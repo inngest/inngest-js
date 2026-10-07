@@ -1154,6 +1154,11 @@ describe("from()", () => {
     expect(result.type).toBe("function-resolved");
     expect(api.sandboxes.size).toBe(3);
 
+    // `build` snapshots even though `install` already found snapshots
+    // unavailable: whether a sibling got there first can't decide its steps.
+    expect(result.stepIds).toContain("install › snapshot");
+    expect(result.stepIds).toContain("build › snapshot");
+
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");

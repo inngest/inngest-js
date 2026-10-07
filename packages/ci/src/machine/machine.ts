@@ -704,10 +704,10 @@ const createSnapshot = async (
     return undefined;
   }
 
-  // Already found to be unavailable earlier in this run.
-  if (run.snapshotsUnavailable) {
-    return undefined;
-  }
+  // No check of `run.snapshotsUnavailable` here: another job finding snapshots
+  // unavailable is a race, so gating these steps on it would plan them on one
+  // request and skip them on the next. They are always planned, and the
+  // memoized outcome of the snapshot step decides.
 
   run.ci.reporter.activity(run, jobPath, "snapshotting machine…");
 
@@ -761,11 +761,14 @@ const createSnapshot = async (
       throw error;
     }
 
-    run.snapshotsUnavailable = true;
+    // Every job that snapshots finds out for itself, but says so once.
+    if (!run.snapshotsUnavailable) {
+      run.warnings.push(
+        `fell back: snapshots unavailable (\`${jobPath}\`), so jobs started from it re-ran it on their own machines`,
+      );
+    }
 
-    run.warnings.push(
-      `fell back: snapshots unavailable (\`${jobPath}\`), so jobs started from it re-ran it on their own machines`,
-    );
+    run.snapshotsUnavailable = true;
 
     return undefined;
   }
