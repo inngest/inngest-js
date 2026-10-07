@@ -240,7 +240,6 @@ const newRunScope = ({
       .sandbox as DurableSandboxTools,
     asyncCtx,
     counters: new Map(),
-    snapshotsUnavailable: false,
     warnings: [],
     pipelineSummaries: [],
     pipelineAnnotations: [],

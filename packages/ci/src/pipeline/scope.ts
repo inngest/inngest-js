@@ -279,8 +279,6 @@ export interface CiRunScope {
   asyncCtx: AsyncContext;
   /** Step ID counters, keyed by the ID's base. */
   counters: Map<string, number>;
-  /** Set when snapshots turned out to be unavailable, so `from()` fell back. */
-  snapshotsUnavailable: boolean;
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
   /** The run's changed files, read once; `null` when they can't be read. */

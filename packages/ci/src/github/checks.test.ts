@@ -47,7 +47,6 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     sandboxes: new Set(),
     summaries: [],
     counters: new Map(),
-    snapshotsUnavailable: false,
     warnings: [],
     pipelineSummaries: [],
     pipelineAnnotations: [],

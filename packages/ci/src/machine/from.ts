@@ -119,11 +119,9 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
   } else if (run.machines.has(job.id) || cacheable) {
     // A cached job is built in a run of its own, so without a snapshot its
     // work isn't on any machine here.
-    const why = run.snapshotsUnavailable
-      ? " · no snapshots"
-      : cacheable
-        ? " · no cache"
-        : "";
+    // This job's own parent gave no snapshot: for a cached job it wasn't
+    // found, and for any other the machine couldn't be snapshotted.
+    const why = cacheable ? " · no cache" : " · no snapshots";
 
     scope.startNote = `rebuilding ${job.id}${why}`;
 
