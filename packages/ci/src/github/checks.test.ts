@@ -20,7 +20,6 @@ import {
   createCheckReporter,
   normaliseAnnotation,
   pipelineSummary,
-  resetTitleThrottle,
   statusesSink,
   truncateSummary,
 } from "./checks.ts";
@@ -206,8 +205,6 @@ describe("commit statuses", () => {
 
 describe("attempt reporting", () => {
   test("a retry updates the job check with the attempt and the error", async () => {
-    resetTitleThrottle();
-
     const updates: Array<{ name: string; title: string }> = [];
 
     const reporter = createCheckReporter({

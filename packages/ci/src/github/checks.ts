@@ -22,9 +22,6 @@ export const maxSummaryBytes = 65_000;
 /** GitHub accepts at most 50 annotations per request, and appends them. */
 export const annotationBatchSize = 50;
 
-/** How often a "current command" title update may be sent per check. */
-export const titleThrottleMs = 10_000;
-
 /** What a check is told when it finishes. */
 interface CheckResult {
   conclusion: CheckConclusion;
@@ -111,12 +108,6 @@ export interface CheckReporter {
     attempt: number;
     of: number;
     error: unknown;
-  }): Promise<void>;
-  /** Best-effort "running `pnpm test`" title update. Never fails a command. */
-  currentCommand(args: {
-    run: CiRunScope;
-    jobPath: string;
-    command: string;
   }): Promise<void>;
   /**
    * A job's check as another run can find it: its name and, once started, its
@@ -228,8 +219,6 @@ export const normaliseAnnotation = (
     ...(annotation.raw_details ? { raw_details: annotation.raw_details } : {}),
   };
 };
-
-const lastTitleUpdate = new Map<string, number>();
 
 /** Run a check update as a step in the run's GitHub span. */
 const githubStep = <T>(
@@ -567,34 +556,6 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return null;
       });
     },
-
-    currentCommand: async ({ run, jobPath, command }) => {
-      if (!run.checkName || !run.jobChecks || !sink.update) {
-        return;
-      }
-
-      // Title updates aren't steps: they're cosmetic, throttled, and a failed
-      // one must never fail the command it was describing.
-      const key = `${run.runId}:${jobPath}`;
-      const now = Date.now();
-
-      if (now - (lastTitleUpdate.get(key) ?? 0) < titleThrottleMs) {
-        return;
-      }
-
-      lastTitleUpdate.set(key, now);
-
-      try {
-        await sink.update({
-          run,
-          name: jobCheckName(run, jobPath),
-          title: `Running \`${command}\``,
-          ...idFor(run, jobPath),
-        });
-      } catch {
-        // Best effort.
-      }
-    },
   };
 };
 
@@ -926,11 +887,4 @@ export const pipelineSummary = (run: CiRunScope): string => {
         ]
       : []),
   ].join("\n");
-};
-
-/**
- * Only for tests: forget the title-update throttle.
- */
-export const resetTitleThrottle = (): void => {
-  lastTitleUpdate.clear();
 };
