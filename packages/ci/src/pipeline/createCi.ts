@@ -234,8 +234,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const jobs = new Map<string, RegisteredJob>();
   const matrices = new Map<string, Matrix<MatrixAxes>>();
   const reporter = createLocalReporter();
-  /** The matrices with a `cache`, whose combinations have a build function. */
-  const cachedMatrixIds = new Set<string>();
   const buildFunctions = new Map<string, InngestFunction.Any>();
 
   const internals: CiInternals = {
@@ -247,8 +245,8 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     ),
     reporter,
     jobs,
-    // One build function per cached job or matrix, made when first needed so
-    // a pipeline can invoke it whether or not `functions()` has run.
+    // One build function per job or matrix, made when first needed so a
+    // pipeline can invoke it whether or not `functions()` has run.
     cacheBuild: (target) => {
       let fn = buildFunctions.get(target);
 
@@ -316,10 +314,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
       matrices.set(config.id, matrix as Matrix<MatrixAxes>);
 
-      if (config.cache) {
-        cachedMatrixIds.add(config.id);
-      }
-
       manifestMatrices.push({
         id: config.id,
         axes: config.axes as unknown as LocalManifest["matrices"][number]["axes"],
@@ -364,17 +358,18 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         };
       });
 
-      // A matrix's jobs only exist once it runs, so its build function is for
+      // Any job can be started from, so each has a build function. A
+      // matrix's jobs only exist once it runs, so its build function is for
       // the matrix, not for each combination.
       const buildTargets = [
         ...[...jobs.values()]
           .filter(({ config }) => {
-            return config.cache && !matrixOriginOf(config);
+            return !matrixOriginOf(config);
           })
           .map(({ id }) => {
             return id;
           }),
-        ...cachedMatrixIds,
+        ...matrices.keys(),
       ];
 
       return [

@@ -37,7 +37,7 @@ export const rebuildSuffix = " (rebuild)";
 export const defaultCwd = "/work";
 
 /**
- * Where a job keeps its handler, so `from()` can re-run it on another machine
+ * Where a job keeps its handler, so `from()` can re-run it on its own machine
  * when there are no snapshots to copy from.
  */
 export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
@@ -88,16 +88,18 @@ export interface MachineHandle {
 }
 
 /**
- * A cached job's snapshot that this run uses, whether it was found by name or
- * built for the run.
+ * What a build run's job ended with, which the run hands back to the run that
+ * invoked it. A build run has one job, so nothing else writes it.
  */
-export interface CachedJob extends CachedSnapshot {
-  /** The job's resolved key, for a rebuild. */
-  ownKey: string;
-  /** The name the job's snapshot is written under, for a rebuild. */
-  writeName: string;
-  /** Whether it was already there, rather than built for this run. */
-  restored: boolean;
+export interface BuildOutcome {
+  /** The job's snapshot, if it had a machine and snapshots could be taken. */
+  snapshotId?: string;
+  /** Set when the snapshot is the job's cache entry, found or made. */
+  cached?: CachedSnapshot;
+  /** Whether the snapshot was already there, rather than built by this run. */
+  reused: boolean;
+  /** Whether the job ran commands, so it had a machine to snapshot. */
+  hadMachine: boolean;
 }
 
 /** How long a slow step took, for the run's timing summary. */
@@ -195,24 +197,15 @@ export interface CiRunScope {
   event: unknown;
   repo?: RepoContext;
   /**
-   * The first run of each job in this pipeline run, keyed by job ID. It's the
-   * shared one `from()` copies from. Later direct calls aren't stored.
+   * The builds `from()` has asked for, keyed by request: the parent's job ID
+   * (with its input, when it has one), or the same plus `(rebuild)` for a
+   * snapshot that went bad. Each is the one `step.invoke()` of the parent's
+   * build, so children of one parent share it. It holds promises and nothing
+   * else, and no job reads another job's state through it.
    */
-  jobs: Map<string, Promise<void>>;
-  /**
-   * Cached jobs being rebuilt after their snapshot went bad, keyed by the
-   * rebuild's path, so jobs that find the same bad snapshot share one build.
-   */
-  rebuilds?: Map<string, Promise<CacheBuildResult>>;
-  /** How many runs of each job have started, keyed by job ID. */
+  builds: Map<string, Promise<CacheBuildResult>>;
+  /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
-  /**
-   * The jobs that started `from()` each job, keyed by the parent's job ID and
-   * holding the children's paths.
-   */
-  fromChildren: Map<string, Set<string>>;
-  /** Machines created in this run, keyed by scope path. */
-  machines: Map<string, Promise<MachineHandle>>;
   /**
    * Pauses of finished jobs' machines that were started and not awaited, keyed
    * by scope path. Each never rejects: a failed pause is a run warning. The
@@ -221,8 +214,6 @@ export interface CiRunScope {
   pauses: Map<string, Promise<void>>;
   /** Set once end-of-run cleanup starts destroying this run's machines. */
   destroyingMachines?: boolean;
-  /** Snapshots taken of finished jobs, keyed by job path. */
-  snapshots: Map<string, Promise<string | undefined>>;
   /**
    * Snapshots this run took itself, by ID. They are deleted when the run ends,
    * so a snapshot a later run can find (a named cache snapshot) or one the run
@@ -232,13 +223,13 @@ export interface CiRunScope {
   createdSnapshots: Set<string>;
   /** How long the slow steps took, in the order they finished. */
   timings: StepTiming[];
-  /** The cached snapshots this run uses, keyed by job ID. */
-  cached: Map<string, CachedJob>;
   /**
-   * Set when this run is a cache build: one job's snapshot, built for the run
-   * that invoked it. It has no checks of its own and reports to that run.
+   * Set when this run is a build: one job's snapshot, built for the run that
+   * invoked it. It has no checks of its own and reports to that run.
    */
   build?: CacheBuildData;
+  /** What the build's job ended with, which the build hands back. */
+  outcome?: BuildOutcome;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
@@ -303,11 +294,17 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
+  /**
+   * What each `from()` parent's build gave back, by job ID. A machine records
+   * the cached snapshots it started from in its own snapshot.
+   */
+  fromBuilt: Record<string, CacheBuildResult>;
   /** Re-runs the `from()` parent on this job's machine. Set by `from()`. */
   rebuildParent?: () => Promise<void>;
   /**
-   * Runs the `from()` parent again as a job of its own, once per run, and
-   * gives its new snapshot. Set by `from()`.
+   * Asks for the `from()` parent's snapshot to be built again, once per run
+   * whatever the number of children that need it, and gives the new one. Set
+   * by `from()`.
    */
   rebuildSnapshot?: () => Promise<string | undefined>;
   /**
@@ -603,6 +600,16 @@ export const inJobSpan = <R>(
       fn,
     );
   });
+};
+
+/**
+ * Run `fn` outside every job's span, wherever it's called from. Jobs that
+ * start from one parent share its build, so the build's steps belong to none
+ * of them, and which one asks first must not decide where they sit in the
+ * trace.
+ */
+export const outsideJobs = <R>(run: CiRunScope, fn: () => R): R => {
+  return runWithAsyncCtx(run.asyncCtx, fn);
 };
 
 /**

@@ -42,7 +42,7 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration, isSandboxNotFound } from "../util.ts";
+import { formatDuration } from "../util.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -218,14 +218,10 @@ const newRunScope = ({
     ...(ctx.logger ? { logger: ctx.logger } : {}),
     ...(repo ? { repo } : {}),
     ...(build ? { build } : {}),
-    jobs: new Map(),
+    builds: new Map(),
     jobCalls: new Map(),
-    fromChildren: new Map(),
-    machines: new Map(),
     pauses: new Map(),
-    snapshots: new Map(),
     timings: [],
-    cached: new Map(),
     createdSnapshots: new Set(),
     sandboxes: new Set(),
     summaries: [],
@@ -386,7 +382,6 @@ const runPipelineAttempt = async ({
 
       await completeDeferredJobChecks(run, checks);
 
-      addSlowParentHints(run);
       run.ci.reporter.warnings(run);
 
       await completePipeline(run, checks, {
@@ -440,7 +435,6 @@ const runPipelineAttempt = async ({
       // their checks spinning.
       await closeJobChecks(run, checks);
 
-      addSlowParentHints(run);
       run.ci.reporter.warnings(run);
 
       await completePipeline(run, checks, {
@@ -710,39 +704,6 @@ const closeJobChecks = async (
         durationMs: 0,
       });
     }
-  }
-};
-
-/** How long an uncached parent can take before its missing cache is worth a note. */
-const slowParentMs = 30_000;
-
-/**
- * Note each uncached job that took a while and had other jobs start `from()`
- * it, since it runs again next run. The run scope is rebuilt on every replay
- * and the durations come from memoized start and end times, so a replay adds
- * the same lines to its own fresh list, once.
- */
-const addSlowParentHints = (run: CiRunScope): void => {
-  for (const [parentId, children] of run.fromChildren) {
-    // Cached here means a `cache` key, or a named snapshot it was restored
-    // from or built into.
-    if (run.ci.jobs.get(parentId)?.config.cache || run.cached.has(parentId)) {
-      continue;
-    }
-
-    const summary = run.summaries.find((candidate) => {
-      return candidate.path === parentId;
-    });
-
-    if (!summary || summary.durationMs <= slowParentMs) {
-      continue;
-    }
-
-    const count = `${children.size} ${children.size === 1 ? "job" : "jobs"}`;
-
-    run.warnings.push(
-      `\`${parentId}\` took ${formatDuration(summary.durationMs)} and ${count} started from it. It isn't cached, so it runs again next time. To reuse it, give it a cache key: \`cache: { key: files("pnpm-lock.yaml") }\`.`,
-    );
   }
 };
 

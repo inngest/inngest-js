@@ -214,17 +214,22 @@ export interface CacheTarget {
 }
 
 /**
- * Compute this job's key and the name its snapshot is written under, as a
+ * Compute a job's key and the name its snapshot is written under, as a
  * memoized step. What a pipeline needs to ask a build function for it.
  */
 export const cacheTarget = async (
-  scope: CiJobScope,
+  run: CiRunScope,
+  job: {
+    /** The job's ID, which its snapshot's name has. */
+    id: string;
+    /** Where the job's steps go: its own path, or the one `from()` asks under. */
+    path: string;
+  },
   cache: CacheConfig,
   /** The input the job was called with, which is part of its identity. */
   input?: unknown,
 ): Promise<CacheTarget> => {
-  const { run } = scope;
-  const jobId = scope.config.id;
+  const jobId = job.id;
 
   countApi("cache");
 
@@ -235,9 +240,9 @@ export const cacheTarget = async (
   const ownKey =
     given?.ownKey ??
     ((await run.step.run(
-      ciStep(`${scope.path}${scopeSeparator}cache:key`, traceName.checkCache),
+      ciStep(`${job.path}${scopeSeparator}cache:key`, traceName.checkCache),
       async () => {
-        await tagStep(run, { kind: "cache", job: scope.path });
+        await tagStep(run, { kind: "cache", job: job.path });
 
         return jobCacheKey(run, cache, input);
       },
@@ -249,6 +254,17 @@ export const cacheTarget = async (
       given?.cacheKey ??
       snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
   };
+};
+
+/**
+ * Where a job without a `cache` has its snapshot for `from()`: a name that
+ * belongs to this pipeline run, so another run never starts from it, and that
+ * a second build in this run finds rather than builds again.
+ */
+export const runTarget = (run: CiRunScope, jobId: string, input?: unknown) => {
+  const ownKey = input === undefined ? "" : hash(stableStringify(input));
+
+  return { ownKey, name: snapshotName(`run:${run.runId}`, jobId, ownKey) };
 };
 
 /**
@@ -387,7 +403,8 @@ const findInScopes = async (
  */
 export const lookupCache = async (
   scope: CiJobScope,
-  cache: CacheConfig,
+  /** The job's `cache`, or none for a job whose snapshot is only for this run. */
+  cache: CacheConfig | undefined,
   target: CacheTarget,
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
@@ -399,15 +416,17 @@ export const lookupCache = async (
     async () => {
       await tagStep(run, { kind: "cache", job: scope.path });
 
-      return (
-        (await findInScopes(
-          run,
-          scope.config.id,
-          cache,
-          target.ownKey,
-          exclude,
-        )) ?? null
-      );
+      const hit = cache
+        ? await findInScopes(
+            run,
+            scope.config.id,
+            cache,
+            target.ownKey,
+            exclude,
+          )
+        : await findNamed(run, target.name, exclude);
+
+      return hit ?? null;
     },
   )) as CachedSnapshot | null;
 

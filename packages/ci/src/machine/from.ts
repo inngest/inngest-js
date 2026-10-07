@@ -1,17 +1,26 @@
 /**
- * Starting a job from another job's machine: `from()`, plus the fallback that
- * re-runs the parent's handler when no snapshot is available.
+ * Starting a job from another job's machine: `from()`, which asks the
+ * parent's build function for a snapshot and starts from it, plus the fallback
+ * that re-runs the parent's handler when no snapshot is available.
  *
  * @module
  */
 
-import { describeCached } from "../cache/cache.ts";
+import type { CacheTarget } from "../cache/cache.ts";
+import { cacheTarget, describeCached, runTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
-import { joinJob, rebuildJob } from "../pipeline/job.ts";
-import type { CiJobScope } from "../pipeline/scope.ts";
-import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
-import type { AnyJob, Job } from "../types.ts";
-import { snapshotJob } from "./machine.ts";
+import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
+import { adoptBuilt, invokeBuild, validateInput } from "../pipeline/job.ts";
+import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
+import {
+  countApi,
+  jobHandlerKey,
+  outsideJobs,
+  rebuildSuffix,
+  requireJobScope,
+} from "../pipeline/scope.ts";
+import type { AnyJob, Job, JobConfig } from "../types.ts";
+import { errorMessage, hash, stableStringify } from "../util.ts";
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -19,18 +28,16 @@ import { snapshotJob } from "./machine.ts";
  *
  * Start this job on a copy of another job's machine.
  *
- * The parent runs once however many jobs start from it, and each child gets
- * its own copy, so they can't affect each other. If the parent was already
- * called directly, `from()` uses that run instead of starting another. The copy is made when this
- * job runs its first command, so a job that starts from another and then
- * waits doesn't pay for a machine while it waits.
+ * The parent runs once however many jobs start from it, in a run of its own,
+ * and each child gets its own copy of its machine, so they can't affect each
+ * other. The copy is made when this job runs its first command, so a job that
+ * starts from another and then waits doesn't pay for a machine while it waits.
  *
- * `from()` shares a job's machine within one run. Only a `cache` key on the
- * parent reuses it across runs.
+ * `from()` shares a parent's build within one pipeline run. Only a `cache` key
+ * on the parent reuses it across runs.
  *
  * The snapshot behind the copy is deleted when the pipeline run ends, unless
- * the parent is cached under a name (the cache keeps it for later runs) or
- * fails with `keepOnFailure`.
+ * the parent is cached under a name (the cache keeps it for later runs).
  *
  * ```ts
  * const setup = ci.job("setup", async () => {
@@ -45,8 +52,9 @@ import { snapshotJob } from "./machine.ts";
  * ```
  *
  * `await setup()` and `await from(setup)` differ: the first runs setup on its
- * own machine every time it's called, the second joins the one shared run of
- * setup *and* starts this job from where it finished.
+ * own machine every time it's called, the second starts this job from the one
+ * shared build of setup. A job that is both called and started from builds
+ * twice.
  *
  * @throws {CiUsageError} When called outside a job, after this job's first
  * command, or a second time.
@@ -76,60 +84,182 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
   scope.fromJobIds.push(job.id);
 
-  scope.run.ci.reporter.jobFrom(scope, job.id);
+  const { run } = scope;
 
-  const children = scope.run.fromChildren.get(job.id) ?? new Set<string>();
+  run.ci.reporter.jobFrom(scope, job.id);
 
-  children.add(scope.jobPath);
-  scope.run.fromChildren.set(job.id, children);
+  const registered = run.ci.jobs.get(job.id);
 
-  if (input !== undefined) {
-    scope.parentInputs[job.id] = input;
+  if (!registered) {
+    throw new CiUsageError(
+      `Job \`${job.id}\` isn't registered on this client.`,
+    );
   }
 
-  scope.run.ci.reporter.activity(
-    scope.run,
-    scope.jobPath,
-    `waiting for ${job.id}…`,
-  );
+  const { config } = registered;
+  const given = await validateInput(config, input);
 
-  await joinJob({ id: job.id, input });
+  if (given !== undefined) {
+    scope.parentInputs[job.id] = given;
+  }
 
-  const snapshotId = await snapshotJob(scope.run, job.id);
+  run.ci.reporter.activity(run, scope.jobPath, `waiting for ${job.id}…`);
 
-  const { run } = scope;
-  const cached = run.cached.get(job.id);
-  const cacheable = Boolean(run.ci.jobs.get(job.id)?.config.cache);
+  const built = await requestBuild({ run, config, input: given });
 
-  if (snapshotId) {
+  scope.fromBuilt[job.id] = built;
+
+  if (built.snapshotId) {
+    const snapshotId = built.snapshotId;
+
     scope.fromSnapshotId = snapshotId;
 
     scope.startNote =
-      cached?.snapshotId === snapshotId
-        ? `starting ${job.id} · ${describeCached(cached.createdAt)}`
+      built.cached?.snapshotId === snapshotId
+        ? `starting ${job.id} · ${describeCached(built.cached.createdAt)}`
         : `starting ${job.id}`;
 
-    scope.rebuildSnapshot = () => {
-      return rebuildJob(run, job.id, input);
+    scope.rebuildSnapshot = async () => {
+      const rebuilt = await requestBuild({
+        run,
+        config,
+        input: given,
+        replacing: { snapshotId, target: built.target },
+      });
+
+      scope.fromBuilt[job.id] = rebuilt;
+
+      return rebuilt.snapshotId;
     };
 
     scope.rebuildParent = () => {
-      return rerunOnThisMachine(scope, job, input);
+      return rerunOnThisMachine(scope, job, given);
     };
-  } else if (run.machines.has(job.id) || cacheable) {
+  } else if (built.hadMachine || config.cache) {
     // A cached job is built in a run of its own, so without a snapshot its
-    // work isn't on any machine here.
-    // This job's own parent gave no snapshot: for a cached job it wasn't
-    // found, and for any other the machine couldn't be snapshotted.
-    const why = cacheable ? " · no cache" : " · no snapshots";
+    // work isn't on any machine here. This job's own parent gave no snapshot:
+    // for a cached job it wasn't found, and for any other the machine
+    // couldn't be snapshotted.
+    const why = config.cache ? " · no cache" : " · no snapshots";
 
     scope.startNote = `rebuilding ${job.id}${why}`;
 
     run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
 
-    await rerunOnThisMachine(scope, job, input);
+    await rerunOnThisMachine(scope, job, given);
   }
 }
+
+/**
+ * What a build asked for by `from()` is called in step IDs: the
+ * job's ID, plus a hash of its input when it has one, so builds of one job
+ * with different inputs are different builds. No job of the run has a path
+ * like it.
+ */
+const buildPathOf = (jobId: string, input: unknown): string => {
+  const suffix =
+    input === undefined ? "" : ` #${hash(stableStringify(input), 8)}`;
+
+  return `${jobId}${suffix} (from)`;
+};
+
+/**
+ * Ask for a `from()` parent's snapshot, in a build run of its own. Children of
+ * one parent share one invoke, which `run.builds` holds as a promise, so
+ * whichever child comes first makes no difference to the steps the run plans.
+ *
+ * A parent without a `cache` is built under a name that belongs to this
+ * pipeline run: the build function runs one build at a time per name and looks
+ * it up before it builds, so a second invoke of the same build in this run
+ * finds the first's snapshot instead of making another.
+ *
+ * With `replacing`, it's the one build of the same parent that replaces a
+ * snapshot that wouldn't start, shared by every child that found it bad.
+ */
+const requestBuild = ({
+  run,
+  config,
+  input,
+  replacing,
+}: {
+  run: CiRunScope;
+  config: JobConfig;
+  input: unknown;
+  /** The bad snapshot, and the name the build gave it. */
+  replacing?: { snapshotId: string; target: CacheTarget };
+}): Promise<CacheBuildResult> => {
+  const base = buildPathOf(config.id, input);
+  const path = replacing ? `${base}${rebuildSuffix}` : base;
+  const existing = run.builds.get(path);
+
+  if (existing) {
+    return existing;
+  }
+
+  const built = outsideJobs(run, async () => {
+    const target =
+      replacing?.target ??
+      (config.cache
+        ? await cacheTarget(
+            run,
+            { id: config.id, path: base },
+            config.cache,
+            input,
+          )
+        : runTarget(run, config.id, input));
+
+    const result = await invokeBuild({
+      run,
+      path: config.id,
+      stepPath: path,
+      config,
+      input,
+      target,
+      ...(replacing ? { exclude: replacing.snapshotId } : {}),
+    });
+
+    adoptBuilt(run, result);
+
+    return result;
+  });
+
+  run.builds.set(path, built);
+
+  if (!replacing) {
+    reportBuilt(run, config.id, built);
+  }
+
+  return built;
+};
+
+/**
+ * Say how a parent's build ended, where the build itself can't: its row in the
+ * pipeline's summary and in the local CLI. Each is made once however many jobs
+ * start from the parent.
+ */
+const reportBuilt = (
+  run: CiRunScope,
+  jobId: string,
+  built: Promise<CacheBuildResult>,
+): void => {
+  built.then(
+    (result) => {
+      if (result.summary) {
+        run.summaries.push(result.summary);
+      }
+
+      run.ci.reporter.jobEnded(
+        run,
+        jobId,
+        result.reused ? "cached" : "passed",
+        result.summary?.title,
+      );
+    },
+    (error: unknown) => {
+      run.ci.reporter.jobEnded(run, jobId, "failed", errorMessage(error));
+    },
+  );
+};
 
 /**
  * Without a snapshot to copy, get this machine to where the parent's finished

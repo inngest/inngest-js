@@ -154,7 +154,7 @@ describe("run metadata", () => {
         waitForChecks: 0,
         waitForWorkflow: 0,
         waitFor: 0,
-        commands: 5,
+        commands: 4,
         background: 0,
         shard: 0,
         skip: 0,

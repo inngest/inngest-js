@@ -77,47 +77,6 @@ describe("background pause", () => {
     ]);
   });
 
-  test("from() waits for the parent's pause, then resumes and snapshots", async () => {
-    const { api, ci } = setup();
-
-    const parent = ci.job("parent", async () => {
-      await $`pnpm install`;
-    });
-
-    const child = ci.job("child", async () => {
-      await from(parent);
-
-      await $`pnpm test`;
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await Promise.all([parent(), child()]);
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-resolved");
-
-    const order = result.stepIds.filter((id) => {
-      return /^parent › (pause|resume|snapshot)$/.test(id);
-    });
-
-    expect(order).toEqual([
-      "parent › pause",
-      "parent › resume",
-      "parent › snapshot",
-    ]);
-
-    const calls = api.requests
-      .map((request) => {
-        return /\/(pause|resume|snapshots)$/.exec(request)?.[1];
-      })
-      .filter(Boolean);
-
-    expect(calls.slice(0, 3)).toEqual(["pause", "resume", "snapshots"]);
-  });
-
   test("a failed background pause is a warning and the run passes", async () => {
     const { api, ci } = setup();
 

@@ -1,25 +1,26 @@
 /**
- * Building a cached job's snapshot in a run of its own: what a pipeline hands
- * the build, the generated function that does it, and what it hands back.
+ * Building a job's snapshot in a run of its own: what a pipeline hands the
+ * build, the generated function that does it, and what it hands back.
  *
- * A pipeline with a cached job invokes this function instead of running the
- * job inline. The function is limited to one run per snapshot name, and looks
- * the snapshot up again when it starts, so a burst of runs that all missed the
- * same name builds it once and every one of them gets the same snapshot.
+ * A pipeline invokes this function for a cached job, and for any job another
+ * job starts `from()`, instead of running the job inline. The function is
+ * limited to one run per snapshot name, and looks the snapshot up again when
+ * it starts, so a burst of runs that all missed the same name builds it once
+ * and every one of them gets the same snapshot.
  *
  * @module
  */
 
 import type { Inngest, InngestFunction } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
-import type { CachedSnapshot } from "../cache/cache.ts";
+import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
 import { pipelineFunctionOptions, runPipeline } from "./pipeline.ts";
-import type { CiInternals } from "./scope.ts";
+import type { CiInternals, JobSummary } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
 
 /** The event every invoked function runs from. */
@@ -36,11 +37,15 @@ export interface CacheBuildData extends Record<string, unknown> {
   matrix?: { id: string; combo: Record<string, unknown> };
   /** The job's input, for jobs that take one. */
   input?: unknown;
-  /** The job's resolved cache key, as the pipeline computed it. */
+  /**
+   * The job's resolved cache key, as the pipeline computed it. For a job
+   * without a `cache`, its input's hash, if it has one.
+   */
   ownKey: string;
   /**
-   * The name the snapshot is written under: scope, job and `ownKey`. Builds
-   * are limited to one at a time per name.
+   * The name the snapshot is written under: scope, job and `ownKey`, where the
+   * scope of a job without a `cache` is the pipeline run. Builds are limited
+   * to one at a time per name.
    */
   cacheKey: string;
   /**
@@ -72,6 +77,12 @@ export interface CacheBuildResult {
   cached?: CachedSnapshot;
   /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
+  /** The key and name the build was asked for, for asking again. */
+  target: CacheTarget;
+  /** Whether the job ran commands, so there was a machine to snapshot. */
+  hadMachine: boolean;
+  /** The job's line in the pipeline summary, for the run that invoked it. */
+  summary?: JobSummary;
   /** What the invoking run should say about the build, like a fallback. */
   warnings: string[];
 }
@@ -169,21 +180,19 @@ const buildSnapshot = async ({
   }
 
   const run = getRunScope();
-  const cached = run?.cached.get(data.jobId);
-  const snapshotId = await run?.snapshots.get(data.jobId);
+  const outcome = run?.outcome;
+
+  const summary = run?.summaries.find((candidate) => {
+    return candidate.path === data.jobId;
+  });
 
   return {
-    ...(snapshotId ? { snapshotId } : {}),
-    ...(cached
-      ? {
-          cached: {
-            snapshotId: cached.snapshotId,
-            name: cached.name,
-            createdAt: cached.createdAt,
-          },
-        }
-      : {}),
-    reused: cached?.restored ?? false,
+    ...(outcome?.snapshotId ? { snapshotId: outcome.snapshotId } : {}),
+    ...(outcome?.cached ? { cached: outcome.cached } : {}),
+    reused: outcome?.reused ?? false,
+    target: { ownKey: data.ownKey, name: data.cacheKey },
+    hadMachine: outcome?.hadMachine ?? false,
+    ...(summary ? { summary } : {}),
     warnings: run?.warnings ?? [],
   };
 };

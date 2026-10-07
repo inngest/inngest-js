@@ -62,6 +62,13 @@ export interface LocalReporter {
   jobFrom(scope: CiJobScope, parentId: string): void;
   /** Where a job's own run is, when another run builds it. */
   jobRunUrl(run: CiRunScope, jobId: string, url: string): void;
+  /** How a job built in a run of its own ended, as the run that needed it sees. */
+  jobEnded(
+    run: CiRunScope,
+    jobId: string,
+    status: LocalStatus,
+    title?: string,
+  ): void;
   /** What a job is doing at a slow point that isn't a command. */
   activity(run: CiRunScope, jobId: string, text: string): void;
   /** What the run wants to say once it's over, like a cache that's missing. */
@@ -247,6 +254,17 @@ export const createLocalReporter = (): LocalReporter => {
         jobId,
         status: "running",
         url,
+        at: Date.now(),
+      });
+    },
+
+    jobEnded: (run, jobId, status, title) => {
+      send({
+        kind: "job",
+        runId: reportedRunId(run),
+        jobId,
+        status,
+        ...(title ? { title } : {}),
         at: Date.now(),
       });
     },

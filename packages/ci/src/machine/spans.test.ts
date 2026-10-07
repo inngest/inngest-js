@@ -19,7 +19,6 @@ import { createCiTestClient } from "../testing/client.ts";
 import type { CommandScript, FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { spanStubInstalled } from "../testing/spanStub.ts";
 import { version } from "../version.ts";
 import { $ } from "./command.ts";
 import { from } from "./from.ts";
@@ -45,24 +44,6 @@ const prEvent = {
 };
 
 type Ci = ReturnType<typeof createCi>;
-
-/**
- * The rows a snapshot's own steps draw under its "Snapshot sandbox" row. A
- * newer SDK groups them in spans of its own, marked with its origin. The SDK
- * the test stub stands in for has one flat step, in the span CI opened.
- */
-const snapshotRows = (withOrigins: boolean): string[] => {
-  if (spanStubInstalled()) {
-    return [
-      `    Snapshot sandbox (wait until ready)${withOrigins ? " <- ci" : ""}`,
-    ];
-  }
-
-  return [
-    `      Create snapshot${withOrigins ? " <- inngest" : ""}`,
-    `      Wait for snapshot${withOrigins ? " <- inngest" : ""}`,
-  ];
-};
 
 interface TraceNode {
   label: string;
@@ -436,7 +417,7 @@ describe("spans", () => {
     });
   });
 
-  test("keep a job's span top-level, and come back to it for a snapshot", async () => {
+  test("keep the build of a parent outside every job's span", async () => {
     const result = await runPipeline((ci) => {
       const base = ci.job("base", async () => {
         await $`install`;
@@ -457,24 +438,13 @@ describe("spans", () => {
       }),
     );
 
-    // `base` is started by `test`, which later asks for its snapshot. Check
-    // updates are in the GitHub span.
+    // `base` runs in a run of its own, so the pipeline has only the step that
+    // invokes it, outside any job whichever child asks first. Check updates
+    // are in the GitHub span.
     expect(jobOf).toEqual({
       "github › check:pr:start": "github",
-      "github › check:base:start": "github",
-      "base › machine": "base",
-      "base › machine › setup": "base",
-      "base › install › start": "base",
-      "base › install › wait #1": "base",
-      "base › install › check #1": "base",
-      "base › install › output": "base",
-      "github › check:base:complete": "github",
-      "base › pause": "base",
-      "base › resume": "base",
-      "base › snapshot:meta": "base",
-      "base › snapshot": "base",
-      "base › snapshot:wait-until-ready": "base",
       "github › check:test:start": "github",
+      "base (from) › build": undefined,
       "test › machine": "test",
       "test › machine › setup": "test",
       "test › unit › start": "test",
@@ -497,25 +467,9 @@ describe("spans", () => {
         "GitHub",
         "  Create check: pr",
         "  Report test: started",
-        "  Report base: started",
-        "  Report base: passed",
         "  Report test: passed",
         "  Complete check: pr",
-        "Install dependencies [job]",
-        "  Start sandbox",
-        "    Create sandbox",
-        "    Prepare workspace",
-        "  $ pnpm install",
-        "    Start process",
-        "    Wait 1s",
-        "    Poll process",
-        "    Read output",
-        "  Save sandbox",
-        "    Pause sandbox",
-        "    Resume sandbox",
-        "    Record snapshot contents",
-        "    Snapshot sandbox",
-        ...snapshotRows(false),
+        "Build base in its own run",
         "test [job]",
         "  Start sandbox from base",
         "    Create sandbox",
@@ -560,25 +514,9 @@ describe("spans", () => {
         "GitHub <- ci",
         "  Create check: pr <- ci",
         "  Report test: started <- ci",
-        "  Report base: started <- ci",
-        "  Report base: passed <- ci",
         "  Report test: passed <- ci",
         "  Complete check: pr <- ci",
-        "Install dependencies [job]",
-        "  Start sandbox <- ci",
-        "    Create sandbox <- ci",
-        "    Prepare workspace <- ci",
-        "  $ pnpm install",
-        "    Start process <- ci",
-        "    Wait 1s <- ci",
-        "    Poll process <- ci",
-        "    Read output <- ci",
-        "  Save sandbox <- ci",
-        "    Pause sandbox <- ci",
-        "    Resume sandbox <- ci",
-        "    Record snapshot contents <- ci",
-        "    Snapshot sandbox <- ci",
-        ...snapshotRows(true),
+        "Build base in its own run <- ci",
         "test [job]",
         "  Start sandbox from base <- ci",
         "    Create sandbox <- ci",
@@ -619,59 +557,52 @@ describe("spans", () => {
     }
   });
 
-  test("name a rebuilt job's span for the job, keeping its path as its ID", async () => {
-    /** The span of `base`, rebuilt because its snapshot won't start. */
-    const rebuiltSpan = async (base: { id: string; name?: string }) => {
-      const api = createFakeSandboxApi();
-      const { fetch } = api;
-      let broken = false;
+  test("ask for a parent's snapshot again, as a build of its own, when it won't start", async () => {
+    const api = createFakeSandboxApi();
+    const { fetch } = api;
+    let broken = false;
 
-      // Break the snapshot as soon as it's taken, before `test` starts from it.
-      api.fetch = (input, init) => {
-        if (!broken && api.snapshots.size > 0) {
-          broken = true;
+    // Break the snapshot as soon as it's taken, before `test` starts from it.
+    api.fetch = (input, init) => {
+      if (!broken && api.snapshots.size > 0) {
+        broken = true;
 
-          api.failSnapshotStarts();
-        }
+        api.failSnapshotStarts();
+      }
 
-        return fetch(input, init);
-      };
-
-      const result = await runPipeline(
-        (ci) => {
-          const parent = ci.job(base, async () => {
-            await $`pnpm install`;
-          });
-
-          return ci.job("test", async () => {
-            await from(parent);
-
-            await $`pnpm test`;
-          });
-        },
-        [],
-        api,
-      );
-
-      expect(result.type).toBe("function-resolved");
-
-      return Object.values(result.spans)
-        .flat()
-        .find((span) => span.id === "base (rebuild)");
+      return fetch(input, init);
     };
 
-    expect(
-      await rebuiltSpan({ id: "base", name: "Install dependencies" }),
-    ).toEqual({
-      id: "base (rebuild)",
-      name: "Install dependencies (rebuild)",
-      kind: "job",
+    const result = await runPipeline(
+      (ci) => {
+        const parent = ci.job("base", async () => {
+          await $`pnpm install`;
+        });
+
+        return ci.job("test", async () => {
+          await from(parent);
+
+          await $`pnpm test`;
+        });
+      },
+      [],
+      api,
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    const builds = result.stepIds.filter((id) => {
+      return id.endsWith("› build");
     });
 
-    expect(await rebuiltSpan({ id: "base" })).toEqual({
-      id: "base (rebuild)",
-      name: "base (rebuild)",
-      kind: "job",
-    });
+    expect(builds).toEqual([
+      "base (from) › build",
+      "base (from) (rebuild) › build",
+    ]);
+
+    // Neither is in a job's span.
+    for (const id of builds) {
+      expect(result.spans[id]?.[0]).toBeUndefined();
+    }
   });
 });

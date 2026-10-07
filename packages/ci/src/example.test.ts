@@ -272,8 +272,9 @@ describe("the example's pr pipeline", () => {
         return `${entry.name}: ${entry.conclusion}`;
       });
 
+    // `setup` is only started from, so it is built in a run of its own and
+    // has no check.
     expect(completed).toEqual([
-      "pr / setup: success",
       "pr / lint: success",
       "pr / test: success",
       "pr / compat (node:20): success",

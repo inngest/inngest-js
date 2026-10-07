@@ -14,7 +14,7 @@ import type { CheckConclusion } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import { version } from "../version.ts";
 import type { CiRunScope } from "./scope.ts";
-import { rebuildSuffix, scopeSeparator } from "./scope.ts";
+import { scopeSeparator } from "./scope.ts";
 import { originOption } from "./spans.ts";
 
 /**
@@ -46,16 +46,9 @@ const outcomes: Partial<Record<CheckConclusion, string>> = {
 };
 
 export const traceName = {
-  /**
-   * A job's span: its `name`, or its path when it has none. A rebuilt job
-   * reads as the job, as in `Install dependencies (rebuild)`.
-   */
+  /** A job's span: its `name`, or its path when it has none. */
   job: (run: CiRunScope, path: string): string => {
-    const rebuilt = path.endsWith(rebuildSuffix);
-    const id = rebuilt ? path.slice(0, -rebuildSuffix.length) : path;
-    const name = run.ci.jobs.get(id)?.config.name ?? id;
-
-    return rebuilt ? `${name}${rebuildSuffix}` : name;
+    return run.ci.jobs.get(path)?.config.name ?? path;
   },
 
   /** The span a job's sandbox starts in. */
