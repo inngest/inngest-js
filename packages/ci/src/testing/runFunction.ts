@@ -42,7 +42,7 @@ interface Step {
   data?: unknown;
   error?: unknown;
   metadata?: MetadataUpdate[];
-  opts?: { span?: StepSpanPath; origin?: string };
+  opts?: { span?: StepSpanPath; origin?: string; parallelMode?: string };
   /** The step's ID before hashing. */
   userland?: { id: string };
 }
@@ -84,6 +84,8 @@ export interface RunResult {
   steps: Record<string, unknown>;
   /** The span path of each step in a span, keyed by step ID. */
   spans: Record<string, StepSpanPath>;
+  /** The parallel mode of each step that has one, keyed by step ID. */
+  parallelModes: Record<string, string>;
   /** The origin of each step that has one, keyed by step ID. */
   origins: Record<string, string>;
   /**
@@ -258,6 +260,7 @@ export const runFunction = async (
   const steps: Record<string, unknown> = {};
   const spans: RunResult["spans"] = {};
   const origins: RunResult["origins"] = {};
+  const parallelModes: RunResult["parallelModes"] = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
@@ -354,6 +357,7 @@ export const runFunction = async (
         steps,
         spans,
         origins,
+        parallelModes,
         metadata,
       };
     }
@@ -375,6 +379,7 @@ export const runFunction = async (
         steps,
         spans,
         origins,
+        parallelModes,
         metadata,
       };
     }
@@ -387,6 +392,12 @@ export const runFunction = async (
 
     if (result.type !== "steps-found") {
       throw new Error(`Unexpected execution result: ${result.type}`);
+    }
+
+    for (const planned of result.steps ?? []) {
+      if (planned.opts?.parallelMode) {
+        parallelModes[stepId(planned)] = planned.opts.parallelMode;
+      }
     }
 
     batches.push(
@@ -410,6 +421,10 @@ export const runFunction = async (
             ? { data: outcome.data ?? null }
             : { error: outcome.error }),
         });
+
+        if (planned.opts?.parallelMode === "race") {
+          break;
+        }
 
         continue;
       }
@@ -435,6 +450,12 @@ export const runFunction = async (
 
       if (ran.type === "step-ran") {
         recordRan(ran);
+      }
+
+      // The executor re-invokes the function as soon as a race step ends,
+      // even with other steps still pending. The rest are found again.
+      if (planned.opts?.parallelMode === "race") {
+        break;
       }
     }
   }

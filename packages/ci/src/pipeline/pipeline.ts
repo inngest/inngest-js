@@ -44,6 +44,7 @@ import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
 import { ciStep, traceName } from "./names.ts";
+import { inRaceMode } from "./race.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -294,139 +295,141 @@ const runPipelineAttempt = async ({
   });
   const checks = internals.checks as CheckReporter;
 
-  return runInScope({ run }, async () => {
-    // A trigger with no repository of its own, like a cron, gets the one the
-    // pipeline was configured with. Checks, checkout and cache keys all need
-    // it, so it's resolved before any of them run.
-    if (!run.repo && config.repo) {
-      run.repo = await resolveConfiguredRepo(run, config.repo);
-    }
+  return runInScope({ run }, () => {
+    return inRaceMode(run, ctx, async () => {
+      // A trigger with no repository of its own, like a cron, gets the one the
+      // pipeline was configured with. Checks, checkout and cache keys all need
+      // it, so it's resolved before any of them run.
+      if (!run.repo && config.repo) {
+        run.repo = await resolveConfiguredRepo(run, config.repo);
+      }
 
-    // A comment trigger knows its pull request but not the commit it's for.
-    if (run.repo?.pullRequest && !run.repo.sha && !run.repo.local) {
-      run.repo = await resolvePullRequestHead(run, run.repo);
-    }
+      // A comment trigger knows its pull request but not the commit it's for.
+      if (run.repo?.pullRequest && !run.repo.sha && !run.repo.local) {
+        run.repo = await resolvePullRequestHead(run, run.repo);
+      }
 
-    // The check's step carries the run's metadata. With checks off there's no
-    // such step, so one of its own does.
-    const checkStarted = await checks.pipelineStart({
-      run,
-      metadata: () => {
-        return runStartMetadata(run);
-      },
-    });
-
-    if (checkStarted === undefined) {
-      await metadataStep(run, "ci › metadata:start", () => {
-        return runStartMetadata(run);
+      // The check's step carries the run's metadata. With checks off there's no
+      // such step, so one of its own does.
+      const checkStarted = await checks.pipelineStart({
+        run,
+        metadata: () => {
+          return runStartMetadata(run);
+        },
       });
-    }
 
-    // A run that is about to be retried keeps its machines and snapshots: the
-    // retry replays the memoized machine and snapshot IDs and needs them
-    // alive. The generated cleanup function covers a run that never gets
-    // here; it finds machines by name, but snapshots carry no run name, so
-    // it can't delete them.
-    let retrying = false;
+      if (checkStarted === undefined) {
+        await metadataStep(run, "ci › metadata:start", () => {
+          return runStartMetadata(run);
+        });
+      }
 
-    try {
-      const permitted = await checkCommentPermission(run, config);
+      // A run that is about to be retried keeps its machines and snapshots: the
+      // retry replays the memoized machine and snapshot IDs and needs them
+      // alive. The generated cleanup function covers a run that never gets
+      // here; it finds machines by name, but snapshots carry no run name, so
+      // it can't delete them.
+      let retrying = false;
 
-      if (!permitted) {
+      try {
+        const permitted = await checkCommentPermission(run, config);
+
+        if (!permitted) {
+          await completePipeline(run, checks, {
+            conclusion: "neutral",
+            title: "Not permitted",
+            summary: pipelineSummary(run),
+            annotations: run.pipelineAnnotations,
+          });
+
+          return { skipped: "not permitted" };
+        }
+
+        const result = await handler({
+          event: ctx.event,
+          events: ctx.events ?? [ctx.event],
+          runId: ctx.runId,
+          pipelineId: config.id,
+          repo: run.repo,
+          attempt: ctx.attempt ?? 0,
+          logger: ctx.logger ?? console,
+        });
+
+        const skip = asSkip(result);
+
+        if (skip) {
+          countApi("skip");
+        }
+
+        await completeDeferredJobChecks(run, checks);
+
+        addSlowParentHints(run);
+        run.ci.reporter.warnings(run);
+
         await completePipeline(run, checks, {
-          conclusion: "neutral",
-          title: "Not permitted",
-          summary: pipelineSummary(run),
+          conclusion: "success",
+          title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
+          summary: pipelineSummaryWithReports(run),
           annotations: run.pipelineAnnotations,
         });
 
-        return { skipped: "not permitted" };
-      }
+        return result;
+      } catch (error) {
+        // A failed command's exit code is already recorded in its steps, and a
+        // usage error is the same on every attempt, so retrying the run would
+        // only replay the same failure.
+        const deterministic = isDeterministicFailure(error);
 
-      const result = await handler({
-        event: ctx.event,
-        events: ctx.events ?? [ctx.event],
-        runId: ctx.runId,
-        pipelineId: config.id,
-        repo: run.repo,
-        attempt: ctx.attempt ?? 0,
-        logger: ctx.logger ?? console,
-      });
+        retrying = !deterministic && run.willRetry(error);
 
-      const skip = asSkip(result);
+        if (retrying) {
+          // The check steps are memoized, so completing a check as failed now
+          // would leave it failed even if the retry passes. They stay in
+          // progress until an attempt that's final.
+          const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
 
-      if (skip) {
-        countApi("skip");
-      }
+          for (const [jobPath, deferred] of run.deferredChecks) {
+            await checks.retrying({
+              run,
+              jobPath,
+              ...(deferred.name ? { name: deferred.name } : {}),
+              title,
+            });
+          }
 
-      await completeDeferredJobChecks(run, checks);
+          await checks.retrying({ run, title });
 
-      addSlowParentHints(run);
-      run.ci.reporter.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: "success",
-        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      return result;
-    } catch (error) {
-      // A failed command's exit code is already recorded in its steps, and a
-      // usage error is the same on every attempt, so retrying the run would
-      // only replay the same failure.
-      const deterministic = isDeterministicFailure(error);
-
-      retrying = !deterministic && run.willRetry(error);
-
-      if (retrying) {
-        // The check steps are memoized, so completing a check as failed now
-        // would leave it failed even if the retry passes. They stay in
-        // progress until an attempt that's final.
-        const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
-
-        for (const [jobPath, deferred] of run.deferredChecks) {
-          await checks.retrying({
-            run,
-            jobPath,
-            ...(deferred.name ? { name: deferred.name } : {}),
-            title,
-          });
+          throw error;
         }
 
-        await checks.retrying({ run, title });
+        await completeDeferredJobChecks(run, checks);
+
+        // Jobs that were still running when the run ended would otherwise leave
+        // their checks spinning.
+        await closeOpenJobChecks(run, checks);
+
+        addSlowParentHints(run);
+        run.ci.reporter.warnings(run);
+
+        await completePipeline(run, checks, {
+          conclusion: conclusionForError(error),
+          title: errorTitle(error, run),
+          summary: pipelineSummaryWithReports(run),
+          annotations: run.pipelineAnnotations,
+        });
+
+        if (deterministic) {
+          throw new NonRetriableError(error.message, { cause: error });
+        }
 
         throw error;
+      } finally {
+        if (!retrying) {
+          await destroyRunMachines(run, ctx.attempt ?? 0);
+          await deleteRunSnapshots(run, ctx.attempt ?? 0);
+        }
       }
-
-      await completeDeferredJobChecks(run, checks);
-
-      // Jobs that were still running when the run ended would otherwise leave
-      // their checks spinning.
-      await closeOpenJobChecks(run, checks);
-
-      addSlowParentHints(run);
-      run.ci.reporter.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: conclusionForError(error),
-        title: errorTitle(error, run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      if (deterministic) {
-        throw new NonRetriableError(error.message, { cause: error });
-      }
-
-      throw error;
-    } finally {
-      if (!retrying) {
-        await destroyRunMachines(run, ctx.attempt ?? 0);
-        await deleteRunSnapshots(run, ctx.attempt ?? 0);
-      }
-    }
+    });
   });
 };
 
