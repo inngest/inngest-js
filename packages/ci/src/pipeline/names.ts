@@ -131,8 +131,6 @@ export const traceName = {
   discardStaleMachine: "Discard stale sandbox",
   prepareWorkspace: "Prepare workspace",
   saveMachine: "Save sandbox",
-  pauseMachine: "Pause sandbox",
-  resumeMachine: "Resume sandbox",
   snapshotMachine: "Snapshot sandbox",
   cleanUpMachines: "Clean up sandboxes",
   cleanUpSnapshots: "Clean up snapshots",

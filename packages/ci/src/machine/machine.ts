@@ -1,6 +1,6 @@
 /**
- * A job's machines: creating them lazily, pausing, snapshotting and
- * destroying them.
+ * A job's machines: creating them lazily, snapshotting them and destroying
+ * them.
  *
  * @module
  */
@@ -34,7 +34,6 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
-import { pauseSandbox } from "./pause.ts";
 import type { SnapshotMeta, SnapshotParent } from "./snapshotMeta.ts";
 import {
   parseSnapshotMeta,
@@ -512,77 +511,12 @@ const errorStatus = (error: unknown): number | undefined => {
   return seen?.status ?? seen?.cause?.status;
 };
 
-/**
- * Run `fn` in a job's "Save sandbox" span, which holds pausing its machine
- * when the job ends and resuming and snapshotting it for `from()` later.
- */
+/** Run `fn` in a job's "Save sandbox" span, which holds snapshotting it. */
 const inSaveSpan = <R>(jobPath: string, fn: () => R): R => {
   return inSpan(
     ciSpan(`${jobPath}${scopeSeparator}save`, traceName.saveMachine),
     fn,
   );
-};
-
-/**
- * Start pausing a finished job's machine, without waiting for it, so a later
- * `from()` can still snapshot it. Everything is destroyed at the end of the
- * run.
- *
- * Nothing needs the machine paused until something snapshots it or the run
- * cleans up, and a pause takes 15-20 seconds, so the job ends now and those two
- * wait on `run.pauses` instead. The pause is still one durable step with a
- * fixed ID, started at the same point on every replay, so it memoizes like any
- * other. The returned promise is stored, never rejects, and so can't surface as
- * an unhandled rejection.
- */
-export const pauseMachine = (scope: CiJobScope): void => {
-  if (!scope.machine) {
-    return;
-  }
-
-  const pausing = pauseNow(scope, scope.machine).catch((error: unknown) => {
-    // Pausing is an optimisation; a machine that can't pause is still
-    // destroyed at the end of the run. Once cleanup has started, a pause that
-    // fails is one racing the destroy, which is expected.
-    if (scope.run.destroyingMachines) {
-      return;
-    }
-
-    scope.run.warnings.push(
-      `Could not pause \`${scope.path}\`: ${errorMessage(error)}`,
-    );
-  });
-
-  scope.run.pauses.set(scope.path, pausing);
-};
-
-const pauseNow = async (
-  scope: CiJobScope,
-  pending: Promise<MachineHandle>,
-): Promise<void> => {
-  const machine = await pending;
-
-  scope.run.ci.reporter.activity(scope.run, scope.jobPath, "pausing machine…");
-
-  await inSaveSpan(scope.path, () => {
-    return scope.run.step.run(
-      ciStep(`${scope.path}${scopeSeparator}pause`, traceName.pauseMachine),
-      async () => {
-        return pauseSandbox(scope.run.ci.client, machine.id);
-      },
-    );
-  });
-};
-
-/**
- * Wait for the pause started when a job ended, if there was one. A paused
- * machine can be resumed; one that is still pausing can't.
- */
-export const awaitPause = async (
-  run: CiRunScope,
-  path: string,
-): Promise<void> => {
-  await run.pauses.get(path);
 };
 
 /** How a job's snapshot is named. */
@@ -858,10 +792,6 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  // Don't wait for pauses still in flight: Cloud destroys a pausing sandbox,
-  // and a pause's snapshot doesn't count toward the snapshot quota.
-  run.destroyingMachines = true;
-
   // The step is always there and reads the set when it runs: how many
   // machines exist now depends on how far each sibling got in this request, so
   // a request that sees none must still plan what another found.

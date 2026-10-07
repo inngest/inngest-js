@@ -541,7 +541,6 @@ describe("the run-job function", () => {
       "command pnpm test #1 running",
       "command pnpm test #1 passed",
       "job test passed",
-      "activity test pausing machine…",
       "run ci-run-job passed",
     ]);
   });

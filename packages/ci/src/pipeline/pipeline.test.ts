@@ -1369,7 +1369,7 @@ describe("from()", () => {
 });
 
 describe("machines", () => {
-  test("a finished job's machine is paused, and destroyed with the run", async () => {
+  test("a finished job's machine is destroyed with the run", async () => {
     const { api, ci } = setup();
 
     const job = ci.job("test", async () => {
@@ -1381,12 +1381,6 @@ describe("machines", () => {
     });
 
     await runFunction(pipeline, { event: prEvent });
-
-    expect(
-      api.requests.some((request) => {
-        return request.includes("/pause");
-      }),
-    ).toBe(true);
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
@@ -2269,7 +2263,6 @@ describe("cleanup", () => {
   }) => {
     return {
       sandboxes: new Set(["a"]),
-      pauses: new Map(),
       step: {
         run: (_options: unknown, fn: () => unknown) => {
           return fn();

@@ -1,7 +1,7 @@
 /**
  * Defining and running a job: the `ci.job()` factory, running a direct call of
  * a job, asking a build function for a job's snapshot, and the job body that
- * reports checks, caches and pauses machines.
+ * reports checks and caches.
  *
  * @module
  */
@@ -20,7 +20,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { pauseMachine, snapshotMachine } from "../machine/machine.ts";
+import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
@@ -465,8 +465,6 @@ const jobSteps = async ({
       durationMs: reusedTitle ? 0 : durationMs,
       ...(reusedTitle ? { cached: true } : {}),
     });
-
-    pauseMachine(scope);
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);

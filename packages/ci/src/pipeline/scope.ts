@@ -207,14 +207,6 @@ export interface CiRunScope {
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * Pauses of finished jobs' machines that were started and not awaited, keyed
-   * by scope path. Each never rejects: a failed pause is a run warning. The
-   * map is made with this attempt's scope, so a retry never sees a stale one.
-   */
-  pauses: Map<string, Promise<void>>;
-  /** Set once end-of-run cleanup starts destroying this run's machines. */
-  destroyingMachines?: boolean;
-  /**
    * Snapshots this run took itself, by ID. They are deleted when the run ends,
    * so a snapshot a later run can find (a named cache snapshot) or one the run
    * keeps (`keepOnFailure`) is removed from here, and one it only restored is

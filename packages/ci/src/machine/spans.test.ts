@@ -216,7 +216,6 @@ const attempt2 = [
   { id: "attempt-2", name: "Attempt 2", origin },
 ];
 const serve = [job, command("serve")];
-const save = [job, { id: "test › save", name: "Save sandbox", origin }];
 
 describe("spans", () => {
   test("group each job, machine, command and retried attempt", async () => {
@@ -258,7 +257,6 @@ describe("spans", () => {
       "test › serve › output": serve,
       "test › serve › kill": serve,
       "github › check:test:complete": github,
-      "test › pause": save,
       "github › check:pr:complete": github,
     });
   });
@@ -298,7 +296,6 @@ describe("spans", () => {
       "test › serve › output",
       "test › serve › kill",
       "github › check:test:complete",
-      "test › pause",
       "github › check:pr:complete",
       "pipeline › cleanup",
       "pipeline › cleanup:snapshots",
@@ -323,7 +320,6 @@ describe("spans", () => {
       "test › serve › output #1": "Read output",
       "test › serve › kill": "Stop process",
       "github › check:test:complete": "Report test: passed",
-      "test › pause": "Pause sandbox",
       "github › check:pr:complete": "Complete check: pr",
       "pipeline › cleanup": "Clean up sandboxes",
     });
@@ -378,7 +374,6 @@ describe("spans", () => {
       "test › fail › check #1",
       "test › fail › output",
       "github › check:test:complete",
-      "test › pause",
       "github › check:pr:complete",
       "pipeline › cleanup",
       "pipeline › cleanup:snapshots",
@@ -452,7 +447,6 @@ describe("spans", () => {
       "test › unit › check #1": "test",
       "test › unit › output": "test",
       "github › check:test:complete": "github",
-      "test › pause": "test",
       "github › check:pr:complete": "github",
     });
   });
@@ -491,8 +485,6 @@ describe("spans", () => {
         "      Prepare workspace",
         "    $ pnpm start",
         "      Run and read output",
-        "  Save sandbox",
-        "    Pause sandbox",
         "Clean up sandboxes",
         "Clean up snapshots",
       ].join("\n"),
@@ -538,8 +530,6 @@ describe("spans", () => {
         "      Prepare workspace <- ci",
         "    $ pnpm start",
         "      Run and read output <- ci",
-        "  Save sandbox <- ci",
-        "    Pause sandbox <- ci",
         "Clean up sandboxes <- ci",
         "Clean up snapshots <- ci",
       ].join("\n"),

@@ -423,7 +423,7 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
         return {
           ...run,
           jobs: run.jobs.map((job) => {
-            // A finished job's machine is still being paused.
+            // A job that has ended has nothing more to say.
             return job.jobId === event.jobId && !isTerminal(job.status)
               ? { ...job, activity: event.text }
               : job;
