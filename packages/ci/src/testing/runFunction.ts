@@ -341,7 +341,44 @@ export const runFunction = async (
     record(step);
   };
 
+  // Invokes run beside the function, as they do on the platform: the function
+  // is called again as soon as any one of them ends, without waiting for the
+  // rest. Their outcomes are only recorded between requests, so a request
+  // never sees state change underneath it.
+  const inflight = new Map<string, Promise<void>>();
+  const started = new Set<string>();
+
+  const finished: Array<{
+    planned: Step;
+    outcome?: { data?: unknown; error?: unknown };
+    thrown?: unknown;
+  }> = [];
+
+  const settleInvokes = (): void => {
+    for (const { planned, outcome, thrown } of finished.splice(0)) {
+      if (thrown !== undefined) {
+        throw thrown;
+      }
+
+      record({
+        id: planned.id,
+        ...(planned.userland ? { userland: planned.userland } : {}),
+        ...(planned.displayName === undefined
+          ? {}
+          : { displayName: planned.displayName }),
+        opts: planned.opts,
+        ...(outcome?.error === undefined
+          ? { data: outcome?.data ?? null }
+          : { error: outcome.error }),
+      });
+    }
+  };
+
   for (let i = 0; i < maxRequests; i++) {
+    settleInvokes();
+
+    let progressed = false;
+
     const result = await request();
 
     if (result.type === "function-resolved") {
@@ -389,27 +426,42 @@ export const runFunction = async (
       throw new Error(`Unexpected execution result: ${result.type}`);
     }
 
-    batches.push(
-      (result.steps ?? []).map((planned) => {
-        return stepId(planned);
-      }),
-    );
+    // An invoke that is still running is planned again by every request.
+    const fresh = (result.steps ?? []).filter((planned) => {
+      return !started.has(planned.id);
+    });
+
+    if (fresh.length > 0) {
+      batches.push(
+        fresh.map((planned) => {
+          return stepId(planned);
+        }),
+      );
+    }
 
     for (const planned of result.steps ?? []) {
       if (planned.op === StepOpCode.InvokeFunction) {
-        const outcome = await runInvoked(fn, opts, planned);
+        if (started.has(planned.id)) {
+          continue;
+        }
 
-        record({
-          id: planned.id,
-          ...(planned.userland ? { userland: planned.userland } : {}),
-          ...(planned.displayName === undefined
-            ? {}
-            : { displayName: planned.displayName }),
-          opts: planned.opts,
-          ...(outcome.error === undefined
-            ? { data: outcome.data ?? null }
-            : { error: outcome.error }),
-        });
+        started.add(planned.id);
+
+        progressed = true;
+
+        inflight.set(
+          planned.id,
+          runInvoked(fn, opts, planned).then(
+            (outcome) => {
+              finished.push({ planned, outcome });
+              inflight.delete(planned.id);
+            },
+            (thrown) => {
+              finished.push({ planned, thrown: thrown ?? new Error("invoke") });
+              inflight.delete(planned.id);
+            },
+          ),
+        );
 
         continue;
       }
@@ -433,9 +485,16 @@ export const runFunction = async (
 
       const ran = await request(planned.id);
 
+      progressed = true;
+
       if (ran.type === "step-ran") {
         recordRan(ran);
       }
+    }
+
+    // Nothing new to do, so the function is waiting on its invokes.
+    if (!progressed && finished.length === 0 && inflight.size > 0) {
+      await Promise.race(inflight.values());
     }
   }
 
