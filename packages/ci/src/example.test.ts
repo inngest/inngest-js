@@ -311,7 +311,7 @@ describe("the example's pr pipeline", () => {
     });
 
     // `test` and both `compat` jobs run `pnpm test`, and they're started with
-    // `Promise.all`, so the first failure ends the run once the rest have finished.
+    // `Promise.all`, so whichever fails first ends the run.
     const failed = completed.filter((entry) => {
       return entry.conclusion === "failure" && entry.name !== "pr";
     });
@@ -324,8 +324,8 @@ describe("the example's pr pipeline", () => {
       }),
     ).toBe(true);
 
-    // The jobs that were still going finish and report their own result, so
-    // every check that started has finished and none was cancelled.
+    // The jobs that were still going are cancelled rather than left spinning,
+    // and every check that started has finished.
     const started = reporter.history.filter((entry) => {
       return entry.status === "in_progress";
     });
@@ -347,8 +347,8 @@ describe("the example's pr pipeline", () => {
     expect(
       completed.filter((entry) => {
         return entry.conclusion === "cancelled";
-      }),
-    ).toHaveLength(0);
+      }).length,
+    ).toBeGreaterThan(0);
 
     const pipelineCheck = completed.find((entry) => {
       return entry.name === "pr";

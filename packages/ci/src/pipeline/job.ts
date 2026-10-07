@@ -421,13 +421,9 @@ const validateInput = async (
 const jobBody = (
   args: RunJobArgs & { run: CiRunScope; path: string; number: number },
 ): Promise<void> => {
-  const running = inJobSpan(args.run, args.path, () => {
+  return inJobSpan(args.run, args.path, () => {
     return jobSteps(args);
   });
-
-  args.run.jobRuns.add(running);
-
-  return running;
 };
 
 const jobSteps = async ({
@@ -518,6 +514,10 @@ const jobSteps = async ({
       scope.path,
     ));
 
+  if (checked) {
+    run.openChecks.set(scope.path, checkName);
+  }
+
   try {
     let reusedTitle: string | undefined;
 
@@ -560,6 +560,10 @@ const jobSteps = async ({
     let checkEndedAt: number | undefined;
 
     if (checked) {
+      // Before the step, not after: a sibling's failure can end the run while
+      // it's in flight, and a job that passed must not be cancelled for it.
+      run.openChecks.delete(scope.path);
+
       checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
@@ -616,6 +620,8 @@ const jobSteps = async ({
         summary: jobFailureSummary(error, scope),
         annotations: scope.annotations,
       };
+
+      run.openChecks.delete(scope.path);
 
       if (run.willRetry(error)) {
         // A later attempt may pass, and the check's complete step is memoized,

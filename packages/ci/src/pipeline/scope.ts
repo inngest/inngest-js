@@ -248,8 +248,11 @@ export interface CiRunScope {
    * on the first, as with `Promise.allSettled`, still fails when one did.
    */
   jobErrors: unknown[];
-  /** Every run of every job, so the end of the run can wait for them all. */
-  jobRuns: Set<Promise<void>>;
+  /**
+   * Job checks that have started and not finished. When a run ends while jobs
+   * are still going, these are completed rather than left spinning.
+   */
+  openChecks: Map<string, string | undefined>;
   /**
    * Job checks whose job failed with an error Inngest will retry. They stay in
    * progress with their result held back, because a later attempt may pass.
