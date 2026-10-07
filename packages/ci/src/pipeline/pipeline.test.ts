@@ -2315,7 +2315,17 @@ describe("cleanup", () => {
           return fn();
         },
       },
-      ci: { client: { sandboxes } },
+      runId: "r",
+      ci: {
+        client: {
+          sandboxes: {
+            list: async () => {
+              return { items: [], page: { hasMore: false } };
+            },
+            ...sandboxes,
+          },
+        },
+      },
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
   };
@@ -2331,7 +2341,10 @@ describe("cleanup", () => {
     // Which machines exist depends on how far each sibling got in a request,
     // so the step can't be left out for a request that sees none.
     expect(result.stepIds).toContain("pipeline › cleanup");
-    expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: [] });
+    expect(result.steps["pipeline › cleanup"]).toEqual({
+      destroyed: [],
+      swept: 0,
+    });
   });
 
   test("a machine that is already gone is not an error", async () => {

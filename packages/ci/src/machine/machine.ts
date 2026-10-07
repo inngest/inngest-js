@@ -5,6 +5,7 @@
  * @module
  */
 
+import type { Inngest } from "inngest";
 import type { CacheTarget } from "../cache/cache.ts";
 import {
   deleteSnapshot,
@@ -929,7 +930,11 @@ export const destroyRunMachines = async (
         }
       }
 
-      return { destroyed };
+      // Whatever the in-memory set missed, such as a machine of a job nobody
+      // awaited, is found by the run's name prefix.
+      const swept = await destroyOrphans(run.ci.client, run.runId);
+
+      return { destroyed, swept: swept.destroyed };
     },
   );
 };
@@ -983,4 +988,44 @@ export const deleteRunSnapshots = async (
       return { deleted, failed };
     },
   );
+};
+
+/**
+ * A run that ended permanently never reached its own cleanup step, so its
+ * machines are found by name. Listing has no name filter, so the comparison
+ * happens here.
+ */
+export const destroyOrphans = async (
+  client: Inngest.Any,
+  runId: string,
+): Promise<{ destroyed: number }> => {
+  const prefix = `ci-${runId}-`;
+  let cursor: string | undefined;
+  let destroyed = 0;
+
+  do {
+    const page = await client.sandboxes.list({
+      ...(cursor ? { cursor } : {}),
+      limit: 100,
+    });
+
+    for (const sandbox of page.items) {
+      if (sandbox.name.startsWith(prefix)) {
+        try {
+          await sandbox.destroy();
+
+          destroyed++;
+        } catch (error) {
+          // Anything but "not found" fails the step so it retries.
+          if (!isSandboxNotFound(error)) {
+            throw error;
+          }
+        }
+      }
+    }
+
+    cursor = page.page.hasMore ? page.page.cursor : undefined;
+  } while (cursor);
+
+  return { destroyed };
 };

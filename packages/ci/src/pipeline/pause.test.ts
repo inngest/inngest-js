@@ -224,6 +224,9 @@ describe("background pause", () => {
       ci: {
         client: {
           sandboxes: {
+            list: async () => {
+              return { items: [], page: { hasMore: false } };
+            },
             get: async () => {
               return {
                 destroy: async () => {

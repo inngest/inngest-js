@@ -29,7 +29,11 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
+import {
+  deleteRunSnapshots,
+  destroyOrphans,
+  destroyRunMachines,
+} from "../machine/machine.ts";
 import type {
   CiSkip,
   CiTrigger,
@@ -934,45 +938,7 @@ const generatedFunctions = ({
   return functions;
 };
 
-/**
- * A run that ended permanently never reached its own cleanup step, so its
- * machines are found by name. Listing has no name filter, so the comparison
- * happens here.
- */
-export const destroyOrphans = async (
-  client: Inngest.Any,
-  runId: string,
-): Promise<{ destroyed: number }> => {
-  const prefix = `ci-${runId}-`;
-  let cursor: string | undefined;
-  let destroyed = 0;
-
-  do {
-    const page = await client.sandboxes.list({
-      ...(cursor ? { cursor } : {}),
-      limit: 100,
-    });
-
-    for (const sandbox of page.items) {
-      if (sandbox.name.startsWith(prefix)) {
-        try {
-          await sandbox.destroy();
-
-          destroyed++;
-        } catch (error) {
-          // Anything but "not found" fails the step so it retries.
-          if (!isSandboxNotFound(error)) {
-            throw error;
-          }
-        }
-      }
-    }
-
-    cursor = page.page.hasMore ? page.page.cursor : undefined;
-  } while (cursor);
-
-  return { destroyed };
-};
+export { destroyOrphans };
 
 /**
  * One function per cached job with `refresh` triggers, so the cache is built
