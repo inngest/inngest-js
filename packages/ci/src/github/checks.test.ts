@@ -443,6 +443,42 @@ describe("a required check never hangs", () => {
 
     expect(slowCheck?.conclusion).toBe("cancelled");
   });
+
+  test("checks held back for a retry are kept in progress in one step", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([{ match: "pnpm build", ticks: 50 }]);
+
+    const failing = ci.job("test", async () => {
+      throw new Error("flaky infrastructure");
+    });
+
+    const slow = ci.job("slow", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }], retries: 1 },
+      async () => {
+        await Promise.all([failing(), slow()]);
+      },
+    );
+
+    const result = await runFunction(pipeline, { retries: 1 });
+
+    // One step per attempt whatever was held back, so no request can ask for
+    // a per-job step that a later request wouldn't reach.
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("github › check:jobs:retry:");
+      }),
+    ).toEqual(["github › check:jobs:retry:0"]);
+
+    expect(result.stepIds).not.toContain("github › check:test:retry:0");
+  });
 });
 
 describe("dev mode", () => {

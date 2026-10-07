@@ -408,14 +408,18 @@ const runPipelineAttempt = async ({
         // progress until an attempt that's final.
         const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
 
-        for (const [jobPath, deferred] of run.deferredChecks) {
-          await checks.retrying({
-            run,
-            jobPath,
-            ...(deferred.name ? { name: deferred.name } : {}),
-            title,
-          });
-        }
+        // One step whatever is held back, because which jobs have a check
+        // deferred depends on how far each sibling got in this request.
+        const held = [...run.deferredChecks.entries()].map(
+          ([jobPath, deferred]) => {
+            return {
+              jobPath,
+              ...(deferred.name ? { name: deferred.name } : {}),
+            };
+          },
+        );
+
+        await checks.retryingAll({ run, jobs: held, title });
 
         await checks.retrying({ run, title });
 

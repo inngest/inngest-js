@@ -94,6 +94,17 @@ export interface CheckReporter {
     name?: string;
     title: string;
   }): Promise<void>;
+  /**
+   * Keep every given job's check in progress with a retry title, in one step.
+   * Which jobs have a check held back depends on how far each sibling got in
+   * that request, so one step per job could be found on one request and
+   * missing on the next. The step exists even with no jobs.
+   */
+  retryingAll(args: {
+    run: CiRunScope;
+    jobs: Array<{ jobPath: string; name?: string }>;
+    title: string;
+  }): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
     jobPath: string;
@@ -457,6 +468,35 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           title,
           ...idFor(run, key),
         });
+
+        return null;
+      });
+    },
+
+    retryingAll: async ({ run, jobs, title }) => {
+      if (!run.checkName || !run.jobChecks) {
+        return;
+      }
+
+      const step = {
+        id: `github › check:jobs:retry:${run.attempt}`,
+        name: traceName.report(
+          "jobs",
+          traceName.retrying(run.attempt + 2, run.maxAttempts),
+        ),
+      };
+
+      await githubStep(run, step, async () => {
+        await tagStep(run, { kind: "check" });
+
+        for (const { jobPath, name } of jobs) {
+          await sink.update?.({
+            run,
+            name: jobCheckName(run, jobPath, name),
+            title,
+            ...idFor(run, jobPath),
+          });
+        }
 
         return null;
       });
