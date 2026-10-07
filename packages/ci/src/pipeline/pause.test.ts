@@ -5,11 +5,12 @@
  * @module
  */
 
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
 import { destroyRunMachines } from "../machine/machine.ts";
+import { pauseTiming } from "../machine/pause.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
@@ -219,5 +220,120 @@ describe("background pause", () => {
     await pausing;
 
     expect(events).toEqual(["destroyed", "paused"]);
+  });
+});
+
+describe("CI-owned pause step", () => {
+  const original = { ...pauseTiming };
+
+  beforeEach(() => {
+    pauseTiming.pollMs = 10;
+    pauseTiming.timeoutMs = 300;
+  });
+
+  afterEach(() => {
+    Object.assign(pauseTiming, original);
+  });
+
+  const pauseOf = async (
+    arrange: (api: ReturnType<typeof setup>["api"]) => void,
+  ) => {
+    const { api, ci } = setup();
+
+    arrange(api);
+
+    const leaf = ci.job("leaf", async () => {
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await leaf();
+
+        const run = getRunScope();
+
+        await Promise.all(run?.pauses.values() ?? []);
+
+        return run?.warnings;
+      }),
+      { event: prEvent },
+    );
+
+    return result;
+  };
+
+  test("a normal pause reaches PAUSED", async () => {
+    const result = await pauseOf((api) => {
+      api.scriptPause(["PAUSING", "PAUSING", "PAUSED"]);
+    });
+
+    expect(result.data).toEqual([]);
+
+    expect(result.steps["leaf › pause"]).toMatchObject({ paused: true });
+  });
+
+  test("a pause with no wait reaches PAUSED", async () => {
+    const result = await pauseOf(() => {});
+
+    expect(result.steps["leaf › pause"]).toMatchObject({ paused: true });
+  });
+
+  test("a sandbox destroyed while pausing succeeds quickly, not paused", async () => {
+    const started = Date.now();
+
+    const result = await pauseOf((api) => {
+      api.scriptPause(["PAUSING", "TERMINATING", "TERMINATED"]);
+    });
+
+    expect(Date.now() - started).toBeLessThan(5_000);
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(result.data).toEqual([]);
+
+    expect(result.steps["leaf › pause"]).toEqual({
+      paused: false,
+      reason: "sandbox was cleaned up",
+      seen: ["RUNNING", "PAUSING", "TERMINATING"],
+    });
+  });
+
+  test("a pause refused because the sandbox is being torn down succeeds", async () => {
+    const result = await pauseOf((api) => {
+      api.conflictPauses();
+    });
+
+    expect(result.data).toEqual([]);
+
+    expect(result.steps["leaf › pause"]).toMatchObject({
+      paused: false,
+      reason: "sandbox was cleaned up",
+    });
+  });
+
+  test("a FAILED sandbox is a warning", async () => {
+    const result = await pauseOf((api) => {
+      api.scriptPause(["PAUSING", "FAILED"]);
+    });
+
+    expect(result.data).toEqual([
+      expect.stringContaining("Could not pause `leaf`"),
+    ]);
+  });
+
+  test("a sandbox still PAUSING at the timeout is a warning", async () => {
+    const result = await pauseOf((api) => {
+      api.scriptPause(["PAUSING"]);
+    });
+
+    expect(result.data).toEqual([
+      expect.stringContaining("Could not pause `leaf`"),
+    ]);
+  });
+
+  test("the step keeps its ID", async () => {
+    const result = await pauseOf(() => {});
+
+    expect(result.stepIds).toContain("leaf › pause");
   });
 });

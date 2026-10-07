@@ -40,7 +40,12 @@ export interface FakeProcess {
 export interface FakeSandbox {
   id: string;
   name: string;
-  status: "STARTING" | "RUNNING" | "PAUSED" | "TERMINATED";
+  status: string;
+  /**
+   * Statuses a pausing sandbox reports on its next reads, one per read, the
+   * last one staying. Set by `scriptPause`.
+   */
+  statusesAfterReads?: string[];
   snapshotId?: string;
   /** Set on a sandbox whose start failed, which the create call reported. */
   stuck?: boolean;
@@ -109,6 +114,14 @@ export interface FakeSandboxApi {
   snapshotStarts: string[];
   /** Make every pause fail, as one the platform accepts but never completes. */
   failPauses(): void;
+  /**
+   * Make a pause take time: the sandbox is PAUSING after the request, then
+   * reports one of `statuses` per read, the last one staying. A sandbox that
+   * is destroyed while pausing is `["TERMINATING", "TERMINATED"]`.
+   */
+  scriptPause(statuses: string[]): void;
+  /** Make every pause request be refused with a 409, as for a torn-down sandbox. */
+  conflictPauses(): void;
   /**
    * Behave like a server without snapshot names, as Cloud is today: a create
    * with a name is refused as a bad request, and a list ignores `name` and
@@ -245,6 +258,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   let snapshotsExhausted = false;
   let snapshotNames = true;
   let pausesFail = false;
+  let pausesConflict = false;
+  let pauseStatuses: string[] | undefined;
   let loseNameRaces = false;
   let counter = 1;
 
@@ -601,6 +616,13 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       method: "GET",
       path: new RegExp(`${SANDBOX}$`),
       handler: onSandbox((_req, sandbox) => {
+        const next = sandbox.statusesAfterReads;
+
+        if (next && next.length > 0) {
+          sandbox.status =
+            next.length > 1 ? (next.shift() as string) : (next[0] as string);
+        }
+
         return json(200, sandboxResource(sandbox));
       }),
     },
@@ -624,6 +646,18 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       handler: onSandbox((_req, sandbox) => {
         if (pausesFail) {
           return apiError(400, "sandbox_not_pausable", "did not reach PAUSED");
+        }
+
+        if (pausesConflict) {
+          return apiError(409, "sandbox_conflict", "sandbox is terminating");
+        }
+
+        if (pauseStatuses) {
+          sandbox.status = "PAUSING";
+
+          sandbox.statusesAfterReads = [...pauseStatuses];
+
+          return json(202, sandboxResource(sandbox));
         }
 
         sandbox.status = "PAUSED";
@@ -803,6 +837,12 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     },
     failPauses: () => {
       pausesFail = true;
+    },
+    scriptPause: (statuses) => {
+      pauseStatuses = statuses;
+    },
+    conflictPauses: () => {
+      pausesConflict = true;
     },
     snapshotStarts,
     withoutSnapshotNames: () => {

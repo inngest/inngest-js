@@ -33,6 +33,7 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
+import { pauseSandbox } from "./pause.ts";
 import type { SnapshotMeta, SnapshotParent } from "./snapshotMeta.ts";
 import {
   parseSnapshotMeta,
@@ -583,14 +584,6 @@ const inSaveSpan = <R>(jobPath: string, fn: () => R): R => {
 };
 
 /**
- * How long a pause may wait for the sandbox to report PAUSED. The SDK's
- * default is 5 minutes, and a pause the platform accepts but never completes
- * (the sandbox goes back to STARTING) would hold the whole pipeline that long
- * for what is only an optimisation. A healthy pause takes about 10 seconds.
- */
-export const pauseTimeoutMs = 30_000;
-
-/**
  * Start pausing a finished job's machine, without waiting for it, so a later
  * `from()` can still snapshot it. Everything is destroyed at the end of the
  * run.
@@ -632,12 +625,11 @@ const pauseNow = async (
   scope.run.ci.reporter.activity(scope.run, scope.jobPath, "pausing machine…");
 
   await inSaveSpan(scope.path, () => {
-    return machine.sandbox.pause(
-      {
-        id: `${scope.path}${scopeSeparator}pause`,
-        name: traceName.pauseMachine,
+    return scope.run.step.run(
+      ciStep(`${scope.path}${scopeSeparator}pause`, traceName.pauseMachine),
+      async () => {
+        return pauseSandbox(scope.run.ci.client, machine.id);
       },
-      { timeout: pauseTimeoutMs },
     );
   });
 };
