@@ -207,10 +207,10 @@ export interface CiRunScope {
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * Snapshots this run took itself, by ID. They are deleted when the run ends,
-   * so a snapshot a later run can find (a named cache snapshot) or one the run
-   * keeps (`keepOnFailure`) is removed from here, and one it only restored is
-   * never added.
+   * Snapshots the builds this run asked for left for it, by ID: a `from()`
+   * parent's without a `cache`, and the unnamed fallback of any build. They are
+   * deleted when the run ends. A named cache snapshot is never added, so later
+   * runs find it.
    */
   createdSnapshots: Set<string>;
   /** How long the slow steps took, in the order they finished. */

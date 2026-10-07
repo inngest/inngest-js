@@ -659,6 +659,45 @@ describe("what a job says while it starts from a parent", () => {
     expect(texts).toContain("starting base");
   });
 
+  test("a parent built in its own run is a job of the session's run, with that run's URL, until it ends", async () => {
+    const { messages } = await run({ cache: false });
+
+    const base = messages.flatMap((message) => {
+      return message.kind === "job" && message.jobId === "base"
+        ? [message]
+        : [];
+    });
+
+    expect(
+      base.map((message) => {
+        return message.status;
+      }),
+    ).toEqual(["running", "passed"]);
+
+    expect(base[0]?.url).toMatch(/runID=01TESTINVOKED\d+/);
+
+    // The child nests under it, and the parent's commands are the session's.
+    expect(
+      messages.some((message) => {
+        return (
+          message.kind === "job" &&
+          message.jobId === "child" &&
+          message.parentId === "base"
+        );
+      }),
+    ).toBe(true);
+
+    expect(
+      messages.some((message) => {
+        return (
+          message.kind === "command" &&
+          message.jobId === "base" &&
+          message.runId === "01TESTRUN"
+        );
+      }),
+    ).toBe(true);
+  });
+
   test("a cached snapshot says how old it is", async () => {
     const api = createFakeSandboxApi();
 
