@@ -394,7 +394,7 @@ describe("a required check never hangs", () => {
     expect(completed("pr")?.conclusion).toBe("failure");
   });
 
-  test("jobs still running when the run fails are cancelled in one step", async () => {
+  test("jobs still running when the run fails finish and report their own result", async () => {
     const api = createFakeSandboxApi();
     const client = createCiTestClient(api);
     const reporter = consoleReporter();
@@ -424,73 +424,21 @@ describe("a required check never hangs", () => {
 
     expect(result.type).toBe("function-rejected");
 
-    // One step whatever was open, so no request can ask for a per-job step
-    // that a later request, with its siblings further along, wouldn't reach.
-    expect(
-      result.stepIds.filter((id) => {
-        return id === "github › check:jobs:complete";
-      }),
-    ).toHaveLength(1);
-
-    expect(result.stepIds).not.toContain("github › check:slow:complete");
-
+    // The end of the run waits for every job, so it never closes a check for
+    // a job on a guess about how far that job got.
     const slowCheck = reporter.history.find((entry) => {
       return entry.name === "pr / slow" && entry.status === "completed";
     });
 
-    expect(slowCheck?.conclusion).toBe("cancelled");
-  });
+    expect(slowCheck?.conclusion).toBe("success");
+    expect(result.stepIds).toContain("github › check:slow:complete");
 
-  test("a job that passed is no longer open while its check completes", async () => {
-    const api = createFakeSandboxApi();
-    const client = createCiTestClient(api);
-    const ci = createCi(client, { github: consoleReporter() });
-    const openWhenCompleting: boolean[] = [];
-
-    const job = ci.job("test", async () => {
-      await $`pnpm test`;
-    });
-
-    const pipeline = ci.pipeline(
-      { id: "pr", on: [{ event: "test/event" }] },
-      async () => {
-        const run = getRunScope();
-
-        if (run) {
-          const tools = run.step;
-
-          run.step = new Proxy(tools, {
-            get: (target, key) => {
-              if (key !== "run") {
-                return Reflect.get(target, key);
-              }
-
-              // biome-ignore lint/suspicious/noExplicitAny: passing through
-              return (step: { id: string }, ...rest: any[]) => {
-                if (step.id === "github › check:test:complete") {
-                  openWhenCompleting.push(run.openChecks.has("test"));
-                }
-
-                // biome-ignore lint/suspicious/noExplicitAny: passing through
-                return (target.run as any)(step, ...rest);
-              };
-            },
-          });
-        }
-
-        await job();
-      },
+    expect(result.stepIds.indexOf("github › check:slow:complete")).toBeLessThan(
+      result.stepIds.indexOf("github › check:pr:complete"),
     );
-
-    await runFunction(pipeline);
-
-    // A sibling failing while the step is in flight would otherwise cancel a
-    // job that passed.
-    expect(openWhenCompleting.length).toBeGreaterThan(0);
-    expect(openWhenCompleting).not.toContain(true);
   });
 
-  test("checks held back for a retry are kept in progress in one step", async () => {
+  test("checks held back for a retry are updated after every job ended", async () => {
     const api = createFakeSandboxApi();
     const client = createCiTestClient(api);
     const reporter = consoleReporter();
@@ -515,15 +463,11 @@ describe("a required check never hangs", () => {
 
     const result = await runFunction(pipeline, { retries: 1 });
 
-    // One step per attempt whatever was held back, so no request can ask for
-    // a per-job step that a later request wouldn't reach.
-    expect(
-      result.stepIds.filter((id) => {
-        return id.startsWith("github › check:jobs:retry:");
-      }),
-    ).toEqual(["github › check:jobs:retry:0"]);
+    expect(result.stepIds).toContain("github › check:slow:complete");
 
-    expect(result.stepIds).not.toContain("github › check:test:retry:0");
+    expect(result.stepIds.indexOf("github › check:slow:complete")).toBeLessThan(
+      result.stepIds.indexOf("github › check:test:retry:0"),
+    );
   });
 });
 

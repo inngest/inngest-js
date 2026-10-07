@@ -226,7 +226,7 @@ const newRunScope = ({
     sandboxes: new Set(),
     summaries: [],
     jobErrors: [],
-    openChecks: new Map(),
+    jobRuns: new Set(),
     deferredChecks: new Map(),
     attempt,
     maxAttempts,
@@ -369,6 +369,10 @@ const runPipelineAttempt = async ({
         logger: ctx.logger ?? console,
       });
 
+      // A job the handler didn't wait for still finishes before the run is
+      // judged, so what it reads of the jobs is final.
+      await settleJobs(run);
+
       // Settled jobs, as with `Promise.allSettled`, don't reject the handler,
       // but a failed job still fails the pipeline.
       if (run.jobErrors.length > 0) {
@@ -395,11 +399,15 @@ const runPipelineAttempt = async ({
 
       return result;
     } catch (error) {
-      // A sibling's failure can end the run before a replay reaches a pause an
-      // earlier request found, which then can't be run ("Could not find
-      // step"). Waiting for the pauses already started lets this request plan
-      // them too. Only a failed run waits, and cleanup below still doesn't
-      // wait on any that are slower.
+      // `Promise.all` rejects on the first failure while its siblings are
+      // still going. Everything below reads what jobs leave behind, so they
+      // finish first and report what actually happened to them.
+      await settleJobs(run);
+
+      // A pause step an earlier request found can't be run if this replay ends
+      // the run before planning it ("Could not find step"). The jobs have
+      // ended, so every pause has been started: wait for them. Only a failed
+      // run waits, and cleanup below still doesn't wait on a pause.
       await Promise.allSettled([...run.pauses.values()]);
 
       // A failed command's exit code is already recorded in its steps, and a
@@ -415,27 +423,21 @@ const runPipelineAttempt = async ({
         // progress until an attempt that's final.
         const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
 
-        // One step whatever is held back, because which jobs have a check
-        // deferred depends on how far each sibling got in this request.
-        const held = [...run.deferredChecks.entries()].map(
-          ([jobPath, deferred]) => {
-            return {
-              jobPath,
-              ...(deferred.name ? { name: deferred.name } : {}),
-            };
-          },
-        );
-
-        await checks.retryingAll({ run, jobs: held, title });
+        for (const [jobPath, deferred] of run.deferredChecks) {
+          await checks.retrying({
+            run,
+            jobPath,
+            ...(deferred.name ? { name: deferred.name } : {}),
+            title,
+          });
+        }
 
         await checks.retrying({ run, title });
 
         throw error;
       }
 
-      // Jobs that were still running when the run ended would otherwise leave
-      // their checks spinning.
-      await closeJobChecks(run, checks);
+      await completeDeferredJobChecks(run, checks);
 
       addSlowParentHints(run);
       run.ci.reporter.warnings(run);
@@ -655,59 +657,23 @@ const completeDeferredJobChecks = async (
   }
 };
 
-const cancelledTitle = "Cancelled: the pipeline ended first";
+/**
+ * Wait for every job run to settle, including ones started while waiting.
+ * Nothing about a job is final until it has, so the end of a run reads its
+ * state only after this.
+ */
+const settleJobs = async (run: CiRunScope): Promise<void> => {
+  let seen = -1;
+
+  while (seen < run.jobRuns.size) {
+    seen = run.jobRuns.size;
+
+    await Promise.allSettled([...run.jobRuns]);
+  }
+};
 
 const jobsFailed = (errors: unknown[]): string => {
   return `${errors.length} ${errors.length === 1 ? "job" : "jobs"} failed`;
-};
-
-/**
- * Complete the job checks the failed run leaves behind: those held back for a
- * retry that isn't coming, and those of jobs still running.
- *
- * With `Promise.all`, the first failure ends the run while its siblings are
- * mid-flight, so their checks are marked cancelled rather than left in
- * progress. The siblings keep going while this runs, and how far each got
- * differs between requests, so both lists are read at once and completed in
- * one memoized step.
- */
-const closeJobChecks = async (
-  run: CiRunScope,
-  checks: CheckReporter,
-): Promise<void> => {
-  const deferred = [...run.deferredChecks.entries()].map(
-    ([jobPath, { name, ...result }]) => {
-      return { jobPath, ...(name ? { name } : {}), ...result };
-    },
-  );
-
-  const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
-    return {
-      jobPath,
-      ...(name ? { name } : {}),
-      conclusion: "cancelled" as const,
-      title: cancelledTitle,
-    };
-  });
-
-  run.deferredChecks.clear();
-  run.openChecks.clear();
-
-  const closed = await checks.jobsComplete({
-    run,
-    jobs: [...deferred, ...open],
-  });
-
-  for (const job of closed) {
-    if (job.conclusion === "cancelled" && job.title === cancelledTitle) {
-      run.summaries.push({
-        path: job.jobPath,
-        conclusion: "cancelled",
-        title: cancelledTitle,
-        durationMs: 0,
-      });
-    }
-  }
 };
 
 /** How long an uncached parent can take before its missing cache is worth a note. */
