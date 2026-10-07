@@ -14,6 +14,7 @@ import {
   OTelSetupPath,
 } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../test/helpers.ts";
+import { StepOpCode } from "../types.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
 import { InngestCommHandler, RequestSignature } from "./InngestCommHandler.ts";
 import { sdkFeatureObservations } from "./sdkFeatureObservations.ts";
@@ -156,8 +157,28 @@ describe("ServeHandler", () => {
         actionOverrides: { transformStreamingResponse: undefined },
       });
 
-      expect(result.status).not.toBe(500);
-      expect(result.body).not.toMatch(/streaming/i);
+      expect(result.status).toBe(206);
+      expect(JSON.parse(result.body)).toEqual([
+        expect.objectContaining({ op: StepOpCode.RunComplete, data: "test" }),
+      ]);
+    });
+
+    test("sends a non-streaming response when streaming is false and the handler supports streaming", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: false,
+      });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+      });
+
+      expect(result.status).toBe(206);
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(JSON.parse(result.body)).toEqual([
+        expect.objectContaining({ op: StepOpCode.RunComplete, data: "test" }),
+      ]);
     });
   });
 
