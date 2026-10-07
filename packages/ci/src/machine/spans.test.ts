@@ -320,6 +320,7 @@ describe("spans", () => {
       "test › pause",
       "github › check:pr:complete",
       "pipeline › cleanup",
+      "pipeline › cleanup:snapshots",
     ]);
   });
 
@@ -399,6 +400,7 @@ describe("spans", () => {
       "test › pause",
       "github › check:pr:complete",
       "pipeline › cleanup",
+      "pipeline › cleanup:snapshots",
     ]);
   });
 
