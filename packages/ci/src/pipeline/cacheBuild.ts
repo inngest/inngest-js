@@ -1,20 +1,21 @@
 /**
  * Building a job's snapshot in a run of its own: what a pipeline hands the
- * build, the generated function that does it, and what it hands back.
+ * build, the one generated function that does it, and what it hands back.
  *
  * A pipeline invokes this function for a cached job, and for any job another
- * job starts `from()`, instead of running the job inline. The function is
- * limited to one run per snapshot name, and looks the snapshot up again when
- * it starts, so a burst of runs that all missed the same name builds it once
- * and every one of them gets the same snapshot.
+ * job starts `from()`, instead of running the job inline. One function builds
+ * every job: the invoke's data says which. It is limited to one run per
+ * snapshot name, which is unique across jobs, and looks the snapshot up again
+ * when it starts, so a burst of runs that all missed the same name builds it
+ * once and every one of them gets the same snapshot.
  *
  * @module
  */
 
 import type { Inngest, InngestFunction } from "inngest";
+import { NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { CiUsageError } from "../errors.ts";
 import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
@@ -104,30 +105,31 @@ interface MatrixRunner {
   [runCombosKey](combos: Record<string, unknown>[]): Promise<void>;
 }
 
+/** The ID of the one function that builds every job's snapshot. */
+export const cacheBuildFunctionId = "ci/build";
+
 /**
- * The build function for a job, or for a matrix, as its ID is shown in the
- * Dev Server: `build <target>`.
+ * The function that builds any job or matrix combination, as the invoke's
+ * data names it. The build run's trace shows the job's own spans, named by
+ * its ID.
  */
 export const cacheBuildFunction = ({
   client,
   internals,
   jobs,
   matrices,
-  target,
 }: {
   client: Inngest.Any;
   internals: CiInternals;
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes>>;
-  /** The job's ID, or the matrix's. */
-  target: string;
 }): InngestFunction.Any => {
-  const id = `ci/cache-build/${target}`;
+  const id = cacheBuildFunctionId;
 
   return client.createFunction(
     {
       id,
-      name: `build ${target}`,
+      name: "build",
       // One build per name at a time. Whoever comes next finds it taken.
       concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
       ...pipelineFunctionOptions,
@@ -167,8 +169,8 @@ const buildSnapshot = async ({
     const matrix = matrices.get(data.matrix.id);
 
     if (!matrix) {
-      throw new CiUsageError(
-        `No matrix with the ID "${data.matrix.id}" is defined, so "${data.jobId}" can't be built.`,
+      throw new NonRetriableError(
+        `No matrix with the ID "${data.matrix.id}" is defined, so "${data.jobId}" can't be built. The worker's code may be out of date.`,
       );
     }
 
@@ -179,8 +181,8 @@ const buildSnapshot = async ({
     const job = jobs.get(data.jobId);
 
     if (!job) {
-      throw new CiUsageError(
-        `No job with the ID "${data.jobId}" is defined, so it can't be built.`,
+      throw new NonRetriableError(
+        `No job with the ID "${data.jobId}" is defined, so it can't be built. The worker's code may be out of date.`,
       );
     }
 

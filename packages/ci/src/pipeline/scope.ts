@@ -150,10 +150,10 @@ export interface CiInternals {
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   /**
-   * The function that builds the cached snapshots of a job, or of a matrix's
-   * combinations, in a run of its own. `target` is the job or matrix ID.
+   * The one function that builds the snapshot of any job, or of a matrix's
+   * combinations, in a run of its own. Which one is in the invoke's data.
    */
-  cacheBuild: (target: string) => InngestFunction.Any;
+  cacheBuild: () => InngestFunction.Any;
   isDev: () => boolean;
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };

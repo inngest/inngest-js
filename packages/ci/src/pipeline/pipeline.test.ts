@@ -3024,9 +3024,9 @@ describe("cache builds in their own run", () => {
 
     expect(
       ci.functions().find((fn) => {
-        return fn.opts.id === "ci/cache-build/base";
+        return fn.opts.id === "ci/build";
       })?.opts.name,
-    ).toBe("build base");
+    ).toBe("build");
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -3188,7 +3188,7 @@ describe("cache builds in their own run", () => {
     ).toBe(true);
   });
 
-  test("every job and matrix has a build function, cached or not", () => {
+  test("one build function serves every job and matrix, however many there are", () => {
     const { ci } = setup();
 
     ci.job("plain", async () => {});
@@ -3203,14 +3203,53 @@ describe("cache builds in their own run", () => {
         return fn.opts.id;
       })
       .filter((id) => {
-        return id.startsWith("ci/cache-build/") && !id.endsWith("/cleanup");
+        return id.startsWith("ci/build");
       });
 
-    expect(ids.sort()).toEqual([
-      "ci/cache-build/cached",
-      "ci/cache-build/compat",
-      "ci/cache-build/plain",
-    ]);
+    expect(ids.sort()).toEqual(["ci/build", "ci/build/cleanup"]);
+
+    ci.job("another", async () => {});
+
+    expect(
+      ci.functions().filter((fn) => {
+        return fn.opts.id === "ci/build";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("a build of a job the worker doesn't know fails without retrying, naming it", async () => {
+    const { ci } = setup();
+
+    ci.job("known", async () => {});
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const result = await runFunction(build as NonNullable<typeof build>, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          jobId: "gone",
+          ownKey: "k",
+          cacheKey: "ci/pr:7/gone/k",
+          rootRunId: "01ROOT",
+          parent: {
+            runId: "01ROOT",
+            pipelineId: "pr",
+            jobPath: "gone",
+            trigger: "manual",
+          },
+        },
+      },
+    });
+
+    expect(result.type).toBe("function-rejected");
+
+    expect(result.type === "function-rejected" && result.error).toMatchObject({
+      name: "NonRetriableError",
+      message: expect.stringMatching(/No job with the ID "gone".*out of date/),
+    });
   });
 
   test("a cached matrix combination is built by its matrix's function", async () => {
@@ -3229,10 +3268,10 @@ describe("cache builds in their own run", () => {
         return fn.opts.id;
       })
       .filter((id) => {
-        return id.startsWith("ci/cache-build/") && !id.endsWith("/cleanup");
+        return id === "ci/build";
       });
 
-    expect(names).toEqual(["ci/cache-build/compat"]);
+    expect(names).toEqual(["ci/build"]);
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       await compat();

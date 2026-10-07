@@ -188,7 +188,7 @@ export const invokeBuild = async ({
         `${stepPath}${scopeSeparator}build`,
         traceName.buildInOwnRun(path),
       ),
-      { function: run.ci.cacheBuild(origin?.id ?? config.id), data },
+      { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {
     throw new NonRetriableError(errorMessage(error), { cause: error });

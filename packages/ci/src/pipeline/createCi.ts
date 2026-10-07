@@ -1,7 +1,7 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
  * pipeline, job and matrix definitions to a shared set of internals (checks,
- * cache build functions, GitHub provider).
+ * the cache build function, GitHub provider).
  *
  * @module
  */
@@ -39,7 +39,7 @@ import type {
   PipelineContext,
 } from "../types.ts";
 import { devServerRunUrl } from "../util.ts";
-import { cacheBuildFunction } from "./cacheBuild.ts";
+import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix, expandMatrix } from "./matrix.ts";
@@ -49,7 +49,6 @@ import {
   definePipeline,
 } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
-import { matrixOriginOf } from "./scope.ts";
 
 export interface CiOptions {
   /**
@@ -234,7 +233,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const jobs = new Map<string, RegisteredJob>();
   const matrices = new Map<string, Matrix<MatrixAxes>>();
   const reporter = createLocalReporter();
-  const buildFunctions = new Map<string, InngestFunction.Any>();
+  let buildFunction: InngestFunction.Any | undefined;
 
   const internals: CiInternals = {
     client,
@@ -245,18 +244,17 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     ),
     reporter,
     jobs,
-    // One build function per job or matrix, made when first needed so a
-    // pipeline can invoke it whether or not `functions()` has run.
-    cacheBuild: (target) => {
-      let fn = buildFunctions.get(target);
+    // One build function for every job and matrix, made when first needed
+    // so a pipeline can invoke it whether or not `functions()` has run.
+    cacheBuild: () => {
+      buildFunction ??= cacheBuildFunction({
+        client,
+        internals,
+        jobs,
+        matrices,
+      });
 
-      if (!fn) {
-        fn = cacheBuildFunction({ client, internals, jobs, matrices, target });
-
-        buildFunctions.set(target, fn);
-      }
-
-      return fn;
+      return buildFunction;
     },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
@@ -358,32 +356,12 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         };
       });
 
-      // Any job can be started from, so each has a build function. A
-      // matrix's jobs only exist once it runs, so its build function is for
-      // the matrix, not for each combination.
-      const buildTargets = [
-        ...[...jobs.values()]
-          .filter(({ config }) => {
-            return !matrixOriginOf(config);
-          })
-          .map(({ id }) => {
-            return id;
-          }),
-        ...matrices.keys(),
-      ];
-
       return [
         ...pipelines,
         ...generated,
-        ...buildTargets.flatMap((target) => {
-          return [
-            internals.cacheBuild(target),
-            cleanupFunction({
-              client,
-              config: { id: `ci/cache-build/${target}` },
-            }),
-          ];
-        }),
+        // Any job can be started from, so one function builds them all.
+        internals.cacheBuild(),
+        cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
         ...(isLocal()
           ? [
               runJobFunction({ client, internals, jobs, matrices }),
