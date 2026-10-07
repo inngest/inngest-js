@@ -293,8 +293,8 @@ export interface CiRunScope {
   snapshotsUnavailable: boolean;
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
-  /** The run's changed files, resolved once. */
-  changedFiles?: string[];
+  /** The run's changed files, read once; `null` when they can't be read. */
+  changedFiles?: Promise<string[] | null>;
   /** Markdown added with `report.summary()` outside a job. */
   pipelineSummaries: string[];
   /** Annotations added with `report.annotate()` outside a job. */
