@@ -2319,6 +2319,20 @@ describe("cleanup", () => {
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
   };
+  test("the machine cleanup step is planned even when no machine exists yet", async () => {
+    const { ci } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return "ok";
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    // Which machines exist depends on how far each sibling got in a request,
+    // so the step can't be left out for a request that sees none.
+    expect(result.stepIds).toContain("pipeline › cleanup");
+    expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: [] });
+  });
 
   test("a machine that is already gone is not an error", async () => {
     const run = runWithSandboxes({
@@ -2427,7 +2441,7 @@ describe("cleanup", () => {
       result.stepIds.filter((id) => {
         return id.startsWith("pipeline › cleanup");
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
@@ -3078,6 +3092,15 @@ describe("run snapshot cleanup", () => {
     });
   };
 
+  /** The snapshots the cleanup step deleted. The step is always planned. */
+  const deletedBy = (result: { steps: Record<string, unknown> }) => {
+    const step = result.steps["pipeline › cleanup:snapshots"] as
+      | { deleted: string[] }
+      | undefined;
+
+    return step?.deleted ?? [];
+  };
+
   const cachedChain = (ci: ReturnType<typeof setup>["ci"]) => {
     const setupJob = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
       await $`pnpm install`;
@@ -3128,7 +3151,7 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
-  test("a run with no snapshots has no cleanup step", async () => {
+  test("a run with no snapshots still plans the cleanup step, which deletes nothing", async () => {
     const { ci } = setup();
 
     const job = ci.job("test", async () => {
@@ -3141,7 +3164,10 @@ describe("run snapshot cleanup", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+    // Always planned, so a request that sees no snapshots yet can't skip a
+    // step another request found.
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(deletedBy(result)).toHaveLength(0);
   });
 
   test("snapshots are deleted when the run fails", async () => {
@@ -3191,8 +3217,8 @@ describe("run snapshot cleanup", () => {
 
     expect(second.type).toBe("function-resolved");
     expect([...api.snapshots.keys()]).toEqual(kept);
-    expect(cleanupSteps(first.stepIds)).toHaveLength(0);
-    expect(cleanupSteps(second.stepIds)).toHaveLength(0);
+    expect(deletedBy(first)).toHaveLength(0);
+    expect(deletedBy(second)).toHaveLength(0);
   });
 
   test("a snapshot that lost a name race is adopted and kept", async () => {
@@ -3206,7 +3232,7 @@ describe("run snapshot cleanup", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(namedSnapshots(api)).toHaveLength(1);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+    expect(deletedBy(result)).toHaveLength(0);
   });
 
   test("an unnamed fallback snapshot is deleted at the end of the run", async () => {
@@ -3255,7 +3281,7 @@ describe("run snapshot cleanup", () => {
     // `cached`'s is the named cache snapshot. The invoking run took none.
     expect(namedSnapshots(api)).toHaveLength(1);
     expect(api.snapshots.size).toBe(1);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+    expect(deletedBy(result)).toHaveLength(0);
   });
 
   test("a build run doesn't delete the named snapshot it built", async () => {
@@ -3285,7 +3311,7 @@ describe("run snapshot cleanup", () => {
     expect(result.type).toBe("function-resolved");
     expect(namedDuringRun).toHaveLength(1);
     expect(namedSnapshots(api)).toEqual(namedDuringRun);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+    expect(deletedBy(result)).toHaveLength(0);
   });
 
   test("a build run's unnamed fallback is left for the invoking run to delete", async () => {
