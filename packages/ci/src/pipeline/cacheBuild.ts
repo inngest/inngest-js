@@ -18,7 +18,7 @@ import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
-import { runPipeline } from "./pipeline.ts";
+import { pipelineFunctionOptions, runPipeline } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
 
@@ -107,6 +107,7 @@ export const cacheBuildFunction = ({
       name: `build ${target}`,
       // One build per name at a time. Whoever comes next finds it taken.
       concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
+      ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx

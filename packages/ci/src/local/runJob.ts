@@ -11,7 +11,7 @@ import { CiUsageError } from "../errors.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
 import { runJob } from "../pipeline/job.ts";
 import { runCombosKey } from "../pipeline/matrix.ts";
-import { runPipeline } from "../pipeline/pipeline.ts";
+import { pipelineFunctionOptions, runPipeline } from "../pipeline/pipeline.ts";
 import type { CiInternals } from "../pipeline/scope.ts";
 import type { Matrix, MatrixAxes } from "../types.ts";
 import type { RunJobEventData } from "./protocol.ts";
@@ -41,6 +41,7 @@ export const runJobFunction = ({
     {
       id: runJobFunctionId,
       triggers: [{ event: runJobEvent }],
+      ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx

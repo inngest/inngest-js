@@ -54,6 +54,20 @@ import {
   withScopePreserved,
 } from "./scope.ts";
 
+/**
+ * Options for every function that runs a pipeline: pipelines, cache builds,
+ * refreshes and local single-job runs.
+ *
+ * With parallelism optimized, the executor waits for every step in a parallel
+ * batch before it calls the function again, so a slow step in one job holds
+ * back every other job, and a job's background pause holds back whatever comes
+ * next. Turning it off has the executor call back after each step, so jobs run
+ * independently. It's deprecated in favour of `group.parallel({ mode: "race" })`,
+ * but that marks every step for race semantics, which stops steps running inline
+ * and added a 15-20s gap between a job's steps on a real run.
+ */
+export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
+
 export const definePipeline = ({
   client,
   internals,
@@ -106,6 +120,7 @@ export const definePipeline = ({
       ...flowControl(config),
       id: config.id,
       triggers,
+      ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
@@ -957,6 +972,7 @@ export const cacheRefreshFunctions = ({
           id,
           triggers: refresh,
           singleton: { key: `"${job.id}"`, mode: "skip" },
+          ...pipelineFunctionOptions,
           middleware: [sandboxMiddleware(), metadataMiddleware()],
         },
         // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
