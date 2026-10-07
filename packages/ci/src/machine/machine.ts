@@ -609,7 +609,12 @@ export const pauseMachine = (scope: CiJobScope): void => {
 
   const pausing = pauseNow(scope, scope.machine).catch((error: unknown) => {
     // Pausing is an optimisation; a machine that can't pause is still
-    // destroyed at the end of the run.
+    // destroyed at the end of the run. Once cleanup has started, a pause that
+    // fails is one racing the destroy, which is expected.
+    if (scope.run.destroyingMachines) {
+      return;
+    }
+
     scope.run.warnings.push(
       `Could not pause \`${scope.path}\`: ${errorMessage(error)}`,
     );
@@ -646,14 +651,6 @@ export const awaitPause = async (
   path: string,
 ): Promise<void> => {
   await run.pauses.get(path);
-};
-
-/**
- * Wait for every pause the run started, whatever its outcome. Cleanup calls
- * this so it never destroys a machine while its pause is in flight.
- */
-export const settlePauses = async (run: CiRunScope): Promise<void> => {
-  await Promise.allSettled(run.pauses.values());
 };
 
 /** How a job's snapshot is cached, for a job with `cache`. */
@@ -971,7 +968,9 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  await settlePauses(run);
+  // Don't wait for pauses still in flight: Cloud destroys a pausing sandbox,
+  // and a pause's snapshot doesn't count toward the snapshot quota.
+  run.destroyingMachines = true;
 
   const ids = [...run.sandboxes];
 

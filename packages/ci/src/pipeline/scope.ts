@@ -219,6 +219,8 @@ export interface CiRunScope {
    * map is made with this attempt's scope, so a retry never sees a stale one.
    */
   pauses: Map<string, Promise<void>>;
+  /** Set once end-of-run cleanup starts destroying this run's machines. */
+  destroyingMachines?: boolean;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
   /**

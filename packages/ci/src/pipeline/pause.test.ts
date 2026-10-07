@@ -173,7 +173,7 @@ describe("background pause", () => {
     ).toHaveLength(1);
   });
 
-  test("cleanup waits for in-flight pauses before destroying", async () => {
+  test("cleanup destroys without waiting for in-flight pauses", async () => {
     const events: string[] = [];
     let finishPause = () => {};
 
@@ -209,18 +209,15 @@ describe("background pause", () => {
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
 
-    const cleanup = destroyRunMachines(run);
+    await destroyRunMachines(run);
 
-    await new Promise((resolve) => {
-      setTimeout(resolve, 20);
-    });
-
-    expect(events).toEqual([]);
+    expect(events).toEqual(["destroyed"]);
+    expect(run.destroyingMachines).toBe(true);
 
     finishPause();
 
-    await cleanup;
+    await pausing;
 
-    expect(events).toEqual(["paused", "destroyed"]);
+    expect(events).toEqual(["destroyed", "paused"]);
   });
 });
