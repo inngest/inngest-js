@@ -3062,7 +3062,7 @@ describe("cache builds in their own run", () => {
     ).toMatch(/^Passed in /);
   });
 
-  test("a hit asks the build function and builds nothing", async () => {
+  test("a hit builds nothing", async () => {
     const api = createFakeSandboxApi();
 
     for (let i = 0; i < 2; i++) {

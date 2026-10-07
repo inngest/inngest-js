@@ -164,7 +164,8 @@ const buildPathOf = (jobId: string, input: unknown): string => {
 };
 
 /**
- * Ask for a `from()` parent's snapshot, in a build run of its own. Children of
+ * Ask for a `from()` parent's snapshot: a lookup by name first, then, only on a
+ * miss, a build run of its own. Children of
  * one parent share one invoke, which `run.builds` holds as a promise, so
  * whichever child comes first makes no difference to the steps the run plans.
  *

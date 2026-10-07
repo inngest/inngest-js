@@ -11,6 +11,7 @@ import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
   describeCached,
+  lookupBeforeBuild,
   lookupCache,
   runTarget,
 } from "../cache/cache.ts";
@@ -179,6 +180,35 @@ export const invokeBuild = async ({
       ...(check ? { check } : {}),
     },
   };
+
+  // A snapshot that is already there needs no build run, and no wait behind
+  // the builds that are queued for its name.
+  const hit = await lookupBeforeBuild(
+    run,
+    { id: config.id, path, stepPath },
+    config.cache,
+    target,
+    exclude,
+  );
+
+  if (hit) {
+    return {
+      snapshotId: hit.snapshotId,
+      ...(config.cache ? { cached: hit } : {}),
+      reused: true,
+      target,
+      hadMachine: true,
+      createdSnapshots: [],
+      summary: {
+        path: config.id,
+        conclusion: "success",
+        title: cachedTitle(hit),
+        durationMs: 0,
+        cached: true,
+      },
+      warnings: [],
+    };
+  }
 
   let output: CacheBuildResult | null;
 

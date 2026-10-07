@@ -315,6 +315,57 @@ describe("a chain of cached jobs", () => {
   });
 });
 
+describe("a warm cache", () => {
+  test("is read by the caller, with no build run and no place in the queue", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job("lint", async () => {
+      await from(install);
+
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+    });
+
+    const builds = () => {
+      return [...api.sandboxes.values()].filter((machine) => {
+        return machine.name.startsWith("ci-01TESTINVOKED");
+      }).length;
+    };
+
+    const cold = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01COLD",
+    });
+
+    expect(cold.stepIds).toContain("install (from) › lookup");
+    expect(cold.stepIds).toContain("install (from) › build");
+    expect(builds()).toBe(1);
+
+    const warm = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01WARM",
+    });
+
+    expect(warm.type).toBe("function-resolved");
+    expect(warm.stepIds).toContain("install (from) › lookup");
+    expect(warm.stepIds).not.toContain("install (from) › build");
+    expect(builds()).toBe(1);
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm lint")).toBe(2);
+  });
+});
+
 describe("a snapshot that is about to expire", () => {
   test("is rebuilt rather than reused, and its replacement takes the name", async () => {
     const api = createFakeSandboxApi();

@@ -420,15 +420,61 @@ export const lookupCache = async (
     async () => {
       await tagStep(run, { kind: "cache", job: scope.path });
 
-      const hit = cache
-        ? await findInScopes(
-            run,
-            scope.config.id,
-            cache,
-            target.ownKey,
-            exclude,
-          )
-        : await findNamed(run, target.name, exclude);
+      const hit = await findCached(
+        run,
+        scope.config.id,
+        cache,
+        target,
+        exclude,
+      );
+
+      return hit ?? null;
+    },
+  )) as CachedSnapshot | null;
+
+  return found ?? undefined;
+};
+
+/** A job's usable snapshot: in the scopes it reads if cached, else by its run's name. */
+const findCached = (
+  run: CiRunScope,
+  jobId: string,
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  return cache
+    ? findInScopes(run, jobId, cache, target.ownKey, exclude)
+    : findNamed(run, target.name, exclude);
+};
+
+/**
+ * Look a snapshot up before asking a build function for it, as a memoized step
+ * in the run that needs it. A hit saves the invoke and its place in the queue
+ * behind any build still taking the name. A miss, or a snapshot that is about
+ * to expire or is the bad one, is for the build function to settle, which
+ * looks again when it starts.
+ */
+export const lookupBeforeBuild = async (
+  run: CiRunScope,
+  job: {
+    id: string;
+    /** The job's path, where its activity goes. */
+    path: string;
+    /** What the step's ID is built on. */
+    stepPath: string;
+  },
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  /** A snapshot found to be bad, which a rebuild must not find again. */
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  const found = (await run.step.run(
+    ciStep(`${job.stepPath}${scopeSeparator}lookup`, traceName.lookUpCache),
+    async () => {
+      await tagStep(run, { kind: "cache", job: job.path });
+
+      const hit = await findCached(run, job.id, cache, target, exclude);
 
       return hit ?? null;
     },
