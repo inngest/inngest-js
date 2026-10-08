@@ -22,6 +22,12 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
+import type { SnapshotMeta } from "./snapshotMeta.ts";
+import {
+  parseSnapshotMeta,
+  snapshotMetaPath,
+  writeSnapshotMetaCommand,
+} from "./snapshotMeta.ts";
 
 /**
  * Memory is paired with vCPU count, so a job only picks one number.
@@ -93,12 +99,14 @@ export const ensureMachine = async (
  *   and `waitForHttp`/`waitForPort`. Bringing it up is a no-op once the
  *   platform does it itself.
  */
-export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
+export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true) && (cat ${snapshotMetaPath} 2>/dev/null || true)`;
 
 /** A machine that has started and been set up. */
 interface Started {
   // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
   sandbox: any;
+  /** What the snapshot it started from says about itself, if anything. */
+  meta?: SnapshotMeta;
 }
 
 const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
@@ -135,13 +143,16 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
     run.sandboxes.add(sandbox.id);
 
-    await sandbox.commands.run(`${createStepId}${scopeSeparator}setup`, [
-      "/bin/sh",
-      "-c",
-      machineSetupScript,
-    ]);
+    const setup = await sandbox.commands.run(
+      `${createStepId}${scopeSeparator}setup`,
+      ["/bin/sh", "-c", machineSetupScript],
+    );
 
-    return { sandbox };
+    const meta = options.snapshotId
+      ? parseSnapshotMeta(setup?.stdout ?? "")
+      : undefined;
+
+    return { sandbox, ...(meta ? { meta } : {}) };
   };
 
   const startFresh = (note: string) => {
@@ -219,6 +230,12 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     name,
     id: started.sandbox.id,
   };
+
+  // A machine from a snapshot has the working tree that snapshot was taken
+  // with, which is what lets `checkout()` upload only what changed since.
+  if (started.meta?.treeId) {
+    handle.treeId = started.meta.treeId;
+  }
 
   run.machines.set(scope.path, Promise.resolve(handle));
 
@@ -418,6 +435,13 @@ const createSnapshot = async (
   }
 
   run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
+
+  if (handle.treeId) {
+    await handle.sandbox.commands.run(
+      `${jobPath}${scopeSeparator}snapshot:meta`,
+      writeSnapshotMetaCommand({ treeId: handle.treeId }),
+    );
+  }
 
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 

@@ -6,6 +6,11 @@
  * @module
  */
 
+import {
+  snapshotMetaPath,
+  writeSnapshotMetaScript,
+} from "../machine/snapshotMeta.ts";
+
 const uuid = (seed: number): string => {
   const hex = seed.toString(16).padStart(12, "0");
 
@@ -41,6 +46,11 @@ export interface FakeSandbox {
   stuck?: boolean;
   vcpu: number;
   memoryMb: number;
+  /**
+   * Files on the machine that CI reads back, by path. Only CI's snapshot
+   * metadata is kept: it is written by one command and read by another.
+   */
+  files: Map<string, string>;
 }
 
 export interface FakeSnapshot {
@@ -49,6 +59,8 @@ export interface FakeSnapshot {
   name?: string;
   status: string;
   sandboxId: string;
+  /** The files of the machine it was taken of, which a restore gets. */
+  files: Map<string, string>;
   createdAt: string;
   expiresAt: string;
   /** How many reads a `CREATING` snapshot answers before it is `READY`. */
@@ -81,6 +93,8 @@ export interface FakeSandboxApi {
   commands: string[][];
   /** Every request path, in order. */
   requests: string[];
+  /** Every file uploaded to a sandbox, in order. */
+  uploads: { sandboxId: string; path: string; bytes: Uint8Array }[];
   script(scripts: CommandScript[]): void;
   /** Make snapshot creation fail the way an environment without it would. */
   disableSnapshots(): void;
@@ -222,6 +236,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const snapshots = new Map<string, FakeSnapshot>();
   const commands: string[][] = [];
   const requests: string[] = [];
+  const uploads: FakeSandboxApi["uploads"] = [];
 
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
@@ -318,6 +333,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         memoryMb: body.memoryMb ?? 2048,
         snapshotId: body.snapshotId,
         stuck: true,
+        files: new Map(),
       };
 
       sandboxes.set(stuck.id, stuck);
@@ -336,6 +352,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       vcpu: body.vcpu ?? 2,
       memoryMb: body.memoryMb ?? 2048,
       ...(body.snapshotId ? { snapshotId: body.snapshotId } : {}),
+      files: new Map(snapshots.get(body.snapshotId ?? "")?.files),
     };
 
     sandboxes.set(sandbox.id, sandbox);
@@ -347,6 +364,25 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+
+    // CI's snapshot metadata is the one file kept: written by its own script,
+    // and read with `cat` by a machine's setup.
+    if (argv[2] === writeSnapshotMetaScript && argv[4] !== undefined) {
+      sandbox.files.set(argv[4], argv[5] ?? "");
+    }
+
+    const read = argv[2]?.includes(`cat ${snapshotMetaPath}`)
+      ? sandbox.files.get(snapshotMetaPath)
+      : undefined;
+
+    if (read !== undefined) {
+      return json(200, {
+        encoding: "base64",
+        stdout: btoa(read),
+        stderr: btoa(""),
+        exitCode: 0,
+      });
+    }
 
     const script = scriptFor(argv);
 
@@ -372,6 +408,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       ...(fields.name === undefined ? {} : { name: fields.name }),
       status: fields.status ?? "READY",
       sandboxId: sandbox.id,
+      files: new Map(sandbox.files),
       createdAt: now(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     };
@@ -714,6 +751,16 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         ? JSON.parse(String(init.body))
         : undefined;
 
+    const upload = /^\/v2\/sandboxes\/(?<id>[^/]+)\/files$/.exec(url.pathname);
+
+    if (upload && method === "PUT" && init?.body instanceof Blob) {
+      uploads.push({
+        sandboxId: upload.groups?.id ?? "",
+        path: url.searchParams.get("path") ?? "",
+        bytes: new Uint8Array(await init.body.arrayBuffer()),
+      });
+    }
+
     for (const route of routes) {
       const match = route.path.exec(url.pathname);
 
@@ -732,6 +779,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     snapshots,
     commands,
     requests,
+    uploads,
     script: (next) => {
       scripts = next;
     },
