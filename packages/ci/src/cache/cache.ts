@@ -730,12 +730,12 @@ export const justInTimeNote = (
   return {
     message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while this job waited. ${
       warm
-        ? "Its inputs changed since the last warm build."
+        ? "Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet."
         : "Add `cache.warm` to build it ahead of time."
     }`,
     line: `built just in time: \`${config.id}\` (${
       warm
-        ? "its inputs changed since the last warm build"
+        ? "not warmed for these inputs yet"
         : "add `cache.warm` to build it ahead of time"
     })`,
   };
