@@ -85,7 +85,7 @@ await inngest.send(invalidateEvent("node-base"));
 await inngest.send(invalidateEvent(nodeBase, { scope: "main" }));
 ```
 
-The event is `ci/base-image.invalidate`, with `data: { job: "node-base", scope?: "main" }`. An app that doesn't define the job ignores it, so apps can share an Inngest environment.
+The event is `ci/base-image.invalidate`, with `data: { job: "node-base", scope?: "main" }`. An app that doesn't define the job ignores it, so apps can share an Inngest environment. An app that does define the job deletes that job ID's snapshots across the whole Inngest environment, whichever app made them.
 
 ## Run metadata
 
