@@ -337,7 +337,7 @@ describe("a warm cache", () => {
 
 const cronEvent = { name: "inngest/scheduled.timer", data: {} };
 
-describe("a warm run", () => {
+describe("the warm function", () => {
   test("builds a cold cache, and reuses a cache that hits without running the job", async () => {
     const api = createFakeSandboxApi();
     const { ci } = setup(api);
