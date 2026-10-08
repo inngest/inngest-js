@@ -325,17 +325,12 @@ describe("pipeline summary", () => {
   });
 });
 
-const setup = () => {
-  const api = createFakeSandboxApi();
-  const reporter = consoleReporter();
-  const ci = createCi(createCiTestClient(api), { github: reporter });
-
-  return { api, ci, reporter };
-};
-
 describe("a required check never hangs", () => {
   test("the pipeline check completes even when a job throws", async () => {
-    const { ci, reporter } = setup();
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
 
     const job = ci.job("boom", async () => {
       throw new Error("something went wrong in the app's code");
@@ -362,7 +357,10 @@ describe("a required check never hangs", () => {
   });
 
   test("a settled failed job leaves the pipeline passing", async () => {
-    const { api, ci, reporter } = setup();
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
 
     api.script([{ match: "pnpm test", exitCode: 1 }]);
 
@@ -397,7 +395,10 @@ describe("a required check never hangs", () => {
   });
 
   test("jobs still running when the run fails are cancelled in one step", async () => {
-    const { api, ci, reporter } = setup();
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
 
     api.script([
       { match: "pnpm test", exitCode: 1 },
@@ -490,7 +491,10 @@ describe("a required check never hangs", () => {
   });
 
   test("checks held back for a retry are kept in progress in one step", async () => {
-    const { api, ci } = setup();
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
 
     api.script([{ match: "pnpm build", ticks: 50 }]);
 
