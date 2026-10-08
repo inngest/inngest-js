@@ -153,6 +153,39 @@ export const tagStep = async (
   }
 };
 
+/**
+ * Put a warning on the step whose callback is running, as `inngest.warnings`
+ * metadata, which the trace shows on the step's row. `key` names the warning,
+ * so saying it again replaces it rather than adding another.
+ *
+ * Like `tagStep`, it only queues the update on the step's own result and must
+ * never fail the step, so anything that goes wrong is logged.
+ */
+export const warnStep = async (
+  run: Loggable,
+  key: string,
+  message: string,
+): Promise<void> => {
+  try {
+    const execution = (await getAsyncCtx())?.execution;
+    const stepId = execution?.executingStep?.id;
+
+    if (!execution || !stepId) {
+      return;
+    }
+
+    execution.instance.addMetadata(
+      stepId,
+      "inngest.warnings",
+      "step",
+      "merge",
+      { [key]: message },
+    );
+  } catch (error) {
+    run.ci.logger?.warn({ error }, "Couldn't attach inngest.warnings metadata");
+  }
+};
+
 /** The longest a string in a step's outcome gets before it's cut. */
 const maxOutcomeString = 200;
 

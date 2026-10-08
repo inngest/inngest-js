@@ -21,6 +21,7 @@ import { createCi } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
 import { ciOrigin } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
 
 const setup = () => {
   const api = createFakeSandboxApi();
@@ -399,5 +400,82 @@ describe("pieces", () => {
     ) as { version: string };
 
     expect(version).toBe(pkg.version);
+  });
+});
+
+describe("the just-in-time warning", () => {
+  const pipelineOf = (cached: boolean) => {
+    const { ci } = setup();
+
+    const install = ci.job(
+      cached ? { id: "install", cache: { key: "v1" } } : { id: "install" },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const child = (id: string) => {
+      return ci.job({ id, from: install }, async () => {
+        await $`echo ${id}`;
+      });
+    };
+
+    const a = child("a");
+    const b = child("b");
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([a(), b()]);
+
+      return getRunScope()?.warnings;
+    });
+  };
+
+  const warned = (metadata: Update[]) => {
+    return metadata
+      .filter((update) => {
+        return update.kind === "inngest.warnings";
+      })
+      .map((update) => {
+        return [update.step, update.values];
+      });
+  };
+
+  const message =
+    "`install` wasn't cached for these inputs, so it was built while this job waited. Add `cache.warm` to build it ahead of time.";
+
+  test("a miss is on each child's Start from row, and in the warnings once", async () => {
+    const result = await runFunction(pipelineOf(true), { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(warned(result.metadata).sort()).toEqual([
+      ["a › from install", { "ci.justInTime": message }],
+      ["b › from install", { "ci.justInTime": message }],
+    ]);
+
+    expect(result.data).toEqual([
+      "built just in time: `install` (add `cache.warm` to build it ahead of time)",
+    ]);
+  });
+
+  test("a hit has no warning", async () => {
+    const pipeline = pipelineOf(true);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01COLD" });
+
+    const warm = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01WARM",
+    });
+
+    expect(warned(warm.metadata)).toEqual([]);
+    expect(warm.data).toEqual([]);
+  });
+
+  test("an uncached parent has no warning", async () => {
+    const result = await runFunction(pipelineOf(false), { event: prEvent });
+
+    expect(warned(result.metadata)).toEqual([]);
+    expect(result.data).toEqual([]);
   });
 });
