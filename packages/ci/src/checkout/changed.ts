@@ -6,12 +6,8 @@
  */
 
 import { CiUsageError } from "../errors.ts";
-import {
-  countApi,
-  getJobScope,
-  getRunScope,
-  nextStepId,
-} from "../pipeline/scope.ts";
+import type { CiRunScope } from "../pipeline/scope.ts";
+import { countApi, getRunScope } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { filterPaths, git } from "../util.ts";
 import { parsePorcelainPaths } from "./porcelain.ts";
@@ -84,27 +80,32 @@ export const changedFiles = async (): Promise<string[] | null> => {
     );
   }
 
-  const cached = run.changedFiles;
+  // The promise is stored before anything awaits, so concurrent callers share
+  // one step with one ID whichever of them asks first. Which job asks first
+  // differs between requests, and a step ID taken from the asker or a counter
+  // would be found on one request and missing on the next.
+  run.changedFiles ??= readChangedFiles(run);
 
-  if (cached) {
-    return cached;
-  }
+  return run.changedFiles;
+};
 
-  const id = nextStepId(run, getJobScope()?.path, "changed");
+const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
+  const files = (await run.step.run(
+    { id: "changed", name: "changed" },
+    async () => {
+      try {
+        return await listChangedFiles(run.repo);
+      } catch (error) {
+        if (!(error instanceof CiUsageError)) {
+          throw error;
+        }
 
-  const files = (await run.step.run({ id, name: id }, async () => {
-    try {
-      return await listChangedFiles(run.repo);
-    } catch (error) {
-      if (!(error instanceof CiUsageError)) {
-        throw error;
+        // No credentials, so the change can't be read. The caller assumes
+        // everything changed rather than skipping work it shouldn't.
+        return { unknown: true as const, reason: error.message };
       }
-
-      // No credentials, so the change can't be read. The caller assumes
-      // everything changed rather than skipping work it shouldn't.
-      return { unknown: true as const, reason: error.message };
-    }
-  })) as string[] | { unknown: true; reason: string };
+    },
+  )) as string[] | { unknown: true; reason: string };
 
   if (!Array.isArray(files)) {
     run.warnings.push(
@@ -113,8 +114,6 @@ export const changedFiles = async (): Promise<string[] | null> => {
 
     return null;
   }
-
-  run.changedFiles = files;
 
   return files;
 };

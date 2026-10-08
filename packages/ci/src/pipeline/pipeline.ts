@@ -29,8 +29,14 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
+import {
+  deleteRunSnapshots,
+  destroyOrphans,
+  destroyRunMachines,
+} from "../machine/machine.ts";
 import type {
+  CheckAnnotation,
+  CheckConclusion,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
@@ -50,6 +56,19 @@ import {
   runInScope,
   withScopePreserved,
 } from "./scope.ts";
+
+/**
+ * Options for every function that runs a pipeline: pipelines and cache
+ * refreshes.
+ *
+ * With parallelism optimized, the executor waits for every step in a parallel
+ * batch before it calls the function again, so a slow step in one job holds
+ * back every other job. Turning it off has the executor call back after each step, so jobs run independently.
+ * It's deprecated in favour of `group.parallel({ mode: "race" })`,
+ * but that marks every step for race semantics, which stops steps running inline
+ * and added a 15-20s gap between a job's steps on a real run.
+ */
+export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
 
 export const definePipeline = ({
   client,
@@ -102,6 +121,7 @@ export const definePipeline = ({
       ...flowControl(config),
       id: config.id,
       triggers,
+      ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
@@ -194,7 +214,6 @@ const newRunScope = ({
     snapshots: new Map(),
     createdSnapshots: new Set(),
     cachedSnapshots: new Map(),
-    sandboxes: new Set(),
     summaries: [],
     openChecks: new Map(),
     deferredChecks: new Map(),
@@ -306,114 +325,188 @@ const runPipelineAttempt = async ({
       });
     }
 
-    // A run that is about to be retried keeps its machines and snapshots: the
-    // retry replays the memoized machine and snapshot IDs and needs them
-    // alive. The generated cleanup function covers a run that never gets
-    // here; it finds machines by name, but snapshots carry no run name, so
-    // it can't delete them.
-    let retrying = false;
+    // The handler's outcome is caught here, so what comes after it is the same
+    // steps whether it passed or failed. Which jobs were still running, what
+    // the summaries say and which sandboxes exist all differ between
+    // requests, so each is read inside the step that needs it, never to
+    // decide which steps exist.
+    const outcome = await settle({ run, config, handler, ctx });
 
-    try {
-      const permitted = await checkCommentPermission(run, config);
-
-      if (!permitted) {
-        await completePipeline(run, checks, {
-          conclusion: "neutral",
-          title: "Not permitted",
-          summary: pipelineSummary(run),
-          annotations: run.pipelineAnnotations,
-        });
-
-        return { skipped: "not permitted" };
-      }
-
-      const result = await handler({
-        event: ctx.event,
-        events: ctx.events ?? [ctx.event],
-        runId: ctx.runId,
-        pipelineId: config.id,
-        repo: run.repo,
-        attempt: ctx.attempt ?? 0,
-        logger: ctx.logger ?? console,
-      });
-
-      const skip = asSkip(result);
-
-      if (skip) {
-        countApi("skip");
-      }
-
-      await completeDeferredJobChecks(run, checks);
-
-      addSlowParentHints(run);
-
-      run.ci.hooks.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: "success",
-        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      return result;
-    } catch (error) {
-      // A failed command's exit code is already recorded in its steps, and a
-      // usage error is the same on every attempt, so retrying the run would
-      // only replay the same failure.
-      const deterministic = isDeterministicFailure(error);
-
-      retrying = !deterministic && run.willRetry(error);
-
-      if (retrying) {
+    if (outcome.kind === "failed") {
+      // A run that is about to be retried keeps its machines and snapshots:
+      // the retry replays the memoized machine and snapshot IDs and needs them
+      // alive. The generated cleanup function covers a run that never gets
+      // here; it finds machines by name, but snapshots carry no run name, so
+      // it can't delete them.
+      if (
+        !isDeterministicFailure(outcome.error) &&
+        run.willRetry(outcome.error)
+      ) {
         // The check steps are memoized, so completing a check as failed now
         // would leave it failed even if the retry passes. They stay in
         // progress until an attempt that's final.
         const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
 
-        for (const [jobPath, deferred] of run.deferredChecks) {
-          await checks.retrying({
-            run,
-            jobPath,
-            ...(deferred.name ? { name: deferred.name } : {}),
-            title,
-          });
-        }
+        // One step whatever is held back, because which jobs have a check
+        // deferred depends on how far each sibling got in this request.
+        await checks.retryingAll({
+          run,
+          jobs: () => {
+            return [...run.deferredChecks.entries()].map(
+              ([jobPath, deferred]) => {
+                return {
+                  jobPath,
+                  ...(deferred.name ? { name: deferred.name } : {}),
+                };
+              },
+            );
+          },
+          title,
+        });
 
         await checks.retrying({ run, title });
 
-        throw error;
-      }
-
-      await completeDeferredJobChecks(run, checks);
-
-      // Jobs that were still running when the run ended would otherwise leave
-      // their checks spinning.
-      await closeOpenJobChecks(run, checks);
-
-      addSlowParentHints(run);
-
-      run.ci.hooks.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: conclusionForError(error),
-        title: errorTitle(error, run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      if (deterministic) {
-        throw new NonRetriableError(error.message, { cause: error });
-      }
-
-      throw error;
-    } finally {
-      if (!retrying) {
-        await destroyRunMachines(run, ctx.attempt ?? 0);
-        await deleteRunSnapshots(run, ctx.attempt ?? 0);
+        throw outcome.error;
       }
     }
+
+    // Jobs that were still running when the run ended would otherwise leave
+    // their checks spinning. The run doesn't wait for them: one a person left
+    // unawaited on purpose is cancelled by the run ending.
+    await closeJobChecks(run, checks);
+
+    addSlowParentHints(run);
+
+    run.ci.hooks.warnings(run);
+
+    await completePipeline(run, checks, conclusionOf(outcome), () => {
+      return describeOutcome(run, outcome);
+    });
+
+    await destroyRunMachines(run, ctx.attempt ?? 0);
+    await deleteRunSnapshots(run, ctx.attempt ?? 0);
+
+    if (outcome.kind === "failed") {
+      // A failed command's exit code is already recorded in its steps, and a
+      // usage error is the same on every attempt, so retrying the run would
+      // only replay the same failure.
+      if (isDeterministicFailure(outcome.error)) {
+        throw new NonRetriableError(outcome.error.message, {
+          cause: outcome.error,
+        });
+      }
+
+      throw outcome.error;
+    }
+
+    return outcome.kind === "denied"
+      ? { skipped: "not permitted" }
+      : outcome.result;
   });
+};
+
+/** How the handler ended, caught rather than thrown. */
+type Outcome =
+  | { kind: "ran"; result: unknown }
+  | { kind: "denied" }
+  | { kind: "failed"; error: unknown };
+
+/**
+ * Run the handler, and say how it ended instead of throwing, so a failed run
+ * reaches the same end-of-run steps as one that passed.
+ */
+const settle = async ({
+  run,
+  config,
+  handler,
+  ctx,
+}: {
+  run: CiRunScope;
+  config: PipelineConfig;
+  handler: (ctx: PipelineContext) => Promise<unknown>;
+  // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+  ctx: any;
+}): Promise<Outcome> => {
+  try {
+    const permitted = await checkCommentPermission(run, config);
+
+    if (!permitted) {
+      return { kind: "denied" };
+    }
+
+    const result = await handler({
+      event: ctx.event,
+      events: ctx.events ?? [ctx.event],
+      runId: ctx.runId,
+      pipelineId: config.id,
+      repo: run.repo,
+      attempt: ctx.attempt ?? 0,
+      logger: ctx.logger ?? console,
+    });
+
+    if (asSkip(result)) {
+      countApi("skip");
+    }
+
+    return { kind: "ran", result };
+  } catch (error) {
+    return { kind: "failed", error };
+  }
+};
+
+/** What the pipeline's check concludes for an outcome. */
+const conclusionOf = (outcome: Outcome): CheckConclusion => {
+  switch (outcome.kind) {
+    case "ran": {
+      return "success";
+    }
+
+    case "denied": {
+      return "neutral";
+    }
+
+    case "failed": {
+      return conclusionForError(outcome.error);
+    }
+  }
+};
+
+/**
+ * What the pipeline's check says for an outcome. It reads the run's summaries,
+ * warnings and annotations, so it only runs inside the step that completes
+ * the check.
+ */
+const describeOutcome = (
+  run: CiRunScope,
+  outcome: Outcome,
+): { title: string; summary: string; annotations: CheckAnnotation[] } => {
+  switch (outcome.kind) {
+    case "ran": {
+      const skip = asSkip(outcome.result);
+
+      return {
+        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
+        summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+
+    case "denied": {
+      return {
+        title: "Not permitted",
+        summary: pipelineSummary(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+
+    case "failed": {
+      return {
+        title: errorTitle(outcome.error, run),
+        summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+  }
 };
 
 /**
@@ -423,16 +516,25 @@ const runPipelineAttempt = async ({
 const completePipeline = async (
   run: CiRunScope,
   checks: CheckReporter,
-  result: Omit<
-    Parameters<CheckReporter["pipelineComplete"]>[0],
-    "run" | "metadata"
-  >,
+  conclusion: CheckConclusion,
+  /** What the check says, read inside the step that completes it. */
+  describe: () => {
+    title: string;
+    summary: string;
+    annotations: CheckAnnotation[];
+  },
 ): Promise<void> => {
   const metadata = () => {
-    return runEndMetadata(run, result.conclusion);
+    return runEndMetadata(run, conclusion);
   };
 
-  await checks.pipelineComplete({ run, ...result, metadata });
+  await checks.pipelineComplete({
+    run,
+    metadata,
+    result: () => {
+      return { conclusion, ...describe() };
+    },
+  });
 
   if (!run.checkName) {
     await metadataStep(run, "ci › metadata:end", metadata);
@@ -553,6 +655,19 @@ const isDeterministicFailure = (error: unknown): error is Error => {
 };
 
 /**
+ * Whether the error is a `NonRetriableError`. A step's error comes back into
+ * the handler as a `StepError` that only carries the name, so `instanceof`
+ * alone misses a non-retriable step failure, and the run would wait for a
+ * retry that never comes, leaving its checks open.
+ */
+const isNonRetriable = (error: unknown): boolean => {
+  return (
+    error instanceof NonRetriableError ||
+    (error as { name?: unknown } | undefined)?.name === "NonRetriableError"
+  );
+};
+
+/**
  * Whether Inngest will run the function again after this error: it isn't
  * non-retriable and attempts remain.
  */
@@ -561,7 +676,7 @@ const willRetry = (
   attempt: number,
   maxAttempts: number,
 ): boolean => {
-  if (error instanceof NonRetriableError || isDeterministicFailure(error)) {
+  if (isNonRetriable(error) || isDeterministicFailure(error)) {
     return false;
   }
 
@@ -571,58 +686,53 @@ const willRetry = (
 /** How many times Inngest retries a function that sets no `retries`. */
 const defaultRetries = 4;
 
-/**
- * Complete the job checks that were held back for a retry that isn't coming
- * after all: the run succeeded around the failed job, or this was the last
- * attempt.
- */
-const completeDeferredJobChecks = async (
-  run: CiRunScope,
-  checks: CheckReporter,
-): Promise<void> => {
-  const deferred = [...run.deferredChecks.entries()];
-
-  run.deferredChecks.clear();
-
-  for (const [jobPath, { name, ...result }] of deferred) {
-    await checks.jobComplete({
-      run,
-      jobPath,
-      ...(name ? { name } : {}),
-      ...result,
-    });
-  }
-};
+const cancelledTitle = "Cancelled: the pipeline ended first";
 
 /**
- * Complete the job checks of anything still running when the run ended.
+ * Complete the job checks the run leaves behind: those held back for a retry
+ * that isn't coming, and those of jobs still running.
  *
  * With `Promise.all`, the first failure ends the run while its siblings are
- * mid-flight; their checks are marked cancelled rather than left in progress.
+ * mid-flight, so their checks are marked cancelled rather than left in
+ * progress, and so are those of jobs left unawaited. The siblings keep going
+ * while this runs, and how far each got differs between requests, so both
+ * lists are read at once, inside one memoized step.
  */
-const closeOpenJobChecks = async (
+const closeJobChecks = async (
   run: CiRunScope,
   checks: CheckReporter,
 ): Promise<void> => {
-  const open = [...run.openChecks.entries()];
+  const closed = await checks.jobsComplete({
+    run,
+    jobs: () => {
+      const deferred = [...run.deferredChecks.entries()].map(
+        ([jobPath, { name, ...result }]) => {
+          return { jobPath, ...(name ? { name } : {}), ...result };
+        },
+      );
 
-  run.openChecks.clear();
+      const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
+        return {
+          jobPath,
+          ...(name ? { name } : {}),
+          conclusion: "cancelled" as const,
+          title: cancelledTitle,
+        };
+      });
 
-  for (const [jobPath, name] of open) {
-    run.summaries.push({
-      path: jobPath,
-      conclusion: "cancelled",
-      title: "Cancelled: the pipeline ended first",
-      durationMs: 0,
-    });
+      return [...deferred, ...open];
+    },
+  });
 
-    await checks.jobComplete({
-      run,
-      jobPath,
-      ...(name ? { name } : {}),
-      conclusion: "cancelled",
-      title: "Cancelled: the pipeline ended first",
-    });
+  for (const job of closed) {
+    if (job.conclusion === "cancelled" && job.title === cancelledTitle) {
+      run.summaries.push({
+        path: job.jobPath,
+        conclusion: "cancelled",
+        title: cancelledTitle,
+        durationMs: 0,
+      });
+    }
   }
 };
 
@@ -832,45 +942,7 @@ const generatedFunctions = ({
   return functions;
 };
 
-/**
- * A run that ended permanently never reached its own cleanup step, so its
- * machines are found by name. Listing has no name filter, so the comparison
- * happens here.
- */
-export const destroyOrphans = async (
-  client: Inngest.Any,
-  runId: string,
-): Promise<{ destroyed: number }> => {
-  const prefix = `ci-${runId}-`;
-  let cursor: string | undefined;
-  let destroyed = 0;
-
-  do {
-    const page = await client.sandboxes.list({
-      ...(cursor ? { cursor } : {}),
-      limit: 100,
-    });
-
-    for (const sandbox of page.items) {
-      if (sandbox.name.startsWith(prefix)) {
-        try {
-          await sandbox.destroy();
-
-          destroyed++;
-        } catch (error) {
-          // Anything but "not found" fails the step so it retries.
-          if (!isSandboxNotFound(error)) {
-            throw error;
-          }
-        }
-      }
-    }
-
-    cursor = page.page.hasMore ? page.page.cursor : undefined;
-  } while (cursor);
-
-  return { destroyed };
-};
+export { destroyOrphans };
 
 /**
  * One function per cached job with `refresh` triggers, so the cache is built
@@ -908,6 +980,7 @@ export const cacheRefreshFunctions = ({
           id,
           triggers: refresh,
           singleton: { key: `"${job.id}"`, mode: "skip" },
+          ...pipelineFunctionOptions,
           middleware: [sandboxMiddleware(), metadataMiddleware()],
         },
         // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
