@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
 import { checkout } from "../checkout/checkout.ts";
@@ -1073,7 +1074,7 @@ describe("from()", () => {
 });
 
 describe("machines", () => {
-  test("a finished job's machine is paused, and destroyed with the run", async () => {
+  test("a finished job's machine is destroyed with the run", async () => {
     const { api, ci } = setup();
 
     const job = ci.job("test", async () => {
@@ -1085,12 +1086,6 @@ describe("machines", () => {
     });
 
     await runFunction(pipeline, { event: prEvent });
-
-    expect(
-      api.requests.some((request) => {
-        return request.includes("/pause");
-      }),
-    ).toBe(true);
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
@@ -2262,52 +2257,59 @@ describe("cleanup", () => {
     code: "sandbox_not_found",
   });
 
-  const runWithSandboxes = (sandboxes: {
-    get: (id: string) => Promise<unknown>;
-  }) => {
+  const runWithSandboxes = (list: () => Promise<unknown>) => {
     return {
-      sandboxes: new Set(["a"]),
       step: {
         run: (_options: unknown, fn: () => unknown) => {
           return fn();
         },
       },
-      ci: { client: { sandboxes } },
+      runId: "r",
+      ci: {
+        client: {
+          sandboxes: { list },
+        },
+      },
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
   };
-
   test("a machine that is already gone is not an error", async () => {
-    const run = runWithSandboxes({
-      get: async () => {
-        return {
-          destroy: async () => {
-            throw notFound;
+    const run = runWithSandboxes(async () => {
+      return {
+        items: [
+          {
+            name: "ci-r-a",
+            destroy: async () => {
+              throw notFound;
+            },
           },
-        };
-      },
+        ],
+        page: { hasMore: false },
+      };
     });
 
     await expect(destroyRunMachines(run)).resolves.toBeUndefined();
   });
 
   test("any other failure fails the step so it retries", async () => {
-    const run = runWithSandboxes({
-      get: async () => {
-        return {
-          destroy: async () => {
-            throw new Error("503 service unavailable");
+    const run = runWithSandboxes(async () => {
+      return {
+        items: [
+          {
+            name: "ci-r-a",
+            destroy: async () => {
+              throw new Error("503 service unavailable");
+            },
           },
-        };
-      },
+        ],
+        page: { hasMore: false },
+      };
     });
 
     await expect(destroyRunMachines(run)).rejects.toThrow("503");
 
-    const lookup = runWithSandboxes({
-      get: async () => {
-        throw new Error("network down");
-      },
+    const lookup = runWithSandboxes(async () => {
+      throw new Error("network down");
     });
 
     await expect(destroyRunMachines(lookup)).rejects.toThrow("network down");
@@ -2382,9 +2384,9 @@ describe("cleanup", () => {
 
     expect(
       result.stepIds.filter((id) => {
-        return id === "cleanup";
+        return id.startsWith("pipeline › cleanup");
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
@@ -2483,7 +2485,7 @@ describe("repository for repo-less triggers", () => {
       baseRef: "main",
     });
 
-    expect(result.stepIds).toContain("repo:resolve");
+    expect(result.stepIds).toContain("github › repo:resolve");
   });
 
   test("a comment run gets its pull request's head commit", async () => {
@@ -2530,7 +2532,7 @@ describe("repository for repo-less triggers", () => {
       pullRequest: { number: 12, headRef: "feature", fork: false },
     });
 
-    expect(result.stepIds).toContain("pr:resolve");
+    expect(result.stepIds).toContain("github › pr:resolve");
   });
 });
 
@@ -2561,6 +2563,48 @@ describe("failures that retrying cannot fix", () => {
         return sandbox.status === "TERMINATED";
       }),
     ).toBe(true);
+  });
+
+  test("a non-retriable step error completes the checks with its message", async () => {
+    const { ci, reporter } = setup();
+
+    const build = ci.job("build", async () => {
+      await getRunScope()?.step.run({ id: "machine:create" }, () => {
+        throw new NonRetriableError(
+          "Sandbox did not reach RUNNING within 120000 milliseconds",
+        );
+      });
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await build();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 4 });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const completed = reporter.history.filter((entry) => {
+      return entry.status === "completed";
+    });
+
+    expect(
+      completed.map((entry) => {
+        return [entry.name, entry.conclusion, entry.title];
+      }),
+    ).toEqual([
+      [
+        "pr / build",
+        "failure",
+        "Sandbox did not reach RUNNING within 120000 milliseconds",
+      ],
+      [
+        "pr",
+        "failure",
+        "build: Sandbox did not reach RUNNING within 120000 milliseconds",
+      ],
+    ]);
   });
 
   test("a malformed repo fails when the pipeline is defined", () => {
@@ -2678,6 +2722,99 @@ describe("comment permissions", () => {
   });
 });
 
+describe("the end of a run", () => {
+  /** The steps every run ends with, in the order it plans them. */
+  const endSteps = (stepIds: string[]) => {
+    return stepIds.filter((id) => {
+      return (
+        id === "github › check:jobs:complete" ||
+        id === "github › check:pr:complete" ||
+        id.startsWith("pipeline › cleanup")
+      );
+    });
+  };
+
+  const expected = [
+    "github › check:jobs:complete",
+    "github › check:pr:complete",
+    "pipeline › cleanup",
+    "pipeline › cleanup:snapshots",
+  ];
+
+  test("plans the same steps when a job passed, when one failed and when none ran", async () => {
+    const run = async (
+      handler: (ci: ReturnType<typeof setup>["ci"]) => Promise<unknown>,
+    ) => {
+      const { api, ci } = setup();
+
+      api.script([{ match: "pnpm fail", exitCode: 1, stderr: "nope" }]);
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return handler(ci);
+        }),
+        { event: prEvent },
+      );
+    };
+
+    const passed = await run(async (ci) => {
+      await ci.job("test", async () => {
+        await $`pnpm test`;
+      })();
+    });
+
+    const failed = await run(async (ci) => {
+      await ci.job("test", async () => {
+        await $`pnpm fail`;
+      })();
+    });
+
+    const none = await run(async () => {
+      return "nothing awaited";
+    });
+
+    expect(passed.type).toBe("function-resolved");
+    expect(failed.type).toBe("function-rejected");
+    expect(none.type).toBe("function-resolved");
+
+    for (const result of [passed, failed, none]) {
+      expect(endSteps(result.stepIds)).toEqual(expected);
+    }
+  });
+
+  test("a job left unawaited doesn't delay the run's end, and its check is cancelled", async () => {
+    const { api, ci } = setup();
+
+    const slow = ci.job("slow", async () => {
+      for (let i = 0; i < 20; i++) {
+        await $`pnpm slow ${i}`;
+      }
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      slow().catch(() => {
+        return undefined;
+      });
+
+      return "done";
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.data).toBe("done");
+    expect(endSteps(result.stepIds)).toEqual(expected);
+
+    // The run ended long before the job could have, and said so.
+    expect(userCommands(api).length).toBeLessThan(20);
+    expect(result.stepIds).not.toContain("github › check:slow:complete");
+
+    expect(result.steps["github › check:jobs:complete"]).toEqual([
+      expect.objectContaining({ jobPath: "slow", conclusion: "cancelled" }),
+    ]);
+  });
+});
+
 describe("checks across retries", () => {
   test("a retried run's checks end with the last attempt's result", async () => {
     vi.stubEnv("INNGEST_CI_GITHUB", "live");
@@ -2789,7 +2926,32 @@ describe("checks across retries", () => {
 describe("run snapshot cleanup", () => {
   const cleanupSteps = (stepIds: string[]) => {
     return stepIds.filter((id) => {
-      return id === "cleanup:snapshots";
+      return id.includes("cleanup:snapshots");
+    });
+  };
+
+  /** The snapshots the cleanup step deleted. The step is always planned. */
+  const deletedBy = (result: { steps: Record<string, unknown> }) => {
+    const step = result.steps["pipeline › cleanup:snapshots"] as
+      | { deleted: string[] }
+      | undefined;
+
+    return step?.deleted ?? [];
+  };
+
+  const cachedChain = (ci: ReturnType<typeof setup>["ci"]) => {
+    const setupJob = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const test = ci.job("test", async () => {
+      await from(setupJob);
+
+      await $`pnpm test`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
     });
   };
 
@@ -2822,12 +2984,15 @@ describe("run snapshot cleanup", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
+    // Both are the pipeline's to delete: `base`'s was left by `child`'s build
+    // run, which hands it up instead of deleting what others may share.
     expect(duringRun).toBe(2);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(deletedBy(result)).toHaveLength(2);
   });
 
-  test("a run with no snapshots has no cleanup step", async () => {
+  test("a run with no snapshots still plans the cleanup step, which deletes nothing", async () => {
     const { ci } = setup();
 
     const job = ci.job("test", async () => {
@@ -2840,7 +3005,10 @@ describe("run snapshot cleanup", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+    // Always planned, so a request that sees no snapshots yet can't skip a
+    // step another request found.
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(deletedBy(result)).toHaveLength(0);
   });
 
   test("snapshots are deleted when the run fails", async () => {
@@ -2870,46 +3038,28 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
-  test("a cache entry's snapshot is kept, and a later run restoring it keeps it too", async () => {
+  test("a named cache snapshot survives cleanup, across two runs", async () => {
     const api = createFakeSandboxApi();
 
     const runOnce = async () => {
       const { ci } = setup({ api });
 
-      const setupJob = ci.job(
-        { id: "setup", cache: { key: "v1" } },
-        async () => {
-          await $`pnpm install`;
-        },
-      );
-
-      const test = ci.job("test", async () => {
-        await from(setupJob);
-
-        await $`pnpm test`;
-      });
-
-      return runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-          await test();
-        }),
-        { event: prEvent },
-      );
+      return runFunction(cachedChain(ci), { event: prEvent });
     };
 
     const first = await runOnce();
 
     expect(first.type).toBe("function-resolved");
-    expect(api.snapshots.size).toBe(1);
+    expect(namedSnapshots(api)).toHaveLength(1);
 
-    const [kept] = [...api.snapshots.keys()];
+    const kept = [...api.snapshots.keys()];
 
     const second = await runOnce();
 
     expect(second.type).toBe("function-resolved");
-    expect([...api.snapshots.keys()]).toEqual([kept]);
-    expect(cleanupSteps(first.stepIds)).toHaveLength(0);
-    expect(cleanupSteps(second.stepIds)).toHaveLength(0);
+    expect([...api.snapshots.keys()]).toEqual(kept);
+    expect(deletedBy(first)).toHaveLength(0);
+    expect(deletedBy(second)).toHaveLength(0);
   });
 
   test("only the run's own snapshots go when a cached job's sits beside them", async () => {
@@ -2941,6 +3091,35 @@ describe("run snapshot cleanup", () => {
     expect(result.type).toBe("function-resolved");
     // `base`'s is deleted; `cached`'s is the cache entry.
     expect(api.snapshots.size).toBe(1);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  test("a snapshot that lost a name race is adopted and kept", async () => {
+    const api = createFakeSandboxApi();
+
+    api.loseSnapshotNameRaces();
+
+    const { ci } = setup({ api });
+
+    const result = await runFunction(cachedChain(ci), { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(namedSnapshots(api)).toHaveLength(1);
+    expect(deletedBy(result)).toHaveLength(0);
+  });
+
+  test("an unnamed fallback snapshot is deleted at the end of the run", async () => {
+    const api = createFakeSandboxApi();
+
+    api.withoutSnapshotNames();
+
+    const { ci } = setup({ api });
+
+    const result = await runFunction(cachedChain(ci), { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(namedSnapshots(api)).toHaveLength(0);
+    expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
