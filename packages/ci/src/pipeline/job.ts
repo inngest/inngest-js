@@ -17,7 +17,7 @@ import type { CheckReporter } from "../github/checks.ts";
 import { parentOf, parentSnapshot, startFrom } from "../machine/from.ts";
 import { pauseMachine, snapshotJob } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { formatDuration, shortReason } from "../util.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { getRunScope, runJobBody } from "./scope.ts";
@@ -437,9 +437,7 @@ const jobErrorTitle = (error: unknown): string => {
     return `\`${error.command.join(" ")}\` timed out after ${error.timeout}`;
   }
 
-  return error instanceof Error
-    ? (error.message.split("\n")[0] ?? "Failed")
-    : "Failed";
+  return shortReason(error) || "Failed";
 };
 
 const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {
