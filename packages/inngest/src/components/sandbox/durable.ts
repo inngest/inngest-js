@@ -356,6 +356,7 @@ export const executeSandboxOperation = async (
       const snapshot = await createSandboxSnapshotForOperation(
         client,
         operation.target.sandbox.id,
+        operation.input[0],
       );
       return {
         protocolVersion: sandboxProtocolVersion,

@@ -292,6 +292,10 @@ export type SandboxSnapshotStatus =
 
 export interface SandboxSnapshotResource {
   id: string;
+  /**
+   * The name given when the snapshot was created, if any.
+   */
+  name?: string;
   sourceImageId: string;
   status: SandboxSnapshotStatus;
   compatibilityId?: string;
@@ -319,13 +323,28 @@ export interface SandboxLifecycleOptions {
   signal?: AbortSignal;
 }
 
-export type SandboxSnapshotCreateOptions = Record<string, never>;
+export interface SandboxSnapshotCreateOptions {
+  /**
+   * Optional name for the snapshot. A name is held by at most one CREATING or
+   * unexpired READY snapshot at a time; creating another snapshot with a held
+   * name fails with `sandbox_snapshot_name_taken`. Names follow the same rules
+   * as sandbox names: case-sensitive, up to 255 characters, no control
+   * characters, and no leading or trailing whitespace.
+   */
+  name?: string;
+}
+
 export interface SandboxSnapshotCloneOptions {
   name: string;
   runningTimeout?: SandboxDuration;
 }
 
-export type SandboxSnapshotListOptions = SandboxListOptions;
+export interface SandboxSnapshotListOptions extends SandboxListOptions {
+  /**
+   * Only return snapshots with exactly this name, newest first.
+   */
+  name?: string;
+}
 export type SandboxSnapshotListResult<TSnapshot = SandboxSnapshotRef> =
   SandboxListResult<TSnapshot>;
 
@@ -373,6 +392,7 @@ export type SandboxErrorCode =
   | "sandbox_process_output_not_retained"
   | "sandbox_process_wait_timed_out"
   | "sandbox_snapshot_limit_exceeded"
+  | "sandbox_snapshot_name_taken"
   | "sandbox_snapshot_not_found"
   | "sandbox_snapshot_not_ready"
   | "sandbox_snapshot_wait_timed_out"
@@ -589,6 +609,7 @@ export interface DurableSandboxSnapshot {
   readonly kind: "inngest/sandbox.snapshot";
   readonly version: 1;
   readonly id: string;
+  readonly name?: string;
   readonly sourceImageId: string;
   readonly status: SandboxSnapshotStatus;
   readonly compatibilityId?: string;

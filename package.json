@@ -2,7 +2,7 @@
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "release:all": "pnpm run build && pnpm run release:publish && pnpm run release:tag",
-    "build": "pnpm run --if-present --recursive build",
+    "build": "pnpm --filter inngest run build && pnpm run --if-present --recursive --filter \"!inngest\" build",
     "release:version": "npx changeset version && pnpm run --if-present --recursive release:version",
     "release:publish": "pnpm run --if-present --recursive release",
     "release:tag": "node scripts/release/tag.js",
@@ -21,7 +21,7 @@
   "pnpm": {
     "overrides": {
       "whatwg-url": "^14.0.0",
-      "rolldown": "1.0.0-beta.53",
+      "tsdown@^0.15>rolldown": "1.0.0-beta.53",
       "@opentelemetry/sdk-node": ">=0.217.0",
       "@opentelemetry/exporter-prometheus": ">=0.217.0",
       "fflate": "0.8.2"
