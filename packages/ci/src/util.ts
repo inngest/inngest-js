@@ -308,15 +308,63 @@ export const formatDuration = (ms: number): string => {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 };
 
+/** Why Sandboxes can't be used, as the Dev Server and Cloud report it. */
+export type SandboxAccessProblem = "login" | "environment" | "plan";
+
+/** The short reason for each problem. */
+export const sandboxAccessReasons: Record<SandboxAccessProblem, string> = {
+  login: "not logged in to Inngest",
+  environment: "no Inngest environment selected",
+  plan: "Sandboxes not enabled for your account",
+};
+
+/**
+ * Whether an error, or the short reason made from one, says Sandboxes can't
+ * be used. The Dev Server answers `cloud_login_required` (401) when it isn't
+ * logged in and `environment_required` (400) when the login has no single
+ * environment; Cloud answers `access_denied` (403) when the account hasn't
+ * been given Sandbox access.
+ */
+export const sandboxAccessProblem = (
+  error: unknown,
+): SandboxAccessProblem | undefined => {
+  const { code, message } = readError(error);
+
+  if (
+    code === "cloud_login_required" ||
+    message === sandboxAccessReasons.login
+  ) {
+    return "login";
+  }
+
+  if (
+    code === "environment_required" ||
+    message === sandboxAccessReasons.environment
+  ) {
+    return "environment";
+  }
+
+  if (code === "access_denied" || message === sandboxAccessReasons.plan) {
+    return "plan";
+  }
+
+  return undefined;
+};
+
 /**
  * A failure reason short enough for a narrow column or a check title. Known
- * Sandbox start errors get fixed wording, matched by `code` when there is one
- * and by message otherwise; anything else is its first non-empty line without
- * an `Error:` style prefix or trailing period, capped at 60 characters. An
- * empty input gives an empty string.
+ * Sandbox start errors and access problems get fixed wording, matched by
+ * `code` when there is one and by message otherwise; anything else is its
+ * first non-empty line without an `Error:` style prefix or trailing period,
+ * capped at 60 characters. An empty input gives an empty string.
  */
 export const shortReason = (error: unknown): string => {
   const { code, message } = readError(error);
+  const access = sandboxAccessProblem(error);
+
+  if (access) {
+    return sandboxAccessReasons[access];
+  }
 
   if (
     code === "sandbox_start_timed_out" ||

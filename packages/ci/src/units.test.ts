@@ -37,6 +37,7 @@ import {
   formatRelative,
   globToRegExp,
   maskSecrets,
+  sandboxAccessProblem,
   shellEscape,
   shortReason,
   stableStringify,
@@ -671,6 +672,20 @@ describe("shortReason", () => {
     ).toBe("machine failed to start");
   });
 
+  test("Sandbox access problems are matched by code and read the same", () => {
+    expect(shortReason({ code: "cloud_login_required", message: "x" })).toBe(
+      "not logged in to Inngest",
+    );
+
+    expect(shortReason({ cause: { code: "environment_required" } })).toBe(
+      "no Inngest environment selected",
+    );
+
+    expect(shortReason({ code: "access_denied" })).toBe(
+      "Sandboxes not enabled for your account",
+    );
+  });
+
   test("anything else is its first line without prefix or period", () => {
     expect(
       shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
@@ -688,5 +703,20 @@ describe("shortReason", () => {
     expect(shortReason("")).toBe("");
     expect(shortReason(undefined)).toBe("");
     expect(shortReason(new Error(""))).toBe("");
+  });
+});
+
+describe("sandboxAccessProblem", () => {
+  test("it names the problem from the code or from the short reason", () => {
+    expect(sandboxAccessProblem({ code: "cloud_login_required" })).toBe(
+      "login",
+    );
+
+    expect(sandboxAccessProblem("no Inngest environment selected")).toBe(
+      "environment",
+    );
+
+    expect(sandboxAccessProblem({ code: "access_denied" })).toBe("plan");
+    expect(sandboxAccessProblem(new Error("boom"))).toBeUndefined();
   });
 });
