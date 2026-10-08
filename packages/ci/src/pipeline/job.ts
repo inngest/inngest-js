@@ -316,7 +316,11 @@ export const reusedBuild = (
  * ends. That is a snapshot only this run needs.
  */
 export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
-  run.warnings.push(...built.warnings);
+  for (const warning of built.warnings) {
+    if (!run.warnings.includes(warning)) {
+      run.warnings.push(warning);
+    }
+  }
 
   for (const id of built.createdSnapshots) {
     run.createdSnapshots.add(id);

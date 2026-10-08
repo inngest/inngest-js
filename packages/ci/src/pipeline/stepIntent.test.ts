@@ -14,7 +14,7 @@ import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { createCi } from "./createCi.ts";
-import { withNotes } from "./metadata.ts";
+import { metadataKind, withNotes } from "./metadata.ts";
 
 const prEvent = {
   name: "github/pull_request.opened",
@@ -56,7 +56,11 @@ type Metadata = Awaited<ReturnType<typeof runFunction>>["metadata"];
 /** A step's own metadata values, by the step's ID. */
 const stepValues = (metadata: Metadata, step: string) => {
   return metadata.find((update) => {
-    return update.step === step && update.scope === "step";
+    return (
+      update.step === step &&
+      update.scope === "step" &&
+      update.kind === metadataKind
+    );
   })?.values;
 };
 
