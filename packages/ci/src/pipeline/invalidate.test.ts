@@ -9,11 +9,12 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { snapshotName } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { snapshotName } from "../cache/cache.ts";
 import { createCi } from "./createCi.ts";
 import { invalidateEvent } from "./invalidate.ts";
 
@@ -68,7 +69,9 @@ const setup = (
       files: new Map(),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    });
+      // The fake's other fields vary by what's underneath this branch, and
+      // nothing here reads them.
+    } as FakeSnapshot);
   }
 
   const run = async (event: ReturnType<typeof invalidateEvent>) => {
