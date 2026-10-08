@@ -2540,6 +2540,66 @@ describe("repository for repo-less triggers", () => {
     expect(result.stepIds).toContain("github › repo:resolve");
   });
 
+  test("a cron warm run builds the cache a pull request reads", async () => {
+    const { api, ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
+
+    gh.route("GET /repos/inngest/inngest-js/branches/main", {
+      commit: { sha: "cafe1234" },
+    });
+
+    const install = ci.job(
+      {
+        id: "install",
+        cache: { key: "v1", warm: [{ cron: "0 3 * * *" }] },
+      },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline(
+      {
+        id: "pr",
+        on: prTrigger,
+        repo: "inngest/inngest-js",
+        check: false,
+      },
+      async () => {
+        await install();
+      },
+    );
+
+    const warm = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/cache-warm/install";
+    });
+
+    expect(warm).toBeDefined();
+
+    if (!warm) {
+      return;
+    }
+
+    const warmed = await runFunction(warm, {
+      event: { name: "inngest/scheduled.timer", data: {} },
+      runId: "01WARM",
+    });
+
+    expect(warmed.type).toBe("function-resolved");
+    expect(warmed.stepIds).toContain("github › repo:resolve");
+
+    const pr = await runFunction(pipeline, { event: prEvent, runId: "01PR" });
+
+    expect(pr.type).toBe("function-resolved");
+
+    const installs = api.commands.filter((argv) => {
+      return argv.join(" ") === "pnpm install";
+    });
+
+    expect(installs).toHaveLength(1);
+  });
+
   test("a comment run gets its pull request's head commit", async () => {
     const { ci, gh } = setupGitHub();
 

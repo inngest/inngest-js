@@ -57,9 +57,18 @@ Calling a job runs it every time you call it. Starting `from` a job builds it in
 
 A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
 
+`warm` builds a cached job on your triggers, so no run waits on a cold build. A warm run does nothing when the cache already hits.
+
 ```ts
 const base = ci.job(
-  { id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } },
+  {
+    id: "base",
+    cache: {
+      key: files("images/node-base/**"),
+      maxAge: "1d",
+      warm: [github.push({ branches: ["main"] }), { cron: "0 3 * * *" }],
+    },
+  },
   async () => {
     await checkout();
     await $`pnpm install`;
