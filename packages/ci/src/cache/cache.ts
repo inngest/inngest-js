@@ -10,6 +10,7 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
 import { ciRun, shorten } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
@@ -136,6 +137,10 @@ const resolveFilesPart = async (
     return hashLocalFiles(repo.local.path, part.patterns);
   }
 
+  if (!repo && run.build?.resolve) {
+    throw new NonRetriableError(noDeployedRepo(run, "`files()`"));
+  }
+
   if (!repo) {
     return `files:${part.patterns.join(",")}`;
   }
@@ -177,6 +182,16 @@ const resolveFilesPart = async (
       })
       .join("\n"),
   );
+};
+
+/**
+ * Why a job another app asked for can't read its repository: the deployment
+ * didn't say which it came from.
+ */
+export const noDeployedRepo = (run: CiRunScope, what: string): string => {
+  const job = run.build?.resolve?.job ?? "this job";
+
+  return `\`${run.ci.client.id}/${job}\` uses ${what}, but this app's deployment doesn't say which repository it came from. Deploy it from a host that sets git variables (Vercel, Netlify, Render, Railway, GitHub Actions) or from a git checkout.`;
 };
 
 /**

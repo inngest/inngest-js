@@ -5,6 +5,8 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
+import { noDeployedRepo } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
@@ -81,6 +83,10 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
   const local =
     repo?.local && process.env.INNGEST_CI_GITHUB !== "live" ? repo.local : null;
+
+  if (!local && !repo && run.build?.resolve) {
+    throw new NonRetriableError(noDeployedRepo(run, "`checkout()`"));
+  }
 
   if (!local && !repo) {
     throw new CiUsageError(
