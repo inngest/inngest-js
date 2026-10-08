@@ -308,6 +308,66 @@ export const formatDuration = (ms: number): string => {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 };
 
+/** Fixed wording for the Sandbox errors that are worth naming. */
+const codeReasons = new Map([
+  ["cloud_login_required", "not logged in to Inngest"],
+  ["environment_required", "no Inngest environment selected"],
+  ["access_denied", "Sandboxes not enabled for your account"],
+  ["sandbox_start_failed", "machine failed to start"],
+]);
+
+/**
+ * A failure reason short enough for a narrow column or a check title. Known
+ * Sandbox errors get fixed wording, matched by `code` (or the cause's);
+ * anything else is its first non-empty line without an `Error:` style prefix
+ * or trailing period, capped at 60 characters. No message gives an empty
+ * string.
+ */
+export const shortReason = (error: unknown): string => {
+  const { code, message, cause } = (error ?? {}) as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string };
+  };
+  const text = typeof message === "string" ? message : "";
+  const codes = [code, cause?.code];
+
+  const known = codes
+    .map((candidate) => {
+      return codeReasons.get(String(candidate));
+    })
+    .find(Boolean);
+
+  if (known) {
+    return known;
+  }
+
+  if (
+    codes.includes("sandbox_start_timed_out") ||
+    /did not reach RUNNING/i.test(text)
+  ) {
+    const ms = Number(/within (\d+) milliseconds/i.exec(text)?.[1]);
+
+    if (!Number.isFinite(ms)) {
+      return "machine didn't start";
+    }
+
+    const waited = ms % 60_000 === 0 ? `${ms / 60_000}m` : formatDuration(ms);
+
+    return `machine didn't start in ${waited}`;
+  }
+
+  const first = text.split("\n").find((part) => {
+    return part.trim();
+  });
+  const line = (first ?? "")
+    .trim()
+    .replace(/^(?:\w*Error:\s*)+/, "")
+    .replace(/\.$/, "");
+
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+};
+
 /**
  * Relative time for check summaries, like "5h ago".
  */
