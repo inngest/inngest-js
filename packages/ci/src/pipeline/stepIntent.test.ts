@@ -56,7 +56,11 @@ type Metadata = Awaited<ReturnType<typeof runFunction>>["metadata"];
 /** A step's own metadata values, by the step's ID. */
 const stepValues = (metadata: Metadata, step: string) => {
   return metadata.find((update) => {
-    return update.step === step && update.scope === "step";
+    return (
+      update.step === step &&
+      update.scope === "step" &&
+      update.kind !== "inngest.warnings"
+    );
   })?.values;
 };
 

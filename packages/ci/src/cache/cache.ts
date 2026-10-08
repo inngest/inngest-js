@@ -10,7 +10,7 @@
  * @module
  */
 
-import { ciRun, shorten } from "../pipeline/metadata.ts";
+import { ciRun, shorten, warnStep } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
@@ -625,9 +625,27 @@ export const lookupParent = async (
 
       note.outcome(lookupOutcome(hit));
 
+      if (!hit) {
+        await warnStep(
+          run,
+          "ci.justInTime",
+          `\`${config.id}\` wasn't cached for these inputs, so it was built while this job waited. Add \`cache.warm\` to build it ahead of time.`,
+        );
+      }
+
       return { target, hit: hit ?? null };
     },
   );
+
+  // From the memoized result, so a replay says it too, once per parent however
+  // many jobs start from it.
+  if (config.cache && !found.hit) {
+    const line = `built just in time: \`${config.id}\` (add \`cache.warm\` to build it ahead of time)`;
+
+    if (!run.warnings.includes(line)) {
+      run.warnings.push(line);
+    }
+  }
 
   return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
 };

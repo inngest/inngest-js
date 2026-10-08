@@ -1873,7 +1873,9 @@ describe("cache", () => {
     );
 
     expect(result.type).toBe("function-resolved");
-    expect(result.data).toEqual([]);
+    expect(result.data).toEqual([
+      "built just in time: `base` (add `cache.warm` to build it ahead of time)",
+    ]);
 
     const [winner, ...others] = [...api.snapshots.values()];
 
