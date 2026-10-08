@@ -1,6 +1,6 @@
 /**
  * End-to-end tests of pipelines, jobs, machines, caching and reporting,
- driven through the fake sandbox API.
+ * driven through the fake sandbox API.
  *
  * @module
  */
