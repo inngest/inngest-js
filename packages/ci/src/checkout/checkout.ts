@@ -7,16 +7,23 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
-import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
+import type {
+  CiJobScope,
+  CiRunScope,
+  MachineHandle,
+} from "../pipeline/scope.ts";
 import {
   countApi,
   defaultCwd,
+  recordTiming,
   requireJobScope,
   scopeSeparator,
 } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
-import { shellEscape } from "../util.ts";
-import { buildWorkingTreeTarball } from "./tarball.ts";
+import { errorMessage, formatBytes, shellEscape } from "../util.ts";
+import { buildTarball, buildWorkingTreeTarball } from "./tarball.ts";
+import type { TreeDelta } from "./tree.ts";
+import { treeDelta, workingTreeId } from "./tree.ts";
 
 /** Uploads are limited to 100 MiB, so a local checkout has an upper bound. */
 const maxUploadBytes = 100 * 1024 * 1024;
@@ -61,8 +68,10 @@ interface CheckoutOptions {
  *
  * Locally, it uploads your working tree, including uncommitted changes, so
  * there's nothing to push before running a pipeline. Over an existing local
- * checkout the files are extracted on top, so files deleted locally since can
- * linger on the machine. Against GitHub, it clones
+ * checkout it uploads only what changed since the machine's recorded tree and
+ * removes the files deleted since. Only when that tree is unknown does it
+ * extract everything on top, so files deleted since an earlier upload can
+ * linger. Against GitHub, it clones
  * the commit that triggered the run with a short-lived installation token that
  * never leaves the step handler, so it's never in step input, step output, or
  * the trace.
@@ -87,14 +96,20 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     );
   }
 
+  if (local) {
+    await checkoutLocal(scope, local.path, target);
+
+    scope.cwd ??= target;
+
+    return;
+  }
+
   const machine = await ensureMachine(scope);
   const stepId = `${scope.path}${scopeSeparator}checkout`;
 
-  await run.step.run({ id: stepId, name: stepId }, async () => {
-    if (local) {
-      return uploadWorkingTree(run, machine, local.path, target);
-    }
+  run.ci.hooks.activity(run, scope.jobPath, "cloning repository…");
 
+  await run.step.run({ id: stepId, name: stepId }, async () => {
     return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
   });
 
@@ -111,22 +126,147 @@ const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
   return sandbox;
 };
 
+/** What a local `checkout()` did, as the step's output. */
+interface LocalCheckoutResult {
+  path: string;
+  source: "local";
+  /** `unchanged`: nothing to upload. `delta`: only what changed. `full`: everything. */
+  mode: "unchanged" | "delta" | "full";
+  /** The git tree ID the machine now has, when it could be worked out. */
+  treeId?: string;
+  /** Why a delta wasn't used, when it would have been. */
+  fallback?: string;
+  /** Files uploaded. */
+  files: number;
+  /** Files removed on the machine. */
+  removed: number;
+  /** Bytes of the uploaded tar. */
+  bytes: number;
+  /** Hashing the tree and diffing it. */
+  hashMs: number;
+  /** Building the tar. */
+  tarMs: number;
+  /** Uploading it and unpacking it. */
+  uploadMs: number;
+}
+
+/** Past this many bytes of paths, removing files can't go in one command. */
+const maxRemoveArgBytes = 64 * 1024;
+
+/**
+ * `checkout()` of the local working tree. The machine may already have most
+ * of it, from the snapshot it started from, so only what changed is uploaded.
+ *
+ * We tried layer snapshots (upload a large change once, snapshot it, and let
+ * the other jobs in the run start from that) and removed them. Measured on the
+ * Dev Server with a 38 MB tree: a full upload took ~22s (~1.6 MB/s, limited by
+ * upload bandwidth, so parallel uploads share it); a snapshot took ~16s to be
+ * READY whatever the change size, because it captures the whole machine
+ * (memory and disk); starting from one took ~1.4s; a delta of a typical edit
+ * took ~2s. A layer only pays off when (jobs sharing the change - 1) x upload
+ * time exceeds ~16s: many jobs, large changes or slow uplinks. Typical edits
+ * are tiny deltas.
+ *
+ * Revisit when Sandboxes support cheap incremental snapshots, meaning a small
+ * layer on top of an existing snapshot that is quick to create and to share.
+ * Then snapshotting after `checkout()` (and similar automatic layers) would
+ * speed up every job, and should be reconsidered.
+ */
+const checkoutLocal = async (
+  scope: CiJobScope,
+  localPath: string,
+  target: string,
+): Promise<void> => {
+  const { run } = scope;
+  const stepId = `${scope.path}${scopeSeparator}checkout`;
+  const machine = await ensureMachine(scope);
+
+  run.ci.hooks.activity(run, scope.jobPath, "checking working tree…");
+
+  const result = (await run.step.run({ id: stepId, name: stepId }, async () => {
+    return uploadWorkingTree(scope, machine, localPath, target);
+  })) as LocalCheckoutResult;
+
+  machine.treeId = result.treeId;
+
+  if (result.mode !== "unchanged") {
+    recordTiming(run, {
+      kind: result.mode === "delta" ? "delta" : "upload",
+      path: scope.path,
+      durationMs: result.hashMs + result.tarMs + result.uploadMs,
+      bytes: result.bytes,
+    });
+  }
+};
+
 const uploadWorkingTree = async (
-  run: CiRunScope,
+  scope: CiJobScope,
   machine: MachineHandle,
   localPath: string,
   target: string,
-) => {
-  const tarball = await buildWorkingTreeTarball(localPath);
+): Promise<LocalCheckoutResult> => {
+  const { run } = scope;
+  const hashing = Date.now();
+  const treeId = await workingTreeId(localPath);
+  const had = machine.treeId;
 
-  if (tarball.byteLength > maxUploadBytes) {
-    throw new CiUsageError(
-      `The working tree is ${Math.round(tarball.byteLength / 1024 / 1024)} MiB, and uploads are limited to 100 MiB. Trim it, or use a GitHub checkout.`,
-    );
+  const base = { path: target, source: "local" as const };
+  const none = { files: 0, removed: 0, bytes: 0, tarMs: 0, uploadMs: 0 };
+
+  if (treeId && had === treeId) {
+    run.ci.hooks.activity(run, scope.jobPath, "working tree unchanged");
+
+    return {
+      ...base,
+      mode: "unchanged",
+      treeId,
+      ...none,
+      hashMs: Date.now() - hashing,
+    };
   }
 
-  const sandbox = await getSandbox(run, machine);
+  let fallback: string | undefined;
 
+  if (treeId && had) {
+    const delta = await treeDelta(localPath, had, treeId);
+    const hashMs = Date.now() - hashing;
+
+    if (!delta) {
+      fallback = "the machine's tree isn't known here";
+    } else {
+      try {
+        return await uploadDelta(scope, machine, localPath, target, {
+          delta,
+          treeId,
+          hashMs,
+        });
+      } catch (error) {
+        // Part of the change may be on the machine now, so nothing is
+        // assumed about it until the full upload has replaced it.
+        machine.treeId = undefined;
+
+        fallback = `the changes wouldn't apply (${errorMessage(error)})`;
+
+        run.logger?.debug?.({ fallback }, "uploading the whole working tree");
+      }
+    }
+  } else if (treeId) {
+    fallback = "the machine has no known tree";
+  }
+
+  return uploadFull(scope, machine, localPath, target, {
+    ...(treeId ? { treeId } : {}),
+    ...(fallback ? { fallback } : {}),
+    hashMs: Date.now() - hashing,
+  });
+};
+
+/** Put a tar in `target` and unpack it there. */
+const sendTarball = async (
+  sandbox: Awaited<ReturnType<typeof getSandbox>>,
+  target: string,
+  tarball: Uint8Array,
+): Promise<void> => {
   await sandbox.commands.run(["/bin/mkdir", "-p", target]);
 
   await sandbox.files.upload({
@@ -134,15 +274,150 @@ const uploadWorkingTree = async (
     data: new Blob([new Uint8Array(tarball)]),
   });
 
-  await sandbox.commands.run(["/bin/tar", "-xf", ".inngest-ci-source.tar"], {
-    cwd: target,
-  });
+  const unpacked = await sandbox.commands.run(
+    ["/bin/tar", "-xf", ".inngest-ci-source.tar"],
+    { cwd: target },
+  );
 
   await sandbox.commands.run(["/bin/rm", "-f", ".inngest-ci-source.tar"], {
     cwd: target,
   });
 
-  return { path: target, source: "local" as const };
+  if (unpacked.exitCode !== 0) {
+    throw new Error(`tar exited with ${unpacked.exitCode}`);
+  }
+};
+
+const uploadFull = async (
+  scope: CiJobScope,
+  machine: MachineHandle,
+  localPath: string,
+  target: string,
+  known: { treeId?: string; fallback?: string; hashMs: number },
+): Promise<LocalCheckoutResult> => {
+  const { run } = scope;
+  const building = Date.now();
+  const tarball = await buildWorkingTreeTarball(localPath);
+  const tarMs = Date.now() - building;
+
+  if (tarball.byteLength > maxUploadBytes) {
+    throw new CiUsageError(
+      `The working tree is ${Math.round(tarball.byteLength / 1024 / 1024)} MiB, and uploads are limited to 100 MiB. Trim it, or use a GitHub checkout.`,
+    );
+  }
+
+  run.ci.hooks.activity(
+    run,
+    scope.jobPath,
+    `uploading working tree (${formatBytes(tarball.byteLength)})…`,
+  );
+
+  const uploading = Date.now();
+  const sandbox = await getSandbox(run, machine);
+
+  machine.treeId = undefined;
+
+  await sendTarball(sandbox, target, tarball);
+
+  machine.treeId = known.treeId;
+
+  return {
+    path: target,
+    source: "local",
+    mode: "full",
+    ...(known.treeId ? { treeId: known.treeId } : {}),
+    ...(known.fallback ? { fallback: known.fallback } : {}),
+    files: 0,
+    removed: 0,
+    bytes: tarball.byteLength,
+    hashMs: known.hashMs,
+    tarMs,
+    uploadMs: Date.now() - uploading,
+  };
+};
+
+/**
+ * Bring the machine from the tree it has to the one in the working tree:
+ * remove what's gone, then unpack a tar of what was added or modified.
+ *
+ * Nothing re-hashes the machine afterwards, since it has no git to do it
+ * with: the result is only as right as the diff and the machine's tree ID.
+ */
+const uploadDelta = async (
+  scope: CiJobScope,
+  machine: MachineHandle,
+  localPath: string,
+  target: string,
+  known: { delta: TreeDelta; treeId: string; hashMs: number },
+): Promise<LocalCheckoutResult> => {
+  const { run } = scope;
+  const { delta } = known;
+
+  const removeBytes = delta.deleted.reduce((sum, path) => {
+    return sum + path.length + 1;
+  }, 0);
+
+  if (removeBytes > maxRemoveArgBytes) {
+    throw new Error(`${delta.deleted.length} files to remove`);
+  }
+
+  const building = Date.now();
+  const tarball = await buildTarball(localPath, delta.changed);
+  const tarMs = Date.now() - building;
+
+  if (tarball.byteLength > maxUploadBytes) {
+    throw new CiUsageError(
+      `The changes are ${Math.round(tarball.byteLength / 1024 / 1024)} MiB, and uploads are limited to 100 MiB. Trim them, or use a GitHub checkout.`,
+    );
+  }
+
+  const removed =
+    delta.deleted.length > 0 ? ` · ${delta.deleted.length} removed` : "";
+
+  run.ci.hooks.activity(
+    run,
+    scope.jobPath,
+    `uploading changes (${delta.changed.length} ${delta.changed.length === 1 ? "file" : "files"}, ${formatBytes(tarball.byteLength)}${removed})…`,
+  );
+
+  const uploading = Date.now();
+  const sandbox = await getSandbox(run, machine);
+
+  machine.treeId = undefined;
+
+  if (delta.deleted.length > 0) {
+    const removal = await sandbox.commands.run([
+      "/bin/sh",
+      "-c",
+      'cd "$1" && shift && rm -f -- "$@"',
+      "sh",
+      target,
+      ...delta.deleted,
+    ]);
+
+    if (removal.exitCode !== 0) {
+      throw new Error(`removing files exited with ${removal.exitCode}`);
+    }
+  }
+
+  if (delta.changed.length > 0) {
+    await sendTarball(sandbox, target, tarball);
+  }
+
+  machine.treeId = known.treeId;
+
+  return {
+    path: target,
+    source: "local",
+    mode: "delta",
+    treeId: known.treeId,
+    files: delta.changed.length,
+    removed: delta.deleted.length,
+    bytes: tarball.byteLength,
+    hashMs: known.hashMs,
+    tarMs,
+    uploadMs: Date.now() - uploading,
+  };
 };
 
 /**

@@ -1,7 +1,7 @@
 /**
- * What a snapshot knows about itself, kept in a file inside it: the cached
- * snapshots it was built from. Written just before
- * a machine is snapshotted, and read back when a machine starts from one.
+ * What a snapshot knows about itself, kept in a file inside it: the working
+ * tree it holds and the cached snapshots it was built from. Written just
+ * before a machine is snapshotted, and read back when a machine starts from one.
  *
  * @module
  */
@@ -20,6 +20,11 @@ export interface SnapshotParent {
 }
 
 export interface SnapshotMeta {
+  /**
+   * The git tree ID of the working tree the snapshot holds, so a job that
+   * starts from it uploads only what changed since.
+   */
+  treeId?: string;
   /**
    * Every cached snapshot up the chain this one was built from, by job ID. A
    * restore checks each is still what its job would use now.
@@ -64,6 +69,7 @@ export const parseSnapshotMeta = (stdout: string): SnapshotMeta | undefined => {
     }
 
     return {
+      ...(typeof parsed.treeId === "string" ? { treeId: parsed.treeId } : {}),
       parents:
         parsed.parents && typeof parsed.parents === "object"
           ? parsed.parents

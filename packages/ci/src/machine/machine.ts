@@ -17,7 +17,7 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
+import { defaultCwd, recordTiming, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
@@ -137,6 +137,8 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     createStepId: string,
     options: { name: string; snapshotId?: string },
   ): Promise<Started> => {
+    const began = Date.now();
+
     const sandbox = options.snapshotId
       ? await tools.create(createStepId, {
           name: options.name,
@@ -148,6 +150,14 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
         });
 
     run.sandboxes.add(sandbox.id);
+
+    if (options.snapshotId) {
+      recordTiming(run, {
+        kind: "start",
+        path: scope.path,
+        durationMs: Date.now() - began,
+      });
+    }
 
     const setup = await sandbox.commands.run(
       `${createStepId}${scopeSeparator}setup`,
@@ -262,6 +272,12 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     id: started.sandbox.id,
     parents: parentsOf(scope, started),
   };
+
+  // A machine from a snapshot has the working tree that snapshot was taken
+  // with, which is what lets `checkout()` upload only what changed since.
+  if (started.meta?.treeId) {
+    handle.treeId = started.meta.treeId;
+  }
 
   run.machines.set(scope.path, Promise.resolve(handle));
 
@@ -511,21 +527,26 @@ const createSnapshot = async (
 
   await handle.sandbox.commands.run(
     `${jobPath}${scopeSeparator}snapshot:meta`,
-    writeSnapshotMetaCommand({ parents: handle.parents }),
+    writeSnapshotMetaCommand({
+      ...(handle.treeId ? { treeId: handle.treeId } : {}),
+      parents: handle.parents,
+    }),
   );
 
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
-    if (!cache) {
-      const snapshot = await handle.sandbox.snapshot(stepId);
+    const began = Date.now();
 
-      run.createdSnapshots.add(snapshot.id);
+    const taken = await takeSnapshot(run, handle, jobPath, stepId, cache);
 
-      return snapshot.id;
-    }
+    recordTiming(run, {
+      kind: "snapshot",
+      path: jobPath,
+      durationMs: Date.now() - began,
+    });
 
-    return await createNamedSnapshot(run, handle, jobPath, stepId, cache);
+    return taken;
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;
@@ -539,6 +560,25 @@ const createSnapshot = async (
 
     return undefined;
   }
+};
+
+/** Snapshot a job's machine, under its name when the job is cached. */
+const takeSnapshot = async (
+  run: CiRunScope,
+  handle: MachineHandle,
+  jobPath: string,
+  stepId: string,
+  cache: SnapshotCache | undefined,
+): Promise<string> => {
+  if (!cache) {
+    const snapshot = await handle.sandbox.snapshot(stepId);
+
+    run.createdSnapshots.add(snapshot.id);
+
+    return snapshot.id;
+  }
+
+  return createNamedSnapshot(run, handle, jobPath, stepId, cache);
 };
 
 /**

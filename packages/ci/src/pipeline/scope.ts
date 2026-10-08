@@ -56,6 +56,23 @@ export interface MachineHandle {
    * its own snapshot records so a restore can check they are still current.
    */
   parents: Record<string, SnapshotParent>;
+  /**
+   * The git tree ID of the working tree this machine has, from its last local
+   * `checkout()` or the snapshot it started from. A later `checkout()` uploads
+   * only what changed since.
+   */
+  treeId?: string;
+}
+
+/** How long a slow step took, for the run's timing summary. */
+export interface StepTiming {
+  /** What was timed: `upload`, `delta`, `snapshot`, `start`. */
+  kind: string;
+  /** The job that waited on it. */
+  path: string;
+  durationMs: number;
+  /** Bytes moved, for an upload. */
+  bytes?: number;
 }
 
 export interface JobSummary {
@@ -158,6 +175,8 @@ export interface CiRunScope {
    * from here, and one it only restored is never added.
    */
   createdSnapshots: Set<string>;
+  /** How long the slow steps took, in the order they finished. */
+  timings: StepTiming[];
   /** Cached snapshots found or taken this run, keyed by job path. */
   cachedSnapshots: Map<string, CachedSnapshot>;
   /** Sandbox IDs created in this run, for cleanup. */
@@ -198,6 +217,8 @@ export interface CiRunScope {
   counters: Map<string, number>;
   /** Set when snapshots turned out to be unavailable, so `from()` fell back. */
   snapshotsUnavailable: boolean;
+  /** The run's logger, which writes into the trace. */
+  logger?: { debug?: (...args: unknown[]) => void };
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
   /** The run's changed files, resolved once. */
@@ -317,6 +338,15 @@ export const countApi = (api: ApiName): void => {
   if (run) {
     run.apis[api] += 1;
   }
+};
+
+/**
+ * Note how long a slow step took, in the run's timings and its debug log.
+ */
+export const recordTiming = (run: CiRunScope, timing: StepTiming): void => {
+  run.timings.push(timing);
+
+  run.logger?.debug?.({ timing }, `${timing.kind} took ${timing.durationMs}ms`);
 };
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {
