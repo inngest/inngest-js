@@ -69,7 +69,7 @@ import {
  * `group.parallel({ mode: "race" })`, but that stops steps running inline and
  * added a 15-20s gap between a job's steps on a real run.
  */
-const pipelineFunctionOptions = { optimizeParallelism: false } as const;
+export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
 
 export const definePipeline = ({
   client,
