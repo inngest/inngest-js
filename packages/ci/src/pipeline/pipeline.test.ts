@@ -1229,7 +1229,7 @@ describe("from", () => {
     expect(() => {
       ci.job({ id: "child", from: "parent" as unknown as Job }, async () => {});
     }).toThrow(
-      'The `from` of job "child" must name a job, or a job with input from `job.with(input)`.',
+      'The `from` of job "child" must name a job, a job with input from `job.with(input)`, or an image.',
     );
 
     expect(() => {
@@ -3882,6 +3882,7 @@ describe("base images", () => {
       name,
       status: "READY",
       sandboxId: "00000000-0000-4000-8000-0000000000aa",
+      files: new Map(),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     });
