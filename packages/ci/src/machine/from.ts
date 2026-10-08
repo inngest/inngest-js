@@ -28,8 +28,9 @@ import { snapshotJob } from "./machine.ts";
  * parent reuses it across runs.
  *
  * The snapshot behind the copy is deleted when the pipeline run ends, unless
- * the parent is cached (the cache keeps it for later runs) or fails with
- * `keepOnFailure`.
+ * the parent is cached (the cache keeps it under its name for later runs) or
+ * fails with `keepOnFailure`. A cached snapshot that is stale, or won't start,
+ * is deleted, and the job re-runs the parent on its own machine instead.
  *
  * ```ts
  * const setup = ci.job("setup", async () => {
@@ -65,7 +66,8 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
   countApi("from");
 
-  if (scope.machine || scope.fromCalled) {
+  // While a parent re-runs on this job's machine, the machine exists already.
+  if ((scope.machine && !scope.restoringFallback) || scope.fromCalled) {
     throw new CiUsageError(
       "`from()` must come before this job's first command, and can only be called once.",
     );
@@ -76,6 +78,14 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
   scope.fromJobIds.push(job.id);
 
   scope.run.ci.hooks.jobFrom(scope, job.id);
+
+  // This job's machine already has a snapshot's worth of work to catch up on,
+  // so the parent's own parent is re-run here too, not started from.
+  if (scope.restoringFallback) {
+    await rerunOnThisMachine(scope, job, input);
+
+    return;
+  }
 
   const children = scope.run.fromChildren.get(job.id) ?? new Set<string>();
 
@@ -89,13 +99,19 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
   await joinJob({ id: job.id, input });
 
   const snapshotId = await snapshotJob(scope.run, job.id);
+  const cached = scope.run.cachedSnapshots.get(job.id);
 
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
-  } else if (
-    scope.run.machines.has(job.id) ||
-    scope.run.cacheEntries.has(job.id)
-  ) {
+
+    if (cached?.snapshotId === snapshotId) {
+      scope.fromCached[job.id] = cached;
+    }
+
+    scope.rebuildParent = () => {
+      return rerunOnThisMachine(scope, job, input);
+    };
+  } else if (scope.run.machines.has(job.id) || cached) {
     await rerunOnThisMachine(scope, job, input);
   }
 }

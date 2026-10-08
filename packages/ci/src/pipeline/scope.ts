@@ -8,9 +8,10 @@
 import type { GetStepTools, Inngest } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
+import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { SnapshotParent } from "../machine/snapshotMeta.ts";
 import type {
-  CacheEntry,
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
@@ -50,6 +51,11 @@ export interface MachineHandle {
    * ambiguous start never adopts one of them.
    */
   claimedProcessIds?: Set<string>;
+  /**
+   * The cached snapshots this machine was built from, all the way up, which
+   * its own snapshot records so a restore can check they are still current.
+   */
+  parents: Record<string, SnapshotParent>;
 }
 
 export interface JobSummary {
@@ -73,8 +79,6 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  // biome-ignore lint/suspicious/noExplicitAny: CacheStore
-  cacheStore: any;
   /** Every job defined on the client, so a cache key can look up its parents. */
   jobs: Map<
     string,
@@ -154,8 +158,8 @@ export interface CiRunScope {
    * from here, and one it only restored is never added.
    */
   createdSnapshots: Set<string>;
-  /** Cache entries resolved this run, keyed by job path. */
-  cacheEntries: Map<string, CacheEntry | undefined>;
+  /** Cached snapshots found or taken this run, keyed by job path. */
+  cachedSnapshots: Map<string, CachedSnapshot>;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
@@ -215,6 +219,21 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
+  /** The cached snapshot each `from()` parent gave, by job ID. */
+  fromCached: Record<string, CachedSnapshot>;
+  /** Re-runs the `from()` parent on this job's machine. Set by `from()`. */
+  rebuildParent?: () => Promise<void>;
+  /**
+   * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
+   * has to be brought to where the snapshot would have been.
+   */
+  restoreFallback?: () => Promise<void>;
+  /** What the job's first machine is for, shown while it starts. */
+  startNote?: string;
+  /** Set while `restoreFallback` runs, whose own commands must not wait on it. */
+  restoringFallback?: boolean;
+  /** The one run of `restoreFallback`, shared by concurrent first commands. */
+  fallbackRan?: Promise<void>;
   fromCalled: boolean;
   fromJobIds: string[];
   /** The input each `from()` parent was called with, by job ID. */
