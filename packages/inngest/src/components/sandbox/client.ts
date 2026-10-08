@@ -19,6 +19,7 @@ import {
   type SandboxRef,
   type SandboxSnapshot,
   type SandboxSnapshotCloneOptions,
+  type SandboxSnapshotCreateOptions,
   type SandboxSnapshotListResult,
   type SandboxSnapshotRef,
   type SandboxStatus,
@@ -1066,10 +1067,10 @@ const createDirectSandboxFacade = (
       );
     },
     snapshot: async (options = {}, waitOptions) => {
-      normalizeSandboxSnapshotCreateOptions(options);
       const initial = await createSandboxSnapshot(
         transport,
         ref.id,
+        options,
         waitOptions?.signal,
       );
       const ready = await waitUntilSandboxSnapshotReady(
@@ -1210,13 +1211,17 @@ const getSnapshotForOperation = async (
 const createSandboxSnapshot = async (
   transport: SandboxRestTransport,
   sandboxId: string,
+  options: SandboxSnapshotCreateOptions,
   signal?: AbortSignal,
 ): Promise<SandboxSnapshotRef> => {
+  const { name } = normalizeSandboxSnapshotCreateOptions(options);
   const { status, envelope } = await transport.json(
     "snapshot.create",
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
+      // Unnamed creates send no body at all, not even `{}`.
+      ...(name !== undefined && { body: { name } }),
       statuses: [201, 202],
       sandboxId,
       signal,
@@ -1242,6 +1247,9 @@ const listSandboxSnapshots = async (
   const query = new URLSearchParams({ limit: `${normalized.limit}` });
   if (normalized.cursor !== undefined) {
     query.set("cursor", normalized.cursor);
+  }
+  if (normalized.name !== undefined) {
+    query.set("name", normalized.name);
   }
   const { envelope } = await transport.json(
     "snapshot.list",
@@ -1274,8 +1282,9 @@ const listSandboxSnapshots = async (
 export const createSandboxSnapshotForOperation = async (
   client: SandboxClient,
   sandboxId: string,
+  options: SandboxSnapshotCreateOptions,
 ): Promise<SandboxSnapshotRef> =>
-  createSandboxSnapshot(transportForClient(client), sandboxId);
+  createSandboxSnapshot(transportForClient(client), sandboxId, options);
 
 export const listSandboxSnapshotsForOperation = async (
   client: SandboxClient,
