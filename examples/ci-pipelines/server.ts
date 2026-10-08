@@ -2,8 +2,8 @@ import { createServer } from "node:http";
 
 import { serve } from "inngest/node";
 
-import { ci, inngest } from "./ci/client.ts";
-import "./ci/pipelines.ts";
+import { inngest } from "./ci/client.ts";
+import { ci } from "./ci/index.ts";
 
 const port = Number(process.env.PORT ?? 3939);
 
