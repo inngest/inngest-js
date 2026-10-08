@@ -61,8 +61,8 @@ import {
 } from "./scope.ts";
 
 /**
- * Options for every function that runs a pipeline: pipelines, cache builds,
- * refreshes and local single-job runs.
+ * Options for every function that runs a pipeline: pipelines, cache builds and
+ * refreshes.
  *
  * With parallelism optimized, the executor waits for every step in a parallel
  * batch before it calls the function again, so a slow step in one job holds
@@ -86,7 +86,6 @@ export const definePipeline = ({
 }): {
   fn: InngestFunction.Any;
   config: PipelineConfig;
-  triggers: CiTrigger[];
   generated: InngestFunction.Any[];
 } => {
   const triggers = flattenTriggers(rawConfig.on);
@@ -142,7 +141,6 @@ export const definePipeline = ({
   return {
     fn,
     config,
-    triggers,
     generated: generatedFunctions({ client, config }),
   };
 };
