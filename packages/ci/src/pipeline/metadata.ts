@@ -11,6 +11,7 @@
 import { getAsyncCtx } from "inngest/experimental";
 import type { CheckConclusion } from "../types.ts";
 import { version } from "../version.ts";
+import { ciStep, traceName } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 import { apiNames } from "./scope.ts";
 
@@ -149,7 +150,7 @@ export const metadataStep = (
   id: string,
   runValues: () => Record<string, unknown>,
 ): Promise<number> => {
-  return run.step.run({ id, name: id }, async () => {
+  return run.step.run(ciStep(id, traceName.recordRunDetails), async () => {
     await tagStep(run, undefined, runValues());
 
     return Date.now();

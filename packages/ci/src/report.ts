@@ -4,6 +4,7 @@
  * @module
  */
 
+import { traceName } from "./pipeline/names.ts";
 import {
   countApi,
   getJobScope,
@@ -43,7 +44,7 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:summary");
 
-    await run.step.run({ id, name: id }, () => {
+    await run.step.run({ id, name: traceName.addSummary }, () => {
       return {
         length: markdown.length,
       };
@@ -94,7 +95,7 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:annotate");
 
-    await run.step.run({ id, name: id }, () => {
+    await run.step.run({ id, name: traceName.addAnnotations }, () => {
       return {
         count: valid.length,
       };

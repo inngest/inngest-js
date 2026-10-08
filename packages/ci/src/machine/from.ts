@@ -20,6 +20,7 @@ import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
   jobHandlerKey,
+  outsideJobs,
   rebuildSuffix,
   requireJobScope,
 } from "../pipeline/scope.ts";
@@ -210,7 +211,7 @@ const requestBuild = ({
     return existing;
   }
 
-  const built = (async () => {
+  const built = outsideJobs(run, async () => {
     // Every child that asked has just looked the snapshot up itself, so the
     // build function is the only guard left against a build that raced it.
     const result =
@@ -230,7 +231,7 @@ const requestBuild = ({
     adoptBuilt(run, result);
 
     return result;
-  })();
+  });
 
   run.builds.set(path, built);
 

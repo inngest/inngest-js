@@ -26,9 +26,11 @@ import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { tagStep } from "./metadata.ts";
+import { ciStep, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import {
   getRunScope,
+  inJobSpan,
   jobHandlerKey,
   matrixOriginOf,
   rootRunIdOf,
@@ -202,10 +204,11 @@ export const invokeBuild = async ({
   let output: CacheBuildResult | null;
 
   try {
-    const buildStepId = `${stepPath}${scopeSeparator}build`;
-
     output = (await run.step.invoke(
-      { id: buildStepId, name: buildStepId },
+      ciStep(
+        `${stepPath}${scopeSeparator}build`,
+        traceName.buildInOwnRun(path),
+      ),
       { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {
@@ -329,7 +332,16 @@ export const validateInput = async (
   );
 };
 
-const jobBody = async ({
+/** Everything a job does is in its span. */
+const jobBody = (
+  args: RunJobArgs & { run: CiRunScope; path: string; number: number },
+): Promise<void> => {
+  return inJobSpan(args.run, args.path, () => {
+    return jobSteps(args);
+  });
+};
+
+const jobSteps = async ({
   run,
   config,
   handler,
@@ -419,7 +431,12 @@ const jobBody = async ({
   const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
   const startedAt =
     checkStartedAt ??
-    (await durableNow(run, `start:${scope.path}`, scope.path));
+    (await durableNow(
+      run,
+      `start:${scope.path}`,
+      traceName.recordStartTime,
+      scope.path,
+    ));
 
   if (checked) {
     run.openChecks.set(scope.path, checkName);
@@ -484,7 +501,13 @@ const jobBody = async ({
     }
 
     const endedAt =
-      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+      checkEndedAt ??
+      (await durableNow(
+        run,
+        `end:${scope.path}`,
+        traceName.recordEndTime,
+        scope.path,
+      ));
     const durationMs = endedAt - startedAt;
 
     run.summaries.push({
@@ -528,7 +551,13 @@ const jobBody = async ({
     }
 
     const endedAt =
-      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+      checkEndedAt ??
+      (await durableNow(
+        run,
+        `end:${scope.path}`,
+        traceName.recordEndTime,
+        scope.path,
+      ));
 
     run.summaries.push({
       path: scope.path,
@@ -549,9 +578,10 @@ const jobBody = async ({
 const durableNow = (
   run: CiRunScope,
   id: string,
+  name: string,
   jobPath: string,
 ): Promise<number> => {
-  return run.step.run({ id, name: id }, async () => {
+  return run.step.run(ciStep(id, name), async () => {
     await tagStep(run, { kind: "job", job: jobPath });
 
     return Date.now();

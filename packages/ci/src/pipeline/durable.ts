@@ -178,7 +178,8 @@ const call = async (
   // inside the handler; that's how the call knows which repository it's for.
   const step = getRunScope()?.step ?? execution.ctx.step;
 
-  return step.run({ id, name: overrides.name ?? id }, invoke);
+  // Named by the method called, without the job path or count in its ID.
+  return step.run({ id, name: overrides.name ?? label }, invoke);
 };
 
 const invokeOnClient = async (
