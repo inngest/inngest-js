@@ -1,6 +1,6 @@
 /**
  * Small shared helpers: hashing, durations, glob matching, formatting,
- * warn-once and running local git.
+ * and running local git.
  *
  * @module
  */
@@ -179,6 +179,15 @@ export const filterPaths = (
   });
 };
 
+const msPerUnit: Record<string, number> = {
+  ms: 1,
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+
 /**
  * Parse a duration string like `"10m"` into milliseconds. Only the small
  * subset CI uses is supported, because these are written by hand in pipelines.
@@ -192,38 +201,10 @@ export const durationToMs = (duration: string): number => {
     );
   }
 
-  const matches = duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g);
   let total = 0;
 
-  for (const match of matches) {
-    const value = Number(match[1]);
-
-    switch (match[2]) {
-      case "ms":
-        total += value;
-
-        break;
-      case "s":
-        total += value * 1000;
-
-        break;
-      case "m":
-        total += value * 60_000;
-
-        break;
-      case "h":
-        total += value * 3_600_000;
-
-        break;
-      case "d":
-        total += value * 86_400_000;
-
-        break;
-      case "w":
-        total += value * 604_800_000;
-
-        break;
-    }
+  for (const match of duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g)) {
+    total += Number(match[1]) * (msPerUnit[match[2] as string] as number);
   }
 
   return total;
@@ -260,17 +241,21 @@ export const stableStringify = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
+const hasErrorCode = (error: unknown, code: string): boolean => {
+  const { code: own, cause } = (error ?? {}) as {
+    code?: string;
+    cause?: { code?: string };
+  };
+
+  return own === code || cause?.code === code;
+};
+
 /**
  * Whether the Sandbox API said the machine doesn't exist, which is the only
  * failure cleanup may ignore.
  */
 export const isSandboxNotFound = (error: unknown): boolean => {
-  const code = (error as { code?: string } | undefined)?.code;
-
-  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
-    ?.code;
-
-  return code === "sandbox_not_found" || causeCode === "sandbox_not_found";
+  return hasErrorCode(error, "sandbox_not_found");
 };
 
 /**
@@ -278,15 +263,7 @@ export const isSandboxNotFound = (error: unknown): boolean => {
  * deleting one that is already gone.
  */
 export const isSnapshotNotFound = (error: unknown): boolean => {
-  const code = (error as { code?: string } | undefined)?.code;
-
-  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
-    ?.code;
-
-  return (
-    code === "sandbox_snapshot_not_found" ||
-    causeCode === "sandbox_snapshot_not_found"
-  );
+  return hasErrorCode(error, "sandbox_snapshot_not_found");
 };
 
 /**
@@ -330,27 +307,6 @@ export const formatRelative = (from: string, now = Date.now()): string => {
   }
 
   return `${Math.floor(hours / 24)}d ago`;
-};
-
-const warned = new Set<string>();
-
-/**
- * Warn at most once per key, so a deprecated option in a loop doesn't fill the
- * logs.
- */
-export const warnOnce = (
-  // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
-  logger: { warn: (...args: any[]) => void } | undefined,
-  key: string,
-  message: string,
-): void => {
-  if (warned.has(key)) {
-    return;
-  }
-
-  warned.add(key);
-
-  (logger ?? console).warn({ feature: key }, message);
 };
 
 /**
