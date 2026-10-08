@@ -7,6 +7,7 @@
 
 import { getAsyncCtx } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
+import { withNotes } from "./metadata.ts";
 import { getJobScope, getRunScope, nextStepId } from "./scope.ts";
 
 export type DurableBehaviour = "step" | "direct";
@@ -176,10 +177,23 @@ const call = async (
 
   // Inside a run, CI's own step tools are used so the scope is still there
   // inside the handler; that's how the call knows which repository it's for.
-  const step = getRunScope()?.step ?? execution.ctx.step;
+  const scope = getRunScope();
+  const step = scope?.step ?? execution.ctx.step;
 
   // Named by the method called, without the job path or count in its ID.
-  return step.run({ id, name: overrides.name ?? label }, invoke);
+  return step.run({ id, name: overrides.name ?? label }, () => {
+    return withNotes(
+      scope ?? { ci: {} },
+      { intent: `Call \`${label}\` on GitHub` },
+      async (note) => {
+        const result = await invoke();
+
+        note.outcome({ call: label });
+
+        return result;
+      },
+    );
+  });
 };
 
 const invokeOnClient = async (
