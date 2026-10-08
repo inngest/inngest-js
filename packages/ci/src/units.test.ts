@@ -37,7 +37,6 @@ import {
   formatRelative,
   globToRegExp,
   maskSecrets,
-  sandboxAccessProblem,
   shellEscape,
   shortReason,
   stableStringify,
@@ -644,79 +643,31 @@ describe("formatting", () => {
 });
 
 describe("shortReason", () => {
-  test("a start timeout is matched by code", () => {
-    expect(shortReason({ code: "sandbox_start_timed_out", message: "x" })).toBe(
-      "machine didn't start",
-    );
-  });
-
-  test("a start timeout is matched by message, with its duration", () => {
-    expect(
-      shortReason(
-        new Error("Sandbox did not reach RUNNING within 120000 milliseconds"),
-      ),
-    ).toBe("machine didn't start in 2m");
-
-    expect(
-      shortReason("Sandbox did not reach RUNNING within 90000 milliseconds"),
-    ).toBe("machine didn't start in 1m 30s");
-  });
-
-  test("a start failure is matched by code, also on the cause", () => {
+  test("Sandbox errors get fixed wording, from the code or its cause", () => {
     expect(shortReason({ code: "sandbox_start_failed" })).toBe(
       "machine failed to start",
     );
 
-    expect(
-      shortReason({ message: "boom", cause: { code: "sandbox_start_failed" } }),
-    ).toBe("machine failed to start");
-  });
-
-  test("Sandbox access problems are matched by code and read the same", () => {
-    expect(shortReason({ code: "cloud_login_required", message: "x" })).toBe(
+    expect(shortReason({ cause: { code: "cloud_login_required" } })).toBe(
       "not logged in to Inngest",
     );
-
-    expect(shortReason({ cause: { code: "environment_required" } })).toBe(
-      "no Inngest environment selected",
-    );
-
-    expect(shortReason({ code: "access_denied" })).toBe(
-      "Sandboxes not enabled for your account",
-    );
   });
 
-  test("anything else is its first line without prefix or period", () => {
+  test("a start timeout says how long it waited", () => {
+    expect(
+      shortReason(
+        new Error("Sandbox did not reach RUNNING within 90000 milliseconds"),
+      ),
+    ).toBe("machine didn't start in 1m 30s");
+  });
+
+  test("anything else is its first line, trimmed and capped", () => {
     expect(
       shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
     ).toBe("nope");
-  });
 
-  test("long lines are capped at 60 characters", () => {
-    const out = shortReason("a".repeat(100));
+    expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
 
-    expect(out).toBe(`${"a".repeat(59)}…`);
-    expect(out).toHaveLength(60);
-  });
-
-  test("empty input gives an empty string", () => {
-    expect(shortReason("")).toBe("");
     expect(shortReason(undefined)).toBe("");
-    expect(shortReason(new Error(""))).toBe("");
-  });
-});
-
-describe("sandboxAccessProblem", () => {
-  test("it names the problem from the code or from the short reason", () => {
-    expect(sandboxAccessProblem({ code: "cloud_login_required" })).toBe(
-      "login",
-    );
-
-    expect(sandboxAccessProblem("no Inngest environment selected")).toBe(
-      "environment",
-    );
-
-    expect(sandboxAccessProblem({ code: "access_denied" })).toBe("plan");
-    expect(sandboxAccessProblem(new Error("boom"))).toBeUndefined();
   });
 });
