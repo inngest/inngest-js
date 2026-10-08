@@ -309,12 +309,12 @@ export const formatDuration = (ms: number): string => {
 };
 
 /** Fixed wording for the Sandbox errors that are worth naming. */
-const codeReasons: Record<string, string> = {
-  cloud_login_required: "not logged in to Inngest",
-  environment_required: "no Inngest environment selected",
-  access_denied: "Sandboxes not enabled for your account",
-  sandbox_start_failed: "machine failed to start",
-};
+const codeReasons = new Map([
+  ["cloud_login_required", "not logged in to Inngest"],
+  ["environment_required", "no Inngest environment selected"],
+  ["access_denied", "Sandboxes not enabled for your account"],
+  ["sandbox_start_failed", "machine failed to start"],
+]);
 
 /**
  * A failure reason short enough for a narrow column or a check title. Known
@@ -330,14 +330,20 @@ export const shortReason = (error: unknown): string => {
     cause?: { code?: string };
   };
   const text = typeof message === "string" ? message : "";
-  const known = codeReasons[code ?? cause?.code ?? ""];
+  const codes = [code, cause?.code];
+
+  const known = codes
+    .map((candidate) => {
+      return codeReasons.get(String(candidate));
+    })
+    .find(Boolean);
 
   if (known) {
     return known;
   }
 
   if (
-    code === "sandbox_start_timed_out" ||
+    codes.includes("sandbox_start_timed_out") ||
     /did not reach RUNNING/i.test(text)
   ) {
     const ms = Number(/within (\d+) milliseconds/i.exec(text)?.[1]);
