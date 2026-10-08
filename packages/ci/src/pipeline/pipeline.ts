@@ -44,7 +44,8 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration, isSandboxNotFound } from "../util.ts";
+import { formatDuration } from "../util.ts";
+import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
@@ -58,7 +59,7 @@ import {
 } from "./scope.ts";
 
 /**
- * Options for every function that runs a pipeline: pipelines and cache
+ * Options for every function that runs a pipeline: pipelines, cache builds and
  * refreshes.
  *
  * With parallelism optimized, the executor waits for every step in a parallel
@@ -174,6 +175,8 @@ interface RunPipelineArgs {
   internals: CiInternals;
   config: PipelineConfig;
   handler: (ctx: PipelineContext) => Promise<unknown>;
+  /** Set when the run builds one job's cached snapshot for another run. */
+  build?: CacheBuildData;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
 }
@@ -183,14 +186,17 @@ const newRunScope = ({
   config,
   ctx,
   asyncCtx,
+  build,
 }: {
   internals: CiInternals;
   config: PipelineConfig;
+  build?: CacheBuildData;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
   asyncCtx: AsyncContext;
 }): CiRunScope => {
-  const repo = repoContextFromEvent(ctx.event);
+  // A build starts with an event of its own, so it's told the repository.
+  const repo = build?.repo ?? repoContextFromEvent(ctx.event);
   const attempt: number = ctx.attempt ?? 0;
   const retries = (config as { retries?: number }).retries ?? defaultRetries;
   const maxAttempts: number = ctx.maxAttempts ?? retries + 1;
@@ -207,13 +213,10 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     event: ctx.event,
     ...(repo ? { repo } : {}),
-    jobs: new Map(),
+    ...(build ? { build } : {}),
+    builds: new Map(),
     jobCalls: new Map(),
-    fromChildren: new Map(),
-    machines: new Map(),
-    snapshots: new Map(),
     createdSnapshots: new Set(),
-    cachedSnapshots: new Map(),
     summaries: [],
     openChecks: new Map(),
     deferredChecks: new Map(),
@@ -229,7 +232,6 @@ const newRunScope = ({
       .sandbox as DurableSandboxTools,
     asyncCtx,
     counters: new Map(),
-    snapshotsUnavailable: false,
     warnings: [],
     pipelineSummaries: [],
     pipelineAnnotations: [],
@@ -278,6 +280,7 @@ const runPipelineAttempt = async ({
   config,
   handler,
   ctx,
+  build,
 }: RunPipelineArgs): Promise<unknown> => {
   await initCiAls();
 
@@ -294,6 +297,7 @@ const runPipelineAttempt = async ({
     config,
     ctx,
     asyncCtx,
+    ...(build ? { build } : {}),
   });
   const checks = internals.checks as CheckReporter;
 
@@ -374,8 +378,6 @@ const runPipelineAttempt = async ({
     // their checks spinning. The run doesn't wait for them: one a person left
     // unawaited on purpose is cancelled by the run ending.
     await closeJobChecks(run, checks);
-
-    addSlowParentHints(run);
 
     run.ci.hooks.warnings(run);
 
@@ -736,37 +738,6 @@ const closeJobChecks = async (
   }
 };
 
-/** How long an uncached parent can take before its missing cache is worth a note. */
-const slowParentMs = 30_000;
-
-/**
- * Note each uncached job that took a while and had other jobs start `from()`
- * it, since it runs again next run. The run scope is rebuilt on every replay
- * and the durations come from memoized start and end times, so a replay adds
- * the same lines to its own fresh list, once.
- */
-const addSlowParentHints = (run: CiRunScope): void => {
-  for (const [parentId, children] of run.fromChildren) {
-    if (run.ci.jobs.get(parentId)?.config.cache) {
-      continue;
-    }
-
-    const summary = run.summaries.find((candidate) => {
-      return candidate.path === parentId;
-    });
-
-    if (!summary || summary.durationMs <= slowParentMs) {
-      continue;
-    }
-
-    const count = `${children.size} ${children.size === 1 ? "job" : "jobs"}`;
-
-    run.warnings.push(
-      `\`${parentId}\` took ${formatDuration(summary.durationMs)} and ${count} started from it. It isn't cached, so it runs again next time. To reuse it, give it a cache key: \`cache: { key: files("pnpm-lock.yaml") }\`.`,
-    );
-  }
-};
-
 const pipelineSummaryWithReports = (run: CiRunScope): string => {
   return [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
 };
@@ -883,6 +854,42 @@ const permissionForComment = (
 };
 
 /**
+ * Destroys the machines of a run of `config.id` that ended permanently, by
+ * failure or cancellation, without reaching its own cleanup step.
+ */
+export const cleanupFunction = ({
+  client,
+  config,
+}: {
+  client: Inngest.Any;
+  config: Pick<PipelineConfig, "id">;
+}): InngestFunction.Any => {
+  return client.createFunction(
+    {
+      id: `${config.id}/cleanup`,
+      triggers: [
+        {
+          event: internalEvents.FunctionFailed,
+          if: `event.data.function_id == "${client.id}-${config.id}"`,
+        },
+        {
+          event: internalEvents.FunctionCancelled,
+          if: `event.data.function_id == "${client.id}-${config.id}"`,
+        },
+      ],
+    },
+    // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+    async ({ event, step }: any) => {
+      const runId = event?.data?.run_id ?? event?.data?.runId;
+
+      return step.run("destroy-orphans", async () => {
+        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+      });
+    },
+  );
+};
+
+/**
  * The functions a pipeline needs behind the scenes: cleanup after a permanent
  * failure or cancellation, and re-runs from a GitHub check.
  */
@@ -893,33 +900,9 @@ const generatedFunctions = ({
   client: Inngest.Any;
   config: PipelineConfig;
 }): InngestFunction.Any[] => {
-  const functions: InngestFunction.Any[] = [];
-
-  functions.push(
-    client.createFunction(
-      {
-        id: `${config.id}/cleanup`,
-        triggers: [
-          {
-            event: internalEvents.FunctionFailed,
-            if: `event.data.function_id == "${client.id}-${config.id}"`,
-          },
-          {
-            event: internalEvents.FunctionCancelled,
-            if: `event.data.function_id == "${client.id}-${config.id}"`,
-          },
-        ],
-      },
-      // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-      async ({ event, step }: any) => {
-        const runId = event?.data?.run_id ?? event?.data?.runId;
-
-        return step.run("destroy-orphans", async () => {
-          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-        });
-      },
-    ),
-  );
+  const functions: InngestFunction.Any[] = [
+    cleanupFunction({ client, config }),
+  ];
 
   functions.push(
     client.createFunction(
