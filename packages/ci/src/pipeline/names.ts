@@ -61,7 +61,7 @@ export const traceName = {
     return path.slice(jobPath.length + scopeSeparator.length);
   },
 
-  /** A command's span: its `.as()` label, or the command as the CLI shows it. */
+  /** A command's span: its `.as()` label, or the command itself. */
   command: (text: string, label?: string): string => {
     return label ?? `$ ${text}`;
   },
@@ -155,8 +155,6 @@ export const traceName = {
   deleteBadSnapshot: "Delete bad snapshot",
   recordSnapshotContents: "Record snapshot contents",
 
-  cloneRepository: "Clone repository",
-  uploadWorkingTree: "Upload working tree",
   findChangedFiles: "Find changed files",
 
   recordStartTime: "Record start time",
