@@ -38,6 +38,7 @@ import {
   globToRegExp,
   maskSecrets,
   shellEscape,
+  shortReason,
   stableStringify,
   truncateLabel,
 } from "./util.ts";
@@ -638,5 +639,54 @@ describe("formatting", () => {
     expect(maskSecrets("token=abc123 and abc123", ["abc123"])).toBe(
       "token=*** and ***",
     );
+  });
+});
+
+describe("shortReason", () => {
+  test("a start timeout is matched by code", () => {
+    expect(shortReason({ code: "sandbox_start_timed_out", message: "x" })).toBe(
+      "machine didn't start",
+    );
+  });
+
+  test("a start timeout is matched by message, with its duration", () => {
+    expect(
+      shortReason(
+        new Error("Sandbox did not reach RUNNING within 120000 milliseconds"),
+      ),
+    ).toBe("machine didn't start in 2m");
+
+    expect(
+      shortReason("Sandbox did not reach RUNNING within 90000 milliseconds"),
+    ).toBe("machine didn't start in 1m 30s");
+  });
+
+  test("a start failure is matched by code, also on the cause", () => {
+    expect(shortReason({ code: "sandbox_start_failed" })).toBe(
+      "machine failed to start",
+    );
+
+    expect(
+      shortReason({ message: "boom", cause: { code: "sandbox_start_failed" } }),
+    ).toBe("machine failed to start");
+  });
+
+  test("anything else is its first line without prefix or period", () => {
+    expect(
+      shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
+    ).toBe("nope");
+  });
+
+  test("long lines are capped at 60 characters", () => {
+    const out = shortReason("a".repeat(100));
+
+    expect(out).toBe(`${"a".repeat(59)}…`);
+    expect(out).toHaveLength(60);
+  });
+
+  test("empty input gives an empty string", () => {
+    expect(shortReason("")).toBe("");
+    expect(shortReason(undefined)).toBe("");
+    expect(shortReason(new Error(""))).toBe("");
   });
 });

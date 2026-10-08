@@ -309,6 +309,69 @@ export const formatDuration = (ms: number): string => {
 };
 
 /**
+ * A failure reason short enough for a narrow column or a check title. Known
+ * Sandbox start errors get fixed wording, matched by `code` when there is one
+ * and by message otherwise; anything else is its first non-empty line without
+ * an `Error:` style prefix or trailing period, capped at 60 characters. An
+ * empty input gives an empty string.
+ */
+export const shortReason = (error: unknown): string => {
+  const { code, message } = readError(error);
+
+  if (
+    code === "sandbox_start_timed_out" ||
+    /did not reach RUNNING/i.test(message)
+  ) {
+    const ms = Number(/within (\d+) milliseconds/i.exec(message)?.[1]);
+
+    if (!Number.isFinite(ms)) {
+      return "machine didn't start";
+    }
+
+    const waited = ms % 60_000 === 0 ? `${ms / 60_000}m` : formatDuration(ms);
+
+    return `machine didn't start in ${waited}`;
+  }
+
+  if (code === "sandbox_start_failed") {
+    return "machine failed to start";
+  }
+
+  const first =
+    message
+      .split("\n")
+      .map((part) => {
+        return part.trim();
+      })
+      .find(Boolean) ?? "";
+  const line = first.replace(/^(?:\w*Error:\s*)+/, "").replace(/\.$/, "");
+
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+};
+
+const readError = (error: unknown): { code?: string; message: string } => {
+  if (typeof error === "string") {
+    return { message: error };
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return { message: "" };
+  }
+
+  const { code, message, cause } = error as {
+    code?: unknown;
+    message?: unknown;
+    cause?: { code?: unknown };
+  };
+  const found = typeof code === "string" ? code : cause?.code;
+
+  return {
+    ...(typeof found === "string" ? { code: found } : {}),
+    message: typeof message === "string" ? message : "",
+  };
+};
+
+/**
  * Relative time for check summaries, like "5h ago".
  */
 export const formatRelative = (from: string, now = Date.now()): string => {
