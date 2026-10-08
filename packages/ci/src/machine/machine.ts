@@ -117,7 +117,7 @@ export const pauseTimeoutMs = 30_000;
 
 /**
  * Pause a finished job's machine rather than destroying it, so a later
- * `from()` can still snapshot it. Everything is destroyed at the end of the
+ * `from` can still snapshot it. Everything is destroyed at the end of the
  * run.
  */
 export const pauseMachine = async (scope: CiJobScope): Promise<void> => {
@@ -303,7 +303,7 @@ export const destroyRunMachines = async (
 };
 
 /**
- * Delete the snapshots this run took for `from()`, once the run is over.
+ * Delete the snapshots this run took for `from`, once the run is over.
  * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
  * run only restored never was.
  *

@@ -165,7 +165,7 @@ export type CacheKey =
   | (() => Promise<string>);
 
 /**
- * A job's cache settings. `from()` shares a job's machine within one run, and
+ * A job's cache settings. `from` shares a job's machine within one run, and
  * only a `cache` key reuses it across runs.
  */
 export interface CacheConfig {
@@ -200,7 +200,7 @@ export interface CacheEntry {
   /** The job that wrote the entry. */
   jobId: string;
   /**
-   * The snapshot of the job's machine, if one was taken, for `from()`. It
+   * The snapshot of the job's machine, if one was taken, for `from`. It
    * outlives the run that took it, unlike a run's other snapshots.
    */
   snapshotId?: string;
@@ -208,7 +208,7 @@ export interface CacheEntry {
   builtAt: string;
   /** The run that wrote the entry. */
   builtBy: { runId: string; sha?: string; trigger: string };
-  /** The keys of the cached jobs this job started `from()` when it was built. */
+  /** The keys of the cached jobs this job started `from` when it was built. */
   fromKeys?: Record<string, string>;
   /** The input each of those jobs was called with, by job ID. */
   fromInputs?: Record<string, unknown>;
@@ -234,14 +234,42 @@ export interface CacheStore {
  * });
  * ```
  */
-export interface JobConfig<_TInput = void> {
+export interface JobConfig<TInput = void> {
   /** Unique within the CI client. It's the job's path in the trace and its check name. */
   id: string;
+  /**
+   * The job to start from: this job runs on a copy of that job's machine, so
+   * it begins where the parent left off. The parent runs once however many
+   * jobs start from it.
+   *
+   * ```ts
+   * const install = ci.job("install", async () => {
+   *   await checkout();
+   *   await $`pnpm install`;
+   * });
+   *
+   * const test = ci.job({ id: "test", from: install }, async () => {
+   *   await $`pnpm test`;
+   * });
+   * ```
+   *
+   * A parent that takes input is given it with `job.with(input)`, and a
+   * parent can depend on this job's own input by passing a function:
+   *
+   * ```ts
+   * ci.job({ id: "web", from: build.with("web") }, …);
+   * ci.job({ id: "test", from: ({ input }) => build.with(input) }, …);
+   * ```
+   *
+   * To choose a parent from facts only known at run time, define two jobs and
+   * choose between them in the pipeline.
+   */
+  from?: From<TInput>;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
    * Skip the job when nothing it depends on has changed since it last passed,
-   * and let jobs that start `from()` it reuse its machine.
+   * and let jobs that start `from` it reuse its machine.
    *
    * "Cache" reads oddly for a job like `test`, where nothing is restored and
    * the job simply doesn't need to run again. The trace and checks say what
@@ -258,7 +286,7 @@ export interface JobConfig<_TInput = void> {
    * The duration is currently ignored: the snapshot is kept for the
    * platform's default retention, whatever you pass.
    *
-   * Every other snapshot a run takes for `from()` is deleted when the run
+   * Every other snapshot a run takes for `from` is deleted when the run
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
@@ -269,7 +297,7 @@ export interface JobConfig<_TInput = void> {
  *
  * Every call is its own run of the job, with its own machine, steps and check:
  * the second call in a pipeline run is `test (2)`. To share one run between
- * jobs, start them with `from()`, which builds the parent once.
+ * jobs, start them `from` it, which builds the parent once.
  *
  * A job is called for its side effects, so it resolves to nothing.
  */
@@ -278,7 +306,49 @@ export interface Job<TInput = void> {
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
+  /**
+   * This job with an input, for another job to start `from`. Each distinct
+   * input is its own run of the job.
+   *
+   * ```ts
+   * ci.job({ id: "web", from: build.with("web") }, …);
+   * ```
+   */
+  with(input: TInput): JobRef<TInput>;
 }
+
+/**
+ * A job with the input to run it with, from `job.with(input)`.
+ */
+export interface JobRef<TInput = unknown> {
+  readonly kind: "inngest/ci.jobRef";
+  readonly job: Job<TInput>;
+  readonly input: TInput;
+}
+
+/**
+ * Any job with input, regardless of its input type.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
+export type AnyJobRef = JobRef<any>;
+
+/**
+ * A job as `from` takes it. Without the call signature, a function given to
+ * `from` is typed as the function of input it is.
+ */
+type JobLike = Pick<AnyJob, "id" | "kind" | "with">;
+
+/**
+ * What a job can start `from`: a job, a job with input, or a function of the
+ * starting job's own input that gives either.
+ */
+export type From<TInput = void> =
+  | JobLike
+  | AnyJobRef
+  | ((ctx: {
+      /** The starting job's input. */
+      input: TInput;
+    }) => JobLike | AnyJobRef);
 
 /**
  * Any job, regardless of its input type.
@@ -593,6 +663,11 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
   machine?: MachineConfig | ((combo: MatrixCombo<TAxes>) => MachineConfig);
   /** Cache settings, per combination if you need them to differ. */
   cache?: CacheConfig | ((combo: MatrixCombo<TAxes>) => CacheConfig);
+  /**
+   * The job each combination starts `from`. A function is given the
+   * combination as its `input`.
+   */
+  from?: From<MatrixCombo<TAxes>>;
   /** Check settings for each combination's job. `false` means no job checks. */
   check?: false | { name?: string };
 }

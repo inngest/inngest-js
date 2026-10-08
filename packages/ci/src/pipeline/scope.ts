@@ -29,12 +29,6 @@ export const scopeSeparator = " › ";
 export const defaultCwd = "/work";
 
 /**
- * Where a job keeps its handler, so `from()` can re-run it on another machine
- * when there are no snapshots to copy from.
- */
-export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
-
-/**
  * A machine held by a job or an extra machine scope. It's a promise so
  * concurrent first commands share one creation.
  */
@@ -131,13 +125,13 @@ export interface CiRunScope {
   repo?: RepoContext;
   /**
    * The first run of each job in this pipeline run, keyed by job ID. It's the
-   * shared one `from()` copies from. Later direct calls aren't stored.
+   * shared one `from` copies from. Later direct calls aren't stored.
    */
   jobs: Map<string, Promise<void>>;
   /** How many runs of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * The jobs that started `from()` each job, keyed by the parent's job ID and
+   * The jobs that started `from` each job, keyed by the parent's job ID and
    * holding the children's paths.
    */
   fromChildren: Map<string, Set<string>>;
@@ -189,7 +183,7 @@ export interface CiRunScope {
   asyncCtx: AsyncContext;
   /** Step ID counters, keyed by the ID's base. */
   counters: Map<string, number>;
-  /** Set when snapshots turned out to be unavailable, so `from()` fell back. */
+  /** Set when snapshots turned out to be unavailable, so `from` fell back. */
   snapshotsUnavailable: boolean;
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
@@ -212,9 +206,8 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
-  fromCalled: boolean;
   fromJobIds: string[];
-  /** The input each `from()` parent was called with, by job ID. */
+  /** The input each `from` parent was called with, by job ID. */
   fromInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */

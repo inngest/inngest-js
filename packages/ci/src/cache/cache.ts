@@ -201,9 +201,9 @@ const findEntry = async (
 };
 
 /**
- * The current keys of the cached jobs a job starts `from()`, by job ID.
+ * The current keys of the cached jobs a job starts `from`, by job ID.
  *
- * `from()` only runs inside the job body, after the lookup, so a job's entry
+ * `from` only runs inside the job body, after the lookup, so a job's entry
  * records its parents' keys when it is built and a lookup compares them with
  * the current ones. Each key folds in the parent's own parents, read from the
  * parent's stored entry, so a change anywhere up the chain changes it. A parent

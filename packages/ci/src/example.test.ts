@@ -16,7 +16,6 @@ import { checkout } from "./checkout/checkout.ts";
 import { waitForHttp } from "./checkout/wait.ts";
 import { consoleReporter } from "./github/auth.ts";
 import { $ } from "./machine/command.ts";
-import { from } from "./machine/from.ts";
 import { createCi } from "./pipeline/createCi.ts";
 import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
@@ -114,22 +113,16 @@ const buildPipeline = () => {
     },
   );
 
-  const lint = ci.job("lint", async () => {
-    await from(setup);
-
+  const lint = ci.job({ id: "lint", from: setup }, async () => {
     await $`pnpm lint`;
   });
 
-  const test = ci.job("test", async () => {
-    await from(setup);
-
+  const test = ci.job({ id: "test", from: setup }, async () => {
     await $`pnpm test`.retries(1);
   });
 
   const compat = (node: string) => {
-    return ci.job(`compat (node:${node})`, async () => {
-      await from(setup);
-
+    return ci.job({ id: `compat (node:${node})`, from: setup }, async () => {
       await $`pnpm test`.env({ NODE_VERSION: node });
     })();
   };
@@ -150,9 +143,7 @@ const buildPipeline = () => {
   });
 
   const e2e = (baseUrl: string) => {
-    return ci.job("e2e", async () => {
-      await from(setup);
-
+    return ci.job({ id: "e2e", from: setup }, async () => {
       await $`serve`.background();
 
       await waitForHttp("http://127.0.0.1:3000");

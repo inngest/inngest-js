@@ -74,7 +74,6 @@ import type {
   ShardOptions as EntryShardOptions,
 } from "./index.ts";
 import { $ } from "./machine/command.ts";
-import { from } from "./machine/from.ts";
 import { sandbox } from "./machine/sandbox.ts";
 import { createCi } from "./pipeline/createCi.ts";
 import { report } from "./report.ts";
@@ -371,7 +370,7 @@ describe("jobs infer their input", () => {
   });
 });
 
-describe("from() starts from a job", () => {
+describe("from starts from a job", () => {
   const setup = ci.job("setup", async () => {
     await $`pnpm install`;
   });
@@ -380,21 +379,33 @@ describe("from() starts from a job", () => {
     await $`fnm use ${node}`;
   });
 
-  test("it resolves to nothing", () => {
-    types(async () => {
-      expectTypeOf(await from(setup)).toBeVoid();
-    });
+  test("a job, or a job with its input", () => {
+    ci.job({ id: "from-job", from: setup }, async () => {});
+    ci.job({ id: "from-ref", from: withInput.with("22") }, async () => {});
+
+    // @ts-expect-error the job needs a string
+    withInput.with(22);
+    // @ts-expect-error the job needs its input
+    withInput.with();
   });
 
-  test("an input is passed through, and checked", () => {
-    types(async () => {
-      expectTypeOf(await from(withInput, "22")).toBeVoid();
+  test("a function of the job's own input", () => {
+    ci.job(
+      {
+        id: "from-fn",
+        from: ({ input }) => {
+          expectTypeOf(input).toBeString();
 
-      // @ts-expect-error the job needs a string
-      await from(withInput, 22);
-      // @ts-expect-error the job needs its input
-      await from(withInput);
-    });
+          return withInput.with(input);
+        },
+      },
+      async (_node: string) => {},
+    );
+  });
+
+  test("anything else is a type error", () => {
+    // @ts-expect-error not a job
+    ci.job({ id: "from-string", from: "setup" }, async () => {});
   });
 });
 
@@ -871,7 +882,6 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf(entry.createCi).toBeFunction();
     expectTypeOf(entry.$).toBeFunction();
     expectTypeOf(entry.github).toBeObject();
-    expectTypeOf(entry.from).toBeFunction();
     expectTypeOf(entry.checkout).toBeFunction();
     expectTypeOf(entry.changed).toBeFunction();
     expectTypeOf(entry.files).toBeFunction();

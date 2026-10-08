@@ -20,7 +20,6 @@ import {
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { report } from "../report.ts";
@@ -750,7 +749,7 @@ describe("commands", () => {
   });
 });
 
-describe("from()", () => {
+describe("from", () => {
   test("snapshots the parent once and clones per child", async () => {
     const { api, ci } = setup();
 
@@ -758,15 +757,11 @@ describe("from()", () => {
       await $`pnpm install`;
     });
 
-    const lint = ci.job("lint", async () => {
-      await from(install);
-
+    const lint = ci.job({ id: "lint", from: install }, async () => {
       await $`pnpm lint`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(install);
-
+    const test = ci.job({ id: "test", from: install }, async () => {
       await $`pnpm test`;
     });
 
@@ -782,7 +777,7 @@ describe("from()", () => {
       }),
     ).toHaveLength(1);
 
-    // The one snapshot was taken for `from()`, and is deleted with the run.
+    // The one snapshot was taken for `from`, and is deleted with the run.
     expect(api.snapshots.size).toBe(0);
     expect(api.sandboxes.size).toBe(3);
 
@@ -793,16 +788,14 @@ describe("from()", () => {
     expect(cloned).toHaveLength(2);
   });
 
-  test("calling the parent directly, then from() it, runs it once", async () => {
+  test("calling the parent directly, then starting from it, runs it once", async () => {
     const { api, ci } = setup();
 
     const base = ci.job("base", async () => {
       await $`pnpm install`;
     });
 
-    const lint = ci.job("lint", async () => {
-      await from(base);
-
+    const lint = ci.job({ id: "lint", from: base }, async () => {
       await $`pnpm lint`;
     });
 
@@ -831,16 +824,14 @@ describe("from()", () => {
     expect(cloned).toHaveLength(1);
   });
 
-  test("a direct call after from() starts its own run", async () => {
+  test("a direct call after starting from it starts its own run", async () => {
     const { api, ci } = setup();
 
     const base = ci.job("base", async () => {
       await $`pnpm install`;
     });
 
-    const lint = ci.job("lint", async () => {
-      await from(base);
-
+    const lint = ci.job({ id: "lint", from: base }, async () => {
       await $`pnpm lint`;
     });
 
@@ -861,7 +852,7 @@ describe("from()", () => {
     expect(result.stepIds).toContain("base (2) › machine");
   });
 
-  test("a child that from()s a cached parent can checkout() again", async () => {
+  test("a child that starts from a cached parent can checkout() again", async () => {
     const dir = mkdtempSync(join(tmpdir(), "inngest-ci-from-checkout-"));
 
     try {
@@ -876,9 +867,7 @@ describe("from()", () => {
         await $`pnpm install`;
       });
 
-      const lint = ci.job("lint", async () => {
-        await from(base);
-
+      const lint = ci.job({ id: "lint", from: base }, async () => {
         await checkout();
 
         await $`pnpm lint`;
@@ -912,16 +901,13 @@ describe("from()", () => {
     }
   });
 
-  test("from() after a command throws", async () => {
+  test("a `from` naming another client's job throws", async () => {
     const { ci } = setup();
+    const other = setup().ci;
 
-    const parent = ci.job("parent", async () => {});
+    const parent = other.job("parent", async () => {});
 
-    const child = ci.job("child", async () => {
-      await $`echo hi`;
-
-      await from(parent);
-    });
+    const child = ci.job({ id: "child", from: parent }, async () => {});
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       return child();
@@ -930,35 +916,45 @@ describe("from()", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(String((result.error as { message?: string })?.message)).toContain(
-      "must come before this job's first command",
+      "isn't defined on this CI client",
     );
   });
 
-  test("from() twice throws", async () => {
-    const { ci } = setup();
+  test("a `from` function picks the parent from the job's input", async () => {
+    const { api, ci } = setup();
 
-    const a = ci.job("a", async () => {
-      return undefined;
+    const build = ci.job("build", async (target: string) => {
+      await $`pnpm build --target ${target}`;
     });
 
-    const b = ci.job("b", async () => {
-      return undefined;
-    });
-
-    const child = ci.job("child", async () => {
-      await from(a);
-      await from(b);
-    });
+    const test = ci.job(
+      {
+        id: "test",
+        from: ({ input }) => {
+          return build.with(input);
+        },
+      },
+      async (target: string) => {
+        await $`pnpm test --filter ${target}`;
+      },
+    );
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return child();
+      await test("web");
     });
 
-    const result = await runFunction(pipeline, { event: prEvent });
+    await runFunction(pipeline, { event: prEvent });
 
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "can only be called once",
-    );
+    expect(
+      api.commands
+        .filter((argv) => {
+          return argv[0] === "pnpm";
+        })
+        .map((argv) => {
+          return argv.join(" ");
+        })
+        .sort(),
+    ).toEqual(["pnpm build --target web", "pnpm test --filter web"]);
   });
 
   const runFromWithoutSnapshots = async ({
@@ -969,9 +965,7 @@ describe("from()", () => {
       await $`pnpm install`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(install);
-
+    const test = ci.job({ id: "test", from: install }, async () => {
       await $`pnpm test`;
     });
 
@@ -1023,15 +1017,11 @@ describe("from()", () => {
       await $`pnpm install`;
     });
 
-    const build = ci.job("build", async () => {
-      await from(install);
-
+    const build = ci.job({ id: "build", from: install }, async () => {
       await $`pnpm build`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(build);
-
+    const test = ci.job({ id: "test", from: build }, async () => {
       await $`pnpm test`;
     });
 
@@ -1400,9 +1390,7 @@ describe("cache", () => {
       },
     );
 
-    const test = second.ci.job("test", async () => {
-      await from(setupJob2);
-
+    const test = second.ci.job({ id: "test", from: setupJob2 }, async () => {
       await $`pnpm test`;
     });
 
@@ -1443,11 +1431,12 @@ describe("cache", () => {
         },
       );
 
-      const test = ci.job({ id: "test", cache: { key: "t" } }, async () => {
-        await from(setupJob);
-
-        await $`pnpm test`;
-      });
+      const test = ci.job(
+        { id: "test", from: setupJob, cache: { key: "t" } },
+        async () => {
+          await $`pnpm test`;
+        },
+      );
 
       await runFunction(
         ci.pipeline({ id: "pr", on: prTrigger }, async () => {
@@ -1552,10 +1541,14 @@ describe("checks", () => {
       );
 
       const child = ci.job(
-        { id: "test", cache: { key: "t" } },
-        async (input: { version: string }) => {
-          await from(parent, input);
-
+        {
+          id: "test",
+          cache: { key: "t" },
+          from: ({ input }) => {
+            return parent.with(input);
+          },
+        },
+        async (_input: { version: string }) => {
           await $`pnpm test`;
         },
       );
@@ -1792,13 +1785,12 @@ describe("slow parent hints", () => {
     );
 
     const childJobs = Array.from({ length: children }, (_, index) => {
-      return ci.job(`child-${index}`, async () => {
-        if (fromBase) {
-          await from(base);
-        }
-
-        await $`pnpm test`;
-      });
+      return ci.job(
+        { id: `child-${index}`, ...(fromBase ? { from: base } : {}) },
+        async () => {
+          await $`pnpm test`;
+        },
+      );
     });
 
     const pipeline = ci.pipeline(
@@ -2483,7 +2475,7 @@ describe("run snapshot cleanup", () => {
     });
   };
 
-  test("a from() chain's snapshots are deleted when the run passes", async () => {
+  test("a `from` chain's snapshots are deleted when the run passes", async () => {
     const { api, ci } = setup();
     let duringRun = 0;
 
@@ -2491,15 +2483,11 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job("child", async () => {
-      await from(base);
-
+    const child = ci.job({ id: "child", from: base }, async () => {
       await $`pnpm build`;
     });
 
-    const grandchild = ci.job("grandchild", async () => {
-      await from(child);
-
+    const grandchild = ci.job({ id: "grandchild", from: child }, async () => {
       await $`pnpm test`;
 
       duringRun = Math.max(duringRun, api.snapshots.size);
@@ -2540,9 +2528,7 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job("child", async () => {
-      await from(base);
-
+    const child = ci.job({ id: "child", from: base }, async () => {
       throw new Error("boom");
     });
 
@@ -2574,9 +2560,7 @@ describe("run snapshot cleanup", () => {
         },
       );
 
-      const test = ci.job("test", async () => {
-        await from(setupJob);
-
+      const test = ci.job({ id: "test", from: setupJob }, async () => {
         await $`pnpm test`;
       });
 
@@ -2612,15 +2596,14 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const cached = ci.job({ id: "cached", cache: { key: "v1" } }, async () => {
-      await from(base);
+    const cached = ci.job(
+      { id: "cached", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
 
-      await $`pnpm build`;
-    });
-
-    const test = ci.job("test", async () => {
-      await from(cached);
-
+    const test = ci.job({ id: "test", from: cached }, async () => {
       await $`pnpm test`;
     });
 
@@ -2643,13 +2626,14 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job({ id: "child", keepOnFailure: "1h" }, async () => {
-      await from(base);
+    const child = ci.job(
+      { id: "child", from: base, keepOnFailure: "1h" },
+      async () => {
+        await $`pnpm build`;
 
-      await $`pnpm build`;
-
-      throw new Error("boom");
-    });
+        throw new Error("boom");
+      },
+    );
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, retries: 0 },
@@ -2700,9 +2684,7 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job("child", async () => {
-      await from(base);
-
+    const child = ci.job({ id: "child", from: base }, async () => {
       await $`pnpm test`;
     });
 
@@ -2728,9 +2710,7 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job("child", async () => {
-      await from(base);
-
+    const child = ci.job({ id: "child", from: base }, async () => {
       api.snapshots.clear();
 
       await $`pnpm test`;
@@ -2752,9 +2732,7 @@ describe("run snapshot cleanup", () => {
       await $`pnpm install`;
     });
 
-    const child = ci.job("child", async () => {
-      await from(base);
-
+    const child = ci.job({ id: "child", from: base }, async () => {
       await $`pnpm test`;
     });
 

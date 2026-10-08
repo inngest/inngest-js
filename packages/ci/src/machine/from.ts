@@ -1,108 +1,129 @@
 /**
- * Starting a job from another job's machine: `from()`, plus the fallback that
- * re-runs the parent's handler when no snapshot is available.
+ * Starting a job from its `from` parent's machine: working out what `from`
+ * names, and starting the job from a snapshot of the parent's, plus the
+ * fallback that re-runs the parent's handler when no snapshot is available.
  *
  * @module
  */
 
 import { CiUsageError } from "../errors.ts";
 import { joinJob } from "../pipeline/job.ts";
-import type { CiJobScope } from "../pipeline/scope.ts";
-import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
-import type { AnyJob, Job } from "../types.ts";
+import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
+import { countApi } from "../pipeline/scope.ts";
+import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { snapshotJob } from "./machine.ts";
 
+/** A `from` parent, worked out: the job's config and the input it's built with. */
+export interface Parent {
+  config: JobConfig;
+  input: unknown;
+}
+
+const isJob = (value: unknown): value is AnyJob => {
+  return (
+    typeof value === "function" &&
+    (value as Partial<AnyJob>).kind === "inngest/ci.job"
+  );
+};
+
+const isJobRef = (value: unknown): value is JobRef => {
+  return (value as JobRef | undefined)?.kind === "inngest/ci.jobRef";
+};
+
 /**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
+ * What a job's `from` names for this call: the parent job and the input it's
+ * built with, or nothing for a job without one. A function is called with the
+ * job's input. Pure, so a handler replaying from the top gets the same answer
+ * without a step.
  *
- * Start this job on a copy of another job's machine.
- *
- * The parent runs once however many jobs start from it, and each child gets
- * its own copy, so they can't affect each other. If the parent was already
- * called directly, `from()` uses that run instead of starting another. The copy is made when this
- * job runs its first command, so a job that starts from another and then
- * waits doesn't pay for a machine while it waits.
- *
- * `from()` shares a job's machine within one run. Only a `cache` key on the
- * parent reuses it across runs.
- *
- * The snapshot behind the copy is deleted when the pipeline run ends, unless
- * the parent is cached (the cache keeps it for later runs) or fails with
- * `keepOnFailure`.
- *
- * ```ts
- * const setup = ci.job("setup", async () => {
- *   await checkout();
- *   await $`pnpm install`;
- * });
- *
- * const test = ci.job("test", async () => {
- *   await from(setup);   // runs `setup` first
- *   await $`pnpm test`;  // runs on a copy of its machine
- * });
- * ```
- *
- * `await setup()` and `await from(setup)` differ: the first runs setup on its
- * own machine every time it's called, the second joins the one shared run of
- * setup *and* starts this job from where it finished.
- *
- * @throws {CiUsageError} When called outside a job, after this job's first
- * command, or a second time.
+ * @throws {CiUsageError} When `from` names something that isn't a job of this
+ * client.
  */
-export async function from(
-  /** The job to start from. */
-  job: Job,
-): Promise<void>;
-export async function from<TInput>(
-  /** The job to start from. */
-  job: Job<TInput>,
-  /** The parent's input, when it takes one. */
-  input: TInput,
-): Promise<void>;
-export async function from(job: AnyJob, input?: unknown): Promise<void> {
-  const scope = requireJobScope("from");
+export const parentOf = (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input. */
+  input: unknown,
+): Parent | undefined => {
+  const from = config.from;
 
-  countApi("from");
+  if (from === undefined) {
+    return undefined;
+  }
 
-  if (scope.machine || scope.fromCalled) {
+  const named: unknown =
+    typeof from === "function" && !isJob(from)
+      ? (from as (ctx: { input: unknown }) => unknown)({ input })
+      : from;
+
+  const ref = isJobRef(named)
+    ? named
+    : isJob(named)
+      ? { job: named, input: undefined }
+      : undefined;
+
+  if (!ref) {
     throw new CiUsageError(
-      "`from()` must come before this job's first command, and can only be called once.",
+      `The \`from\` of job "${config.id}" must name a job, or a job with input from \`job.with(input)\`.`,
     );
   }
 
-  scope.fromCalled = true;
+  const registered = run.ci.jobs.get(ref.job.id);
 
-  scope.fromJobIds.push(job.id);
-
-  const children = scope.run.fromChildren.get(job.id) ?? new Set<string>();
-
-  children.add(scope.jobPath);
-  scope.run.fromChildren.set(job.id, children);
-
-  if (input !== undefined) {
-    scope.fromInputs[job.id] = input;
+  if (!registered) {
+    throw new CiUsageError(
+      `Job "${config.id}" starts from \`${ref.job.id}\`, which isn't defined on this CI client.`,
+    );
   }
 
-  await joinJob({ id: job.id, input });
+  return { config: registered.config, input: ref.input };
+};
 
-  const snapshotId = await snapshotJob(scope.run, job.id);
+/**
+ * Start this job on a copy of its parent's machine, before its handler runs.
+ *
+ * The parent runs once however many jobs start from it, and if it's also
+ * called directly, the job uses that run instead of starting another. The copy
+ * is made when this job runs its first command, so a job that starts from
+ * another and then waits doesn't pay for a machine while it waits.
+ */
+export const startFrom = async (
+  scope: CiJobScope,
+  parent: Parent,
+): Promise<void> => {
+  const { run } = scope;
+  const { id } = parent.config;
+  const { input } = parent;
+
+  countApi("from");
+
+  scope.fromJobIds.push(id);
+
+  const children = run.fromChildren.get(id) ?? new Set<string>();
+
+  children.add(scope.jobPath);
+  run.fromChildren.set(id, children);
+
+  if (input !== undefined) {
+    scope.fromInputs[id] = input;
+  }
+
+  await joinJob({ id, input });
+
+  const snapshotId = await snapshotJob(run, id);
 
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
-  } else if (
-    scope.run.machines.has(job.id) ||
-    scope.run.cacheEntries.has(job.id)
-  ) {
-    await rerunOnThisMachine(scope, job, input);
+  } else if (run.machines.has(id) || run.cacheEntries.has(id)) {
+    await rerunOnThisMachine(scope, parent);
   }
-}
+};
 
 /**
  * Without a snapshot to copy, get this machine to where the parent's finished
- * the slow way: run the parent's handler again, here. Its commands and steps
- * show in the trace under this job, and this job doesn't run the
- * parent's job again.
+ * the slow way: start from the parent's own parent, then run the parent's
+ * handler again, here. Its commands and steps show in the trace under this
+ * job, and this job doesn't run the parent's job again.
  *
  * TODO: This is a stopgap, not the design. Every job that starts from the
  * same parent repeats the parent's work, so N children means N builds. A
@@ -112,24 +133,24 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
  */
 const rerunOnThisMachine = async (
   scope: CiJobScope,
-  job: AnyJob,
-  input: unknown,
+  parent: Parent,
 ): Promise<void> => {
-  const handler = (job as unknown as Record<symbol, unknown>)[jobHandlerKey] as
-    | ((input: unknown) => Promise<unknown>)
-    | undefined;
+  const { run } = scope;
+  const registered = run.ci.jobs.get(parent.config.id);
 
-  if (!handler) {
+  if (!registered) {
     return;
   }
 
-  // The parent may start from another job itself, which re-runs that one
-  // here too.
-  scope.fromCalled = false;
+  const grandparent = parentOf(run, parent.config, parent.input);
 
-  try {
-    await handler(input);
-  } finally {
-    scope.fromCalled = true;
+  // Before the machine exists, it can still start from the grandparent's
+  // snapshot. After, the grandparent has to run here too.
+  if (grandparent && scope.machine) {
+    await rerunOnThisMachine(scope, grandparent);
+  } else if (grandparent) {
+    await startFrom(scope, grandparent);
   }
+
+  await registered.handler(parent.input);
 };
