@@ -196,6 +196,10 @@ export const parentOf = (
  * Throw when starting from `jobId` would bring a job back to a parent it's
  * already starting from, so a cycle fails with its path instead of recursing.
  *
+ * The chain holds job IDs, not inputs, so a job that starts from itself with
+ * a different input counts as a cycle too. That's coarser than it needs to be,
+ * and fine until someone needs a job to build on its own other inputs.
+ *
  * @throws {CiUsageError} When `jobId` is already in `chain`.
  */
 const assertNoCycle = (chain: string[], jobId: string): void => {
