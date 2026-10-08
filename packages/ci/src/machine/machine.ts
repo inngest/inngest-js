@@ -19,7 +19,12 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, inJobSpan, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  defaultCwd,
+  inJobSpan,
+  recordTiming,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
 import type { MachineConfig } from "../types.ts";
 import {
@@ -174,6 +179,8 @@ const createMachine = async (
     createStep: { id: string; name: string },
     options: { name: string; snapshotId?: string },
   ): Promise<Started> => {
+    const began = Date.now();
+
     const sandbox = options.snapshotId
       ? await tools.create(createStep, {
           name: options.name,
@@ -183,6 +190,14 @@ const createMachine = async (
           name: options.name,
           ...machineConfig,
         });
+
+    if (options.snapshotId) {
+      recordTiming(run, {
+        kind: "start",
+        path: scope.path,
+        durationMs: Date.now() - began,
+      });
+    }
 
     const setup = await sandbox.commands.run(
       {
@@ -332,6 +347,12 @@ const createMachine = async (
     id: started.sandbox.id,
     parents: parentsOf(scope, started),
   };
+
+  // A machine from a snapshot has the working tree that snapshot was taken
+  // with, which is what lets `checkout()` upload only what changed since.
+  if (started.meta?.treeId) {
+    handle.treeId = started.meta.treeId;
+  }
 
   return handle;
 };
@@ -552,7 +573,10 @@ const takeSnapshot = async (
 ): Promise<TakenSnapshot | undefined> => {
   run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
 
-  const meta: SnapshotMeta = { parents: handle.parents };
+  const meta: SnapshotMeta = {
+    ...(handle.treeId ? { treeId: handle.treeId } : {}),
+    parents: handle.parents,
+  };
 
   await handle.sandbox.commands.run(
     ciStep(
@@ -565,9 +589,19 @@ const takeSnapshot = async (
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
-    return cache
+    const began = Date.now();
+
+    const taken = cache
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
       : await createRunSnapshot(handle, stepId);
+
+    recordTiming(run, {
+      kind: "snapshot",
+      path: jobPath,
+      durationMs: Date.now() - began,
+    });
+
+    return taken;
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;

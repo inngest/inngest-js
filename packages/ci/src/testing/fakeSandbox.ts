@@ -98,6 +98,8 @@ export interface FakeSandboxApi {
   timeline: string[];
   /** Every request path, in order. */
   requests: string[];
+  /** Every file uploaded to a sandbox, in order. */
+  uploads: { sandboxId: string; path: string; bytes: Uint8Array }[];
   script(scripts: CommandScript[]): void;
   /** Make snapshot creation fail the way an environment without it would. */
   disableSnapshots(): void;
@@ -240,6 +242,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const commands: string[][] = [];
   const timeline: string[] = [];
   const requests: string[] = [];
+  const uploads: FakeSandboxApi["uploads"] = [];
 
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
@@ -757,6 +760,16 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         ? JSON.parse(String(init.body))
         : undefined;
 
+    const upload = /^\/v2\/sandboxes\/(?<id>[^/]+)\/files$/.exec(url.pathname);
+
+    if (upload && method === "PUT" && init?.body instanceof Blob) {
+      uploads.push({
+        sandboxId: upload.groups?.id ?? "",
+        path: url.searchParams.get("path") ?? "",
+        bytes: new Uint8Array(await init.body.arrayBuffer()),
+      });
+    }
+
     for (const route of routes) {
       const match = route.path.exec(url.pathname);
 
@@ -776,6 +789,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     commands,
     timeline,
     requests,
+    uploads,
     script: (next) => {
       scripts = next;
     },
