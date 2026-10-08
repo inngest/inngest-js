@@ -289,7 +289,8 @@ export interface JobConfig<TInput = void> {
   keepOnFailure?: Duration;
   /**
    * The shape of the job's input, as any Standard Schema (Zod, Valibot,
-   * ArkType, …). The handler gets the validated value.
+   * ArkType, …). The handler gets the validated value, and `inngest-ci` asks
+   * for it field by field.
    *
    * ```ts
    * const build = ci.job(

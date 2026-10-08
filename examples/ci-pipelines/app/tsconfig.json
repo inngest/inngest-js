@@ -4,6 +4,7 @@
     "module": "Preserve",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "lib": ["ES2022"],
     "types": ["node"],
     "strict": true,

@@ -410,6 +410,14 @@ export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
+/** Where the Dev Server's UI shows a run. */
+export const devServerRunUrl = (
+  devServerUrl: string,
+  runId: string,
+): string => {
+  return `${devServerUrl.replace(/\/$/, "")}/run?runID=${runId}`;
+};
+
 /** A size for the activity line: `812 B`, `40 KB`, `3.2 MB`, `38 MB`. */
 export const formatBytes = (bytes: number): string => {
   if (bytes < 1024) {

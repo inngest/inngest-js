@@ -13,6 +13,10 @@ export const releasePipeline = ci.pipeline(
       return ci.skip("the branch was deleted");
     }
 
+    if (ci.local) {
+      return ci.skip("not releasing from a local run");
+    }
+
     return release();
   },
 );
