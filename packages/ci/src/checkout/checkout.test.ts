@@ -189,7 +189,7 @@ describe("cloneScript", () => {
     );
   });
 
-  test("the remote ends up as the plain URL, after a clone and an update", () => {
+  test("the update replaces the remote URL with the fresh one", () => {
     const target = join(root, "work");
 
     run(
@@ -199,10 +199,6 @@ describe("cloneScript", () => {
         target,
         sha,
       }),
-    );
-
-    expect(git(target, "remote", "get-url", "origin")).toBe(
-      "https://github.com/o/r.git",
     );
 
     git(target, "remote", "set-url", "origin", "https://expired.invalid/o/r");
@@ -216,9 +212,7 @@ describe("cloneScript", () => {
       }),
     );
 
-    expect(git(target, "remote", "get-url", "origin")).toBe(
-      "https://github.com/o/r.git",
-    );
+    expect(git(target, "remote", "get-url", "origin")).toBe(origin);
   });
 
   test("a fork pull request update fetches the pull request head", () => {

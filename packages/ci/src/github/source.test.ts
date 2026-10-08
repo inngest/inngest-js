@@ -441,7 +441,7 @@ describe("a truncated tree", () => {
 });
 
 describe("the clone", () => {
-  test("leaves no token in .git/config", async () => {
+  test("keeps the token out of the clone script and commands", async () => {
     const { api, gh, ci } = setup();
 
     platform(gh);
@@ -463,16 +463,6 @@ describe("the clone", () => {
 
     expect(script).not.toContain(secret);
     expect(JSON.stringify(api.commands)).not.toContain(secret);
-
-    expect(script).toContain(
-      "remote set-url origin 'https://github.com/acme/platform.git'",
-    );
-
-    const [update = "", clone = ""] = script.split("; else ");
-
-    expect(update).toContain("remote set-url origin 'https://github.com");
-    expect(clone).toContain("git clone");
-    expect(clone).toMatch(/checkout 'cafe1234'.*remote set-url origin 'https/);
   });
 
   test("fetches a fork's pull request head when the repo's case differs", async () => {

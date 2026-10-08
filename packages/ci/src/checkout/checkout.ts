@@ -436,7 +436,7 @@ const uploadDelta = async (
  * already a git checkout it's updated to `sha` instead of cloned.
  */
 export const cloneScript = (args: {
-  repo: Pick<RepoContext, "fullName" | "pullRequest">;
+  repo: Pick<RepoContext, "pullRequest">;
   opts: CheckoutOptions;
   target: string;
   sha: string;
@@ -464,16 +464,11 @@ export const cloneScript = (args: {
     ? [`git -C ${target} submodule update --init --recursive`]
     : [];
 
-  // The checkout's token expires, and a snapshot of the sandbox keeps whatever
-  // is in `.git/config`, so the remote ends up as the plain URL.
-  const forget = `git -C ${target} remote set-url origin ${shellEscape(`https://github.com/${repo.fullName}.git`)}`;
-
   const clone = [
     `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
     ...(fork ? [fork] : []),
     `git -C ${target} checkout ${shellEscape(sha)}`,
     ...submodules,
-    forget,
   ].join(" && ");
 
   // A checkout that's already there, such as one restored from a cached
@@ -487,7 +482,6 @@ export const cloneScript = (args: {
       ? `git -C ${target} checkout --force --detach ${shellEscape(sha)}`
       : `git -C ${target} checkout --force --detach FETCH_HEAD`,
     ...submodules,
-    forget,
   ].join(" && ");
 
   return `if [ -d ${target}/.git ]; then ${update}; else ${clone}; fi`;
@@ -515,10 +509,7 @@ const cloneFromGithub = async (
   const pullRequest = own ? run.repo?.pullRequest : undefined;
 
   const script = cloneScript({
-    repo: {
-      fullName: source.fullName,
-      ...(pullRequest ? { pullRequest } : {}),
-    },
+    repo: { ...(pullRequest ? { pullRequest } : {}) },
     opts,
     target,
     sha: source.sha,
