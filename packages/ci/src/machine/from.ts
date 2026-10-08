@@ -243,7 +243,7 @@ const requestBuild = ({
 
 /**
  * Say how a parent's build ended, where the build itself can't: its row in the
- * pipeline's summary and in the local CLI. Each is made once however many jobs
+ * pipeline's summary and in the hooks. Each is made once however many jobs
  * start from the parent.
  */
 const reportBuilt = (
@@ -282,7 +282,7 @@ const reportBuilt = (
  * that one build (no thundering herd), which needs reliable snapshots or a
  * shared base image to copy from.
  */
-export const rerunOnThisMachine = async (
+const rerunOnThisMachine = async (
   scope: CiJobScope,
   job: AnyJob,
   input: unknown,

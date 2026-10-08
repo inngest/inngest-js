@@ -64,10 +64,10 @@ import {
  *
  * With parallelism optimized, the executor waits for every step in a parallel
  * batch before it calls the function again, so a slow step in one job holds
- * back every other job. Turning it off has the executor call back after each step, so jobs run independently.
- * It's deprecated in favour of `group.parallel({ mode: "race" })`,
- * but that marks every step for race semantics, which stops steps running inline
- * and added a 15-20s gap between a job's steps on a real run.
+ * back every other job. Turning it off has the executor call back after each
+ * step, so jobs run independently. It's deprecated in favour of
+ * `group.parallel({ mode: "race" })`, but that stops steps running inline and
+ * added a 15-20s gap between a job's steps on a real run.
  */
 export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
 
@@ -381,9 +381,7 @@ const runPipelineAttempt = async ({
 
     run.ci.hooks.warnings(run);
 
-    await completePipeline(run, checks, conclusionOf(outcome), () => {
-      return describeOutcome(run, outcome);
-    });
+    await completePipeline(run, checks, outcome);
 
     await destroyRunMachines(run, ctx.attempt ?? 0);
     await deleteRunSnapshots(run, ctx.attempt ?? 0);
@@ -518,23 +516,20 @@ const describeOutcome = (
 const completePipeline = async (
   run: CiRunScope,
   checks: CheckReporter,
-  conclusion: CheckConclusion,
-  /** What the check says, read inside the step that completes it. */
-  describe: () => {
-    title: string;
-    summary: string;
-    annotations: CheckAnnotation[];
-  },
+  outcome: Outcome,
 ): Promise<void> => {
   const metadata = () => {
-    return runEndMetadata(run, conclusion);
+    return runEndMetadata(run, conclusionOf(outcome));
   };
 
   await checks.pipelineComplete({
     run,
     metadata,
     result: () => {
-      return { conclusion, ...describe() };
+      return {
+        conclusion: conclusionOf(outcome),
+        ...describeOutcome(run, outcome),
+      };
     },
   });
 
@@ -924,8 +919,6 @@ const generatedFunctions = ({
 
   return functions;
 };
-
-export { destroyOrphans };
 
 /**
  * One function per cached job with `refresh` triggers, so the cache is built

@@ -14,33 +14,13 @@ import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { createCi } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiRunScope } from "./scope.ts";
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
 
 const setup = () => {
   const api = createFakeSandboxApi();
