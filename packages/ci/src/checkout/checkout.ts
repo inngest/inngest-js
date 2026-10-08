@@ -9,6 +9,7 @@ import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
   resolveSource,
+  sameRepo,
   targetsRunRepo,
   tokenForSource,
 } from "../github/source.ts";
@@ -91,6 +92,9 @@ interface CheckoutOptions {
  * await checkout({ repo: "acme/platform", ref: "v2.1.0" });
  * await checkout({ ref: "main" });                          // this repository
  * ```
+ *
+ * Don't pass a `repo` taken from untrusted event data: it picks what gets
+ * cloned with your credentials.
  *
  * The GitHub App must be installed on the other repository's owner and have
  * access to it. The installation is found from the repository, so it doesn't
@@ -432,7 +436,7 @@ const uploadDelta = async (
  * already a git checkout it's updated to `sha` instead of cloned.
  */
 export const cloneScript = (args: {
-  repo: Pick<RepoContext, "pullRequest">;
+  repo: Pick<RepoContext, "fullName" | "pullRequest">;
   opts: CheckoutOptions;
   target: string;
   sha: string;
@@ -446,6 +450,7 @@ export const cloneScript = (args: {
       `\`checkout()\` was given the ref \`${sha}\`, which git would read as an option.`,
     );
   }
+
   const target = shellEscape(args.target);
   const filter = opts.history === "full" ? "" : "--filter=blob:none";
 
@@ -459,11 +464,16 @@ export const cloneScript = (args: {
     ? [`git -C ${target} submodule update --init --recursive`]
     : [];
 
+  // The checkout's token expires, and a snapshot of the sandbox keeps whatever
+  // is in `.git/config`, so the remote ends up as the plain URL.
+  const forget = `git -C ${target} remote set-url origin ${shellEscape(`https://github.com/${repo.fullName}.git`)}`;
+
   const clone = [
     `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
     ...(fork ? [fork] : []),
     `git -C ${target} checkout ${shellEscape(sha)}`,
     ...submodules,
+    forget,
   ].join(" && ");
 
   // A checkout that's already there, such as one restored from a cached
@@ -477,6 +487,7 @@ export const cloneScript = (args: {
       ? `git -C ${target} checkout --force --detach ${shellEscape(sha)}`
       : `git -C ${target} checkout --force --detach FETCH_HEAD`,
     ...submodules,
+    forget,
   ].join(" && ");
 
   return `if [ -d ${target}/.git ]; then ${update}; else ${clone}; fi`;
@@ -499,11 +510,15 @@ const cloneFromGithub = async (
 
   // A fork's pull request head is only fetched for the run's own commit.
   const own =
-    run.repo?.fullName === source.fullName && run.repo.sha === source.sha;
+    sameRepo(source.fullName, run.repo?.fullName) &&
+    run.repo?.sha === source.sha;
   const pullRequest = own ? run.repo?.pullRequest : undefined;
 
   const script = cloneScript({
-    repo: { ...(pullRequest ? { pullRequest } : {}) },
+    repo: {
+      fullName: source.fullName,
+      ...(pullRequest ? { pullRequest } : {}),
+    },
     opts,
     target,
     sha: source.sha,

@@ -10,7 +10,15 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
+import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import {
+  octokitForSource,
+  resolvedSource,
+  resolveSource,
+  targetsRunRepo,
+} from "../github/source.ts";
 import { ciRun, shorten } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
@@ -151,8 +159,6 @@ export const resolveKeySources = async (
   run: CiRunScope,
   key: CacheKey | undefined,
 ): Promise<void> => {
-  const { resolveSource, targetsRunRepo } = await import("../github/source.ts");
-
   for (const part of keyParts(key)) {
     if (typeof part !== "string" && !targetsRunRepo(run, part)) {
       await resolveSource(run, part);
@@ -164,10 +170,6 @@ const resolveFilesPart = async (
   run: CiRunScope,
   part: CacheKeyPart,
 ): Promise<string> => {
-  const { resolvedSource, targetsRunRepo } = await import(
-    "../github/source.ts"
-  );
-
   if (!targetsRunRepo(run, part)) {
     return hashRemoteFiles(run, await resolvedSource(run, part), part);
   }
@@ -184,14 +186,12 @@ const resolveFilesPart = async (
     return `files:${part.patterns.join(",")}`;
   }
 
-  const { rest } = await import("../github/rest.ts");
-
   const tree = await rest.git.getTree({
     tree_sha: repo.sha,
     recursive: "1",
   });
 
-  return hashTree(tree.tree, part.patterns);
+  return hashTree(tree, part.patterns, repo.fullName);
 };
 
 /**
@@ -203,8 +203,6 @@ const hashRemoteFiles = async (
   source: ResolvedSource,
   part: CacheKeyPart,
 ): Promise<string> => {
-  const { octokitForSource } = await import("../github/source.ts");
-  const { mapGitHubError } = await import("../github/rest.ts");
   const octokit = await octokitForSource(run, source);
 
   try {
@@ -215,7 +213,7 @@ const hashRemoteFiles = async (
       recursive: "1",
     });
 
-    return hashTree(data.tree, part.patterns);
+    return hashTree(data, part.patterns, source.fullName);
   } catch (error) {
     throw mapGitHubError(error) ?? error;
   }
@@ -223,10 +221,22 @@ const hashRemoteFiles = async (
 
 /** A hash of the blobs in a git tree that match the patterns. */
 const hashTree = (
-  tree: { type?: string; path?: string; sha?: string }[] | undefined,
+  listing: {
+    tree?: { type?: string; path?: string; sha?: string }[];
+    truncated?: boolean;
+  },
   patterns: string[],
+  fullName: string,
 ): string => {
-  const entries = (tree ?? [])
+  // A truncated listing would hash only some of the files, and a key that
+  // ignores the rest never changes when they do.
+  if (listing.truncated) {
+    throw new NonRetriableError(
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Use narrower patterns, or a string key.`,
+    );
+  }
+
+  const entries = (listing.tree ?? [])
     .filter((entry) => {
       return entry.type === "blob" && entry.path;
     })

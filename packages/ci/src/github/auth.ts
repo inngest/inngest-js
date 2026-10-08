@@ -8,12 +8,19 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 
+import { NonRetriableError } from "inngest";
 import { CiUsageError } from "../errors.ts";
+import { mapGitHubError } from "./rest.ts";
 
 export interface AuthContext {
   installationId?: number;
   owner?: string;
   repo?: string;
+  /**
+   * Narrow the installation token to these repositories of the installation.
+   * Without it a token can reach everything the installation can.
+   */
+  repositoryNames?: string[];
 }
 
 /**
@@ -103,7 +110,8 @@ export const githubApp = (
     });
   };
 
-  const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
+  /** A client for the installation, which can reach all of it. */
+  const installationOctokit = (ctx?: AuthContext): Octokit => {
     const { appId, privateKey } = resolve();
 
     const installationId =
@@ -126,6 +134,30 @@ export const githubApp = (
     });
   };
 
+  /** A token for the installation, narrowed to `repositoryNames` when given. */
+  const installationToken = async (ctx?: AuthContext): Promise<string> => {
+    const auth = (await installationOctokit(ctx).auth({
+      type: "installation",
+      ...(ctx?.repositoryNames ? { repositoryNames: ctx.repositoryNames } : {}),
+    })) as { token: string };
+
+    return auth.token;
+  };
+
+  const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
+    if (!ctx?.repositoryNames) {
+      return installationOctokit(ctx);
+    }
+
+    // A narrowed client authenticates with a token that reaches only those
+    // repositories.
+    return new Octokit({
+      auth: await installationToken(ctx),
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+    });
+  };
+
   return {
     kind: "app",
     reporter: "checks",
@@ -140,22 +172,30 @@ export const githubApp = (
 
         return data.id;
       } catch (error) {
-        if ((error as { status?: number }).status === 404) {
+        const status = (error as { status?: number }).status;
+
+        if (status === 404) {
           return undefined;
         }
 
-        throw error;
+        const mapped = mapGitHubError(error);
+
+        if (status === 401 || status === 403) {
+          // A rate limit is a 403 too, and retries.
+          if (mapped && !(mapped instanceof NonRetriableError)) {
+            throw mapped;
+          }
+
+          throw new NonRetriableError(
+            "GitHub rejected the GitHub App's credentials. The App may be suspended, or `appId` and `privateKey` may be wrong.",
+            { cause: error },
+          );
+        }
+
+        throw mapped ?? error;
       }
     },
-    token: async (ctx) => {
-      const octokit = await octokitFor(ctx);
-
-      const auth = (await octokit.auth({ type: "installation" })) as {
-        token: string;
-      };
-
-      return auth.token;
-    },
+    token: installationToken,
   };
 };
 

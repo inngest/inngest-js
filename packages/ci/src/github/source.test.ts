@@ -94,7 +94,8 @@ describe("checkout() of another repository", () => {
     );
 
     expect(result.type).toBe("function-resolved");
-    expect(result.stepIds).toContain("github › ref:acme/platform@");
+    expect(result.stepIds).toContain("github › default-branch:acme/platform");
+    expect(result.stepIds).toContain("github › ref:acme/platform@main");
     expect(result.stepIds).toContain("build › checkout");
 
     expect(cloneScripts(api)).toHaveLength(1);
@@ -257,6 +258,260 @@ describe("checkout() of another repository", () => {
   });
 });
 
+describe("one commit per repository per run", () => {
+  test("repo alone and repo with the default branch share one resolve step", async () => {
+    const { gh, ci } = setup();
+
+    platform(gh);
+
+    const first = ci.job("first", async () => {
+      await checkout({ repo: "acme/platform" });
+    });
+
+    const second = ci.job("second", async () => {
+      await checkout({ repo: "acme/platform", ref: "main", path: "/other" });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all([first(), second()]);
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("github › ref:");
+      }),
+    ).toEqual(["github › ref:acme/platform@main"]);
+
+    expect(
+      gh.requests.filter((request) => {
+        return request.path === "/repos/acme/platform/commits/main";
+      }),
+    ).toHaveLength(1);
+
+    expect(result.steps["build › checkout"]).toBeUndefined();
+    expect(result.steps["first › checkout"]).toMatchObject({ sha: "cafe1234" });
+    expect(result.steps["second › checkout"]).toMatchObject({
+      sha: "cafe1234",
+    });
+  });
+
+  test("a long ref keeps the step ID bounded", async () => {
+    const { gh, ci } = setup();
+    const ref = "x".repeat(600);
+
+    platform(gh);
+
+    gh.route(`GET /repos/acme/platform/commits/${ref}`, { sha: "aaaa0000" });
+
+    const build = ci.job("build", async () => {
+      await checkout({ repo: "acme/platform", ref });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return build();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    for (const id of result.stepIds) {
+      expect(id.length).toBeLessThanOrEqual(255);
+    }
+  });
+});
+
+describe("what a failed lookup says", () => {
+  const failed = async (
+    prepare: (gh: ReturnType<typeof createFakeGitHub>) => void,
+    opts: { repo: string; ref?: string } = { repo: "acme/platform" },
+    provider?: Parameters<typeof setup>[0],
+  ) => {
+    const { ci, gh } = setup(provider);
+
+    prepare(gh);
+
+    const build = ci.job("build", async () => {
+      await checkout(opts);
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return build();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-rejected");
+
+    return JSON.stringify(result.error);
+  };
+
+  test("no ref and no default branch says so, not undefined", async () => {
+    const message = await failed((gh) => {
+      gh.route("GET /repos/acme/platform", {});
+    });
+
+    expect(message).toContain("the default branch");
+    expect(message).not.toContain("undefined");
+  });
+
+  test("an empty repository is called empty", async () => {
+    const message = await failed((gh) => {
+      gh.route("GET /repos/acme/platform", { default_branch: "main" });
+
+      gh.route(
+        "GET /repos/acme/platform/commits/main",
+        { message: "Git Repository is empty." },
+        409,
+      );
+    });
+
+    expect(message).toContain("the repository is empty");
+  });
+
+  test("the token provider says the token, not the GitHub App", async () => {
+    const message = await failed((gh) => {
+      gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+    });
+
+    expect(message).toContain("The token can't access");
+    expect(message).not.toContain("GitHub App");
+  });
+
+  test.each([
+    "acme",
+    "acme/platform/extra",
+    "-acme/platform",
+    "ac me/platform",
+    "acme/plat form",
+    "acme/..",
+    "acme/.",
+    "acme/pla\ttform",
+    "ac_me/platform",
+  ])("rejects the repo %j", async (repo) => {
+    const message = await failed(() => {}, { repo });
+
+    expect(message).toContain("`repo` must be");
+  });
+});
+
+describe("a truncated tree", () => {
+  test("throws instead of hashing part of the files", async () => {
+    const { gh, ci } = setup();
+
+    platform(gh);
+
+    gh.route("GET /repos/acme/platform/git/trees/cafe1234", {
+      truncated: true,
+      tree: [{ type: "blob", path: "a", sha: "1" }],
+    });
+
+    const image = ci.job(
+      {
+        id: "image",
+        cache: { key: files("**", { repo: "acme/platform" }) },
+      },
+      async () => {
+        await $`build image`;
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return image();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const message = JSON.stringify(result.error);
+
+    expect(message).toContain("too large to hash");
+    expect(message).toContain("narrower patterns");
+  });
+});
+
+describe("the clone", () => {
+  test("leaves no token in .git/config", async () => {
+    const { api, gh, ci } = setup();
+
+    platform(gh);
+
+    const build = ci.job("build", async () => {
+      await checkout({ repo: "acme/platform" });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return build();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    const script = cloneScripts(api)[0] ?? "";
+
+    expect(script).not.toContain(secret);
+    expect(JSON.stringify(api.commands)).not.toContain(secret);
+
+    expect(script).toContain(
+      "remote set-url origin 'https://github.com/acme/platform.git'",
+    );
+
+    const [update = "", clone = ""] = script.split("; else ");
+
+    expect(update).toContain("remote set-url origin 'https://github.com");
+    expect(clone).toContain("git clone");
+    expect(clone).toMatch(/checkout 'cafe1234'.*remote set-url origin 'https/);
+  });
+
+  test("fetches a fork's pull request head when the repo's case differs", async () => {
+    const { api, gh, ci } = setup();
+
+    gh.route("GET /repos/INNGEST/Inngest-JS/commits/abc1234", {
+      sha: "abc1234",
+    });
+
+    const build = ci.job("build", async () => {
+      await checkout({ repo: "INNGEST/Inngest-JS", ref: "abc1234" });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return build();
+      }),
+      {
+        event: {
+          ...prEvent,
+          data: {
+            ...prEvent.data,
+            pull_request: {
+              ...prEvent.data.pull_request,
+              head: {
+                ...prEvent.data.pull_request.head,
+                repo: { full_name: "someone/inngest-js" },
+              },
+            },
+          },
+        },
+      },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(cloneScripts(api)[0]).toContain("fetch origin 'refs/pull/7/head'");
+  });
+});
+
 describe("the GitHub App's installation", () => {
   const key = generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -273,41 +528,111 @@ describe("the GitHub App's installation", () => {
     });
   };
 
-  test("is found from the repository, not the run", async () => {
-    const { api, gh, ci } = setup(app);
+  const tokenRoutes = (gh: ReturnType<typeof createFakeGitHub>) => {
+    const expires = new Date(Date.now() + 3600_000).toISOString();
 
-    platform(gh);
-
-    gh.route("GET /repos/acme/platform/installation", { id: 99 });
+    gh.route("POST /app/installations/1/access_tokens", {
+      token: "tok_run",
+      expires_at: expires,
+    });
 
     gh.route("POST /app/installations/99/access_tokens", {
       token: secret,
-      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      expires_at: expires,
     });
+  };
 
+  const requestsOf = (gh: ReturnType<typeof createFakeGitHub>) => {
+    return gh.requests.map((request) => {
+      return `${request.method} ${request.path}`;
+    });
+  };
+
+  const checkoutPlatform = async (
+    ci: ReturnType<typeof setup>["ci"],
+    opts: { repo: string } = { repo: "acme/platform" },
+  ) => {
     const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform" });
+      await checkout(opts);
     });
 
-    const result = await runFunction(
+    return runFunction(
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return build();
       }),
       { event: prEvent },
     );
+  };
+
+  test("the run's own installation is used first", async () => {
+    const { api, gh, ci } = setup(app);
+
+    platform(gh);
+    tokenRoutes(gh);
+
+    const result = await checkoutPlatform(ci);
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
 
-    const paths = gh.requests.map((request) => {
-      return `${request.method} ${request.path}`;
+    const paths = requestsOf(gh);
+
+    expect(paths).toContain("POST /app/installations/1/access_tokens");
+    expect(paths).not.toContain("GET /repos/acme/platform/installation");
+    expect(paths).not.toContain("POST /app/installations/99/access_tokens");
+  });
+
+  test("tokens are narrowed to the one repository", async () => {
+    const { gh, ci } = setup(app);
+
+    platform(gh);
+    tokenRoutes(gh);
+
+    await checkoutPlatform(ci);
+
+    const minted = gh.requests.filter((request) => {
+      return (
+        request.method === "POST" && request.path.endsWith("/access_tokens")
+      );
     });
+
+    expect(minted.length).toBeGreaterThan(0);
+
+    for (const request of minted) {
+      expect(request.body).toMatchObject({ repositories: ["platform"] });
+    }
+  });
+
+  test("is found from the repository when the run's can't see it", async () => {
+    const { api, gh, ci } = setup(app);
+
+    tokenRoutes(gh);
+
+    gh.route("GET /repos/acme/platform/installation", { id: 99 });
+
+    gh.handle("GET /repos/acme/platform", (request) => {
+      return request.authorization?.includes("tok_run")
+        ? { body: { message: "Not Found" }, status: 404 }
+        : { body: { default_branch: "main" } };
+    });
+
+    gh.handle("GET /repos/acme/platform/commits/main", (request) => {
+      return request.authorization?.includes("tok_run")
+        ? { body: { message: "Not Found" }, status: 404 }
+        : { body: { sha: "cafe1234" } };
+    });
+
+    const result = await checkoutPlatform(ci);
+
+    expect(result.type).toBe("function-resolved");
+    expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
+
+    const paths = requestsOf(gh);
 
     expect(paths).toContain("GET /repos/acme/platform/installation");
     expect(paths).toContain("POST /app/installations/99/access_tokens");
-    expect(paths).not.toContain("POST /app/installations/1/access_tokens");
 
-    expect(result.steps["github › ref:acme/platform@"]).toMatchObject({
+    expect(result.steps["github › ref:acme/platform@main"]).toMatchObject({
       installationId: 99,
       sha: "cafe1234",
     });
@@ -318,22 +643,17 @@ describe("the GitHub App's installation", () => {
   test("an app that can't access the repository says so", async () => {
     const { api, gh, ci } = setup(app);
 
+    tokenRoutes(gh);
+
+    gh.route("GET /repos/acme/secret", { message: "Not Found" }, 404);
+
     gh.route(
       "GET /repos/acme/secret/installation",
       { message: "Not Found" },
       404,
     );
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/secret" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
+    const result = await checkoutPlatform(ci, { repo: "acme/secret" });
 
     expect(result.type).toBe("function-rejected");
     expect(result.retriable).toBe(false);
@@ -344,6 +664,77 @@ describe("the GitHub App's installation", () => {
     expect(message).toContain("GitHub App");
 
     expect(cloneScripts(api)).toHaveLength(0);
+  });
+
+  test("a rate limit retries instead of reading as no access", async () => {
+    const { gh, ci } = setup(app);
+
+    tokenRoutes(gh);
+
+    gh.handle("GET /repos/acme/platform", () => {
+      return {
+        body: { message: "API rate limit exceeded" },
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0", "retry-after": "1" },
+      };
+    });
+
+    const result = await checkoutPlatform(ci);
+
+    expect(result.type).toBe("function-rejected");
+
+    const message = JSON.stringify(result.error);
+
+    expect(message).toContain("rate limit");
+    expect(message).not.toContain("can't access");
+
+    expect(
+      requestsOf(gh).filter((path) => {
+        return path === "GET /repos/acme/platform";
+      }).length,
+    ).toBeGreaterThan(1);
+  });
+
+  test("a rate limit looking up the installation retries too", async () => {
+    const { gh, ci } = setup(app);
+
+    tokenRoutes(gh);
+
+    gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+
+    gh.handle("GET /repos/acme/platform/installation", () => {
+      return {
+        body: { message: "API rate limit exceeded" },
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0" },
+      };
+    });
+
+    const result = await checkoutPlatform(ci);
+
+    expect(result.type).toBe("function-rejected");
+    expect(JSON.stringify(result.error)).toContain("rate limit");
+    expect(JSON.stringify(result.error)).not.toContain("can't access");
+  });
+
+  test("a rejected App says its credentials are the problem", async () => {
+    const { gh, ci } = setup(app);
+
+    tokenRoutes(gh);
+
+    gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+
+    gh.route(
+      "GET /repos/acme/platform/installation",
+      { message: "Bad credentials" },
+      401,
+    );
+
+    const result = await checkoutPlatform(ci);
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+    expect(JSON.stringify(result.error)).toContain("credentials");
   });
 });
 
