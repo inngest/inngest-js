@@ -21,6 +21,7 @@ import {
 } from "../errors.ts";
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
+import { image } from "../image.ts";
 import { $ } from "../machine/command.ts";
 import {
   destroyOrphans,
@@ -3861,5 +3862,415 @@ describe("run snapshot cleanup", () => {
     expect(sizeBeforeRetry).toBe(1);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+});
+
+describe("base images", () => {
+  let captured = 0;
+
+  /** Capture a named snapshot, as the Sandboxes API would. */
+  const capture = (
+    api: ReturnType<typeof createFakeSandboxApi>,
+    name: string,
+  ): string => {
+    captured += 1;
+
+    const id = `00000000-0000-4000-8000-ffff${String(captured).padStart(8, "0")}`;
+
+    api.snapshots.set(id, {
+      id,
+      name,
+      status: "READY",
+      sandboxId: "00000000-0000-4000-8000-0000000000aa",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+
+    return id;
+  };
+
+  test("a job from image.custom boots from that snapshot", async () => {
+    const { api, ci } = setup();
+    const id = capture(api, "agent-deps");
+
+    const test = ci.job(
+      { id: "test", from: image.custom("agent-deps") },
+      async () => {
+        await $`pnpm test`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshotStarts).toEqual([id]);
+    expect(userCommands(api)).toEqual([["pnpm", "test"]]);
+  });
+
+  test("the newest snapshot with exactly that name wins", async () => {
+    const api = createFakeSandboxApi();
+
+    capture(api, "agent-deps-old");
+    const id = capture(api, "agent-deps");
+
+    const { ci } = setup({ api });
+
+    const test = ci.job(
+      { id: "test", from: image.custom("agent-deps") },
+      async () => {
+        await $`pnpm test`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(api.snapshotStarts).toEqual([id]);
+  });
+
+  test("the createCi default applies, and a job's own from wins", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+
+    const ci = createCi(client, {
+      github: consoleReporter(),
+      from: image.custom("agent-deps"),
+    });
+
+    const deps = capture(api, "agent-deps");
+    const base = capture(api, "agent-base");
+
+    const plain = ci.job("plain", async () => {
+      await $`echo plain`;
+    });
+
+    const own = ci.job(
+      { id: "own", from: image.custom("agent-base") },
+      async () => {
+        await $`echo own`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await plain();
+      await own();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshotStarts).toEqual([deps, base]);
+  });
+
+  test("a missing image says how to capture one", async () => {
+    const { api, ci } = setup();
+
+    const test = ci.job(
+      { id: "test", from: image.custom("agent-deps") },
+      async () => {
+        await $`pnpm test`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+
+    expect(result.type === "function-rejected" && result.error).toMatchObject({
+      name: "NonRetriableError",
+      message:
+        'No base image named `agent-deps`. Capture one with `sandbox.snapshot({ name: "agent-deps" })`.',
+    });
+
+    expect(api.sandboxes.size).toBe(0);
+  });
+
+  test("two jobs on one image resolve it with one step", async () => {
+    const { api, ci } = setup();
+
+    capture(api, "agent-deps");
+
+    const one = ci.job(
+      { id: "one", from: image.custom("agent-deps") },
+      async () => {
+        await $`echo one`;
+      },
+    );
+
+    const two = ci.job(
+      { id: "two", from: image.custom("agent-deps") },
+      async () => {
+        await $`echo two`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([one(), two()]);
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id === "image agent-deps";
+      }),
+    ).toHaveLength(1);
+
+    expect(api.snapshotStarts).toHaveLength(2);
+  });
+
+  test("a snapshot that won't start fails the job without rebuilding", async () => {
+    const { api, ci } = setup();
+
+    capture(api, "agent-deps");
+    api.failSnapshotStarts();
+
+    const test = ci.job(
+      { id: "test", from: image.custom("agent-deps") },
+      async () => {
+        await $`pnpm test`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+
+    expect(result.type === "function-rejected" && result.error).toMatchObject({
+      name: "NonRetriableError",
+      message: expect.stringContaining("The base image `agent-deps` wouldn't"),
+    });
+
+    expect(userCommands(api)).toEqual([]);
+  });
+
+  test("a parent that starts from an image passes it on", async () => {
+    const { api, ci } = setup();
+    const id = capture(api, "agent-deps");
+
+    const parent = ci.job(
+      { id: "parent", from: image.custom("agent-deps") },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const child = ci.job({ id: "child", from: parent }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await child();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshotStarts[0]).toBe(id);
+    expect(api.snapshotStarts).toHaveLength(2);
+  });
+
+  /** How many times a command containing `text` ran. */
+  const ran = (api: ReturnType<typeof createFakeSandboxApi>, text: string) => {
+    return userCommands(api).filter((argv) => {
+      return argv.join(" ").includes(text);
+    }).length;
+  };
+
+  test("a parent on an image that ran no commands passes the image on", async () => {
+    const { api, ci } = setup();
+    const id = capture(api, "agent-deps");
+
+    const parent = ci.job(
+      { id: "parent", from: image.custom("agent-deps") },
+      async () => {},
+    );
+
+    const child = ci.job({ id: "child", from: parent }, async () => {
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await child();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshotStarts).toEqual([id]);
+    expect(userCommands(api)).toEqual([["pnpm", "test"]]);
+  });
+
+  test("a cached job on an image hits again, and misses once the image is recaptured", async () => {
+    const api = createFakeSandboxApi();
+
+    capture(api, "x");
+
+    const run = async () => {
+      const { ci } = setup({ api });
+
+      const setupJob = ci.job(
+        { id: "setup", from: image.custom("x"), cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await setupJob();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await run();
+    await run();
+
+    expect(ran(api, "pnpm install")).toBe(1);
+
+    const first = namedSnapshots(api).filter((name) => {
+      return name.startsWith("ci/pr:7/setup/");
+    });
+
+    expect(first).toHaveLength(1);
+
+    const recaptured = capture(api, "x");
+
+    await run();
+
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(api.snapshotStarts.at(-1)).toBe(recaptured);
+
+    const second = namedSnapshots(api).filter((name) => {
+      return name.startsWith("ci/pr:7/setup/");
+    });
+
+    expect(new Set(second).size).toBe(2);
+  });
+
+  test("a cached parent on an image gets a new name when the image changes", async () => {
+    const api = createFakeSandboxApi();
+
+    capture(api, "x");
+
+    const run = async () => {
+      const { ci } = setup({ api });
+
+      const parent = ci.job(
+        { id: "parent", from: image.custom("x"), cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      const child = ci.job({ id: "child", from: parent }, async () => {
+        await $`pnpm test`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await child();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await run();
+    await run();
+
+    expect(ran(api, "pnpm install")).toBe(1);
+    expect(ran(api, "pnpm test")).toBe(2);
+
+    capture(api, "x");
+
+    await run();
+
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(ran(api, "pnpm test")).toBe(3);
+
+    const names = namedSnapshots(api).filter((name) => {
+      return name.startsWith("ci/pr:7/parent/");
+    });
+
+    expect(new Set(names).size).toBe(2);
+  });
+
+  test("a cached build starts from the image its name was worked out from", async () => {
+    const api = createFakeSandboxApi();
+    const id = capture(api, "x");
+    const { ci } = setup({ api });
+
+    const setupJob = ci.job(
+      { id: "setup", from: image.custom("x"), cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await setupJob();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshotStarts).toEqual([id]);
+
+    expect(
+      result.stepIds.filter((stepId) => {
+        return stepId === "image x";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test.each([
+    ["", /needs the name/],
+    ["agent deps", /whitespace/],
+    [" agent", /whitespace/],
+    ["ci/pr:7/setup/abc", /belong to CI/],
+  ])("image.custom(%j) throws at construction", (name, message) => {
+    expect(() => {
+      return image.custom(name);
+    }).toThrow(CiUsageError);
+
+    expect(() => {
+      return image.custom(name);
+    }).toThrow(message);
+  });
+
+  test("the image value is frozen", () => {
+    const value = image.custom("agent-deps");
+
+    expect(value).toEqual({
+      kind: "inngest/ci.image",
+      source: "custom",
+      name: "agent-deps",
+    });
+
+    expect(Object.isFrozen(value)).toBe(true);
   });
 });

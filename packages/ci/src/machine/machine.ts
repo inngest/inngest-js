@@ -242,6 +242,13 @@ const createMachine = async (
       // another, and the stuck machine is cleared away meanwhile.
       await discardFailedStart(run, stepId, name, error);
 
+      // An image isn't built by any job, so there is nothing to redo.
+      if (scope.fromImage) {
+        throw new NonRetriableError(
+          `The base image \`${scope.fromImage}\` wouldn't start (${errorMessage(error)}). Capture it again with \`sandbox.snapshot({ name: "${scope.fromImage}" })\`.`,
+        );
+      }
+
       bad = `wouldn't start (${errorMessage(error)})`;
     }
 

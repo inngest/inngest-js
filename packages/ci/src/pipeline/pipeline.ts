@@ -225,6 +225,7 @@ const newRunScope = ({
     builds: new Map(),
     sources: new Map(),
     defaultBranches: new Map(),
+    images: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],

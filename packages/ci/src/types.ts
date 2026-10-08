@@ -8,6 +8,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
+import type { BaseImage } from "./image.ts";
 
 /**
  * A duration, expressed as a time string like `"10m"`, `"24h"`, or `"1h30m"`.
@@ -349,16 +350,18 @@ export type AnyJobRef = JobRef<any>;
 type JobLike = Pick<AnyJob, "id" | "kind" | "with">;
 
 /**
- * What a job can start `from`: a job, a job with input, or a function of the
- * starting job's own input that gives either.
+ * What a job can start `from`: a job, a job with input, a base image from
+ * `image.custom()`, or a function of the starting job's own input that gives
+ * any of them.
  */
 export type From<TInput = void> =
   | JobLike
   | AnyJobRef
+  | BaseImage
   | ((ctx: {
       /** The starting job's input. */
       input: TInput;
-    }) => JobLike | AnyJobRef);
+    }) => JobLike | AnyJobRef | BaseImage);
 
 /**
  * Any job, regardless of its input type.

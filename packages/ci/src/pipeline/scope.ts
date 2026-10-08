@@ -11,6 +11,7 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import { CiUsageError } from "../errors.ts";
+import type { BaseImage } from "../image.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -122,6 +123,8 @@ export interface CiInternals {
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
+  /** The image jobs without a `from` start from. */
+  defaultImage?: BaseImage;
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   /** What the run tells a tool that watches it. Does nothing by default. */
   hooks: CiHooks;
@@ -194,6 +197,11 @@ export interface CiRunScope {
    * branch is found by one step per run. It holds promises and nothing else.
    */
   defaultBranches: Map<string, Promise<string>>;
+  /**
+   * The snapshot each base image name resolved to, one promise per name, so
+   * jobs on one image share one lookup. It holds promises and nothing else.
+   */
+  images: Map<string, Promise<CachedSnapshot>>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
@@ -264,6 +272,8 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
+  /** The name of the base image the job starts from, when it does. */
+  fromImage?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
   /**

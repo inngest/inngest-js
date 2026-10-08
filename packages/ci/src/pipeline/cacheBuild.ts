@@ -67,6 +67,12 @@ export interface CacheBuildData extends Record<string, unknown> {
    * looking its parent up again.
    */
   base?: CacheBuildResult;
+  /**
+   * The snapshot of the base image the job starts from, as the invoking run
+   * resolved it. The job's name has this snapshot's ID, so the build starts
+   * from it rather than looking the image up again.
+   */
+  image?: CachedSnapshot;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
   /**
