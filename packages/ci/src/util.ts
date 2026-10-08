@@ -285,69 +285,39 @@ export const formatDuration = (ms: number): string => {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 };
 
-/** Why Sandboxes can't be used, as the Dev Server and Cloud report it. */
-export type SandboxAccessProblem = "login" | "environment" | "plan";
-
-/** The short reason for each problem, which the run and the band show. */
-export const sandboxAccessReasons: Record<SandboxAccessProblem, string> = {
-  login: "not logged in to Inngest",
-  environment: "no Inngest environment selected",
-  plan: "Sandboxes not enabled for your account",
-};
-
-/**
- * Whether an error, or the short reason made from one, says Sandboxes can't
- * be used. The Dev Server answers `cloud_login_required` (401) when it isn't
- * logged in and `environment_required` (400) when the login has no single
- * environment; Cloud answers `access_denied` (403) when the account hasn't
- * been given Sandbox access.
- */
-export const sandboxAccessProblem = (
-  error: unknown,
-): SandboxAccessProblem | undefined => {
-  const { code, message } = readError(error);
-
-  if (
-    code === "cloud_login_required" ||
-    message === sandboxAccessReasons.login
-  ) {
-    return "login";
-  }
-
-  if (
-    code === "environment_required" ||
-    message === sandboxAccessReasons.environment
-  ) {
-    return "environment";
-  }
-
-  if (code === "access_denied" || message === sandboxAccessReasons.plan) {
-    return "plan";
-  }
-
-  return undefined;
+/** Fixed wording for the Sandbox errors that are worth naming. */
+const codeReasons: Record<string, string> = {
+  cloud_login_required: "not logged in to Inngest",
+  environment_required: "no Inngest environment selected",
+  access_denied: "Sandboxes not enabled for your account",
+  sandbox_start_failed: "machine failed to start",
 };
 
 /**
  * A failure reason short enough for a narrow column or a check title. Known
- * Sandbox start errors and access problems get fixed wording, matched by
- * `code` when there is one and by message otherwise; anything else is its first non-empty line without
- * an `Error:` style prefix or trailing period, capped at 60 characters. An
- * empty input gives an empty string.
+ * Sandbox errors get fixed wording, matched by `code` (or the cause's);
+ * anything else is its first non-empty line without an `Error:` style prefix
+ * or trailing period, capped at 60 characters. No message gives an empty
+ * string.
  */
 export const shortReason = (error: unknown): string => {
-  const { code, message } = readError(error);
-  const access = sandboxAccessProblem(error);
+  const { code, message, cause } = (error ?? {}) as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string };
+  };
+  const text = typeof message === "string" ? message : "";
+  const known = codeReasons[code ?? cause?.code ?? ""];
 
-  if (access) {
-    return sandboxAccessReasons[access];
+  if (known) {
+    return known;
   }
 
   if (
     code === "sandbox_start_timed_out" ||
-    /did not reach RUNNING/i.test(message)
+    /did not reach RUNNING/i.test(text)
   ) {
-    const ms = Number(/within (\d+) milliseconds/i.exec(message)?.[1]);
+    const ms = Number(/within (\d+) milliseconds/i.exec(text)?.[1]);
 
     if (!Number.isFinite(ms)) {
       return "machine didn't start";
@@ -358,42 +328,15 @@ export const shortReason = (error: unknown): string => {
     return `machine didn't start in ${waited}`;
   }
 
-  if (code === "sandbox_start_failed") {
-    return "machine failed to start";
-  }
-
-  const first =
-    message
-      .split("\n")
-      .map((part) => {
-        return part.trim();
-      })
-      .find(Boolean) ?? "";
-  const line = first.replace(/^(?:\w*Error:\s*)+/, "").replace(/\.$/, "");
+  const first = text.split("\n").find((part) => {
+    return part.trim();
+  });
+  const line = (first ?? "")
+    .trim()
+    .replace(/^(?:\w*Error:\s*)+/, "")
+    .replace(/\.$/, "");
 
   return line.length > 60 ? `${line.slice(0, 59)}…` : line;
-};
-
-const readError = (error: unknown): { code?: string; message: string } => {
-  if (typeof error === "string") {
-    return { message: error };
-  }
-
-  if (typeof error !== "object" || error === null) {
-    return { message: "" };
-  }
-
-  const { code, message, cause } = error as {
-    code?: unknown;
-    message?: unknown;
-    cause?: { code?: unknown };
-  };
-  const found = typeof code === "string" ? code : cause?.code;
-
-  return {
-    ...(typeof found === "string" ? { code: found } : {}),
-    message: typeof message === "string" ? message : "",
-  };
 };
 
 /**
