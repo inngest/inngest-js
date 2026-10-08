@@ -9,7 +9,6 @@
 import { readFileSync } from "node:fs";
 import { runWithAsyncCtx } from "inngest/experimental";
 import { describe, expect, test, vi } from "vitest";
-import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
@@ -18,7 +17,7 @@ import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
-import { createCiWithStore } from "./createCi.ts";
+import { createCi } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiRunScope } from "./scope.ts";
 
@@ -43,20 +42,16 @@ const prEvent = {
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 
-const setup = (cacheStore = memoryCacheStore()) => {
+const setup = () => {
   const api = createFakeSandboxApi();
   const client = createCiTestClient(api);
 
-  const ci = createCiWithStore(
-    client,
-    {
-      github: consoleReporter(),
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
-      },
+  const ci = createCi(client, {
+    github: consoleReporter(),
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
     },
-    cacheStore,
-  );
+  });
 
   return { api, client, ci };
 };
