@@ -53,6 +53,20 @@ A pipeline run is one trace. `base` runs once, in a run of its own that the trac
 
 Calling a job runs it every time you call it. Starting `from` a job builds it in a run of its own, so a job you both call and start from runs twice.
 
+## Caching
+
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+
+```ts
+const base = ci.job(
+  { id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } },
+  async () => {
+    await checkout();
+    await $`pnpm install`;
+  },
+);
+```
+
 ## Install
 
 ```bash

@@ -13,6 +13,7 @@ import {
   describeCached,
   lookupBeforeBuild,
   lookupCache,
+  maxAgeMsOf,
   runTarget,
 } from "../cache/cache.ts";
 import {
@@ -24,7 +25,12 @@ import type { CheckReporter } from "../github/checks.ts";
 import { identityOf, parentBuildOf, startFrom } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  shortReason,
+} from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, traceName } from "./names.ts";
@@ -62,6 +68,16 @@ export const defineJob = ({
 
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
+  if (config.cache?.maxAge !== undefined) {
+    try {
+      durationToMs(config.cache.maxAge);
+    } catch (error) {
+      throw new CiUsageError(
+        `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+      );
+    }
+  }
+
   if (jobs.has(config.id) && !getRunScope()) {
     throw new CiUsageError(
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
@@ -709,8 +725,11 @@ const snapshotBuilt = async (
     return;
   }
 
+  const maxAgeMs = maxAgeMsOf(scope.config.cache);
+
   const taken = await snapshotMachine(scope, {
     target,
+    ...(maxAgeMs === undefined ? {} : { maxAgeMs }),
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
   });
 

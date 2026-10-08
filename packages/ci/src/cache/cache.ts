@@ -21,7 +21,13 @@ import type {
   JobConfig,
   RepoContext,
 } from "../types.ts";
-import { boundedName, formatRelative, hash, stableStringify } from "../util.ts";
+import {
+  boundedName,
+  durationToMs,
+  formatRelative,
+  hash,
+  stableStringify,
+} from "../util.ts";
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -337,6 +343,27 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
+/**
+ * A job's `maxAge` in milliseconds, or none if it has no cache or no max age.
+ * `defineJob` has already checked that it parses.
+ */
+export const maxAgeMsOf = (
+  cache: CacheConfig | undefined,
+): number | undefined => {
+  return cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
+};
+
+/** Whether a snapshot was taken longer ago than a job's max age allows. */
+const isTooOld = (createdAt: string, maxAgeMs: number | undefined): boolean => {
+  if (maxAgeMs === undefined) {
+    return false;
+  }
+
+  const at = Date.parse(createdAt);
+
+  return Number.isFinite(at) && Date.now() - at > maxAgeMs;
+};
+
 /** How long a lookup waits for a snapshot another build is still taking. */
 const readyWaitMs = 2 * 60 * 1000;
 const readyPollMs = 1000;
@@ -387,7 +414,8 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the build taking it, and not about to expire.
+ * ready after waiting for the build taking it, not about to expire, and not
+ * older than the job's max age.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -397,6 +425,8 @@ const findNamed = async (
   name: string,
   /** A snapshot that must not be used, though it may still hold the name. */
   exclude?: string,
+  /** How old a snapshot may be, in milliseconds, from the job's `maxAge`. */
+  maxAgeMs?: number,
 ): Promise<CachedSnapshot | undefined> => {
   try {
     const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
@@ -416,7 +446,11 @@ const findNamed = async (
         ? await waitUntilReady(run, newest.id)
         : newest;
 
-    if (ready?.status !== "READY" || isExpiring(ready.expiresAt)) {
+    if (
+      ready?.status !== "READY" ||
+      isExpiring(ready.expiresAt) ||
+      isTooOld(ready.createdAt, maxAgeMs)
+    ) {
       return undefined;
     }
 
@@ -434,11 +468,14 @@ const findInScopes = async (
   ownKey: string,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
+  const maxAgeMs = maxAgeMsOf(cache);
+
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
       snapshotName(scope, jobId, ownKey),
       exclude,
+      maxAgeMs,
     );
 
     if (found) {
@@ -634,14 +671,16 @@ export const lookupParent = async (
 
 /**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
- * step. If it can't be used, because it is about to expire or is the bad one
- * the build replaces, it is deleted so the build can take the name after all.
+ * step. If it can't be used, because it is about to expire, is older than the
+ * job's max age or is the bad one the build replaces, it is deleted so the build can take the name after all.
  */
 export const resolveTakenName = async (
   run: CiRunScope,
   stepId: string,
   name: string,
   exclude?: string,
+  /** How old a snapshot may be, in milliseconds, from the job's `maxAge`. */
+  maxAgeMs?: number,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
   return ciRun<{ winner?: CachedSnapshot; cleared: boolean }>(
     run,
@@ -650,7 +689,7 @@ export const resolveTakenName = async (
       intent: `Find who holds the snapshot name \`${shorten(name, 80)}\``,
     },
     async (note) => {
-      const winner = await findNamed(run, name, exclude);
+      const winner = await findNamed(run, name, exclude, maxAgeMs);
 
       if (winner) {
         note.outcome({
@@ -670,7 +709,9 @@ export const resolveTakenName = async (
 
         for (const holder of page.items) {
           const unusable =
-            holder.id === exclude || isExpiring(holder.expiresAt);
+            holder.id === exclude ||
+            isExpiring(holder.expiresAt) ||
+            isTooOld(holder.createdAt, maxAgeMs);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;

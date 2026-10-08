@@ -431,6 +431,8 @@ export interface SnapshotCache {
   target: CacheTarget;
   /** A bad snapshot that may still hold the name, which must not be used. */
   exclude?: string;
+  /** How old a snapshot holding the name may be, in milliseconds. */
+  maxAgeMs?: number;
 }
 
 /** A snapshot of a job's machine. */
@@ -525,7 +527,7 @@ const createNamedSnapshot = async (
   run: CiRunScope,
   handle: MachineHandle,
   stepId: string,
-  { target, exclude }: SnapshotCache,
+  { target, exclude, maxAgeMs }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -556,6 +558,7 @@ const createNamedSnapshot = async (
     `${stepId}${scopeSeparator}name-taken`,
     name,
     exclude,
+    maxAgeMs,
   );
 
   if (held.winner) {
