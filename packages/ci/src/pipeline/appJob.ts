@@ -191,10 +191,15 @@ export const answerAppJob = async ({
   const config = registered.config;
 
   // Taken as this run's concern inside, like any build it asks for.
-  const built = await buildBase(run, {
-    config,
-    input: await validateInput(config, input),
-  });
+  const built = await buildBase(
+    run,
+    {
+      config,
+      input: await validateInput(config, input),
+    },
+    // The job itself is the start of the chain that guards `from` cycles here.
+    [config.id],
+  );
 
   // The asking run deletes what only it needs, since this one never does.
   return { ...built, createdSnapshots: [...run.createdSnapshots] };
