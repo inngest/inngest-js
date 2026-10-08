@@ -396,9 +396,8 @@ const findInScopes = async (
 };
 
 /**
- * Look a job's cached snapshot up, as a memoized step. Its parents aren't
- * checked here: that needs the metadata inside it, which is read when a
- * machine starts from it.
+ * Look a job's cached snapshot up, as a memoized step. Its parents need no
+ * check: they are part of its name.
  */
 export const lookupCache = async (
   scope: CiJobScope,
