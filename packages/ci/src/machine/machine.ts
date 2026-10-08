@@ -6,6 +6,7 @@
  */
 
 import type { Inngest } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { deleteSnapshot, resolveTakenName } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
@@ -227,6 +228,13 @@ const createMachine = async (
       // The failed start still holds `name`, so what replaces it gets
       // another, and the stuck machine is cleared away meanwhile.
       await discardFailedStart(run, stepId, name, error);
+
+      // An image isn't built by any job, so there is nothing to redo.
+      if (scope.fromImage) {
+        throw new NonRetriableError(
+          `The base image \`${scope.fromImage}\` wouldn't start (${errorMessage(error)}). Capture it again with \`sandbox.snapshot({ name: "${scope.fromImage}" })\`.`,
+        );
+      }
 
       bad = `wouldn't start (${errorMessage(error)})`;
     }

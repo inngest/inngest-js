@@ -223,6 +223,7 @@ const newRunScope = ({
     ...(repo ? { repo } : {}),
     ...(build ? { build } : {}),
     builds: new Map(),
+    images: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],

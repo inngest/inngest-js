@@ -21,7 +21,13 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { identityOf, parentBuildOf, startFrom } from "../machine/from.ts";
+import type { FromBase } from "../machine/from.ts";
+import {
+  identityOf,
+  isImageBase,
+  parentBuildOf,
+  startFrom,
+} from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
@@ -164,7 +170,7 @@ export const invokeBuild = async ({
   exclude?: string;
   check?: CacheBuildData["parent"]["check"];
   /** What the job starts from, which the build must start from too. */
-  base?: CacheBuildResult;
+  base?: FromBase;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
 }): Promise<CacheBuildResult> => {
@@ -179,7 +185,8 @@ export const invokeBuild = async ({
     ownKey: target.ownKey,
     cacheKey: target.name,
     ...(exclude ? { exclude } : {}),
-    ...(base ? { base: baseForBuild(base) } : {}),
+    ...(base && !isImageBase(base) ? { base: baseForBuild(base.built) } : {}),
+    ...(base && isImageBase(base) ? { image: base.snapshot } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
     rootRunId,
     parent: {
@@ -415,10 +422,11 @@ const jobSteps = async ({
   // parent that failed fails this job too, once its check has started.
   let parentFailure: { error: unknown } | undefined;
 
-  // Only a job with a `from` waits here, so a job without one plans its
-  // first step at once, as a run that ends without awaiting it expects.
+  // Only a job with a `from`, or on a default image, waits here, so a job
+  // without one plans its first step at once, as a run that ends without
+  // awaiting it expects.
   const fromParent =
-    config.from === undefined
+    config.from === undefined && !run.ci.defaultImage
       ? undefined
       : await parentBuildOf(scope, input).catch((error: unknown) => {
           parentFailure = { error };
@@ -442,9 +450,7 @@ const jobSteps = async ({
           { id: config.id, path: scope.path },
           config.cache,
           input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
+          fromParent ? identityOf(fromParent) : undefined,
         )
       : undefined;
 
@@ -502,7 +508,7 @@ const jobSteps = async ({
         input,
         target: cacheAt,
         check: checks.target(target),
-        ...(fromParent ? { base: fromParent.built } : {}),
+        ...(fromParent ? { base: fromParent } : {}),
       });
 
       adoptBuilt(run, built);

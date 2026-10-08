@@ -8,6 +8,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Inngest, InngestFunction } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
 import { consoleReporter } from "../github/auth.ts";
 import type { CheckSink } from "../github/checks.ts";
@@ -19,6 +20,8 @@ import {
   statusesSink,
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
+import type { BaseImage } from "../image.ts";
+import { isBaseImage } from "../image.ts";
 import type {
   CiSkip,
   CiTrigger,
@@ -53,6 +56,16 @@ export interface CiOptions {
   github?: GitHubProvider;
   /** Default machine for jobs. */
   machine?: MachineConfig;
+  /**
+   * The image every job without its own `from` starts from. Only an image is
+   * allowed: a default job would make every job, itself included, start from
+   * itself.
+   *
+   * ```ts
+   * const ci = createCi(inngest, { from: image.custom("agent-deps") });
+   * ```
+   */
+  from?: BaseImage;
   /** Builds the link shown on checks. */
   runUrl?: (ctx: { runId: string; functionId: string }) => string;
 }
@@ -205,6 +218,12 @@ export interface Ci {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
+  if (options.from !== undefined && !isBaseImage(options.from)) {
+    throw new CiUsageError(
+      '`createCi` takes an image for `from`, like `image.custom("agent-deps")`. To start a job from another job, set `from` on that job.',
+    );
+  }
+
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
   const isDev = () => {
@@ -241,6 +260,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return buildFunction;
     },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
+    ...(options.from ? { defaultImage: options.from } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
       client as unknown as { logger?: { warn: (...args: unknown[]) => void } }

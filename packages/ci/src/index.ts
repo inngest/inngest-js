@@ -73,6 +73,9 @@ export type {
   PullRequestAction,
   PullRequestEventFor,
 } from "./github/triggers.ts";
+// Base images
+export type { BaseImage } from "./image.ts";
+export { image } from "./image.ts";
 // Commands and machines
 export { $ } from "./machine/command.ts";
 export { sandbox } from "./machine/sandbox.ts";

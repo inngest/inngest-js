@@ -147,6 +147,9 @@ export const traceName = {
   stopAfterTimeout: "Stop after timeout",
   findStartedProcess: "Find started process",
 
+  findBaseImage: (name: string): string => {
+    return `Find base image ${name}`;
+  },
   checkCache: "Check cache",
   lookUpCache: "Look up cache",
   resolveCacheName: "Resolve cache name",
