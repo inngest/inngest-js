@@ -8,6 +8,14 @@ export interface FakeGitHubRequest {
   method: string;
   path: string;
   body?: unknown;
+  /** The request's `Authorization` header, if it had one. */
+  authorization?: string;
+}
+
+export interface FakeGitHubReply {
+  body: unknown;
+  status?: number;
+  headers?: Record<string, string>;
 }
 
 export interface FakeGitHub {
@@ -15,6 +23,11 @@ export interface FakeGitHub {
   requests: FakeGitHubRequest[];
   /** Reply to `METHOD /path` with this body. Paths may end in `*`. */
   route(pattern: string, body: unknown, status?: number): void;
+  /** Like `route`, but decides from the request, such as who is asking. */
+  handle(
+    pattern: string,
+    reply: (request: FakeGitHubRequest) => FakeGitHubReply,
+  ): void;
 }
 
 /**
@@ -22,7 +35,10 @@ export interface FakeGitHub {
  */
 export const createFakeGitHub = (): FakeGitHub => {
   const requests: FakeGitHubRequest[] = [];
-  const routes: Array<{ pattern: string; body: unknown; status: number }> = [];
+  const routes: Array<{
+    pattern: string;
+    reply: (request: FakeGitHubRequest) => FakeGitHubReply;
+  }> = [];
 
   const fakeFetch = (async (
     input: string | URL | Request,
@@ -32,11 +48,16 @@ export const createFakeGitHub = (): FakeGitHub => {
     const method = (init?.method ?? "GET").toUpperCase();
     const key = `${method} ${url.pathname}`;
 
-    requests.push({
+    const authorization = new Headers(init?.headers).get("authorization");
+
+    const request: FakeGitHubRequest = {
       method,
       path: url.pathname,
       ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
-    });
+      ...(authorization ? { authorization } : {}),
+    };
+
+    requests.push(request);
 
     const route = routes.find(({ pattern }) => {
       return pattern.endsWith("*")
@@ -44,9 +65,11 @@ export const createFakeGitHub = (): FakeGitHub => {
         : pattern === key;
     });
 
-    const response = new Response(JSON.stringify(route?.body ?? {}), {
-      status: route?.status ?? 200,
-      headers: { "Content-Type": "application/json" },
+    const reply = route?.reply(request);
+
+    const response = new Response(JSON.stringify(reply?.body ?? {}), {
+      status: reply?.status ?? 200,
+      headers: { "Content-Type": "application/json", ...reply?.headers },
     });
 
     // Octokit's pagination reads the request URL from the response.
@@ -59,7 +82,15 @@ export const createFakeGitHub = (): FakeGitHub => {
     fetch: fakeFetch,
     requests,
     route: (pattern, body, status = 200) => {
-      routes.unshift({ pattern, body, status });
+      routes.unshift({
+        pattern,
+        reply: () => {
+          return { body, status };
+        },
+      });
+    },
+    handle: (pattern, reply) => {
+      routes.unshift({ pattern, reply });
     },
   };
 };

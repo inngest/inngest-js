@@ -8,12 +8,19 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 
+import { NonRetriableError } from "inngest";
 import { CiUsageError } from "../errors.ts";
+import { mapGitHubError } from "./rest.ts";
 
 export interface AuthContext {
   installationId?: number;
   owner?: string;
   repo?: string;
+  /**
+   * Narrow the installation token to these repositories of the installation.
+   * Without it a token can reach everything the installation can.
+   */
+  repositoryNames?: string[];
 }
 
 /**
@@ -29,6 +36,12 @@ export interface GitHubProvider {
   readonly reporter: "checks" | "statuses" | "console";
   octokit(ctx?: AuthContext): Promise<Octokit>;
   token(ctx?: AuthContext): Promise<string>;
+  /**
+   * The installation that can access a repository, or `undefined` when none
+   * can. Only a GitHub App has installations, so other providers leave this
+   * out and use the same credentials for every repository.
+   */
+  installationFor?(owner: string, repo: string): Promise<number | undefined>;
 }
 
 export interface GitHubAppProvider extends GitHubProvider {
@@ -86,7 +99,19 @@ export const githubApp = (
     return { appId, privateKey: privateKey.replace(/\\n/g, "\n") };
   };
 
-  const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
+  const appOctokit = (): Octokit => {
+    const { appId, privateKey } = resolve();
+
+    return new Octokit({
+      authStrategy: createAppAuth,
+      auth: { appId, privateKey },
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+    });
+  };
+
+  /** A client for the installation, which can reach all of it. */
+  const installationOctokit = (ctx?: AuthContext): Octokit => {
     const { appId, privateKey } = resolve();
 
     const installationId =
@@ -109,19 +134,68 @@ export const githubApp = (
     });
   };
 
+  /** A token for the installation, narrowed to `repositoryNames` when given. */
+  const installationToken = async (ctx?: AuthContext): Promise<string> => {
+    const auth = (await installationOctokit(ctx).auth({
+      type: "installation",
+      ...(ctx?.repositoryNames ? { repositoryNames: ctx.repositoryNames } : {}),
+    })) as { token: string };
+
+    return auth.token;
+  };
+
+  const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
+    if (!ctx?.repositoryNames) {
+      return installationOctokit(ctx);
+    }
+
+    // A narrowed client authenticates with a token that reaches only those
+    // repositories.
+    return new Octokit({
+      auth: await installationToken(ctx),
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+    });
+  };
+
   return {
     kind: "app",
     reporter: "checks",
     octokit: octokitFor,
-    token: async (ctx) => {
-      const octokit = await octokitFor(ctx);
+    installationFor: async (owner, repo) => {
+      try {
+        // Asked as the App itself, since an installation is what's being found.
+        const { data } = await appOctokit().rest.apps.getRepoInstallation({
+          owner,
+          repo,
+        });
 
-      const auth = (await octokit.auth({ type: "installation" })) as {
-        token: string;
-      };
+        return data.id;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
 
-      return auth.token;
+        if (status === 404) {
+          return undefined;
+        }
+
+        const mapped = mapGitHubError(error);
+
+        if (status === 401 || status === 403) {
+          // A rate limit is a 403 too, and retries.
+          if (mapped && !(mapped instanceof NonRetriableError)) {
+            throw mapped;
+          }
+
+          throw new NonRetriableError(
+            "GitHub rejected the GitHub App's credentials. The App may be suspended, or `appId` and `privateKey` may be wrong.",
+            { cause: error },
+          );
+        }
+
+        throw mapped ?? error;
+      }
     },
+    token: installationToken,
   };
 };
 

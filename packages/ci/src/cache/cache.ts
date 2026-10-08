@@ -10,6 +10,15 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
+import { mapGitHubError, rest } from "../github/rest.ts";
+import type { ResolvedSource } from "../github/source.ts";
+import {
+  octokitForSource,
+  resolvedSource,
+  resolveSource,
+  targetsRunRepo,
+} from "../github/source.ts";
 import { ciRun, shorten } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
@@ -18,12 +27,14 @@ import type {
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  FilesOptions,
   JobConfig,
   RepoContext,
 } from "../types.ts";
 import {
   boundedName,
   durationToMs,
+  filterPaths,
   formatRelative,
   hash,
   stableStringify,
@@ -99,8 +110,9 @@ export const snapshotName = (
  * Resolve the parts of a cache key into a single hash.
  *
  * `files()` parts are resolved against the repository: the git tree for the
- * run's commit on GitHub, or the working tree locally, so a key changes
- * exactly when the matched files do.
+ * run's commit on GitHub (or for the commit its `repo` and `ref` resolved to),
+ * or the working tree locally, so a key changes exactly when the matched files
+ * do.
  */
 export const resolveCacheKey = async (
   run: CiRunScope,
@@ -130,10 +142,39 @@ export const resolveCacheKey = async (
   return hash(resolved.join("\0"));
 };
 
+/** The parts of a cache key, as a list. */
+const keyParts = (key: CacheKey | undefined): (CacheKeyPart | string)[] => {
+  if (key === undefined || typeof key === "function") {
+    return [];
+  }
+
+  return Array.isArray(key) ? key : [key];
+};
+
+/**
+ * Resolve the repository and ref of every `files()` part that reads another
+ * commit than the run's own, each in a memoized step. A key is worked out
+ * inside a step, which can't start another, so this runs just before it.
+ */
+export const resolveKeySources = async (
+  run: CiRunScope,
+  key: CacheKey | undefined,
+): Promise<void> => {
+  for (const part of keyParts(key)) {
+    if (typeof part !== "string" && !targetsRunRepo(run, part)) {
+      await resolveSource(run, part);
+    }
+  }
+};
+
 const resolveFilesPart = async (
   run: CiRunScope,
   part: CacheKeyPart,
 ): Promise<string> => {
+  if (!targetsRunRepo(run, part)) {
+    return hashRemoteFiles(run, await resolvedSource(run, part), part);
+  }
+
   const repo = run.repo;
 
   if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
@@ -146,15 +187,57 @@ const resolveFilesPart = async (
     return `files:${part.patterns.join(",")}`;
   }
 
-  const { rest } = await import("../github/rest.ts");
-  const { filterPaths } = await import("../util.ts");
-
   const tree = await rest.git.getTree({
     tree_sha: repo.sha,
     recursive: "1",
   });
 
-  const entries = (tree.tree ?? [])
+  return hashTree(tree, part.patterns, repo.fullName);
+};
+
+/**
+ * Hash the matched files of another repository or ref, at the commit it
+ * resolved to, with a client for the installation that can read it.
+ */
+const hashRemoteFiles = async (
+  run: CiRunScope,
+  source: ResolvedSource,
+  part: CacheKeyPart,
+): Promise<string> => {
+  const octokit = await octokitForSource(run, source);
+
+  try {
+    const { data } = await octokit.rest.git.getTree({
+      owner: source.owner,
+      repo: source.name,
+      tree_sha: source.sha,
+      recursive: "1",
+    });
+
+    return hashTree(data, part.patterns, source.fullName);
+  } catch (error) {
+    throw mapGitHubError(error) ?? error;
+  }
+};
+
+/** A hash of the blobs in a git tree that match the patterns. */
+const hashTree = (
+  listing: {
+    tree?: { type?: string; path?: string; sha?: string }[];
+    truncated?: boolean;
+  },
+  patterns: string[],
+  fullName: string,
+): string => {
+  // A truncated listing would hash only some of the files, and a key that
+  // ignores the rest never changes when they do.
+  if (listing.truncated) {
+    throw new NonRetriableError(
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Use narrower patterns, or a string key.`,
+    );
+  }
+
+  const entries = (listing.tree ?? [])
     .filter((entry) => {
       return entry.type === "blob" && entry.path;
     })
@@ -166,7 +249,7 @@ const resolveFilesPart = async (
     entries.map((entry) => {
       return entry.path;
     }),
-    { include: part.patterns },
+    { include: patterns },
   );
 
   const byPath = new Map(
@@ -275,6 +358,10 @@ export const cacheTarget = async (
   // A build run was handed the name the run that invoked it concurrency-limits
   // on, so the two can't drift apart.
   const given = run.build?.jobId === jobId ? run.build : undefined;
+
+  if (!given?.ownKey) {
+    await resolveKeySources(run, cache.key);
+  }
 
   const ownKey =
     given?.ownKey ??
@@ -620,6 +707,10 @@ export const lookupParent = async (
     countApi("cache");
   }
 
+  if (config.cache && run.build?.jobId !== config.id) {
+    await resolveKeySources(run, config.cache.key);
+  }
+
   const found = await ciRun<{
     target: CacheTarget;
     hit: CachedSnapshot | null;
@@ -801,14 +892,38 @@ export const describeCached = (
  * Contents are read from the git tree for the run's commit, or from the
  * working tree locally, so uncommitted changes change the key too.
  *
+ * End with `{ repo, ref }` to read another repository or ref. `ref` is a
+ * branch, tag or commit, and `repo` is `"owner/name"` with `ref` defaulting to
+ * its default branch. The ref is resolved to a commit once per run, so a branch
+ * that moves changes the key exactly when the matched files change. Locally,
+ * this reads from GitHub too, unless it names the local repository with no
+ * `ref`.
+ *
+ * ```ts
+ * cache: {
+ *   key: files("images/node-base/**", { repo: "acme/platform", ref: "main" }),
+ * }
+ * ```
+ *
  * Patterns support `**`, `*`, `?`, and `{a,b}`.
  */
 export const files = (
-  /** Glob patterns for the files to hash. */ ...patterns: string[]
+  /** Glob patterns for the files to hash, then optionally where to read them from. */
+  ...args: string[] | [...patterns: string[], options: FilesOptions]
 ): CacheKeyPart => {
+  const list: (string | FilesOptions)[] = args;
+  const last = list.at(-1);
+  const options = typeof last === "object" ? last : undefined;
+
+  const patterns = list.filter((arg): arg is string => {
+    return typeof arg === "string";
+  });
+
   return {
     kind: "inngest/ci.cacheKeyPart",
     type: "files",
     patterns,
+    ...(options?.repo ? { repo: options.repo } : {}),
+    ...(options?.ref ? { ref: options.ref } : {}),
   };
 };
