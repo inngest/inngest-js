@@ -1,6 +1,6 @@
 /**
  * End-to-end tests of pipelines, jobs, machines, caching and reporting,
- driven through the fake sandbox API.
+ * driven through the fake sandbox API.
  *
  * @module
  */
@@ -22,39 +22,22 @@ import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
+import {
+  destroyOrphans,
+  destroyRunMachines,
+  machineSetupScript,
+} from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { writeSnapshotMetaScript } from "../machine/snapshotMeta.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import { createCi } from "./createCi.ts";
-import { destroyOrphans } from "./pipeline.ts";
 import { getRunScope } from "./scope.ts";
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
 
 /**
  * The commands a job asked for, without CI's own machine setup and snapshot
