@@ -67,7 +67,7 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  /** Every job defined on the client, so a cache key can look up its parents. */
+  /** Every job defined on the client, so a job's `from` can find its parent. */
   jobs: Map<
     string,
     {
