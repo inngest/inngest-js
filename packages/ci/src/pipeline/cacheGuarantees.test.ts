@@ -19,30 +19,10 @@ import { from } from "../machine/from.ts";
 import { machineSetupScript } from "../machine/machine.ts";
 import { writeSnapshotMetaScript } from "../machine/snapshotMeta.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { createCi } from "./createCi.ts";
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
 

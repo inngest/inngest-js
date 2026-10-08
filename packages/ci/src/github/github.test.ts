@@ -11,31 +11,12 @@ import { createCi } from "../pipeline/createCi.ts";
 import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
 import { rerunEventFor } from "../pipeline/rerun.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { consoleReporter, githubToken } from "./auth.ts";
 import { github } from "./index.ts";
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
 
 const setup = (gh: FakeGitHub) => {
   const api = createFakeSandboxApi();
