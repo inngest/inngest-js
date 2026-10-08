@@ -6,6 +6,7 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { traceName } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { countApi, getRunScope } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
@@ -91,7 +92,7 @@ export const changedFiles = async (): Promise<string[] | null> => {
 
 const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
   const files = (await run.step.run(
-    { id: "changed", name: "changed" },
+    { id: "changed", name: traceName.findChangedFiles },
     async () => {
       try {
         return await listChangedFiles(run.repo);

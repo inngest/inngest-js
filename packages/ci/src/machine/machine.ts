@@ -9,12 +9,14 @@ import type { Inngest } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { deleteSnapshot, resolveTakenName } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
+import { defaultCwd, inJobSpan, scopeSeparator } from "../pipeline/scope.ts";
+import { inSpan } from "../pipeline/spans.ts";
 import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
@@ -49,12 +51,25 @@ export const machineName = (runId: string, path: string): string => {
  * Create this scope's machine if it doesn't have one yet.
  *
  * Machines are lazy: a job that never runs a command never gets one, and
- * concurrent first commands share a single creation promise.
+ * concurrent first commands share a single creation promise. Its steps are in
+ * a span of its own, in its job's span rather than the first command's.
  */
 export const ensureMachine = async (
   scope: CiJobScope,
 ): Promise<MachineHandle> => {
-  scope.machine ??= createMachine(scope);
+  scope.machine ??= inJobSpan(scope.run, scope.jobPath, () => {
+    return inMachineSpan(scope, () => {
+      const stepId = `${scope.path}${scopeSeparator}machine`;
+
+      // Everything in it is CI's work, including falling back from a
+      // snapshot that won't start.
+      const span = ciSpan(stepId, traceName.startMachine(scope.fromJobIds[0]));
+
+      return inSpan(span, () => {
+        return createMachine(scope, stepId);
+      });
+    });
+  });
 
   const handle = await scope.machine;
 
@@ -82,6 +97,23 @@ export const ensureMachine = async (
 };
 
 /**
+ * Run `fn` in an extra machine's span, so its commands sit apart from the
+ * job's own. A job's own machine has none: the job's span is its span.
+ */
+export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
+  if (scope.path === scope.jobPath) {
+    return fn();
+  }
+
+  const span = {
+    id: scope.path,
+    name: traceName.extraMachine(scope.path, scope.jobPath),
+  };
+
+  return inSpan(span, fn);
+};
+
+/**
  * Run once on every machine before its first command.
  *
  * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
@@ -101,7 +133,11 @@ interface Started {
   sandbox: any;
 }
 
-const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
+const createMachine = async (
+  scope: CiJobScope,
+  /** The create step's ID, which other steps for the machine build on. */
+  stepId: string,
+): Promise<MachineHandle> => {
   const { run } = scope;
   const tools = run.sandboxTools;
 
@@ -112,7 +148,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   }
 
   const name = machineName(run.runId, scope.path);
-  const stepId = `${scope.path}${scopeSeparator}machine`;
+  const create = { id: stepId, name: traceName.createMachine };
 
   const machineConfig = resolveMachineConfig(
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
@@ -120,24 +156,26 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
   /** Create a machine, from a snapshot if one is given, and set it up. */
   const start = async (
-    createStepId: string,
+    createStep: { id: string; name: string },
     options: { name: string; snapshotId?: string },
   ): Promise<Started> => {
     const sandbox = options.snapshotId
-      ? await tools.create(createStepId, {
+      ? await tools.create(createStep, {
           name: options.name,
           snapshotId: options.snapshotId,
         })
-      : await tools.create(createStepId, {
+      : await tools.create(createStep, {
           name: options.name,
           ...machineConfig,
         });
 
-    await sandbox.commands.run(`${createStepId}${scopeSeparator}setup`, [
-      "/bin/sh",
-      "-c",
-      machineSetupScript,
-    ]);
+    await sandbox.commands.run(
+      {
+        id: `${createStep.id}${scopeSeparator}setup`,
+        name: traceName.prepareWorkspace,
+      },
+      ["/bin/sh", "-c", machineSetupScript],
+    );
 
     return { sandbox };
   };
@@ -149,9 +187,13 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
     run.ci.hooks.activity(run, scope.jobPath, note);
 
-    return start(`${stepId}${scopeSeparator}fresh`, {
-      name: machineName(run.runId, `${scope.path} fresh`),
-    });
+    return start(
+      {
+        id: `${stepId}${scopeSeparator}fresh`,
+        name: traceName.createFreshMachine,
+      },
+      { name: machineName(run.runId, `${scope.path} fresh`) },
+    );
   };
 
   const parentId = scope.fromJobIds[0] ?? "the parent";
@@ -160,6 +202,9 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   let started: Started;
 
   if (snapshotId) {
+    // Every job starting from a snapshot checks it for itself, so what a job
+    // does never depends on whether a sibling got there first. Only the
+    // rebuild of the parent, which each of them awaits, is shared.
     run.ci.hooks.activity(
       run,
       scope.jobPath,
@@ -172,7 +217,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     let bad: string | undefined;
 
     try {
-      probed = await start(stepId, { name, snapshotId });
+      probed = await start(create, { name, snapshotId });
     } catch (error) {
       if (!isStartFailure(error)) {
         throw error;
@@ -212,10 +257,16 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
         run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
-        started = await start(`${stepId}${scopeSeparator}retry`, {
-          name: machineName(run.runId, `${scope.path} retry`),
-          snapshotId: replacement,
-        });
+        started = await start(
+          {
+            id: `${stepId}${scopeSeparator}retry`,
+            name: traceName.retryCreate,
+          },
+          {
+            name: machineName(run.runId, `${scope.path} retry`),
+            snapshotId: replacement,
+          },
+        );
       } else {
         started = await startFresh(note);
       }
@@ -227,7 +278,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
       scope.startNote ?? "creating machine…",
     );
 
-    started = await start(stepId, { name });
+    started = await start(create, { name });
   }
 
   const handle: MachineHandle = {
@@ -241,7 +292,8 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
 /**
  * Best-effort cleanup of a machine that failed to start. The platform keeps
- * such a machine (stuck in STARTING) and its name, so it is destroyed here.
+ * such a machine (stuck in STARTING) and its name, so it is destroyed here, and
+ * the end of the run finds it by its name if this couldn't.
  *
  * Never throws: a machine that can't be cleaned up now must not fail the job.
  */
@@ -258,7 +310,7 @@ const discardFailedStart = async (
     await run.step.run(
       {
         id: `${stepId}${scopeSeparator}discard`,
-        name: `${stepId}${scopeSeparator}discard`,
+        name: traceName.discardMachine,
       },
       async (): Promise<{ id?: string }> => {
         // Errors are swallowed inside the step so it never retries.
@@ -292,7 +344,7 @@ const discardFailedStart = async (
             await sandbox?.destroy();
           }
         } catch {
-          // Left to expire with the rest of the run's machines.
+          // The run's cleanup finds it again by its name.
         }
 
         return id ? { id } : {};
@@ -336,6 +388,14 @@ const errorStatus = (error: unknown): number | undefined => {
   return seen?.status ?? seen?.cause?.status;
 };
 
+/** Run `fn` in a job's "Save sandbox" span, which holds snapshotting it. */
+const inSaveSpan = <R>(jobPath: string, fn: () => R): R => {
+  return inSpan(
+    ciSpan(`${jobPath}${scopeSeparator}save`, traceName.saveMachine),
+    fn,
+  );
+};
+
 /** How a job's snapshot is named. */
 export interface SnapshotCache {
   target: CacheTarget;
@@ -356,6 +416,11 @@ export interface TakenSnapshot {
   /** Whether another build had already taken it. */
   reused: boolean;
 }
+
+/** A snapshot step: its ID is the step's, its name reads as an action. */
+const snapshotStep = (id: string) => {
+  return { id, name: traceName.snapshotMachine };
+};
 
 /**
  * Snapshot a job's own machine, which is the end of a build or a failed job
@@ -378,7 +443,9 @@ export const snapshotMachine = async (
 
   const handle = await scope.machine;
 
-  return takeSnapshot(run, scope.path, handle, cache);
+  return inSaveSpan(scope.path, () => {
+    return takeSnapshot(run, scope.path, handle, cache);
+  });
 };
 
 const takeSnapshot = async (
@@ -428,7 +495,7 @@ const createNamedSnapshot = async (
   const name = target.name;
 
   const attempt = async (id: string): Promise<TakenSnapshot> => {
-    const snapshot = await handle.sandbox.snapshot(id, { name });
+    const snapshot = await handle.sandbox.snapshot(snapshotStep(id), { name });
 
     return {
       snapshotId: snapshot.id,
@@ -484,13 +551,16 @@ const createNamedSnapshot = async (
     );
   }
 
-  const unnamed = await handle.sandbox.snapshot(`${stepId} (unnamed)`);
+  const unnamed = await handle.sandbox.snapshot(
+    snapshotStep(`${stepId} (unnamed)`),
+  );
 
   // Today's Cloud rejects snapshot names, so a job's snapshot falls back to an
   // unnamed one that no later run can find. The run that invoked the build
   // deletes it at its own end, like any run-only snapshot: the build's own
   // cleanup would delete it while that run still starts jobs from it. Remove
-  // this once every Cloud environment has snapshot names.
+  // this once every Cloud environment has snapshot names
+  // (inngest/inngest jack/snapshot-names, monorepo jack/snapshot-names).
   return { snapshotId: unnamed.id, reused: false };
 };
 
@@ -502,7 +572,7 @@ const createRunSnapshot = async (
   handle: MachineHandle,
   stepId: string,
 ): Promise<TakenSnapshot> => {
-  const snapshot = await handle.sandbox.snapshot(stepId);
+  const snapshot = await handle.sandbox.snapshot(snapshotStep(stepId));
 
   return { snapshotId: snapshot.id, reused: false };
 };
@@ -582,10 +652,10 @@ export const destroyRunMachines = async (
   attempt = 0,
 ): Promise<void> => {
   await run.step.run(
-    {
-      id: `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      name: "cleanup",
-    },
+    ciStep(
+      `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      traceName.cleanUpMachines,
+    ),
     async () => {
       return destroyOrphans(run.ci.client, run.runId);
     },
@@ -615,10 +685,10 @@ export const deleteRunSnapshots = async (
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
   await run.step.run(
-    {
-      id: `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      name: "cleanup:snapshots",
-    },
+    ciStep(
+      `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      traceName.cleanUpSnapshots,
+    ),
     async () => {
       const deleted: string[] = [];
       const failed: string[] = [];

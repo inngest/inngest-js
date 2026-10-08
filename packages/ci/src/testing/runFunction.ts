@@ -15,6 +15,7 @@
 
 import type { EventPayload, InngestFunction } from "inngest";
 import { createdFunctions } from "./client.ts";
+import { SpanStubMiddleware, spanStubInstalled, stampOf } from "./spanStub.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
@@ -41,10 +42,18 @@ interface Step {
   data?: unknown;
   error?: unknown;
   metadata?: MetadataUpdate[];
-  opts?: unknown;
+  opts?: { span?: StepSpanPath; origin?: string };
   /** The step's ID before hashing. */
   userland?: { id: string };
 }
+
+/** The spans a step is grouped under, outermost first. */
+type StepSpanPath = Array<{
+  id: string;
+  name: string;
+  kind?: string;
+  origin?: string;
+}>;
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
 interface ExecutionResult {
@@ -73,6 +82,10 @@ export interface RunResult {
   names: Record<string, string>;
   /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
+  /** The span path of each step in a span, keyed by step ID. */
+  spans: Record<string, StepSpanPath>;
+  /** The origin of each step that has one, keyed by step ID. */
+  origins: Record<string, string>;
   /**
    * Metadata updates in the order steps ran them, each with the ID of the step
    * that carried it. A step that fails and retries carries its metadata on
@@ -243,6 +256,8 @@ export const runFunction = async (
   const batches: string[][] = [];
   const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const spans: RunResult["spans"] = {};
+  const origins: RunResult["origins"] = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
@@ -278,6 +293,21 @@ export const runFunction = async (
     names[id] = step.displayName ?? step.name ?? id;
 
     steps[id] = step.data;
+
+    // Where the SDK has the span API it stamps these on the step. Where the
+    // test stub provides it, the stub recorded them instead.
+    const stamp = spanStubInstalled() ? stampOf(id) : undefined;
+    const span =
+      step.opts?.span ?? (stamp?.span.length ? stamp.span : undefined);
+    const origin = step.opts?.origin ?? stamp?.origin;
+
+    if (span) {
+      spans[id] = span;
+    }
+
+    if (origin) {
+      origins[id] = origin;
+    }
   };
 
   // The executor retries a step that failed retriably, and only writes the
@@ -336,6 +366,7 @@ export const runFunction = async (
         ...(planned.displayName === undefined
           ? {}
           : { displayName: planned.displayName }),
+        opts: planned.opts,
         ...(outcome?.error === undefined
           ? { data: outcome?.data ?? null }
           : { error: outcome.error }),
@@ -358,6 +389,8 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        spans,
+        origins,
         metadata,
       };
     }
@@ -377,6 +410,8 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        spans,
+        origins,
         metadata,
       };
     }
@@ -442,6 +477,7 @@ export const runFunction = async (
             ? {}
             : { displayName: planned.displayName }),
           data: opts.resolveWait ? opts.resolveWait(planned) : null,
+          opts: planned.opts,
         });
 
         continue;
@@ -489,6 +525,11 @@ const runOnce = async (
   ].map((Middleware: any) => {
     return new Middleware({ client });
   });
+
+  if (spanStubInstalled()) {
+    // First, so the other middleware builds on step tools that record.
+    middlewareInstances.unshift(new SpanStubMiddleware({ client }));
+  }
 
   const execution = internals["createExecution"]({
     partialOptions: {

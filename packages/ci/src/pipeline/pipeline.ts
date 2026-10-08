@@ -49,10 +49,12 @@ import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
+import { ciStep, traceName } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
   countApi,
+  inGitHubSpan,
   initCiAls,
   runInScope,
   withScopePreserved,
@@ -551,38 +553,41 @@ const resolveConfiguredRepo = (
 ): Promise<RepoContext> => {
   const { owner, name } = parseRepo(fullName);
 
-  return run.step.run(
-    { id: `github › repo:resolve`, name: "repo:resolve" },
-    async (): Promise<RepoContext> => {
-      const base: RepoContext = { owner, name, fullName, sha: "" };
-      const provider = run.ci.github as GitHubProvider;
+  return inGitHubSpan(run, () => {
+    return run.step.run(
+      { id: `github › repo:resolve`, name: traceName.resolveRepository },
+      async (): Promise<RepoContext> => {
+        const base: RepoContext = { owner, name, fullName, sha: "" };
+        const provider = run.ci.github as GitHubProvider;
 
-      if (provider.kind === "console") {
-        return base;
-      }
+        if (provider.kind === "console") {
+          return base;
+        }
 
-      const octokit = await provider.octokit({ owner, repo: name });
-      const { data: info } = await octokit.rest.repos.get({
-        owner,
-        repo: name,
-      });
-      const branch = info.default_branch;
+        const octokit = await provider.octokit({ owner, repo: name });
+        const { data: info } = await octokit.rest.repos.get({
+          owner,
+          repo: name,
+        });
+        const branch = info.default_branch;
 
-      const { data: head } = await octokit.rest.repos.getBranch({
-        owner,
-        repo: name,
-        branch,
-      });
+        const { data: head } = await octokit.rest.repos.getBranch({
+          owner,
+          repo: name,
+          branch,
+        });
 
-      return {
-        ...base,
-        sha: head.commit.sha,
-        ref: `refs/heads/${branch}`,
-        baseRef: branch,
-        trigger: (run.event as { name?: string } | undefined)?.name ?? "manual",
-      };
-    },
-  ) as Promise<RepoContext>;
+        return {
+          ...base,
+          sha: head.commit.sha,
+          ref: `refs/heads/${branch}`,
+          baseRef: branch,
+          trigger:
+            (run.event as { name?: string } | undefined)?.name ?? "manual",
+        };
+      },
+    ) as Promise<RepoContext>;
+  });
 };
 
 /**
@@ -811,19 +816,21 @@ const checkCommentPermission = async (
   const allowed = await canUser(login, minPermission);
 
   if (!allowed) {
-    await run.step.run(
-      { id: "github › comment:denied", name: "comment:denied" },
-      async () => {
-        const { stickyComment } = await import("../github/helpers.ts");
+    await inGitHubSpan(run, () => {
+      return run.step.run(
+        { id: "github › comment:denied", name: traceName.commentNotAllowed },
+        async () => {
+          const { stickyComment } = await import("../github/helpers.ts");
 
-        await stickyComment(
-          "permission",
-          `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
-        );
+          await stickyComment(
+            "permission",
+            `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
+          );
 
-        return { denied: login };
-      },
-    );
+          return { denied: login };
+        },
+      );
+    });
   }
 
   return allowed;
@@ -877,9 +884,12 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run("destroy-orphans", async () => {
-        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-      });
+      return step.run(
+        ciStep("destroy-orphans", traceName.cleanUpMachines),
+        async () => {
+          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+        },
+      );
     },
   );
 };

@@ -31,7 +31,7 @@ import {
   validateInput,
 } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rebuildSuffix } from "../pipeline/scope.ts";
+import { countApi, outsideJobs, rebuildSuffix } from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -219,7 +219,7 @@ const buildBase = (
     return existing;
   }
 
-  const built = (async () => {
+  const built = outsideJobs(run, async () => {
     const base = await baseOf(run, parent);
     const identity = base
       ? identityOf(base.parent.config.id, base.built)
@@ -248,7 +248,7 @@ const buildBase = (
     adoptBuilt(run, result);
 
     return result;
-  })();
+  });
 
   run.builds.set(path, built);
 
@@ -370,7 +370,7 @@ const requestBuild = ({
     return existing;
   }
 
-  const built = (async () => {
+  const built = outsideJobs(run, async () => {
     // Every child that asked has just looked the snapshot up itself, so the
     // build function is the only guard left against a build that raced it.
     const result =
@@ -391,7 +391,7 @@ const requestBuild = ({
     adoptBuilt(run, result);
 
     return result;
-  })();
+  });
 
   run.builds.set(path, built);
 

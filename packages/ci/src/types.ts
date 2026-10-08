@@ -202,7 +202,7 @@ export interface CacheConfig {
  * ```
  */
 export interface JobConfig<TInput = void> {
-  /** Unique within the CI client. It's the job's path in the trace and its check name. */
+  /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
   /**
    * The job to start from: this job runs on a copy of that job's machine, so
@@ -232,6 +232,8 @@ export interface JobConfig<TInput = void> {
    * choose between them in the pipeline.
    */
   from?: From<TInput>;
+  /** What the trace calls the job. Defaults to `id`. */
+  name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
