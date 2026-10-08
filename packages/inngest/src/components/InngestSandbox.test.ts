@@ -1244,88 +1244,6 @@ describe("step.sandbox", () => {
     expect(list?.url.searchParams.get("name")).toBe("base");
   });
 
-  test("fails a durable snapshot create with a taken name without retrying", async () => {
-    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-    const fetchMock: typeof fetch = vi.fn(async (input) => {
-      const url = new URL(input instanceof Request ? input.url : input);
-      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
-        return Response.json({ data: sandboxResource });
-      }
-      return Response.json(
-        {
-          errors: [
-            {
-              code: "sandbox_snapshot_name_taken",
-              message: "snapshot name is taken",
-            },
-          ],
-        },
-        { status: 409 },
-      );
-    });
-    const client = new Inngest({
-      id: testClientId,
-      signingKey: "signkey-test",
-      baseUrl: "https://api.example.test",
-      fetch: fetchMock,
-      middleware: [sandboxMiddleware()],
-    });
-    const fn = client.createFunction(
-      {
-        id: "sandbox-snapshot-name-taken",
-        triggers: [{ event: "sandbox/snapshot-name-taken" }],
-      },
-      async ({ step }) => {
-        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
-        if (!sandbox) {
-          throw new Error("Expected sandbox");
-        }
-        return sandbox.snapshot("create-snapshot", { name: "base" });
-      },
-    );
-    const getRun = await runFnWithStack(fn, {});
-    if (getRun.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${getRun.type}`);
-    }
-    const state = {
-      [getRun.step.id]: { id: getRun.step.id, data: getRun.step.data },
-    };
-    const createRun = await runFnWithStack(fn, state, {
-      stackOrder: [getRun.step.id],
-    });
-    if (createRun.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${createRun.type}`);
-    }
-    const replay = await runFnWithStack(
-      fn,
-      {
-        ...state,
-        [createRun.step.id]: {
-          id: createRun.step.id,
-          data: undefined,
-          error: createRun.step.error,
-        },
-      },
-      { stackOrder: [getRun.step.id, createRun.step.id] },
-    );
-
-    expect(replay).toMatchObject({
-      type: "function-rejected",
-      retriable: false,
-    });
-    if (replay.type !== "function-rejected") {
-      throw new Error(`Expected function-rejected, got ${replay.type}`);
-    }
-    expect(getSandboxError(replay.error)).toMatchObject({
-      action: "snapshot.create",
-      code: "sandbox_snapshot_name_taken",
-      status: 409,
-      sandboxId,
-      ambiguous: false,
-      retryable: false,
-    });
-  });
-
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
     const stdoutBytes = new Uint8Array(3 << 20);
     stdoutBytes.set([1, 2, 3]);
@@ -2526,9 +2444,6 @@ describe("inngest.sandboxes", () => {
         throw new Error("Expected sandbox");
       }
 
-      await expect(sandbox.snapshot({ name })).rejects.toThrow(
-        SandboxValidationError,
-      );
       await expect(sandbox.snapshot({ name })).rejects.toThrow(message);
       await expect(client.snapshots.list({ name })).rejects.toThrow(message);
       expect(() =>

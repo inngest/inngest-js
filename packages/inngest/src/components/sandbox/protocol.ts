@@ -18,6 +18,7 @@ import {
   sandboxProcessRefSchema,
   sandboxRefSchema,
   sandboxSecretNameSchema,
+  sandboxSnapshotCreateOptionsSchema,
   sandboxSnapshotRefSchema,
   wireOutputChunkSchema,
 } from "./validation.ts";
@@ -90,9 +91,6 @@ const listInputSchema = z
     cursor: z.string().min(1).optional(),
     limit: z.number().int().min(1).max(250),
   })
-  .strict();
-const snapshotCreateInputSchema = z
-  .object({ name: sandboxNameSchema.optional() })
   .strict();
 const snapshotListInputSchema = listInputSchema
   .extend({ name: sandboxNameSchema.optional() })
@@ -277,7 +275,7 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("snapshot.create"),
       target: sandboxTargetSchema,
-      input: z.tuple([snapshotCreateInputSchema]),
+      input: z.tuple([sandboxSnapshotCreateOptionsSchema]),
     })
     .strict(),
   z

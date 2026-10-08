@@ -577,17 +577,19 @@ export const normalizeSandboxWaitUntilRunningOptions = (
   };
 };
 
+const sandboxListOptionsSchema = z
+  .object({
+    cursor: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(250).optional(),
+  })
+  .strict();
+
 export const normalizeSandboxListOptions = (
   options: SandboxListOptions = {},
 ): Required<Pick<SandboxListOptions, "limit">> &
   Pick<SandboxListOptions, "cursor"> => {
   const parsed = parseWithSchema(
-    z
-      .object({
-        cursor: z.string().min(1).optional(),
-        limit: z.number().int().min(1).max(250).optional(),
-      })
-      .strict(),
+    sandboxListOptionsSchema,
     options,
     "sandbox list options",
   );
@@ -600,21 +602,22 @@ type SandboxProcessSpecOptions = SandboxCommandOptions & {
   command: SandboxCommand;
 };
 
+export const sandboxSnapshotCreateOptionsSchema = z
+  .object({ name: sandboxNameSchema.optional() })
+  .strict();
+
 export const normalizeSandboxSnapshotListOptions = (
   options: SandboxSnapshotListOptions = {},
 ): Required<Pick<SandboxSnapshotListOptions, "limit">> &
   Pick<SandboxSnapshotListOptions, "cursor" | "name"> => {
   const { name, ...list } = parseWithSchema(
-    z
-      .object({
-        cursor: z.string().min(1).optional(),
-        limit: z.number().int().min(1).max(250).optional(),
-        name: sandboxNameSchema.optional(),
-      })
+    sandboxListOptionsSchema
+      .extend({ name: sandboxNameSchema.optional() })
       .strict(),
     options,
     "sandbox snapshot list options",
   );
+
   return {
     ...normalizeSandboxListOptions(list),
     ...(name !== undefined && { name }),
@@ -623,14 +626,12 @@ export const normalizeSandboxSnapshotListOptions = (
 
 export const normalizeSandboxSnapshotCreateOptions = (
   options: SandboxSnapshotCreateOptions = {},
-): SandboxSnapshotCreateOptions => {
-  const { name } = parseWithSchema(
-    z.object({ name: sandboxNameSchema.optional() }).strict(),
+): SandboxSnapshotCreateOptions =>
+  parseWithSchema(
+    sandboxSnapshotCreateOptionsSchema,
     options,
     "sandbox snapshot create options",
   );
-  return name === undefined ? {} : { name };
-};
 
 export const normalizeSandboxSnapshotWaitOptions = (
   options: SandboxSnapshotWaitOptions,
