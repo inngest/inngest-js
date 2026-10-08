@@ -236,8 +236,6 @@ export interface CiRunScope {
   maxAttempts: number;
   /** Whether Inngest will run the function again after this error. */
   willRetry: (error: unknown) => boolean;
-  /** The run's logger, which writes into the trace. */
-  logger?: { debug?: (...args: unknown[]) => void };
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;
