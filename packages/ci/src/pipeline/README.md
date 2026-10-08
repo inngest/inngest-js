@@ -10,5 +10,7 @@ The client and the run engine.
 - `matrix.ts`: `ci.matrix()`, matrix expansion and the concurrency pool.
 - `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, and the helpers that build and attach it.
 - `scope.ts`: the run and job scopes held in async context. Jobs only write to the run scope, except for `builds`, the promises of the builds `from()` asked for.
+- `names.ts`: what each step and span CI writes is called in the trace, and the origin that marks CI's own work.
+- `spans.ts`: the one place CI touches the SDK's experimental trace-span API. It is feature-detected, so CI runs unchanged on an SDK without it.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.
