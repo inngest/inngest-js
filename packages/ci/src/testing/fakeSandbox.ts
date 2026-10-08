@@ -98,12 +98,8 @@ export interface FakeSandboxApi {
   failSnapshotStarts(): void;
   /** The snapshot of every sandbox create that asked for one, in order. */
   snapshotStarts: string[];
-  /**
-   * Behave like a server without snapshot names, as Cloud is today: a create
-   * with a name is refused as a bad request, and a list ignores `name` and
-   * gives snapshots without one.
-   */
-  withoutSnapshotNames(): void;
+  /** Refuse every snapshot create that has a name, as a bad request. */
+  refuseSnapshotNames(): void;
   /**
    * Have another builder win every named snapshot create: just before it, a
    * snapshot with the same name and the same files appears, still `CREATING`,
@@ -232,7 +228,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
   let snapshotsExhausted = false;
-  let snapshotNames = true;
+  let refuseNames = false;
   let loseNameRaces = false;
   let counter = 1;
 
@@ -414,8 +410,12 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       return json(201, snapshotResource(newSnapshot(sandbox)));
     }
 
-    if (!snapshotNames) {
-      return apiError(400, "invalid_request", "request body not allowed");
+    if (refuseNames) {
+      return apiError(
+        400,
+        "invalid_request",
+        "request body is not allowed for this HTTP binding",
+      );
     }
 
     if (loseNameRaces && !nameIsHeld(name)) {
@@ -450,7 +450,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   };
 
   const listSnapshots: Handler = ({ url }) => {
-    const name = snapshotNames ? url.searchParams.get("name") : null;
+    const name = url.searchParams.get("name");
 
     // Newest first, as the API lists them.
     const items = [...snapshots.values()]
@@ -459,16 +459,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         return name === null || snapshot.name === name;
       })
       .map((snapshot) => {
-        const resource = snapshotResource(readSnapshot(snapshot));
-
-        if (snapshotNames) {
-          return resource;
-        }
-
-        // A server without names never gives one.
-        const { name: _name, ...withoutName } = resource;
-
-        return withoutName;
+        return snapshotResource(readSnapshot(snapshot));
       });
 
     return json(200, items, { page: { hasMore: false, limit: 100 } });
@@ -757,8 +748,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       }
     },
     snapshotStarts,
-    withoutSnapshotNames: () => {
-      snapshotNames = false;
+    refuseSnapshotNames: () => {
+      refuseNames = true;
     },
     loseSnapshotNameRaces: () => {
       loseNameRaces = true;
