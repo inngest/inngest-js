@@ -455,7 +455,7 @@ describe("the just-in-time warning", () => {
     "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Add `cache.warm` to build it ahead of time.";
 
   const warmed =
-    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Its inputs changed since the last warm build.";
+    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet.";
 
   test("a miss on a parent without warm advises cache.warm, on each child's row and once in the warnings", async () => {
     const result = await runFunction(pipelineOf({}), { event: prEvent });
@@ -472,7 +472,7 @@ describe("the just-in-time warning", () => {
     ]);
   });
 
-  test("a miss on a parent with warm says its inputs changed", async () => {
+  test("a miss on a parent with warm says it wasn't warmed for these inputs", async () => {
     const result = await runFunction(pipelineOf({ warm: true }), {
       event: prEvent,
     });
@@ -485,7 +485,7 @@ describe("the just-in-time warning", () => {
     ]);
 
     expect(result.data).toEqual([
-      "built just in time: `install` (its inputs changed since the last warm build)",
+      "built just in time: `install` (not warmed for these inputs yet)",
     ]);
   });
 
