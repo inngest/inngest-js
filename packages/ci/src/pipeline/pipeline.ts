@@ -385,7 +385,7 @@ const runPipelineAttempt = async ({
     // unawaited on purpose is cancelled by the run ending.
     await closeJobChecks(run, checks);
 
-    run.ci.reporter.warnings(run);
+    run.ci.hooks.warnings(run);
 
     await completePipeline(run, checks, conclusionOf(outcome), () => {
       return describeOutcome(run, outcome);

@@ -232,7 +232,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
   const matrices = new Map<string, Matrix<MatrixAxes>>();
-  const reporter = createLocalReporter();
+  const hooks = createLocalReporter();
   let buildFunction: InngestFunction.Any | undefined;
 
   const internals: CiInternals = {
@@ -240,9 +240,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     isDev,
     github: provider,
     checks: createCheckReporter(
-      reporter.sink(sinkFor(provider, client, isDev)),
+      hooks.wrapSink(sinkFor(provider, client, isDev)),
     ),
-    reporter,
+    hooks,
     jobs,
     // One build function for every job and matrix, made when first needed
     // so a pipeline can invoke it whether or not `functions()` has run.
@@ -339,7 +339,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     },
 
     functions: () => {
-      reporter.manifest(() => {
+      hooks.manifest(() => {
         return {
           pipelines: manifestPipelines,
           jobs: [...jobs.values()].map(({ id, config, handler }) => {

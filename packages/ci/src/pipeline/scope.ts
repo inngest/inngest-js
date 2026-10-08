@@ -10,7 +10,6 @@ import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
-import type { LocalReporter } from "../local/reporter.ts";
 import type { SnapshotParent } from "../machine/snapshotMeta.ts";
 import type {
   CheckAnnotation,
@@ -20,6 +19,7 @@ import type {
   RepoContext,
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import type { CiHooks } from "./hooks.ts";
 import { ciSpan, traceName } from "./names.ts";
 import { inSpan } from "./spans.ts";
 
@@ -145,8 +145,8 @@ export interface CiInternals {
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
-  /** Tells the `inngest-ci` CLI what's happening, when it started the app. */
-  reporter: LocalReporter;
+  /** What the run tells a tool that watches it. Does nothing by default. */
+  hooks: CiHooks;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   /**

@@ -108,7 +108,7 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const machine = await ensureMachine(scope);
   const stepId = `${scope.path}${scopeSeparator}checkout`;
 
-  run.ci.reporter.activity(run, scope.jobPath, "cloning repository…");
+  run.ci.hooks.activity(run, scope.jobPath, "cloning repository…");
 
   await run.step.run(
     { id: stepId, name: traceName.cloneRepository },
@@ -185,7 +185,7 @@ const checkoutLocal = async (
   const stepId = `${scope.path}${scopeSeparator}checkout`;
   const machine = await ensureMachine(scope);
 
-  run.ci.reporter.activity(run, scope.jobPath, "checking working tree…");
+  run.ci.hooks.activity(run, scope.jobPath, "checking working tree…");
 
   const result = (await run.step.run(
     { id: stepId, name: traceName.uploadWorkingTree },
@@ -221,7 +221,7 @@ const uploadWorkingTree = async (
   const none = { files: 0, removed: 0, bytes: 0, tarMs: 0, uploadMs: 0 };
 
   if (treeId && had === treeId) {
-    run.ci.reporter.activity(run, scope.jobPath, "working tree unchanged");
+    run.ci.hooks.activity(run, scope.jobPath, "working tree unchanged");
 
     return {
       ...base,
@@ -313,7 +313,7 @@ const uploadFull = async (
     );
   }
 
-  run.ci.reporter.activity(
+  run.ci.hooks.activity(
     run,
     scope.jobPath,
     `uploading working tree (${formatBytes(tarball.byteLength)})…`,
@@ -381,7 +381,7 @@ const uploadDelta = async (
   const removed =
     delta.deleted.length > 0 ? ` · ${delta.deleted.length} removed` : "";
 
-  run.ci.reporter.activity(
+  run.ci.hooks.activity(
     run,
     scope.jobPath,
     `uploading changes (${delta.changed.length} ${delta.changed.length === 1 ? "file" : "files"}, ${formatBytes(tarball.byteLength)}${removed})…`,

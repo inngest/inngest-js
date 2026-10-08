@@ -287,9 +287,9 @@ const announceBuild = async (run: CiRunScope): Promise<void> => {
 
   const url = run.ci.runUrl({ runId: run.runId, functionId: run.functionId });
 
-  run.ci.reporter.jobRunUrl(run, run.build.parent.jobPath, url);
+  run.ci.hooks.jobRunUrl(run, run.build.parent.jobPath, url);
 
-  run.ci.reporter.activity(
+  run.ci.hooks.activity(
     run,
     run.build.parent.jobPath,
     "building in its own run",
@@ -389,7 +389,7 @@ const jobSteps = async ({
   };
 
   if (config.cache) {
-    run.ci.reporter.activity(run, scope.jobPath, "checking cache…");
+    run.ci.hooks.activity(run, scope.jobPath, "checking cache…");
   }
 
   // A cached job is always asked of its build function, which is the one place

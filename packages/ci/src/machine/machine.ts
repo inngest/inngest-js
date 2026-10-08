@@ -225,7 +225,7 @@ const createMachine = async (
     scope.startNote = note;
     scope.restoreFallback = scope.rebuildParent;
 
-    run.ci.reporter.activity(run, scope.jobPath, note);
+    run.ci.hooks.activity(run, scope.jobPath, note);
 
     return start(
       {
@@ -245,7 +245,7 @@ const createMachine = async (
     // Every job starting from a snapshot checks it for itself, so what a job
     // does never depends on whether a sibling got there first. Only the
     // rebuild of the parent, which each of them awaits, is shared.
-    run.ci.reporter.activity(
+    run.ci.hooks.activity(
       run,
       scope.jobPath,
       scope.startNote ?? "creating machine…",
@@ -301,7 +301,7 @@ const createMachine = async (
 
       scope.startNote = note;
 
-      run.ci.reporter.activity(run, scope.jobPath, note);
+      run.ci.hooks.activity(run, scope.jobPath, note);
 
       await deleteSnapshot(
         run,
@@ -315,7 +315,7 @@ const createMachine = async (
       if (replacement) {
         scope.startNote = `starting ${parentId}`;
 
-        run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
+        run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
         started = await start(
           {
@@ -332,7 +332,7 @@ const createMachine = async (
       }
     }
   } else {
-    run.ci.reporter.activity(
+    run.ci.hooks.activity(
       run,
       scope.jobPath,
       scope.startNote ?? "creating machine…",
@@ -571,7 +571,7 @@ const takeSnapshot = async (
   handle: MachineHandle,
   cache: SnapshotCache | undefined,
 ): Promise<TakenSnapshot | undefined> => {
-  run.ci.reporter.activity(run, jobPath, "snapshotting machine…");
+  run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
 
   const meta: SnapshotMeta = {
     ...(handle.treeId ? { treeId: handle.treeId } : {}),

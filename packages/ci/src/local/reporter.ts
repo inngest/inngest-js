@@ -7,9 +7,14 @@
  */
 
 import type { CheckSink } from "../github/checks.ts";
+import type {
+  CiHooks,
+  CommandAttempt,
+  LocalStatus,
+} from "../pipeline/hooks.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import type { CheckConclusion, CommandResult } from "../types.ts";
-import type { LocalManifest, LocalMessage, LocalStatus } from "./protocol.ts";
+import type { LocalManifest, LocalMessage } from "./protocol.ts";
 import { localEnv } from "./protocol.ts";
 
 /** Whether `inngest-ci` started this app. Read on use, like the client's mode. */
@@ -39,46 +44,12 @@ const statusForConclusion: Record<CheckConclusion, LocalStatus> = {
 
 type CommandMessage = Extract<LocalMessage, { kind: "command" }>;
 
-/** A command attempt, as it's named in a {@link LocalMessage}. */
-interface CommandAttempt {
-  /** The command's step ID. */
-  id: string;
-  name: string;
-  attempt: number;
-}
-
-export interface LocalReporter {
+export interface LocalReporter extends CiHooks {
   /**
    * Send the manifest once the current turn of the event loop is over, so
    * every module has finished defining things. `build` runs then.
    */
   manifest(build: () => LocalManifest): void;
-  /**
-   * Wrap the sink checks go to, so the pipeline's and each job's start and
-   * finish are reported too.
-   */
-  sink(sink: CheckSink): CheckSink;
-  /** A job started from another job's machine, which the CLI nests it under. */
-  jobFrom(scope: CiJobScope, parentId: string): void;
-  /** Where a job's own run is, when another run builds it. */
-  jobRunUrl(run: CiRunScope, jobId: string, url: string): void;
-  /** How a job built in a run of its own ended, as the run that needed it sees. */
-  jobEnded(
-    run: CiRunScope,
-    jobId: string,
-    status: LocalStatus,
-    title?: string,
-  ): void;
-  /** What a job is doing at a slow point that isn't a command. */
-  activity(run: CiRunScope, jobId: string, text: string): void;
-  /** What the run wants to say once it's over, like a cache that's missing. */
-  warnings(run: CiRunScope): void;
-  commandStarted(scope: CiJobScope, command: CommandAttempt): void;
-  commandFinished(
-    scope: CiJobScope,
-    command: CommandAttempt,
-    result: CommandResult,
-  ): void;
 }
 
 /**
@@ -201,7 +172,7 @@ export const createLocalReporter = (): LocalReporter => {
       });
     },
 
-    sink: (sink) => {
+    wrapSink: (sink) => {
       return {
         ...sink,
 

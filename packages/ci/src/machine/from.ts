@@ -91,7 +91,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
   const { run } = scope;
 
-  run.ci.reporter.jobFrom(scope, job.id);
+  run.ci.hooks.jobFrom(scope, job.id);
 
   const registered = run.ci.jobs.get(job.id);
 
@@ -108,7 +108,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
     scope.parentInputs[job.id] = given;
   }
 
-  run.ci.reporter.activity(run, scope.jobPath, `waiting for ${job.id}…`);
+  run.ci.hooks.activity(run, scope.jobPath, `waiting for ${job.id}…`);
 
   const { target, hit } = await lookupParent(scope, { config, input: given });
 
@@ -152,7 +152,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
     scope.startNote = `rebuilding ${job.id}${why}`;
 
-    run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
+    run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
     await rerunOnThisMachine(scope, job, given);
   }
@@ -258,7 +258,7 @@ const reportBuilt = (
         run.summaries.push(result.summary);
       }
 
-      run.ci.reporter.jobEnded(
+      run.ci.hooks.jobEnded(
         run,
         jobId,
         result.reused ? "cached" : "passed",
@@ -266,7 +266,7 @@ const reportBuilt = (
       );
     },
     (error: unknown) => {
-      run.ci.reporter.jobEnded(run, jobId, "failed", errorMessage(error));
+      run.ci.hooks.jobEnded(run, jobId, "failed", errorMessage(error));
     },
   );
 };

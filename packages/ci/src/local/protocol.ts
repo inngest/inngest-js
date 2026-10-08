@@ -7,7 +7,10 @@
  * @module
  */
 
+import type { LocalStatus } from "../pipeline/hooks.ts";
 import type { JsonSchema } from "./jsonSchema.ts";
+
+export type { LocalStatus };
 
 /** Env vars the CLI sets on the app process. */
 export const localEnv = {
@@ -79,16 +82,6 @@ export interface LocalManifest {
     combos: Record<string, string | number | boolean>[];
   }[];
 }
-
-/** Where a job or pipeline is up to. */
-export type LocalStatus =
-  | "queued"
-  | "running"
-  | "passed"
-  | "failed"
-  | "cancelled"
-  | "skipped"
-  | "cached";
 
 /**
  * One message from the app to the CLI. Sent as JSON in a `POST` to
