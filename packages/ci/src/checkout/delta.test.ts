@@ -27,6 +27,7 @@ import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import { snapshotMetaPath } from "../machine/snapshotMeta.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import type { FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
@@ -39,25 +40,10 @@ const git = (cwd: string, ...args: string[]): string => {
 
 const event = (path: string) => {
   return {
-    name: "github/pull_request.opened",
-    data: {
-      action: "opened",
-      repository: { full_name: "inngest/inngest-js" },
-      pull_request: {
-        number: 7,
-        head: {
-          sha: "abc1234",
-          ref: "feature",
-          repo: { full_name: "inngest/inngest-js" },
-        },
-        base: { sha: "def5678", ref: "main" },
-      },
-      local: { path, baseRef: "main" },
-    },
+    ...prEvent,
+    data: { ...prEvent.data, local: { path, baseRef: "main" } },
   };
 };
-
-const trigger = [{ event: "github/pull_request.opened" }];
 
 /** The files in an uploaded tar, by unpacking it with the system's `tar`. */
 const unpack = (bytes: Uint8Array): Record<string, string> => {
@@ -159,7 +145,7 @@ describe("checkout() of a local working tree", () => {
     });
 
     await runFunction(
-      ci.pipeline({ id: "pr", on: trigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return lint();
       }),
       { event: event(repo) },
@@ -171,7 +157,7 @@ describe("checkout() of a local working tree", () => {
     const { ci, base } = harness(api);
 
     await runFunction(
-      ci.pipeline({ id: "pr", on: trigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return base();
       }),
       { event: event(repo) },
@@ -256,7 +242,7 @@ describe("checkout() of a local working tree", () => {
     });
 
     await runFunction(
-      ci.pipeline({ id: "pr", on: trigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return child();
       }),
       { event: event(repo) },
