@@ -19,12 +19,7 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import {
-  defaultCwd,
-  inJobSpan,
-  recordTiming,
-  scopeSeparator,
-} from "../pipeline/scope.ts";
+import { defaultCwd, inJobSpan, scopeSeparator } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
 import type { MachineConfig } from "../types.ts";
 import {
@@ -179,8 +174,6 @@ const createMachine = async (
     createStep: { id: string; name: string },
     options: { name: string; snapshotId?: string },
   ): Promise<Started> => {
-    const began = Date.now();
-
     const sandbox = options.snapshotId
       ? await tools.create(createStep, {
           name: options.name,
@@ -190,14 +183,6 @@ const createMachine = async (
           name: options.name,
           ...machineConfig,
         });
-
-    if (options.snapshotId) {
-      recordTiming(run, {
-        kind: "start",
-        path: scope.path,
-        durationMs: Date.now() - began,
-      });
-    }
 
     const setup = await sandbox.commands.run(
       {
@@ -589,19 +574,9 @@ const takeSnapshot = async (
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
-    const began = Date.now();
-
-    const taken = cache
+    return cache
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
       : await createRunSnapshot(handle, stepId);
-
-    recordTiming(run, {
-      kind: "snapshot",
-      path: jobPath,
-      durationMs: Date.now() - began,
-    });
-
-    return taken;
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;

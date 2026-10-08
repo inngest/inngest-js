@@ -11,7 +11,7 @@ import { countApi, matrixOriginKey } from "./scope.ts";
 
 /**
  * Where a matrix keeps the function that runs exactly the combinations it's
- * given, which is how the CLI runs a hand-picked set.
+ * given, which is how a build runs the one combination it was asked for.
  */
 export const runCombosKey = Symbol("inngest/ci.matrixCombos");
 

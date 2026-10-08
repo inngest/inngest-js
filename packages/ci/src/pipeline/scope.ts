@@ -102,17 +102,6 @@ export interface BuildOutcome {
   hadMachine: boolean;
 }
 
-/** How long a slow step took, for the run's timing summary. */
-export interface StepTiming {
-  /** What was timed: `upload`, `snapshot`, `start`. */
-  kind: string;
-  /** The job that waited on it. */
-  path: string;
-  durationMs: number;
-  /** Bytes moved, for an upload. */
-  bytes?: number;
-}
-
 export interface JobSummary {
   path: string;
   conclusion: CheckConclusion;
@@ -213,8 +202,6 @@ export interface CiRunScope {
    * runs find it.
    */
   createdSnapshots: Set<string>;
-  /** How long the slow steps took, in the order they finished. */
-  timings: StepTiming[];
   /**
    * Set when this run is a build: one job's snapshot, built for the run that
    * invoked it. It has no checks of its own and reports to that run.
@@ -249,8 +236,6 @@ export interface CiRunScope {
   maxAttempts: number;
   /** Whether Inngest will run the function again after this error. */
   willRetry: (error: unknown) => boolean;
-  /** The run's logger, which writes into the trace. */
-  logger?: { debug?: (...args: unknown[]) => void };
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;
@@ -395,15 +380,6 @@ export const countApi = (api: ApiName): void => {
   if (run) {
     run.apis[api] += 1;
   }
-};
-
-/**
- * Note how long a slow step took, in the run's timings and its debug log.
- */
-export const recordTiming = (run: CiRunScope, timing: StepTiming): void => {
-  run.timings.push(timing);
-
-  run.logger?.debug?.({ timing }, `${timing.kind} took ${timing.durationMs}ms`);
 };
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {
