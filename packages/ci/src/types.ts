@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
 
 /**
@@ -254,6 +255,20 @@ export interface JobConfig<TInput = void> {
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
+  /**
+   * The shape of the job's input, as any Standard Schema (Zod, Valibot,
+   * ArkType, …). The handler gets the validated value.
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
+   */
+  input?: StandardSchemaV1;
 }
 
 /**

@@ -79,6 +79,11 @@ export interface FakeSandboxApi {
   snapshots: Map<string, FakeSnapshot>;
   /** Every command or process argv the API was asked to run, in order. */
   commands: string[][];
+  /**
+   * Commands asked of machines and snapshots taken of them, in order, as
+   * `command <argv>` and `snapshot <machine name>`.
+   */
+  timeline: string[];
   /** Every request path, in order. */
   requests: string[];
   script(scripts: CommandScript[]): void;
@@ -221,6 +226,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const processes = new Map<string, FakeProcess>();
   const snapshots = new Map<string, FakeSnapshot>();
   const commands: string[][] = [];
+  const timeline: string[] = [];
   const requests: string[] = [];
 
   let scripts: CommandScript[] = [];
@@ -347,6 +353,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -377,6 +384,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     snapshots.set(snapshot.id, snapshot);
+    timeline.push(`snapshot ${sandbox.name}`);
 
     return snapshot;
   };
@@ -470,6 +478,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -731,6 +740,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     processes,
     snapshots,
     commands,
+    timeline,
     requests,
     script: (next) => {
       scripts = next;
