@@ -2657,16 +2657,8 @@ describe("failures that retrying cannot fix", () => {
         return [entry.name, entry.conclusion, entry.title];
       }),
     ).toEqual([
-      [
-        "pr / build",
-        "failure",
-        "Sandbox did not reach RUNNING within 120000 milliseconds",
-      ],
-      [
-        "pr",
-        "failure",
-        "build: Sandbox did not reach RUNNING within 120000 milliseconds",
-      ],
+      ["pr / build", "failure", "machine didn't start in 2m"],
+      ["pr", "failure", "build: machine didn't start in 2m"],
     ]);
   });
 
