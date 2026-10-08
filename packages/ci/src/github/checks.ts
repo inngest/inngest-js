@@ -267,6 +267,24 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     return result?.startedAt;
   };
 
+  const sendComplete = async (
+    run: CiRunScope,
+    key: string,
+    name: string,
+    result: CheckResult,
+  ) => {
+    await sink.complete({
+      run,
+      name,
+      ...identity(run, key),
+      conclusion: result.conclusion,
+      title: result.title,
+      summary: truncateSummary(result.summary ?? ""),
+      annotations: (result.annotations ?? []).map(normaliseAnnotation),
+      ...idFor(run, key),
+    });
+  };
+
   const complete = async (
     run: CiRunScope,
     key: string,
@@ -281,18 +299,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       async () => {
         await tagStep(run, tag, metadata?.());
 
-        const read = result();
-
-        await sink.complete({
-          run,
-          name,
-          ...identity(run, key),
-          conclusion: read.conclusion,
-          title: read.title,
-          summary: truncateSummary(read.summary ?? ""),
-          annotations: (read.annotations ?? []).map(normaliseAnnotation),
-          ...idFor(run, key),
-        });
+        await sendComplete(run, key, name, result());
 
         return Date.now();
       },
@@ -385,16 +392,12 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         const jobs = read();
 
         for (const { jobPath, name, ...result } of jobs) {
-          await sink.complete({
+          await sendComplete(
             run,
-            name: jobCheckName(run, jobPath, name),
-            ...identity(run, jobPath),
-            conclusion: result.conclusion,
-            title: result.title,
-            summary: truncateSummary(result.summary ?? ""),
-            annotations: (result.annotations ?? []).map(normaliseAnnotation),
-            ...idFor(run, jobPath),
-          });
+            jobPath,
+            jobCheckName(run, jobPath, name),
+            result,
+          );
         }
 
         return closing(jobs);

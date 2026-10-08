@@ -22,7 +22,11 @@ import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
+import {
+  destroyOrphans,
+  destroyRunMachines,
+  machineSetupScript,
+} from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { writeSnapshotMetaScript } from "../machine/snapshotMeta.ts";
 import { report } from "../report.ts";
@@ -31,7 +35,6 @@ import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { createCi } from "./createCi.ts";
-import { destroyOrphans } from "./pipeline.ts";
 import { getRunScope } from "./scope.ts";
 
 const prEvent = {
