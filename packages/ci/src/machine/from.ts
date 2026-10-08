@@ -270,17 +270,7 @@ export const buildBase = (
 
   const built = outsideJobs(run, async () => {
     const base = await baseOf(run, parent);
-    const identity = base ? identityOf(base) : undefined;
-
-    const target = config.cache
-      ? await cacheTarget(
-          run,
-          { id: config.id, path },
-          config.cache,
-          input,
-          identity,
-        )
-      : runTarget(run, config.id, input, identity);
+    const target = await targetOf(run, parent, base, path);
 
     const result = await invokeBuild({
       run,
@@ -395,6 +385,25 @@ const startFromImage = (scope: CiJobScope, base: ImageBase): void => {
 };
 
 /**
+ * The key and name a job is built under, given what it starts from, as a
+ * memoized step under `path` for a cached job.
+ */
+const targetOf = (
+  run: CiRunScope,
+  parent: Parent,
+  base: FromBase | undefined,
+  /** What the key step's ID is built on. */
+  path: string,
+): Promise<CacheTarget> | CacheTarget => {
+  const { config, input } = parent;
+  const identity = base ? identityOf(base) : undefined;
+
+  return config.cache
+    ? cacheTarget(run, { id: config.id, path }, config.cache, input, identity)
+    : runTarget(run, config.id, input, identity);
+};
+
+/**
  * Start this job on a copy of its base's machine, before its handler runs.
  *
  * The parent runs once however many jobs start from it, in a run of its own,
@@ -427,13 +436,23 @@ export const startFrom = async (
         : `starting ${config.id}`;
 
     scope.rebuildSnapshot = async () => {
+      // The parent's base is looked up again here, and an image may have been
+      // captured again since, so the name is worked out again too: the rebuild
+      // is named after what it's built on.
       const base = await baseOf(run, parent);
+
+      const target = await targetOf(
+        run,
+        parent,
+        base,
+        `${buildPathOf(config.id, input)}${rebuildSuffix}`,
+      );
 
       const rebuilt = await requestBuild({
         run,
         config,
         input,
-        target: built.target,
+        target,
         replacing: { snapshotId },
         ...(base ? { base } : {}),
       });
