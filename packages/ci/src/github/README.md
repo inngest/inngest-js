@@ -8,4 +8,5 @@ Everything GitHub.
 - `fixtures.ts`: local event fixtures standing in for webhooks when running from a working tree.
 - `checks.ts`: check run, commit status and console reporting.
 - `rest.ts`: the durable REST client.
+- `deployRepo.ts`: which repository and commit the app was deployed from, read from host variables or the working directory's git checkout, for builds another app asks for.
 - `helpers.ts`: the `github.*` helpers, gathered in `index.ts`.
