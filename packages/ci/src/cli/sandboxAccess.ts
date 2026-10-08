@@ -7,11 +7,72 @@
  * @module
  */
 
-import type { SandboxAccessProblem } from "../util.ts";
 import { SetupError } from "./setupError.ts";
 
 const docsUrl = "https://www.inngest.com/docs/sandboxes/overview";
 const limitsUrl = "https://www.inngest.com/docs/sandboxes/limits";
+
+/** Why Sandboxes can't be used, as the Dev Server and Cloud report it. */
+export type SandboxAccessProblem = "login" | "environment" | "plan";
+
+/** The short reason each problem gets from `shortReason`. */
+const accessReasons: Record<SandboxAccessProblem, string> = {
+  login: "not logged in to Inngest",
+  environment: "no Inngest environment selected",
+  plan: "Sandboxes not enabled for your account",
+};
+
+/**
+ * Whether an error, or the short reason made from one, says Sandboxes can't
+ * be used. The Dev Server answers `cloud_login_required` (401) when it isn't
+ * logged in and `environment_required` (400) when the login has no single
+ * environment; Cloud answers `access_denied` (403) when the account hasn't
+ * been given Sandbox access.
+ */
+export const sandboxAccessProblem = (
+  error: unknown,
+): SandboxAccessProblem | undefined => {
+  const { code, message } = readError(error);
+
+  if (code === "cloud_login_required" || message === accessReasons.login) {
+    return "login";
+  }
+
+  if (
+    code === "environment_required" ||
+    message === accessReasons.environment
+  ) {
+    return "environment";
+  }
+
+  if (code === "access_denied" || message === accessReasons.plan) {
+    return "plan";
+  }
+
+  return undefined;
+};
+
+const readError = (error: unknown): { code?: string; message: string } => {
+  if (typeof error === "string") {
+    return { message: error };
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return { message: "" };
+  }
+
+  const { code, message, cause } = error as {
+    code?: unknown;
+    message?: unknown;
+    cause?: { code?: unknown };
+  };
+  const found = typeof code === "string" ? code : cause?.code;
+
+  return {
+    ...(typeof found === "string" ? { code: found } : {}),
+    message: typeof message === "string" ? message : "",
+  };
+};
 
 const details: Record<
   SandboxAccessProblem,

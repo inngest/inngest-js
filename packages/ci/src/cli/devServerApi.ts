@@ -6,11 +6,11 @@
  */
 
 import type { LocalStatus } from "../local/protocol.ts";
+import { shortReason } from "../util.ts";
 import {
   type SandboxAccessProblem,
   sandboxAccessProblem,
-  shortReason,
-} from "../util.ts";
+} from "./sandboxAccess.ts";
 
 const requestTimeoutMs = 5000;
 
@@ -40,7 +40,7 @@ export interface RunInfo {
 export const failureReason = (output: unknown): string | undefined => {
   const first = (text: unknown): string | undefined => {
     return typeof text === "string"
-      ? shortReason(text) || undefined
+      ? shortReason({ message: text }) || undefined
       : undefined;
   };
 

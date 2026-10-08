@@ -278,7 +278,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       const {
         fn,
         config,
-        triggers,
         generated: extra,
       } = definePipeline({
         client,
@@ -293,7 +292,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
       manifestPipelines.push({
         id: config.id,
-        triggers: triggers.map(manifestTrigger),
+        triggers: (fn.opts.triggers as CiTrigger[]).map(manifestTrigger),
       });
 
       generated.push(...extra);

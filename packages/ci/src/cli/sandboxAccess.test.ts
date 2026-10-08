@@ -7,11 +7,11 @@
 
 import { SandboxError } from "inngest/experimental";
 import { describe, expect, test } from "vitest";
-import { sandboxAccessProblem, shortReason } from "../util.ts";
+import { shortReason } from "../util.ts";
 import { createPaint } from "./render/format.ts";
 import { initialModel, reduce } from "./render/model.ts";
 import { plainLines } from "./render/plain.ts";
-import { sandboxAccessError } from "./sandboxAccess.ts";
+import { sandboxAccessError, sandboxAccessProblem } from "./sandboxAccess.ts";
 
 const plain = (problem: Parameters<typeof sandboxAccessError>[0]): string => {
   const error = sandboxAccessError(problem);
