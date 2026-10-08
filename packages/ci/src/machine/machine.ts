@@ -85,6 +85,8 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
 
+  run.ci.hooks.activity(run, scope.jobPath, "creating machine…");
+
   const sandbox = scope.fromSnapshotId
     ? await tools.create(stepId, {
         name,
@@ -192,6 +194,8 @@ const createSnapshot = async (
     // Already running, or resume isn't supported here. The snapshot below
     // decides whether this actually mattered.
   }
+
+  run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
 
   try {
     const snapshot = await handle.sandbox.snapshot(

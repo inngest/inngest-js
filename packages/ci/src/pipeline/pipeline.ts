@@ -347,6 +347,8 @@ const runPipelineAttempt = async ({
 
       addSlowParentHints(run);
 
+      run.ci.hooks.warnings(run);
+
       await completePipeline(run, checks, {
         conclusion: "success",
         title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
@@ -390,6 +392,8 @@ const runPipelineAttempt = async ({
       await closeOpenJobChecks(run, checks);
 
       addSlowParentHints(run);
+
+      run.ci.hooks.warnings(run);
 
       await completePipeline(run, checks, {
         conclusion: conclusionForError(error),

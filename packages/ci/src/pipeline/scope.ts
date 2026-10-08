@@ -17,6 +17,7 @@ import type {
   MachineConfig,
   RepoContext,
 } from "../types.ts";
+import type { CiHooks } from "./hooks.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -85,6 +86,8 @@ export interface CiInternals {
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
+  /** What the run tells a tool that watches it. Does nothing by default. */
+  hooks: CiHooks;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   isDev: () => boolean;

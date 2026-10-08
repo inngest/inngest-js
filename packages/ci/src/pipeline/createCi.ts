@@ -35,6 +35,7 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
@@ -207,12 +208,16 @@ export const createCiWithStore = (
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+  const hooks = noopHooks;
 
   const internals: CiInternals = {
     client,
     isDev,
     github: provider,
-    checks: createCheckReporter(sinkFor(provider, client, isDev)),
+    checks: createCheckReporter(
+      hooks.wrapSink(sinkFor(provider, client, isDev)),
+    ),
+    hooks,
     cacheStore,
     jobs,
     ...(options.machine ? { defaultMachine: options.machine } : {}),

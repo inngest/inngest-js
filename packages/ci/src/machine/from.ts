@@ -75,6 +75,8 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
   scope.fromJobIds.push(job.id);
 
+  scope.run.ci.hooks.jobFrom(scope, job.id);
+
   const children = scope.run.fromChildren.get(job.id) ?? new Set<string>();
 
   children.add(scope.jobPath);
