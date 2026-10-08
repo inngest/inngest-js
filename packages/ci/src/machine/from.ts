@@ -29,8 +29,10 @@ import { CiUsageError } from "../errors.ts";
 import type { BaseImage } from "../image.ts";
 import { isBaseImage } from "../image.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
+import type { RegisteredJob } from "../pipeline/job.ts";
 import {
   adoptBuilt,
+  describeIssues,
   invokeBuild,
   reusedBuild,
   validateInput,
@@ -41,6 +43,9 @@ import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, outsideJobs, rebuildSuffix } from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
+
+/** The jobs defined on one CI client, by ID. */
+type JobRegistry = Map<string, Pick<RegisteredJob, "config" | "handler">>;
 
 /** A `from` parent, worked out: the job's config and the input it's built with. */
 export interface Parent {
@@ -79,6 +84,108 @@ const isJobRef = (value: unknown): value is JobRef => {
 };
 
 /**
+ * The registry of the CI client each job object was defined on. A job is
+ * compared by this rather than by ID, so a job of the same ID from another
+ * client is caught. Curried factories make a new job object per call, so it's
+ * the registry that has to match, not the registered entry.
+ */
+const jobOwners = new WeakMap<object, JobRegistry>();
+
+/** Record which client's registry a job was defined on. */
+export const ownJob = (job: object, jobs: JobRegistry): void => {
+  jobOwners.set(job, jobs);
+};
+
+/** The error for a `from` that names something that isn't a job. */
+const malformedFrom = (config: Pick<JobConfig, "id">): CiUsageError => {
+  return new CiUsageError(
+    `The \`from\` of job "${config.id}" must name a job, a job with input from \`job.with(input)\`, or an image.`,
+  );
+};
+
+/**
+ * What a `from` value names, checked: a job or job ref defined on the client
+ * whose registry is `jobs`.
+ *
+ * @throws {CiUsageError} When it names something that isn't a job of this
+ * client.
+ */
+const resolveRef = (
+  jobs: JobRegistry,
+  config: Pick<JobConfig, "id">,
+  named: unknown,
+): {
+  job: AnyJob;
+  registered: Pick<RegisteredJob, "config" | "handler">;
+  input: unknown;
+} => {
+  const ref = isJobRef(named)
+    ? named
+    : isJob(named)
+      ? { job: named, input: undefined }
+      : undefined;
+
+  if (!ref) {
+    throw malformedFrom(config);
+  }
+
+  const registered = jobs.get(ref.job.id);
+
+  if (!registered || jobOwners.get(ref.job) !== jobs) {
+    throw new CiUsageError(
+      `Job "${config.id}" starts from \`${ref.job.id}\`, which isn't defined on this CI client.`,
+    );
+  }
+
+  return { job: ref.job, registered, input: ref.input };
+};
+
+/**
+ * Check a static `from` when the job or matrix is defined, so a mistake fails
+ * when the app boots rather than mid-pipeline. A function is left to run time,
+ * as is input checked by a schema that validates asynchronously.
+ *
+ * @throws {CiUsageError} When `from` isn't a job of this client, or its input
+ * fails the parent's schema.
+ */
+export const checkStaticFrom = (
+  jobs: JobRegistry,
+  config: { id: string; from?: unknown },
+): void => {
+  const from = config.from;
+
+  if (
+    from === undefined ||
+    isBaseImage(from) ||
+    (typeof from === "function" && !isJob(from))
+  ) {
+    return;
+  }
+
+  const { job, registered, input } = resolveRef(jobs, config, from);
+  const schema = registered.config.input;
+
+  if (!schema || input === undefined) {
+    return;
+  }
+
+  const result = schema["~standard"].validate(input);
+
+  if (result instanceof Promise) {
+    // Left to run time, which validates it again.
+    result.catch(() => {});
+
+    return;
+  }
+
+  if (result.issues) {
+    throw new CiUsageError(
+      `The input that job "${config.id}" gives \`${job.id}\` in \`from\` doesn't match its \`input\` schema:\n${describeIssues(result.issues)}`,
+    );
+  }
+};
+
+/**
  * What a job's `from` names for this call: the parent job and the input it's
  * built with, a base image, or nothing for a job without one. A job without a
  * `from` gets the client's default image, if it has one. A function is called
@@ -109,27 +216,38 @@ export const parentOf = (
     return named;
   }
 
-  const ref = isJobRef(named)
-    ? named
-    : isJob(named)
-      ? { job: named, input: undefined }
-      : undefined;
+  const ref = resolveRef(run.ci.jobs, config, named);
 
-  if (!ref) {
-    throw new CiUsageError(
-      `The \`from\` of job "${config.id}" must name a job, a job with input from \`job.with(input)\`, or an image.`,
-    );
+  return { config: ref.registered.config, input: ref.input };
+};
+
+/**
+ * Throw when starting from `jobId` would bring a job back to a parent it's
+ * already starting from, so a cycle fails with its path instead of recursing.
+ *
+ * The chain holds job IDs, not inputs, so a job that starts from itself with
+ * a different input counts as a cycle too. That's coarser than it needs to be,
+ * and fine until someone needs a job to build on its own other inputs.
+ *
+ * @throws {CiUsageError} When `jobId` is already in `chain`.
+ */
+const assertNoCycle = (chain: string[], jobId: string): void => {
+  if (!chain.includes(jobId)) {
+    return;
   }
 
-  const registered = run.ci.jobs.get(ref.job.id);
+  throw new CiUsageError(cycleMessage([...chain, jobId]));
+};
 
-  if (!registered) {
-    throw new CiUsageError(
-      `Job "${config.id}" starts from \`${ref.job.id}\`, which isn't defined on this CI client.`,
-    );
-  }
+/** What a cycle of `from`s says, given the jobs along it. */
+export const cycleMessage = (path: string[]): string => {
+  const named = path
+    .map((id) => {
+      return `\`${id}\``;
+    })
+    .join(" → ");
 
-  return { config: registered.config, input: ref.input };
+  return `${named} starts from itself.`;
 };
 
 /** What a job's key knows of the base it starts from. */
@@ -176,9 +294,18 @@ export const parentBuildOf = async (
     input: await validateInput(named.config, named.input),
   };
 
+  const chain = [config.id];
+
+  assertNoCycle(chain, parent.config.id);
+
   const given = run.build?.jobId === config.id ? run.build.base : undefined;
 
-  return { parent, built: given ?? (await resolveParent(scope, parent)) };
+  return {
+    parent,
+    built:
+      given ??
+      (await resolveParent(scope, parent, [...chain, parent.config.id])),
+  };
 };
 
 /**
@@ -189,6 +316,8 @@ export const parentBuildOf = async (
 const resolveParent = async (
   scope: CiJobScope,
   parent: Parent,
+  /** The jobs being started from, this job first and `parent` last. */
+  chain: string[],
 ): Promise<CacheBuildResult> => {
   const { run } = scope;
   const { config, input } = parent;
@@ -199,7 +328,7 @@ const resolveParent = async (
 
   run.ci.hooks.jobFrom(scope, config.id);
 
-  const base = await baseOf(run, parent);
+  const base = await baseOf(run, parent, chain);
 
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
@@ -224,10 +353,14 @@ const resolveParent = async (
  * however many jobs need it. It's a parent's own base, so no job of this run
  * starts from it directly: its key, lookup and build are steps of its own. An
  * image is looked up once per run, whoever asks.
+ *
+ * The chain only guards against cycles. It never reaches a step ID.
  */
 const baseOf = async (
   run: CiRunScope,
   parent: Parent,
+  /** The jobs being started from, ending with `parent`. */
+  chain: string[],
 ): Promise<FromBase | undefined> => {
   const named = parentOf(run, parent.config, parent.input);
 
@@ -239,17 +372,24 @@ const baseOf = async (
     return { image: named, snapshot: await resolveImage(run, named) };
   }
 
+  assertNoCycle(chain, named.config.id);
+
   const grandparent = {
     config: named.config,
     input: await validateInput(named.config, named.input),
   };
 
-  return { parent: grandparent, built: await buildBase(run, grandparent) };
+  return {
+    parent: grandparent,
+    built: await buildBase(run, grandparent, [...chain, named.config.id]),
+  };
 };
 
 const buildBase = (
   run: CiRunScope,
   parent: Parent,
+  /** The jobs being started from, ending with `parent`. */
+  chain: string[],
 ): Promise<CacheBuildResult> => {
   const { config, input } = parent;
   const path = `${buildPathOf(config.id, input)} (base)`;
@@ -260,7 +400,7 @@ const buildBase = (
   }
 
   const built = outsideJobs(run, async () => {
-    const base = await baseOf(run, parent);
+    const base = await baseOf(run, parent, chain);
     const target = await targetOf(run, parent, base, path);
 
     const result = await invokeBuild({
@@ -409,7 +549,7 @@ export const startFrom = async (
       // The parent's base is looked up again here, and an image may have been
       // captured again since, so the name is worked out again too: the rebuild
       // is named after what it's built on.
-      const base = await baseOf(run, parent);
+      const base = await baseOf(run, parent, [scope.config.id, config.id]);
 
       const target = await targetOf(
         run,
@@ -431,7 +571,7 @@ export const startFrom = async (
     };
 
     scope.rebuildParent = () => {
-      return rerunOnThisMachine(scope, parent);
+      return rerunOnThisMachine(scope, parent, [scope.config.id, config.id]);
     };
   } else if (built.hadMachine || config.cache) {
     // A cached job is built in a run of its own, so without a snapshot its
@@ -444,11 +584,11 @@ export const startFrom = async (
 
     run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
-    await rerunOnThisMachine(scope, parent);
+    await rerunOnThisMachine(scope, parent, [scope.config.id, config.id]);
   } else {
     // A parent that ran no commands has no machine to copy, but the image it
     // starts from is still where its children begin.
-    const parentBase = await baseOf(run, parent);
+    const parentBase = await baseOf(run, parent, [scope.config.id, config.id]);
 
     if (parentBase && isImageBase(parentBase)) {
       startFromImage(scope, parentBase);
@@ -593,6 +733,8 @@ const reportBuilt = (
 const rerunOnThisMachine = async (
   scope: CiJobScope,
   parent: Parent,
+  /** The jobs already being started from, ending with `parent`. */
+  chain: string[],
 ): Promise<void> => {
   const { run } = scope;
   const registered = run.ci.jobs.get(parent.config.id);
@@ -622,15 +764,19 @@ const rerunOnThisMachine = async (
       input: await validateInput(named.config, named.input),
     };
 
+    assertNoCycle(chain, grandparent.config.id);
+
+    const through = [...chain, grandparent.config.id];
+
     // Before the machine exists, it can still start from the grandparent's
     // snapshot. After, as when a snapshot wouldn't start, the grandparent has
     // to run here too.
     if (scope.machine) {
-      await rerunOnThisMachine(scope, grandparent);
+      await rerunOnThisMachine(scope, grandparent, through);
     } else {
       await startFrom(scope, {
         parent: grandparent,
-        built: await resolveParent(scope, grandparent),
+        built: await resolveParent(scope, grandparent, through),
       });
     }
   }

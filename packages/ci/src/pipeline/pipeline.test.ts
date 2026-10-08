@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
@@ -32,8 +33,9 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
+import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { runFunction } from "../testing/runFunction.ts";
+import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
@@ -1251,11 +1253,119 @@ describe("from", () => {
     expect(cloned).toHaveLength(2);
   });
 
-  test("a `from` that isn't a job throws", async () => {
+  test("a `from` that isn't a job throws when the job is defined", () => {
+    const { ci } = setup();
+
+    expect(() => {
+      ci.job({ id: "child", from: "parent" as unknown as Job }, async () => {});
+    }).toThrow(
+      'The `from` of job "child" must name a job, a job with input from `job.with(input)`, or an image.',
+    );
+
+    expect(() => {
+      ci.job({ id: "other", from: {} as unknown as Job }, async () => {});
+    }).toThrow("must name a job");
+  });
+
+  test("a `from` naming another client's job throws when the job is defined", () => {
+    const { ci } = setup();
+    const other = setup().ci;
+
+    const parent = other.job("parent", async () => {});
+
+    expect(() => {
+      ci.job({ id: "child", from: parent }, async () => {});
+    }).toThrow("`parent`, which isn't defined on this CI client");
+
+    // The ID matches a job on this client, which isn't the one named.
+    ci.job("same", async () => {});
+
+    const impostor = other.job("same", async () => {});
+
+    expect(() => {
+      ci.job({ id: "child", from: impostor.with() }, async () => {});
+    }).toThrow("isn't defined on this CI client");
+  });
+
+  test("input that fails the parent's schema throws when the job is defined", () => {
+    const { ci } = setup();
+
+    const build = ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async () => {},
+    );
+
+    expect(() => {
+      ci.job(
+        {
+          id: "test",
+          from: build.with({ target: 1 as unknown as string }),
+        },
+        async () => {},
+      );
+    }).toThrow(/target: Expected string/);
+
+    expect(() => {
+      ci.job({ id: "ok", from: build.with({ target: "web" }) }, async () => {});
+    }).not.toThrow();
+  });
+
+  test("input checked by an async schema waits for run time", () => {
+    const { ci } = setup();
+
+    const input: StandardSchemaV1<unknown, { target: string }> = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: async () => {
+          return { issues: [{ message: "never" }] };
+        },
+      },
+    };
+
+    const build = ci.job({ id: "build", input }, async () => {});
+
+    expect(() => {
+      ci.job(
+        { id: "test", from: build.with({ target: "web" }) },
+        async () => {},
+      );
+    }).not.toThrow();
+  });
+
+  test("a matrix with a bad static `from` throws when it's defined", () => {
+    const { ci } = setup();
+    const other = setup().ci;
+
+    const parent = other.job("parent", async () => {});
+
+    expect(() => {
+      ci.matrix(
+        { id: "compat", axes: { node: ["20"] }, from: parent },
+        async () => {},
+      );
+    }).toThrow("isn't defined on this CI client");
+
+    expect(() => {
+      ci.matrix(
+        {
+          id: "compat2",
+          axes: { node: ["20"] },
+          from: "parent" as unknown as Job,
+        },
+        async () => {},
+      );
+    }).toThrow("must name a job");
+  });
+
+  test("a `from` function that returns a non-job fails the run for good", async () => {
     const { ci } = setup();
 
     const child = ci.job(
-      { id: "child", from: "parent" as unknown as Job },
+      { id: "child", from: (() => "nope") as unknown as () => Job },
       async () => {},
     );
 
@@ -1265,28 +1375,97 @@ describe("from", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
     expect(String((result.error as { message?: string })?.message)).toContain(
       "must name a job",
     );
   });
 
-  test("a `from` naming another client's job throws", async () => {
+  test("a `from` function that leads back to the start fails the run once", async () => {
     const { ci } = setup();
-    const other = setup().ci;
 
-    const parent = other.job("parent", async () => {});
-
-    const child = ci.job({ id: "child", from: parent }, async () => {});
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return child();
+    // Each names the other, which only a function can do.
+    const a: Job = ci.job({ id: "a", from: () => b }, async () => {
+      await $`echo a`;
     });
 
+    const b: Job = ci.job({ id: "b", from: () => a }, async () => {
+      await $`echo b`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return a();
+    });
+
+    const before = invokedRunCount();
     const result = await runFunction(pipeline, { event: prEvent });
+    const builds = invokedRunCount() - before;
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
 
     expect(String((result.error as { message?: string })?.message)).toContain(
-      "isn't defined on this CI client",
+      "`a` → `b` → `a` starts from itself",
     );
+
+    // The cycle is found while working out the parents, before any build.
+    expect(builds).toBe(0);
+  });
+
+  test("a cycle only reachable through a parent's own parent fails once", async () => {
+    const { ci } = setup();
+
+    const a: Job = ci.job({ id: "a", from: () => b }, async () => {
+      await $`echo a`;
+    });
+
+    const b: Job = ci.job({ id: "b", from: () => a }, async () => {
+      await $`echo b`;
+    });
+
+    const c = ci.job({ id: "c", from: a }, async () => {
+      await $`echo c`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return c();
+    });
+
+    const before = invokedRunCount();
+    const result = await runFunction(pipeline, { event: prEvent });
+    const builds = invokedRunCount() - before;
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "`c` → `a` → `b` → `a` starts from itself",
+    );
+
+    expect(builds).toBe(0);
+  });
+
+  test("a job that names itself fails without any build", async () => {
+    const { ci } = setup();
+
+    const a: Job = ci.job({ id: "a", from: () => a }, async () => {});
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return a();
+    });
+
+    const before = invokedRunCount();
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.retriable).toBe(false);
+
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "`a` → `a` starts from itself",
+    );
+
+    expect(invokedRunCount() - before).toBe(0);
   });
 
   test("a `from` function picks the parent from the job's input", async () => {
@@ -3734,7 +3913,7 @@ describe("base images", () => {
       sandboxId: "00000000-0000-4000-8000-0000000000aa",
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    });
+    } as FakeSnapshot);
 
     return id;
   };
