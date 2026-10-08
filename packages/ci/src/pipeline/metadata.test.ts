@@ -404,11 +404,19 @@ describe("pieces", () => {
 });
 
 describe("the just-in-time warning", () => {
-  const pipelineOf = (cached: boolean) => {
+  const pipelineOf = (parent: false | { warm?: boolean }) => {
     const { ci } = setup();
 
     const install = ci.job(
-      cached ? { id: "install", cache: { key: "v1" } } : { id: "install" },
+      parent
+        ? {
+            id: "install",
+            cache: {
+              key: "v1",
+              ...(parent.warm ? { warm: [{ cron: "0 3 * * *" }] } : {}),
+            },
+          }
+        : { id: "install" },
       async () => {
         await $`pnpm install`;
       },
@@ -436,21 +444,27 @@ describe("the just-in-time warning", () => {
         return update.kind === "inngest.warnings";
       })
       .map((update) => {
-        return [update.step, update.values];
+        return [update.step, update.values] as const;
+      })
+      .sort(([left], [right]) => {
+        return left.localeCompare(right);
       });
   };
 
-  const message =
-    "`install` wasn't cached for these inputs, so it was built while this job waited. Add `cache.warm` to build it ahead of time.";
+  const unwarmed =
+    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Add `cache.warm` to build it ahead of time.";
 
-  test("a miss is on each child's Start from row, and in the warnings once", async () => {
-    const result = await runFunction(pipelineOf(true), { event: prEvent });
+  const warmed =
+    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Its inputs changed since the last warm build.";
+
+  test("a miss on a parent without warm advises cache.warm, on each child's row and once in the warnings", async () => {
+    const result = await runFunction(pipelineOf({}), { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
 
-    expect(warned(result.metadata).sort()).toEqual([
-      ["a › from install", { "ci.justInTime": message }],
-      ["b › from install", { "ci.justInTime": message }],
+    expect(warned(result.metadata)).toEqual([
+      ["a › from install", { "ci.justInTime": unwarmed }],
+      ["b › from install", { "ci.justInTime": unwarmed }],
     ]);
 
     expect(result.data).toEqual([
@@ -458,8 +472,25 @@ describe("the just-in-time warning", () => {
     ]);
   });
 
+  test("a miss on a parent with warm says its inputs changed", async () => {
+    const result = await runFunction(pipelineOf({ warm: true }), {
+      event: prEvent,
+    });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(warned(result.metadata)).toEqual([
+      ["a › from install", { "ci.justInTime": warmed }],
+      ["b › from install", { "ci.justInTime": warmed }],
+    ]);
+
+    expect(result.data).toEqual([
+      "built just in time: `install` (its inputs changed since the last warm build)",
+    ]);
+  });
+
   test("a hit has no warning", async () => {
-    const pipeline = pipelineOf(true);
+    const pipeline = pipelineOf({});
 
     await runFunction(pipeline, { event: prEvent, runId: "01COLD" });
 
@@ -477,5 +508,76 @@ describe("the just-in-time warning", () => {
 
     expect(warned(result.metadata)).toEqual([]);
     expect(result.data).toEqual([]);
+  });
+
+  test("a replayed handler sends each warning once", async () => {
+    const { ci } = setup();
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job({ id: "lint", from: install }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async ({ attempt }) => {
+        await lint();
+
+        if (attempt === 0) {
+          throw new Error("flaky infrastructure");
+        }
+
+        return getRunScope()?.warnings;
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(warned(result.metadata)).toEqual([
+      ["lint › from install", { "ci.justInTime": unwarmed }],
+    ]);
+
+    expect(result.data).toEqual([
+      "built just in time: `install` (add `cache.warm` to build it ahead of time)",
+    ]);
+  });
+
+  test("a cold ancestor in a chain is warned about once, with no row to carry it", async () => {
+    const { ci } = setup();
+
+    const a = ci.job({ id: "a", cache: { key: "v1" } }, async () => {
+      await $`echo a`;
+    });
+
+    const b = ci.job({ id: "b", cache: { key: "v1" }, from: a }, async () => {
+      await $`echo b`;
+    });
+
+    const c = ci.job({ id: "c", from: b }, async () => {
+      await $`echo c`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await c();
+
+      return getRunScope()?.warnings;
+    });
+
+    const cold = await runFunction(pipeline, { event: prEvent, runId: "01A" });
+
+    expect(cold.type).toBe("function-resolved");
+
+    expect(cold.data).toEqual([
+      expect.stringContaining("built just in time: `a`"),
+      expect.stringContaining("built just in time: `b`"),
+    ]);
   });
 });

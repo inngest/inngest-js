@@ -108,82 +108,82 @@ export const runEndMetadata = (
 /** All that tagging needs of a run: somewhere to warn. */
 export type Loggable = { ci: Pick<CiRunScope["ci"], "logger"> };
 
+/** One update to a step's metadata: the values, and what they're about. */
+type MetadataValues = {
+  scope: "run" | "step";
+  values: Record<string, unknown>;
+};
+
+/**
+ * Queue metadata of one `kind` on the step whose callback is running. It only
+ * adds to the step's own result, so it adds no request, and it must never fail
+ * the step, so anything that goes wrong is logged.
+ */
+const addStepMetadata = async (
+  run: Loggable,
+  kind: typeof metadataKind | "inngest.warnings",
+  values: MetadataValues[],
+): Promise<void> => {
+  try {
+    const execution = (await getAsyncCtx())?.execution;
+    const stepId = execution?.executingStep?.id;
+
+    if (!execution || !stepId) {
+      return;
+    }
+
+    for (const update of values) {
+      execution.instance.addMetadata(
+        stepId,
+        kind,
+        update.scope,
+        "merge",
+        update.values,
+      );
+    }
+  } catch (error) {
+    run.ci.logger?.warn({ error }, `Couldn't attach ${kind} metadata`);
+  }
+};
+
 /**
  * Attach metadata to the step whose callback is running: `runValues` to the
  * run, and `step` to the step itself.
  *
- * It only queues the update on the step's own result, so it adds no request,
- * and a step that's already memoized never runs its callback again, so nothing
- * is sent twice on replay. It must never fail the step, so anything that goes
- * wrong is a warning.
+ * A step that's already memoized never runs its callback again, so nothing is
+ * sent twice on replay.
  */
 export const tagStep = async (
   run: Loggable,
   step?: StepMetadata,
   runValues?: Record<string, unknown>,
 ): Promise<void> => {
-  try {
-    const execution = (await getAsyncCtx())?.execution;
-    const stepId = execution?.executingStep?.id;
+  const values: MetadataValues[] = [];
 
-    if (!execution || !stepId) {
-      return;
-    }
-
-    if (runValues) {
-      execution.instance.addMetadata(
-        stepId,
-        metadataKind,
-        "run",
-        "merge",
-        runValues,
-      );
-    }
-
-    if (step) {
-      execution.instance.addMetadata(stepId, metadataKind, "step", "merge", {
-        ...step,
-      });
-    }
-  } catch (error) {
-    run.ci.logger?.warn(
-      { error },
-      "Couldn't attach userland.inngest-ci metadata",
-    );
+  if (runValues) {
+    values.push({ scope: "run", values: runValues });
   }
+
+  if (step) {
+    values.push({ scope: "step", values: { ...step } });
+  }
+
+  await addStepMetadata(run, metadataKind, values);
 };
 
 /**
  * Put a warning on the step whose callback is running, as `inngest.warnings`
  * metadata, which the trace shows on the step's row. `key` names the warning,
  * so saying it again replaces it rather than adding another.
- *
- * Like `tagStep`, it only queues the update on the step's own result and must
- * never fail the step, so anything that goes wrong is logged.
  */
 export const warnStep = async (
   run: Loggable,
   key: string,
   message: string,
 ): Promise<void> => {
-  try {
-    const execution = (await getAsyncCtx())?.execution;
-    const stepId = execution?.executingStep?.id;
-
-    if (!execution || !stepId) {
-      return;
-    }
-
-    execution.instance.addMetadata(
-      stepId,
-      "inngest.warnings",
-      "step",
-      "merge",
-      { [key]: message },
-    );
-  } catch (error) {
-    run.ci.logger?.warn({ error }, "Couldn't attach inngest.warnings metadata");
-  }
+  await addStepMetadata(run, "inngest.warnings", [
+    { scope: "step", values: { [key]: message } },
+  ]);
 };
 
 /** The longest a string in a step's outcome gets before it's cut. */

@@ -21,6 +21,7 @@ import {
   describeCached,
   lookupParent,
   runTarget,
+  warnJustInTime,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
@@ -246,6 +247,11 @@ const buildBase = (
     });
 
     adoptBuilt(run, result);
+
+    // From the resolved result, so it's the same on every replay.
+    if (config.cache && !result.reused) {
+      warnJustInTime(run, config);
+    }
 
     return result;
   });

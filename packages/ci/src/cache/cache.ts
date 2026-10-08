@@ -560,6 +560,44 @@ export const lookupBeforeBuild = async (
 };
 
 /**
+ * What a cached parent that was built just in time says, on the row of the job
+ * that waited (`message`) and in the run's warnings (`line`). One place, so the
+ * two can't drift apart.
+ *
+ * A miss is more than "never built": the lookup also comes back empty on an
+ * API error, a snapshot about to expire or still being made, or one that isn't
+ * ready. The wording is true for all of them, and only suggests `cache.warm`
+ * when the parent has none.
+ */
+export const justInTimeNote = (
+  config: JobConfig,
+): { message: string; line: string } => {
+  const warm = Boolean(config.cache?.warm);
+
+  return {
+    message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while this job waited. ${
+      warm
+        ? "Its inputs changed since the last warm build."
+        : "Add `cache.warm` to build it ahead of time."
+    }`,
+    line: `built just in time: \`${config.id}\` (${
+      warm
+        ? "its inputs changed since the last warm build"
+        : "add `cache.warm` to build it ahead of time"
+    })`,
+  };
+};
+
+/** Add a cached parent's just-in-time line to the run's warnings, once. */
+export const warnJustInTime = (run: CiRunScope, config: JobConfig): void => {
+  const { line } = justInTimeNote(config);
+
+  if (!run.warnings.includes(line)) {
+    run.warnings.push(line);
+  }
+};
+
+/**
  * Look a `from` parent's snapshot up for the job that starts from it, as the
  * first memoized step inside that job. One step works out the parent's key and
  * name, then lists by name once per scope the parent reads, so the job's own
@@ -626,11 +664,7 @@ export const lookupParent = async (
       note.outcome(lookupOutcome(hit));
 
       if (!hit) {
-        await warnStep(
-          run,
-          "ci.justInTime",
-          `\`${config.id}\` wasn't cached for these inputs, so it was built while this job waited. Add \`cache.warm\` to build it ahead of time.`,
-        );
+        await warnStep(run, "ci.justInTime", justInTimeNote(config).message);
       }
 
       return { target, hit: hit ?? null };
@@ -640,11 +674,7 @@ export const lookupParent = async (
   // From the memoized result, so a replay says it too, once per parent however
   // many jobs start from it.
   if (config.cache && !found.hit) {
-    const line = `built just in time: \`${config.id}\` (add \`cache.warm\` to build it ahead of time)`;
-
-    if (!run.warnings.includes(line)) {
-      run.warnings.push(line);
-    }
+    warnJustInTime(run, config);
   }
 
   return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
