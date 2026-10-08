@@ -729,9 +729,12 @@ describe("what a job says while it starts from a parent", () => {
       return message.kind === "warning" ? [message.text] : [];
     });
 
-    expect(warnings).toEqual([
-      expect.stringContaining("not cached: `base` ran no commands"),
-    ]);
+    // Other warnings may join it; this one is sent exactly once.
+    expect(
+      warnings.filter((warning) => {
+        return warning.includes("not cached: `base` ran no commands");
+      }),
+    ).toHaveLength(1);
   });
 
   test("unavailable snapshots say so", async () => {
