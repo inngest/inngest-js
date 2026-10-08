@@ -66,18 +66,10 @@ export const defineJob = ({
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
+  checkMaxAge(config);
+
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
-  if (config.cache?.maxAge !== undefined) {
-    try {
-      durationToMs(config.cache.maxAge);
-    } catch (error) {
-      throw new CiUsageError(
-        `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
-      );
-    }
-  }
-
   if (jobs.has(config.id) && !getRunScope()) {
     throw new CiUsageError(
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
@@ -101,6 +93,35 @@ export const defineJob = ({
   });
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  let ms: number;
+
+  try {
+    ms = durationToMs(maxAge);
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
+
+  if (ms <= 0) {
+    throw new CiUsageError(
+      `Job "${config.id}" has a \`cache.maxAge\` of zero. It must be longer than that.`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {

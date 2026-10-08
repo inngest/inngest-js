@@ -672,7 +672,8 @@ export const lookupParent = async (
 /**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
  * step. If it can't be used, because it is about to expire, is older than the
- * job's max age or is the bad one the build replaces, it is deleted so the build can take the name after all.
+ * job's max age or is the bad one the build replaces, it is deleted so the
+ * build can take the name after all.
  */
 export const resolveTakenName = async (
   run: CiRunScope,

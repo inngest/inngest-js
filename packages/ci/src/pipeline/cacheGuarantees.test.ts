@@ -568,4 +568,15 @@ describe("a snapshot older than the cache's maxAge", () => {
       );
     }).toThrow(/cache\.maxAge/);
   });
+
+  test("a zero maxAge throws when the job is defined", () => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job(
+        { id: "install", cache: { key: "v1", maxAge: "0s" } },
+        async () => {},
+      );
+    }).toThrow(/cache\.maxAge/);
+  });
 });
