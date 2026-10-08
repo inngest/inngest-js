@@ -16,6 +16,7 @@ import { consoleReporter } from "../github/auth.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { ciOrigin } from "../pipeline/names.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent } from "../testing/events.ts";
 import type { CommandScript, FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
@@ -23,25 +24,6 @@ import { version } from "../version.ts";
 import { $ } from "./command.ts";
 import { from } from "./from.ts";
 import { sandbox } from "./sandbox.ts";
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
 
 type Ci = ReturnType<typeof createCi>;
 
