@@ -10,6 +10,7 @@ import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { deleteSnapshot, resolveTakenName } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import { ciRun } from "../pipeline/metadata.ts";
 import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
@@ -327,12 +328,16 @@ const discardFailedStart = async (
     ?.sandboxId;
 
   try {
-    await run.step.run(
+    await ciRun(
+      run,
       {
-        id: `${stepId}${scopeSeparator}discard`,
-        name: traceName.discardMachine,
+        step: {
+          id: `${stepId}${scopeSeparator}discard`,
+          name: traceName.discardMachine,
+        },
+        intent: `Discard the sandbox \`${name}\` that failed to start`,
       },
-      async (): Promise<{ id?: string }> => {
+      async (note): Promise<{ id?: string }> => {
         // Errors are swallowed inside the step so it never retries.
         let id = knownId;
 
@@ -366,6 +371,11 @@ const discardFailedStart = async (
         } catch {
           // The run's cleanup finds it again by its name.
         }
+
+        note.outcome({
+          discarded: Boolean(id),
+          ...(id ? { sandboxId: id } : {}),
+        });
 
         return id ? { id } : {};
       },
@@ -663,13 +673,21 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpMachines,
-    ),
-    async () => {
-      return destroyOrphans(run.ci.client, run.runId);
+  await ciRun(
+    run,
+    {
+      step: ciStep(
+        `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+        traceName.cleanUpMachines,
+      ),
+      intent: "Destroy this run's sandboxes",
+    },
+    async (note) => {
+      const result = await destroyOrphans(run.ci.client, run.runId);
+
+      note.outcome(result);
+
+      return result;
     },
   );
 };
@@ -696,12 +714,16 @@ export const deleteRunSnapshots = async (
 
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpSnapshots,
-    ),
-    async () => {
+  await ciRun(
+    run,
+    {
+      step: ciStep(
+        `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+        traceName.cleanUpSnapshots,
+      ),
+      intent: "Delete the snapshots this run took",
+    },
+    async (note) => {
       const deleted: string[] = [];
       const failed: string[] = [];
 
@@ -727,6 +749,8 @@ export const deleteRunSnapshots = async (
           );
         }
       }
+
+      note.outcome({ deleted: deleted.length, failed: failed.length });
 
       return { deleted, failed };
     },

@@ -7,6 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
+import { ciRun } from "../pipeline/metadata.ts";
 import { traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
@@ -109,10 +110,24 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
   run.ci.hooks.activity(run, scope.jobPath, "cloning repository…");
 
-  await run.step.run(
-    { id: stepId, name: traceName.cloneRepository },
-    async () => {
-      return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
+  await ciRun(
+    run,
+    {
+      step: { id: stepId, name: traceName.cloneRepository },
+      intent: `Clone \`${repo?.fullName}\` into \`${target}\``,
+    },
+    async (note) => {
+      const cloned = await cloneFromGithub(
+        run,
+        machine,
+        repo as RepoContext,
+        opts,
+        target,
+      );
+
+      note.outcome({ path: target, sha: repo?.sha });
+
+      return cloned;
     },
   );
 
