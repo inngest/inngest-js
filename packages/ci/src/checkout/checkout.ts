@@ -7,6 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
+import { ciRun } from "../pipeline/metadata.ts";
 import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   countApi,
@@ -90,13 +91,41 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const machine = await ensureMachine(scope);
   const stepId = `${scope.path}${scopeSeparator}checkout`;
 
-  await run.step.run({ id: stepId, name: stepId }, async () => {
-    if (local) {
-      return uploadWorkingTree(run, machine, local.path, target);
-    }
+  await ciRun(
+    run,
+    {
+      step: { id: stepId, name: stepId },
+      intent: local
+        ? `Upload the working tree to \`${target}\``
+        : `Clone \`${repo?.fullName}\` into \`${target}\``,
+    },
+    async (note) => {
+      if (local) {
+        const uploaded = await uploadWorkingTree(
+          run,
+          machine,
+          local.path,
+          target,
+        );
 
-    return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
-  });
+        note.outcome({ path: target, source: "local" });
+
+        return uploaded;
+      }
+
+      const cloned = await cloneFromGithub(
+        run,
+        machine,
+        repo as RepoContext,
+        opts,
+        target,
+      );
+
+      note.outcome({ path: target, sha: repo?.sha });
+
+      return cloned;
+    },
+  );
 
   scope.cwd ??= target;
 };

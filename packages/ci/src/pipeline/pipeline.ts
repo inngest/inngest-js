@@ -48,7 +48,13 @@ import { formatDuration } from "../util.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
-import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
+import {
+  ciRun,
+  metadataStep,
+  runEndMetadata,
+  runStartMetadata,
+  withNotes,
+} from "./metadata.ts";
 import { ciStep, traceName } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
@@ -561,13 +567,22 @@ const resolveConfiguredRepo = (
   const { owner, name } = parseRepo(fullName);
 
   return inGitHubSpan(run, () => {
-    return run.step.run(
-      { id: `github › repo:resolve`, name: traceName.resolveRepository },
-      async (): Promise<RepoContext> => {
+    return ciRun<RepoContext>(
+      run,
+      {
+        step: {
+          id: `github › repo:resolve`,
+          name: traceName.resolveRepository,
+        },
+        intent: `Find the head commit of \`${fullName}\`'s default branch`,
+      },
+      async (note): Promise<RepoContext> => {
         const base: RepoContext = { owner, name, fullName, sha: "" };
         const provider = run.ci.github as GitHubProvider;
 
         if (provider.kind === "console") {
+          note.outcome({ resolved: false });
+
           return base;
         }
 
@@ -584,6 +599,8 @@ const resolveConfiguredRepo = (
           branch,
         });
 
+        note.outcome({ resolved: true, branch, sha: head.commit.sha });
+
         return {
           ...base,
           sha: head.commit.sha,
@@ -593,7 +610,7 @@ const resolveConfiguredRepo = (
             (run.event as { name?: string } | undefined)?.name ?? "manual",
         };
       },
-    ) as Promise<RepoContext>;
+    );
   });
 };
 
@@ -608,13 +625,19 @@ const resolvePullRequestHead = (
   run: CiRunScope,
   repo: RepoContext,
 ): Promise<RepoContext> => {
-  return run.step.run(
-    { id: `github › pr:resolve`, name: "pr:resolve" },
-    async (): Promise<RepoContext> => {
+  return ciRun<RepoContext>(
+    run,
+    {
+      step: { id: `github › pr:resolve`, name: "pr:resolve" },
+      intent: `Find the head and base of pull request #${repo.pullRequest?.number ?? "?"}`,
+    },
+    async (note): Promise<RepoContext> => {
       const provider = run.ci.github as GitHubProvider;
       const number = repo.pullRequest?.number;
 
       if (provider.kind === "console" || !number) {
+        note.outcome({ resolved: false });
+
         return repo;
       }
 
@@ -628,6 +651,15 @@ const resolvePullRequestHead = (
         pull_number: number,
       });
 
+      const fork = (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName;
+
+      note.outcome({
+        resolved: true,
+        sha: pr.head.sha,
+        baseRef: pr.base.ref,
+        fork,
+      });
+
       return {
         ...repo,
         sha: pr.head.sha,
@@ -637,11 +669,11 @@ const resolvePullRequestHead = (
         pullRequest: {
           number,
           headRef: pr.head.ref,
-          fork: (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName,
+          fork,
         },
       };
     },
-  ) as Promise<RepoContext>;
+  );
 };
 
 /** Errors that replaying the run would only reproduce. */
@@ -824,15 +856,24 @@ const checkCommentPermission = async (
 
   if (!allowed) {
     await inGitHubSpan(run, () => {
-      return run.step.run(
-        { id: "github › comment:denied", name: traceName.commentNotAllowed },
-        async () => {
+      return ciRun(
+        run,
+        {
+          step: {
+            id: "github › comment:denied",
+            name: traceName.commentNotAllowed,
+          },
+          intent: `Tell ${login} they need \`${minPermission}\` permission`,
+        },
+        async (note) => {
           const { stickyComment } = await import("../github/helpers.ts");
 
           await stickyComment(
             "permission",
             `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
           );
+
+          note.outcome({ denied: login, needed: minPermission });
 
           return { denied: login };
         },
@@ -893,8 +934,20 @@ export const cleanupFunction = ({
 
       return step.run(
         ciStep("destroy-orphans", traceName.cleanUpMachines),
-        async () => {
-          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+        () => {
+          return withNotes(
+            { ci: {} },
+            { intent: "Destroy the sandboxes of a run that ended" },
+            async (note) => {
+              const result = runId
+                ? await destroyOrphans(client, runId)
+                : { destroyed: 0 };
+
+              note.outcome(result);
+
+              return result;
+            },
+          );
         },
       );
     },
