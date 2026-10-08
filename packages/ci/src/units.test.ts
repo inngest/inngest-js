@@ -38,6 +38,7 @@ import {
   globToRegExp,
   maskSecrets,
   shellEscape,
+  shortReason,
   stableStringify,
   truncateLabel,
 } from "./util.ts";
@@ -791,5 +792,43 @@ describe("snapshot names", () => {
     expect(long).toHaveLength(255);
     expect(long.startsWith("ci/main/jjj")).toBe(true);
     expect(long).not.toBe(other);
+  });
+});
+
+describe("shortReason", () => {
+  test("Sandbox errors get fixed wording, from the code or its cause", () => {
+    expect(shortReason({ code: "sandbox_start_failed" })).toBe(
+      "machine failed to start",
+    );
+
+    expect(shortReason({ cause: { code: "cloud_login_required" } })).toBe(
+      "not logged in to Inngest",
+    );
+
+    expect(
+      shortReason({ code: "ERR_JOB", cause: { code: "access_denied" } }),
+    ).toBe("Sandboxes not enabled for your account");
+  });
+
+  test("an unknown code falls back to the message", () => {
+    expect(shortReason({ code: "constructor", message: "boom" })).toBe("boom");
+  });
+
+  test("a start timeout says how long it waited", () => {
+    expect(
+      shortReason(
+        new Error("Sandbox did not reach RUNNING within 90000 milliseconds"),
+      ),
+    ).toBe("machine didn't start in 1m 30s");
+  });
+
+  test("anything else is its first line, trimmed and capped", () => {
+    expect(
+      shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
+    ).toBe("nope");
+
+    expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
+
+    expect(shortReason(undefined)).toBe("");
   });
 });

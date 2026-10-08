@@ -1817,6 +1817,33 @@ describe("checks", () => {
     ]);
   });
 
+  test("a job's failure title is one short line", async () => {
+    const { ci, reporter } = setup();
+
+    const build = ci.job("build", async () => {
+      await $`pnpm build`;
+
+      throw new NonRetriableError(
+        "Sandbox did not reach RUNNING within 120000 milliseconds\nmore detail",
+      );
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return build();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    const failed = reporter.history.find((entry) => {
+      return entry.status === "completed" && entry.name === "pr / build";
+    });
+
+    expect(failed).toMatchObject({
+      conclusion: "failure",
+      title: "machine didn't start in 2m",
+    });
+  });
+
   test("a cached child of a parent called with an input hits again, and misses when that input changes", async () => {
     const api = createFakeSandboxApi();
 
