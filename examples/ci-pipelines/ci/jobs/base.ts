@@ -8,7 +8,7 @@ export const base = ci.job(
     id: "base",
     cache: {
       key: files("examples/ci-pipelines/app/package.json", "pnpm-lock.yaml"),
-      refresh: [{ cron: "0 3 * * *" }],
+      warm: [{ cron: "0 3 * * *" }],
     },
   },
   async () => {

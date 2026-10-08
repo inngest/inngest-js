@@ -39,7 +39,7 @@ import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
 import {
-  cacheRefreshFunctions,
+  cacheWarmFunctions,
   cleanupFunction,
   definePipeline,
 } from "./pipeline.ts";
@@ -180,7 +180,7 @@ export interface Ci {
 
   /**
    * Every function to pass to `serve()`: your pipelines, plus the ones CI
-   * needs behind the scenes for cleanup, cache refreshes, and re-runs.
+   * needs behind the scenes for cleanup, cache warming, and re-runs.
    *
    * ```ts
    * export const { GET, POST, PUT } = serve({
@@ -252,7 +252,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const generated: InngestFunction.Any[] = [];
   const pipelines: InngestFunction.Any[] = [];
 
-  /** The first `repo` a pipeline set, used by refresh runs that have none. */
+  /** The first `repo` a pipeline set, used by warm runs that have none. */
   let pipelineRepo: string | undefined;
 
   const ci: Ci = {
@@ -309,7 +309,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
-        ...cacheRefreshFunctions({
+        ...cacheWarmFunctions({
           client,
           internals,
           jobs,

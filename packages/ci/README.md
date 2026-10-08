@@ -53,6 +53,27 @@ A pipeline run is one trace. `base` runs once, in a run of its own that the trac
 
 Calling a job runs it every time you call it. Starting `from` a job builds it in a run of its own, so a job you both call and start from runs twice.
 
+## Warm caches
+
+No run waits on a cold build when you `warm` a cached job. Without `warm`, the first run after a change builds the cache and waits. With it, the cache is built on your triggers, so it's ready first. A warm run does nothing when the cache already hits.
+
+```ts
+const base = ci.job(
+  {
+    id: "base",
+    cache: {
+      key: files("images/node-base/**"),
+      warm: [github.push({ branches: ["main"] }), { cron: "0 3 * * *" }],
+    },
+  },
+  async () => {
+    await $`pnpm install`;
+  },
+);
+```
+
+[Caching](https://www.inngest.com/docs/labs/ci/caching)
+
 ## Install
 
 ```bash
