@@ -311,7 +311,7 @@ export const formatDuration = (ms: number): string => {
 /** Why Sandboxes can't be used, as the Dev Server and Cloud report it. */
 export type SandboxAccessProblem = "login" | "environment" | "plan";
 
-/** The short reason for each problem. */
+/** The short reason for each problem, which the run and the band show. */
 export const sandboxAccessReasons: Record<SandboxAccessProblem, string> = {
   login: "not logged in to Inngest",
   environment: "no Inngest environment selected",
@@ -354,9 +354,9 @@ export const sandboxAccessProblem = (
 /**
  * A failure reason short enough for a narrow column or a check title. Known
  * Sandbox start errors and access problems get fixed wording, matched by
- * `code` when there is one and by message otherwise; anything else is its
- * first non-empty line without an `Error:` style prefix or trailing period,
- * capped at 60 characters. An empty input gives an empty string.
+ * `code` when there is one and by message otherwise; anything else is its first non-empty line without
+ * an `Error:` style prefix or trailing period, capped at 60 characters. An
+ * empty input gives an empty string.
  */
 export const shortReason = (error: unknown): string => {
   const { code, message } = readError(error);

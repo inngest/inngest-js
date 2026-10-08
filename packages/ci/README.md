@@ -52,7 +52,9 @@ const test = ci.job("test", async () => {
 });
 ```
 
-A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
+A pipeline run is one trace. `base` runs once, in a run of its own that the trace links to, and `lint` and `test` start from a snapshot of it. A failed command runs again without rerunning the jobs that passed.
+
+Calling a job runs it every time you call it. `from()` builds the job in a run of its own, so a job you both call and start from runs twice.
 
 ## Install
 

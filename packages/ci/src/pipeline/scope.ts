@@ -75,27 +75,16 @@ export interface MachineHandle {
    */
   claimedProcessIds?: Set<string>;
   /**
-   * The cached snapshots this machine was built from, all the way up, which
-   * its own snapshot records so a restore can check they are still current.
-   */
-  parents: Record<string, SnapshotParent>;
-  /**
    * The git tree ID of the working tree this machine has, from its last local
    * `checkout()` or the snapshot it started from. A later `checkout()` uploads
    * only what changed since.
    */
   treeId?: string;
-}
-
-/** How long a slow step took, for the run's timing summary. */
-export interface StepTiming {
-  /** What was timed: `upload`, `delta`, `snapshot`, `start`. */
-  kind: string;
-  /** The job that waited on it. */
-  path: string;
-  durationMs: number;
-  /** Bytes moved, for an upload. */
-  bytes?: number;
+  /**
+   * The cached snapshots this machine was built from, all the way up, which
+   * its own snapshot records so a restore can check they are still current.
+   */
+  parents: Record<string, SnapshotParent>;
 }
 
 /**
@@ -111,6 +100,17 @@ export interface BuildOutcome {
   reused: boolean;
   /** Whether the job ran commands, so it had a machine to snapshot. */
   hadMachine: boolean;
+}
+
+/** How long a slow step took, for the run's timing summary. */
+export interface StepTiming {
+  /** What was timed: `upload`, `snapshot`, `start`. */
+  kind: string;
+  /** The job that waited on it. */
+  path: string;
+  durationMs: number;
+  /** Bytes moved, for an upload. */
+  bytes?: number;
 }
 
 export interface JobSummary {
@@ -249,6 +249,8 @@ export interface CiRunScope {
   maxAttempts: number;
   /** Whether Inngest will run the function again after this error. */
   willRetry: (error: unknown) => boolean;
+  /** The run's logger, which writes into the trace. */
+  logger?: { debug?: (...args: unknown[]) => void };
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;
@@ -256,8 +258,6 @@ export interface CiRunScope {
   asyncCtx: AsyncContext;
   /** Step ID counters, keyed by the ID's base. */
   counters: Map<string, number>;
-  /** The run's logger, which writes into the trace. */
-  logger?: { debug?: (...args: unknown[]) => void };
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
   /** The run's changed files, read once; `null` when they can't be read. */

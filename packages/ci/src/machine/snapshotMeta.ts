@@ -1,7 +1,7 @@
 /**
  * What a snapshot knows about itself, kept in a file inside it: the working
- * tree it holds and the cached snapshots it was built from. Written just
- * before a machine is snapshotted, and read back when a machine starts from one.
+ * tree it holds and the cached snapshots it was built from. Written just before
+ * a machine is snapshotted, and read back when a machine starts from one.
  *
  * @module
  */
