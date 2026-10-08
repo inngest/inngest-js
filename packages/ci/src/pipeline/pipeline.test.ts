@@ -33,6 +33,7 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
+import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
@@ -3885,7 +3886,7 @@ describe("base images", () => {
       files: new Map(),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    });
+    } as FakeSnapshot);
 
     return id;
   };
