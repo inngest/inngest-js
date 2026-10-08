@@ -148,6 +148,9 @@ const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
   status: sandbox.status,
   vpcId: sandbox.vpcId,
   imageRef: sandbox.imageRef,
+  ...(sandbox.imageDigest !== undefined && {
+    imageDigest: sandbox.imageDigest,
+  }),
   resources: { ...sandbox.resources },
   createdAt: sandbox.createdAt,
   ...(sandbox.startedAt !== undefined && { startedAt: sandbox.startedAt }),
