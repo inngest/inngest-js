@@ -17,7 +17,7 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, recordTiming, scopeSeparator } from "../pipeline/scope.ts";
+import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
@@ -137,8 +137,6 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     createStepId: string,
     options: { name: string; snapshotId?: string },
   ): Promise<Started> => {
-    const began = Date.now();
-
     const sandbox = options.snapshotId
       ? await tools.create(createStepId, {
           name: options.name,
@@ -150,14 +148,6 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
         });
 
     run.sandboxes.add(sandbox.id);
-
-    if (options.snapshotId) {
-      recordTiming(run, {
-        kind: "start",
-        path: scope.path,
-        durationMs: Date.now() - began,
-      });
-    }
 
     const setup = await sandbox.commands.run(
       `${createStepId}${scopeSeparator}setup`,
@@ -536,17 +526,15 @@ const createSnapshot = async (
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
-    const began = Date.now();
+    if (!cache) {
+      const snapshot = await handle.sandbox.snapshot(stepId);
 
-    const taken = await takeSnapshot(run, handle, jobPath, stepId, cache);
+      run.createdSnapshots.add(snapshot.id);
 
-    recordTiming(run, {
-      kind: "snapshot",
-      path: jobPath,
-      durationMs: Date.now() - began,
-    });
+      return snapshot.id;
+    }
 
-    return taken;
+    return await createNamedSnapshot(run, handle, jobPath, stepId, cache);
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;
@@ -560,25 +548,6 @@ const createSnapshot = async (
 
     return undefined;
   }
-};
-
-/** Snapshot a job's machine, under its name when the job is cached. */
-const takeSnapshot = async (
-  run: CiRunScope,
-  handle: MachineHandle,
-  jobPath: string,
-  stepId: string,
-  cache: SnapshotCache | undefined,
-): Promise<string> => {
-  if (!cache) {
-    const snapshot = await handle.sandbox.snapshot(stepId);
-
-    run.createdSnapshots.add(snapshot.id);
-
-    return snapshot.id;
-  }
-
-  return createNamedSnapshot(run, handle, jobPath, stepId, cache);
 };
 
 /**

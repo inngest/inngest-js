@@ -107,7 +107,7 @@ const header = (fields: {
  * The files git would consider part of the working tree: tracked files plus
  * untracked ones that aren't ignored.
  */
-export const workingTreeFiles = async (cwd: string): Promise<string[]> => {
+const workingTreeFiles = async (cwd: string): Promise<string[]> => {
   const stdout = await git(cwd, [
     "ls-files",
     "-co",

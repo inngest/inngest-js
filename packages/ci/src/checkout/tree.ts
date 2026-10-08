@@ -5,7 +5,7 @@
  * @module
  */
 
-import { copyFile, lstat, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../util.ts";
@@ -121,24 +121,4 @@ export const treeDelta = async (
   } catch {
     return undefined;
   }
-};
-
-/** The bytes of these files, for sizing an upload before building it. */
-export const sizeOfFiles = async (
-  cwd: string,
-  paths: string[],
-): Promise<number> => {
-  let total = 0;
-
-  for (const path of paths) {
-    try {
-      const info = await lstat(join(cwd, path));
-
-      total += info.isFile() ? info.size : 0;
-    } catch {
-      // Gone since the tree was hashed.
-    }
-  }
-
-  return total;
 };
