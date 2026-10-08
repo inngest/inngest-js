@@ -18,6 +18,7 @@ import {
   supportsColor,
 } from "./format.ts";
 import {
+  acceptsActivity,
   displayActivity,
   initialModel,
   isTerminal,
@@ -188,6 +189,11 @@ export const plainLines = (
       const job = run?.jobs.find((item) => {
         return item.jobId === event.jobId;
       });
+
+      if (run && !acceptsActivity(run, job)) {
+        return [];
+      }
+
       const text = (run && job && displayActivity(run, job)) ?? event.text;
 
       return [

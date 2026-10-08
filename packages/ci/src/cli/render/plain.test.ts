@@ -310,3 +310,59 @@ describe("a job waiting for its parent in the plain view", () => {
     );
   });
 });
+
+describe("activity after the end", () => {
+  const start: SessionEvent[] = [
+    {
+      kind: "run",
+      eventId: "e1",
+      runId: "r1",
+      pipelineId: "pr",
+      status: "running",
+      url: "u",
+      at: 0,
+    },
+    { kind: "job", runId: "r1", jobId: "e2e", status: "running", at: 1 },
+    { kind: "job", runId: "r1", jobId: "lint", status: "running", at: 1 },
+  ];
+  const replayed = (jobId: string): SessionEvent => {
+    return {
+      kind: "activity",
+      runId: "r1",
+      jobId,
+      text: "starting base · cached 2m ago",
+      at: 5,
+    };
+  };
+
+  test("prints nothing for a job that has ended", () => {
+    const events: SessionEvent[] = [
+      ...start,
+      { kind: "job", runId: "r1", jobId: "e2e", status: "passed", at: 2 },
+      replayed("e2e"),
+    ];
+
+    expect(lines(events).join("\n")).not.toContain("starting base");
+    expect(lines([...events, replayed("lint")])).toContain(
+      "job lint: starting base · cached 2m ago",
+    );
+  });
+
+  test("prints nothing once the run has ended", () => {
+    const events: SessionEvent[] = [
+      ...start,
+      {
+        kind: "run",
+        eventId: "e1",
+        runId: "r1",
+        pipelineId: "pr",
+        status: "passed",
+        url: "u",
+        at: 3,
+      },
+      replayed("lint"),
+    ];
+
+    expect(lines(events).join("\n")).not.toContain("starting base");
+  });
+});

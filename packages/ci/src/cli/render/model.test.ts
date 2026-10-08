@@ -168,6 +168,20 @@ describe("reduce", () => {
     expect(
       jobActivity([job("test", "passed", 2), activity("pausing machine…", 3)]),
     ).toBeUndefined();
+    expect(
+      jobActivity([job("test", "failed", 2), activity("starting base", 3)]),
+    ).toBeUndefined();
+  });
+
+  test("ignores an activity that arrives after its run ended", () => {
+    const model = play([
+      run("running", 0),
+      job("test", "running", 1),
+      run("passed", 2),
+      { kind: "activity", runId: "r1", jobId: "test", text: "late", at: 3 },
+    ]);
+
+    expect(model.runs[0]?.jobs[0]?.activity).toBeUndefined();
   });
 
   test("tracks stages and keeps their detail", () => {

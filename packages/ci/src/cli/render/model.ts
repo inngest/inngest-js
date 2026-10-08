@@ -87,6 +87,19 @@ export const isTerminal = (status: LocalStatus): boolean => {
 
 export const initialModel: Model = { stages: [], runs: [] };
 
+/**
+ * Whether a job's activity is still news. A job that has ended, or whose run
+ * has, has nothing more to say: a replay of the pipeline re-sends the start
+ * notes of jobs that already finished.
+ */
+export const acceptsActivity = (run: RunView, job?: JobView): boolean => {
+  if (isTerminal(run.status)) {
+    return false;
+  }
+
+  return !job || !isTerminal(job.status);
+};
+
 /** The parent a job's activity says it is waiting for, if it does. */
 export const waitingFor = (job: JobView): string | undefined => {
   return /^waiting for (.+?)…?$/.exec(job.activity ?? "")?.[1];
@@ -423,8 +436,7 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
         return {
           ...run,
           jobs: run.jobs.map((job) => {
-            // A job that has ended has nothing more to say.
-            return job.jobId === event.jobId && !isTerminal(job.status)
+            return job.jobId === event.jobId && acceptsActivity(run, job)
               ? { ...job, activity: event.text }
               : job;
           }),
