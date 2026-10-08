@@ -6,13 +6,11 @@
  */
 
 import type { Inngest } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import {
-  deleteSnapshot,
-  resolveTakenName,
-  staleParentOf,
-} from "../cache/cache.ts";
+import { deleteSnapshot, resolveTakenName } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import { ciRun } from "../pipeline/metadata.ts";
 import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
@@ -29,7 +27,7 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
-import type { SnapshotMeta, SnapshotParent } from "./snapshotMeta.ts";
+import type { SnapshotMeta } from "./snapshotMeta.ts";
 import {
   parseSnapshotMeta,
   snapshotMetaPath,
@@ -142,9 +140,7 @@ export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 
 interface Started {
   // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
   sandbox: any;
-  /** The snapshot it started from, if any. */
-  from?: string;
-  /** What that snapshot says about itself, if it says anything. */
+  /** What the snapshot it started from says about itself, if anything. */
   meta?: SnapshotMeta;
 }
 
@@ -192,17 +188,11 @@ const createMachine = async (
       ["/bin/sh", "-c", machineSetupScript],
     );
 
-    if (!options.snapshotId) {
-      return { sandbox };
-    }
+    const meta = options.snapshotId
+      ? parseSnapshotMeta(setup?.stdout ?? "")
+      : undefined;
 
-    const meta = parseSnapshotMeta(setup?.stdout ?? "");
-
-    return {
-      sandbox,
-      from: options.snapshotId,
-      ...(meta ? { meta } : {}),
-    };
+    return { sandbox, ...(meta ? { meta } : {}) };
   };
 
   const startFresh = (note: string) => {
@@ -255,26 +245,6 @@ const createMachine = async (
       bad = `wouldn't start (${errorMessage(error)})`;
     }
 
-    // A cached snapshot is checked against what its parents' jobs would use
-    // now, which only the metadata inside it can say.
-    const cachedParent =
-      scope.fromBuilt[parentId]?.cached?.snapshotId === snapshotId;
-
-    if (probed?.meta && cachedParent) {
-      const stale = await staleParentOf(
-        run,
-        `${scope.path}${scopeSeparator}cache:verify`,
-        scope.path,
-        probed.meta,
-      );
-
-      if (stale) {
-        bad = `was built from an older \`${stale}\``;
-
-        await discardStale(stepId, probed);
-      }
-    }
-
     if (probed && !bad) {
       started = probed;
     } else {
@@ -282,7 +252,7 @@ const createMachine = async (
         `fell back: snapshot of \`${parentId}\` ${bad}, so \`${scope.path}\` rebuilt it`,
       );
 
-      const note = `rebuilding ${parentId} · ${probed ? "stale snapshot" : "bad snapshot"}`;
+      const note = `rebuilding ${parentId} · bad snapshot`;
 
       scope.startNote = note;
 
@@ -330,7 +300,6 @@ const createMachine = async (
     sandbox: started.sandbox,
     name,
     id: started.sandbox.id,
-    parents: parentsOf(scope, started),
   };
 
   // A machine from a snapshot has the working tree that snapshot was taken
@@ -340,56 +309,6 @@ const createMachine = async (
   }
 
   return handle;
-};
-
-/**
- * The cached snapshots a machine was built from: those its snapshot was built
- * from, plus the snapshot itself if it is a cached job's. A cached parent this
- * machine didn't start from, because the parent re-ran here instead, is
- * recorded with no snapshot, so a restore never trusts it.
- */
-const parentsOf = (
-  scope: CiJobScope,
-  started: Started,
-): Record<string, SnapshotParent> => {
-  const parents = started.from ? { ...started.meta?.parents } : {};
-
-  for (const jobId of scope.fromJobIds) {
-    const cached = scope.fromBuilt[jobId]?.cached;
-
-    if (!cached) {
-      continue;
-    }
-
-    const input = scope.parentInputs[jobId];
-
-    parents[jobId] = {
-      name: cached.name,
-      snapshotId: started.from === cached.snapshotId ? cached.snapshotId : "",
-      ...(input === undefined ? {} : { input }),
-    };
-  }
-
-  return parents;
-};
-
-/**
- * Best-effort cleanup of a machine that started from a stale snapshot, so it
- * isn't kept running while the parent is rebuilt. It is destroyed with the
- * run's machines anyway.
- */
-const discardStale = async (
-  stepId: string,
-  started: Started,
-): Promise<void> => {
-  try {
-    await started.sandbox.destroy({
-      id: `${stepId}${scopeSeparator}stale`,
-      name: traceName.discardStaleMachine,
-    });
-  } catch {
-    // Best effort only.
-  }
 };
 
 /**
@@ -409,12 +328,16 @@ const discardFailedStart = async (
     ?.sandboxId;
 
   try {
-    await run.step.run(
+    await ciRun(
+      run,
       {
-        id: `${stepId}${scopeSeparator}discard`,
-        name: traceName.discardMachine,
+        step: {
+          id: `${stepId}${scopeSeparator}discard`,
+          name: traceName.discardMachine,
+        },
+        intent: `Discard the sandbox \`${name}\` that failed to start`,
       },
-      async (): Promise<{ id?: string }> => {
+      async (note): Promise<{ id?: string }> => {
         // Errors are swallowed inside the step so it never retries.
         let id = knownId;
 
@@ -448,6 +371,11 @@ const discardFailedStart = async (
         } catch {
           // The run's cleanup finds it again by its name.
         }
+
+        note.outcome({
+          discarded: Boolean(id),
+          ...(id ? { sandboxId: id } : {}),
+        });
 
         return id ? { id } : {};
       },
@@ -503,11 +431,6 @@ export interface SnapshotCache {
   target: CacheTarget;
   /** A bad snapshot that may still hold the name, which must not be used. */
   exclude?: string;
-  /**
-   * Set when the job has no `cache` and the name is only for this run, so
-   * failing to name it isn't worth a warning.
-   */
-  ephemeral?: boolean;
 }
 
 /** A snapshot of a job's machine. */
@@ -558,24 +481,21 @@ const takeSnapshot = async (
 ): Promise<TakenSnapshot | undefined> => {
   run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
 
-  const meta: SnapshotMeta = {
-    ...(handle.treeId ? { treeId: handle.treeId } : {}),
-    parents: handle.parents,
-  };
-
-  await handle.sandbox.commands.run(
-    ciStep(
-      `${jobPath}${scopeSeparator}snapshot:meta`,
-      traceName.recordSnapshotContents,
-    ),
-    writeSnapshotMetaCommand(meta),
-  );
+  if (handle.treeId) {
+    await handle.sandbox.commands.run(
+      ciStep(
+        `${jobPath}${scopeSeparator}snapshot:meta`,
+        traceName.recordSnapshotContents,
+      ),
+      writeSnapshotMetaCommand({ treeId: handle.treeId }),
+    );
+  }
 
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
     return cache
-      ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
+      ? await createNamedSnapshot(run, handle, stepId, cache)
       : await createRunSnapshot(handle, stepId);
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
@@ -596,16 +516,16 @@ const takeSnapshot = async (
  * the job's cache, and a cached one is left for later runs, as is one adopted
  * from a name race winner.
  *
- * If another build holds the name, its snapshot is used instead. If the name
- * is refused, as by a server without snapshot names, the snapshot is taken
- * without one: the invoking run still starts from it, but nothing is cached.
+ * If another build holds the name, its snapshot is used instead, or the
+ * holder is deleted when it is about to expire or is the bad one being
+ * replaced, and the create is tried again. Any other failure is the build's:
+ * one the server refused as invalid is not retried.
  */
 const createNamedSnapshot = async (
   run: CiRunScope,
   handle: MachineHandle,
-  jobPath: string,
   stepId: string,
-  { target, exclude, ephemeral }: SnapshotCache,
+  { target, exclude }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -619,64 +539,68 @@ const createNamedSnapshot = async (
     };
   };
 
-  let refusal: unknown;
+  let taken: unknown;
 
   try {
     return await attempt(stepId);
   } catch (error) {
     if (!hasCode(error, nameTakenCode)) {
-      if (!isNameRefused(error)) {
-        throw error;
-      }
-
-      refusal = error;
-    }
-  }
-
-  if (!refusal) {
-    const taken = await resolveTakenName(
-      run,
-      `${stepId}${scopeSeparator}name-taken`,
-      name,
-      exclude,
-    );
-
-    if (taken.winner) {
-      // Another build got there first, with the same key, so its snapshot is
-      // as good as this one.
-      return {
-        snapshotId: taken.winner.snapshotId,
-        named: taken.winner,
-        reused: true,
-      };
+      throw refusedAsFatal(error, name);
     }
 
-    if (taken.cleared) {
-      try {
-        return await attempt(`${stepId} (retry)`);
-      } catch (error) {
-        refusal = error;
-      }
-    }
+    taken = error;
   }
 
-  if (!ephemeral) {
-    run.warnings.push(
-      `not cached: the snapshot of \`${jobPath}\` couldn't be named${refusal ? ` (${errorMessage(refusal)})` : ""}, so later runs build it again`,
-    );
-  }
-
-  const unnamed = await handle.sandbox.snapshot(
-    snapshotStep(`${stepId} (unnamed)`),
+  const held = await resolveTakenName(
+    run,
+    `${stepId}${scopeSeparator}name-taken`,
+    name,
+    exclude,
   );
 
-  // Today's Cloud rejects snapshot names, so a job's snapshot falls back to an
-  // unnamed one that no later run can find. The run that invoked the build
-  // deletes it at its own end, like any run-only snapshot: the build's own
-  // cleanup would delete it while that run still starts jobs from it. Remove
-  // this once every Cloud environment has snapshot names
-  // (inngest/inngest jack/snapshot-names, monorepo jack/snapshot-names).
-  return { snapshotId: unnamed.id, reused: false };
+  if (held.winner) {
+    // Another build got there first, with the same key, so its snapshot is
+    // as good as this one.
+    return {
+      snapshotId: held.winner.snapshotId,
+      named: held.winner,
+      reused: true,
+    };
+  }
+
+  if (!held.cleared) {
+    throw taken;
+  }
+
+  try {
+    return await attempt(`${stepId} (retry)`);
+  } catch (error) {
+    throw refusedAsFatal(error, name);
+  }
+};
+
+/**
+ * Make a create the server refused as invalid, such as a name it won't take,
+ * fail the run for good: asking again gets the same answer. Anything else,
+ * including the errors the caller treats as "snapshots unavailable", comes
+ * back unchanged and takes the normal step retry.
+ */
+const refusedAsFatal = (error: unknown, name: string): unknown => {
+  const status = errorStatus(error);
+
+  const refused =
+    status === 400 ||
+    status === 422 ||
+    (error as { name?: string } | undefined)?.name === "SandboxValidationError";
+
+  if (!refused) {
+    return error;
+  }
+
+  return new NonRetriableError(
+    `the snapshot named \`${name}\` was refused (${errorMessage(error)})`,
+    { cause: error },
+  );
 };
 
 /**
@@ -696,31 +620,14 @@ const createRunSnapshot = async (
 const nameTakenCode = "sandbox_snapshot_name_taken";
 
 /**
- * Whether a named snapshot was refused for its name, so taking it without one
- * may work.
- *
- * WORKAROUND (Sandboxes API): Cloud doesn't have snapshot names yet, and
- * refuses a create with a body as a bad request. Delete this once it does.
- */
-const isNameRefused = (error: unknown): boolean => {
-  const status = errorStatus(error);
-
-  return (
-    status === 400 ||
-    status === 422 ||
-    (error as { name?: string } | undefined)?.name === "SandboxValidationError"
-  );
-};
-
-/**
  * Whether a snapshot failed because snapshots can't be had here, as opposed
  * to a real failure. The caller falls back to re-running the parent rather
  * than failing the run.
  *
- * WORKAROUND (Sandboxes API): older Dev Servers have no snapshot endpoints
- * (404, 501 or an "unsupported" message), and an environment can run out of
- * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
- * happens; a real failure should then always surface.
+ * That is an environment that can't snapshot: an older Dev Server with no
+ * snapshot endpoints (404, 501 or an "unsupported" message), or an account out
+ * of snapshots (`sandbox_snapshot_limit_exceeded`). A refused or invalid
+ * create is not one, and fails the build.
  */
 const isSnapshotUnavailable = (error: unknown): boolean => {
   const cause = (error as { cause?: { code?: string; status?: number } })
@@ -766,20 +673,28 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpMachines,
-    ),
-    async () => {
-      return destroyOrphans(run.ci.client, run.runId);
+  await ciRun(
+    run,
+    {
+      step: ciStep(
+        `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+        traceName.cleanUpMachines,
+      ),
+      intent: "Destroy this run's sandboxes",
+    },
+    async (note) => {
+      const result = await destroyOrphans(run.ci.client, run.runId);
+
+      note.outcome(result);
+
+      return result;
     },
   );
 };
 
 /**
  * Delete the snapshots the builds of this run left for it, once the run is
- * over: those of `from()` parents without a cache, and unnamed fallbacks.
+ * over: those of `from` parents without a cache.
  * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
  * run only restored never was.
  *
@@ -799,12 +714,16 @@ export const deleteRunSnapshots = async (
 
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpSnapshots,
-    ),
-    async () => {
+  await ciRun(
+    run,
+    {
+      step: ciStep(
+        `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+        traceName.cleanUpSnapshots,
+      ),
+      intent: "Delete the snapshots this run took",
+    },
+    async (note) => {
       const deleted: string[] = [];
       const failed: string[] = [];
 
@@ -830,6 +749,8 @@ export const deleteRunSnapshots = async (
           );
         }
       }
+
+      note.outcome({ deleted: deleted.length, failed: failed.length });
 
       return { deleted, failed };
     },

@@ -31,7 +31,7 @@ export interface CommandView {
 export interface JobView {
   jobId: string;
   status: LocalStatus;
-  /** The job it started `from()`, when known. */
+  /** The job it started `from`, when known. */
   parentId?: string;
   title?: string;
   /** Where the job's own run is, when another run builds it. */

@@ -10,8 +10,7 @@
  * @module
  */
 
-import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
-import { tagStep } from "../pipeline/metadata.ts";
+import { ciRun, shorten } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
@@ -182,20 +181,51 @@ const resolveFilesPart = async (
 
 /**
  * A job's own cache key: its resolved key, with the input it was called with
- * folded in, since the same key with a different input is a different job.
- * Names, lookups and parent checks all go through this, so they always agree.
+ * and the snapshot it starts from folded in, since either changing makes it a
+ * different job. Names and lookups both go through this, so they always agree.
  */
 export const jobCacheKey = async (
   run: CiRunScope,
   cache: CacheConfig,
   input: unknown,
+  /** What the job starts from. */
+  base?: BaseIdentity,
 ): Promise<string> => {
-  const key = await resolveCacheKey(run, cache.key);
-
-  return input === undefined
-    ? key
-    : hash(`${key}\0input:${stableStringify(input)}`);
+  return identityKey(await resolveCacheKey(run, cache.key), input, base);
 };
+
+/**
+ * Fold a job's input and the snapshot it starts from into a key. A key with
+ * neither stays as it is.
+ */
+const identityKey = (
+  key: string,
+  input: unknown,
+  base: BaseIdentity | undefined,
+): string => {
+  const parts = [key];
+
+  if (input !== undefined) {
+    parts.push(`input:${stableStringify(input)}`);
+  }
+
+  if (base) {
+    parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
+  }
+
+  return parts.length === 1 ? key : hash(parts.join("\0"));
+};
+
+/**
+ * The parent a job starts from, as its key sees it: the parent's job and its
+ * snapshot, which is missing when there was none to take. A parent rebuilt
+ * with any change has a new snapshot, so every job below it gets a new name
+ * and misses on lookup, without a machine starting to find out.
+ */
+export interface BaseIdentity {
+  jobId: string;
+  snapshotId?: string;
+}
 
 /** A cached job's snapshot, as found by its name. */
 export interface CachedSnapshot {
@@ -223,12 +253,14 @@ export const cacheTarget = async (
   job: {
     /** The job's ID, which its snapshot's name has. */
     id: string;
-    /** Where the job's steps go: its own path, or the one `from()` asks under. */
+    /** Where the job's steps go: its own path, or the one its build is asked under. */
     path: string;
   },
   cache: CacheConfig,
   /** The input the job was called with, which is part of its identity. */
   input?: unknown,
+  /** What the job starts from, which is part of its identity too. */
+  base?: BaseIdentity,
 ): Promise<CacheTarget> => {
   const jobId = job.id;
 
@@ -240,14 +272,24 @@ export const cacheTarget = async (
 
   const ownKey =
     given?.ownKey ??
-    ((await run.step.run(
-      ciStep(`${job.path}${scopeSeparator}cache:key`, traceName.checkCache),
-      async () => {
-        await tagStep(run, { kind: "cache", job: job.path });
-
-        return jobCacheKey(run, cache, input);
+    (await ciRun(
+      run,
+      {
+        step: ciStep(
+          `${job.path}${scopeSeparator}cache:key`,
+          traceName.checkCache,
+        ),
+        intent: `Work out the cache key for \`${jobId}\``,
+        tag: { kind: "cache", job: job.path },
       },
-    )) as string);
+      async (note) => {
+        const key = await jobCacheKey(run, cache, input, base);
+
+        note.outcome({ key });
+
+        return key;
+      },
+    ));
 
   return {
     ownKey,
@@ -258,13 +300,19 @@ export const cacheTarget = async (
 };
 
 /**
- * Where a job without a `cache` has its snapshot for `from()`: a name that
+ * Where a job without a `cache` has its snapshot for `from`: a name that
  * belongs to the pipeline run at the root, so another run never starts from
  * it, and that a second build anywhere in that pipeline finds rather than
  * builds again.
  */
-export const runTarget = (run: CiRunScope, jobId: string, input?: unknown) => {
-  const ownKey = input === undefined ? "" : hash(stableStringify(input));
+export const runTarget = (
+  run: CiRunScope,
+  jobId: string,
+  input?: unknown,
+  /** What the job starts from. */
+  base?: BaseIdentity,
+) => {
+  const ownKey = identityKey("", input, base);
 
   return {
     ownKey,
@@ -401,10 +449,21 @@ const findInScopes = async (
   return undefined;
 };
 
+/** What a lookup step sets out to do, for the job it looks a snapshot up for. */
+const lookupIntent = (jobId: string): string => {
+  return `Look up the cached snapshot for \`${jobId}\``;
+};
+
+/** What a lookup step found, for its outcome. */
+const lookupOutcome = (hit: CachedSnapshot | undefined) => {
+  return hit
+    ? { found: true, snapshotId: hit.snapshotId, name: hit.name }
+    : { found: false };
+};
+
 /**
- * Look a job's cached snapshot up, as a memoized step. Its parents aren't
- * checked here: that needs the metadata inside it, which is read when a
- * machine starts from it.
+ * Look a job's cached snapshot up, as a memoized step. Its parents need no
+ * check: they are part of its name.
  */
 export const lookupCache = async (
   scope: CiJobScope,
@@ -416,11 +475,17 @@ export const lookupCache = async (
 ): Promise<CachedSnapshot | undefined> => {
   const { run } = scope;
 
-  const found = (await run.step.run(
-    ciStep(`${scope.path}${scopeSeparator}cache:lookup`, traceName.lookUpCache),
-    async () => {
-      await tagStep(run, { kind: "cache", job: scope.path });
-
+  const found = await ciRun<CachedSnapshot | null>(
+    run,
+    {
+      step: ciStep(
+        `${scope.path}${scopeSeparator}cache:lookup`,
+        traceName.lookUpCache,
+      ),
+      intent: lookupIntent(scope.config.id),
+      tag: { kind: "cache", job: scope.path },
+    },
+    async (note) => {
       const hit = await findCached(
         run,
         scope.config.id,
@@ -429,9 +494,11 @@ export const lookupCache = async (
         exclude,
       );
 
+      note.outcome(lookupOutcome(hit));
+
       return hit ?? null;
     },
-  )) as CachedSnapshot | null;
+  );
 
   return found ?? undefined;
 };
@@ -470,22 +537,30 @@ export const lookupBeforeBuild = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const found = (await run.step.run(
-    ciStep(`${job.stepPath}${scopeSeparator}lookup`, traceName.lookUpCache),
-    async () => {
-      await tagStep(run, { kind: "cache", job: job.path });
-
+  const found = await ciRun<CachedSnapshot | null>(
+    run,
+    {
+      step: ciStep(
+        `${job.stepPath}${scopeSeparator}lookup`,
+        traceName.lookUpCache,
+      ),
+      intent: lookupIntent(job.id),
+      tag: { kind: "cache", job: job.path },
+    },
+    async (note) => {
       const hit = await findCached(run, job.id, cache, target, exclude);
+
+      note.outcome(lookupOutcome(hit));
 
       return hit ?? null;
     },
-  )) as CachedSnapshot | null;
+  );
 
   return found ?? undefined;
 };
 
 /**
- * Look a `from()` parent's snapshot up for the job that starts from it, as the
+ * Look a `from` parent's snapshot up for the job that starts from it, as the
  * first memoized step inside that job. One step works out the parent's key and
  * name, then lists by name once per scope the parent reads, so the job's own
  * row shows the work from the moment the job is called. A miss is for the
@@ -495,35 +570,45 @@ export const lookupParent = async (
   scope: CiJobScope,
   parent: {
     config: JobConfig;
-    /** The input `from()` was given for the parent. */
+    /** The input the parent is built with. */
     input: unknown;
+    /** What the parent starts from. */
+    base?: BaseIdentity;
   },
 ): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
   const { run } = scope;
-  const { config, input } = parent;
+  const { config, input, base } = parent;
 
   if (config.cache) {
     countApi("cache");
   }
 
-  const found = (await run.step.run(
-    ciStep(
-      `${scope.path}${scopeSeparator}from ${config.id}`,
-      traceName.startFrom(config.id),
-    ),
-    async () => {
-      await tagStep(run, { kind: "cache", job: scope.path });
-
+  const found = await ciRun<{
+    target: CacheTarget;
+    hit: CachedSnapshot | null;
+  }>(
+    run,
+    {
+      step: ciStep(
+        `${scope.path}${scopeSeparator}from ${config.id}`,
+        traceName.startFrom(config.id),
+      ),
+      intent: `Look up the snapshot of \`${config.id}\` to start from`,
+      tag: { kind: "cache", job: scope.path },
+    },
+    async (note) => {
       if (!config.cache) {
-        const target = runTarget(run, config.id, input);
+        const target = runTarget(run, config.id, input, base);
         const hit = await findNamed(run, target.name);
+
+        note.outcome(lookupOutcome(hit));
 
         return { target, hit: hit ?? null };
       }
 
       const given = run.build?.jobId === config.id ? run.build : undefined;
       const ownKey =
-        given?.ownKey ?? (await jobCacheKey(run, config.cache, input));
+        given?.ownKey ?? (await jobCacheKey(run, config.cache, input, base));
 
       const target = {
         ownKey,
@@ -538,9 +623,11 @@ export const lookupParent = async (
 
       const hit = await findInScopes(run, config.id, config.cache, ownKey);
 
+      note.outcome(lookupOutcome(hit));
+
       return { target, hit: hit ?? null };
     },
-  )) as { target: CacheTarget; hit: CachedSnapshot | null };
+  );
 
   return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
 };
@@ -556,12 +643,21 @@ export const resolveTakenName = async (
   name: string,
   exclude?: string,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-  return (await run.step.run(
-    ciStep(stepId, traceName.resolveCacheName),
-    async () => {
+  return ciRun<{ winner?: CachedSnapshot; cleared: boolean }>(
+    run,
+    {
+      step: ciStep(stepId, traceName.resolveCacheName),
+      intent: `Find who holds the snapshot name \`${shorten(name, 80)}\``,
+    },
+    async (note) => {
       const winner = await findNamed(run, name, exclude);
 
       if (winner) {
+        note.outcome({
+          winner: winner.snapshotId,
+          cleared: false,
+        });
+
         return { winner, cleared: false };
       }
 
@@ -590,50 +686,11 @@ export const resolveTakenName = async (
         // Nothing more to try: the build keeps its snapshot without a name.
       }
 
+      note.outcome({ cleared });
+
       return { cleared };
     },
-  )) as { winner?: CachedSnapshot; cleared: boolean };
-};
-
-/**
- * Which cached parent, if any, a snapshot was built from that its job would no
- * longer use: its key has changed, or its snapshot was rebuilt or is gone. Run
- * as a memoized step when a machine first starts from a cached snapshot.
- *
- * The metadata lists every cached snapshot up the chain, so a change anywhere
- * above is found here.
- */
-export const staleParentOf = async (
-  run: CiRunScope,
-  stepId: string,
-  jobPath: string,
-  meta: SnapshotMeta,
-): Promise<string | undefined> => {
-  const stale = (await run.step.run(
-    ciStep(stepId, traceName.verifyCachedSnapshot),
-    async () => {
-      await tagStep(run, { kind: "cache", job: jobPath });
-
-      for (const [jobId, parent] of Object.entries(meta.parents)) {
-        const cache = run.ci.jobs.get(jobId)?.config.cache;
-
-        if (!cache) {
-          return jobId;
-        }
-
-        const ownKey = await jobCacheKey(run, cache, parent.input);
-        const current = await findInScopes(run, jobId, cache, ownKey);
-
-        if (current?.snapshotId !== parent.snapshotId) {
-          return jobId;
-        }
-      }
-
-      return null;
-    },
-  )) as string | null;
-
-  return stale ?? undefined;
+  );
 };
 
 /**
@@ -646,9 +703,13 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<void> => {
   try {
-    await run.step.run(
-      ciStep(stepId, traceName.deleteBadSnapshot),
-      async () => {
+    await ciRun(
+      run,
+      {
+        step: ciStep(stepId, traceName.deleteBadSnapshot),
+        intent: `Delete the bad snapshot \`${snapshotId}\``,
+      },
+      async (note) => {
         try {
           const snapshot = await snapshotsClient(run).get(snapshotId);
 
@@ -657,8 +718,12 @@ export const deleteSnapshot = async (
           // Gone now, so the run's cleanup has nothing to delete.
           run.createdSnapshots.delete(snapshotId);
 
+          note.outcome({ snapshotId, deleted: Boolean(snapshot) });
+
           return { deleted: Boolean(snapshot) };
-        } catch {
+        } catch (error) {
+          note.outcome({ snapshotId, deleted: false, error: String(error) });
+
           return { deleted: false };
         }
       },

@@ -101,7 +101,7 @@ const pipelineRun: SessionEvent[] = [
 ];
 
 describe("toSessionState", () => {
-  test("maps a pipeline run with from() and a matrix", () => {
+  test("maps a pipeline run with `from` and a matrix", () => {
     const model = pipelineRun.reduce(reduce, initialModel);
     const state = toSessionState(model, meta, 99);
 

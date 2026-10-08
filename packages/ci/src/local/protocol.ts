@@ -110,7 +110,7 @@ export type LocalMessage =
       /** The job's ID as it appears on its check, like `compat (node:22)`. */
       jobId: string;
       status: LocalStatus;
-      /** The job it started `from()`, if any. */
+      /** The job it started `from`, if any. */
       parentId?: string;
       /** The check title, like `` `pnpm test` exited with 1 ``. */
       title?: string;

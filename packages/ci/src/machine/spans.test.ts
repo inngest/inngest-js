@@ -22,7 +22,6 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { $ } from "./command.ts";
-import { from } from "./from.ts";
 import { sandbox } from "./sandbox.ts";
 
 type Ci = ReturnType<typeof createCi>;
@@ -159,9 +158,7 @@ const rowsPipeline = (ci: Ci) => {
     },
   );
 
-  return ci.job("test", async () => {
-    await from(base);
-
+  return ci.job({ id: "test", from: base }, async () => {
     await $`pnpm test`;
 
     await $`pnpm exec eslint .`.as("lint");
@@ -404,9 +401,7 @@ describe("spans", () => {
         await $`install`;
       });
 
-      return ci.job("test", async () => {
-        await from(base);
-
+      return ci.job({ id: "test", from: base }, async () => {
         await $`unit`;
       });
     });
@@ -562,9 +557,7 @@ describe("spans", () => {
           await $`pnpm install`;
         });
 
-        return ci.job("test", async () => {
-          await from(parent);
-
+        return ci.job({ id: "test", from: parent }, async () => {
           await $`pnpm test`;
         });
       },

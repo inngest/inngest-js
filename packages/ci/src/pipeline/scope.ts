@@ -10,7 +10,6 @@ import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
-import type { SnapshotParent } from "../machine/snapshotMeta.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -35,12 +34,6 @@ export const rebuildSuffix = " (rebuild)";
 
 /** The default working directory, which is where `checkout()` puts the repo. */
 export const defaultCwd = "/work";
-
-/**
- * Where a job keeps its handler, so `from()` can re-run it on its own machine
- * when there are no snapshots to copy from.
- */
-export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
 
 /**
  * Where a matrix combination's job config remembers the matrix and combination
@@ -80,11 +73,6 @@ export interface MachineHandle {
    * only what changed since.
    */
   treeId?: string;
-  /**
-   * The cached snapshots this machine was built from, all the way up, which
-   * its own snapshot records so a restore can check they are still current.
-   */
-  parents: Record<string, SnapshotParent>;
 }
 
 /**
@@ -123,7 +111,7 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  /** Every job defined on the client, so a cache key can look up its parents. */
+  /** Every job defined on the client, so a job's `from` can find its parent. */
   jobs: Map<
     string,
     {
@@ -186,7 +174,7 @@ export interface CiRunScope {
   event: unknown;
   repo?: RepoContext;
   /**
-   * The builds `from()` has asked for, keyed by request: the parent's job ID
+   * The builds `from` has asked for, keyed by request: the parent's job ID
    * (with its input, when it has one), or the same plus `(rebuild)` for a
    * snapshot that went bad. Each is the one `step.invoke()` of the parent's
    * build, so children of one parent share it. It holds promises and nothing
@@ -196,10 +184,9 @@ export interface CiRunScope {
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * Snapshots the builds this run asked for left for it, by ID: a `from()`
-   * parent's without a `cache`, and the unnamed fallback of any build. They are
-   * deleted when the run ends. A named cache snapshot is never added, so later
-   * runs find it.
+   * Snapshots the builds this run asked for left for it, by ID: those of
+   * `from` parents without a `cache`. They are deleted when the run ends. A
+   * named cache snapshot is never added, so later runs find it.
    */
   createdSnapshots: Set<string>;
   /**
@@ -264,17 +251,12 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
-  /**
-   * What each `from()` parent's build gave back, by job ID. A machine records
-   * the cached snapshots it started from in its own snapshot.
-   */
-  fromBuilt: Record<string, CacheBuildResult>;
-  /** Re-runs the `from()` parent on this job's machine. Set by `from()`. */
+  /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
   /**
-   * Asks for the `from()` parent's snapshot to be built again, once per run
+   * Asks for the `from` parent's snapshot to be built again, once per run
    * whatever the number of children that need it, and gives the new one. Set
-   * by `from()`.
+   * by `startFrom`.
    */
   rebuildSnapshot?: () => Promise<string | undefined>;
   /**
@@ -288,10 +270,7 @@ export interface CiJobScope {
   restoringFallback?: boolean;
   /** The one run of `restoreFallback`, shared by concurrent first commands. */
   fallbackRan?: Promise<void>;
-  fromCalled: boolean;
   fromJobIds: string[];
-  /** The input each `from()` parent was called with, by job ID. */
-  parentInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];

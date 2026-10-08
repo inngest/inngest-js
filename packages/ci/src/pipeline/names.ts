@@ -132,12 +132,12 @@ export const traceName = {
   createFreshMachine: "Create sandbox (fresh)",
   retryCreate: "Retry create",
   discardMachine: "Discard sandbox",
-  discardStaleMachine: "Discard stale sandbox",
   prepareWorkspace: "Prepare workspace",
   saveMachine: "Save sandbox",
   snapshotMachine: "Snapshot sandbox",
   cleanUpMachines: "Clean up sandboxes",
   cleanUpSnapshots: "Clean up snapshots",
+  recordSnapshotContents: "Record snapshot contents",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
@@ -150,10 +150,8 @@ export const traceName = {
 
   checkCache: "Check cache",
   lookUpCache: "Look up cache",
-  verifyCachedSnapshot: "Verify cached snapshot",
   resolveCacheName: "Resolve cache name",
   deleteBadSnapshot: "Delete bad snapshot",
-  recordSnapshotContents: "Record snapshot contents",
 
   cloneRepository: "Clone repository",
   uploadWorkingTree: "Upload working tree",

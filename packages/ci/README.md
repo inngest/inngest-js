@@ -9,7 +9,7 @@
 
 - **Plain TypeScript.** Use `if`, loops, `Promise.all`, types, and your own SDKs. [Pipelines](https://www.inngest.com/docs/labs/ci/pipelines)
 - **Durable jobs.** A retry never reruns work that already passed. [Concepts](https://www.inngest.com/docs/labs/ci/concepts)
-- **Jobs that start from other jobs.** `from()` starts a job on a copy of another job's machine. [Machines](https://www.inngest.com/docs/labs/ci/machines#start-a-job-from-another-job)
+- **Jobs that start from other jobs.** `from` starts a job on a copy of another job's machine. [Machines](https://www.inngest.com/docs/labs/ci/machines#start-a-job-from-another-job)
 - **The same code locally.** Run a pipeline against the Dev Server with your uncommitted changes. [Quick start](https://www.inngest.com/docs/labs/ci/quick-start#5-run-locally)
 - **GitHub checks.** One check for each pipeline and one for each job. [Checks and reports](https://www.inngest.com/docs/labs/ci/checks-and-reports)
 - **Flow control.** Cancel superseded runs, cap concurrency, debounce, throttle, and rate limit. [Flow control](https://www.inngest.com/docs/labs/ci/pipelines#flow-control)
@@ -20,7 +20,7 @@ This pipeline runs on every pull request. `base` installs dependencies once. `li
 
 ```ts
 import { Inngest } from "inngest";
-import { createCi, github, checkout, from, $ } from "@inngest/ci";
+import { createCi, github, checkout, $ } from "@inngest/ci";
 
 const inngest = new Inngest({ id: "my-app" });
 const ci = createCi(inngest);
@@ -41,20 +41,18 @@ const base = ci.job("base", async () => {
   await $`pnpm install`;
 });
 
-const lint = ci.job("lint", async () => {
-  await from(base);
+const lint = ci.job({ id: "lint", from: base }, async () => {
   await $`pnpm lint`;
 });
 
-const test = ci.job("test", async () => {
-  await from(base);
+const test = ci.job({ id: "test", from: base }, async () => {
   await $`pnpm test`.retries(1);
 });
 ```
 
 A pipeline run is one trace. `base` runs once, in a run of its own that the trace links to, and `lint` and `test` start from a snapshot of it. A failed command runs again without rerunning the jobs that passed.
 
-Calling a job runs it every time you call it. `from()` builds the job in a run of its own, so a job you both call and start from runs twice.
+Calling a job runs it every time you call it. Starting `from` a job builds it in a run of its own, so a job you both call and start from runs twice.
 
 ## Install
 
@@ -72,7 +70,7 @@ Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to wr
 - [Pipelines and triggers](https://www.inngest.com/docs/labs/ci/pipelines)
 - [Jobs](https://www.inngest.com/docs/labs/ci/jobs)
 - [Commands](https://www.inngest.com/docs/labs/ci/commands)
-- [Machines and `from()`](https://www.inngest.com/docs/labs/ci/machines)
+- [Machines and `from`](https://www.inngest.com/docs/labs/ci/machines)
 - [Caching](https://www.inngest.com/docs/labs/ci/caching)
 - [Checks and reports](https://www.inngest.com/docs/labs/ci/checks-and-reports)
 - [Run on GitHub](https://www.inngest.com/docs/labs/ci/reference#run-on-github)

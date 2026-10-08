@@ -7,6 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
+import { ciRun } from "../pipeline/metadata.ts";
 import { traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
@@ -55,7 +56,7 @@ interface CheckoutOptions {
  *
  * If `/work` already has a checkout, it's updated to this run's commit instead
  * of cloned again, and installed dependencies and build output are kept. A job
- * that starts `from()` a cached job should call `checkout()` again to move to
+ * that starts `from` a cached job should call `checkout()` again to move to
  * this run's commit, since the cached machine has the commit it was built on.
  *
  * ```ts
@@ -109,10 +110,24 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
   run.ci.hooks.activity(run, scope.jobPath, "cloning repository…");
 
-  await run.step.run(
-    { id: stepId, name: traceName.cloneRepository },
-    async () => {
-      return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
+  await ciRun(
+    run,
+    {
+      step: { id: stepId, name: traceName.cloneRepository },
+      intent: `Clone \`${repo?.fullName}\` into \`${target}\``,
+    },
+    async (note) => {
+      const cloned = await cloneFromGithub(
+        run,
+        machine,
+        repo as RepoContext,
+        opts,
+        target,
+      );
+
+      note.outcome({ path: target, sha: repo?.sha });
+
+      return cloned;
     },
   );
 

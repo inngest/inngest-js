@@ -1,11 +1,10 @@
-import { $, checkout, from, report } from "@inngest/ci";
+import { $, checkout, report } from "@inngest/ci";
 
 import { ci } from "../client.ts";
 import { appDir } from "../helpers.ts";
 import { base } from "./base.ts";
 
-export const test = ci.job("test", async () => {
-  await from(base);
+export const test = ci.job({ id: "test", from: base }, async () => {
   await checkout();
 
   const result = await $`pnpm test`.cwd(appDir).retries(1);

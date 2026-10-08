@@ -11,7 +11,6 @@ import { runWithAsyncCtx } from "inngest/experimental";
 import { describe, expect, test, vi } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
@@ -59,9 +58,7 @@ describe("run metadata", () => {
       await $`pnpm install`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(install);
-
+    const test = ci.job({ id: "test", from: install }, async () => {
       await $`pnpm test`;
       await $`pnpm lint`;
 
@@ -290,7 +287,12 @@ describe("step metadata", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     const tags = stepScoped(result.metadata).map((update) => {
-      return [update.step, update.values];
+      const { kind, job } = update.values as { kind?: string; job?: string };
+
+      return [
+        update.step,
+        { ...(kind ? { kind } : {}), ...(job ? { job } : {}) },
+      ];
     });
 
     expect(tags).toEqual([
@@ -303,6 +305,8 @@ describe("step metadata", () => {
       ["end:plain", { kind: "job", job: "plain" }],
       ["github › check:jobs:complete", { kind: "check" }],
       ["github › check:pr:complete", { kind: "check" }],
+      ["pipeline › cleanup", {}],
+      ["pipeline › cleanup:snapshots", {}],
     ]);
 
     for (const update of stepScoped(result.metadata)) {

@@ -13,7 +13,6 @@ import { CiUsageError } from "../errors.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { repo } from "../github/helpers.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -598,9 +597,7 @@ describe("what a job says while it starts from a parent", () => {
       },
     );
 
-    ci.job("child", async () => {
-      await from(base);
-
+    ci.job({ id: "child", from: base }, async () => {
       await $`pnpm test`;
     });
   };
@@ -789,9 +786,7 @@ describe("what a job says while it starts from a parent", () => {
         });
 
         const children = ["one", "two", "three"].map((id) => {
-          return ci.job(id, async () => {
-            await from(base);
-
+          return ci.job({ id, from: base }, async () => {
             await $`pnpm test ${id}`;
           });
         });

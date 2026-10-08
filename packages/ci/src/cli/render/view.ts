@@ -151,7 +151,7 @@ const elapsed = (
   return (item.endedAt ?? clock) - item.startedAt;
 };
 
-/** A job's rows, then its `from()` children's, drawn as a tree. */
+/** A job's rows, then its `from` children's, drawn as a tree. */
 const jobRows = (run: RunView, clock: number): Row[] => {
   const ids = new Set(
     run.jobs.map((job) => {

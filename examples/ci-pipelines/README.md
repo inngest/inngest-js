@@ -87,8 +87,8 @@ pnpm run ci --pipeline release --event push      # skipped: ci.local
 | File | Look at |
 | --- | --- |
 | `ci/jobs/base.ts` | A cached job with a nightly refresh |
-| `ci/jobs/lint.ts`, `ci/jobs/test.ts` | `from(base)` starts on a copy of the `base` machine |
-| `ci/jobs/build.ts` | A job that takes input |
+| `ci/jobs/lint.ts`, `ci/jobs/test.ts` | `from: base` starts on a copy of the `base` machine |
+| `ci/jobs/build.ts` | A job that takes input, checked by a schema |
 | `ci/jobs/compat.ts` | `ci.matrix`, one job per Node version |
 | `ci/jobs/e2e.ts` | `.background()` and `waitForHttp()` |
 | `ci/jobs/two-machines.ts` | `sandbox()` for a second machine |

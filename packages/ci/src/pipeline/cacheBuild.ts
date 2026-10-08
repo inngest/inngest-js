@@ -3,7 +3,7 @@
  * build, the one generated function that does it, and what it hands back.
  *
  * A pipeline invokes this function for a cached job, and for any job another
- * job starts `from()`, instead of running the job inline. One function builds
+ * job starts `from`, instead of running the job inline. One function builds
  * every job: the invoke's data says which. It is limited to one run per
  * snapshot name, which is unique across jobs, and looks the snapshot up again
  * when it starts, so a burst of runs that all missed the same name builds it
@@ -54,6 +54,12 @@ export interface CacheBuildData extends Record<string, unknown> {
    * build never reuses it.
    */
   exclude?: string;
+  /**
+   * What the job starts from, as the invoking run found it. The job's name was
+   * worked out from this snapshot, so the build starts from it rather than
+   * looking its parent up again.
+   */
+  base?: CacheBuildResult;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
   /**

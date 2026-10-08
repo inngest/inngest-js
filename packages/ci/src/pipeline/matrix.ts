@@ -53,9 +53,15 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
             ? config.cache(combo)
             : config.cache;
 
+        const from: JobConfig["from"] =
+          typeof config.from === "function" && !("kind" in config.from)
+            ? config.from({ input: combo })
+            : (config.from as JobConfig["from"]);
+
         const job = ci.job(
           {
             id: matrixJobId(config.id, combo),
+            ...(from ? { from } : {}),
             ...(machine ? { machine } : {}),
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),

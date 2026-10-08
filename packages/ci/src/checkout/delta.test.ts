@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import { snapshotMetaPath } from "../machine/snapshotMeta.ts";
 import { createCi } from "../pipeline/createCi.ts";
@@ -136,9 +135,7 @@ describe("checkout() of a local working tree", () => {
   const runLint = async (api: FakeSandboxApi) => {
     const { ci, base } = harness(api);
 
-    const lint = ci.job("lint", async () => {
-      await from(base);
-
+    const lint = ci.job({ id: "lint", from: base }, async () => {
       await checkout();
 
       await $`pnpm lint`;
@@ -233,9 +230,7 @@ describe("checkout() of a local working tree", () => {
       await checkout();
     });
 
-    const child = ci.job("child", async () => {
-      await from(parent);
-
+    const child = ci.job({ id: "child", from: parent }, async () => {
       write("edit.txt", "edited by the child's run");
 
       await checkout();

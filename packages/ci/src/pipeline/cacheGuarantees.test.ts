@@ -15,9 +15,7 @@
 import { describe, expect, test } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { machineSetupScript } from "../machine/machine.ts";
-import { writeSnapshotMetaScript } from "../machine/snapshotMeta.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -43,9 +41,7 @@ const setup = (api: Api) => {
 const ran = (api: Api): string[] => {
   return api.commands
     .filter((argv) => {
-      return (
-        argv[2] !== machineSetupScript && argv[2] !== writeSnapshotMetaScript
-      );
+      return argv[2] !== machineSetupScript;
     })
     .map((argv) => {
       return argv.join(" ");
@@ -58,10 +54,7 @@ const ran = (api: Api): string[] => {
  */
 const events = (api: Api): string[] => {
   return api.timeline.filter((line) => {
-    return (
-      !line.includes(machineSetupScript) &&
-      !line.includes(writeSnapshotMetaScript)
-    );
+    return !line.includes(machineSetupScript);
   });
 };
 
@@ -89,9 +82,7 @@ describe("a burst of runs that need one cached job", () => {
       },
     );
 
-    const lint = ci.job("lint", async () => {
-      await from(install);
-
+    const lint = ci.job({ id: "lint", from: install }, async () => {
       await $`pnpm lint`;
     });
 
@@ -185,22 +176,22 @@ describe("a chain of cached jobs", () => {
       },
     );
 
-    const build = ci.job({ id: "build", cache: { key: "v1" } }, async () => {
-      await from(install);
+    const build = ci.job(
+      { id: "build", from: install, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
 
-      await $`pnpm build`;
-    });
-
-    const pack = ci.job({ id: "pack", cache: { key: "v1" } }, async () => {
-      await from(build);
-
-      await $`pnpm pack`;
-    });
+    const pack = ci.job(
+      { id: "pack", from: build, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm pack`;
+      },
+    );
 
     const startingFrom = (parent: typeof install, name: string) => {
-      return ci.job(name, async () => {
-        await from(parent);
-
+      return ci.job({ id: name, from: parent }, async () => {
         await $`echo ${name}`;
       });
     };
@@ -307,9 +298,7 @@ describe("a warm cache", () => {
       },
     );
 
-    const lint = ci.job("lint", async () => {
-      await from(install);
-
+    const lint = ci.job({ id: "lint", from: install }, async () => {
       await $`pnpm lint`;
     });
 
@@ -358,9 +347,7 @@ describe("a snapshot that is about to expire", () => {
       },
     );
 
-    const lint = ci.job("lint", async () => {
-      await from(install);
-
+    const lint = ci.job({ id: "lint", from: install }, async () => {
       await $`pnpm lint`;
     });
 
@@ -422,9 +409,7 @@ describe("jobs that start from one parent", () => {
     );
 
     const startingFrom = (name: string) => {
-      return ci.job(name, async () => {
-        await from(install);
-
+      return ci.job({ id: name, from: install }, async () => {
         await $`echo ${name}`;
       });
     };
