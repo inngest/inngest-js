@@ -492,9 +492,7 @@ describe("a snapshot older than the cache's maxAge", () => {
       },
     );
 
-    const lint = ci.job("lint", async () => {
-      await from(install);
-
+    const lint = ci.job({ id: "lint", from: install }, async () => {
       await $`pnpm lint`;
     });
 
