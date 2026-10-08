@@ -123,6 +123,19 @@ Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to wr
 - [Reference](https://www.inngest.com/docs/labs/ci/reference)
 - [About Inngest Labs](https://www.inngest.com/docs/labs)
 
+## Invalidating a cache
+
+Force a rebuild without changing a job's inputs, such as after a change the cache key can't see. Send an event and the job's cached images are deleted, in every scope or just one. Running sandboxes are unaffected, and the job's next run builds again.
+
+```ts
+import { invalidateEvent } from "@inngest/ci";
+
+await inngest.send(invalidateEvent("node-base"));
+await inngest.send(invalidateEvent(nodeBase, { scope: "main" }));
+```
+
+The event is `ci/base-image.invalidate`, with `data: { job: "node-base", scope?: "main" }`. An app that doesn't define the job ignores it, so apps can share an Inngest environment. An app that does define the job deletes that job ID's snapshots across the whole Inngest environment, whichever app made them.
+
 ## Run metadata
 
 Every pipeline run is tagged with `userland.inngest-ci` metadata, visible on the run in Inngest. It includes the package version, the repo, ref, sha and pull request number when the run has them, and usage counts for the `@inngest/ci` APIs the run used. Commands, output, and secrets are never recorded.

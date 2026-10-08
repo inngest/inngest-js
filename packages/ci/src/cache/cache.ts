@@ -10,6 +10,7 @@
  * @module
  */
 
+import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -463,10 +464,17 @@ interface SnapshotResource {
   expiresAt?: string;
 }
 
+/** The direct snapshots client of an Inngest client. */
+// biome-ignore lint/suspicious/noExplicitAny: SandboxClient["snapshots"], kept loose
+export const clientSnapshots = (client: Inngest.Any): any => {
+  // biome-ignore lint/suspicious/noExplicitAny: the SDK's sandboxes client
+  return (client as any).sandboxes.snapshots;
+};
+
 /** The direct snapshots client, for CI's own steps. */
 // biome-ignore lint/suspicious/noExplicitAny: SandboxClient["snapshots"], kept loose
 const snapshotsClient = (run: CiRunScope): any => {
-  return run.ci.client.sandboxes.snapshots;
+  return clientSnapshots(run.ci.client);
 };
 
 /**
