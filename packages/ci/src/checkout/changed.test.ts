@@ -133,6 +133,45 @@ describe("changed()", () => {
     expect(result.data).toBe(true);
   });
 
+  test("callers in different jobs share one step with a fixed ID", async () => {
+    const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
+      github: consoleReporter(),
+    });
+
+    const answers: boolean[] = [];
+
+    const first = ci.job("first", async () => {
+      answers.push(await changed("src/**"));
+    });
+
+    const second = ci.job("second", async () => {
+      answers.push(await changed("docs/**"));
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "nightly", on: { cron: "0 3 * * *" } },
+      async () => {
+        await Promise.all([first(), second()]);
+
+        return changed("lib/**");
+      },
+    );
+
+    const result = await runFunction(pipeline, {
+      event: { name: "inngest/scheduled.timer", data: {} },
+    });
+
+    // Whichever caller asks first, and whether or not the answer is known yet,
+    // there is one step, so no request can plan one another doesn't reach.
+    expect(
+      result.stepIds.filter((id) => {
+        return id.endsWith("changed") || id.includes("changed #");
+      }),
+    ).toEqual(["changed"]);
+
+    expect(result.data).toBe(true);
+  });
+
   const runOn = async (name: string, data: Record<string, unknown>) => {
     // GitHub answers a compare against a missing commit with a 404.
     const gh = createFakeGitHub();

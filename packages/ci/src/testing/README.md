@@ -6,4 +6,4 @@ Test-only helpers. Not exported and not built.
 - `fakeGitHub.ts`: a fake GitHub HTTP layer.
 - `client.ts`: an Inngest client wired to the fake sandbox API.
 - `events.ts`: the pull request event and trigger tests share.
-- `runFunction.ts`: drives a function to completion like the executor.
+- `runFunction.ts`: drives a function to completion like the executor, reporting the step IDs, their display names and the batches of steps found together.

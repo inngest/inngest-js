@@ -1,7 +1,7 @@
 /**
  * Defining and running a job: the `ci.job()` factory, starting a run of a job
  * or joining the shared one `from` uses, and the job body that reports
- * checks, caches and pauses machines.
+ * checks and caches.
  *
  * @module
  */
@@ -15,7 +15,7 @@ import {
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
 import { parentOf, parentSnapshot, startFrom } from "../machine/from.ts";
-import { pauseMachine, snapshotJob } from "../machine/machine.ts";
+import { snapshotJob } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import { tagStep } from "./metadata.ts";
@@ -280,6 +280,10 @@ const jobBody = async ({
     let checkEndedAt: number | undefined;
 
     if (checked) {
+      // Before the step, not after: a sibling's failure can end the run while
+      // it's in flight, and a job that passed must not be cancelled for it.
+      run.openChecks.delete(scope.path);
+
       checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
@@ -291,8 +295,6 @@ const jobBody = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
-
-      run.openChecks.delete(scope.path);
     }
 
     const endedAt =
@@ -305,8 +307,6 @@ const jobBody = async ({
       title: `Passed in ${formatDuration(durationMs)}`,
       durationMs,
     });
-
-    await pauseMachine(scope);
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);

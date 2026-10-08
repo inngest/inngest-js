@@ -3,8 +3,8 @@
 The client and the run engine.
 
 - `createCi.ts`: `createCi()`, its options and the `Ci` interface; wires the rest together.
-- `pipeline.ts`: `ci.pipeline()`, running a pipeline, and the functions generated beside it (cleanup, re-runs, cache refreshes).
-- `job.ts`: `ci.job()` and the job body (checks, caching, pausing machines).
+- `pipeline.ts`: `ci.pipeline()`, running a pipeline, and the functions generated beside it (cleanup, re-runs, cache refreshes). A run ends with the same steps whether it passed or failed.
+- `job.ts`: `ci.job()` and the job body (checks and caching).
 - `hooks.ts`: `CiHooks`, what a run tells a tool that watches it (`run.ci.hooks`); the default hooks do nothing.
 - `matrix.ts`: `ci.matrix()`, matrix expansion and the concurrency pool.
 - `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, and the helpers that build and attach it.
