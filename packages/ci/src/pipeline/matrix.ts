@@ -5,8 +5,10 @@
  * @module
  */
 
+import { checkStaticFrom } from "../machine/from.ts";
 import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
+import type { RegisteredJob } from "./job.ts";
 import { countApi, matrixOriginKey } from "./scope.ts";
 
 /**
@@ -33,11 +35,20 @@ const sameCombo = (
 /**
  * Expand a matrix into its combinations and run them as jobs.
  */
-export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
-  ci: Ci,
-  config: MatrixConfig<TAxes>,
-  handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
-): Matrix<TAxes> => {
+export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
+  ci,
+  jobs,
+  config,
+  handler,
+}: {
+  ci: Ci;
+  /** The client's job registry, which a static `from` is checked against. */
+  jobs: Map<string, RegisteredJob>;
+  config: MatrixConfig<TAxes>;
+  handler: (combo: MatrixCombo<TAxes>) => Promise<void>;
+}): Matrix<TAxes> => {
+  checkStaticFrom(jobs, config);
+
   const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");
 

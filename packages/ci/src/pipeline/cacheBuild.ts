@@ -16,6 +16,7 @@ import type { Inngest, InngestFunction } from "inngest";
 import { NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import { cycleMessage } from "../machine/from.ts";
 import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
@@ -49,6 +50,12 @@ export interface CacheBuildData extends Record<string, unknown> {
    * to one at a time per name.
    */
   cacheKey: string;
+  /**
+   * The jobs whose builds led to this one, outermost first: each build run
+   * adds its own job when it invokes another. A build asked for a job that's
+   * already here is a cycle of `from`s.
+   */
+  chain?: string[];
   /**
    * A snapshot that turned out to be bad, which may still hold the name. The
    * build never reuses it.
@@ -171,6 +178,10 @@ const buildSnapshot = async ({
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes>>;
 }): Promise<CacheBuildResult> => {
+  if (data.chain?.includes(data.jobId)) {
+    throw new NonRetriableError(cycleMessage([...data.chain, data.jobId]));
+  }
+
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
 

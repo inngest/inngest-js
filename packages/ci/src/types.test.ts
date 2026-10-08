@@ -14,7 +14,7 @@
 
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { describe, expectTypeOf, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { files } from "./cache/cache.ts";
 import { changed } from "./checkout/changed.ts";
 import { checkout } from "./checkout/checkout.ts";
@@ -457,8 +457,10 @@ describe("from starts from a job", () => {
   });
 
   test("anything else is a type error", () => {
-    // @ts-expect-error not a job
-    ci.job({ id: "from-string", from: "setup" }, async () => {});
+    expect(() => {
+      // @ts-expect-error not a job
+      ci.job({ id: "from-string", from: "setup" }, async () => {});
+    }).toThrow("must name a job");
   });
 });
 
