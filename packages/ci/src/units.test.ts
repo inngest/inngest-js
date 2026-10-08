@@ -694,6 +694,7 @@ describe("looking a cached snapshot up by name", () => {
     get: () => Promise<unknown> = async () => {
       return null;
     },
+    exclude?: string,
   ) => {
     const scope = {
       path: "setup",
@@ -712,6 +713,7 @@ describe("looking a cached snapshot up by name", () => {
       scope,
       { key: "v1", scope: "global" },
       { ownKey: "k1", name },
+      exclude,
     );
   };
 
@@ -776,6 +778,12 @@ describe("looking a cached snapshot up by name", () => {
       name,
       createdAt: snapshot({}).createdAt,
     });
+  });
+
+  test("a snapshot found to be bad is never found again", async () => {
+    expect(await lookup(listing(snapshot({})), undefined, "s1")).toBe(
+      undefined,
+    );
   });
 });
 
