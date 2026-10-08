@@ -155,6 +155,8 @@ export const traceName = {
   deleteBadSnapshot: "Delete bad snapshot",
   recordSnapshotContents: "Record snapshot contents",
 
+  cloneRepository: "Clone repository",
+  uploadWorkingTree: "Upload working tree",
   findChangedFiles: "Find changed files",
 
   recordStartTime: "Record start time",
