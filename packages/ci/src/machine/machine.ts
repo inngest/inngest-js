@@ -87,8 +87,7 @@ export const ensureMachine = async (
 };
 
 /**
- * Run once on every machine before its first command. It prints the
- * snapshot's metadata, which a machine started from a snapshot has.
+ * Run once on every machine before its first command.
  *
  * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
  * - Commands run in `/work` by default, and a sandbox won't start a process in
