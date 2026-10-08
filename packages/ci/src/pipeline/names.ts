@@ -139,6 +139,7 @@ export const traceName = {
   cleanUpMachines: "Clean up sandboxes",
   cleanUpSnapshots: "Clean up snapshots",
   recordSnapshotContents: "Record snapshot contents",
+  findDeployedRepo: "Find deployed repository",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
@@ -148,6 +149,10 @@ export const traceName = {
   stopProcess: "Stop process",
   stopAfterTimeout: "Stop after timeout",
   findStartedProcess: "Find started process",
+
+  buildAppJob: (name: string): string => {
+    return `Build ${name} in its app`;
+  },
 
   findBaseImage: (name: string): string => {
     return `Find base image ${name}`;

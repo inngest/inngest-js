@@ -119,6 +119,18 @@ A job starts from the newest ready snapshot with exactly that name. If there is 
 
 A cached job on an image is cached against the snapshot the image names. Capture the image again and the job runs again.
 
+## Start from another app's job
+
+Share a base image across apps: start from a job another app defines with `image.job()`. That app builds it if it's missing, once for every app that asks, from the commit it was deployed from.
+
+```ts
+ci.job({ id: "test", from: image.job("platform/node-base") }, async () => {
+  await $`pnpm test`;
+});
+```
+
+The other app reads which repository and commit it was deployed from out of its host's variables (Vercel, Netlify, Render, Railway or GitHub Actions) or its git checkout. Both apps run `@inngest/ci` in the same Inngest environment.
+
 ## Install
 
 ```bash

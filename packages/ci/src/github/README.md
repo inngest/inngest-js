@@ -9,4 +9,5 @@ Everything GitHub.
 - `checks.ts`: check run, commit status and console reporting.
 - `rest.ts`: the durable REST client.
 - `source.ts`: resolving the repository and ref `checkout()` and `files()` read to a commit, and finding the installation that can read it.
+- `deployRepo.ts`: which repository and commit the app was deployed from, read from host variables or the working directory's git checkout, for builds another app asks for.
 - `helpers.ts`: the `github.*` helpers, gathered in `index.ts`.

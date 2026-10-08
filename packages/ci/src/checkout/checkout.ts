@@ -5,6 +5,8 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
+import { noDeployedRepo } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
@@ -133,6 +135,10 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     scope.cwd ??= target;
 
     return;
+  }
+
+  if (!opts.repo && !run.repo && run.build?.resolve) {
+    throw new NonRetriableError(noDeployedRepo(run, "`checkout()`"));
   }
 
   if (!opts.repo && !run.repo) {

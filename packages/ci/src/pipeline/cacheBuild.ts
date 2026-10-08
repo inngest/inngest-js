@@ -18,6 +18,8 @@ import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { cycleMessage } from "../machine/from.ts";
 import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
+import type { AppJobRequest } from "./appJob.ts";
+import { answerAppJob } from "./appJob.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
@@ -73,6 +75,11 @@ export interface CacheBuildData extends Record<string, unknown> {
    * from it rather than looking the image up again.
    */
   image?: CachedSnapshot;
+  /**
+   * Set when another app asks for one of this app's jobs with `image.job()`.
+   * The asking app can't name the job's snapshot, so this run resolves it.
+   */
+  resolve?: AppJobRequest;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
   /**
@@ -186,6 +193,17 @@ const buildSnapshot = async ({
 }): Promise<CacheBuildResult> => {
   if (data.chain?.includes(data.jobId)) {
     throw new NonRetriableError(cycleMessage([...data.chain, data.jobId]));
+  }
+
+  const asking = getRunScope();
+
+  if (data.resolve && asking) {
+    return answerAppJob({
+      run: asking,
+      request: data.resolve,
+      input: data.input,
+      jobs,
+    });
   }
 
   if (data.matrix) {

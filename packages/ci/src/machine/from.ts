@@ -29,6 +29,7 @@ import {
 import { CiUsageError } from "../errors.ts";
 import type { BaseImage } from "../image.ts";
 import { isBaseImage } from "../image.ts";
+import { requestAppJob } from "../pipeline/appJob.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
 import {
@@ -254,7 +255,10 @@ export const cycleMessage = (path: string[]): string => {
 /** What a job's key knows of the base it starts from. */
 export const identityOf = (base: FromBase): BaseIdentity => {
   if (isImageBase(base)) {
-    return { image: base.image.name, snapshotId: base.snapshot.snapshotId };
+    return {
+      image: imageKey(base.image),
+      snapshotId: base.snapshot.snapshotId,
+    };
   }
 
   return {
@@ -386,7 +390,12 @@ const baseOf = async (
   };
 };
 
-const buildBase = (
+/**
+ * Find or build a job's snapshot that no job of this run starts from
+ * directly: a parent's parent, or a job another app asked for. Its key, lookup
+ * and build are steps of their own, made once per run however many ask.
+ */
+export const buildBase = (
   run: CiRunScope,
   parent: Parent,
   /** The jobs being started from, ending with `parent`. */
@@ -432,20 +441,41 @@ const buildBase = (
 };
 
 /**
- * The snapshot a base image names, once per pipeline run per name: the first
- * job to ask makes the one lookup step, and the rest wait on its promise, so
- * which job asks first never changes the steps the run plans.
+ * What tells one image from another, in this run and in names: a captured
+ * snapshot's name, or `job:` and another app's job, so the two never meet.
+ */
+const imageKey = (image: BaseImage): string => {
+  return image.source === "job" ? `job:${image.name}` : image.name;
+};
+
+/**
+ * The snapshot a base image names, once per pipeline run per image: the first
+ * job to ask makes the one step, and the rest wait on its promise, so which
+ * job asks first never changes the steps the run plans. Another app's job is
+ * asked of that app, and a captured image is looked up by name.
  *
- * @throws {NonRetriableError} When no ready snapshot has that name.
+ * @throws {NonRetriableError} When no ready snapshot has that name, or the
+ * other app can't give one.
  */
 export const resolveImage = (
   run: CiRunScope,
   image: BaseImage,
 ): Promise<CachedSnapshot> => {
-  const existing = run.images.get(image.name);
+  const key = imageKey(image);
+  const existing = run.images.get(key);
 
   if (existing) {
     return existing;
+  }
+
+  if (image.source === "job") {
+    const asked = outsideJobs(run, () => {
+      return requestAppJob(run, image, `image ${key}`);
+    });
+
+    run.images.set(key, asked);
+
+    return asked;
   }
 
   const resolved = outsideJobs(run, async () => {
@@ -478,7 +508,7 @@ export const resolveImage = (
     return found;
   });
 
-  run.images.set(image.name, resolved);
+  run.images.set(key, resolved);
 
   return resolved;
 };
