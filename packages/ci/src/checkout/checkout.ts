@@ -6,6 +6,12 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
+import {
+  resolveSource,
+  targetsRunRepo,
+  tokenForSource,
+} from "../github/source.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { traceName } from "../pipeline/names.ts";
@@ -30,7 +36,15 @@ import { treeDelta, workingTreeId } from "./tree.ts";
 const maxUploadBytes = 100 * 1024 * 1024;
 
 interface CheckoutOptions {
-  /** The commit or ref to check out. Defaults to the run's. */
+  /**
+   * The repository to check out, as `owner/name`. Defaults to the run's. Needed
+   * when the run's trigger has no repository.
+   */
+  repo?: string;
+  /**
+   * The branch, tag or commit to check out. Defaults to the run's commit, or to
+   * the default branch when `repo` is another repository.
+   */
   ref?: string;
   /** Also initialise submodules, recursively. */
   submodules?: boolean;
@@ -67,37 +81,49 @@ interface CheckoutOptions {
  * });
  * ```
  *
+ * Name another repository, a branch, a tag or a commit with `repo` and `ref`.
+ * The ref is resolved to a commit once per run, so every job and every replay
+ * checks out the same one. Without `repo`, `ref` overrides the run's commit. A
+ * run whose trigger has no repository, like a cron, needs `repo`.
+ *
+ * ```ts
+ * await checkout({ repo: "acme/platform" });                // default branch
+ * await checkout({ repo: "acme/platform", ref: "v2.1.0" });
+ * await checkout({ ref: "main" });                          // this repository
+ * ```
+ *
+ * The GitHub App must be installed on the other repository's owner and have
+ * access to it. The installation is found from the repository, so it doesn't
+ * have to be the one that triggered the run.
+ *
  * Locally, it uploads your working tree, including uncommitted changes, so
  * there's nothing to push before running a pipeline. Over an existing local
  * checkout it uploads only what changed since the machine's recorded tree and
  * removes the files deleted since. Only when that tree is unknown does it
  * extract everything on top, so files deleted since an earlier upload can
- * linger. Against GitHub, it clones
- * the commit that triggered the run with a short-lived installation token that
- * never leaves the step handler, so it's never in step input, step output, or
- * the trace.
+ * linger. With another `repo` or an explicit `ref` it clones from GitHub, as
+ * CI does. Against GitHub, it clones the commit with a short-lived
+ * installation token that never leaves the step handler, so it's never in step
+ * input, step output, or the trace.
  *
- * @throws {CiUsageError} When called outside a job, or when the run has no
- * repository to check out.
+ * @throws {CiUsageError} When called outside a job, or when neither the run
+ * nor `repo` names a repository to check out.
+ * @throws {NonRetriableError} When the GitHub App can't access the repository,
+ * or the ref doesn't exist in it.
  */
 export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const scope = requireJobScope("checkout");
 
   countApi("checkout");
   const { run } = scope;
-  const repo = run.repo;
   const target = opts.path ?? defaultCwd;
 
   const local =
-    repo?.local && process.env.INNGEST_CI_GITHUB !== "live" ? repo.local : null;
+    run.repo?.local && process.env.INNGEST_CI_GITHUB !== "live"
+      ? run.repo.local
+      : null;
 
-  if (!local && !repo) {
-    throw new CiUsageError(
-      "`checkout()` needs a repository. This run's trigger doesn't have one, so set `repo: \"owner/name\"` on the pipeline or send an event with repository data.",
-    );
-  }
-
-  if (local) {
+  if (local && targetsRunRepo(run, opts)) {
     await checkoutLocal(scope, local.path, target);
 
     scope.cwd ??= target;
@@ -105,6 +131,13 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     return;
   }
 
+  if (!opts.repo && !run.repo) {
+    throw new CiUsageError(
+      '`checkout()` needs a repository. This run\'s trigger doesn\'t have one, so pass `checkout({ repo: "owner/name" })` or set `repo: "owner/name"` on the pipeline.',
+    );
+  }
+
+  const source = await resolveSource(run, opts);
   const machine = await ensureMachine(scope);
   const stepId = `${scope.path}${scopeSeparator}checkout`;
 
@@ -114,18 +147,12 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     run,
     {
       step: { id: stepId, name: traceName.cloneRepository },
-      intent: `Clone \`${repo?.fullName}\` into \`${target}\``,
+      intent: `Clone \`${source.fullName}\` into \`${target}\``,
     },
     async (note) => {
-      const cloned = await cloneFromGithub(
-        run,
-        machine,
-        repo as RepoContext,
-        opts,
-        target,
-      );
+      const cloned = await cloneFromGithub(run, machine, source, opts, target);
 
-      note.outcome({ path: target, sha: repo?.sha });
+      note.outcome({ path: target, sha: source.sha });
 
       return cloned;
     },
@@ -405,7 +432,7 @@ const uploadDelta = async (
  * already a git checkout it's updated to `sha` instead of cloned.
  */
 export const cloneScript = (args: {
-  repo: RepoContext;
+  repo: Pick<RepoContext, "pullRequest">;
   opts: CheckoutOptions;
   target: string;
   sha: string;
@@ -458,20 +485,29 @@ export const cloneScript = (args: {
 const cloneFromGithub = async (
   run: CiRunScope,
   machine: MachineHandle,
-  repo: RepoContext,
+  source: ResolvedSource,
   opts: CheckoutOptions,
   target: string,
 ) => {
   // The token is minted here, inside the step handler, so it's never part of
   // the step's input or output. Both of those show in the trace.
-  const { token } = await import("../github/helpers.ts");
-  const accessToken = await token();
+  const accessToken = await tokenForSource(run, source);
 
   const sandbox = await getSandbox(run, machine);
 
-  const sha = opts.ref ?? repo.sha;
-  const url = `https://x-access-token:${accessToken}@github.com/${repo.fullName}.git`;
-  const script = cloneScript({ repo, opts, target, sha });
+  const url = `https://x-access-token:${accessToken}@github.com/${source.fullName}.git`;
+
+  // A fork's pull request head is only fetched for the run's own commit.
+  const own =
+    run.repo?.fullName === source.fullName && run.repo.sha === source.sha;
+  const pullRequest = own ? run.repo?.pullRequest : undefined;
+
+  const script = cloneScript({
+    repo: { ...(pullRequest ? { pullRequest } : {}) },
+    opts,
+    target,
+    sha: source.sha,
+  });
 
   const result = await sandbox.commands.run(["/bin/sh", "-c", script], {
     environment: { CI_REPO_URL: url },
@@ -484,5 +520,5 @@ const cloneFromGithub = async (
     );
   }
 
-  return { sha, path: target, source: "github" as const };
+  return { sha: source.sha, path: target, source: "github" as const };
 };

@@ -153,6 +153,24 @@ export interface CacheKeyPart {
   readonly kind: "inngest/ci.cacheKeyPart";
   readonly type: "files";
   readonly patterns: string[];
+  /** The repository to read the files from, as `owner/name`. Defaults to the run's. */
+  readonly repo?: string;
+  /**
+   * The branch, tag or commit to read them at. Defaults to the run's commit, or
+   * to the repository's default branch when `repo` is another repository.
+   */
+  readonly ref?: string;
+}
+
+/** Where `files()` reads from, when that isn't the run's own commit. */
+export interface FilesOptions {
+  /** The repository to read the files from, as `owner/name`. Defaults to the run's. */
+  repo?: string;
+  /**
+   * The branch, tag or commit to read them at. Defaults to the run's commit, or
+   * to the repository's default branch when `repo` is another repository.
+   */
+  ref?: string;
 }
 
 /**

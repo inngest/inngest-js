@@ -95,6 +95,7 @@ export type {
   CiTrigger,
   CiTriggerInput,
   Command,
+  FilesOptions,
   CommandResult,
   CommandTag,
   CommandValue,

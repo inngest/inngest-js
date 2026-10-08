@@ -44,7 +44,7 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { formatDuration, parseRepo } from "../util.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -223,6 +223,7 @@ const newRunScope = ({
     ...(repo ? { repo } : {}),
     ...(build ? { build } : {}),
     builds: new Map(),
+    sources: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
@@ -249,19 +250,6 @@ const newRunScope = ({
       }),
     ) as CiRunScope["apis"],
   };
-};
-
-/** Split a configured `repo` into its owner and name. */
-const parseRepo = (fullName: string): { owner: string; name: string } => {
-  const [owner, name, ...rest] = fullName.split("/");
-
-  if (!owner || !name || rest.length > 0) {
-    throw new CiUsageError(
-      `\`repo\` must be "owner/name", but got "${fullName}".`,
-    );
-  }
-
-  return { owner, name };
 };
 
 /**

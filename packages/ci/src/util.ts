@@ -406,3 +406,18 @@ export const formatBytes = (bytes: number): string => {
 
   return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`;
 };
+
+/** Split `owner/name`, or say what a repository should look like. */
+export const parseRepo = (
+  fullName: string,
+): { owner: string; name: string } => {
+  const [owner, name, ...rest] = fullName.split("/");
+
+  if (!owner || !name || rest.length > 0) {
+    throw new CiUsageError(
+      `\`repo\` must be "owner/name", but got "${fullName}".`,
+    );
+  }
+
+  return { owner, name };
+};

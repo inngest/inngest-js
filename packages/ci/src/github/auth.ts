@@ -29,6 +29,12 @@ export interface GitHubProvider {
   readonly reporter: "checks" | "statuses" | "console";
   octokit(ctx?: AuthContext): Promise<Octokit>;
   token(ctx?: AuthContext): Promise<string>;
+  /**
+   * The installation that can access a repository, or `undefined` when none
+   * can. Only a GitHub App has installations, so other providers leave this
+   * out and use the same credentials for every repository.
+   */
+  installationFor?(owner: string, repo: string): Promise<number | undefined>;
 }
 
 export interface GitHubAppProvider extends GitHubProvider {
@@ -86,6 +92,17 @@ export const githubApp = (
     return { appId, privateKey: privateKey.replace(/\\n/g, "\n") };
   };
 
+  const appOctokit = (): Octokit => {
+    const { appId, privateKey } = resolve();
+
+    return new Octokit({
+      authStrategy: createAppAuth,
+      auth: { appId, privateKey },
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+    });
+  };
+
   const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
     const { appId, privateKey } = resolve();
 
@@ -113,6 +130,23 @@ export const githubApp = (
     kind: "app",
     reporter: "checks",
     octokit: octokitFor,
+    installationFor: async (owner, repo) => {
+      try {
+        // Asked as the App itself, since an installation is what's being found.
+        const { data } = await appOctokit().rest.apps.getRepoInstallation({
+          owner,
+          repo,
+        });
+
+        return data.id;
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) {
+          return undefined;
+        }
+
+        throw error;
+      }
+    },
     token: async (ctx) => {
       const octokit = await octokitFor(ctx);
 
