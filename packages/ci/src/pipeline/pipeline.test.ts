@@ -1922,7 +1922,10 @@ describe("cache", () => {
 
     for (const run of runs) {
       expect(run.type).toBe("function-resolved");
-      expect(run.data).toEqual([expect.stringContaining("not cached")]);
+      expect(run.data).toEqual([
+        expect.stringContaining("built just in time"),
+        expect.stringContaining("not cached"),
+      ]);
     }
 
     expect(ran(api, "pnpm install")).toBe(2);
