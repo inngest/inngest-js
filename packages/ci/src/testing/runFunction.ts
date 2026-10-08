@@ -564,3 +564,8 @@ const runOnce = async (
 
   return result;
 };
+
+/** How many invoked functions have run, for a test to count builds with. */
+export const invokedRunCount = (): number => {
+  return invokedRuns;
+};

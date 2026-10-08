@@ -304,7 +304,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     }) as any,
 
     matrix: (config, handler) => {
-      const matrix = createMatrix(ci, config, handler);
+      const matrix = createMatrix({ ci, jobs, config, handler });
 
       matrices.set(config.id, matrix as Matrix<MatrixAxes>);
 
