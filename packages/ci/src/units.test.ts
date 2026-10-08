@@ -677,6 +677,14 @@ describe("shortReason", () => {
     expect(shortReason({ cause: { code: "cloud_login_required" } })).toBe(
       "not logged in to Inngest",
     );
+
+    expect(
+      shortReason({ code: "ERR_JOB", cause: { code: "access_denied" } }),
+    ).toBe("Sandboxes not enabled for your account");
+  });
+
+  test("an unknown code falls back to the message", () => {
+    expect(shortReason({ code: "constructor", message: "boom" })).toBe("boom");
   });
 
   test("a start timeout says how long it waited", () => {
