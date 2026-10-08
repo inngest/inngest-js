@@ -184,7 +184,6 @@ const createMachine = async (
           ...machineConfig,
         });
 
-
     const setup = await sandbox.commands.run(
       {
         id: `${createStep.id}${scopeSeparator}setup`,
@@ -575,17 +574,9 @@ const takeSnapshot = async (
   const stepId = `${jobPath}${scopeSeparator}snapshot`;
 
   try {
-    if (!cache) {
-      const snapshot = await handle.sandbox.snapshot(stepId);
-
-    const taken = cache
+    return cache
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
       : await createRunSnapshot(handle, stepId);
-
-      return snapshot.id;
-    }
-
-    return await createNamedSnapshot(run, handle, jobPath, stepId, cache);
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;
