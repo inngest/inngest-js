@@ -1969,6 +1969,49 @@ export interface StepOptions {
    * `group.parallel()`.
    */
   parallelMode?: "race";
+
+  /**
+   * Metadata to attach to this step, scoped to the step.
+   *
+   * Use it to tag steps the SDK creates for you, such as `step.sandbox.*` and
+   * `step.invoke`, where there is no callback of yours to call
+   * `step.metadata()` from. It adds no steps and doesn't change step IDs.
+   *
+   * `values` can be a record, or a function called inside the step once it
+   * finishes, with its result or its error. It's not called when the step is
+   * memoized. For `step.sandbox.*` the result is the step's raw output, which
+   * wraps the sandbox result in `{ protocolVersion, action, result }`.
+   *
+   * `step.invoke` carries only a record, as the invoked run's output isn't
+   * available to this function.
+   */
+  metadata?: StepMetadata;
+}
+
+/**
+ * What a step finished with, passed to a {@link StepMetadata} `values`
+ * function: the step's `data` if it succeeded, otherwise its `error`.
+ */
+export type StepMetadataOutcome =
+  | { data: unknown; error?: undefined }
+  | { error: unknown; data?: undefined };
+
+/**
+ * Metadata for a step, attached at the step scope under `kind`.
+ */
+export interface StepMetadata {
+  /**
+   * The kind to attach the values under.
+   */
+  kind: `userland.${string}`;
+
+  /**
+   * The values to attach, or a function that returns them once the step has
+   * finished.
+   */
+  values:
+    | Record<string, unknown>
+    | ((outcome: StepMetadataOutcome) => Record<string, unknown>);
 }
 
 /**
