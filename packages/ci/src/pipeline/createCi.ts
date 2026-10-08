@@ -1,14 +1,13 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
  * pipeline, job and matrix definitions to a shared set of internals (checks,
- * cache store, GitHub provider).
+ * GitHub provider).
  *
  * @module
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Inngest, InngestFunction } from "inngest";
-import { memoryCacheStore } from "../cache/cache.ts";
 import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
 import { consoleReporter } from "../github/auth.ts";
 import type { CheckSink } from "../github/checks.ts";
@@ -21,7 +20,6 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
-  CacheStore,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
@@ -35,6 +33,7 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
@@ -184,19 +183,6 @@ export interface Ci {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
-  return createCiWithStore(client, options, memoryCacheStore());
-};
-
-/**
- * `createCi` with a given cache store. Not exported from the package: cache
- * entries live in memory for now (named Sandboxes snapshots replace this),
- * and tests pass one store to several clients to simulate later runs.
- */
-export const createCiWithStore = (
-  client: Inngest.Any,
-  options: CiOptions,
-  cacheStore: CacheStore,
-): Ci => {
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
   const isDev = () => {
@@ -207,13 +193,16 @@ export const createCiWithStore = (
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+  const hooks = noopHooks;
 
   const internals: CiInternals = {
     client,
     isDev,
     github: provider,
-    checks: createCheckReporter(sinkFor(provider, client, isDev)),
-    cacheStore,
+    checks: createCheckReporter(
+      hooks.wrapSink(sinkFor(provider, client, isDev)),
+    ),
+    hooks,
     jobs,
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
