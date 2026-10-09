@@ -216,9 +216,7 @@ export interface CiJobScope {
   restoreFallback?: () => Promise<void>;
   /** What the job's first machine is for, shown while it starts. */
   startNote?: string;
-  /** Set while `restoreFallback` runs, whose own commands must not wait on it. */
-  restoringFallback?: boolean;
-  /** The one run of `restoreFallback`, shared by concurrent first commands. */
+  /** The one run of `restoreFallback`, which every other command waits on. */
   fallbackRan?: Promise<void>;
   fromJobIds: string[];
   annotations: CheckAnnotation[];
@@ -236,6 +234,8 @@ export interface CiJobScope {
 interface CiStore {
   run?: CiRunScope;
   job?: CiJobScope;
+  /** The job whose `restoreFallback` is running here. Its commands don't wait on it. */
+  restoring?: CiJobScope;
 }
 
 type CiAls = {
@@ -288,6 +288,11 @@ export const getRunScope = (): CiRunScope | undefined => {
 };
 export const getJobScope = (): CiJobScope | undefined => {
   return getStore()?.job;
+};
+
+/** Whether this code is part of `scope`'s `restoreFallback`. */
+export const isRestoring = (scope: CiJobScope): boolean => {
+  return getStore()?.restoring === scope;
 };
 
 /**

@@ -1469,6 +1469,53 @@ describe("cache", () => {
     expect(userCommands(api)).toHaveLength(2);
   });
 
+  test("the same branch, job and key in another repository misses", async () => {
+    // Two repositories sharing one Sandbox environment.
+    const api = createFakeSandboxApi();
+
+    const runIn = async (fullName: string) => {
+      const { ci } = setup({ api });
+
+      const job = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const event = {
+        ...prEvent,
+        data: {
+          ...prEvent.data,
+          repository: { full_name: fullName },
+          pull_request: {
+            ...prEvent.data.pull_request,
+            head: {
+              ...prEvent.data.pull_request.head,
+              repo: { full_name: fullName },
+            },
+          },
+        },
+      };
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await job();
+        }),
+        { event },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await runIn("inngest/inngest-js");
+    await runIn("inngest/inngest");
+
+    expect(userCommands(api)).toHaveLength(2);
+
+    // The first repository still hits its own.
+    await runIn("inngest/inngest-js");
+
+    expect(userCommands(api)).toHaveLength(2);
+  });
+
   test("a cached job with a machine can still be started from", async () => {
     // The same machines and snapshots across both runs, like a real environment.
     const api = createFakeSandboxApi();
@@ -1726,6 +1773,51 @@ describe("cache", () => {
         return machine.stuck && machine.status !== "TERMINATED";
       }),
     ).toEqual([]);
+  });
+
+  test("after a snapshot won't start, concurrent commands all wait for the parent to re-run", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+        await $`pnpm build`;
+      });
+
+      const check = ci.job({ id: "check", from: base }, async () => {
+        await Promise.all([$`pnpm lint`, $`pnpm test`]);
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await check();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await run();
+
+    api.failSnapshotStarts();
+
+    const before = userCommands(api).length;
+
+    await run();
+
+    const commands = userCommands(api)
+      .slice(before)
+      .map((command) => {
+        return command.join(" ");
+      });
+
+    expect(commands.slice(0, 2)).toEqual(["pnpm install", "pnpm build"]);
+    expect(new Set(commands.slice(2))).toEqual(
+      new Set(["pnpm lint", "pnpm test"]),
+    );
   });
 
   test("without snapshot names, every run builds, starts children from the snapshot, and passes", async () => {
