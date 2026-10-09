@@ -76,6 +76,7 @@
     "@types/node": "~24.3.0",
     "genversion": "^3.1.1",
     "inngest": "link:../inngest/dist",
+    "temporal-polyfill": "^0.2.5",
     "tsdown": "^0.23.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"

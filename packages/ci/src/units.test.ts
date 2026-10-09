@@ -5,6 +5,7 @@
  * @module
  */
 
+import { Temporal } from "temporal-polyfill";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache, snapshotName } from "./cache/cache.ts";
 import { CiUsageError } from "./errors.ts";
@@ -644,23 +645,55 @@ describe("formatting", () => {
   });
 
   test("durations parse", () => {
-    expect(durationToMs("10m")).toBe(600_000);
-    expect(durationToMs("1h30m")).toBe(5_400_000);
-    expect(durationToMs("250ms")).toBe(250);
-
-    expect(() => {
-      return durationToMs("soon");
-    }).toThrow(CiUsageError);
+    expect(durationToMs("10m", "timeout")).toBe(600_000);
+    expect(durationToMs("1h30m", "timeout")).toBe(5_400_000);
+    expect(durationToMs("1h 30m", "timeout")).toBe(5_400_000);
+    expect(durationToMs("250ms", "timeout")).toBe(250);
+    expect(durationToMs("1d", "timeout")).toBe(86_400_000);
+    expect(durationToMs("1.5s", "timeout")).toBe(1500);
   });
 
-  test("malformed durations are rejected rather than partly read", () => {
-    for (const bad of ["1 month", "1h garbage", "10", "", "m5", "-5m"]) {
-      expect(() => {
-        return durationToMs(bad);
-      }).toThrow(CiUsageError);
-    }
+  test("numbers are milliseconds", () => {
+    expect(durationToMs(90_000, "timeout")).toBe(90_000);
+  });
 
-    expect(durationToMs("1h 30m")).toBe(5_400_000);
+  test("Temporal durations convert to milliseconds", () => {
+    expect(
+      durationToMs(Temporal.Duration.from({ days: 1 }), "cache.maxAge"),
+    ).toBe(86_400_000);
+    expect(
+      durationToMs(
+        Temporal.Duration.from({ hours: 1, minutes: 30 }),
+        "timeout",
+      ),
+    ).toBe(5_400_000);
+  });
+
+  test("malformed durations are rejected, naming the field", () => {
+    const bad = [
+      "soon",
+      "1 month garbage",
+      "1h garbage",
+      "",
+      "m5",
+      "-5m",
+      0,
+      -1,
+      Number.NaN,
+      true,
+      null,
+      Temporal.Duration.from({ weeks: 1 }),
+    ];
+
+    for (const value of bad) {
+      expect(() => {
+        return durationToMs(value as string, "cache.maxAge");
+      }).toThrow(CiUsageError);
+
+      expect(() => {
+        return durationToMs(value as string, "cache.maxAge");
+      }).toThrow(/cache\.maxAge/);
+    }
   });
 
   test("stable strings ignore key order", () => {

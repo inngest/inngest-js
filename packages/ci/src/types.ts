@@ -8,12 +8,14 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
+import type { DurationInput } from "inngest/experimental";
 import type { BaseImage } from "./image.ts";
 
 /**
- * A duration, expressed as a time string like `"10m"`, `"24h"`, or `"1h30m"`.
+ * A length of time: a number of milliseconds, an `ms` string like `"10m"`,
+ * `"24h"` or `"1h30m"`, or a `Temporal.Duration`.
  */
-export type Duration = string;
+export type Duration = DurationInput;
 
 /**
  * A trigger for a pipeline. This is an Inngest function trigger, so
@@ -209,6 +211,8 @@ export interface CacheConfig {
    * job builds again and the new snapshot takes the name.
    *
    * Without it a snapshot is reused until its key changes or it expires.
+   *
+   * Takes milliseconds, an `ms` string like `"10m"`, or a `Temporal.Duration`.
    */
   maxAge?: Duration;
 }
@@ -281,7 +285,7 @@ export interface JobConfig<TInput = void> {
    * machines".
    *
    * The duration is currently ignored: the snapshot is kept for the
-   * platform's default retention, whatever you pass.
+   * platform's default retention, whatever you pass. Takes milliseconds, an `ms` string like `"10m"`, or a `Temporal.Duration`.
    *
    * Every other snapshot a run takes for `from` is deleted when the run
    * ends, unless the job is cached. This one is kept.
@@ -559,7 +563,7 @@ export interface Command extends PromiseLike<CommandResult> {
    */
   nothrow(): Command;
   /**
-   * Give up after this long, and throw `CommandTimeoutError`.
+   * Give up after this long, and throw `CommandTimeoutError`. Takes milliseconds, an `ms` string like `"10m"`, or a `Temporal.Duration`.
    *
    * A timeout under five minutes also makes the command a single captured
    * step, which is cheaper and keeps the trace tidy.
@@ -622,9 +626,15 @@ export interface ExtraMachine {
   readonly name: string;
   /** Run a command on this machine. `$.sh` runs a shell script. */
   $: CommandTag & { sh: CommandTag };
-  /** Wait until something listens on `port`, or throw after `timeout`. */
+  /**
+   * Wait until something listens on `port`, or throw after `timeout`, which
+   * is milliseconds, an `ms` string or a `Temporal.Duration`.
+   */
   waitForPort(port: number, opts?: { timeout?: Duration }): Promise<void>;
-  /** Wait until `url` answers (with `status`, if given), or throw after `timeout`. */
+  /**
+   * Wait until `url` answers (with `status`, if given), or throw after
+   * `timeout`, which is milliseconds, an `ms` string or a `Temporal.Duration`.
+   */
   waitForHttp(
     url: string,
     opts?: { timeout?: Duration; status?: number },

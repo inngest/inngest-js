@@ -76,7 +76,7 @@ export const defineJob = ({
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
-  checkMaxAge(config);
+  checkDurations(config);
 
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
@@ -110,31 +110,26 @@ export const defineJob = ({
 };
 
 /**
- * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
- * zero age would make every snapshot too old, so concurrent builds would
- * delete each other's.
+ * Fail a malformed or non-positive `cache.maxAge` or `keepOnFailure` when the
+ * job is defined. A zero age would make every snapshot too old, so concurrent
+ * builds would delete each other's.
  */
-const checkMaxAge = (config: JobConfig): void => {
-  const maxAge = config.cache?.maxAge;
+const checkDurations = (config: JobConfig): void => {
+  const fields = [
+    ["cache.maxAge", config.cache?.maxAge],
+    ["keepOnFailure", config.keepOnFailure],
+  ] as const;
 
-  if (maxAge === undefined) {
-    return;
-  }
+  for (const [field, value] of fields) {
+    if (value === undefined) {
+      continue;
+    }
 
-  let ms: number;
-
-  try {
-    ms = durationToMs(maxAge);
-  } catch (error) {
-    throw new CiUsageError(
-      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
-    );
-  }
-
-  if (ms <= 0) {
-    throw new CiUsageError(
-      `Job "${config.id}" has a \`cache.maxAge\` of zero. It must be longer than that.`,
-    );
+    try {
+      durationToMs(value, field);
+    } catch (error) {
+      throw new CiUsageError(`Job "${config.id}": ${errorMessage(error)}`);
+    }
   }
 };
 
@@ -648,9 +643,10 @@ const jobSteps = async ({
     const title = jobErrorTitle(error);
 
     // Kept on purpose, so the run's cleanup leaves it alone.
-    const keptSnapshotId = config.keepOnFailure
-      ? (await snapshotMachine(scope))?.snapshotId
-      : undefined;
+    const keptSnapshotId =
+      config.keepOnFailure !== undefined
+        ? (await snapshotMachine(scope))?.snapshotId
+        : undefined;
 
     let checkEndedAt: number | undefined;
 

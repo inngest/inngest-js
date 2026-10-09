@@ -14,6 +14,7 @@
 
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { Temporal } from "temporal-polyfill";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { files } from "./cache/cache.ts";
 import { changed } from "./checkout/changed.ts";
@@ -83,6 +84,7 @@ import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
   BackgroundProcess,
+  CacheConfig,
   CacheKeyPart,
   CheckConclusion,
   CiEvent,
@@ -91,8 +93,10 @@ import type {
   Command,
   CommandResult,
   CommandTag,
+  Duration,
   ExtraMachine,
   Job,
+  JobConfig,
   Matrix,
   RepoContext,
 } from "./types.ts";
@@ -975,6 +979,54 @@ describe("providers and stores", () => {
   });
 });
 
+describe("durations", () => {
+  test("every time field takes milliseconds, an ms string or a Temporal.Duration", () => {
+    const temporal = Temporal.Duration.from({ minutes: 1 });
+
+    for (const value of [1000, "30s", temporal]) {
+      expectTypeOf(value).toExtend<Duration>();
+
+      expectTypeOf<{ maxAge: typeof value }>().toExtend<{
+        maxAge?: NonNullable<CacheConfig["maxAge"]>;
+      }>();
+
+      expectTypeOf<{ timeout: typeof value }>().toExtend<
+        Parameters<typeof waitForPort>[1] & object
+      >();
+
+      expectTypeOf<{ timeout: typeof value }>().toExtend<
+        Parameters<typeof waitForHttp>[1] & object
+      >();
+
+      expectTypeOf<typeof value>().toExtend<
+        NonNullable<Parameters<typeof github.waitForChecks>[0]["timeout"]>
+      >();
+
+      expectTypeOf<{ keepOnFailure: typeof value }>().toExtend<
+        Pick<JobConfig, "keepOnFailure">
+      >();
+    }
+
+    expectTypeOf<Command["timeout"]>().parameter(0).toEqualTypeOf<Duration>();
+
+    expectTypeOf<boolean>().not.toExtend<Duration>();
+    expectTypeOf<{ days: number }>().not.toExtend<Duration>();
+    expectTypeOf<Date>().not.toExtend<Duration>();
+
+    expectTypeOf<{ maxAge: boolean }>().not.toExtend<{
+      maxAge?: CacheConfig["maxAge"];
+    }>();
+
+    expectTypeOf<{ timeout: boolean }>().not.toExtend<
+      Parameters<typeof waitForPort>[1] & object
+    >();
+
+    expectTypeOf<{ keepOnFailure: boolean }>().not.toExtend<
+      Pick<JobConfig, "keepOnFailure">
+    >();
+  });
+});
+
 describe("errors", () => {
   test("each carries what you need to report it", () => {
     expectTypeOf<CiUsageError>().toExtend<Error>();
@@ -1071,7 +1123,8 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf<Exported>().toBeArray();
 
     // A couple of the load-bearing ones, checked rather than just named.
-    expectTypeOf<EntryDuration>().toBeString();
+    expectTypeOf<string>().toExtend<EntryDuration>();
+    expectTypeOf<number>().toExtend<EntryDuration>();
     expectTypeOf<EntryJob<string>>().toExtend<Job<string>>();
     expectTypeOf<EntryCiEvent<{ a: 1 }>["data"]>().toEqualTypeOf<{ a: 1 }>();
 
