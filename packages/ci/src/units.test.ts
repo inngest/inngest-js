@@ -29,7 +29,12 @@ import {
 } from "./github/triggers.ts";
 import { buildArgv, buildShellString } from "./machine/command.ts";
 import { behaviourFor } from "./pipeline/durable.ts";
-import { expandMatrix, matrixJobId, runPool } from "./pipeline/matrix.ts";
+import {
+  expandMatrix,
+  matrixJobId,
+  runPool,
+  sameCombo,
+} from "./pipeline/matrix.ts";
 import {
   durationToMs,
   filterPaths,
@@ -197,6 +202,16 @@ describe("matrix", () => {
     expect(matrixJobId("compat", { node: "20", db: "sqlite" })).toBe(
       "compat (node:20, db:sqlite)",
     );
+  });
+});
+
+describe("matrix combinations compare by value", () => {
+  test("object values match after a round trip", () => {
+    const combo = { node: "22", env: { region: "eu", tier: ["a", "b"] } };
+
+    expect(sameCombo(combo, JSON.parse(JSON.stringify(combo)))).toBe(true);
+    expect(sameCombo(combo, { ...combo, env: { region: "us" } })).toBe(false);
+    expect(sameCombo({ node: "22" }, { node: "20" })).toBe(false);
   });
 });
 
