@@ -45,13 +45,6 @@ import {
  */
 const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 
-/**
- * How long the second try at a snapshot waits for its machine to run, where
- * the first waited the default two minutes. A snapshot that starts at all
- * does so well within it, and one that doesn't is found out sooner.
- */
-const restartTimeout = "60s";
-
 export const resolveMachineConfig = (
   config: MachineConfig | undefined,
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
@@ -182,17 +175,12 @@ const createMachine = async (
     options: {
       name: string;
       snapshotId?: string;
-      /** How long to wait for it to be running, in place of the default. */
-      runningTimeout?: string;
     },
   ): Promise<Started> => {
     const sandbox = options.snapshotId
       ? await tools.create(createStep, {
           name: options.name,
           snapshotId: options.snapshotId,
-          ...(options.runningTimeout
-            ? { runningTimeout: options.runningTimeout }
-            : {}),
         })
       : await tools.create(createStep, {
           name: options.name,
@@ -300,12 +288,14 @@ const createMachine = async (
         const restartName = machineName(run.runId, `${scope.path} restart`);
 
         try {
+          // With the default wait, the same as the first try's: a shorter one
+          // would make a slow node more likely to fail the retry, and a second
+          // failure deletes the snapshot.
           probed = await start(
             { id: restartStepId, name: traceName.restartMachine },
             {
               name: restartName,
               snapshotId,
-              runningTimeout: restartTimeout,
             },
           );
 
