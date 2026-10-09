@@ -47,6 +47,7 @@ import {
   definePipeline,
 } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
 
 export interface CiOptions {
   /**
@@ -304,6 +305,14 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     }) as any,
 
     matrix: (config, handler) => {
+      // Inside a run, a matrix is rebuilt per call, so the same ID again is
+      // expected, as it is for jobs.
+      if (matrices.has(config.id) && !getRunScope()) {
+        throw new CiUsageError(
+          `Matrix IDs must be unique per app, and "${config.id}" is already defined.`,
+        );
+      }
+
       const matrix = createMatrix({ ci, jobs, config, handler });
 
       matrices.set(config.id, matrix as Matrix<MatrixAxes>);
