@@ -178,8 +178,10 @@ const resolveFilesPart = async (
 };
 
 /**
- * A job's own cache key: its resolved key, with the input it was called with
- * folded in, since the same key with a different input is a different job.
+ * A job's own cache key: its resolved key, with the repository and the input
+ * it was called with folded in, since the same key in another repository or
+ * with a different input is a different job. Runs with no repository, like a
+ * cron with no `repo` set, use the app's ID instead.
  * Names, lookups and parent checks all go through this, so they always agree.
  */
 export const jobCacheKey = async (
@@ -190,7 +192,10 @@ export const jobCacheKey = async (
   base?: BaseIdentity,
 ): Promise<string> => {
   const key = await resolveCacheKey(run, cache.key);
-  const parts = [key];
+  const owner = run.repo
+    ? `repo:${run.repo.fullName}`
+    : `app:${run.ci.client?.id ?? ""}`;
+  const parts = [key, owner];
 
   if (input !== undefined) {
     parts.push(`input:${stableStringify(input)}`);
@@ -200,7 +205,7 @@ export const jobCacheKey = async (
     parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
   }
 
-  return parts.length === 1 ? key : hash(parts.join("\0"));
+  return hash(parts.join("\0"));
 };
 
 /**
