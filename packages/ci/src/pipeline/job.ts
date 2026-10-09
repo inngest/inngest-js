@@ -32,6 +32,7 @@ import {
   ownJob,
   parentBuildOf,
   startFrom,
+  withoutUnreusableCache,
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
@@ -203,6 +204,8 @@ export const invokeBuild = async ({
   input,
   target,
   exclude,
+  broken,
+  unnamed,
   check,
   base,
   lookup = true,
@@ -215,8 +218,12 @@ export const invokeBuild = async ({
   config: JobConfig;
   input: unknown;
   target: CacheTarget;
-  /** A bad snapshot the build must not reuse. */
+  /** A snapshot that wouldn't start, which the build must not reuse. */
   exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
   check?: CacheBuildData["parent"]["check"];
   /** What the job starts from, which the build must start from too. */
   base?: FromBase;
@@ -246,6 +253,8 @@ export const invokeBuild = async ({
     cacheKey: target.name,
     chain: building,
     ...(exclude ? { exclude } : {}),
+    ...(broken ? { broken } : {}),
+    ...(unnamed ? { unnamed } : {}),
     ...(base && !isImageBase(base) ? { base: baseForBuild(base.built) } : {}),
     ...(base && isImageBase(base) ? { image: base.snapshot } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
@@ -447,7 +456,7 @@ const jobBody = (
 
 const jobSteps = async ({
   run,
-  config,
+  config: declared,
   handler,
   input: given,
   validated,
@@ -460,14 +469,22 @@ const jobSteps = async ({
   /** Which run of this job in the pipeline run this is, counting from 1. */
   number: number;
 }): Promise<void> => {
-  const input = validated ? given : await validateInput(config, given);
+  const input = validated ? given : await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
+
+  // Only a cached job with a `from` has anything to work out, so any other
+  // plans its first step at once.
+  const { config, uncachedBase } =
+    declared.cache && declared.from !== undefined
+      ? await withoutUnreusableCache(run, { config: declared, input })
+      : { config: declared, uncachedBase: undefined };
 
   const scope: CiJobScope = {
     run,
     path,
     jobPath: path,
     config,
+    ...(uncachedBase ? { uncachedBase } : {}),
     fromJobIds: [],
     annotations: [],
     summaries: [],
@@ -805,6 +822,8 @@ const snapshotBuilt = async (
     target,
     ...(maxAgeMs === undefined ? {} : { maxAgeMs }),
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
+    ...(run.build?.broken ? { broken: true } : {}),
+    ...(run.build?.unnamed ? { unnamed: true } : {}),
   });
 
   run.outcome = {
