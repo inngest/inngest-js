@@ -6,6 +6,7 @@ import {
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
+import { warningMetadataKind } from "./InngestMetadata.ts";
 import { getStepOptions } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 
@@ -321,13 +322,14 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
           );
 
           if (select.__experimentConfig.nullishBucket) {
+            const code = "sdk.group.experiment.nullishBucket";
             execInstance.addMetadata(
               experimentStepHashedId,
-              "inngest.warnings",
+              warningMetadataKind(code),
               "step",
               "set",
               {
-                "sdk.group.experiment.nullishBucket":
+                [code]:
                   "experiment.bucket() received a null/undefined value; " +
                   'hashing empty string "" for variant selection',
               },

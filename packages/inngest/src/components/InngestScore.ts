@@ -2,14 +2,14 @@ import { isFiniteNumber, isRecord } from "../helpers/types.ts";
 import type { ExperimentRef } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import type { ExperimentMetadataValues } from "./InngestGroupTools.ts";
-import { performOp } from "./InngestMetadata.ts";
+import { performOp, scoreMetadataKind } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-const scoreKind = "inngest.score" as const;
 const experimentKind = "inngest.experiment" as const;
-const maxKindByteLength = 128;
-const maxScoreNameByteLength = maxKindByteLength;
+// The server allows `inngest.score.<name>` kinds to be the prefix plus this
+// many bytes, so the name isn't limited by the general 128 byte kind limit.
+const maxScoreNameByteLength = 128;
 
 type ScoreValue = number | boolean;
 
@@ -20,7 +20,12 @@ export type ScoreOptions = {
   value: ScoreValue;
 };
 
-export type ScoreExperimentOptions = ScoreOptions & {
+/**
+ * Experiment scores are always run scoped, so there's no `stepId`. A step
+ * scoped `inngest.experiment` write could land on the experiment's own step
+ * and replace its full experiment metadata.
+ */
+export type ScoreExperimentOptions = Omit<ScoreOptions, "stepId"> & {
   experiment: ExperimentRef;
 };
 
@@ -147,9 +152,9 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: { value: options.value } },
-    `${scoreKind}`,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 
@@ -167,9 +172,9 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: { value: options.value } },
-    `${scoreKind}`,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 
@@ -194,9 +199,16 @@ export async function sendScoreExperiment(
   options: ScoreExperimentOptions,
 ): Promise<void> {
   validateSendScoreOptions(options);
+  // Mirrors REST v2, which rejects step scoped experiment scores. Checked at
+  // runtime too since JS callers can still pass it.
+  if ((options as ScoreOptions).stepId !== undefined) {
+    throw new Error(
+      "score.experiment() does not accept stepId; experiment scores must be run-scoped",
+    );
+  }
   validateExperimentRef(options.experiment);
 
-  const target = { runId: options.runId, stepId: options.stepId };
+  const target = { runId: options.runId };
 
   // Write the experiment attribution first, then the score. These are two
   // non-atomic metadata writes; if the second fails, attribution-without-score
@@ -217,9 +229,9 @@ export async function sendScoreExperiment(
   await performOp(
     client,
     target,
-    { [options.name]: { value: options.value } },
-    scoreKind,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 

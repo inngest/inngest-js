@@ -67,6 +67,7 @@ import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
+  warningMetadataKind,
 } from "./InngestMetadata.ts";
 import { createSandboxClient, type SandboxClient } from "./InngestSandbox.ts";
 import {
@@ -720,18 +721,29 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       return;
     }
 
-    await this.updateMetadata({
-      target: target,
-      metadata: [
-        {
-          kind: "inngest.warnings",
-          op: "set",
-          values: {
-            [`sdk.${kind}`]: formatLogMessage(log),
+    const code = `sdk.${kind}`;
+    // Callers don't await this, so a failed write (IE an older server that
+    // rejects per-name warning kinds) must not become an unhandled rejection.
+    // The warning has already been logged above.
+    try {
+      await this.updateMetadata({
+        target: target,
+        metadata: [
+          {
+            kind: warningMetadataKind(code),
+            op: "set",
+            values: {
+              [code]: formatLogMessage(log),
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    } catch (err) {
+      this[internalLoggerSymbol].debug(
+        { err },
+        "Failed to write warning metadata",
+      );
+    }
   }
 
   /**

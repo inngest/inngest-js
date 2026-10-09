@@ -15,10 +15,41 @@ export type MetadataScope = "run" | "step" | "extended_trace";
  */
 export type MetadataKind =
   | "inngest.experiment"
-  | "inngest.score"
-  | "inngest.warnings"
+  | ScoreMetadataKind
+  | WarningMetadataKind
   | "inngest.ai"
   | `userland.${string}`;
+
+/**
+ * One kind per score name, w/ values `{ value }`.
+ * @internal
+ */
+export type ScoreMetadataKind = `inngest.score.${string}`;
+
+/**
+ * One kind per warning code, w/ values `{ [code]: message }`.
+ * @internal
+ */
+export type WarningMetadataKind = `inngest.warning.${string}`;
+
+const scoreKindPrefix = "inngest.score.";
+const warningKindPrefix = "inngest.warning.";
+
+/**
+ * Returns the kind for the score `name`, IE `inngest.score.<name>`.
+ * @internal
+ */
+export function scoreMetadataKind(name: string): ScoreMetadataKind {
+  return `${scoreKindPrefix}${name}`;
+}
+
+/**
+ * Returns the kind for the warning `code`, IE `inngest.warning.<code>`.
+ * @internal
+ */
+export function warningMetadataKind(code: string): WarningMetadataKind {
+  return `${warningKindPrefix}${code}`;
+}
 
 /**
  * The operation used to combine multiple metadata updates of the same kind.
@@ -384,7 +415,7 @@ export async function performOp(
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
   const isScoreOrExperimentWrite =
-    kind === "inngest.score" || kind === "inngest.experiment";
+    kind.startsWith(scoreKindPrefix) || kind === "inngest.experiment";
   if (isInsideRun && !isInsideStep && !isScoreOrExperimentWrite) {
     client[internalLoggerSymbol].warn(
       "metadata.set() (or update()) called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
