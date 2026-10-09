@@ -50,8 +50,7 @@ export interface CacheBuildData extends Record<string, unknown> {
   /**
    * The job's input as the invoker was given it, before its schema, for jobs
    * that take one. It is JSON, so it is the build that validates it: a schema's
-   * output may not survive JSON, such as a Date, and may not be accepted by
-   * the schema a second time.
+   * output may not be accepted by the schema a second time.
    */
   input?: unknown;
   /**
