@@ -11,27 +11,17 @@
  * @module
  */
 
-import type {
-  BaseIdentity,
-  CachedSnapshot,
-  CacheTarget,
-} from "../cache/cache.ts";
+import type { BaseIdentity, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
   deleteSnapshot,
   describeCached,
-  lookupParent,
   runTarget,
   warnUncachedBase,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
-import {
-  adoptBuilt,
-  invokeBuild,
-  reusedBuild,
-  validateInput,
-} from "../pipeline/job.ts";
+import { adoptBuilt, invokeBuild, validateInput } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, rebuildSuffix, scopeSeparator } from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
@@ -40,7 +30,13 @@ import { errorMessage, hash, stableStringify } from "../util.ts";
 /** A `from` parent, worked out: the job's config and the input it's built with. */
 export interface Parent {
   config: JobConfig;
+  /** The input the job is built with, after its schema. */
   input: unknown;
+  /**
+   * The input as `from` named it, before the schema: what a build is sent, so
+   * its run validates it again rather than trusting the invoker's output.
+   */
+  raw: unknown;
 }
 
 /** A job's parent, and the build that gave its snapshot. */
@@ -119,7 +115,7 @@ export const parentOf = (
     );
   }
 
-  return { config: registered.config, input: ref.input };
+  return { config: registered.config, input: ref.input, raw: ref.input };
 };
 
 /**
@@ -144,8 +140,10 @@ const namedParent = async (
     config: await withoutUnreusableCache(run, {
       config: named.config,
       input: validated,
+      raw: named.raw,
     }),
     input: validated,
+    raw: named.raw,
   };
 };
 
@@ -157,8 +155,10 @@ const namedParent = async (
  * Every parent here is a job, so each is either cached or not. The base
  * images of later work will be stable like a cached job and end this walk.
  *
- * A chain that comes back on itself stops the walk. Resolving the chain fails
- * on it with a message of its own.
+ * A chain that comes back on itself stops the walk, so the walk itself ends.
+ * Cycles aren't detected or reported anywhere else yet: a job that starts from
+ * itself, directly or through its parents, is a usage error that isn't
+ * checked.
  */
 const uncachedAncestorOf = async (
   run: CiRunScope,
@@ -183,6 +183,7 @@ const uncachedAncestorOf = async (
     current = {
       config: named.config,
       input: await validateInput(named.config, named.input),
+      raw: named.raw,
     };
   }
 };
@@ -261,47 +262,30 @@ export const parentBuildOf = async (
 };
 
 /**
- * Get a parent's snapshot for the job that starts from it. The job looks the
- * parent up itself, in a step of its own, and on a miss waits for the one
- * build every job that needs the parent shares.
+ * Get a parent's snapshot for the job that starts from it: the one build of
+ * that parent this pipeline run shares, which looks the snapshot up and, on a
+ * miss, invokes the build function.
  */
-const resolveParent = async (
+const resolveParent = (
   scope: CiJobScope,
   parent: Parent,
 ): Promise<CacheBuildResult> => {
   const { run } = scope;
-  const { config, input } = parent;
+  const { config } = parent;
 
   countApi("from");
 
   scope.fromJobIds.push(config.id);
 
   run.ci.hooks.jobFrom(scope, config.id);
-
-  const base = await baseOf(run, parent);
-
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
-  const { target, hit } = await lookupParent(scope, {
-    config,
-    input,
-    ...(base ? { base: identityOf(base.parent.config.id, base.built) } : {}),
-  });
-
-  return requestBuild({
-    run,
-    config,
-    input,
-    target,
-    ...(hit ? { hit } : {}),
-    ...(base ? { base: base.built } : {}),
-  });
+  return buildOf(run, parent);
 };
 
 /**
  * What a job's parent itself starts from, built for this pipeline run once
- * however many jobs need it. It's a parent's parent, so no job of this run
- * starts from it directly: its key, lookup and build are steps of its own.
+ * however many jobs need it.
  */
 const baseOf = async (
   run: CiRunScope,
@@ -313,15 +297,32 @@ const baseOf = async (
     return undefined;
   }
 
-  return { parent: grandparent, built: await buildBase(run, grandparent) };
+  return { parent: grandparent, built: await buildOf(run, grandparent) };
 };
 
-const buildBase = (
+/**
+ * The build of a `from` parent in this pipeline run, which every job that needs
+ * the parent shares: a job that starts from it, and any job whose chain of
+ * parents passes through it. `run.builds` holds it as a promise under the
+ * parent's identity (its job and input), so the first to ask makes it and the
+ * rest, in this run and after it resolves, await the same one. Its key, lookup
+ * and invoke are steps of the parent's own, not of whichever job asked first,
+ * so the steps the run plans don't depend on the order jobs ask in.
+ *
+ * Within a pipeline run a parent is built once. Across concurrent runs that
+ * miss at the same time it is best-effort: each may invoke its own build, at
+ * most one snapshot keeps the name and the rest adopt it.
+ *
+ * A parent without a `cache` is built under a name that belongs to this
+ * pipeline run, which a second build anywhere in the run finds rather than
+ * makes again.
+ */
+const buildOf = (
   run: CiRunScope,
   parent: Parent,
 ): Promise<CacheBuildResult> => {
-  const { config, input } = parent;
-  const path = `${buildPathOf(config.id, input)} (base)`;
+  const { config, input, raw } = parent;
+  const path = buildPathOf(config.id, input);
   const existing = run.builds.get(path);
 
   if (existing) {
@@ -330,6 +331,7 @@ const buildBase = (
 
   const built = (async () => {
     const base = await baseOf(run, parent);
+
     const identity = base
       ? identityOf(base.parent.config.id, base.built)
       : undefined;
@@ -349,7 +351,7 @@ const buildBase = (
       path: config.id,
       stepPath: path,
       config,
-      input,
+      input: raw,
       target,
       ...(base ? { base: base.built } : {}),
     });
@@ -369,8 +371,8 @@ const buildBase = (
 /**
  * Start this job on a copy of its parent's machine, before its handler runs.
  *
- * The parent runs once however many jobs start from it, in a run of its own,
- * and each child gets its own copy of its machine, so they can't affect each
+ * Within a pipeline run the parent is built once however many jobs start from
+ * it, in a run of its own, and each child gets its own copy of its machine, so they can't affect each
  * other. The copy is made when this job runs its first command, so a job that
  * starts from another and then waits doesn't pay for a machine while it waits.
  */
@@ -379,7 +381,7 @@ export const startFrom = async (
   { parent, built }: ParentBuild,
 ): Promise<void> => {
   const { run } = scope;
-  const { config, input } = parent;
+  const { config, input, raw } = parent;
 
   if (built.snapshotId) {
     const snapshotId = built.snapshotId;
@@ -394,10 +396,11 @@ export const startFrom = async (
     scope.rebuildSnapshot = async (why) => {
       const base = await baseOf(run, parent);
 
-      const rebuilt = await requestBuild({
+      const rebuilt = await requestRebuild({
         run,
         config,
         input,
+        raw,
         target: built.target,
         replacing: { snapshotId, ...why },
         ...(base ? { base: base.built } : {}),
@@ -437,43 +440,32 @@ const buildPathOf = (jobId: string, input: unknown): string => {
 };
 
 /**
- * Ask for a `from` parent's snapshot, after the asking child looked it up by
- * name: the hit it found, or, on a miss, a build run of its own. Children of
- * one parent share one invoke, which `run.builds` holds as a promise, so
- * whichever child comes first makes no difference to the steps the run plans.
- *
- * A parent without a `cache` is built under a name that belongs to this
- * pipeline run: the build function runs one build at a time per name and looks
- * it up before it builds, so a second invoke of the same build in this run
- * finds the first's snapshot instead of making another.
- *
- * With `replacing`, it's the one build of the same parent that replaces a
- * snapshot that wouldn't start, shared by every child that had the trouble.
- * If the snapshot is broken, that build deletes it first.
+ * Build a `from` parent again, to replace a snapshot that wouldn't start: the
+ * one rebuild shared by every child that had the trouble. If the snapshot is
+ * broken, it is deleted first.
  */
-const requestBuild = ({
+const requestRebuild = ({
   run,
   config,
   input,
+  raw,
   target,
-  hit,
   base,
   replacing,
 }: {
   run: CiRunScope;
   config: JobConfig;
   input: unknown;
-  /** The parent's key and snapshot name, which every child worked out alike. */
+  /** The input as it was named, which the build validates again. */
+  raw: unknown;
+  /** The parent's key and snapshot name, which its first build worked out. */
   target: CacheTarget;
-  /** The snapshot the asking child found, when it found one. */
-  hit?: CachedSnapshot;
   /** What the parent starts from, which its build must start from too. */
   base?: CacheBuildResult;
   /** The snapshot that wouldn't start, which the build replaces. */
-  replacing?: { snapshotId: string; broken: boolean; unnamed: boolean };
+  replacing: { snapshotId: string; broken: boolean; unnamed: boolean };
 }): Promise<CacheBuildResult> => {
-  const own = buildPathOf(config.id, input);
-  const path = replacing ? `${own}${rebuildSuffix}` : own;
+  const path = `${buildPathOf(config.id, input)}${rebuildSuffix}`;
   const existing = run.builds.get(path);
 
   if (existing) {
@@ -481,12 +473,12 @@ const requestBuild = ({
   }
 
   const built = (async () => {
-    let unnamed = replacing?.unnamed ?? false;
+    let unnamed = replacing.unnamed;
 
     // Here, not in each child, so a snapshot that every child found broken is
     // deleted once. One that can't be deleted still holds its name, so what
     // replaces it can't have one.
-    if (replacing?.broken) {
+    if (replacing.broken) {
       const gone = await deleteSnapshot(
         run,
         `${path}${scopeSeparator}cache:delete`,
@@ -502,28 +494,21 @@ const requestBuild = ({
       }
     }
 
-    // Every child that asked has just looked the snapshot up itself, so the
-    // build function is the only guard left against a build that raced it.
-    const result =
-      hit && !replacing
-        ? reusedBuild(config, target, hit)
-        : await invokeBuild({
-            run,
-            path: config.id,
-            stepPath: path,
-            config,
-            input,
-            target,
-            lookup: false,
-            ...(base ? { base } : {}),
-            ...(replacing
-              ? {
-                  exclude: replacing.snapshotId,
-                  broken: replacing.broken,
-                  unnamed,
-                }
-              : {}),
-          });
+    // The snapshot being replaced may still hold the name, so a lookup would
+    // only find it again.
+    const result = await invokeBuild({
+      run,
+      path: config.id,
+      stepPath: path,
+      config,
+      input: raw,
+      target,
+      lookup: false,
+      ...(base ? { base } : {}),
+      exclude: replacing.snapshotId,
+      broken: replacing.broken,
+      unnamed,
+    });
 
     adoptBuilt(run, result);
 
@@ -531,10 +516,6 @@ const requestBuild = ({
   })();
 
   run.builds.set(path, built);
-
-  if (!replacing) {
-    reportBuilt(run, config.id, built);
-  }
 
   return built;
 };

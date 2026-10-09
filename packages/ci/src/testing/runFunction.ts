@@ -74,6 +74,11 @@ export interface RunResult {
   /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
   /**
+   * What each `step.run` step was planned with, keyed by step ID: the options
+   * the SDK sent the executor, such as a sandbox call's input.
+   */
+  inputs: Record<string, unknown>;
+  /**
    * Metadata updates in the order steps ran them, each with the ID of the step
    * that carried it. A step that fails and retries carries its metadata on
    * every attempt, so it can appear more than once.
@@ -102,17 +107,23 @@ export interface RunFunctionOptions {
   /**
    * The functions `step.invoke` can reach. Defaults to every function the
    * test client created. An invoked function runs to completion like any
-   * other, under its own `concurrency` key, and its output or error comes
-   * back as the invoke's.
+   * other, and its output or error comes back as the invoke's. Its
+   * `concurrency` key limits steps running at once, not runs (see
+   * `inTurn`).
    */
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
+  /**
+   * Rewrites the data of each invoke after it went through JSON and before the
+   * invoked function runs, to play an invoker that is buggy or forged.
+   */
+  rewriteInvoke?: (data: Record<string, unknown>) => Record<string, unknown>;
 }
 
 let invokedRuns = 0;
 
-/** Tails of the queues for each concurrency key, so runs of one key take turns. */
+/** Tails of the queues for each concurrency key, so steps of one key take turns. */
 const keyQueues = new Map<string, Promise<unknown>>();
 
 /** The value of a simple `event.data.<field>` concurrency key. */
@@ -141,7 +152,12 @@ const concurrencyKeyOf = (
   return `${(fn as any).opts?.id}:${String(value)}`;
 };
 
-/** Run `task` after every earlier one for `key`. */
+/**
+ * Run `task` after every earlier one for `key`. The platform's `concurrency`
+ * limits how many steps run at once, not how many runs are in flight, so this
+ * wraps one step's execution and never a whole run: runs of one key interleave
+ * between their steps.
+ */
 const inTurn = async <T>(key: string, task: () => Promise<T>): Promise<T> => {
   const before = keyQueues.get(key) ?? Promise.resolve();
   const mine = before.then(task, task);
@@ -184,27 +200,55 @@ const runInvoked = async (
     throw new Error(`No function to invoke for ${call.function_id}`);
   }
 
+  // As on the wire, the payload and the result are JSON: a Date arrives as a
+  // string and a Map as `{}`, and a value that can't be serialized fails the
+  // invoke.
+  let data: Record<string, unknown>;
+
+  try {
+    data = roundTrip(call.payload.data ?? {}) as Record<string, unknown>;
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+
   const event: EventPayload = {
     name: "inngest/function.invoked",
-    data: (call.payload.data ?? {}) as Record<string, unknown>,
+    data: opts.rewriteInvoke ? opts.rewriteInvoke(data) : data,
   };
 
-  const key = concurrencyKeyOf(target, event);
-  const run = () => {
-    invokedRuns++;
+  invokedRuns++;
 
-    return runFunction(target, {
-      ...opts,
-      event,
-      runId: `01TESTINVOKED${invokedRuns}`,
-    });
+  const child = await runFunction(target, {
+    ...opts,
+    event,
+    runId: `01TESTINVOKED${invokedRuns}`,
+  });
+
+  if (child.type !== "function-resolved") {
+    return { error: child.error };
+  }
+
+  try {
+    return { data: roundTrip(child.data) };
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+};
+
+/** What a value is after being sent as JSON. */
+const roundTrip = (value: unknown): unknown => {
+  const json = JSON.stringify(value);
+
+  return json === undefined ? undefined : JSON.parse(json);
+};
+
+const serializationError = (error: unknown) => {
+  return {
+    name: "Error",
+    message: `Could not serialize the invoke: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
   };
-
-  const child = await (key ? inTurn(key, run) : run());
-
-  return child.type === "function-resolved"
-    ? { data: child.data }
-    : { error: child.error };
 };
 
 const isFailed = (step: Step): boolean => {
@@ -228,6 +272,7 @@ export const runFunction = async (
   const maxRequests = opts.maxRequests ?? 200;
   const maxAttempts = opts.stepAttempts ?? 4;
   const retries = opts.retries ?? 0;
+  const concurrencyKey = concurrencyKeyOf(fn, event);
   let attempt = 0;
 
   // The state the executor would send back on each request.
@@ -243,6 +288,7 @@ export const runFunction = async (
   const batches: string[][] = [];
   const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const inputs: Record<string, unknown> = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
@@ -358,6 +404,7 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        inputs,
         metadata,
       };
     }
@@ -377,6 +424,7 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        inputs,
         metadata,
       };
     }
@@ -447,7 +495,13 @@ export const runFunction = async (
         continue;
       }
 
-      const ran = await request(planned.id);
+      inputs[stepId(planned)] = planned.opts;
+
+      const ran = await (concurrencyKey
+        ? inTurn(concurrencyKey, () => {
+            return request(planned.id);
+          })
+        : request(planned.id));
 
       progressed = true;
 
