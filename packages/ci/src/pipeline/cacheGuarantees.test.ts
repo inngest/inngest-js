@@ -235,13 +235,18 @@ describe("a chain of cached jobs", () => {
    * A chain whose build and pack take a while, as polls
    * of their processes, so a job that waited for either would show it. Gives
    * where events fall in the timeline.
+   *
+   * Every poll is a step, and every step replays the pipeline, so the cost
+   * grows with the ticks. Five outlast the other jobs' commands and keep the
+   * run under a second, where forty took over two and hit the 5s timeout
+   * under load.
    */
-  const slowChain = async () => {
+  const runSlowChain = async () => {
     const api = createFakeSandboxApi();
 
     api.script([
-      { match: "pnpm build", ticks: 40 },
-      { match: "pnpm pack", ticks: 40 },
+      { match: "pnpm build", ticks: 5 },
+      { match: "pnpm pack", ticks: 5 },
     ]);
 
     const result = await chain(api);
@@ -261,6 +266,15 @@ describe("a chain of cached jobs", () => {
         });
       },
     };
+  };
+
+  /** Both tests below read the same run, so it happens once. */
+  let slowRun: ReturnType<typeof runSlowChain> | undefined;
+
+  const slowChain = () => {
+    slowRun ??= runSlowChain();
+
+    return slowRun;
   };
 
   test("jobs that start from install don't wait for build or pack", async () => {
