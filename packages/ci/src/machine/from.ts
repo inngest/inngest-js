@@ -22,6 +22,7 @@ import {
   lookupParent,
   runTarget,
   warnJustInTime,
+  warnUncachedBase,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
@@ -142,6 +143,16 @@ export const parentBuildOf = async (
     input: await validateInput(named.config, named.input),
   };
 
+  if (config.cache) {
+    const uncached = parent.config.cache
+      ? await uncachedAncestorOf(run, parent)
+      : parent.config.id;
+
+    if (uncached) {
+      warnUncachedBase(run, config.id, uncached);
+    }
+  }
+
   const given = run.build?.jobId === config.id ? run.build.base : undefined;
 
   return { parent, built: given ?? (await resolveParent(scope, parent)) };
@@ -169,10 +180,19 @@ const resolveParent = async (
 
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
+  const uncachedBase = config.cache
+    ? await uncachedAncestorOf(run, parent)
+    : undefined;
+
+  if (uncachedBase) {
+    warnUncachedBase(run, config.id, uncachedBase);
+  }
+
   const { target, hit } = await lookupParent(scope, {
     config,
     input,
     ...(base ? { base: identityOf(base.parent.config.id, base.built) } : {}),
+    ...(uncachedBase ? { uncachedBase } : {}),
   });
 
   return requestBuild({
@@ -206,6 +226,35 @@ const baseOf = async (
   };
 
   return { parent: grandparent, built: await buildBase(run, grandparent) };
+};
+
+/**
+ * The first job above `job` in its chain of `from` parents that has no cache,
+ * if there is one. A job without a cache is built fresh in every run, so every
+ * cached job below it gets a new name each run and is never reused.
+ */
+const uncachedAncestorOf = async (
+  run: CiRunScope,
+  job: Parent,
+): Promise<string | undefined> => {
+  let current = job;
+
+  while (true) {
+    const named = parentOf(run, current.config, current.input);
+
+    if (!named) {
+      return undefined;
+    }
+
+    if (!named.config.cache) {
+      return named.config.id;
+    }
+
+    current = {
+      config: named.config,
+      input: await validateInput(named.config, named.input),
+    };
+  }
 };
 
 const buildBase = (
@@ -248,9 +297,16 @@ const buildBase = (
 
     adoptBuilt(run, result);
 
-    // From the resolved result, so it's the same on every replay.
+    // From the resolved result, so it's the same on every replay. A job below
+    // an uncached one was never going to be reused, and says so instead.
     if (config.cache && !result.reused) {
-      warnJustInTime(run, config);
+      const uncached = await uncachedAncestorOf(run, parent);
+
+      if (uncached) {
+        warnUncachedBase(run, config.id, uncached);
+      } else {
+        warnJustInTime(run, config);
+      }
     }
 
     return result;
