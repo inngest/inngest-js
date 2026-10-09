@@ -57,6 +57,8 @@ import {
   type HashedOp,
   jsonErrorSchema,
   type OutgoingOp,
+  type StepMetadata,
+  type StepMetadataOutcome,
   StepMode,
   StepOpCode,
 } from "../../types.ts";
@@ -1680,6 +1682,7 @@ class InngestExecutionEngine
         name: step.name,
         opts: step.opts,
         userland: step.userland,
+        ...this.staticStepMetadata(step),
       };
     });
 
@@ -1691,7 +1694,16 @@ class InngestExecutionEngine
   }
 
   private async executeStep(foundStep: FoundStep): Promise<OutgoingOp> {
-    const { id, name, opts, fn, displayName, userland, hashedId } = foundStep;
+    const {
+      id,
+      name,
+      opts,
+      fn,
+      displayName,
+      userland,
+      hashedId,
+      stepMetadata,
+    } = foundStep;
     const { stepInfo, wrappedHandler, setActualHandler } = foundStep.middleware;
 
     this.devDebug(`preparing to execute step "${id}"`);
@@ -1791,8 +1803,11 @@ class InngestExecutionEngine
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
-        const metadata = this.state.metadata?.get(id);
         const serverData = await resultPromise;
+
+        this.addStepMetadata(id, stepMetadata, { data: serverData });
+
+        const metadata = this.state.metadata?.get(id);
 
         // Don't resolve memoizationDeferred here. wrapStep's next() must
         // block until the step is actually memoized (i.e. handle() fires
@@ -1809,6 +1824,8 @@ class InngestExecutionEngine
         };
       })
       .catch<OutgoingOp>((error) => {
+        this.addStepMetadata(id, stepMetadata, { error });
+
         // Don't reject memoizationDeferred — handle() will reject it when
         // the error is memoized.
         return this.buildStepErrorOp({
@@ -1919,6 +1936,60 @@ class InngestExecutionEngine
     }
 
     return true;
+  }
+
+  /**
+   * Attach the metadata a user set via `StepOptions.metadata` to a step that
+   * has just finished. A throwing `values` function is logged and skipped so it
+   * can't change the step's outcome.
+   */
+  private addStepMetadata(
+    id: string,
+    stepMetadata: StepMetadata | undefined,
+    outcome: StepMetadataOutcome,
+  ): void {
+    if (!stepMetadata) {
+      return;
+    }
+
+    try {
+      const values =
+        typeof stepMetadata.values === "function"
+          ? stepMetadata.values(outcome)
+          : stepMetadata.values;
+
+      this.addMetadata(id, stepMetadata.kind, "step", "merge", values);
+    } catch (err) {
+      this.options.client[internalLoggerSymbol].warn(
+        { runId: this.fnArg.runId, id, err },
+        "step metadata skipped: values function threw",
+      );
+    }
+  }
+
+  /**
+   * The metadata of a step that's known when it's planned, for ops that run
+   * elsewhere (`step.invoke`) and so never finish in this process.
+   */
+  private staticStepMetadata(
+    step: FoundStep,
+  ): { metadata: MetadataUpdate[] } | undefined {
+    const stepMetadata = step.stepMetadata;
+
+    if (!stepMetadata || typeof stepMetadata.values === "function") {
+      return;
+    }
+
+    return {
+      metadata: [
+        {
+          kind: stepMetadata.kind,
+          scope: "step",
+          op: "merge",
+          values: stepMetadata.values,
+        },
+      ],
+    };
   }
 
   /**
@@ -2573,6 +2644,7 @@ class InngestExecutionEngine
 
       const step: FoundStep = {
         ...opId,
+        ...(stepOptions.metadata ? { stepMetadata: stepOptions.metadata } : {}),
         opts: { ...opId.opts, ...extraOpts },
         rawArgs: fnArgs,
         hashedId,

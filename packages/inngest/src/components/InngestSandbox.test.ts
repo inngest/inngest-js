@@ -1674,6 +1674,96 @@ describe("step.sandbox", () => {
     });
   });
 
+  describe("step metadata", () => {
+    const metadataKind = "userland.test";
+
+    const createMetadataFn = (fetchMock: typeof fetch) => {
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+        middleware: [sandboxMiddleware()],
+      });
+      return client.createFunction(
+        { id: "sandbox-metadata", triggers: [{ event: "sandbox/metadata" }] },
+        async ({ step }) => {
+          return step.sandbox.list({
+            id: "list",
+            metadata: {
+              kind: metadataKind,
+              values: (outcome) => {
+                return {
+                  intent: "list sandboxes",
+                  succeeded: outcome.data !== undefined,
+                  failed: outcome.error !== undefined,
+                };
+              },
+            },
+          });
+        },
+      );
+    };
+
+    test("carries static and result-based metadata on a sandbox step", async () => {
+      const fn = createMetadataFn(
+        vi.fn(async () =>
+          Response.json({
+            data: [],
+            metadata: { fetchedAt: now },
+            page: { limit: 50 },
+          }),
+        ),
+      );
+
+      const first = await runFnWithStack(fn, {});
+
+      expect(first).toMatchObject({
+        type: "step-ran",
+        step: {
+          metadata: [
+            {
+              kind: metadataKind,
+              scope: "step",
+              op: "merge",
+              values: {
+                intent: "list sandboxes",
+                succeeded: true,
+                failed: false,
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    test("carries metadata computed from the error of a failed sandbox step", async () => {
+      const fn = createMetadataFn(
+        vi.fn(async () =>
+          Response.json(
+            { errors: [{ code: "compute_unavailable", message: "Down" }] },
+            { status: 503 },
+          ),
+        ),
+      );
+
+      const first = await runFnWithStack(fn, {});
+
+      expect(first).toMatchObject({
+        type: "step-ran",
+        step: {
+          metadata: [
+            {
+              kind: metadataKind,
+              scope: "step",
+              values: { intent: "list sandboxes", failed: true },
+            },
+          ],
+        },
+      });
+    });
+  });
+
   test("maps a structured executor failure without making all errors non-retriable", async () => {
     const rawTool: SandboxRawTool = async (_id, operation) => {
       if (operation.action === "get") {

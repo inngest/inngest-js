@@ -27,6 +27,7 @@ import {
   type ReceivedEventMeta,
   type SendEventOutput,
   type SendSignalResponse,
+  type StepMetadata,
   StepMode,
   StepOpCode,
   type StepOptions,
@@ -102,6 +103,11 @@ export interface StepMiddlewareContext {
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
+
+  /**
+   * Metadata the user asked to attach to this step via its options.
+   */
+  stepMetadata?: StepMetadata;
   fn?: (...args: unknown[]) => unknown;
   rawArgs: unknown[];
 
