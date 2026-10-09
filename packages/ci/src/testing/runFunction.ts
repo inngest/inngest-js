@@ -74,6 +74,11 @@ export interface RunResult {
   /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
   /**
+   * What each `step.run` step was planned with, keyed by step ID: the options
+   * the SDK sent the executor, such as a sandbox call's input.
+   */
+  inputs: Record<string, unknown>;
+  /**
    * Metadata updates in the order steps ran them, each with the ID of the step
    * that carried it. A step that fails and retries carries its metadata on
    * every attempt, so it can appear more than once.
@@ -283,6 +288,7 @@ export const runFunction = async (
   const batches: string[][] = [];
   const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const inputs: Record<string, unknown> = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
@@ -398,6 +404,7 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        inputs,
         metadata,
       };
     }
@@ -417,6 +424,7 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        inputs,
         metadata,
       };
     }
@@ -486,6 +494,8 @@ export const runFunction = async (
 
         continue;
       }
+
+      inputs[stepId(planned)] = planned.opts;
 
       const ran = await (concurrencyKey
         ? inTurn(concurrencyKey, () => {

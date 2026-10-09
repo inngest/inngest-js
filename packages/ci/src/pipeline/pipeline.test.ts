@@ -2742,6 +2742,33 @@ describe("cache", () => {
       },
     );
 
+    test("the retry waits at least as long for its machine as the first try did", async () => {
+      const { api } = await built();
+
+      api.failNextSnapshotStarts("timeout");
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+
+      const waitOf = (stepId: string) => {
+        const call = second.inputs[stepId] as {
+          input: { input: { runningTimeoutMs?: number }[] }[];
+        };
+
+        return call.input[0]?.input[0]?.runningTimeoutMs;
+      };
+
+      const first = waitOf("lint › machine");
+
+      // A shorter wait would make a slow node more likely to fail the retry,
+      // and a second failure deletes the snapshot.
+      expect(first).toBeGreaterThan(0);
+      expect(waitOf("lint › machine › restart")).toBeGreaterThanOrEqual(
+        first ?? 0,
+      );
+    });
+
     test.each([
       ["timeouts", "timeoutSnapshotStarts"],
       ["failures", "failSnapshotStarts"],
