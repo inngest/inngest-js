@@ -1393,19 +1393,19 @@ describe("addMetadata", () => {
   test("merge ops merge by default and keep their op", () => {
     const execution = createExecution();
 
-    execution.addMetadata("step", "inngest.score", "step", "merge", {
-      x: { value: 1 },
+    execution.addMetadata("step", "userland.default", "step", "merge", {
+      x: 1,
     });
-    execution.addMetadata("step", "inngest.score", "step", "merge", {
-      y: { value: 2 },
+    execution.addMetadata("step", "userland.default", "step", "merge", {
+      y: 2,
     });
 
     expect(metadataFor(execution, "step")).toEqual([
       {
-        kind: "inngest.score",
+        kind: "userland.default",
         scope: "step",
         op: "merge",
-        values: { x: { value: 1 }, y: { value: 2 } },
+        values: { x: 1, y: 2 },
       },
     ]);
   });

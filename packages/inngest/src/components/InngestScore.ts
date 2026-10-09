@@ -2,14 +2,14 @@ import { isFiniteNumber, isRecord } from "../helpers/types.ts";
 import type { ExperimentRef } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import type { ExperimentMetadataValues } from "./InngestGroupTools.ts";
-import { performOp } from "./InngestMetadata.ts";
+import { performOp, scoreMetadataKind } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-const scoreKind = "inngest.score" as const;
 const experimentKind = "inngest.experiment" as const;
-const maxKindByteLength = 128;
-const maxScoreNameByteLength = maxKindByteLength;
+// The server allows `inngest.score.<name>` kinds to be the prefix plus this
+// many bytes, so the name isn't limited by the general 128 byte kind limit.
+const maxScoreNameByteLength = 128;
 
 type ScoreValue = number | boolean;
 
@@ -147,9 +147,9 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: { value: options.value } },
-    `${scoreKind}`,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 
@@ -167,9 +167,9 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: { value: options.value } },
-    `${scoreKind}`,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 
@@ -217,9 +217,9 @@ export async function sendScoreExperiment(
   await performOp(
     client,
     target,
-    { [options.name]: { value: options.value } },
-    scoreKind,
-    "merge",
+    { value: options.value },
+    scoreMetadataKind(options.name),
+    "set",
   );
 }
 
