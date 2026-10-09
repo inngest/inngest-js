@@ -216,10 +216,25 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
         run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
-        started = await start(`${stepId}${scopeSeparator}retry`, {
-          name: machineName(run.runId, `${scope.path} retry`),
-          snapshotId: replacement,
-        });
+        const retryStepId = `${stepId}${scopeSeparator}retry`;
+        const retryName = machineName(run.runId, `${scope.path} retry`);
+
+        try {
+          started = await start(retryStepId, {
+            name: retryName,
+            snapshotId: replacement,
+          });
+        } catch (error) {
+          if (!isStartFailure(error)) {
+            throw error;
+          }
+
+          // Restores may still be broken while fresh machines work, which is
+          // where this job went before there was a replacement to try.
+          await discardFailedStart(run, retryStepId, retryName, error);
+
+          started = await startFresh(note);
+        }
       } else {
         started = await startFresh(note);
       }
