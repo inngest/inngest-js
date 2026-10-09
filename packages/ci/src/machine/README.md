@@ -6,4 +6,3 @@ Machines and the commands that run on them.
 - `from.ts`: a job's `from` option: working out the parent, resolving the snapshot it starts from (and its parent's, for its name), and starting the job from it. Children of one parent share one invoke of the build.
 - `sandbox.ts`: `sandbox()`, extra machines alongside a job's own.
 - `command.ts`: the `$` command tag.
-- `snapshotMeta.ts`: the metadata file CI writes into a machine before snapshotting it (its working tree), read back when a machine starts from the snapshot.
