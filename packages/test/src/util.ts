@@ -1,6 +1,6 @@
 import { Context, EventPayload, internalEvents } from "inngest";
 import { ulid } from "ulid";
-import { mockAny } from "./spy.js";
+import { fn, mockAny } from "./spy.js";
 
 /**
  * The default context transformation function that mocks all step tools. Use
@@ -8,9 +8,17 @@ import { mockAny } from "./spy.js";
  * this functionality.
  */
 export const mockCtx = (ctx: Readonly<Context.Any>): Context.Any => {
+  const step = mockAny(ctx.step);
+
+  // `step.sendEvent` would otherwise proxy to the real Inngest client and make a
+  // network request, which fails inside tests (e.g. with a 401 or a missing
+  // event key). Mock it so the call is recorded and resolves locally instead
+  // of hitting the API.
+  (step as Record<string, unknown>).sendEvent = fn();
+
   return {
     ...ctx,
-    step: mockAny(ctx.step),
+    step,
   };
 };
 
@@ -40,7 +48,7 @@ export type DeepPartial<T> = {
  */
 export const isDeeplyEqual = <T extends object>(
   subset: DeepPartial<T>,
-  actual: T
+  actual: T,
 ): boolean => {
   return Object.keys(subset).every((key) => {
     const subsetValue = subset[key as keyof T];
