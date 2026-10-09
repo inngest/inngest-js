@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
@@ -33,7 +34,10 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { fakeSchema } from "../testing/schema.ts";
+import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
+import { runCombosKey } from "./matrix.ts";
 import { getRunScope } from "./scope.ts";
 
 /**
@@ -46,6 +50,10 @@ const userCommands = (api: ReturnType<typeof createFakeSandboxApi>) => {
   });
 };
 
+/**
+ * A CI client over a sandbox API. Clients given the same API share nothing
+ * else, like two machines running the same app against one environment.
+ */
 const setup = (
   opts: {
     api?: ReturnType<typeof createFakeSandboxApi>;
@@ -73,6 +81,21 @@ const namedSnapshots = (api: ReturnType<typeof createFakeSandboxApi>) => {
     return snapshot.name ? [snapshot.name] : [];
   });
 };
+
+describe("matrix IDs", () => {
+  test("defining the same matrix ID twice is rejected", () => {
+    const { ci } = setup();
+
+    ci.matrix({ id: "compat", axes: { node: ["20"] } }, async () => {});
+
+    expect(() => {
+      return ci.matrix(
+        { id: "compat", axes: { node: ["22"] } },
+        async () => {},
+      );
+    }).toThrow(/already defined/);
+  });
+});
 
 describe("pipelines and jobs", () => {
   test("a job runs its commands on its own machine", async () => {
@@ -361,6 +384,319 @@ describe("pipelines and jobs", () => {
     expect(String((result.error as { message?: string })?.message)).toContain(
       "Wrap it in `ci.job()`",
     );
+  });
+});
+
+describe("a job's input schema", () => {
+  const input = fakeSchema<{ target: string; minify: boolean }>(
+    { target: "string", minify: "boolean" },
+    { minify: true },
+  );
+
+  test("validates the input before the job runs, and gives the handler the result", async () => {
+    const { api, ci } = setup();
+    const received = new Set<string>();
+
+    const build = ci.job({ id: "build", input }, async ({ target, minify }) => {
+      received.add(JSON.stringify({ target, minify }));
+
+      await $`pnpm build --target ${target}`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return build({ target: "web" });
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    // The default was applied.
+    expect([...received]).toEqual([
+      JSON.stringify({ target: "web", minify: true }),
+    ]);
+    expect(userCommands(api)).toHaveLength(1);
+  });
+
+  test("an input that doesn't match throws a usage error listing each issue, and runs nothing", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job({ id: "build", input }, async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        return build({ minify: "yes" });
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const message = String((result.error as Error).message);
+
+    expect(message).toContain('"build"');
+    expect(message).toContain("target: Required");
+    expect(message).toContain("minify: Expected boolean");
+    expect(api.sandboxes.size).toBe(0);
+  });
+
+  test("is checked when a job is started from, too", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job({ id: "base", input }, async ({ target }) => {
+      await $`pnpm install --target ${target}`;
+    });
+
+    const test = ci.job(
+      { id: "test", from: base.with({ target: "web" }) },
+      async () => {},
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return test();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(userCommands(api)).toHaveLength(1);
+  });
+
+  test("a job without a schema takes its input as given", async () => {
+    const { ci } = setup();
+    const received = new Set<string>();
+
+    const greet = ci.job("greet", async (name: string) => {
+      received.add(name);
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return greet("jack");
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect([...received]).toEqual(["jack"]);
+  });
+});
+
+describe("a job's input in its build run", () => {
+  /**
+   * A schema that turns a string into a Date, and refuses anything else, as a
+   * schema that doesn't accept its own output does.
+   */
+  const dateSchema: StandardSchemaV1<{ at: string }, { at: Date }> = {
+    "~standard": {
+      version: 1,
+      vendor: "fake",
+      validate: (input: unknown) => {
+        const at = (input as { at?: unknown } | undefined)?.at;
+
+        if (typeof at !== "string") {
+          return { issues: [{ message: "Expected a string", path: ["at"] }] };
+        }
+
+        return { value: { at: new Date(at) } };
+      },
+    },
+  };
+
+  const setupDates = () => {
+    const { api, ci } = setup();
+    // A handler replays on every step, so what it saw is a set.
+    const seen = new Set<string>();
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" }, input: dateSchema },
+      async ({ at }) => {
+        seen.add(at instanceof Date ? at.toISOString() : typeof at);
+
+        await $`pnpm install`;
+      },
+    );
+
+    return { api, ci, base, seen };
+  };
+
+  test("a cached job called directly gets the schema's output in its build", async () => {
+    const { ci, base, seen } = setupDates();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return base({ at: "2026-01-02T03:04:05.000Z" });
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["2026-01-02T03:04:05.000Z"]);
+  });
+
+  test("a parent started from gets the schema's output in its build", async () => {
+    const { ci, base, seen } = setupDates();
+
+    const lint = ci.job(
+      { id: "lint", from: base.with({ at: "2026-01-02T03:04:05.000Z" }) },
+      async () => {},
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["2026-01-02T03:04:05.000Z"]);
+  });
+
+  test("a Set made by the schema from the JSON input reaches the build as a Set", async () => {
+    const { ci } = setup();
+    const seen = new Set<string>();
+
+    const tags: StandardSchemaV1<{ tags: string[] }, { tags: Set<string> }> = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: (input: unknown) => {
+          const list = (input as { tags?: unknown } | undefined)?.tags;
+
+          if (!Array.isArray(list)) {
+            return { issues: [{ message: "Expected an array" }] };
+          }
+
+          return { value: { tags: new Set<string>(list) } };
+        },
+      },
+    };
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" }, input: tags },
+      async ({ tags }) => {
+        seen.add(tags instanceof Set ? [...tags].join(",") : typeof tags);
+
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return base({ tags: ["a", "b"] });
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["a,b"]);
+  });
+
+  test("an input JSON can't carry fails the job with a reason", async () => {
+    const { ci } = setup();
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" } },
+      async (_input: { big: bigint }) => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        return base({ big: 1n });
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(String((result.error as Error).message)).toMatch(
+      /BigInt|serialize/i,
+    );
+  });
+
+  describe("an invoker that sends a name the job's own config doesn't give", () => {
+    const forge = (data: Record<string, unknown>) => {
+      return { ...data, cacheKey: "ci/global/base/forged" };
+    };
+
+    test("is refused, and writes nothing", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return base();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: forge,
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(String((result.error as Error).message)).toContain(
+        "doesn't match",
+      );
+
+      expect(userCommands(api)).toEqual([]);
+      expect(namedSnapshots(api)).toEqual([]);
+    });
+
+    test("is refused for an own key that isn't the job's, too", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return base();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: (data) => {
+          return { ...data, ownKey: "forged" };
+        },
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(namedSnapshots(api)).toEqual([]);
+    });
+
+    test("is refused for a job without a cache, whose name belongs to its run", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {});
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return lint();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: forge,
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(namedSnapshots(api)).toEqual([]);
+    });
   });
 });
 
@@ -741,6 +1077,12 @@ describe("commands", () => {
 });
 
 describe("from", () => {
+  const ran = (api: ReturnType<typeof createFakeSandboxApi>, text: string) => {
+    return userCommands(api).filter((argv) => {
+      return argv.join(" ").includes(text);
+    }).length;
+  };
+
   test("snapshots the parent once and clones per child", async () => {
     const { api, ci } = setup();
 
@@ -779,7 +1121,224 @@ describe("from", () => {
     expect(cloned).toHaveLength(2);
   });
 
-  test("calling the parent directly, then starting from it, runs it once", async () => {
+  test("two children of one uncached parent share one invoke and one build run", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const test = ci.job({ id: "test", from: base }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([lint(), test()]);
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    // One invoke, planned under the parent's name rather than a child's.
+    expect(
+      result.stepIds.filter((id) => {
+        return id.endsWith("› build");
+      }),
+    ).toEqual(["base (from) › build"]);
+
+    // One build run: the only machine named for it is `base`'s, and it ran
+    // the job once.
+    expect(
+      [...api.sandboxes.values()].filter((machine) => {
+        return /^ci-01TESTINVOKED\d+-base$/.test(machine.name);
+      }),
+    ).toHaveLength(1);
+
+    expect(ran(api, "pnpm install")).toBe(1);
+  });
+
+  test("builds nested in other builds share one build of an uncached parent", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job("build", async () => {
+      await $`pnpm install`;
+    });
+
+    const pack = ci.job({ id: "pack", from: build }, async () => {
+      await $`pnpm pack`;
+    });
+
+    const ship = ci.job({ id: "ship", from: pack }, async () => {
+      await $`pnpm ship`;
+    });
+
+    const lint = ci.job({ id: "lint", from: build }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([ship(), lint()]);
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    // `build` is built once, however many builds and jobs start from it.
+    expect(
+      [...api.sandboxes.values()].filter((machine) => {
+        return /^ci-01TESTINVOKED\d+-build$/.test(machine.name);
+      }),
+    ).toHaveLength(1);
+
+    expect(ran(api, "pnpm install")).toBe(1);
+    expect(ran(api, "pnpm pack")).toBe(1);
+
+    // Every uncached snapshot is the root run's, and all are deleted with it.
+    expect(api.snapshots.size).toBe(0);
+  });
+
+  test("an uncached parent's snapshot is named for the run, and deleted with it", async () => {
+    const { api, ci } = setup();
+    const named = new Set<string>();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+
+      for (const name of namedSnapshots(api)) {
+        named.add(name);
+      }
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+    });
+
+    const result = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01RUNA",
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...named]).toEqual(["ci/run:01RUNA/base/"]);
+    expect(api.snapshots.size).toBe(0);
+  });
+
+  test("another run never starts from an uncached parent's snapshot", async () => {
+    const api = createFakeSandboxApi();
+
+    for (const runId of ["01RUNA", "01RUNB"]) {
+      const { ci } = setup({ api });
+
+      const base = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent, runId },
+      );
+    }
+
+    expect(ran(api, "pnpm install")).toBe(2);
+  });
+
+  test("an uncached parent's snapshot without names is still started from and deleted", async () => {
+    const { api, ci } = setup();
+
+    api.withoutSnapshotNames();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+
+        // Nothing was meant to be cached, so there is nothing to warn about.
+        return getRunScope()?.warnings;
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.data).toEqual([]);
+    expect(api.snapshotStarts).toHaveLength(1);
+    expect(api.snapshots.size).toBe(0);
+  });
+
+  test("children with different inputs of one parent build once each", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async ({ target }) => {
+        await $`pnpm build --target ${target}`;
+      },
+    );
+
+    const web = ci.job(
+      { id: "web", from: build.with({ target: "web" }) },
+      async () => {
+        await $`pnpm test:web`;
+      },
+    );
+
+    const web2 = ci.job(
+      { id: "web2", from: build.with({ target: "web" }) },
+      async () => {
+        await $`pnpm test:web2`;
+      },
+    );
+
+    const api2 = ci.job(
+      { id: "api", from: build.with({ target: "api" }) },
+      async () => {
+        await $`pnpm test:api`;
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all([web(), web2(), api2()]);
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(ran(api, "pnpm build")).toBe(2);
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.endsWith("› build");
+      }),
+    ).toHaveLength(2);
+  });
+
+  test("calling the parent directly and starting from it builds it twice", async () => {
     const { api, ci } = setup();
 
     const base = ci.job("base", async () => {
@@ -800,13 +1359,17 @@ describe("from", () => {
 
     expect(result.type).toBe("function-resolved");
 
+    // The direct call runs in the pipeline's run, and the build is another
+    // run of the same job.
     expect(
       userCommands(api).filter((argv) => {
         return argv[1] === "install";
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
-    expect(api.sandboxes.size).toBe(2);
+    expect(result.stepIds).toContain("base › machine");
+    expect(result.stepIds).toContain("base (from) › build");
+    expect(api.sandboxes.size).toBe(3);
 
     const cloned = [...api.sandboxes.values()].filter((sandbox) => {
       return sandbox.snapshotId;
@@ -815,7 +1378,7 @@ describe("from", () => {
     expect(cloned).toHaveLength(1);
   });
 
-  test("a direct call after starting from it starts its own run", async () => {
+  test("a direct call after starting from it is the job's first direct call", async () => {
     const { api, ci } = setup();
 
     const base = ci.job("base", async () => {
@@ -840,7 +1403,8 @@ describe("from", () => {
       }),
     ).toHaveLength(2);
 
-    expect(result.stepIds).toContain("base (2) › machine");
+    expect(result.stepIds).toContain("base › machine");
+    expect(result.stepIds).not.toContain("base (2) › machine");
   });
 
   test("a child that starts from a cached parent can checkout() again", async () => {
@@ -876,7 +1440,7 @@ describe("from", () => {
       });
 
       expect(result.type).toBe("function-resolved");
-      expect(result.stepIds).toContain("base › checkout");
+      expect(result.stepIds).toContain("base (from) › build");
       expect(result.stepIds).toContain("lint › checkout");
 
       expect(
@@ -890,6 +1454,54 @@ describe("from", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("every combination of a matrix starts from its `from`", async () => {
+    const { api, ci } = setup();
+
+    const install = ci.job("setup", async () => {
+      await $`pnpm install`;
+    });
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] }, from: install },
+      async ({ node }) => {
+        await $`node ${node}`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await compat();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(ran(api, "pnpm install")).toBe(1);
+
+    const cloned = [...api.sandboxes.values()].filter((sandbox) => {
+      return sandbox.snapshotId;
+    });
+
+    expect(cloned).toHaveLength(2);
+  });
+
+  test("a `from` that isn't a job throws", async () => {
+    const { ci } = setup();
+
+    const child = ci.job(
+      { id: "child", from: "parent" as unknown as Job },
+      async () => {},
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return child();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "must name a job",
+    );
   });
 
   test("a `from` naming another client's job throws", async () => {
@@ -941,38 +1553,41 @@ describe("from", () => {
   test("a `from` function picks the parent from the job's input", async () => {
     const { api, ci } = setup();
 
-    const build = ci.job("build", async (target: string) => {
-      await $`pnpm build --target ${target}`;
-    });
+    const build = ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async ({ target }) => {
+        await $`pnpm build --target ${target}`;
+      },
+    );
 
     const test = ci.job(
       {
         id: "test",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
         from: ({ input }) => {
-          return build.with(input);
+          return build.with({ target: input.target });
         },
       },
-      async (target: string) => {
+      async ({ target }) => {
         await $`pnpm test --filter ${target}`;
       },
     );
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test("web");
+      await Promise.all([test({ target: "web" }), test({ target: "api" })]);
     });
 
     await runFunction(pipeline, { event: prEvent });
 
-    expect(
-      api.commands
-        .filter((argv) => {
-          return argv[0] === "pnpm";
-        })
-        .map((argv) => {
-          return argv.join(" ");
-        })
-        .sort(),
-    ).toEqual(["pnpm build --target web", "pnpm test --filter web"]);
+    expect(userCommands(api).sort()).toEqual([
+      ["pnpm", "build", "--target", "api"],
+      ["pnpm", "build", "--target", "web"],
+      ["pnpm", "test", "--filter", "api"],
+      ["pnpm", "test", "--filter", "web"],
+    ]);
   });
 
   const runFromWithoutSnapshots = async ({
@@ -1057,12 +1672,14 @@ describe("from", () => {
         return argv.join(" ");
       }),
     ).toEqual([
-      // install
+      // test's build of `build`: its own build of `install`...
       "pnpm install",
-      // build: install again, then build
+      // ...which `build` couldn't copy, so it ran install again, then build
       "pnpm install",
       "pnpm build",
-      // test: install and build again, then test
+      // test couldn't copy `build` either: `build` ran again on its machine,
+      // which gets `install` from the same shared build (no snapshot, so it
+      // ran install again there), then test
       "pnpm install",
       "pnpm build",
       "pnpm test",
@@ -1289,6 +1906,23 @@ describe("matrix", () => {
     expect([...ran]).toEqual(["22"]);
     expect(api.sandboxes.size).toBe(1);
   });
+
+  test("a build asked for a combination the matrix lacks fails instead of passing", async () => {
+    const { ci } = setup();
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] } },
+      async () => {},
+    );
+
+    await expect(
+      (
+        compat as unknown as {
+          [runCombosKey](combos: Record<string, unknown>[]): Promise<void>;
+        }
+      )[runCombosKey]([{ node: "18" }]),
+    ).rejects.toThrow(/No combination/);
+  });
 });
 
 describe("cache", () => {
@@ -1311,11 +1945,11 @@ describe("cache", () => {
   };
 
   test("a run on another machine finds the snapshot by name and skips the job", async () => {
-    // Two apps that share nothing but the sandbox environment.
+    // Two machines running one app, sharing nothing but the sandbox environment.
     const api = createFakeSandboxApi();
 
-    for (const appId of ["machine-a", "machine-b"]) {
-      const { ci } = setup({ api, appId });
+    for (const _machine of ["a", "b"]) {
+      const { ci } = setup({ api });
 
       const build = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
         await $`pnpm install`;
@@ -1339,131 +1973,53 @@ describe("cache", () => {
     ]);
   });
 
-  test("a second run restores the job and skips its commands", async () => {
-    // The same machines and snapshots across both runs, like a real environment.
+  test.each([
+    ["the same input again", ["1", "1"], 1],
+    ["a different input", ["1", "2"], 2],
+  ])("the same key with %s", async (_label, inputs, installs) => {
     const api = createFakeSandboxApi();
 
-    const first = setup({ api });
-
-    const build = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
-
-    const firstPipeline = first.ci.pipeline(
-      { id: "pr", on: prTrigger },
-      async () => {
-        await build();
-      },
-    );
-
-    await runFunction(firstPipeline, { event: prEvent });
-
-    expect(userCommands(first.api)).toHaveLength(1);
-
-    const second = setup({ api });
-    let rebuilt = false;
-
-    const build2 = second.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        rebuilt = true;
-
-        await $`pnpm install`;
-      },
-    );
-
-    const secondPipeline = second.ci.pipeline(
-      { id: "pr", on: prTrigger },
-      async () => {
-        await build2();
-      },
-    );
-
-    const result = await runFunction(secondPipeline, { event: prEvent });
-
-    expect(result.type).toBe("function-resolved");
-    expect(rebuilt).toBe(false);
-    // Nothing new ran: no extra commands, and no second machine.
-    expect(userCommands(api)).toHaveLength(1);
-    expect(api.sandboxes.size).toBe(1);
-  });
-
-  test("the same key with a different input is a different entry", async () => {
-    const api = createFakeSandboxApi();
-    const built: string[] = [];
-
-    const runWith = async (version: string) => {
+    for (const version of inputs) {
       const { ci } = setup({ api });
 
       const build = ci.job<string>(
         { id: "setup", cache: { key: "v1" } },
         async (input) => {
-          built.push(input);
-
-          await $`pnpm install`;
+          await $`pnpm install ${input}`;
         },
       );
 
-      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await build(version);
-      });
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build(version);
+        }),
+        { event: prEvent },
+      );
+    }
 
-      await runFunction(pipeline, { event: prEvent });
-    };
-
-    await runWith("1");
-    await runWith("2");
-
-    expect(userCommands(api)).toHaveLength(2);
-
-    // The same input again is a hit.
-    await runWith("1");
-
-    expect(userCommands(api)).toHaveLength(2);
-    expect(new Set(built)).toEqual(new Set(["1", "2"]));
+    expect(ran(api, "pnpm install")).toBe(installs);
   });
 
   test("a changed key misses and runs again", async () => {
-    // The same machines and snapshots across both runs, like a real environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ api });
+    for (const key of ["v1", "v2"]) {
+      const { ci } = setup({ api });
 
-    const job1 = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
+      const build = ci.job({ id: "setup", cache: { key } }, async () => {
         await $`pnpm install`;
-      },
-    );
+      });
 
-    await runFunction(
-      first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await job1();
-      }),
-      { event: prEvent },
-    );
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build();
+        }),
+        { event: prEvent },
+      );
+    }
 
-    const second = setup({ api });
-
-    const job2 = second.ci.job(
-      { id: "setup", cache: { key: "v2" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
-
-    const result = await runFunction(
-      second.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await job2();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-resolved");
-    expect(userCommands(api)).toHaveLength(2);
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(namedSnapshots(api)).toHaveLength(2);
   });
 
   test("the same branch, job and key in another repository misses", async () => {
@@ -1513,18 +2069,56 @@ describe("cache", () => {
     expect(userCommands(api)).toHaveLength(2);
   });
 
-  test("a cached job with a machine can still be started from", async () => {
-    // The same machines and snapshots across both runs, like a real environment.
+  test("the same repository, branch, job and key in another app misses", async () => {
+    // Two apps in one repository and Sandbox environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ api });
+    const runIn = async (appId: string) => {
+      const { ci } = setup({ api, appId });
 
-    const setupJob = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
+      const job = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
         await $`pnpm install`;
-      },
-    );
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await job();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await runIn("app-a");
+    await runIn("app-b");
+
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(namedSnapshots(api)).toHaveLength(2);
+
+    // Each app still hits its own.
+    await runIn("app-a");
+    await runIn("app-b");
+
+    expect(ran(api, "pnpm install")).toBe(2);
+  });
+
+  test("a cached job with a machine can still be started from", async () => {
+    const api = createFakeSandboxApi();
+
+    const define = (ci: ReturnType<typeof setup>["ci"]) => {
+      const setupJob = ci.job(
+        { id: "setup", cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      return { setupJob };
+    };
+
+    const first = setup({ api });
+    const { setupJob } = define(first.ci);
 
     await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
@@ -1534,13 +2128,7 @@ describe("cache", () => {
     );
 
     const second = setup({ api });
-
-    const setupJob2 = second.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
+    const { setupJob: setupJob2 } = define(second.ci);
 
     const test = second.ci.job({ id: "test", from: setupJob2 }, async () => {
       await $`pnpm test`;
@@ -1562,11 +2150,218 @@ describe("cache", () => {
     ]);
 
     // …and the child cloned the cached snapshot rather than starting fresh.
+    const [cached] = [...api.snapshots.values()];
+
     expect(
       [...api.sandboxes.values()].filter((machine) => {
         return machine.snapshotId;
       }),
-    ).toHaveLength(1);
+    ).toEqual([expect.objectContaining({ snapshotId: cached?.id })]);
+  });
+
+  describe("a cached job below an uncached one", () => {
+    /** `setup` is cached only when `cacheSetup`; `build` always has a cache. */
+    const runChain = async (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      options: { cacheSetup: boolean; runId: string; named?: string[] },
+    ) => {
+      const { ci } = setup({ api });
+
+      const setupJob = ci.job(
+        {
+          id: "setup",
+          ...(options.cacheSetup ? { cache: { key: "s" } } : {}),
+        },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      const buildJob = ci.job(
+        { id: "build", from: setupJob, cache: { key: "b" } },
+        async () => {
+          await $`pnpm build`;
+        },
+      );
+
+      const lint = ci.job({ id: "lint", from: buildJob }, async () => {
+        await $`pnpm lint`;
+
+        options.named?.push(...namedSnapshots(api));
+      });
+
+      const test = ci.job({ id: "test", from: buildJob }, async () => {
+        await $`pnpm test`;
+      });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await Promise.all([lint(), test()]);
+
+          return getRunScope()?.warnings;
+        }),
+        { event: prEvent, runId: options.runId },
+      );
+    };
+
+    const ran = (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      text: string,
+    ) => {
+      return userCommands(api).filter((argv) => {
+        return argv.join(" ").includes(text);
+      }).length;
+    };
+
+    test("is never given a name, however many runs, and nothing is left behind", async () => {
+      const duringRuns: string[] = [];
+
+      const api = createFakeSandboxApi();
+
+      for (const runId of ["01RUNA", "01RUNB", "01RUNC"]) {
+        const result = await runChain(api, {
+          cacheSetup: false,
+          runId,
+          named: duringRuns,
+        });
+
+        expect(result.type).toBe("function-resolved");
+
+        // `build` was never cached, so nothing named for it is ever left, and
+        // the run's own snapshots went with the run.
+        expect(
+          namedSnapshots(api).filter((name) => {
+            return name.includes("/build/");
+          }),
+        ).toEqual([]);
+        expect(api.snapshots.size).toBe(0);
+      }
+
+      // Nor was it named while the run used it, in the cache's scope or any
+      // other: the name it had belongs to the run.
+      expect(duringRuns.length).toBeGreaterThan(0);
+      expect(
+        duringRuns.filter((name) => {
+          return name.startsWith("ci/pr:7/") || name.startsWith("ci/main/");
+        }),
+      ).toEqual([]);
+
+      // It can't be reused, so it ran in every run.
+      expect(ran(api, "pnpm build")).toBe(3);
+      expect(ran(api, "pnpm install")).toBe(3);
+    });
+
+    test("called directly, it runs in the run without a name or a cache lookup", async () => {
+      const api = createFakeSandboxApi();
+
+      for (const runId of ["01RUNA", "01RUNB"]) {
+        const { ci } = setup({ api });
+
+        const setupJob = ci.job({ id: "setup" }, async () => {
+          await $`pnpm install`;
+        });
+
+        const buildJob = ci.job(
+          { id: "build", from: setupJob, cache: { key: "b" } },
+          async () => {
+            await $`pnpm build`;
+          },
+        );
+
+        const result = await runFunction(
+          ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+            await buildJob();
+
+            return getRunScope()?.warnings;
+          }),
+          { event: prEvent, runId },
+        );
+
+        expect(result.type).toBe("function-resolved");
+        expect(result.data).toEqual([
+          "never reused: `build` starts from `setup`, which has no `cache` (give `setup` a `cache`)",
+        ]);
+        expect(api.snapshots.size).toBe(0);
+      }
+
+      expect(ran(api, "pnpm build")).toBe(2);
+    });
+
+    test("still snapshots, so its children in the run start from it and it runs once", async () => {
+      const api = createFakeSandboxApi();
+
+      const result = await runChain(api, {
+        cacheSetup: false,
+        runId: "01RUNA",
+      });
+
+      expect(result.type).toBe("function-resolved");
+      expect(ran(api, "pnpm build")).toBe(1);
+      expect(ran(api, "pnpm lint")).toBe(1);
+      expect(ran(api, "pnpm test")).toBe(1);
+
+      const children = [...api.sandboxes.values()].filter((machine) => {
+        return /^ci-01RUNA-(lint|test)$/.test(machine.name);
+      });
+
+      expect(children).toHaveLength(2);
+      expect(new Set(children.map((machine) => machine.snapshotId)).size).toBe(
+        1,
+      );
+
+      // They start from the snapshot taken of `build`'s machine, after it ran.
+      const timeline = api.timeline.map((entry) => {
+        return entry.startsWith("command ") ? entry : "snapshot";
+      });
+
+      const built = timeline.indexOf("command pnpm build");
+      const lastSnapshotBeforeLint = timeline
+        .slice(0, timeline.indexOf("command pnpm lint"))
+        .lastIndexOf("snapshot");
+
+      expect(built).toBeGreaterThan(-1);
+      expect(lastSnapshotBeforeLint).toBeGreaterThan(built);
+      expect(children.every((machine) => machine.snapshotId)).toBe(true);
+    });
+
+    test("says it rebuilds every run until the job above it has a cache", async () => {
+      const api = createFakeSandboxApi();
+
+      const result = await runChain(api, {
+        cacheSetup: false,
+        runId: "01RUNA",
+      });
+
+      expect(result.data).toEqual([
+        "never reused: `build` starts from `setup`, which has no `cache` (give `setup` a `cache`)",
+      ]);
+
+      const cached = await runChain(createFakeSandboxApi(), {
+        cacheSetup: true,
+        runId: "01RUNA",
+      });
+
+      expect(cached.data).toEqual([]);
+    });
+
+    test("is cached and reused once the job above it has a cache", async () => {
+      const api = createFakeSandboxApi();
+
+      for (const runId of ["01RUNA", "01RUNB"]) {
+        const result = await runChain(api, { cacheSetup: true, runId });
+
+        expect(result.type).toBe("function-resolved");
+      }
+
+      expect(ran(api, "pnpm install")).toBe(1);
+      expect(ran(api, "pnpm build")).toBe(1);
+
+      expect(
+        namedSnapshots(api).filter((name) => {
+          return name.startsWith("ci/pr:7/build/");
+        }),
+      ).toHaveLength(1);
+    });
   });
 
   describe("a cached job whose parent has changed gets a new name, and builds again", () => {
@@ -1608,16 +2403,7 @@ describe("cache", () => {
       expect(result.type).toBe("function-resolved");
     };
 
-    const ran = (
-      api: ReturnType<typeof createFakeSandboxApi>,
-      command: string,
-    ) => {
-      return userCommands(api).filter((argv) => {
-        return argv.join(" ") === command;
-      }).length;
-    };
-
-    /** The snapshots `build` is cached under. */
+    /** The snapshots `build` is cached under, oldest first. */
     const buildSnapshots = (api: ReturnType<typeof createFakeSandboxApi>) => {
       return [...api.snapshots.values()].filter((snapshot) => {
         return snapshot.name?.startsWith("ci/pr:7/build/");
@@ -1654,34 +2440,32 @@ describe("cache", () => {
       expect(ran(api, "pnpm build")).toBe(1);
 
       const [old] = buildSnapshots(api);
+      const startsBefore = api.snapshotStarts.length;
 
-      const startedFromOld = () => {
-        return [...api.sandboxes.values()].filter((machine) => {
-          return machine.snapshotId === old?.id;
-        }).length;
-      };
+      const key = change(api);
 
-      const before = startedFromOld();
+      await runWith(api, key);
 
-      await runWith(api, change(api));
-
-      // `setup` has a new snapshot, so `build`'s name is new: a miss, found
-      // by name alone, and no machine ever started from the old one again.
       expect(ran(api, "pnpm install")).toBe(2);
       expect(ran(api, "pnpm build")).toBe(2);
       expect(ran(api, "pnpm test")).toBe(3);
 
-      const names = buildSnapshots(api).map((snapshot) => {
-        return snapshot.name;
-      });
+      // `setup` has a new snapshot, so `build` has a new name: a miss found
+      // by name alone. No machine started from the old snapshot to find out.
+      const fresh = buildSnapshots(api).at(-1);
 
-      expect(new Set(names).size).toBe(2);
+      expect(fresh?.name).not.toBe(old?.name);
+      expect(api.snapshotStarts.slice(startsBefore)).not.toContain(old?.id);
+      expect(api.snapshotStarts.at(-1)).toBe(fresh?.id);
 
-      expect(startedFromOld()).toBe(before);
+      // The rebuild is good again for the next run.
+      await runWith(api, key);
+
+      expect(ran(api, "pnpm build")).toBe(2);
     });
   });
 
-  test("a job that loses the name to another run uses the winner's snapshot", async () => {
+  test("a build that loses the name to another build uses the winner's snapshot", async () => {
     const { api, ci } = setup();
 
     api.loseSnapshotNameRaces();
@@ -1772,6 +2556,464 @@ describe("cache", () => {
     ).toEqual([]);
   });
 
+  describe("a snapshot that fails to start", () => {
+    /**
+     * `base` is cached and the children start from it. Runs on a shared fake
+     * API, so a second call restores what the first built.
+     */
+    const runPipeline = async (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      options: {
+        event?: { name: string; data: unknown };
+        on?: { event: string }[];
+        children?: string[];
+      } = {},
+    ) => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const children = (options.children ?? ["lint"]).map((id) => {
+        return ci.job({ id, from: base }, async () => {
+          await $`pnpm ${id}`;
+        });
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "ci", on: options.on ?? prTrigger }, async () => {
+          await Promise.all(
+            children.map((child) => {
+              return child();
+            }),
+          );
+
+          return getRunScope()?.warnings;
+        }),
+        { event: options.event ?? prEvent },
+      );
+
+      return result;
+    };
+
+    const deletesOf = (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      snapshotId: string | undefined,
+    ) => {
+      return api.requests.filter((request) => {
+        return request === `DELETE /v2/snapshots/${snapshotId}`;
+      }).length;
+    };
+
+    const leftoverMachines = (api: ReturnType<typeof createFakeSandboxApi>) => {
+      return [...api.sandboxes.values()].filter((machine) => {
+        return machine.stuck && machine.status !== "TERMINATED";
+      });
+    };
+
+    /** A cached `base` from a first run, ready to be restored by the next. */
+    const built = async () => {
+      const api = createFakeSandboxApi();
+
+      expect((await runPipeline(api)).type).toBe("function-resolved");
+
+      const [snapshot] = [...api.snapshots.values()];
+
+      return { api, snapshot };
+    };
+
+    test("a capacity error that clears is retried as any step is, with nothing deleted or rebuilt", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("capacity");
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+      expect(second.data).toEqual([]);
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(1);
+    });
+
+    test("a capacity error that doesn't clear fails the job, and is not a start failure", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("capacity", { count: 50 });
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-rejected");
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(1);
+
+      // No second try at the snapshot: capacity is not the snapshot's fault.
+      expect(second.stepIds.filter((id) => id.includes("restart"))).toEqual([]);
+    });
+
+    test.each([
+      ["gone", "gone"],
+      ["deleting", "DELETING"],
+    ] as const)(
+      "a snapshot that is %s is rebuilt, not deleted",
+      async (_label, then) => {
+        const { api, snapshot } = await built();
+
+        api.failNextSnapshotStarts("timeout", { then });
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining(
+            "fell back: snapshot of `base` wouldn't start",
+          ),
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(0);
+        expect(ran(api, "pnpm install")).toBe(2);
+        expect(ran(api, "pnpm lint")).toBe(2);
+
+        // Rebuilt under the name, once nothing holds it. A snapshot that is
+        // being deleted is on its way out and doesn't count.
+        expect(
+          [...api.snapshots.values()]
+            .filter((candidate) => {
+              return candidate.status === "READY";
+            })
+            .map((candidate) => {
+              return candidate.name;
+            }),
+        ).toEqual([expect.stringMatching(/^ci\/pr:7\/base\//)]);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test("a snapshot still being created is rebuilt unnamed, leaving it alone", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("timeout", { then: "CREATING" });
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+
+      // Unnamed on purpose, so it didn't try for the name and give up on it.
+      expect(second.data).toEqual([
+        expect.stringContaining("fell back: snapshot of `base` wouldn't start"),
+      ]);
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(ran(api, "pnpm install")).toBe(2);
+
+      // The other build keeps the name. This run's copy had none, and was
+      // deleted with the rest of the run's snapshots.
+      expect([...api.snapshots.values()].map((s) => s.id)).toEqual([
+        snapshot?.id,
+      ]);
+
+      expect(api.snapshotStarts.at(-1)).not.toBe(snapshot?.id);
+    });
+
+    test.each(["timeout", "failed"] as const)(
+      "one %s is retried once, and the snapshot is kept",
+      async (mode) => {
+        const { api, snapshot } = await built();
+
+        api.failNextSnapshotStarts(mode);
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining("snapshot of `base` needed a retry to start"),
+        ]);
+
+        // Restored on the second try; nothing deleted or rebuilt.
+        expect(api.snapshotStarts.slice(-2)).toEqual([
+          snapshot?.id,
+          snapshot?.id,
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(0);
+        expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+        expect(ran(api, "pnpm install")).toBe(1);
+        expect(ran(api, "pnpm lint")).toBe(2);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test("the retry waits at least as long for its machine as the first try did", async () => {
+      const { api } = await built();
+
+      api.failNextSnapshotStarts("timeout");
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+
+      const waitOf = (stepId: string) => {
+        const call = second.inputs[stepId] as {
+          input: { input: { runningTimeoutMs?: number }[] }[];
+        };
+
+        return call.input[0]?.input[0]?.runningTimeoutMs;
+      };
+
+      const first = waitOf("lint › machine");
+
+      // A shorter wait would make a slow node more likely to fail the retry,
+      // and a second failure deletes the snapshot.
+      expect(first).toBeGreaterThan(0);
+      expect(waitOf("lint › machine › restart")).toBeGreaterThanOrEqual(
+        first ?? 0,
+      );
+    });
+
+    test.each([
+      ["timeouts", "timeoutSnapshotStarts"],
+      ["failures", "failSnapshotStarts"],
+    ] as const)(
+      "when the retry fails too, the snapshot is deleted and rebuilt (%s)",
+      async (_label, method) => {
+        const { api, snapshot } = await built();
+
+        api[method]();
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining(
+            "fell back: snapshot of `base` wouldn't start",
+          ),
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(1);
+        expect(api.snapshots.has(snapshot?.id ?? "")).toBe(false);
+        expect(ran(api, "pnpm install")).toBe(2);
+        expect(ran(api, "pnpm lint")).toBe(2);
+
+        // The rebuild is cached under the freed name for the next run.
+        expect(namedSnapshots(api)).toEqual([
+          expect.stringMatching(/^ci\/pr:7\/base\//),
+        ]);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test("when the snapshot can't be deleted, the rebuild is unnamed and the broken one is never reused", async () => {
+      const { api, snapshot } = await built();
+
+      api.timeoutSnapshotStarts();
+      api.refuseSnapshotDeletes();
+      const startsBefore = api.snapshotStarts.length;
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+      expect(second.data).toEqual([
+        expect.stringContaining("fell back: snapshot of `base` wouldn't start"),
+        expect.stringContaining("couldn't be deleted"),
+      ]);
+
+      // The broken snapshot is still there and still holds the name, so the
+      // rebuild has none, and the run deleted its copy at its end.
+      expect(deletesOf(api, snapshot?.id)).toBe(1);
+      expect([...api.snapshots.values()].map((s) => s.id)).toEqual([
+        snapshot?.id,
+      ]);
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
+
+      // Two tries at the broken snapshot, then only the rebuilt one.
+      expect(
+        api.snapshotStarts
+          .slice(startsBefore)
+          .filter((id) => id === snapshot?.id),
+      ).toHaveLength(2);
+    });
+
+    test("a pull request run whose restore of main's snapshot times out once leaves it alone", async () => {
+      const api = createFakeSandboxApi();
+
+      const first = await runPipeline(api, {
+        event: pushEvent,
+        on: pushTrigger,
+      });
+
+      expect(first.type).toBe("function-resolved");
+
+      const [main] = [...api.snapshots.values()];
+
+      expect(main?.name).toMatch(/^ci\/main\/base\//);
+
+      api.failNextSnapshotStarts("timeout");
+
+      const pr = await runPipeline(api);
+
+      expect(pr.type).toBe("function-resolved");
+      expect(deletesOf(api, main?.id)).toBe(0);
+      expect(namedSnapshots(api)).toEqual([main?.name]);
+      expect(ran(api, "pnpm install")).toBe(1);
+      expect(ran(api, "pnpm lint")).toBe(2);
+    });
+
+    test("several jobs on the same broken snapshot delete it once", async () => {
+      const api = createFakeSandboxApi();
+
+      expect(
+        (await runPipeline(api, { children: ["lint", "test", "build"] })).type,
+      ).toBe("function-resolved");
+
+      const [snapshot] = [...api.snapshots.values()];
+
+      api.timeoutSnapshotStarts();
+
+      const second = await runPipeline(api, {
+        children: ["lint", "test", "build"],
+      });
+
+      expect(second.type).toBe("function-resolved");
+      expect(deletesOf(api, snapshot?.id)).toBe(1);
+
+      // One delete for all three, not one each that happens to find it gone.
+      expect(
+        second.stepIds.filter((id) => id.includes("cache:delete")),
+      ).toHaveLength(1);
+
+      // One rebuild for all three.
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
+      expect(ran(api, "pnpm test")).toBe(2);
+      expect(ran(api, "pnpm build")).toBe(2);
+      expect(leftoverMachines(api)).toEqual([]);
+    });
+  });
+
+  test("a cached job's build uses the pipeline's machine", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job({ id: "big", cache: { key: "v1" } }, async () => {
+      await $`pnpm build`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, machine: { vcpu: 4 } },
+        async () => {
+          await job();
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      [...api.sandboxes.values()].map((box) => {
+        return box.vcpu;
+      }),
+    ).toEqual([4]);
+  });
+
+  test("a cached job's input is validated once, however the build is run", async () => {
+    const { ci } = setup();
+    const received = new Set<unknown>();
+
+    // Accepts a string and gives a number, so it rejects its own output.
+    const input = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: (value: unknown) => {
+          return typeof value === "string"
+            ? { value: Number(value) }
+            : { issues: [{ message: "Expected string" }] };
+        },
+      },
+    };
+
+    const job = ci.job(
+      { id: "num", input: input as never, cache: { key: "v1" } },
+      async (value: unknown) => {
+        received.add(value);
+
+        await $`pnpm build`;
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await (job as unknown as (value: string) => Promise<void>)("42");
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect([...received]).toEqual([42]);
+  });
+
+  test("a cached job's summaries reach its own check", async () => {
+    const { ci, reporter } = setup();
+
+    const job = ci.job({ id: "cov", cache: { key: "v1" } }, async () => {
+      await $`pnpm test`;
+      await report.summary("Coverage: **91%**");
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    const completed = reporter.history.find((entry) => {
+      return entry.name === "pr / cov" && entry.status === "completed";
+    });
+
+    expect(completed?.summary).toContain("Coverage: **91%**");
+  });
+
+  test("when the rebuilt snapshot won't start either, the job falls back to a fresh machine", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {
+        await $`pnpm lint`;
+      });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+    };
+
+    await run();
+
+    api.failAllSnapshotStarts();
+
+    const second = await run();
+
+    expect(second.type).toBe("function-resolved");
+    expect(ran(api, "pnpm lint")).toBe(2);
+
+    expect(
+      [...api.sandboxes.values()].filter((machine) => {
+        return machine.stuck && machine.status !== "TERMINATED";
+      }),
+    ).toEqual([]);
+  });
+
   test("after a snapshot won't start, concurrent commands all wait for the parent to re-run", async () => {
     const api = createFakeSandboxApi();
 
@@ -1842,7 +3084,7 @@ describe("cache", () => {
 
             return getRunScope()?.warnings;
           }),
-          { event: prEvent },
+          { event: prEvent, runId: `01RUN${i}` },
         ),
       );
     }
@@ -1911,7 +3153,7 @@ describe("cache", () => {
 
           return getRunScope()?.warnings;
         }),
-        { event: prEvent },
+        { event: prEvent, runId: `01RUN${i}` },
       );
 
       expect(result.type).toBe("function-resolved");
@@ -2220,172 +3462,6 @@ describe("job durations", () => {
   });
 });
 
-describe("slow parent hints", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllEnvs();
-  });
-
-  /**
-   * Run a pipeline where `base` and some jobs that start from it run, with
-   * every execution request `requestMs` later, and return the pipeline
-   * check's summary.
-   */
-  const runHint = async ({
-    requestMs,
-    children = 2,
-    cache,
-    fromBase = true,
-    laterRequestMs,
-  }: {
-    requestMs: number;
-    children?: number;
-    cache?: boolean;
-    fromBase?: boolean;
-    /** When set, a stage after the jobs runs with requests this far apart. */
-    laterRequestMs?: number;
-  }) => {
-    let later = false;
-
-    vi.stubEnv("INNGEST_CI_GITHUB", "live");
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-
-    const { ci, gh } = setupGitHub("checks");
-
-    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
-      check_runs: [],
-    });
-
-    gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 9 });
-    gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
-
-    const base = ci.job(
-      { id: "base", ...(cache ? { cache: { key: "v1" } } : {}) },
-      async () => {
-        await $`pnpm install`;
-
-        await $`pnpm build`;
-      },
-    );
-
-    const childJobs = Array.from({ length: children }, (_, index) => {
-      return ci.job(
-        { id: `child-${index}`, ...(fromBase ? { from: base } : {}) },
-        async () => {
-          await $`pnpm test`;
-        },
-      );
-    });
-
-    const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, check: { jobs: false } },
-      async () => {
-        await Promise.all(
-          childJobs.map((child) => {
-            return child();
-          }),
-        );
-
-        if (!fromBase) {
-          await base();
-        }
-
-        if (laterRequestMs !== undefined) {
-          later = true;
-
-          const tail = ci.job("tail", async () => {
-            await $`pnpm lint`;
-
-            await $`pnpm e2e`;
-          });
-
-          await tail();
-        }
-      },
-    );
-
-    const result = await runFunction(pipeline, {
-      event: prEvent,
-      beforeRequest: () => {
-        vi.setSystemTime(
-          Date.now() + (later ? (laterRequestMs ?? requestMs) : requestMs),
-        );
-      },
-    });
-
-    expect(result.type).toBe("function-resolved");
-
-    const completion = gh.requests.find((request) => {
-      return (
-        request.method === "PATCH" &&
-        (request.body as { status?: string })?.status === "completed"
-      );
-    });
-
-    return (
-      (completion?.body as { output?: { summary?: string } })?.output
-        ?.summary ?? ""
-    );
-  };
-
-  const hintLines = (summary: string) => {
-    return summary.split("\n").filter((line) => {
-      return line.includes("started from it");
-    });
-  };
-
-  test("an uncached slow parent gets one line with its count and duration", async () => {
-    const summary = await runHint({ requestMs: 20_000 });
-    const lines = hintLines(summary);
-
-    expect(lines).toHaveLength(1);
-
-    const duration = /^\| base \|.*\| (\S+(?: \S+)?) \|$/m.exec(summary)?.[1];
-
-    expect(duration).toBeDefined();
-    expect(lines[0]).toBe(
-      `- \`base\` took ${duration} and 2 jobs started from it. It isn't cached, so it runs again next time. To reuse it, give it a cache key: \`cache: { key: files("pnpm-lock.yaml") }\`.`,
-    );
-  });
-
-  test("one job starting from it reads as singular", async () => {
-    const summary = await runHint({ requestMs: 20_000, children: 1 });
-
-    expect(hintLines(summary)).toHaveLength(1);
-    expect(summary).toContain(" and 1 job started from it.");
-  });
-
-  test("a cached parent gets no line", async () => {
-    const summary = await runHint({ requestMs: 20_000, cache: true });
-
-    expect(hintLines(summary)).toHaveLength(0);
-  });
-
-  test("a parent that took 30s or less gets no line", async () => {
-    const summary = await runHint({ requestMs: 1 });
-
-    expect(hintLines(summary)).toHaveLength(0);
-  });
-
-  test("a fast parent isn't inflated by a slow stage after it", async () => {
-    const summary = await runHint({ requestMs: 1, laterRequestMs: 60_000 });
-
-    expect(hintLines(summary)).toHaveLength(0);
-
-    const row = /^\| base \|.*\| (\S+(?: \S+)?) \|$/m.exec(summary);
-
-    expect(row?.[1]).toMatch(/^(\d+ms|\d|[12]\ds)$/);
-    expect(row?.[0]).not.toMatch(/\dm /);
-  });
-
-  test("a slow job nothing starts from gets no line", async () => {
-    const summary = await runHint({ requestMs: 20_000, fromBase: false });
-
-    expect(hintLines(summary)).toHaveLength(0);
-  });
-});
-
 describe("errors", () => {
   test("CommandFailedError carries the command and output", () => {
     const error = new CommandFailedError({
@@ -2402,8 +3478,11 @@ describe("errors", () => {
 });
 
 /** A CI client whose GitHub calls go to a fake. */
-const setupGitHub = (reporter: "checks" | "statuses" = "statuses") => {
-  const api = createFakeSandboxApi();
+const setupGitHub = (
+  reporter: "checks" | "statuses" = "statuses",
+  existing?: ReturnType<typeof createFakeSandboxApi>,
+) => {
+  const api = existing ?? createFakeSandboxApi();
   const client = createCiTestClient(api);
   const gh = createFakeGitHub();
 
@@ -2445,6 +3524,21 @@ describe("cleanup", () => {
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
   };
+  test("the machine cleanup step is planned even when no machine exists yet", async () => {
+    const { ci } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return "ok";
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    // Which machines exist depends on how far each sibling got in a request,
+    // so the step can't be left out for a request that sees none.
+    expect(result.stepIds).toContain("pipeline › cleanup");
+    expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: 0 });
+  });
+
   test("a machine that is already gone is not an error", async () => {
     const run = runWithSandboxes(async () => {
       return {
@@ -3087,6 +4181,324 @@ describe("checks across retries", () => {
   });
 });
 
+describe("cache builds in their own run", () => {
+  const buildJob = (ci: ReturnType<typeof setup>["ci"], key = "v1") => {
+    return ci.job({ id: "base", cache: { key } }, async () => {
+      await $`pnpm install`;
+    });
+  };
+
+  const childPipeline = (
+    ci: ReturnType<typeof setup>["ci"],
+    base: ReturnType<typeof buildJob>,
+  ) => {
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+  };
+
+  /** A pipeline that calls the cached job itself, so it has a check. */
+  const directPipeline = (
+    ci: ReturnType<typeof setup>["ci"],
+    base: ReturnType<typeof buildJob>,
+  ) => {
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return base();
+    });
+  };
+
+  const installs = (api: ReturnType<typeof createFakeSandboxApi>) => {
+    return userCommands(api).filter((argv) => {
+      return argv[1] === "install";
+    }).length;
+  };
+
+  test("a miss invokes the build function, and children start from its snapshot", async () => {
+    const { api, ci } = setup();
+    const base = buildJob(ci);
+
+    const pipeline = childPipeline(ci, base);
+
+    expect(
+      ci.functions().find((fn) => {
+        return fn.opts.id === "ci/build";
+      })?.opts.name,
+    ).toBe("build");
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.stepIds).toContain("base (from) › build");
+
+    const machines = [...api.sandboxes.values()];
+
+    // The build's machine belongs to the build's run, not the pipeline's.
+    expect(machines[0]?.name).toMatch(/^ci-01TESTINVOKED\d+-base$/);
+
+    const child = machines.find((machine) => {
+      return machine.name === "ci-01TESTRUN-lint";
+    });
+
+    expect(child?.snapshotId).toBeTruthy();
+    expect(installs(api)).toBe(1);
+  });
+
+  test("a job called directly completes its check when its build does", async () => {
+    const { ci, reporter } = setup();
+
+    const result = await runFunction(directPipeline(ci, buildJob(ci)), {
+      event: prEvent,
+    });
+
+    expect(result.stepIds).toContain("base › build");
+
+    expect(
+      reporter.history.find((entry) => {
+        return entry.name === "pr / base" && entry.status === "completed";
+      })?.title,
+    ).toMatch(/^Passed in /);
+  });
+
+  test("a hit builds nothing", async () => {
+    const api = createFakeSandboxApi();
+
+    for (let i = 0; i < 2; i++) {
+      const { ci } = setup({ api });
+
+      await runFunction(childPipeline(ci, buildJob(ci)), { event: prEvent });
+    }
+
+    expect(installs(api)).toBe(1);
+  });
+
+  test("two pipelines needing the same key end on one named snapshot", async () => {
+    const api = createFakeSandboxApi();
+
+    // Two runs of one app, against one sandbox environment.
+    const { ci } = setup({ api });
+    const base = buildJob(ci);
+
+    const first = childPipeline(ci, base);
+    const second = ci.pipeline({ id: "push", on: prTrigger }, async () => {
+      return base();
+    });
+
+    const [a, b] = await Promise.all([
+      runFunction(first, { event: prEvent, runId: "01RUNA" }),
+      runFunction(second, { event: prEvent, runId: "01RUNB" }),
+    ]);
+
+    expect(a.type).toBe("function-resolved");
+    expect(b.type).toBe("function-resolved");
+
+    // Runs that miss together may each build, so what is fixed is that one
+    // snapshot kept the name and the child that started from it got it.
+    const [snapshot, ...others] = [...api.snapshots.values()].filter(
+      (candidate) => {
+        return candidate.name;
+      },
+    );
+
+    expect(others).toEqual([]);
+    expect(snapshot?.status).toBe("READY");
+
+    const child = [...api.sandboxes.values()].find((machine) => {
+      return machine.name === "ci-01RUNA-lint";
+    });
+
+    expect(child?.snapshotId).toBe(snapshot?.id);
+  });
+
+  test("a failed build fails the job with its reason and caches nothing", async () => {
+    const { api, ci, reporter } = setup();
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      throw new NonRetriableError("registry is down");
+    });
+
+    for (const pipeline of [
+      directPipeline(ci, base),
+      childPipeline(ci, base),
+    ]) {
+      const result = await runFunction(pipeline, { event: prEvent });
+
+      expect(result.type).toBe("function-rejected");
+    }
+
+    const failed = reporter.history.filter((entry) => {
+      return entry.status === "completed" && entry.conclusion === "failure";
+    });
+
+    // The job that called it and the job that started from it.
+    expect(
+      failed
+        .filter((entry) => {
+          return entry.name !== "pr";
+        })
+        .map((entry) => {
+          return entry.name;
+        })
+        .sort(),
+    ).toEqual(["pr / base", "pr / lint"]);
+
+    for (const entry of failed) {
+      if (entry.name !== "pr") {
+        expect(entry.title).toContain("registry is down");
+      }
+    }
+
+    expect(namedSnapshots(api)).toEqual([]);
+  });
+
+  test("the build run posts no check of its own", async () => {
+    const { ci, reporter } = setup();
+
+    await runFunction(directPipeline(ci, buildJob(ci)), { event: prEvent });
+
+    expect(
+      new Set(
+        reporter.history.map((entry) => {
+          return entry.pipeline;
+        }),
+      ),
+    ).toEqual(new Set(["pr"]));
+
+    const started = reporter.history.filter((entry) => {
+      return entry.name === "pr / base" && entry.status === "in_progress";
+    });
+
+    expect(started).toHaveLength(1);
+  });
+
+  test("the job's check says it is building in its own run, with its URL", async () => {
+    const { client, ci } = setup();
+    const info = vi.spyOn(
+      (client as unknown as { logger: { info: (...args: unknown[]) => void } })
+        .logger,
+      "info",
+    );
+
+    await runFunction(directPipeline(ci, buildJob(ci)), { event: prEvent });
+
+    const lines = info.mock.calls.map((call) => {
+      return String(call[1]);
+    });
+
+    expect(
+      lines.some((line) => {
+        return (
+          line.includes("pr / base") &&
+          line.includes("Building in its own run") &&
+          /localhost:8288\/run\?runID=01TESTINVOKED\d+/.test(line)
+        );
+      }),
+    ).toBe(true);
+  });
+
+  test("one build function serves every job and matrix, however many there are", () => {
+    const { ci } = setup();
+
+    ci.job("plain", async () => {});
+
+    ci.job({ id: "cached", cache: { key: "v1" } }, async () => {});
+
+    ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async () => {});
+
+    const ids = ci
+      .functions()
+      .map((fn) => {
+        return fn.opts.id;
+      })
+      .filter((id) => {
+        return id.startsWith("ci/build");
+      });
+
+    expect(ids.sort()).toEqual(["ci/build", "ci/build/cleanup"]);
+
+    ci.job("another", async () => {});
+
+    expect(
+      ci.functions().filter((fn) => {
+        return fn.opts.id === "ci/build";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("a build of a job the worker doesn't know fails without retrying, naming it", async () => {
+    const { ci } = setup();
+
+    ci.job("known", async () => {});
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const result = await runFunction(build as NonNullable<typeof build>, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          jobId: "gone",
+          ownKey: "k",
+          cacheKey: "ci/pr:7/gone/k",
+          rootRunId: "01ROOT",
+          parent: {
+            runId: "01ROOT",
+            pipelineId: "pr",
+            jobPath: "gone",
+            trigger: "manual",
+          },
+        },
+      },
+    });
+
+    expect(result.type).toBe("function-rejected");
+
+    expect(result.type === "function-rejected" && result.error).toMatchObject({
+      name: "NonRetriableError",
+      message: expect.stringMatching(/No job with the ID "gone".*out of date/),
+    });
+  });
+
+  test("a cached matrix combination is built by its matrix's function", async () => {
+    const { api, ci } = setup();
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] }, cache: { key: "m1" } },
+      async ({ node }) => {
+        await $`fnm use ${node}`;
+      },
+    );
+
+    const names = ci
+      .functions()
+      .map((fn) => {
+        return fn.opts.id;
+      })
+      .filter((id) => {
+        return id === "ci/build";
+      });
+
+    expect(names).toEqual(["ci/build"]);
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await compat();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv[0] === "fnm";
+      }),
+    ).toHaveLength(2);
+  });
+});
+
 describe("run snapshot cleanup", () => {
   const cleanupSteps = (stepIds: string[]) => {
     return stepIds.filter((id) => {
@@ -3258,37 +4670,6 @@ describe("run snapshot cleanup", () => {
     expect(deletedBy(second)).toHaveLength(0);
   });
 
-  test("only the run's own snapshots go when a cached job's sits beside them", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup({ api });
-
-    const base = ci.job("base", async () => {
-      await $`pnpm install`;
-    });
-
-    const cached = ci.job(
-      { id: "cached", from: base, cache: { key: "v1" } },
-      async () => {
-        await $`pnpm build`;
-      },
-    );
-
-    const test = ci.job({ id: "test", from: cached }, async () => {
-      await $`pnpm test`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(result.type).toBe("function-resolved");
-    // `base`'s is deleted; `cached`'s is the cache entry.
-    expect(api.snapshots.size).toBe(1);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
-  });
-
   test("a snapshot that lost a name race is adopted and kept", async () => {
     const api = createFakeSandboxApi();
 
@@ -3314,6 +4695,100 @@ describe("run snapshot cleanup", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(namedSnapshots(api)).toHaveLength(0);
+    expect(api.snapshots.size).toBe(0);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  test("a build run hands up its run-only snapshots, including a cached job's below an uncached one", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup({ api });
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const cached = ci.job(
+      { id: "cached", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const test = ci.job({ id: "test", from: cached }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    // `base`'s was taken in the build run and handed up, so the pipeline
+    // deletes it. `cached` is below an uncached job, so its snapshot is run-only
+    // too, rather than a named cache snapshot nothing could ever find again.
+    expect(namedSnapshots(api)).toEqual([]);
+    expect(api.snapshots.size).toBe(0);
+    expect(deletedBy(result)).toHaveLength(2);
+  });
+
+  test("a build run doesn't delete the named snapshot it built", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup({ api });
+
+    let namedDuringRun: string[] = [];
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+
+      namedDuringRun = namedSnapshots(api);
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(namedDuringRun).toHaveLength(1);
+    expect(namedSnapshots(api)).toEqual(namedDuringRun);
+    expect(deletedBy(result)).toHaveLength(0);
+  });
+
+  test("a build run's unnamed fallback is left for the invoking run to delete", async () => {
+    const api = createFakeSandboxApi();
+
+    api.withoutSnapshotNames();
+
+    const { ci } = setup({ api });
+
+    let duringRun = 0;
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await $`pnpm lint`;
+
+      duringRun = Math.max(duringRun, api.snapshots.size);
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    // The build run's own cleanup left it, so `lint` could start from it.
+    expect(duringRun).toBe(1);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
@@ -3398,7 +4873,7 @@ describe("run snapshot cleanup", () => {
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ snapshotId: expect.any(String) }),
-      expect.stringContaining("Couldn't delete a snapshot"),
+      expect.any(String),
     );
   });
 

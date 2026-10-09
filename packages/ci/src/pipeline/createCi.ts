@@ -1,13 +1,14 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
  * pipeline, job and matrix definitions to a shared set of internals (checks,
- * GitHub provider).
+ * the cache build function, GitHub provider).
  *
  * @module
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Inngest, InngestFunction } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
 import { consoleReporter } from "../github/auth.ts";
 import type { CheckSink } from "../github/checks.ts";
@@ -33,12 +34,18 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
 import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
-import { cacheRefreshFunctions, definePipeline } from "./pipeline.ts";
+import {
+  cacheRefreshFunctions,
+  cleanupFunction,
+  definePipeline,
+} from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
 
 export interface CiOptions {
   /**
@@ -92,7 +99,24 @@ export interface Ci {
    *   await $`fnm use ${node}`;
    * });
    * ```
+   *
+   * Give it an `input` schema to validate the input:
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
    */
+  job<TSchema extends StandardSchemaV1>(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>> & {
+      input: TSchema;
+    },
+    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>>;
   job<TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
     handler: (input: TInput) => Promise<void>,
@@ -193,7 +217,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+  const matrices = new Map<string, Matrix<MatrixAxes>>();
   const hooks = noopHooks;
+  let buildFunction: InngestFunction.Any | undefined;
 
   const internals: CiInternals = {
     client,
@@ -204,6 +230,18 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     ),
     hooks,
     jobs,
+    // One build function for every job and matrix, made when first needed
+    // so a pipeline can invoke it whether or not `functions()` has run.
+    cacheBuild: () => {
+      buildFunction ??= cacheBuildFunction({
+        client,
+        internals,
+        jobs,
+        matrices,
+      });
+
+      return buildFunction;
+    },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
@@ -248,7 +286,19 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     }) as any,
 
     matrix: (config, handler) => {
-      return createMatrix(ci, config, handler);
+      // Inside a run, a matrix is rebuilt per call, so the same ID again is
+      // expected, as it is for jobs.
+      if (matrices.has(config.id) && !getRunScope()) {
+        throw new CiUsageError(
+          `Matrix IDs must be unique per app, and "${config.id}" is already defined.`,
+        );
+      }
+
+      const matrix = createMatrix(ci, config, handler);
+
+      matrices.set(config.id, matrix as Matrix<MatrixAxes>);
+
+      return matrix;
     },
 
     manual: (opts) => {
@@ -266,6 +316,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return [
         ...pipelines,
         ...generated,
+        // Any job can be started from, so one function builds them all.
+        internals.cacheBuild(),
+        cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
         ...cacheRefreshFunctions({
           client,
           internals,

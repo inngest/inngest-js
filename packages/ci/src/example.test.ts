@@ -222,8 +222,8 @@ describe("the example's pr pipeline", () => {
     expect(seen.testedAgainst).toBe("https://preview.example.dev");
     expect(deploys()).toBe(2);
 
-    // One machine for setup, and one clone each for the jobs that start from
-    // it. `deploy` never gets one.
+    // One machine for setup, built in its own run, and one clone each for the
+    // jobs that start from it. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
 
     expect(
@@ -231,7 +231,7 @@ describe("the example's pr pipeline", () => {
         return machine.name;
       }),
     ).toEqual([
-      "ci-01TESTRUN-setup",
+      expect.stringMatching(/^ci-01TESTINVOKED\d+-setup$/),
       "ci-01TESTRUN-lint",
       "ci-01TESTRUN-test",
       "ci-01TESTRUN-compat-node-20",
@@ -263,8 +263,9 @@ describe("the example's pr pipeline", () => {
         return `${entry.name}: ${entry.conclusion}`;
       });
 
+    // `setup` is only started from, so it is built in a run of its own and
+    // has no check.
     expect(completed).toEqual([
-      "pr / setup: success",
       "pr / lint: success",
       "pr / test: success",
       "pr / compat (node:20): success",

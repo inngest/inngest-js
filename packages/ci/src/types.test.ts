@@ -277,7 +277,7 @@ describe("jobs infer their input", () => {
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input", async (node: string) => {
+    const job = ci.job("with-input-inferred", async (node: string) => {
       await $`fnm use ${node}`;
     });
 
@@ -339,7 +339,7 @@ describe("jobs infer their input", () => {
     });
 
     // @ts-expect-error config objects are held to the same rule
-    ci.job({ id: "cached", cache: { key: "v1" } }, async () => {
+    ci.job({ id: "cached-built", cache: { key: "v1" } }, async () => {
       return { built: true };
     });
   });
@@ -358,7 +358,7 @@ describe("jobs infer their input", () => {
   });
 
   test("a job with no input takes no argument", () => {
-    const job = ci.job("plain", async () => {
+    const job = ci.job("plain-no-argument", async () => {
       await $`pnpm test`;
     });
 
@@ -367,6 +367,59 @@ describe("jobs infer their input", () => {
       // @ts-expect-error there's no input to give it
       await job("nope");
     });
+  });
+});
+
+describe("a job's input schema types its input", () => {
+  /** What a schema with a default looks like: optional going in, there coming out. */
+  const input: StandardSchemaV1<
+    { target: "web" | "api"; minify?: boolean },
+    { target: "web" | "api"; minify: boolean }
+  > = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: (value) => {
+        return { value: value as { target: "web" | "api"; minify: boolean } };
+      },
+    },
+  };
+
+  test("the handler gets the schema's output", () => {
+    ci.job({ id: "build", input }, async (value) => {
+      expectTypeOf(value).toEqualTypeOf<{
+        target: "web" | "api";
+        minify: boolean;
+      }>();
+    });
+  });
+
+  test("the caller gives the schema's input", () => {
+    const job = ci.job({ id: "build-called", input }, async ({ target }) => {
+      await $`pnpm build --target ${target}`;
+    });
+
+    expectTypeOf(job).parameter(0).toEqualTypeOf<{
+      target: "web" | "api";
+      minify?: boolean;
+    }>();
+    expectTypeOf(job).returns.resolves.toBeVoid();
+
+    types(async () => {
+      await job({ target: "web" });
+      // @ts-expect-error the target must be one of the enum
+      await job({ target: "mars" });
+      // @ts-expect-error there's an input to give it
+      await job();
+    });
+  });
+
+  test("a job config without a schema still infers from the handler", () => {
+    const job = ci.job({ id: "no-schema" }, async (node: string) => {
+      await $`fnm use ${node}`;
+    });
+
+    expectTypeOf(job).parameter(0).toBeString();
   });
 });
 
@@ -433,7 +486,7 @@ describe("matrices keep their literal values", () => {
   test("combinations are exact", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-1",
         axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
       },
       async (combo) => {
@@ -445,7 +498,7 @@ describe("matrices keep their literal values", () => {
 
   test("the matrix itself is typed", () => {
     const matrix = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+      { id: "compat-2", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -459,7 +512,7 @@ describe("matrices keep their literal values", () => {
 
   test("running part of a matrix is checked", () => {
     const matrix = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+      { id: "compat-3", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -480,7 +533,7 @@ describe("matrices keep their literal values", () => {
   test("exclude and include are checked against the axes", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-4",
         axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
         exclude: [{ node: "20", db: "postgres" }],
         include: [{ node: "22", db: "sqlite" }],
@@ -506,7 +559,7 @@ describe("matrices keep their literal values", () => {
   test("per-combination machine and cache see the combination", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-5",
         axes: { node: ["20", "22"] },
         machine: (combo) => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
@@ -524,10 +577,13 @@ describe("matrices keep their literal values", () => {
   });
 
   test("a matrix handler that returns a value is a type error", () => {
-    // @ts-expect-error matrices have no return value
-    ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async (combo) => {
-      return combo.node;
-    });
+    ci.matrix(
+      { id: "compat-6", axes: { node: ["20", "22"] } },
+      // @ts-expect-error matrices have no return value
+      async (combo) => {
+        return combo.node;
+      },
+    );
   });
 });
 
