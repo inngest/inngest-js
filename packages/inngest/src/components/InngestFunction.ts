@@ -662,8 +662,11 @@ export namespace InngestFunction {
        * Determines how to handle new runs when one is already active for the same key.
        * - `"skip"` skips the new run.
        * - `"cancel"` cancels the existing run and starts the new one.
+       * - `"join"` skips the new run like `"skip"`, but when the new run was
+       *   started by `step.invoke()`, the invoking run resolves with the active
+       *   run's result (or error) instead of waiting for its invoke to time out.
        */
-      mode: "skip" | "cancel";
+      mode: "skip" | "cancel" | "join";| "cancel";
     };
 
     cancelOn?: Cancellation[];
