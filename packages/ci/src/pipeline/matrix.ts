@@ -15,19 +15,34 @@ import { countApi, matrixOriginKey } from "./scope.ts";
  */
 export const runCombosKey = Symbol("inngest/ci.matrixCombos");
 
+/**
+ * A string that is the same for equal values however they were built, with
+ * object keys in sorted order. A combination that went through an invoke has
+ * the same values as the original, but never the same object references.
+ */
+const stableKey = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableKey).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => {
+        return `${JSON.stringify(key)}:${stableKey((value as Record<string, unknown>)[key])}`;
+      })
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value) ?? "undefined";
+};
+
 /** Whether two combinations have the same axes and values. */
-const sameCombo = (
+export const sameCombo = (
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): boolean => {
-  const keys = Object.keys(a);
-
-  return (
-    keys.length === Object.keys(b).length &&
-    keys.every((key) => {
-      return a[key] === b[key];
-    })
-  );
+  return stableKey(a) === stableKey(b);
 };
 
 /**
