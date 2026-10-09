@@ -232,23 +232,29 @@ const baseOf = async (
  * The first job above `job` in its chain of `from` parents that has no cache,
  * if there is one. A job without a cache is built fresh in every run, so every
  * cached job below it gets a new name each run and is never reused.
+ *
+ * A chain that comes back on itself stops the walk. Resolving the chain fails
+ * on it with a message of its own.
  */
 const uncachedAncestorOf = async (
   run: CiRunScope,
   job: Parent,
 ): Promise<string | undefined> => {
+  const seen = new Set([job.config.id]);
   let current = job;
 
   while (true) {
     const named = parentOf(run, current.config, current.input);
 
-    if (!named) {
+    if (!named || seen.has(named.config.id)) {
       return undefined;
     }
 
     if (!named.config.cache) {
       return named.config.id;
     }
+
+    seen.add(named.config.id);
 
     current = {
       config: named.config,
