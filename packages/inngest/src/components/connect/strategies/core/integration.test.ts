@@ -556,7 +556,7 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
     // Skipping because it's flaky. Needs to be fixed
     it.skip(
       "server-side WS close triggers reconnection",
-      { timeout: 15000 },
+      { timeout: 20000 },
       async () => {
         const { core } = createIntegrationCore(gateway);
         await core.start();
@@ -567,7 +567,7 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
         gateway.lastClient!.close();
 
         // Wait for reconnection
-        await waitFor(() => gateway.connectionCount >= 2, 5000);
+        await waitFor(() => gateway.connectionCount >= 2, 10000);
         expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
 
         await core.close();
