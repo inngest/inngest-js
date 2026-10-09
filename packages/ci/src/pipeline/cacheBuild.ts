@@ -60,6 +60,13 @@ export interface CacheBuildData extends Record<string, unknown> {
    * build never reuses it.
    */
   exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /**
+   * Take the snapshot without the name, because another build may still hold
+   * it. The invoking run starts its jobs from it and deletes it at its end.
+   */
+  unnamed?: boolean;
   /**
    * What the job starts from, as the invoking run found it. The job's name was
    * worked out from this snapshot, so the build starts from it rather than
