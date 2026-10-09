@@ -1,11 +1,12 @@
 /**
  * Starting a job from its `from` parent's machine: working out what `from`
- * names, and starting the job from a snapshot of the parent's, plus the
+ * names, getting the parent's snapshot, and starting the job from it, plus the
  * fallback that re-runs the parent's handler when no snapshot is available.
  *
  * @module
  */
 
+import type { BaseIdentity } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { joinJob } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
@@ -93,41 +94,59 @@ export const parentOf = (
 };
 
 /**
- * Start this job on a copy of its parent's machine, before its handler runs.
+ * Get the parent's machine to copy: join its shared run, or start it, and
+ * snapshot it. The parent runs once however many jobs start from it, and if
+ * it's also called directly, that run is the one used.
  *
- * The parent runs once however many jobs start from it, and if it's also
- * called directly, the job uses that run instead of starting another. The copy
- * is made when this job runs its first command, so a job that starts from
- * another and then waits doesn't pay for a machine while it waits.
+ * What comes back is what a cached job's name is built from, so a parent with
+ * a new snapshot gives every job below it a new name.
  */
-export const startFrom = async (
+export const parentSnapshot = async (
   scope: CiJobScope,
   parent: Parent,
-): Promise<void> => {
+): Promise<BaseIdentity> => {
   const { run } = scope;
   const { id } = parent.config;
-  const { input } = parent;
 
   countApi("from");
 
   scope.fromJobIds.push(id);
+
+  run.ci.hooks.jobFrom(scope, id);
 
   const children = run.fromChildren.get(id) ?? new Set<string>();
 
   children.add(scope.jobPath);
   run.fromChildren.set(id, children);
 
-  if (input !== undefined) {
-    scope.fromInputs[id] = input;
-  }
-
-  await joinJob({ id, input });
+  await joinJob({ id, input: parent.input });
 
   const snapshotId = await snapshotJob(run, id);
 
-  if (snapshotId) {
-    scope.fromSnapshotId = snapshotId;
-  } else if (run.machines.has(id) || run.cacheEntries.has(id)) {
+  return { jobId: id, ...(snapshotId ? { snapshotId } : {}) };
+};
+
+/**
+ * Start this job on a copy of its parent's machine, before its handler runs.
+ * The copy is made when this job runs its first command, so a job that starts
+ * from another and then waits doesn't pay for a machine while it waits.
+ */
+export const startFrom = async (
+  scope: CiJobScope,
+  parent: Parent,
+  /** The parent's snapshot, from `parentSnapshot`. */
+  base: BaseIdentity,
+): Promise<void> => {
+  const { run } = scope;
+  const { id } = parent.config;
+
+  if (base.snapshotId) {
+    scope.fromSnapshotId = base.snapshotId;
+
+    scope.rebuildParent = () => {
+      return rerunOnThisMachine(scope, parent);
+    };
+  } else if (run.machines.has(id) || run.cachedSnapshots.has(id)) {
     await rerunOnThisMachine(scope, parent);
   }
 };
@@ -158,11 +177,16 @@ const rerunOnThisMachine = async (
   const grandparent = parentOf(run, parent.config, parent.input);
 
   // Before the machine exists, it can still start from the grandparent's
-  // snapshot. After, the grandparent has to run here too.
+  // snapshot. After, as when a snapshot wouldn't start, the grandparent has to
+  // run here too.
   if (grandparent && scope.machine) {
     await rerunOnThisMachine(scope, grandparent);
   } else if (grandparent) {
-    await startFrom(scope, grandparent);
+    await startFrom(
+      scope,
+      grandparent,
+      await parentSnapshot(scope, grandparent),
+    );
   }
 
   await registered.handler(parent.input);

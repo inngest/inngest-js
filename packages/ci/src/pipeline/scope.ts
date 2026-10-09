@@ -8,15 +8,16 @@
 import type { GetStepTools, Inngest } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
+import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type {
-  CacheEntry,
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
   MachineConfig,
   RepoContext,
 } from "../types.ts";
+import type { CiHooks } from "./hooks.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -66,9 +67,7 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  // biome-ignore lint/suspicious/noExplicitAny: CacheStore
-  cacheStore: any;
-  /** Every job defined on the client, so a cache key can look up its parents. */
+  /** Every job defined on the client, so a job's `from` can find its parent. */
   jobs: Map<
     string,
     {
@@ -79,6 +78,8 @@ export interface CiInternals {
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
+  /** What the run tells a tool that watches it. Does nothing by default. */
+  hooks: CiHooks;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   isDev: () => boolean;
@@ -145,8 +146,8 @@ export interface CiRunScope {
    * from here, and one it only restored is never added.
    */
   createdSnapshots: Set<string>;
-  /** Cache entries resolved this run, keyed by job path. */
-  cacheEntries: Map<string, CacheEntry | undefined>;
+  /** Cached snapshots found or taken this run, keyed by job path. */
+  cachedSnapshots: Map<string, CachedSnapshot>;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
@@ -206,9 +207,18 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
+  /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
+  rebuildParent?: () => Promise<void>;
+  /**
+   * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
+   * has to be brought to where the snapshot would have been.
+   */
+  restoreFallback?: () => Promise<void>;
+  /** What the job's first machine is for, shown while it starts. */
+  startNote?: string;
+  /** The one run of `restoreFallback`, which every other command waits on. */
+  fallbackRan?: Promise<void>;
   fromJobIds: string[];
-  /** The input each `from` parent was called with, by job ID. */
-  fromInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];
@@ -224,6 +234,8 @@ export interface CiJobScope {
 interface CiStore {
   run?: CiRunScope;
   job?: CiJobScope;
+  /** The job whose `restoreFallback` is running here. Its commands don't wait on it. */
+  restoring?: CiJobScope;
 }
 
 type CiAls = {
@@ -276,6 +288,11 @@ export const getRunScope = (): CiRunScope | undefined => {
 };
 export const getJobScope = (): CiJobScope | undefined => {
   return getStore()?.job;
+};
+
+/** Whether this code is part of `scope`'s `restoreFallback`. */
+export const isRestoring = (scope: CiJobScope): boolean => {
+  return getStore()?.restoring === scope;
 };
 
 /**
