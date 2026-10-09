@@ -521,7 +521,7 @@ describe("matrices keep their literal values", () => {
   test("combinations are exact", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-1",
         axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
       },
       async (combo) => {
@@ -533,7 +533,7 @@ describe("matrices keep their literal values", () => {
 
   test("the matrix itself is typed", () => {
     const matrix = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+      { id: "compat-2", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -547,7 +547,7 @@ describe("matrices keep their literal values", () => {
 
   test("running part of a matrix is checked", () => {
     const matrix = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+      { id: "compat-3", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -568,7 +568,7 @@ describe("matrices keep their literal values", () => {
   test("exclude and include are checked against the axes", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-4",
         axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
         exclude: [{ node: "20", db: "postgres" }],
         include: [{ node: "22", db: "sqlite" }],
@@ -594,7 +594,7 @@ describe("matrices keep their literal values", () => {
   test("per-combination machine and cache see the combination", () => {
     ci.matrix(
       {
-        id: "compat",
+        id: "compat-5",
         axes: { node: ["20", "22"] },
         machine: (combo) => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
@@ -612,10 +612,13 @@ describe("matrices keep their literal values", () => {
   });
 
   test("a matrix handler that returns a value is a type error", () => {
-    // @ts-expect-error matrices have no return value
-    ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async (combo) => {
-      return combo.node;
-    });
+    ci.matrix(
+      { id: "compat-6", axes: { node: ["20", "22"] } },
+      // @ts-expect-error matrices have no return value
+      async (combo) => {
+        return combo.node;
+      },
+    );
   });
 });
 
