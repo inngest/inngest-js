@@ -254,3 +254,40 @@ export const sandboxAccessProblemOf = async (
 
   return undefined;
 };
+
+/** A run that hasn't ended, with the function and events it came from. */
+export interface ActiveRun {
+  id: string;
+  functionId: string;
+  eventIds: string[];
+}
+
+/** Every run that hasn't ended yet. */
+export const listActiveRuns = async (
+  devServerUrl: string,
+): Promise<ActiveRun[]> => {
+  const response = await request(`${devServerUrl}/v2/runs`);
+
+  if (!response.ok) {
+    throw new Error(`GET /v2/runs answered ${response.status}`);
+  }
+
+  const body = (await response.json()) as {
+    data?: (RunBody & {
+      function: { id: string };
+      trigger?: { eventIds?: string[] };
+    })[];
+  };
+
+  return (body.data ?? [])
+    .filter((run) => {
+      return !terminalStatuses[run.status];
+    })
+    .map((run) => {
+      return {
+        id: run.id,
+        functionId: run.function.id,
+        eventIds: run.trigger?.eventIds ?? [],
+      };
+    });
+};

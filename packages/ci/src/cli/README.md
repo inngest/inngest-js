@@ -19,6 +19,7 @@ The `inngest-ci` command: runs pipelines and jobs of the user's app locally, or 
 - `prompter.ts`: the questions the session asks at a terminal (`Prompter`), which the interactive renderer answers.
 - `prompt/`: the picker and the prompts, as pure state plus the lines that draw them.
 - `runs.ts`: matching messages to the several runs a session sends, and combining their conclusions.
+- `strays.ts`: on the way out, cancelling runs the session's events started but it did not watch, and waiting a bounded time for their cleanup.
 - `openRun.ts`: `inngest-ci open`, a Dev Server alone on the database of the session that ran the run.
 - `session.ts`: the flow: resolve the config (setup included), boot, choose, send every event, watch every run, and offer to go again. When the config turns out wrong, it offers to run setup again and starts over with a `restart` event. Emits `SessionEvent`s (`events.ts`) and never throws; every session ends with a `done` event.
 - `stateDir.ts`: where session state files live (`INNGEST_CI_STATE_DIR`, XDG, platform default), pruning of old ones together with their Dev Server databases, and finding the session that ran a run.

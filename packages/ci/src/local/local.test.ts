@@ -19,7 +19,12 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import type { LocalMessage, RunJobEventData } from "./protocol.ts";
-import { localEnv, runJobEvent, runJobFunctionId } from "./protocol.ts";
+import {
+  localEnv,
+  localTargetKey,
+  runJobEvent,
+  runJobFunctionId,
+} from "./protocol.ts";
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 
@@ -1033,5 +1038,67 @@ describe("a cached job built in its own run", () => {
         );
       }),
     ).toBe(true);
+  });
+});
+
+describe("a local run's target", () => {
+  const twoPipelines = () => {
+    const { ci } = setup();
+    const ran = new Set<string>();
+
+    const pr = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ran.add("pr");
+    });
+
+    const docs = ci.pipeline({ id: "docs", on: prTrigger }, async () => {
+      ran.add("docs");
+    });
+
+    return { ran, pr, docs };
+  };
+
+  const eventFor = (target: string) => {
+    return {
+      name: "github/pull_request.opened",
+      data: { [localTargetKey]: target },
+    };
+  };
+
+  test("only the pipeline the event names runs", async () => {
+    vi.stubEnv(localEnv.local, "1");
+
+    const { ran, pr, docs } = twoPipelines();
+
+    const skipped = await runFunction(pr, { event: eventFor("docs") });
+    const target = await runFunction(docs, { event: eventFor("docs") });
+
+    expect(skipped).toMatchObject({
+      type: "function-resolved",
+      data: { skipped: "not the target" },
+    });
+
+    expect(Object.keys(skipped.steps ?? {})).toEqual([]);
+    expect(target.type).toBe("function-resolved");
+    expect([...ran]).toEqual(["docs"]);
+  });
+
+  test("every pipeline runs when the event names none", async () => {
+    vi.stubEnv(localEnv.local, "1");
+
+    const { ran, pr, docs } = twoPipelines();
+    const event = { name: "github/pull_request.opened", data: {} };
+
+    await runFunction(pr, { event });
+    await runFunction(docs, { event });
+
+    expect([...ran]).toEqual(["pr", "docs"]);
+  });
+
+  test("outside a local run the target is ignored", async () => {
+    const { ran, pr } = twoPipelines();
+
+    await runFunction(pr, { event: eventFor("docs") });
+
+    expect([...ran]).toEqual(["pr"]);
   });
 });

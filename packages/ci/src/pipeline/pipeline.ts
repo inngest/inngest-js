@@ -29,6 +29,8 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
+import { localTargetKey } from "../local/protocol.ts";
+import { isLocal } from "../local/reporter.ts";
 import {
   deleteRunSnapshots,
   destroyOrphans,
@@ -290,6 +292,19 @@ const runPipelineAttempt = async ({
   ctx,
   build,
 }: RunPipelineArgs): Promise<unknown> => {
+  // The CLI's one event can start every pipeline on its trigger, but it asked
+  // for one. The others return before doing anything, so no step runs and no
+  // Sandbox is created.
+  if (!build && isLocal()) {
+    const target = (ctx.event?.data as Record<string, unknown> | undefined)?.[
+      localTargetKey
+    ];
+
+    if (typeof target === "string" && target !== config.id) {
+      return { skipped: "not the target" };
+    }
+  }
+
   await initCiAls();
 
   const asyncCtx = await getAsyncCtx();

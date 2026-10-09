@@ -144,6 +144,7 @@ describe("triggerEvents and matchTrigger", () => {
 describe("buildPipelineEvent", () => {
   test("sends --data on a manual trigger, with the repository", async () => {
     const event = await buildPipelineEvent({
+      pipelineId: "p",
       trigger: "ci/manual.deploy",
       data: { env: "prod" },
       cwd: process.cwd(),
@@ -159,6 +160,7 @@ describe("buildPipelineEvent", () => {
 
   test("builds a push fixture", async () => {
     const event = await buildPipelineEvent({
+      pipelineId: "p",
       trigger: "github/push",
       cwd: process.cwd(),
     });
@@ -170,6 +172,7 @@ describe("buildPipelineEvent", () => {
   test("a comment trigger needs a body", async () => {
     await expect(
       buildPipelineEvent({
+        pipelineId: "p",
         trigger: "github/issue_comment.created",
         cwd: process.cwd(),
       }),
@@ -179,6 +182,7 @@ describe("buildPipelineEvent", () => {
   test("rejects a trigger with no fixture", async () => {
     await expect(
       buildPipelineEvent({
+        pipelineId: "p",
         trigger: "github/merge_group.checks_requested",
         cwd: process.cwd(),
       }),
