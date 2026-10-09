@@ -39,6 +39,7 @@ import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
+import { runCombosKey } from "./matrix.ts";
 import { getRunScope } from "./scope.ts";
 
 /**
@@ -1810,6 +1811,23 @@ describe("matrix", () => {
     expect([...ran]).toEqual(["22"]);
     expect(api.sandboxes.size).toBe(1);
   });
+
+  test("a build asked for a combination the matrix lacks fails instead of passing", async () => {
+    const { ci } = setup();
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] } },
+      async () => {},
+    );
+
+    await expect(
+      (
+        compat as unknown as {
+          [runCombosKey](combos: Record<string, unknown>[]): Promise<void>;
+        }
+      )[runCombosKey]([{ node: "18" }]),
+    ).rejects.toThrow(/No combination/);
+  });
 });
 
 describe("cache", () => {
@@ -2197,6 +2215,131 @@ describe("cache", () => {
     // and the machine that wouldn't start isn't left running.
     expect(api.snapshots.has(stale?.id ?? "")).toBe(false);
     expect(ran(api, "pnpm install")).toBe(2);
+    expect(ran(api, "pnpm lint")).toBe(2);
+
+    expect(
+      [...api.sandboxes.values()].filter((machine) => {
+        return machine.stuck && machine.status !== "TERMINATED";
+      }),
+    ).toEqual([]);
+  });
+
+  test("a cached job's build uses the pipeline's machine", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job({ id: "big", cache: { key: "v1" } }, async () => {
+      await $`pnpm build`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, machine: { vcpu: 4 } },
+        async () => {
+          await job();
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      [...api.sandboxes.values()].map((box) => {
+        return box.vcpu;
+      }),
+    ).toEqual([4]);
+  });
+
+  test("a cached job's input is validated once, however the build is run", async () => {
+    const { ci } = setup();
+    const received = new Set<unknown>();
+
+    // Accepts a string and gives a number, so it rejects its own output.
+    const input = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: (value: unknown) => {
+          return typeof value === "string"
+            ? { value: Number(value) }
+            : { issues: [{ message: "Expected string" }] };
+        },
+      },
+    };
+
+    const job = ci.job(
+      { id: "num", input: input as never, cache: { key: "v1" } },
+      async (value: unknown) => {
+        received.add(value);
+
+        await $`pnpm build`;
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await (job as unknown as (value: string) => Promise<void>)("42");
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect([...received]).toEqual([42]);
+  });
+
+  test("a cached job's summaries reach its own check", async () => {
+    const { ci, reporter } = setup();
+
+    const job = ci.job({ id: "cov", cache: { key: "v1" } }, async () => {
+      await $`pnpm test`;
+      await report.summary("Coverage: **91%**");
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    const completed = reporter.history.find((entry) => {
+      return entry.name === "pr / cov" && entry.status === "completed";
+    });
+
+    expect(completed?.summary).toContain("Coverage: **91%**");
+  });
+
+  test("when the rebuilt snapshot won't start either, the job falls back to a fresh machine", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {
+        await $`pnpm lint`;
+      });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+    };
+
+    await run();
+
+    api.failAllSnapshotStarts();
+
+    const second = await run();
+
+    expect(second.type).toBe("function-resolved");
     expect(ran(api, "pnpm lint")).toBe(2);
 
     expect(

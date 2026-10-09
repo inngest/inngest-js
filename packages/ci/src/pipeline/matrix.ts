@@ -5,6 +5,7 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
 import { checkStaticFrom } from "../machine/from.ts";
 import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
@@ -127,14 +128,20 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
   Object.defineProperties(matrix, {
     id: { value: config.id, enumerable: true },
     [runCombosKey]: {
-      value: (combos: Record<string, unknown>[]) => {
-        return run(
-          expandMatrix(config).filter((combo) => {
-            return combos.some((wanted) => {
-              return sameCombo(wanted, combo);
-            });
-          }),
-        );
+      value: async (combos: Record<string, unknown>[]) => {
+        const matching = expandMatrix(config).filter((combo) => {
+          return combos.some((wanted) => {
+            return sameCombo(wanted, combo);
+          });
+        });
+
+        if (matching.length === 0) {
+          throw new NonRetriableError(
+            `No combination of the matrix "${config.id}" matches the one asked for, so nothing would run. The worker's code may be out of date.`,
+          );
+        }
+
+        return run(matching);
       },
     },
   });
