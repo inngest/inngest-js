@@ -1,6 +1,6 @@
 {
   "name": "@inngest/ci",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inngest Labs: CI pipelines in TypeScript, run by Inngest on Sandboxes",
   "type": "module",
   "bin": {
