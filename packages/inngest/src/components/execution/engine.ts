@@ -68,6 +68,7 @@ import type {
   MetadataOpcode,
   MetadataScope,
   MetadataUpdate,
+  MetadataWriteOptions,
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
@@ -387,13 +388,25 @@ class InngestExecutionEngine
     scope: MetadataScope,
     op: MetadataOpcode,
     values: Record<string, unknown>,
+    { merge = op === "merge" }: MetadataWriteOptions = {},
   ) {
     if (!this.state.metadata) {
       this.state.metadata = new Map();
     }
 
     const updates = this.state.metadata.get(stepId) ?? [];
-    updates.push({ kind, scope, op, values });
+
+    // Keep one update per kind & scope for the step. The server replaces a
+    // kind's values on every write, so merging (`update()`) has to happen
+    // here, in call order, before the op is sent.
+    const existing = updates.find((u) => u.kind === kind && u.scope === scope);
+    if (existing) {
+      existing.op = op;
+      existing.values = merge ? { ...existing.values, ...values } : values;
+    } else {
+      updates.push({ kind, scope, op, values });
+    }
+
     this.state.metadata.set(stepId, updates);
 
     return true;
@@ -1782,7 +1795,7 @@ class InngestExecutionEngine
         this.state.executingStepAIMetadata = undefined;
         const aiValues = aiMetadata && toInngestAIMetadataValues(aiMetadata);
         if (aiValues) {
-          this.addMetadata(id, "inngest.ai", "step", "merge", aiValues);
+          this.addMetadata(id, "inngest.ai", "step", "set", aiValues);
         }
 
         if (store?.execution) {
