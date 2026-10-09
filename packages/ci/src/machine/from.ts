@@ -25,6 +25,7 @@ import {
   lookupParent,
   runTarget,
   warnJustInTime,
+  warnUncachedBase,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { BaseImage } from "../image.ts";
@@ -303,6 +304,16 @@ export const parentBuildOf = async (
 
   assertNoCycle(chain, parent.config.id);
 
+  if (config.cache) {
+    const uncached = parent.config.cache
+      ? await uncachedAncestorOf(run, parent)
+      : parent.config.id;
+
+    if (uncached) {
+      warnUncachedBase(run, config.id, uncached);
+    }
+  }
+
   const given = run.build?.jobId === config.id ? run.build.base : undefined;
 
   return {
@@ -337,10 +348,19 @@ const resolveParent = async (
 
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
+  const uncachedBase = config.cache
+    ? await uncachedAncestorOf(run, parent)
+    : undefined;
+
+  if (uncachedBase) {
+    warnUncachedBase(run, config.id, uncachedBase);
+  }
+
   const { target, hit } = await lookupParent(scope, {
     config,
     input,
     ...(base ? { base: identityOf(base) } : {}),
+    ...(uncachedBase ? { uncachedBase } : {}),
   });
 
   return requestBuild({
@@ -391,6 +411,42 @@ const baseOf = async (
 };
 
 /**
+ * The first job above `job` in its chain of `from` parents that has no cache,
+ * if there is one. A job without a cache is built fresh in every run, so every
+ * cached job below it gets a new name each run and is never reused.
+ *
+ * An image ends the walk: its snapshot is the same in every run. So does a
+ * chain that comes back on itself, which resolving the chain fails on with a
+ * message of its own.
+ */
+const uncachedAncestorOf = async (
+  run: CiRunScope,
+  job: Parent,
+): Promise<string | undefined> => {
+  const seen = new Set([job.config.id]);
+  let current = job;
+
+  while (true) {
+    const named = parentOf(run, current.config, current.input);
+
+    if (!named || isBaseImage(named) || seen.has(named.config.id)) {
+      return undefined;
+    }
+
+    if (!named.config.cache) {
+      return named.config.id;
+    }
+
+    seen.add(named.config.id);
+
+    current = {
+      config: named.config,
+      input: await validateInput(named.config, named.input),
+    };
+  }
+};
+
+/**
  * Find or build a job's snapshot that no job of this run starts from
  * directly: a parent's parent, or a job another app asked for. Its key, lookup
  * and build are steps of their own, made once per run however many ask.
@@ -425,9 +481,16 @@ export const buildBase = (
 
     adoptBuilt(run, result);
 
-    // From the resolved result, so it's the same on every replay.
+    // From the resolved result, so it's the same on every replay. A job below
+    // an uncached one was never going to be reused, and says so instead.
     if (config.cache && !result.reused) {
-      warnJustInTime(run, config);
+      const uncached = await uncachedAncestorOf(run, parent);
+
+      if (uncached) {
+        warnUncachedBase(run, config.id, uncached);
+      } else {
+        warnJustInTime(run, config);
+      }
     }
 
     return result;
