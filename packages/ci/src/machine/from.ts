@@ -23,7 +23,12 @@ import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import { adoptBuilt, invokeBuild, validateInput } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rebuildSuffix, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  countApi,
+  outsideJobs,
+  rebuildSuffix,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -329,7 +334,7 @@ const buildOf = (
     return existing;
   }
 
-  const built = (async () => {
+  const built = outsideJobs(run, async () => {
     const base = await baseOf(run, parent);
 
     const identity = base
@@ -359,7 +364,7 @@ const buildOf = (
     adoptBuilt(run, result);
 
     return result;
-  })();
+  });
 
   run.builds.set(path, built);
 
@@ -472,7 +477,7 @@ const requestRebuild = ({
     return existing;
   }
 
-  const built = (async () => {
+  const built = outsideJobs(run, async () => {
     let unnamed = replacing.unnamed;
 
     // Here, not in each child, so a snapshot that every child found broken is
@@ -513,7 +518,7 @@ const requestRebuild = ({
     adoptBuilt(run, result);
 
     return result;
-  })();
+  });
 
   run.builds.set(path, built);
 

@@ -81,7 +81,7 @@ export const waitForHttp = async (
       return target;
     },
     ["/bin/sh", "-c", script],
-    `waitForHttp ${url}`,
+    { label: `waitForHttp ${url}` },
   ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
 };
 
@@ -125,6 +125,6 @@ export const waitForPort = async (
       return target;
     },
     ["/bin/sh", "-c", script],
-    `waitForPort ${port}`,
+    { label: `waitForPort ${port}` },
   ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
 };

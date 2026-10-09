@@ -7,7 +7,7 @@
 
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
-import { runWithAsyncCtx } from "inngest/experimental";
+import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type {
@@ -19,6 +19,8 @@ import type {
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import type { CiHooks } from "./hooks.ts";
+import { ciSpan, traceName } from "./names.ts";
+import { inSpan } from "./spans.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -510,9 +512,16 @@ export const withScopePreserved = <T extends object>(tools: T): T => {
   return withStepIdPrefix(tools);
 };
 
+/**
+ * Prefix a step's ID with its scope path, and name it by the ID it was given,
+ * since its job's span already shows the rest.
+ */
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {
-    return `${prefix}${scopeSeparator}${idOrOptions}`;
+    return {
+      id: `${prefix}${scopeSeparator}${idOrOptions}`,
+      name: idOrOptions,
+    };
   }
 
   if (
@@ -534,16 +543,56 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
 };
 
 /**
+ * Run `fn` in a job's trace span. The span is top-level wherever the job is
+ * started from, so work on its machine that another job asks for later, like
+ * a snapshot, comes back to it.
+ */
+export const inJobSpan = <R>(
+  run: CiRunScope,
+  jobPath: string,
+  fn: () => R,
+): R => {
+  return runWithAsyncCtx(run.asyncCtx, () => {
+    return inSpan(
+      { id: jobPath, name: traceName.job(run, jobPath), kind: "job" },
+      fn,
+    );
+  });
+};
+
+/**
+ * Run `fn` outside every job's span, wherever it's called from. Jobs that
+ * start from one parent share its build, so the build's steps belong to none
+ * of them, and which one asks first must not decide where they sit in the
+ * trace.
+ */
+export const outsideJobs = <R>(run: CiRunScope, fn: () => R): R => {
+  return runWithAsyncCtx(run.asyncCtx, fn);
+};
+
+/**
+ * Run `fn` in the run's one top-level GitHub span, wherever it's called from.
+ * Reporting isn't a job's own work, so a job's span ends with the job, and a
+ * failed job doesn't end on a green check update.
+ */
+export const inGitHubSpan = <R>(run: CiRunScope, fn: () => R): R => {
+  return runWithAsyncCtx(run.asyncCtx, () => {
+    return inSpan(ciSpan("github", traceName.github), fn);
+  });
+};
+
+/**
  * Run a job handler inside both the CI job scope and a copy of the SDK's async
- * context whose `step` prefixes IDs with the job path.
+ * context whose `step` prefixes IDs with the job path. It copies the context
+ * `inJobSpan` set, so the handler's steps are in the job's span.
  */
 export const runJobBody = async <R>(
   scope: CiJobScope,
   fn: () => Promise<R>,
 ): Promise<R> => {
-  const { asyncCtx } = scope.run;
+  const asyncCtx = await getAsyncCtx();
 
-  if (!asyncCtx.execution) {
+  if (!asyncCtx?.execution) {
     return runInScope({ run: scope.run, job: scope }, fn);
   }
 

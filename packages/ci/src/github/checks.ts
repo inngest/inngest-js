@@ -6,7 +6,9 @@
  */
 
 import { type StepTag, tagStep } from "../pipeline/metadata.ts";
+import { traceName } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
+import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
 import { errorMessage, formatDuration } from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
@@ -225,6 +227,17 @@ export const normaliseAnnotation = (
   };
 };
 
+/** Run a check update as a step in the run's GitHub span. */
+const githubStep = <T>(
+  run: CiRunScope,
+  step: { id: string; name: string },
+  fn: () => Promise<T>,
+): Promise<T> => {
+  return inGitHubSpan(run, () => {
+    return run.step.run(step, fn) as Promise<T>;
+  });
+};
+
 /**
  * Build the reporter used by every pipeline run.
  *
@@ -262,20 +275,17 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     run: CiRunScope,
     key: string,
     name: string,
-    stepId: string,
+    step: { id: string; name: string },
     tag: StepTag,
     metadata?: () => Record<string, unknown>,
   ) => {
-    const result = await run.step.run(
-      { id: stepId, name: stepId },
-      async () => {
-        await tagStep(run, tag, metadata?.());
+    const result = await githubStep(run, step, async () => {
+      await tagStep(run, tag, metadata?.());
 
-        const started = await sink.start({ run, name, ...identity(run, key) });
+      const started = await sink.start({ run, name, ...identity(run, key) });
 
-        return { ...started, startedAt: Date.now() };
-      },
-    );
+      return { ...started, startedAt: Date.now() };
+    });
 
     if (result?.id) {
       checkRunIds.set(idKey(run, key), result.id);
@@ -288,32 +298,29 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     run: CiRunScope,
     key: string,
     name: string,
-    stepId: string,
+    step: { id: string; name: string },
     result: () => CheckResult,
     tag: StepTag,
     metadata?: () => Record<string, unknown>,
   ): Promise<number> => {
-    const endedAt = await run.step.run(
-      { id: stepId, name: stepId },
-      async () => {
-        await tagStep(run, tag, metadata?.());
+    const endedAt = await githubStep(run, step, async () => {
+      await tagStep(run, tag, metadata?.());
 
-        const read = result();
+      const read = result();
 
-        await sink.complete({
-          run,
-          name,
-          ...identity(run, key),
-          conclusion: read.conclusion,
-          title: read.title,
-          summary: truncateSummary(read.summary ?? ""),
-          annotations: (read.annotations ?? []).map(normaliseAnnotation),
-          ...idFor(run, key),
-        });
+      await sink.complete({
+        run,
+        name,
+        ...identity(run, key),
+        conclusion: read.conclusion,
+        title: read.title,
+        summary: truncateSummary(read.summary ?? ""),
+        annotations: (read.annotations ?? []).map(normaliseAnnotation),
+        ...idFor(run, key),
+      });
 
-        return Date.now();
-      },
-    );
+      return Date.now();
+    });
 
     checkRunIds.delete(idKey(run, key));
 
@@ -330,7 +337,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         run,
         "pipeline",
         run.checkName,
-        `github › check:${run.checkName}:start`,
+        {
+          id: `github › check:${run.checkName}:start`,
+          name: traceName.createCheck(run.checkName),
+        },
         { kind: "check" },
         metadata,
       );
@@ -345,7 +355,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         run,
         "pipeline",
         run.checkName,
-        `github › check:${run.checkName}:complete`,
+        {
+          id: `github › check:${run.checkName}:complete`,
+          name: traceName.completeCheck(run.checkName),
+        },
         result,
         { kind: "check" },
         metadata,
@@ -361,7 +374,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         run,
         jobPath,
         jobCheckName(run, jobPath, name),
-        `github › check:${jobPath}:start`,
+        {
+          id: `github › check:${jobPath}:start`,
+          name: traceName.report(jobPath, "started"),
+        },
         { kind: "check", job: jobPath },
       );
     },
@@ -375,7 +391,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         run,
         jobPath,
         jobCheckName(run, jobPath, name),
-        `github › check:${jobPath}:complete`,
+        {
+          id: `github › check:${jobPath}:complete`,
+          name: traceName.report(jobPath, traceName.outcome(result.conclusion)),
+        },
         () => {
           return result;
         },
@@ -394,31 +413,31 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return closing(read());
       }
 
-      const stepId = "github › check:jobs:complete";
+      const step = {
+        id: "github › check:jobs:complete",
+        name: traceName.report("jobs", "ended with the run"),
+      };
 
-      const closed = (await run.step.run(
-        { id: stepId, name: stepId },
-        async () => {
-          await tagStep(run, { kind: "check" });
+      const closed = await githubStep(run, step, async () => {
+        await tagStep(run, { kind: "check" });
 
-          const jobs = read();
+        const jobs = read();
 
-          for (const { jobPath, name, ...result } of jobs) {
-            await sink.complete({
-              run,
-              name: jobCheckName(run, jobPath, name),
-              ...identity(run, jobPath),
-              conclusion: result.conclusion,
-              title: result.title,
-              summary: truncateSummary(result.summary ?? ""),
-              annotations: (result.annotations ?? []).map(normaliseAnnotation),
-              ...idFor(run, jobPath),
-            });
-          }
+        for (const { jobPath, name, ...result } of jobs) {
+          await sink.complete({
+            run,
+            name: jobCheckName(run, jobPath, name),
+            ...identity(run, jobPath),
+            conclusion: result.conclusion,
+            title: result.title,
+            summary: truncateSummary(result.summary ?? ""),
+            annotations: (result.annotations ?? []).map(normaliseAnnotation),
+            ...idFor(run, jobPath),
+          });
+        }
 
-          return closing(jobs);
-        },
-      )) as Array<Omit<ClosingJob, "summary" | "annotations">>;
+        return closing(jobs);
+      });
 
       // Outside the step, so a replay also forgets the IDs its memoized start
       // steps put back.
@@ -439,9 +458,15 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobPath === undefined
           ? run.checkName
           : jobCheckName(run, jobPath, name);
-      const stepId = `github › check:${key}:retry:${run.attempt}`;
+      const step = {
+        id: `github › check:${key}:retry:${run.attempt}`,
+        name: traceName.report(
+          jobPath ?? run.checkName,
+          traceName.retrying(run.attempt + 2, run.maxAttempts),
+        ),
+      };
 
-      await run.step.run({ id: stepId, name: stepId }, async () => {
+      await githubStep(run, step, async () => {
         await tagStep(
           run,
           jobPath === undefined
@@ -465,9 +490,15 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return;
       }
 
-      const stepId = `github › check:jobs:retry:${run.attempt}`;
+      const step = {
+        id: `github › check:jobs:retry:${run.attempt}`,
+        name: traceName.report(
+          "jobs",
+          traceName.retrying(run.attempt + 2, run.maxAttempts),
+        ),
+      };
 
-      await run.step.run({ id: stepId, name: stepId }, async () => {
+      await githubStep(run, step, async () => {
         await tagStep(run, { kind: "check" });
 
         for (const { jobPath, name } of read()) {
@@ -490,10 +521,11 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       const message = errorMessage(error).split("\n")[0];
 
-      await run.step.run(
+      await githubStep(
+        run,
         {
           id: `github › check:${jobPath}:attempt:${attempt}`,
-          name: `check:${jobPath}:attempt:${attempt}`,
+          name: traceName.report(jobPath, traceName.retrying(attempt + 1, of)),
         },
         async () => {
           await sink.update?.({
@@ -527,9 +559,12 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       }
 
       const { parent } = run.build;
-      const stepId = `github › check:${parent.jobPath}:building`;
+      const step = {
+        id: `github › check:${parent.jobPath}:building`,
+        name: traceName.report(parent.jobPath, "building"),
+      };
 
-      await run.step.run({ id: stepId, name: stepId }, async () => {
+      await githubStep(run, step, async () => {
         await sink.update?.({
           // The check belongs to the pipeline that invoked this run.
           run: { ...run, pipelineId: parent.pipelineId },

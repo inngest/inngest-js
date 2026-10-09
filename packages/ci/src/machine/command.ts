@@ -6,12 +6,14 @@
  * @module
  */
 
+import { NonRetriableError, StepError } from "inngest";
 import { getSandboxError } from "inngest/experimental";
 import {
   CiUsageError,
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
+import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   countApi,
@@ -20,6 +22,7 @@ import {
   requireJobScope,
   scopeSeparator,
 } from "../pipeline/scope.ts";
+import { inSpan } from "../pipeline/spans.ts";
 import type {
   BackgroundProcess,
   Command,
@@ -35,7 +38,7 @@ import {
   tail,
   truncateLabel,
 } from "../util.ts";
-import { ensureMachine } from "./machine.ts";
+import { ensureMachine, inMachineSpan } from "./machine.ts";
 
 /**
  * Captured `commands.run` is capped at five minutes, so anything longer runs
@@ -61,6 +64,9 @@ type SandboxProcess = any;
 
 interface CommandState {
   argv: string[];
+  /** What the command reads as, when that isn't its argv, as for `$.sh`. */
+  text?: string;
+  /** A name for the command, from `.as()` or the helper that made it. */
   label?: string;
   env: Record<string, string>;
   cwd?: string;
@@ -165,11 +171,12 @@ export const buildShellString = (
   return out;
 };
 
-/** The id and name of a step nested under `stepId`. */
-const subStep = (stepId: string, suffix: string) => {
-  const id = `${stepId}${scopeSeparator}${suffix}`;
-
-  return { id, name: id };
+/**
+ * A step nested under `stepId`, named for what it does. It's CI's work: the
+ * command's span is yours, but how CI runs it isn't.
+ */
+const subStep = (stepId: string, suffix: string, name: string) => {
+  return ciStep(`${stepId}${scopeSeparator}${suffix}`, name);
 };
 
 class CommandBuilder implements Command {
@@ -261,11 +268,10 @@ class CommandBuilder implements Command {
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
-    const process = await startProcess(
-      machine,
-      stepId,
-      this.spawnOptions(scope),
-    );
+    // Each call back into the process re-enters the command's span.
+    const process = await this.inSpan(scope, stepId, () => {
+      return startProcess(machine, stepId, this.spawnOptions(scope));
+    });
 
     const argv = this.state.argv;
     const secrets = this.secretValues(scope);
@@ -275,25 +281,36 @@ class CommandBuilder implements Command {
 
     return {
       id: process.id,
-      exited: async () => {
-        const polled = await pollUntilTerminal({
-          scope,
-          machine,
-          process,
-          stepId,
-          nextWait,
-        });
+      exited: () => {
+        return this.inSpan(scope, stepId, async () => {
+          const polled = await pollUntilTerminal({
+            scope,
+            machine,
+            process,
+            stepId,
+            nextWait,
+          });
 
-        return readResult({ process: polled.process, stepId, argv, secrets });
+          return readResult({ process: polled.process, stepId, argv, secrets });
+        });
       },
       kill: async (signal = 15) => {
-        await process.signal(subStep(stepId, "kill"), { signal });
+        await this.inSpan(scope, stepId, () => {
+          return process.signal(
+            subStep(stepId, "kill", traceName.stopProcess),
+            { signal },
+          );
+        });
       },
       output: async (opts) => {
-        const output = await process.getOutput(
-          subStep(stepId, `output #${nextWait()}`),
-          { tailBytes: opts?.tailBytes ?? outputTailBytes },
-        );
+        const output = await this.inSpan(scope, stepId, () => {
+          return process.getOutput(
+            subStep(stepId, `output #${nextWait()}`, traceName.readOutput),
+            {
+              tailBytes: opts?.tailBytes ?? outputTailBytes,
+            },
+          );
+        });
 
         const decoded = decodeChunks(output);
 
@@ -313,8 +330,14 @@ class CommandBuilder implements Command {
     return this.started;
   }
 
+  /** What the command reads as: its `$.sh` script, or its arguments. */
+  private commandText(): string {
+    return this.state.text ?? truncateLabel(this.state.argv.join(" "));
+  }
+
+  /** What the command's step IDs are built from. */
   private labelText(): string {
-    return this.state.label ?? truncateLabel(this.state.argv.join(" "));
+    return this.state.label ?? this.commandText();
   }
 
   private stepId(scope: CiJobScope): string {
@@ -348,6 +371,22 @@ class CommandBuilder implements Command {
     });
   }
 
+  /** Run `fn` in the command's span, in its machine's span if it's an extra. */
+  private inSpan<T>(scope: CiJobScope, stepId: string, fn: () => T): T {
+    const span = {
+      id: stepId,
+      name: traceName.command(this.commandText(), this.state.label),
+    };
+
+    return inMachineSpan(scope, () => {
+      return inSpan(span, fn);
+    });
+  }
+
+  /**
+   * Each attempt runs in the command's span, and in a span of its own when the
+   * command has retries. A failed attempt's span ends in its failure.
+   */
   private async runWithRetries(): Promise<CommandResult> {
     const scope = this.getScope();
     const stepId = this.stepId(scope);
@@ -361,7 +400,24 @@ class CommandBuilder implements Command {
 
       scope.run.ci.hooks.commandStarted(scope, attemptInfo);
 
-      const result = await this.runOnce(scope, attemptId);
+      const runAttempt = async () => {
+        const result = await this.runOnce(scope, attemptId);
+
+        if (result.exitCode !== 0 && !this.state.nothrow) {
+          await recordFailure(scope, attemptId, result.exitCode);
+        }
+
+        return result;
+      };
+
+      const result = await this.inSpan(scope, stepId, () => {
+        return attempts === 1
+          ? runAttempt()
+          : inSpan(
+              ciSpan(`attempt-${attempt}`, traceName.attempt(attempt)),
+              runAttempt,
+            );
+      });
 
       scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);
 
@@ -422,7 +478,7 @@ class CommandBuilder implements Command {
 
     try {
       const result = await machine.sandbox.commands.run(
-        { id: stepId, name: stepId },
+        ciStep(stepId, traceName.runAndReadOutput),
         command,
         { ...options, timeout: timeoutMs },
       );
@@ -473,7 +529,10 @@ class CommandBuilder implements Command {
     if (polled.timedOut) {
       await this.state.onTimeout?.();
 
-      await process.signal(subStep(stepId, "timeout-kill"), { signal: 9 });
+      await process.signal(
+        subStep(stepId, "timeout-kill", traceName.stopAfterTimeout),
+        { signal: 9 },
+      );
 
       throw this.timeoutError(scope);
     }
@@ -501,6 +560,31 @@ const counter = (): (() => number) => {
 };
 
 /**
+ * Record that a run of a command failed, as a step that fails without retrying.
+ * The sandbox steps before it all succeed, since a non-zero exit is a result,
+ * so this step is what shows the run as failed in the trace. Its error is
+ * caught: the caller decides whether to retry or throw.
+ */
+const recordFailure = async (
+  scope: CiJobScope,
+  stepId: string,
+  exitCode: number,
+): Promise<void> => {
+  try {
+    await scope.run.step.run(
+      subStep(stepId, "exit", traceName.exited(exitCode)),
+      () => {
+        throw new NonRetriableError(`exit ${exitCode}`);
+      },
+    );
+  } catch (error) {
+    if (!(error instanceof StepError)) {
+      throw error;
+    }
+  }
+};
+
+/**
  * Start a managed process. Cloud can answer a start that succeeded with an
  * ambiguous error, in which case the process that did start is adopted
  * instead of starting the command a second time.
@@ -520,7 +604,7 @@ const startProcess = async (
 
   try {
     const process = await machine.sandbox.processes.start(
-      subStep(stepId, "start"),
+      subStep(stepId, "start", traceName.startProcess),
       options,
     );
 
@@ -570,7 +654,7 @@ const adoptAmbiguousStart = async (
   }
 
   const listed = (await machine.sandbox.processes.list(
-    subStep(stepId, "reconcile"),
+    subStep(stepId, "reconcile", traceName.findStartedProcess),
     { limit: 250 },
   )) as {
     items: Array<{
@@ -634,7 +718,7 @@ const pollUntilTerminal = async (opts: {
     const interval = pollIntervalsMs[index - 1] ?? maxPollIntervalMs;
 
     await opts.scope.run.step.sleep(
-      subStep(opts.stepId, `wait #${index}`),
+      subStep(opts.stepId, `wait #${index}`, traceName.wait(interval)),
       interval,
     );
 
@@ -642,7 +726,7 @@ const pollUntilTerminal = async (opts: {
 
     current =
       (await opts.machine.sandbox.processes.get(
-        subStep(opts.stepId, `check #${index}`),
+        subStep(opts.stepId, `check #${index}`, traceName.pollProcess),
         current.id,
       )) ?? current;
   }
@@ -656,9 +740,12 @@ const readResult = async (opts: {
   argv: string[];
   secrets: string[];
 }): Promise<CommandResult> => {
-  const output = await opts.process.getOutput(subStep(opts.stepId, "output"), {
-    tailBytes: outputTailBytes,
-  });
+  const output = await opts.process.getOutput(
+    subStep(opts.stepId, "output", traceName.readOutput),
+    {
+      tailBytes: outputTailBytes,
+    },
+  );
 
   const decoded = decodeChunks(output);
   const stdout = tail(decoded.stdout, outputTailBytes);
@@ -756,11 +843,12 @@ const decodeChunks = (output: {
 export const createRawCommand = (
   getScope: () => CiJobScope,
   argv: string[],
-  label?: string,
+  /** How the command reads, when not as its arguments. */
+  display: Pick<CommandState, "text" | "label"> = {},
 ): Command => {
   return new CommandBuilder(getScope, {
     argv,
-    ...(label === undefined ? {} : { label }),
+    ...display,
     env: {},
     retries: 0,
     nothrow: false,
@@ -780,11 +868,9 @@ export const createCommandTag = (
   tag.sh = (strings: TemplateStringsArray, ...values: CommandValue[]) => {
     const rendered = buildShellString([...strings], values);
 
-    return createRawCommand(
-      getScope,
-      ["/bin/sh", "-c", rendered],
-      truncateLabel(rendered),
-    );
+    return createRawCommand(getScope, ["/bin/sh", "-c", rendered], {
+      text: truncateLabel(rendered),
+    });
   };
 
   return tag;

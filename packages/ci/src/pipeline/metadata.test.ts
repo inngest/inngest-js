@@ -19,6 +19,7 @@ import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { createCi } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
+import { ciOrigin } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 
 const setup = () => {
@@ -250,6 +251,9 @@ describe("run metadata", () => {
 
     expect(result.stepIds).toContain("ci › metadata:start");
     expect(result.stepIds).toContain("ci › metadata:end");
+
+    expect(result.origins["ci › metadata:start"]).toBe(ciOrigin);
+    expect(result.origins["ci › metadata:end"]).toBe(ciOrigin);
   });
 
   test("a pipeline with its check on adds no steps of its own", async () => {
@@ -305,6 +309,11 @@ describe("step metadata", () => {
     for (const update of stepScoped(result.metadata)) {
       expect(update.kind).toBe("userland.inngest-ci");
       expect(update.op).toBe("merge");
+    }
+
+    // Caching, start times and checks are all CI's work, not the jobs'.
+    for (const [step] of tags) {
+      expect(result.origins[step as string]).toBe(ciOrigin);
     }
   });
 });

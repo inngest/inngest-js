@@ -11,6 +11,7 @@
  */
 
 import { tagStep } from "../pipeline/metadata.ts";
+import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
 import type {
@@ -255,7 +256,7 @@ export interface CachedSnapshot {
 export interface CacheTarget {
   /** The job's resolved key. */
   ownKey: string;
-  /** The name the snapshot is given, in the scope the job writes. */
+  /** The name a build gives the snapshot, in the scope the job writes. */
   name: string;
 }
 
@@ -282,10 +283,7 @@ export const cacheTarget = async (
   countApi("cache");
 
   const ownKey = (await run.step.run(
-    {
-      id: `${job.path}${scopeSeparator}cache:key`,
-      name: "cache:key",
-    },
+    ciStep(`${job.path}${scopeSeparator}cache:key`, traceName.checkCache),
     async () => {
       await tagStep(run, { kind: "cache", job: job.path });
 
@@ -337,7 +335,7 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
-/** How long a lookup waits for a snapshot another run is still taking. */
+/** How long a lookup waits for a snapshot another build is still taking. */
 const readyWaitMs = 2 * 60 * 1000;
 const readyPollMs = 1000;
 
@@ -387,7 +385,7 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the run taking it, and not about to expire.
+ * ready after waiting for the build taking it, and not about to expire.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -464,10 +462,7 @@ export const lookupCache = async (
   const { run } = scope;
 
   const found = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:lookup`,
-      name: "cache:lookup",
-    },
+    ciStep(`${scope.path}${scopeSeparator}cache:lookup`, traceName.lookUpCache),
     async () => {
       await tagStep(run, { kind: "cache", job: scope.path });
 
@@ -521,10 +516,7 @@ export const lookupBeforeBuild = async (
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
   const found = (await run.step.run(
-    {
-      id: `${job.stepPath}${scopeSeparator}lookup`,
-      name: "cache:lookup",
-    },
+    ciStep(`${job.stepPath}${scopeSeparator}lookup`, traceName.lookUpCache),
     async () => {
       await tagStep(run, { kind: "cache", job: job.path });
 
@@ -555,7 +547,7 @@ export const resolveTakenName = async (
   broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
   return (await run.step.run(
-    { id: stepId, name: "cache:name-taken" },
+    ciStep(stepId, traceName.resolveCacheName),
     async () => {
       const winner = await findNamed(run, name, exclude);
 
@@ -605,7 +597,7 @@ export const snapshotState = async (
   snapshotId: string,
 ): Promise<"gone" | "creating" | "ready"> => {
   return (await run.step.run(
-    { id: stepId, name: "cache:snapshot-state" },
+    ciStep(stepId, traceName.checkSnapshotState),
     async () => {
       try {
         const snapshot = (await snapshotsClient(run).get(snapshotId)) as
@@ -637,7 +629,7 @@ export const deleteSnapshot = async (
 ): Promise<boolean> => {
   try {
     const result = (await run.step.run(
-      { id: stepId, name: "cache:delete" },
+      ciStep(stepId, traceName.deleteBadSnapshot),
       async () => {
         try {
           const snapshot = await snapshotsClient(run).get(snapshotId);
