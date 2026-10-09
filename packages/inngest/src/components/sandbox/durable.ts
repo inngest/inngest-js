@@ -1,4 +1,6 @@
 import type { StepOptionsOrId } from "../../types.ts";
+import { version } from "../../version.ts";
+import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
   createSandboxForOperation,
@@ -455,20 +457,11 @@ const callRawTool = async <A extends SandboxAction>(
   }
 };
 
-const snapshotWaitStepOptions = (
-  idOrOptions: StepOptionsOrId,
-): StepOptionsOrId => {
-  if (typeof idOrOptions === "string") {
-    return `${idOrOptions}:wait-until-ready`;
-  }
-  return {
-    ...idOrOptions,
-    id: `${idOrOptions.id}:wait-until-ready`,
-    ...(idOrOptions.name && {
-      name: `${idOrOptions.name} (wait until ready)`,
-    }),
-  };
-};
+/**
+ * Marks the steps the SDK runs on the user's behalf, such as the create and
+ * wait inside `snapshot()`. See `StepOptions["~origin"]`.
+ */
+const sdkOrigin = `inngest@${version}`;
 
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
@@ -628,9 +621,13 @@ export const createDurableSandboxFacade = (
       target: sandboxTarget(ref),
       input: [createOptions],
     });
+    // The caller's name labels the span around both steps, so each step is
+    // named for what it does and marked as the SDK's own work. Step IDs never
+    // change, for replay.
+    const stepOptions = getStepOptions(idOrOptions);
     const created = await callRawTool(
       rawToolResolver,
-      idOrOptions,
+      { ...stepOptions, name: "Create snapshot", "~origin": sdkOrigin },
       createOperation,
     );
     const waitOperation = parseSandboxOperationForAction(
@@ -644,10 +641,20 @@ export const createDurableSandboxFacade = (
     );
     const ready = await callRawTool(
       rawToolResolver,
-      snapshotWaitStepOptions(idOrOptions),
+      {
+        ...stepOptions,
+        id: `${stepOptions.id}:wait-until-ready`,
+        name: "Wait for snapshot",
+        "~origin": sdkOrigin,
+      },
       waitOperation,
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
+  };
+  // The create and readiness wait are one call, so they share one span.
+  const snapshot: DurableSandbox["snapshot"] = (idOrOptions, ...args) => {
+    const { id, name } = getStepOptions(idOrOptions);
+    return withSpan({ id, name }, () => createSnapshot(idOrOptions, ...args));
   };
   const facade: DurableSandbox = {
     ...ref,
@@ -745,9 +752,9 @@ export const createDurableSandboxFacade = (
       },
     }),
     snapshots: Object.freeze({
-      create: createSnapshot,
+      create: snapshot,
     }),
-    snapshot: createSnapshot,
+    snapshot,
     waitUntilRunning: async (idOrOptions, options) => {
       const operation = parseSandboxOperationForAction("waitUntilRunning", {
         protocolVersion: sandboxProtocolVersion,

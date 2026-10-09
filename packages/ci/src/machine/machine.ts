@@ -113,6 +113,12 @@ interface Started {
   meta?: SnapshotMeta;
 }
 
+/** A machine that has started and been set up. */
+interface Started {
+  // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
+  sandbox: any;
+}
+
 const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   const { run } = scope;
   const tools = run.sandboxTools;
