@@ -286,6 +286,37 @@ describe("warnMetadata", () => {
       ],
     });
   });
+
+  test("doesn't reject when the warning write fails", async () => {
+    const client = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.metadataMiddleware()],
+    });
+    vi.spyOn(
+      client as unknown as { updateMetadata: () => Promise<void> },
+      "updateMetadata",
+    ).mockRejectedValue(new Error("Failed to update metadata: not allowed"));
+    vi.spyOn(client[internalLoggerSymbol], "warn").mockImplementation(() => {});
+    const debug = vi
+      .spyOn(client[internalLoggerSymbol], "debug")
+      .mockImplementation(() => {});
+
+    await expect(
+      (
+        client as unknown as {
+          warnMetadata: (
+            target: unknown,
+            kind: ErrCode,
+            log: { message: string },
+          ) => Promise<void>;
+        }
+      ).warnMetadata({ run_id: "run-1" }, ErrCode.NESTING_STEPS, {
+        message: "nested",
+      }),
+    ).resolves.toBeUndefined();
+    expect(debug).toHaveBeenCalled();
+  });
 });
 
 describe("MetadataBuilder.set", () => {
