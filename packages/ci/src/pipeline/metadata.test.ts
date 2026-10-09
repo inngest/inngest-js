@@ -45,9 +45,13 @@ const runScoped = (metadata: Update[]) => {
   });
 };
 
+/**
+ * CI's own step tags. The SDK adds metadata of its own to some steps, such as
+ * `inngest.sandbox` on sandbox steps, which these tests don't look at.
+ */
 const stepScoped = (metadata: Update[]) => {
   return metadata.filter((update) => {
-    return update.scope === "step";
+    return update.scope === "step" && update.kind === "userland.inngest-ci";
   });
 };
 
