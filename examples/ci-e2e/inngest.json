@@ -1,0 +1,5 @@
+{
+  "ci": {
+    "start": "tsx server.ts"
+  }
+}

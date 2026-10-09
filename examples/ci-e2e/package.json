@@ -1,0 +1,23 @@
+{
+  "name": "ci-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end suite for @inngest/ci: small pipelines that each exercise one behaviour on real Sandboxes",
+  "type": "module",
+  "scripts": {
+    "start": "tsx server.ts",
+    "ci": "inngest-ci",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@inngest/ci": "link:../../packages/ci/dist",
+    "inngest": "link:../../packages/inngest/dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "temporal-polyfill": "^0.2.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.2",
+    "zod": "^4.3.0"
+  }
+}
