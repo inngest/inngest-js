@@ -83,12 +83,12 @@ describe("intent and outcome", () => {
 
     expect(first.type).toBe("function-resolved");
 
-    const miss = stepValues(first.metadata, "lint › from install");
+    const miss = stepValues(first.metadata, "install (from) › lookup");
 
     expect(miss).toMatchObject({
       kind: "cache",
-      job: "lint",
-      intent: "Look up the snapshot of `install` to start from",
+      job: "install",
+      intent: "Look up the cached snapshot for `install`",
       outcome: { found: false },
     });
   });
@@ -168,10 +168,10 @@ describe("intent and outcome", () => {
       runId: "01SECOND",
     });
 
-    const hit = stepValues(second.metadata, "lint › from install");
+    const hit = stepValues(second.metadata, "install (from) › lookup");
 
     expect(hit).toMatchObject({
-      intent: "Look up the snapshot of `install` to start from",
+      intent: "Look up the cached snapshot for `install`",
       outcome: { found: true, snapshotId: expect.any(String) },
     });
   });
