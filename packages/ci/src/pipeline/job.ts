@@ -112,6 +112,8 @@ interface RunJobArgs {
   // biome-ignore lint/suspicious/noExplicitAny: user handler
   handler: (input: any) => Promise<void>;
   input: unknown;
+  /** Set when `input` already went through the job's schema, as a build's does. */
+  validated?: boolean;
 }
 
 /**
@@ -123,6 +125,7 @@ export const runJob = async ({
   config,
   handler,
   input,
+  validated,
 }: RunJobArgs): Promise<void> => {
   const run = getRunScope();
 
@@ -141,6 +144,7 @@ export const runJob = async ({
     config,
     handler,
     input,
+    ...(validated ? { validated } : {}),
     path: number === 1 ? config.id : `${config.id} (${number})`,
     number,
   });
@@ -208,6 +212,7 @@ export const invokeBuild = async ({
     ...(base && !isImageBase(base) ? { base: baseForBuild(base.built) } : {}),
     ...(base && isImageBase(base) ? { image: base.snapshot } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    ...(run.machine ? { machine: run.machine } : {}),
     rootRunId,
     parent: {
       runId: rootRunId,
@@ -405,6 +410,7 @@ const jobSteps = async ({
   config,
   handler,
   input: given,
+  validated,
   path,
   number,
 }: RunJobArgs & {
@@ -414,7 +420,7 @@ const jobSteps = async ({
   /** Which run of this job in the pipeline run this is, counting from 1. */
   number: number;
 }): Promise<void> => {
-  const input = await validateInput(config, given);
+  const input = validated ? given : await validateInput(config, given);
   const checks = run.ci.checks as CheckReporter;
 
   const scope: CiJobScope = {
@@ -437,6 +443,13 @@ const jobSteps = async ({
     : undefined;
   const checked = config.check !== false;
   const isBuild = run.build?.jobId === config.id;
+
+  if (isBuild) {
+    run.report = {
+      summaries: scope.summaries,
+      annotations: scope.annotations,
+    };
+  }
 
   const target = {
     run,
@@ -539,6 +552,9 @@ const jobSteps = async ({
       });
 
       adoptBuilt(run, built);
+
+      scope.summaries.push(...(built.report?.summaries ?? []));
+      scope.annotations.push(...(built.report?.annotations ?? []));
 
       if (built.reused && built.cached) {
         reusedTitle = cachedTitle(built.cached);

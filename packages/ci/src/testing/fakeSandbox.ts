@@ -96,6 +96,8 @@ export interface FakeSandboxApi {
    * a stale one doesn't. Snapshots taken afterwards start normally.
    */
   failSnapshotStarts(): void;
+  /** Make a sandbox created from any snapshot, even one taken later, never start. */
+  failAllSnapshotStarts(): void;
   /** The snapshot of every sandbox create that asked for one, in order. */
   snapshotStarts: string[];
   /**
@@ -292,6 +294,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   };
 
   const failingSnapshots = new Set<string>();
+  let failingAllSnapshots = false;
   const snapshotStarts: string[] = [];
 
   const createSandbox: Handler = ({ body }) => {
@@ -313,7 +316,10 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       );
     }
 
-    if (body.snapshotId && failingSnapshots.has(body.snapshotId)) {
+    if (
+      body.snapshotId &&
+      (failingAllSnapshots || failingSnapshots.has(body.snapshotId))
+    ) {
       // As on the real API, the sandbox exists and keeps its name, stuck in
       // STARTING, though the create call fails.
       const stuck: FakeSandbox = {
@@ -755,6 +761,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       for (const id of snapshots.keys()) {
         failingSnapshots.add(id);
       }
+    },
+    failAllSnapshotStarts: () => {
+      failingAllSnapshots = true;
     },
     snapshotStarts,
     withoutSnapshotNames: () => {

@@ -52,6 +52,7 @@ export interface ConsoleCheckRecord {
   status: "in_progress" | "completed";
   conclusion?: string;
   title?: string;
+  summary?: string;
   url?: string;
 }
 
