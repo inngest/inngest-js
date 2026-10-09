@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
@@ -478,6 +479,224 @@ describe("a job's input schema", () => {
     await runFunction(pipeline, { event: prEvent });
 
     expect([...received]).toEqual(["jack"]);
+  });
+});
+
+describe("a job's input in its build run", () => {
+  /**
+   * A schema that turns a string into a Date, and refuses anything else, as a
+   * schema that doesn't accept its own output does.
+   */
+  const dateSchema: StandardSchemaV1<{ at: string }, { at: Date }> = {
+    "~standard": {
+      version: 1,
+      vendor: "fake",
+      validate: (input: unknown) => {
+        const at = (input as { at?: unknown } | undefined)?.at;
+
+        if (typeof at !== "string") {
+          return { issues: [{ message: "Expected a string", path: ["at"] }] };
+        }
+
+        return { value: { at: new Date(at) } };
+      },
+    },
+  };
+
+  const setupDates = () => {
+    const { api, ci } = setup();
+    // A handler replays on every step, so what it saw is a set.
+    const seen = new Set<string>();
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" }, input: dateSchema },
+      async ({ at }) => {
+        seen.add(at instanceof Date ? at.toISOString() : typeof at);
+
+        await $`pnpm install`;
+      },
+    );
+
+    return { api, ci, base, seen };
+  };
+
+  test("a cached job called directly gets the schema's output in its build", async () => {
+    const { ci, base, seen } = setupDates();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return base({ at: "2026-01-02T03:04:05.000Z" });
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["2026-01-02T03:04:05.000Z"]);
+  });
+
+  test("a parent started from gets the schema's output in its build", async () => {
+    const { ci, base, seen } = setupDates();
+
+    const lint = ci.job(
+      { id: "lint", from: base.with({ at: "2026-01-02T03:04:05.000Z" }) },
+      async () => {},
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["2026-01-02T03:04:05.000Z"]);
+  });
+
+  test("a Set made by the schema from the JSON input reaches the build as a Set", async () => {
+    const { ci } = setup();
+    const seen = new Set<string>();
+
+    const tags: StandardSchemaV1<{ tags: string[] }, { tags: Set<string> }> = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: (input: unknown) => {
+          const list = (input as { tags?: unknown } | undefined)?.tags;
+
+          if (!Array.isArray(list)) {
+            return { issues: [{ message: "Expected an array" }] };
+          }
+
+          return { value: { tags: new Set<string>(list) } };
+        },
+      },
+    };
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" }, input: tags },
+      async ({ tags }) => {
+        seen.add(tags instanceof Set ? [...tags].join(",") : typeof tags);
+
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return base({ tags: ["a", "b"] });
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect([...seen]).toEqual(["a,b"]);
+  });
+
+  test("an input JSON can't carry fails the job with a reason", async () => {
+    const { ci } = setup();
+
+    const base = ci.job(
+      { id: "base", cache: { key: "v1" } },
+      async (_input: { big: bigint }) => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        return base({ big: 1n });
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(String((result.error as Error).message)).toMatch(
+      /BigInt|serialize/i,
+    );
+  });
+
+  describe("an invoker that sends a name the job's own config doesn't give", () => {
+    const forge = (data: Record<string, unknown>) => {
+      return { ...data, cacheKey: "ci/global/base/forged" };
+    };
+
+    test("is refused, and writes nothing", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return base();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: forge,
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(String((result.error as Error).message)).toContain(
+        "doesn't match",
+      );
+
+      expect(userCommands(api)).toEqual([]);
+      expect(namedSnapshots(api)).toEqual([]);
+    });
+
+    test("is refused for an own key that isn't the job's, too", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return base();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: (data) => {
+          return { ...data, ownKey: "forged" };
+        },
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(namedSnapshots(api)).toEqual([]);
+    });
+
+    test("is refused for a job without a cache, whose name belongs to its run", async () => {
+      const { api, ci } = setup();
+
+      const base = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {});
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          return lint();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        rewriteInvoke: forge,
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(namedSnapshots(api)).toEqual([]);
+    });
   });
 });
 
@@ -1417,7 +1636,7 @@ describe("from", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    expect(api.sandboxes.size).toBe(4);
+    expect(api.sandboxes.size).toBe(3);
 
     expect(
       userCommands(api).map((argv) => {
@@ -1430,8 +1649,8 @@ describe("from", () => {
       "pnpm install",
       "pnpm build",
       // test couldn't copy `build` either: `build` ran again on its machine,
-      // which asks for `install` again, then test
-      "pnpm install",
+      // which gets `install` from the same shared build (no snapshot, so it
+      // ran install again there), then test
       "pnpm install",
       "pnpm build",
       "pnpm test",
@@ -2493,6 +2712,33 @@ describe("cache", () => {
         expect(leftoverMachines(api)).toEqual([]);
       },
     );
+
+    test("the retry waits at least as long for its machine as the first try did", async () => {
+      const { api } = await built();
+
+      api.failNextSnapshotStarts("timeout");
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+
+      const waitOf = (stepId: string) => {
+        const call = second.inputs[stepId] as {
+          input: { input: { runningTimeoutMs?: number }[] }[];
+        };
+
+        return call.input[0]?.input[0]?.runningTimeoutMs;
+      };
+
+      const first = waitOf("lint › machine");
+
+      // A shorter wait would make a slow node more likely to fail the retry,
+      // and a second failure deletes the snapshot.
+      expect(first).toBeGreaterThan(0);
+      expect(waitOf("lint › machine › restart")).toBeGreaterThanOrEqual(
+        first ?? 0,
+      );
+    });
 
     test.each([
       ["timeouts", "timeoutSnapshotStarts"],
@@ -4046,7 +4292,7 @@ describe("cache builds in their own run", () => {
     expect(installs(api)).toBe(1);
   });
 
-  test("two pipelines needing the same key build it once", async () => {
+  test("two pipelines needing the same key end on one named snapshot", async () => {
     const api = createFakeSandboxApi();
 
     // Two runs of one app, against one sandbox environment.
@@ -4065,13 +4311,23 @@ describe("cache builds in their own run", () => {
 
     expect(a.type).toBe("function-resolved");
     expect(b.type).toBe("function-resolved");
-    expect(installs(api)).toBe(1);
 
-    const snapshots = [...api.sandboxes.values()].filter((machine) => {
-      return machine.snapshotId;
+    // Runs that miss together may each build, so what is fixed is that one
+    // snapshot kept the name and the child that started from it got it.
+    const [snapshot, ...others] = [...api.snapshots.values()].filter(
+      (candidate) => {
+        return candidate.name;
+      },
+    );
+
+    expect(others).toEqual([]);
+    expect(snapshot?.status).toBe("READY");
+
+    const child = [...api.sandboxes.values()].find((machine) => {
+      return machine.name === "ci-01RUNA-lint";
     });
 
-    expect(snapshots.length).toBeGreaterThan(0);
+    expect(child?.snapshotId).toBe(snapshot?.id);
   });
 
   test("a failed build fails the job with its reason and caches nothing", async () => {
