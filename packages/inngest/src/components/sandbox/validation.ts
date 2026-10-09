@@ -24,11 +24,8 @@ import {
   type SandboxWaitUntilRunningOptions,
 } from "./types.ts";
 
-export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
-export const maxSandboxRunningTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxRunningTimeoutMs = 120 * 1_000;
-export const maxSandboxSnapshotWaitTimeoutMs = 5 * 60 * 1_000;
 export const maxSandboxProcessTailBytes = 512 * 1_024;
 
 const maxProcessArgvCount = 128;
@@ -553,7 +550,6 @@ export const normalizeSandboxCreateOptions = (
         ? false
         : normalizeDurationMs(
             runningTimeout ?? defaultSandboxRunningTimeoutMs,
-            maxSandboxRunningTimeoutMs,
             "runningTimeout",
           ),
   };
@@ -568,11 +564,7 @@ export const normalizeSandboxWaitUntilRunningOptions = (
     "sandbox waitUntilRunning options",
   );
   return {
-    timeoutMs: normalizeDurationMs(
-      parsed.timeout,
-      maxSandboxRunningTimeoutMs,
-      "timeout",
-    ),
+    timeoutMs: normalizeDurationMs(parsed.timeout, "timeout"),
   };
 };
 
@@ -643,7 +635,6 @@ export const normalizeSandboxSnapshotWaitOptions = (
   return {
     timeoutMs: normalizeDurationMs(
       parsed.timeout as SandboxDuration,
-      maxSandboxSnapshotWaitTimeoutMs,
       "timeout",
     ),
   };
@@ -730,11 +721,7 @@ export const normalizeSandboxCommandOptions = (
     timeoutMs:
       parsed.timeout === undefined
         ? defaultSandboxProcessTimeoutMs
-        : normalizeDurationMs(
-            parsed.timeout,
-            maxSandboxProcessTimeoutMs,
-            "timeout",
-          ),
+        : normalizeDurationMs(parsed.timeout, "timeout"),
   };
 };
 
@@ -774,11 +761,7 @@ export const normalizeSandboxProcessWaitOptions = (
     timeoutMs:
       parsed.timeout === undefined
         ? defaultSandboxProcessTimeoutMs
-        : normalizeDurationMs(
-            parsed.timeout,
-            maxSandboxProcessTimeoutMs,
-            "timeout",
-          ),
+        : normalizeDurationMs(parsed.timeout, "timeout"),
   };
 };
 
@@ -804,11 +787,10 @@ export const normalizeSandboxProcessOutputOptions = (
 
 export const normalizeDurationMs = (
   duration: unknown,
-  maximumMs: number,
   context: string,
 ): number => {
   try {
-    return durationToMs(duration, { name: context, maxMs: maximumMs });
+    return durationToMs(duration, { name: context });
   } catch (error) {
     throw new SandboxValidationError(
       error instanceof Error ? error.message : String(error),

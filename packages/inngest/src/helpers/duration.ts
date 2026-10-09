@@ -16,11 +16,6 @@ export interface DurationToMsOptions {
    * to `"duration"`.
    */
   name?: string;
-
-  /**
-   * The largest allowed value, in milliseconds. Defaults to no limit.
-   */
-  maxMs?: number;
 }
 
 const compoundToken = /(\d+(?:\.\d+)?)\s*([a-z]+)/gi;
@@ -65,7 +60,7 @@ const parseStringUnsafe = (input: string): number | undefined => {
 /**
  * Convert a {@link DurationInput} to a positive, whole number of
  * milliseconds. Throws an `Error` naming the value if the input is malformed,
- * not positive, over `maxMs`, or a `Temporal.Duration` with calendar years,
+ * not positive, or a `Temporal.Duration` with calendar years,
  * months or weeks (their length depends on the calendar).
  *
  * Strings are anything `ms` accepts, plus compound forms like `"1h30m"`.
@@ -100,10 +95,6 @@ export const durationToMs = (
     milliseconds <= 0
   ) {
     throw new Error(`${name} must be a positive, whole number of milliseconds`);
-  }
-
-  if (options.maxMs !== undefined && milliseconds > options.maxMs) {
-    throw new Error(`${name} must not exceed ${options.maxMs} milliseconds`);
   }
 
   return milliseconds;

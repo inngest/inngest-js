@@ -52,9 +52,10 @@ describe("durationToMs", () => {
     }
   });
 
-  test("enforces maxMs", () => {
-    expect(() => {
-      return durationToMs("10m", { maxMs: 60_000, name: "timeout" });
-    }).toThrow(/timeout must not exceed 60000/);
+  test("does not cap large values", () => {
+    expect(durationToMs("30d")).toBe(2_592_000_000);
+    expect(durationToMs(Temporal.Duration.from({ hours: 100 }))).toBe(
+      360_000_000,
+    );
   });
 });
