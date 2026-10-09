@@ -181,9 +181,10 @@ const resolveFilesPart = async (
 /**
  * A job's own cache key: its resolved key, with the repository, the input it
  * was called with and the snapshot it starts from folded in, since any of
- * them changing makes it a different job. Runs with no repository, like a
- * cron with no `repo` set, use the app's ID instead. Names and lookups both
- * go through this, so they always agree.
+ * them changing makes it a different job. The app's ID is always part of it,
+ * so two apps in one repository never share a snapshot, and the repository
+ * is too when the run has one (a cron with no `repo` set has none). Names and
+ * lookups both go through this, so they always agree.
  */
 export const jobCacheKey = async (
   run: CiRunScope,
@@ -194,11 +195,10 @@ export const jobCacheKey = async (
 ): Promise<string> => {
   const key = await resolveCacheKey(run, cache.key);
 
-  // Repositories can share a Sandbox environment, so the same branch, job and
-  // key in two of them are still two names.
-  const owner = run.repo
-    ? `repo:${run.repo.fullName}`
-    : `app:${run.ci.client?.id ?? ""}`;
+  // Repositories and apps can share a Sandbox environment, so the same
+  // branch, job and key in two of them are still two names.
+  const app = `app:${run.ci.client?.id ?? ""}`;
+  const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
   return identityKey(hash(`${key}\0${owner}`), input, base);
 };

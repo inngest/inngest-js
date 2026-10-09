@@ -1726,11 +1726,11 @@ describe("cache", () => {
   };
 
   test("a run on another machine finds the snapshot by name and skips the job", async () => {
-    // Two apps that share nothing but the sandbox environment.
+    // Two machines running one app, sharing nothing but the sandbox environment.
     const api = createFakeSandboxApi();
 
-    for (const appId of ["machine-a", "machine-b"]) {
-      const { ci } = setup({ api, appId });
+    for (const _machine of ["a", "b"]) {
+      const { ci } = setup({ api });
 
       const build = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
         await $`pnpm install`;
@@ -1848,6 +1848,40 @@ describe("cache", () => {
     await runIn("inngest/inngest-js");
 
     expect(userCommands(api)).toHaveLength(2);
+  });
+
+  test("the same repository, branch, job and key in another app misses", async () => {
+    // Two apps in one repository and Sandbox environment.
+    const api = createFakeSandboxApi();
+
+    const runIn = async (appId: string) => {
+      const { ci } = setup({ api, appId });
+
+      const job = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await job();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await runIn("app-a");
+    await runIn("app-b");
+
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(namedSnapshots(api)).toHaveLength(2);
+
+    // Each app still hits its own.
+    await runIn("app-a");
+    await runIn("app-b");
+
+    expect(ran(api, "pnpm install")).toBe(2);
   });
 
   test("a cached job with a machine can still be started from", async () => {
