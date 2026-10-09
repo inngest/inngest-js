@@ -604,6 +604,8 @@ const jobBody = async ({
 
         reusedTitle = cachedTitle(claim.snapshot);
       } else {
+        let status: "ready" | "failed" = "failed";
+
         try {
           await runJobBody(scope, async () => {
             if (fromParent) {
@@ -616,9 +618,11 @@ const jobBody = async ({
           if (builtAs) {
             await snapshotBuilt(scope, builtAs);
           }
+
+          status = "ready";
         } finally {
           if (claim?.kind === "held") {
-            await releaseBuildLock(scope);
+            await releaseBuildLock(scope, status);
           }
         }
       }

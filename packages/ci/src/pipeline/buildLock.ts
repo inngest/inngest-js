@@ -6,11 +6,17 @@
  * under a name derived from the cache entry and owned by the run that builds
  * (`OWNER` in its environment). The first run to create it builds. Every other
  * run's create is refused with `sandbox_name_taken`, since its owner differs,
- * so it sleeps and then looks the snapshot up again: a hit is adopted, and a
- * miss claims the lock again, which succeeds once the owner has destroyed its
- * machine or been cleaned up after. The winner destroys the machine as soon as
- * its snapshot is taken, or the build failed, so the lock lasts as long as the
- * build does.
+ * so it waits to be woken: a hit is adopted, and a miss claims the lock again,
+ * which succeeds once the owner has destroyed its machine or been cleaned up
+ * after. The winner destroys the machine as soon as its snapshot is taken, or
+ * the build failed, so the lock lasts as long as the build does.
+ *
+ * A run waits for the `ci/build.done` event that whoever lets go of the lock
+ * sends, and saves that wait before it claims. The lock then orders the two: a
+ * claim that is refused means the holder had not let go yet, so its event comes
+ * after the wait was saved, and a wait only misses events from before it was
+ * saved. A wait that nothing wakes, for a holder that died without a trace,
+ * times out and looks again, so no silence lasts longer than that.
  *
  * Creating a machine again with the same name and settings gives the existing
  * one back, so a run that retries an ambiguous create finds its own lock.
@@ -37,14 +43,26 @@ export const buildLockName = (cacheKey: string): string => {
 
 /**
  * How many times a build tries to claim the lock before it builds without it.
- * With `lockWaitSeconds`, about twenty minutes in all.
+ * With `lockWaitSeconds`, about half an hour if nothing ever wakes it.
  */
-const maxClaims = 60;
+const maxClaims = 15;
 
-/** How long to wait after the nth refused claim, counting from 0. */
-export const lockWaitSeconds = (refused: number): number => {
-  return Math.min(5 + refused * 5, 30);
-};
+/**
+ * How long a refused build waits to be woken before it looks for itself. Only a
+ * holder that died without a trace leaves a build waiting this long.
+ */
+export const lockWaitSeconds = 120;
+
+/** The event whoever lets go of a build lock sends, for those waiting on it. */
+export const buildDoneEvent = "ci/build.done";
+
+/** What a build lock's holder sends when it lets go. */
+export interface BuildDone {
+  /** The lock's name. */
+  name: string;
+  /** Whether the holder left a snapshot to adopt, or none. */
+  status: "ready" | "failed";
+}
 
 /** What claiming the lock came to. */
 export type LockClaim =
@@ -88,6 +106,20 @@ export const claimBuildLock = async ({
   for (let attempt = 0; attempt < maxClaims; attempt++) {
     scope.buildLock = { name, attempt };
 
+    // Saved before the claim and left unawaited until the claim is refused. A
+    // claim that is won leaves it to time out unwatched.
+    const wake = run.step.waitForEvent(
+      {
+        id: `${scope.path}${scopeSeparator}lock:wake (${attempt + 1})`,
+        name: "lock:wake",
+      },
+      {
+        event: buildDoneEvent,
+        if: `async.data.name == '${name}'`,
+        timeout: `${lockWaitSeconds}s`,
+      },
+    );
+
     try {
       await ensureMachine(scope);
     } catch (error) {
@@ -105,15 +137,24 @@ export const claimBuildLock = async ({
         "waiting for another run's build of this…",
       );
 
-      await run.step.sleep(
-        {
-          id: `${scope.path}${scopeSeparator}lock:wait (${attempt + 1})`,
-          name: "lock:wait",
-        },
-        `${lockWaitSeconds(attempt)}s`,
-      );
+      // A holder that died after its snapshot but before it let go.
+      const present = await look();
 
-      const snapshot = await look();
+      if (present) {
+        // The wait is still open, and a run doesn't end while a step it found
+        // is, so this sends what the wait is for. It is also true.
+        await announceBuildDone(scope, name, "ready");
+
+        scope.buildLock = undefined;
+
+        return { kind: "adopted", snapshot: present };
+      }
+
+      const done = await wake;
+
+      // A failed build left nothing to find.
+      const snapshot =
+        done?.data?.status === "failed" ? undefined : await look();
 
       if (snapshot) {
         scope.buildLock = undefined;
@@ -129,7 +170,7 @@ export const claimBuildLock = async ({
     const snapshot = await look();
 
     if (snapshot) {
-      await releaseBuildLock(scope);
+      await releaseBuildLock(scope, "ready");
 
       scope.buildLock = undefined;
 
@@ -149,14 +190,50 @@ export const claimBuildLock = async ({
 };
 
 /**
- * Let go of the lock by destroying the machine that holds it. The machine is
- * destroyed whether the build passed or not, and the cleanup function does the
- * same for a build that never got here.
+ * Let go of the lock by destroying the machine that holds it, then wake the
+ * runs waiting on it. The machine is destroyed whether the build passed or not,
+ * and the cleanup function does the same for a build that never got here. The
+ * event comes last, so a run it wakes finds the lock free.
  */
-export const releaseBuildLock = async (scope: CiJobScope): Promise<void> => {
+export const releaseBuildLock = async (
+  scope: CiJobScope,
+  status: BuildDone["status"],
+): Promise<void> => {
+  const name = scope.buildLock?.name;
+
   await destroyMachine(scope, `${scope.path}${scopeSeparator}lock:release`);
 
   scope.machine = undefined;
+
+  if (name) {
+    await announceBuildDone(scope, name, status);
+  }
+};
+
+/**
+ * Send that a lock was let go. A send that fails only costs the waiting runs
+ * the rest of their wait, so it never fails the build.
+ */
+const announceBuildDone = async (
+  scope: CiJobScope,
+  name: string,
+  status: BuildDone["status"],
+): Promise<void> => {
+  const { run } = scope;
+
+  try {
+    await run.step.sendEvent(
+      {
+        id: `${scope.path}${scopeSeparator}lock:done`,
+        name: "lock:done",
+      },
+      { name: buildDoneEvent, data: { name, status } satisfies BuildDone },
+    );
+  } catch {
+    run.warnings.push(
+      `couldn't tell runs waiting on \`${scope.path}\` that its build ended`,
+    );
+  }
 };
 
 /** The code a create gets when another machine holds the name. */

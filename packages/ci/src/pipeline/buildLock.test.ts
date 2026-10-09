@@ -14,16 +14,21 @@ import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { machineSetupScript } from "../machine/machine.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { EventBus } from "../testing/eventBus.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { buildLockName } from "./buildLock.ts";
+import { buildDoneEvent, buildLockName } from "./buildLock.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
 
-const setup = (api: Api, options: { app?: string; lock?: boolean } = {}) => {
-  const client = createCiTestClient(api, options.app);
+const setup = (
+  api: Api,
+  options: { app?: string; lock?: boolean; bus?: EventBus } = {},
+) => {
+  const bus = options.bus ?? new EventBus();
+  const client = createCiTestClient(api, options.app, bus);
 
   const ci = createCi(client, {
     github: consoleReporter(),
@@ -41,7 +46,7 @@ const setup = (api: Api, options: { app?: string; lock?: boolean } = {}) => {
     await install();
   });
 
-  return { ci, pipeline };
+  return { ci, pipeline, bus };
 };
 
 const count = (api: Api, command: string): number => {
@@ -87,10 +92,19 @@ const runs = (
 };
 
 /** Run once and clear the fake, to learn the lock's name and start clean. */
-const learnLockName = async (api: Api): Promise<string> => {
-  const { pipeline } = setup(api);
+const learnLockName = async (
+  api: Api,
+): Promise<{
+  cacheKey: string;
+  snapshot: ReturnType<typeof named>[number] | undefined;
+}> => {
+  const { pipeline, bus } = setup(api);
 
-  await runFunction(pipeline, { event: prEvent, runId: "01LEARN" });
+  await runFunction(pipeline, {
+    bus,
+    event: prEvent,
+    runId: "01LEARN",
+  });
 
   const [snapshot] = named(api);
 
@@ -98,7 +112,7 @@ const learnLockName = async (api: Api): Promise<string> => {
   api.sandboxes.clear();
   api.commands.length = 0;
 
-  return snapshot?.name ?? "";
+  return { cacheKey: snapshot?.name ?? "", snapshot };
 };
 
 /** A build lock held by a run that has since died. */
@@ -124,8 +138,8 @@ describe("runs that miss the same cached job together", () => {
     // A slow install keeps every run's lookup ahead of any snapshot.
     api.script([{ match: "pnpm install", ticks: 5 }]);
 
-    const { pipeline } = setup(api);
-    const results = await runs(pipeline, 4);
+    const { pipeline, bus } = setup(api);
+    const results = await runs(pipeline, 4, { bus });
 
     for (const result of results) {
       expect(result.type).toBe("function-resolved");
@@ -148,9 +162,9 @@ describe("runs that miss the same cached job together", () => {
 
     api.script([{ match: "pnpm install", ticks: 5 }]);
 
-    const { pipeline } = setup(api, { lock: false });
+    const { pipeline, bus } = setup(api, { lock: false });
 
-    await runs(pipeline, 3);
+    await runs(pipeline, 3, { bus });
 
     expect(count(api, "pnpm install")).toBeGreaterThan(1);
     expect(lockMachines(api)).toEqual([]);
@@ -158,9 +172,13 @@ describe("runs that miss the same cached job together", () => {
 
   test("a lock holder's machine is owned by its build run", async () => {
     const api = createFakeSandboxApi();
-    const { pipeline } = setup(api);
+    const { pipeline, bus } = setup(api);
 
-    await runFunction(pipeline, { event: prEvent, runId: "01OWNED" });
+    await runFunction(pipeline, {
+      bus,
+      event: prEvent,
+      runId: "01OWNED",
+    });
 
     const [lock] = lockMachines(api);
 
@@ -172,12 +190,13 @@ describe("runs that miss the same cached job together", () => {
 
     api.script([{ match: "pnpm install", ticks: 5 }]);
 
-    const a = setup(api, { app: "app-a" });
-    const b = setup(api, { app: "app-b" });
+    const bus = new EventBus();
+    const a = setup(api, { app: "app-a", bus });
+    const b = setup(api, { app: "app-b", bus });
 
     const results = await Promise.all([
-      runFunction(a.pipeline, { event: prEvent, runId: "01APPA" }),
-      runFunction(b.pipeline, { event: prEvent, runId: "01APPB" }),
+      runFunction(a.pipeline, { bus, event: prEvent, runId: "01APPA" }),
+      runFunction(b.pipeline, { bus, event: prEvent, runId: "01APPB" }),
     ]);
 
     for (const result of results) {
@@ -195,7 +214,7 @@ describe("runs that miss the same cached job together", () => {
 
     api.script([{ match: "pnpm install", ticks: 5 }]);
 
-    const { pipeline } = setup(api);
+    const { pipeline, bus } = setup(api);
 
     const other = {
       ...prEvent,
@@ -213,8 +232,16 @@ describe("runs that miss the same cached job together", () => {
     };
 
     await Promise.all([
-      runFunction(pipeline, { event: prEvent, runId: "01REPOA" }),
-      runFunction(pipeline, { event: other, runId: "01REPOB" }),
+      runFunction(pipeline, {
+        bus,
+        event: prEvent,
+        runId: "01REPOA",
+      }),
+      runFunction(pipeline, {
+        bus,
+        event: other,
+        runId: "01REPOB",
+      }),
     ]);
 
     expect(count(api, "pnpm install")).toBe(2);
@@ -228,9 +255,10 @@ describe("a build that fails", () => {
 
     api.script([{ match: "pnpm install", exitCode: 1 }]);
 
-    const { pipeline } = setup(api);
+    const { pipeline, bus } = setup(api);
 
     const failed = await runFunction(pipeline, {
+      bus,
       event: prEvent,
       runId: "01FAILED",
     });
@@ -241,6 +269,7 @@ describe("a build that fails", () => {
     api.script([]);
 
     const next = await runFunction(pipeline, {
+      bus,
       event: prEvent,
       runId: "01AFTER",
     });
@@ -256,8 +285,8 @@ describe("a build that fails", () => {
     api.disableSnapshots();
     api.script([{ match: "pnpm install", ticks: 3 }]);
 
-    const { pipeline } = setup(api);
-    const results = await runs(pipeline, 3);
+    const { pipeline, bus } = setup(api);
+    const results = await runs(pipeline, 3, { bus });
 
     for (const result of results) {
       expect(result.type).toBe("function-resolved");
@@ -267,6 +296,201 @@ describe("a build that fails", () => {
     // holds the lock.
     expect(count(api, "pnpm install")).toBe(3);
     expect(heldLocks(api)).toEqual([]);
+  });
+});
+
+/** Wait for the event loop to let every pending promise run. */
+const settleLoop = (): Promise<void> => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 30);
+  });
+};
+
+const timeouts = (bus: EventBus) => {
+  return bus.saved.filter((pause) => {
+    return pause.ended === "timeout";
+  });
+};
+
+const doneEvents = (bus: EventBus) => {
+  return bus.sent.filter((event) => {
+    return event.name === buildDoneEvent;
+  });
+};
+
+describe("runs that wait are woken, not polling", () => {
+  test("a herd waits on one event, with no wait running out", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "pnpm install", ticks: 5 }]);
+
+    const { pipeline, bus } = setup(api);
+    const results = await runs(pipeline, 4, { bus });
+
+    for (const result of results) {
+      expect(result.type).toBe("function-resolved");
+    }
+
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(heldLocks(api)).toEqual([]);
+
+    // The winner sent once; the losers were woken by it and sent nothing.
+    expect(doneEvents(bus)).toHaveLength(1);
+    expect(doneEvents(bus)[0]?.data.status).toBe("ready");
+    expect(timeouts(bus)).toEqual([]);
+
+    // Every wait was saved before the event that ended it was sent, and it
+    // names the lock it waits on.
+    for (const pause of bus.saved) {
+      expect(pause.expression).toMatch(/^async\.data\.name == 'ci-build-/);
+      expect(pause.ended).toBe("matched");
+    }
+
+    // The losers' stepped through no sleeps.
+    for (const result of results) {
+      expect(result.stepIds.join("\n")).not.toContain("lock:wait");
+    }
+  });
+
+  test("a wait saved after the event is not woken by it (no lookback), so it times out and looks again", async () => {
+    const api = createFakeSandboxApi();
+    const { cacheKey } = await learnLockName(api);
+    const id = plantLock(api, cacheKey, "01DEAD");
+    const { pipeline, bus } = setup(api);
+
+    // The holder let go, and said so, before this run saved its wait.
+    bus.send({
+      name: buildDoneEvent,
+      data: { name: buildLockName(cacheKey), status: "failed" },
+    });
+
+    const result = await runFunction(pipeline, {
+      bus,
+      event: prEvent,
+      runId: "01LATE",
+      // The platform reclaims the dead holder's machine after the wait ran out.
+      beforeRequest: () => {
+        if (timeouts(bus).length >= 1) {
+          const stale = api.sandboxes.get(id);
+
+          if (stale) {
+            stale.status = "TERMINATED";
+          }
+        }
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(timeouts(bus)).toHaveLength(1);
+    expect(count(api, "pnpm install")).toBe(1);
+  });
+
+  test("a holder that finished its snapshot but never let go is found by the look after a refused claim", async () => {
+    const api = createFakeSandboxApi();
+    const { cacheKey, snapshot } = await learnLockName(api);
+
+    plantLock(api, cacheKey, "01DEAD");
+
+    const { pipeline, bus } = setup(api);
+    let planted = false;
+
+    const result = await runFunction(pipeline, {
+      bus,
+      event: prEvent,
+      runId: "01FOUND",
+      // The snapshot appears after the run's first look, as the holder takes
+      // it, and nothing is ever sent.
+      beforeRequest: () => {
+        if (!planted && bus.saved.length > 0 && snapshot) {
+          planted = true;
+
+          api.snapshots.set(snapshot.id, snapshot);
+        }
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(0);
+    expect(timeouts(bus)).toEqual([]);
+
+    // It said so, so the wait it left open is ended and the run can end.
+    expect(doneEvents(bus)).toHaveLength(1);
+  });
+
+  test("a build that fails wakes the waiting runs, who claim the lock in turn", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "pnpm install", exitCode: 1, ticks: 5 }]);
+
+    const { pipeline, bus } = setup(api);
+    const results = await runs(pipeline, 3, { bus });
+
+    // Nothing to adopt, so each builds, and fails, once it holds the lock.
+    expect(count(api, "pnpm install")).toBe(3);
+
+    for (const result of results) {
+      expect(result.type).toBe("function-rejected");
+    }
+
+    expect(
+      doneEvents(bus).map((event) => {
+        return event.data.status;
+      }),
+    ).toEqual(["failed", "failed", "failed"]);
+
+    expect(timeouts(bus)).toEqual([]);
+    expect(heldLocks(api)).toEqual([]);
+  });
+
+  test("a failure then a pass: the first waiter to claim builds, and the rest adopt it", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "pnpm install", exitCode: 1, ticks: 5 }]);
+
+    const { pipeline, bus } = setup(api);
+
+    const results = await runs(pipeline, 3, {
+      bus,
+      beforeRequest: () => {
+        // The first build has failed, so a later one passes.
+        if (doneEvents(bus).length > 0) {
+          api.script([]);
+        }
+      },
+    });
+
+    const outcomes = results.map((result) => {
+      return result.type;
+    });
+
+    expect(
+      outcomes.filter((type) => type === "function-rejected"),
+    ).toHaveLength(1);
+    expect(
+      outcomes.filter((type) => type === "function-resolved"),
+    ).toHaveLength(2);
+
+    expect(count(api, "pnpm install")).toBe(2);
+    expect(named(api)).toHaveLength(1);
+    expect(timeouts(bus)).toEqual([]);
+    expect(heldLocks(api)).toEqual([]);
+  });
+
+  test("runs replay to the same steps: the wait and the send are memoized", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "pnpm install", ticks: 3 }]);
+
+    const { pipeline, bus } = setup(api);
+    const results = await runs(pipeline, 3, { bus });
+
+    for (const result of results) {
+      const ids = result.stepIds;
+
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+
+    expect(doneEvents(bus)).toHaveLength(1);
   });
 });
 
@@ -295,36 +519,42 @@ describe("a build that died holding the lock", () => {
     return cleanup;
   };
 
-  test("the cleanup function releases it, and a waiting run then builds", async () => {
+  test("the cleanup function releases it and wakes a waiting run, which then builds", async () => {
     const api = createFakeSandboxApi();
-    const cacheKey = await learnLockName(api);
+    const { cacheKey } = await learnLockName(api);
 
     plantLock(api, cacheKey, "01DEAD");
 
-    const { ci, pipeline } = setup(api);
-    let waits = 0;
+    const { ci, pipeline, bus } = setup(api);
 
-    const result = await runFunction(pipeline, {
+    // The test sends the cleanup, so it counts as a run that may still act.
+    bus.enter();
+
+    const waiter = runFunction(pipeline, {
+      bus,
       event: prEvent,
       runId: "01WAITER",
-      resolveWait: async (step) => {
-        if (step.displayName === "lock:wait") {
-          waits++;
-
-          // The dead run's cleanup comes in after the second wait.
-          if (waits === 2) {
-            await runFunction(cleanupOf(ci), {
-              event: failedEvent(cacheKey, "01DEAD"),
-            });
-          }
-        }
-
-        return null;
-      },
     });
 
+    while (bus.saved.length === 0) {
+      await settleLoop();
+    }
+
+    await settleLoop();
+
+    expect(count(api, "pnpm install")).toBe(0);
+
+    await runFunction(cleanupOf(ci), {
+      bus,
+      event: failedEvent(cacheKey, "01DEAD"),
+    });
+
+    bus.leave();
+
+    const result = await waiter;
+
     expect(result.type).toBe("function-resolved");
-    expect(waits).toBe(2);
+    expect(timeouts(bus)).toEqual([]);
     expect(count(api, "pnpm install")).toBe(1);
     expect(heldLocks(api)).toEqual([]);
     expect(named(api)).toHaveLength(1);
@@ -332,60 +562,56 @@ describe("a build that died holding the lock", () => {
 
   test("the cleanup function leaves a lock that another run holds now", async () => {
     const api = createFakeSandboxApi();
-    const cacheKey = await learnLockName(api);
+    const { cacheKey } = await learnLockName(api);
 
     const id = plantLock(api, cacheKey, "01NEWER");
-    const { ci } = setup(api);
+    const { ci, bus } = setup(api);
 
     await runFunction(cleanupOf(ci), {
+      bus,
       event: failedEvent(cacheKey, "01DEAD"),
     });
 
     expect(api.sandboxes.get(id)?.status).toBe("RUNNING");
   });
 
-  test("the platform reclaiming the machine releases it too", async () => {
+  test("the platform reclaiming the machine releases it too: the wait runs out and the run claims", async () => {
     const api = createFakeSandboxApi();
-    const cacheKey = await learnLockName(api);
+    const { cacheKey } = await learnLockName(api);
 
     const id = plantLock(api, cacheKey, "01DEAD");
-    const { pipeline } = setup(api);
-    let waits = 0;
+    const { pipeline, bus } = setup(api);
 
     const result = await runFunction(pipeline, {
+      bus,
       event: prEvent,
       runId: "01WAITER",
-      resolveWait: (step) => {
-        if (step.displayName === "lock:wait") {
-          waits++;
+      beforeRequest: () => {
+        // The longest a build may run has passed.
+        if (timeouts(bus).length >= 2) {
+          const stale = api.sandboxes.get(id);
 
-          // The longest a build may run has passed.
-          if (waits === 3) {
-            const stale = api.sandboxes.get(id);
-
-            if (stale) {
-              stale.status = "TERMINATED";
-            }
+          if (stale) {
+            stale.status = "TERMINATED";
           }
         }
-
-        return null;
       },
     });
 
     expect(result.type).toBe("function-resolved");
-    expect(waits).toBe(3);
+    expect(timeouts(bus).length).toBeGreaterThanOrEqual(2);
     expect(count(api, "pnpm install")).toBe(1);
   });
 
   test("a lock that never lets go is built without after a while", async () => {
     const api = createFakeSandboxApi();
-    const cacheKey = await learnLockName(api);
+    const { cacheKey } = await learnLockName(api);
 
     const id = plantLock(api, cacheKey, "01DEAD");
-    const { pipeline } = setup(api);
+    const { pipeline, bus } = setup(api);
 
     const result = await runFunction(pipeline, {
+      bus,
       event: prEvent,
       runId: "01IMPATIENT",
       maxRequests: 2000,
@@ -394,6 +620,7 @@ describe("a build that died holding the lock", () => {
     expect(result.type).toBe("function-resolved");
     expect(count(api, "pnpm install")).toBe(1);
     expect(api.sandboxes.get(id)?.status).toBe("RUNNING");
+    expect(timeouts(bus).length).toBeGreaterThanOrEqual(10);
   }, 60_000);
 });
 

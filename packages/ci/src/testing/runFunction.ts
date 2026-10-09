@@ -15,10 +15,13 @@
 
 import type { EventPayload, InngestFunction } from "inngest";
 import { createdFunctions } from "./client.ts";
+import type { EventBus } from "./eventBus.ts";
+import { durationMs } from "./eventBus.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
   InvokeFunction: "InvokeFunction",
+  WaitForEvent: "WaitForEvent",
   StepError: "StepError",
   StepFailed: "StepFailed",
   StepPlanned: "StepPlanned",
@@ -117,6 +120,13 @@ export interface RunFunctionOptions {
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
+  /**
+   * Where `step.waitForEvent` waits and the events `step.sendEvent` sends meet.
+   * Without it, a wait resolves through `resolveWait` straight away. With it,
+   * a wait is a pause that only an event sent after it, or its timeout once
+   * every run is blocked, resumes. Pass the same bus to the test client.
+   */
+  bus?: EventBus;
   /**
    * Rewrites the data of each invoke after it went through JSON and before the
    * invoked function runs, to play an invoker that is buggy or forged.
@@ -269,6 +279,19 @@ const stepId = (step: Step): string => {
 export const runFunction = async (
   fn: InngestFunction.Any,
   opts: RunFunctionOptions = {},
+): Promise<RunResult> => {
+  opts.bus?.enter();
+
+  try {
+    return await driveFunction(fn, opts);
+  } finally {
+    opts.bus?.leave();
+  }
+};
+
+const driveFunction = async (
+  fn: InngestFunction.Any,
+  opts: RunFunctionOptions,
 ): Promise<RunResult> => {
   const event = opts.event ?? { name: "test/event", data: {} };
   const runId = opts.runId ?? "01TESTRUN";
@@ -482,6 +505,32 @@ export const runFunction = async (
         continue;
       }
 
+      // A wait on the bus is saved as a pause now, so events sent from here
+      // on reach it, and it stays open beside the function like an invoke.
+      if (planned.op === StepOpCode.WaitForEvent && opts.bus) {
+        if (started.has(planned.id)) {
+          continue;
+        }
+
+        started.add(planned.id);
+
+        progressed = true;
+
+        const wait = planned.opts as { timeout: string; if?: string };
+
+        inflight.set(
+          planned.id,
+          opts.bus
+            .pause(String(planned.name), wait.if, durationMs(wait.timeout))
+            .then((matched) => {
+              finished.push({ planned, outcome: { data: matched } });
+              inflight.delete(planned.id);
+            }),
+        );
+
+        continue;
+      }
+
       // Only `step.run` steps are asked to run. Everything else (sleeps,
       // waits) is fulfilled by the executor writing state, so the harness
       // does the same.
@@ -494,6 +543,8 @@ export const runFunction = async (
             : { displayName: planned.displayName }),
           data: opts.resolveWait ? await opts.resolveWait(planned) : null,
         });
+
+        progressed = true;
 
         continue;
       }
@@ -515,7 +566,11 @@ export const runFunction = async (
 
     // Nothing new to do, so the function is waiting on its invokes.
     if (!progressed && finished.length === 0 && inflight.size > 0) {
-      await Promise.race(inflight.values());
+      const settled = (): Promise<unknown> => {
+        return Promise.race(inflight.values());
+      };
+
+      await (opts.bus ? opts.bus.blockedOn(settled) : settled());
     }
   }
 

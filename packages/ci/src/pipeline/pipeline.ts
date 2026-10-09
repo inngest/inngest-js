@@ -45,7 +45,8 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration } from "../util.ts";
-import { buildLockName } from "./buildLock.ts";
+import type { BuildDone } from "./buildLock.ts";
+import { buildDoneEvent, buildLockName } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -907,11 +908,21 @@ export const cleanupFunction = ({
           ? buildLockName(cacheKey)
           : undefined;
 
-      return step.run("destroy-orphans", async () => {
+      const destroyed = await step.run("destroy-orphans", async () => {
         return runId
           ? destroyOrphans(client, runId, lockName)
           : { destroyed: 0 };
       });
+
+      // Runs waiting on the dead build's lock are woken to claim it.
+      if (lockName) {
+        await step.sendEvent("announce-lock-released", {
+          name: buildDoneEvent,
+          data: { name: lockName, status: "failed" } satisfies BuildDone,
+        });
+      }
+
+      return destroyed;
     },
   );
 };
