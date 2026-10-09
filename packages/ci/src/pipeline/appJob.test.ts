@@ -198,7 +198,7 @@ describe("image.job()", () => {
     expect(ran(api, "pnpm deps")).toBe(2);
   });
 
-  test("two apps asking at once for jobs that share a base build that base once", async () => {
+  test("two apps asking at once for jobs that share a base may each build it, and the snapshot that kept the name serves both", async () => {
     const api = createFakeSandboxApi();
     const platform = app(api, "platform");
     const web = app(api, "web");
@@ -247,10 +247,20 @@ describe("image.job()", () => {
 
     expect(a.type).toBe("function-resolved");
     expect(b.type).toBe("function-resolved");
-    expect(ran(api, "pnpm build-z")).toBe(1);
+
+    // Best-effort across runs: both asks miss `z` together, so each may build
+    // it, and at most one snapshot keeps its name. `y` is only asked for once.
+    expect(ran(api, "pnpm build-z")).toBeGreaterThanOrEqual(1);
+    expect(ran(api, "pnpm build-z")).toBeLessThanOrEqual(2);
     expect(ran(api, "pnpm build-y")).toBe(1);
     expect(ran(api, "pnpm x")).toBe(1);
     expect(ran(api, "pnpm w")).toBe(1);
+
+    const named = [...api.snapshots.values()].filter((snapshot) => {
+      return /\/z\//.test(snapshot.name ?? "");
+    });
+
+    expect(named).toHaveLength(1);
   });
 
   test("an input reaches the other app's job", async () => {

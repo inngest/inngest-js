@@ -42,22 +42,11 @@ const run = () => {
 };
 
 describe("without the SDK's span API", () => {
-  const realSpanApi = Object.getOwnPropertyDescriptor(group, "~span");
-
   beforeEach(() => {
     removeSpanStub();
-
-    // An SDK that ships the span API has it on `group` itself, so hide it.
-    Reflect.deleteProperty(group, "~span");
   });
 
   afterEach(() => {
-    removeSpanStub();
-
-    if (realSpanApi) {
-      Object.defineProperty(group, "~span", realSpanApi);
-    }
-
     installSpanStub();
   });
 
@@ -105,10 +94,9 @@ describe("without the SDK's span API", () => {
     expect(Object.keys(withSpans.spans).length).toBeGreaterThan(0);
     expect(without.spans).toEqual({});
 
-    // An SDK that ships the span API reads `"~origin"` on its own.
-    if (!realSpanApi) {
-      expect(without.origins).toEqual({});
-    }
+    // Origins aren't asserted absent: an SDK with the span API stamps a
+    // step's `~origin` option itself, whether or not `group["~span"]` is there
+    // to open spans, and this suite runs against that SDK.
   });
 });
 

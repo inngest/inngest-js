@@ -78,10 +78,6 @@ export const traceName = {
     return `Exited with code ${exitCode}`;
   },
 
-  startFrom: (parent: string): string => {
-    return `Start from ${parent}`;
-  },
-
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
   },

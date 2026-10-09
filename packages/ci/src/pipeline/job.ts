@@ -8,7 +8,11 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
-import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import type {
+  CachedSnapshot,
+  CacheTarget,
+  ParentNotes,
+} from "../cache/cache.ts";
 import {
   cacheTarget,
   describeCached,
@@ -86,8 +90,6 @@ export const defineJob = ({
   const given: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
-  checkDurations(given);
-
   const run = getRunScope();
 
   // A job defined while a run is active exists only in this worker's memory,
@@ -102,6 +104,8 @@ export const defineJob = ({
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
     );
   }
+
+  checkDurations(config);
 
   checkStaticFrom(jobs, config);
 
@@ -174,8 +178,6 @@ interface RunJobArgs {
   // biome-ignore lint/suspicious/noExplicitAny: user handler
   handler: (input: any) => Promise<void>;
   input: unknown;
-  /** Set when `input` already went through the job's schema, as a build's does. */
-  validated?: boolean;
 }
 
 /**
@@ -187,7 +189,6 @@ export const runJob = async ({
   config,
   handler,
   input,
-  validated,
 }: RunJobArgs): Promise<void> => {
   const run = getRunScope();
 
@@ -206,7 +207,6 @@ export const runJob = async ({
     config,
     handler,
     input,
-    ...(validated ? { validated } : {}),
     path: number === 1 ? config.id : `${config.id} (${number})`,
     number,
   });
@@ -226,8 +226,9 @@ export const invokeBuild = async (
   const { run, config, input } = args;
 
   // The build function can't find a job that exists only in this run, nor one
-  // whose parent does, so such a job builds here.
-  if (buildsInRun(run, config, input)) {
+  // whose parent does, so such a job builds here. Its `from` reads the
+  // validated input, as everywhere else.
+  if (buildsInRun(run, config, await validateInput(config, input))) {
     return buildInline(args);
   }
 
@@ -241,6 +242,10 @@ interface BuildArgs {
   /** What the invoke's step ID is built on, when it isn't the job's path. */
   stepPath?: string;
   config: JobConfig;
+  /**
+   * The job's input as it was given, before its schema, which goes over the
+   * wire as JSON and which the build validates itself.
+   */
   input: unknown;
   target: CacheTarget;
   /** A snapshot that wouldn't start, which the build must not reuse. */
@@ -254,6 +259,8 @@ interface BuildArgs {
   base?: FromBase;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
+  /** What the lookup warns about, when the job is a `from` parent. */
+  notes?: ParentNotes;
 }
 
 /**
@@ -327,6 +334,7 @@ const invokeBuildRun = async ({
   check,
   base,
   lookup = true,
+  notes,
 }: BuildArgs): Promise<CacheBuildResult> => {
   const origin = matrixOriginOf(config);
   const parent = run.build?.parent;
@@ -378,6 +386,7 @@ const invokeBuildRun = async ({
       config.cache,
       target,
       exclude,
+      notes,
     );
 
     if (hit) {
@@ -471,13 +480,32 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
 };
 
 /**
- * What a job's snapshot is named, for a build run: the name the invoking run
- * limited builds on, so the two can't drift apart.
+ * What the invoker says a job's snapshot is named, for a build run. It's a
+ * claim: `verifyBuildTarget` checks it against the job.
  */
 const buildTarget = (run: CiRunScope): CacheTarget | undefined => {
   return run.build
     ? { ownKey: run.build.ownKey, name: run.build.cacheKey }
     : undefined;
+};
+
+/**
+ * Fail a build whose invoker sent a key or name other than the ones the job's
+ * registered config, its input and its parent's snapshot give.
+ */
+const verifyBuildTarget = (run: CiRunScope, expected: CacheTarget): void => {
+  const claimed = buildTarget(run);
+
+  if (
+    !claimed ||
+    (claimed.ownKey === expected.ownKey && claimed.name === expected.name)
+  ) {
+    return;
+  }
+
+  throw new NonRetriableError(
+    `The build of "${run.build?.jobId}" was asked for under a name that doesn't match the job: it was sent \`${claimed.name}\`, and the job's cache key and input give \`${expected.name}\`.`,
+  );
 };
 
 /**
@@ -567,7 +595,6 @@ const jobSteps = async ({
   config: declared,
   handler,
   input: given,
-  validated,
   path,
   number,
   inline,
@@ -580,14 +607,18 @@ const jobSteps = async ({
   /** Set when the job is built here for a job that starts from it. */
   inline?: InlineBuild;
 }): Promise<void> => {
-  const input = validated ? given : await validateInput(declared, given);
+  const input = await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
 
   // Only a cached job with a `from` has anything to work out, so any other
   // plans its first step at once.
   const { config, uncachedBase } =
     declared.cache && declared.from !== undefined
-      ? await withoutUnreusableCache(run, { config: declared, input })
+      ? await withoutUnreusableCache(run, {
+          config: declared,
+          input,
+          raw: given,
+        })
       : { config: declared, uncachedBase: undefined };
 
   const scope: CiJobScope = {
@@ -666,6 +697,21 @@ const jobSteps = async ({
         )
       : undefined;
 
+  // The invoker names the snapshot, but the job's own config decides what it
+  // may be called, so no invoker can write under a name of its choosing.
+  if (isBuild && !parentFailure) {
+    verifyBuildTarget(
+      run,
+      cacheAt ??
+        runTarget(
+          run,
+          config.id,
+          input,
+          fromParent ? identityOf(fromParent) : undefined,
+        ),
+    );
+  }
+
   // A build snapshots its job, cached or not, under the name the run that
   // invoked it asked for.
   const builtAs = inline
@@ -723,12 +769,13 @@ const jobSteps = async ({
 
     if (cacheAt && asksBuild) {
       // The build run looks the snapshot up when it starts, and builds only if
-      // it still has to, so a herd of runs needing one name builds it once.
+      // it still has to. Runs that miss at the same time may still build
+      // redundantly, and then only one snapshot keeps the name.
       const built = await invokeBuild({
         run,
         path: scope.path,
         config,
-        input,
+        input: given,
         target: cacheAt,
         check: checks.target(target),
         ...(fromParent ? { base: fromParent } : {}),

@@ -14,7 +14,7 @@ import { NonRetriableError, referenceFunction } from "inngest";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { deployedRepo } from "../github/deployRepo.ts";
 import type { BaseImage } from "../image.ts";
-import { buildBase } from "../machine/from.ts";
+import { buildOf } from "../machine/from.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { cacheBuildFunctionId } from "./cacheBuild.ts";
@@ -191,11 +191,12 @@ export const answerAppJob = async ({
   const config = registered.config;
 
   // Taken as this run's concern inside, like any build it asks for.
-  const built = await buildBase(
+  const built = await buildOf(
     run,
     {
       config,
       input: await validateInput(config, input),
+      raw: input,
     },
     // The job itself is the start of the chain that guards `from` cycles here.
     [config.id],

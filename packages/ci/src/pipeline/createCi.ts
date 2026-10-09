@@ -43,7 +43,6 @@ import type {
 } from "../types.ts";
 import { devServerRunUrl } from "../util.ts";
 import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
-import { noopHooks } from "./hooks.ts";
 import { invalidateFunction } from "./invalidate.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";

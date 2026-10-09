@@ -335,7 +335,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
             experimentStepHashedId,
             "inngest.experiment",
             "step",
-            "merge",
+            "set",
             {
               name: stepOpts.id,
               variant: result,
@@ -352,7 +352,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               experimentStepHashedId,
               "inngest.warnings",
               "step",
-              "merge",
+              "set",
               {
                 "sdk.group.experiment.nullishBucket":
                   "experiment.bucket() received a null/undefined value; " +

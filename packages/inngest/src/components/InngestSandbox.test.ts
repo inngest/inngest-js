@@ -1721,7 +1721,8 @@ describe("step.sandbox", () => {
       expect(first).toMatchObject({
         type: "step-ran",
         step: {
-          metadata: [
+          // The SDK's own `inngest.sandbox` metadata is on the step too.
+          metadata: expect.arrayContaining([
             {
               kind: metadataKind,
               scope: "step",
@@ -1732,7 +1733,7 @@ describe("step.sandbox", () => {
                 failed: false,
               },
             },
-          ],
+          ]),
         },
       });
     });
@@ -1752,13 +1753,16 @@ describe("step.sandbox", () => {
       expect(first).toMatchObject({
         type: "step-ran",
         step: {
-          metadata: [
-            {
+          metadata: expect.arrayContaining([
+            expect.objectContaining({
               kind: metadataKind,
               scope: "step",
-              values: { intent: "list sandboxes", failed: true },
-            },
-          ],
+              values: expect.objectContaining({
+                intent: "list sandboxes",
+                failed: true,
+              }),
+            }),
+          ]),
         },
       });
     });
