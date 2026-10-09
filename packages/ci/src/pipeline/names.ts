@@ -86,6 +86,10 @@ export const traceName = {
     return `Build ${path} in its own run`;
   },
 
+  buildInline: (jobId: string): string => {
+    return `Build ${jobId} inline`;
+  },
+
   createCheck: (check: string): string => {
     return `Create check: ${check}`;
   },

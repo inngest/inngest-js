@@ -8,9 +8,9 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
-import type { CachedSnapshot } from "../cache/cache.ts";
-import type { ResolvedSource } from "../github/source.ts";
+import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type { BaseImage } from "../image.ts";
 import type {
   CheckAnnotation,
@@ -53,6 +53,35 @@ export const matrixOriginOf = (
     }
   )[matrixOriginKey];
 };
+
+/**
+ * Where a job config remembers it was defined while a run was active, so it
+ * exists only in the memory of the worker running that pipeline. A matrix sets
+ * it on its combinations itself, since they are always defined in a run.
+ */
+export const inlineKey = Symbol("inngest/ci.inline");
+
+/** Whether the job was defined inside a pipeline run. */
+export const isInline = (config: JobConfig): boolean => {
+  return (config as unknown as { [inlineKey]?: boolean })[inlineKey] === true;
+};
+
+/**
+ * A job built in the run that needs it rather than by the build function: one
+ * the build function can't find, because it exists only in this run.
+ */
+export interface InlineBuild {
+  /** The key and snapshot name to build under. */
+  target: CacheTarget;
+  /** A bad snapshot the build must not reuse. */
+  exclude?: string;
+  /** What the job starts from, as a build run is handed it. */
+  base?: CacheBuildResult;
+  /** What the job ended with, set by the job. */
+  outcome?: BuildOutcome;
+  /** The job's line in the summary, left for the run that asked to report. */
+  summary?: JobSummary;
+}
 
 /**
  * A machine held by a job or an extra machine scope. It's a promise so
@@ -202,6 +231,8 @@ export interface CiRunScope {
    * jobs on one image share one lookup. It holds promises and nothing else.
    */
   images: Map<string, Promise<CachedSnapshot>>;
+  /** The IDs of the jobs defined in this run, which must be unique. */
+  definedJobs: Set<string>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
@@ -273,6 +304,8 @@ export interface CiJobScope {
   jobPath: string;
   config: JobConfig;
   machine?: Promise<MachineHandle>;
+  /** Set when the job is being built in this run for a job that starts from it. */
+  inline?: InlineBuild;
   fromSnapshotId?: string;
   /** The name of the base image the job starts from, when it does. */
   fromImage?: string;
@@ -572,10 +605,12 @@ export const inJobSpan = <R>(
   run: CiRunScope,
   jobPath: string,
   fn: () => R,
+  /** What the span is called, when it isn't the job's name. */
+  name?: string,
 ): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
     return inSpan(
-      { id: jobPath, name: traceName.job(run, jobPath), kind: "job" },
+      { id: jobPath, name: name ?? traceName.job(run, jobPath), kind: "job" },
       fn,
     );
   });

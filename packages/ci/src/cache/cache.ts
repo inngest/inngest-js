@@ -23,7 +23,12 @@ import {
 import { ciRun, shorten, warnStep } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  countApi,
+  isInline,
+  rootRunIdOf,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -753,6 +758,11 @@ export const justInTimeNote = (
 
 /** Add a cached parent's just-in-time line to the run's warnings, once. */
 export const warnJustInTime = (run: CiRunScope, config: JobConfig): void => {
+  // A job defined in the run can't be warmed, and says it was built here.
+  if (isInline(config)) {
+    return;
+  }
+
   const { line } = justInTimeNote(config);
 
   if (!run.warnings.includes(line)) {
@@ -878,7 +888,7 @@ export const lookupParent = async (
           "ci.uncachedBase",
           uncachedBaseNote(config.id, uncachedBase).message,
         );
-      } else if (!hit) {
+      } else if (!hit && !isInline(config)) {
         await warnStep(run, "ci.justInTime", justInTimeNote(config).message);
       }
 
