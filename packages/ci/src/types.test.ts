@@ -467,18 +467,18 @@ describe("from starts from a job", () => {
 });
 
 describe("from starts from a base image", () => {
-  test("a job takes image.custom, directly or from a function", () => {
+  test("a job takes image.snapshot, directly or from a function", () => {
     ci.job(
-      { id: "from-image", from: image.custom("agent-deps") },
+      { id: "from-image", from: image.snapshot("agent-deps") },
       async () => {},
     );
 
     ci.job(
-      { id: "from-image-fn", from: () => image.custom("agent-deps") },
+      { id: "from-image-fn", from: () => image.snapshot("agent-deps") },
       async () => {},
     );
 
-    expectTypeOf(image.custom("agent-deps")).toEqualTypeOf<BaseImage>();
+    expectTypeOf(image.snapshot("agent-deps")).toEqualTypeOf<BaseImage>();
   });
 
   test("createCi takes an image as its default, and rejects a job", () => {
@@ -486,7 +486,7 @@ describe("from starts from a base image", () => {
 
     const client = createCiTestClient(createFakeSandboxApi());
 
-    createCi(client, { from: image.custom("agent-deps") });
+    createCi(client, { from: image.snapshot("agent-deps") });
 
     types(() => {
       return createCi(client, {
