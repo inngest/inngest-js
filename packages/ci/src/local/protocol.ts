@@ -26,6 +26,13 @@ export const localEnv = {
  */
 export const runJobEvent = "ci/run-job";
 
+/**
+ * The field of a pipeline's trigger event `data` that names the one pipeline
+ * the CLI means to run. A local run of any other pipeline on the same trigger
+ * skips the event.
+ */
+export const localTargetKey = "_inngestCiTarget";
+
 /** The ID of the CLI-only function that runs one job. */
 export const runJobFunctionId = "ci-run-job";
 

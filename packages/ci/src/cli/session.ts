@@ -28,6 +28,7 @@ import {
 import {
   cancelRun,
   findRun,
+  listActiveRuns,
   runFailureReason,
   sandboxAccessProblemOf,
   sendEvent,
@@ -58,6 +59,7 @@ import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
 import { sandboxAccessError, sandboxAccessProblem } from "./sandboxAccess.ts";
 import { configure, confirm } from "./setup/guided.ts";
 import { SetupError } from "./setupError.ts";
+import { cancelStrays } from "./strays.ts";
 import {
   buildJobEvent,
   buildPipelineEvent,
@@ -82,6 +84,9 @@ const runTimeoutMs = 60 * 60_000;
 
 /** How long a finished run gets for its Sandboxes to be destroyed. */
 const cleanupGraceMs = 60_000;
+
+/** How long runs the session started but didn't watch get to clean up. */
+const strayGraceMs = 30_000;
 
 /** How often the Dev Server is asked whether the run has ended. */
 const pollIntervalMs = 1000;
@@ -629,6 +634,7 @@ const planTarget = async (
       input,
       entered,
       event: await buildPipelineEvent({
+        pipelineId: target.id,
         trigger: input.trigger as string,
         data: input.data,
         cwd: booted.repoRoot,
@@ -772,6 +778,24 @@ const runRound = async (
     }
 
     throw error;
+  } finally {
+    await cancelStrays({
+      eventIds,
+      graceMs: strayGraceMs,
+      pollMs: pollIntervalMs,
+      deps: {
+        listActive: () => {
+          return listActiveRuns(devServerUrl);
+        },
+        cancel: (runId) => {
+          return cancelRun(devServerUrl, runId);
+        },
+        sleep: (ms) => {
+          return sleep(ms);
+        },
+        now: Date.now,
+      },
+    });
   }
 
   emit({ kind: "done", conclusion, at: Date.now() });

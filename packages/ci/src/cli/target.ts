@@ -11,6 +11,7 @@ import type { PullRequestAction } from "../github/triggers.ts";
 import type { JsonSchema } from "../local/jsonSchema.ts";
 import {
   type LocalManifest,
+  localTargetKey,
   type RunJobEventData,
   runJobEvent,
 } from "../local/protocol.ts";
@@ -198,7 +199,7 @@ export const matchTrigger = (events: string[], name: string): string => {
  * `data` for a manual one. A manual event also carries the repository, so
  * `checkout()` has the working tree to upload.
  */
-export const buildPipelineEvent = async (opts: {
+const triggerEvent = async (opts: {
   trigger: string;
   data?: Record<string, unknown>;
   cwd: string;
@@ -241,6 +242,25 @@ export const buildPipelineEvent = async (opts: {
   }
 
   throw new SetupError(`There is no local fixture for ${trigger}.`);
+};
+
+/**
+ * The event that runs one pipeline. Other pipelines on the same trigger also
+ * receive it, so it names the one to run, and the others skip it.
+ */
+export const buildPipelineEvent = async (opts: {
+  pipelineId: string;
+  trigger: string;
+  data?: Record<string, unknown>;
+  cwd: string;
+}): Promise<LocalEvent> => {
+  const { pipelineId, ...rest } = opts;
+  const event = await triggerEvent(rest);
+
+  return {
+    ...event,
+    data: { ...event.data, [localTargetKey]: pipelineId },
+  };
 };
 
 /** The working tree's repository, for the header and for job events. */
