@@ -1,12 +1,12 @@
 import type { IsNever } from "../helpers/types.ts";
-import type { ExperimentRef, StepOptionsOrId } from "../types.ts";
+import type { ExperimentRef, StepOptionsOrId, StepSpan } from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
-import { getStepOptions } from "./InngestStepTools.ts";
+import { getStepOptions, withSpan } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 
 /**
@@ -219,6 +219,33 @@ export interface GroupTools {
    * ```
    */
   experiment: GroupExperiment;
+
+  /**
+   * Run a callback where every step is grouped under a span in the trace,
+   * nested inside any span this is called in. The same ID under the same
+   * parent re-enters the same span.
+   *
+   * Without AsyncLocalStorage, the callback runs ungrouped.
+   *
+   * EXPERIMENTAL: a library that runs steps on the user's behalf can give
+   * the span an `origin`, the library's `"<package>@<version>"`, such as
+   * `"@inngest/ci@0.1.0"`. Steps inside inherit it unless they set their own
+   * `"~origin"`; a nested span inherits it too unless it sets its own. Leave
+   * it unset for spans that stand for the user's own code. The Inngest UI
+   * de-emphasises spans and steps whose origin is an Inngest package.
+   *
+   * @example
+   * ```ts
+   * await group["~span"](
+   *   { id: "setup", name: "Start sandbox", origin: "@inngest/ci@0.1.0" },
+   *   () => step.run("create", () => createSandbox()),
+   * );
+   * ```
+   *
+   * @internal Unstable and may change or be removed without a major version
+   * bump.
+   */
+  "~span": <T>(span: StepSpan, callback: () => T) => T;
 }
 
 /**
@@ -308,7 +335,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
             experimentStepHashedId,
             "inngest.experiment",
             "step",
-            "merge",
+            "set",
             {
               name: stepOpts.id,
               variant: result,
@@ -325,7 +352,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               experimentStepHashedId,
               "inngest.warnings",
               "step",
-              "merge",
+              "set",
               {
                 "sdk.group.experiment.nullishBucket":
                   "experiment.bucket() received a null/undefined value; " +
@@ -408,5 +435,5 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     };
   }) as GroupExperiment;
 
-  return { parallel, experiment };
+  return { parallel, experiment, "~span": withSpan };
 };
