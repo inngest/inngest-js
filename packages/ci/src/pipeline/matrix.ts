@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
+import type { Matrix, MatrixCombo, MatrixConfig, JobConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import { countApi } from "./scope.ts";
 
@@ -40,9 +40,22 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
             ? config.cache(combo)
             : config.cache;
 
-        const job = ci.job(
+        // A function of the combination runs inside the combination's own
+        // job, like any job's `from`, so if it throws, that job fails with
+        // its own check.
+        const pick = config.from;
+
+        const from: JobConfig["from"] =
+          typeof pick === "function" && !("kind" in pick)
+            ? () => {
+                return pick({ input: combo });
+              }
+            : (pick as JobConfig["from"]);
+
+        const job = ci.job<void>(
           {
             id: matrixJobId(config.id, combo),
+            ...(from ? { from } : {}),
             ...(machine ? { machine } : {}),
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),

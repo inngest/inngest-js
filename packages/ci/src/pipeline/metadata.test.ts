@@ -12,7 +12,6 @@ import { describe, expect, test, vi } from "vitest";
 import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -87,9 +86,7 @@ describe("run metadata", () => {
       await $`pnpm install`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(install);
-
+    const test = ci.job({ id: "test", from: install }, async () => {
       await $`pnpm test`;
       await $`pnpm lint`;
 

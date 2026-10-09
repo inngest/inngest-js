@@ -39,7 +39,7 @@ import { ensureMachine } from "./machine.ts";
  * | If the work… | Use |
  * | --- | --- |
  * | is independent, like lint and test | separate jobs |
- * | follows on from earlier work | separate jobs, with `from()` |
+ * | follows on from earlier work | separate jobs, with `from` |
  * | needs several machines at once | one job, with `sandbox()` |
  *
  * @throws {CiUsageError} When called outside a job.
@@ -64,7 +64,6 @@ export const sandbox = async (
       path,
       jobPath: job.jobPath,
       config: { ...job.config, id: path, machine: config },
-      fromCalled: false,
       fromJobIds: [],
       fromInputs: {},
       annotations: [],

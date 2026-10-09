@@ -1,6 +1,6 @@
 /**
  * Defining and running a job: the `ci.job()` factory, starting a run of a job
- * or joining the shared one `from()` uses, and the job body that reports
+ * or joining the shared one `from` uses, and the job body that reports
  * checks, caches and pauses machines.
  *
  * @module
@@ -13,6 +13,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
+import { ownJob, parentOf, startFrom } from "../machine/from.ts";
 import { pauseMachine, snapshotJob } from "../machine/machine.ts";
 import type {
   AnyJob,
@@ -23,7 +24,7 @@ import type {
 import { formatDuration, formatRelative, shortReason } from "../util.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
-import { getRunScope, jobHandlerKey, runJobBody } from "./scope.ts";
+import { getRunScope, runJobBody } from "./scope.ts";
 
 export interface RegisteredJob {
   id: string;
@@ -58,8 +59,14 @@ export const defineJob = ({
   Object.defineProperties(job, {
     id: { value: config.id, enumerable: true },
     kind: { value: "inngest/ci.job", enumerable: true },
-    [jobHandlerKey]: { value: handler },
+    with: {
+      value: (input: unknown) => {
+        return Object.freeze({ kind: "inngest/ci.jobRef", job, input });
+      },
+    },
   });
+
+  ownJob(job, jobs);
 
   return job;
 };
@@ -77,7 +84,7 @@ interface RunJobArgs {
 
 /**
  * Run a job. Every direct call is its own run of the job: the first has the
- * job's ID as its path and is the one `from()` shares, and each later call gets
+ * job's ID as its path and is the one `from` shares, and each later call gets
  * `${id} (n)`, so it has its own machine, steps and check.
  */
 export const runJob = async ({
@@ -112,8 +119,8 @@ export const runJob = async ({
 };
 
 /**
- * Get the shared run of a job, the one `from()` copies from: join it if it has
- * started, whether by a direct call or another `from()`, or start it.
+ * Get the shared run of a job, the one `from` copies from: join it if it has
+ * started, whether by a direct call or another job's `from`, or start it.
  */
 export const joinJob = ({
   id,
@@ -192,7 +199,6 @@ const jobBody = async ({
     path,
     jobPath: path,
     config,
-    fromCalled: false,
     fromJobIds: [],
     fromInputs: {},
     annotations: [],
@@ -245,7 +251,13 @@ const jobBody = async ({
   }
 
   try {
-    await runJobBody(scope, () => {
+    await runJobBody(scope, async () => {
+      const parent = parentOf(run, config, input);
+
+      if (parent) {
+        await startFrom(scope, parent);
+      }
+
       return handler(input);
     });
 

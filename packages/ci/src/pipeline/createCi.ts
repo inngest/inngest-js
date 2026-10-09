@@ -80,8 +80,8 @@ export interface Ci {
    *
    * Its input is inferred from the handler. Every call runs the job again, on
    * its own machine and with its own check, named `test (2)` the second time.
-   * `from()` is how jobs share one run. It has no return value, and a handler
-   * that returns one is a type error.
+   * A job that starts `from` another runs on a copy of its machine. A job has
+   * no return value, and a handler that returns one is a type error.
    *
    * ```ts
    * const test = ci.job("test", async () => {
