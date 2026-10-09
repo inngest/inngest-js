@@ -270,8 +270,10 @@ export interface JobConfig<TInput = void> {
    *
    * A cached job, and a job another starts `from`, is built in a run of its
    * own, which is sent the input you gave as JSON and validates it again. So
-   * the input you give must survive JSON (no `Date`, `Map`, `Set` or
-   * `bigint`), while the schema can turn it into any of those.
+   * the input you give must survive JSON. The cache key is built from the
+   * schema's output, so that must be plain JSON too (no `Date`, `Map`, `Set`
+   * or `bigint`). Transforms that normalise input, such as trim, lowercase or
+   * defaults, are fine, and let varied inputs share a key.
    *
    * ```ts
    * const build = ci.job(
