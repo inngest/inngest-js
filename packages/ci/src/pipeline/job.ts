@@ -21,7 +21,12 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { identityOf, parentBuildOf, startFrom } from "../machine/from.ts";
+import {
+  identityOf,
+  ownJob,
+  parentBuildOf,
+  startFrom,
+} from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
@@ -83,6 +88,8 @@ export const defineJob = ({
       },
     },
   });
+
+  ownJob(job, jobs);
 
   return job;
 };

@@ -442,6 +442,26 @@ describe("from starts from a job", () => {
     withInput.with();
   });
 
+  test("a job that needs input isn't a bare parent", () => {
+    // @ts-expect-error give it its input with .with()
+    ci.job({ id: "from-bare", from: withInput }, async () => {});
+
+    ci.job(
+      {
+        id: "from-fn-bare",
+        // @ts-expect-error a function can't return it bare either
+        from: () => {
+          return withInput;
+        },
+      },
+      async () => {},
+    );
+
+    const optional = ci.job("optional", async (_node?: string) => {});
+
+    ci.job({ id: "from-optional", from: optional }, async () => {});
+  });
+
   test("a function of the job's own input", () => {
     ci.job(
       {
