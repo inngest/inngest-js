@@ -89,12 +89,16 @@ describe("deleteSnapshot", () => {
 
 describe("resolveTakenName", () => {
   /** A run whose only snapshot holds the name, recording what is deleted. */
-  const holding = (deleted: string[]): CiRunScope => {
+  const holding = (
+    deleted: string[],
+    /** When the holder was created, in place of now. */
+    createdAt = new Date().toISOString(),
+  ): CiRunScope => {
     const holder = {
       id: "main-snapshot",
       name: "ci/main/base/k",
       status: "READY",
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
 
     const snapshots = {
@@ -146,6 +150,22 @@ describe("resolveTakenName", () => {
       "ci/main/base/k",
       "main-snapshot",
       true,
+    );
+
+    expect(deleted).toEqual(["main-snapshot"]);
+    expect(taken.cleared).toBe(true);
+  });
+
+  test("a holder that is too old is replaced without being known to be broken", async () => {
+    const deleted: string[] = [];
+
+    const taken = await resolveTakenName(
+      holding(deleted, "2020-01-01T00:00:00.000Z"),
+      "name-taken",
+      "ci/main/base/k",
+      undefined,
+      false,
+      60_000,
     );
 
     expect(deleted).toEqual(["main-snapshot"]);
