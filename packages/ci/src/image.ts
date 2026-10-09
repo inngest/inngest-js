@@ -9,11 +9,11 @@
 import { CiUsageError } from "./errors.ts";
 
 /**
- * A machine image for a job to start from, made by `image.custom()`.
+ * A machine image for a job to start from, made by `image.snapshot()`.
  */
 export interface BaseImage {
   readonly kind: "inngest/ci.image";
-  readonly source: "custom";
+  readonly source: "snapshot";
   /** The name the snapshot was captured under. */
   readonly name: string;
 }
@@ -36,10 +36,10 @@ export const image = {
    * await sandbox.snapshot({ name: "agent-deps" });
    *
    * // Every job starts from it by default…
-   * const ci = createCi(inngest, { from: image.custom("agent-deps") });
+   * const ci = createCi(inngest, { from: image.snapshot("agent-deps") });
    *
    * // …unless it says otherwise.
-   * ci.job({ id: "test", from: image.custom("agent-base") }, async () => {
+   * ci.job({ id: "test", from: image.snapshot("agent-base") }, async () => {
    *   await $`pnpm test`;
    * });
    * ```
@@ -47,29 +47,31 @@ export const image = {
    * @throws {CiUsageError} When the name is empty, has whitespace, or starts
    * with `ci/`, which is where CI keeps its own snapshots.
    */
-  custom: (
+  snapshot: (
     /** The name the snapshot was captured under. */
     name: string,
   ): BaseImage => {
     if (typeof name !== "string" || name.length === 0) {
-      throw new CiUsageError("`image.custom()` needs the name of a snapshot.");
+      throw new CiUsageError(
+        "`image.snapshot()` needs the name of a snapshot.",
+      );
     }
 
     if (/\s/.test(name)) {
       throw new CiUsageError(
-        `\`image.custom("${name}")\`: a snapshot name can't contain whitespace.`,
+        `\`image.snapshot("${name}")\`: a snapshot name can't contain whitespace.`,
       );
     }
 
     if (name.startsWith("ci/")) {
       throw new CiUsageError(
-        `\`image.custom("${name}")\`: names starting with \`ci/\` belong to CI's own snapshots. Capture yours under another name.`,
+        `\`image.snapshot("${name}")\`: names starting with \`ci/\` belong to CI's own snapshots. Capture yours under another name.`,
       );
     }
 
     return Object.freeze({
       kind: "inngest/ci.image",
-      source: "custom",
+      source: "snapshot",
       name,
     });
   },
