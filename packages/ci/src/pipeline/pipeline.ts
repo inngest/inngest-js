@@ -374,14 +374,29 @@ const runPipelineAttempt = async ({
     // Jobs that were still running when the run ended would otherwise leave
     // their checks spinning. The run doesn't wait for them: one a person left
     // unawaited on purpose is cancelled by the run ending.
-    await closeJobChecks(run, checks);
+    const cleanUp = async () => {
+      await destroyRunMachines(run, ctx.attempt ?? 0);
+      await deleteRunSnapshots(run, ctx.attempt ?? 0);
+    };
 
-    run.ci.hooks.warnings(run);
+    try {
+      await closeJobChecks(run, checks);
 
-    await completePipeline(run, checks, outcome);
+      run.ci.hooks.warnings(run);
 
-    await destroyRunMachines(run, ctx.attempt ?? 0);
-    await deleteRunSnapshots(run, ctx.attempt ?? 0);
+      await completePipeline(run, checks, outcome);
+    } catch (error) {
+      // Reporting failed. Another attempt replays the memoized machine and
+      // snapshot IDs, so it keeps them; the last attempt cleans up anyway,
+      // since the generated cleanup function can't find snapshots.
+      if (!run.willRetry(error)) {
+        await cleanUp();
+      }
+
+      throw error;
+    }
+
+    await cleanUp();
 
     if (outcome.kind === "failed") {
       // A failed command's exit code is already recorded in its steps, and a
