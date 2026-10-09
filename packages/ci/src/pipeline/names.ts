@@ -134,6 +134,7 @@ export const traceName = {
   commentNotAllowed: "Comment: not allowed",
 
   createMachine: "Create sandbox",
+  restartMachine: "Restart sandbox",
   createFreshMachine: "Create sandbox (fresh)",
   retryCreate: "Retry create",
   discardMachine: "Discard sandbox",
@@ -165,6 +166,7 @@ export const traceName = {
   lookUpCache: "Look up cache",
   resolveCacheName: "Resolve cache name",
   deleteBadSnapshot: "Delete bad snapshot",
+  checkSnapshotState: "Check snapshot state",
 
   cloneRepository: "Clone repository",
   uploadWorkingTree: "Upload working tree",

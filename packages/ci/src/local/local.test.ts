@@ -862,8 +862,9 @@ describe("what a job says while it starts from a parent", () => {
       });
 
       // No job waits to learn from another whether the snapshot is bad, so
-      // what each does can't depend on which got there first.
-      expect(attempts).toHaveLength(3);
+      // what each does can't depend on which got there first. Each tries
+      // twice before the snapshot counts as broken.
+      expect(attempts).toHaveLength(6);
 
       const installs = api.commands.filter((argv) => {
         return argv.join(" ") === "pnpm install";
@@ -911,7 +912,8 @@ describe("what a job says while it starts from a parent", () => {
         return machine.stuck;
       });
 
-      expect(stuck).toHaveLength(3);
+      // Each child's two attempts leave one stuck machine apiece.
+      expect(stuck).toHaveLength(6);
 
       expect(
         stuck.every((machine) => {
