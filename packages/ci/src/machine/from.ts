@@ -155,8 +155,10 @@ const namedParent = async (
  * Every parent here is a job, so each is either cached or not. The base
  * images of later work will be stable like a cached job and end this walk.
  *
- * A chain that comes back on itself stops the walk. Resolving the chain fails
- * on it with a message of its own.
+ * A chain that comes back on itself stops the walk, so the walk itself ends.
+ * Cycles aren't detected or reported anywhere else yet: a job that starts from
+ * itself, directly or through its parents, is a usage error that isn't
+ * checked.
  */
 const uncachedAncestorOf = async (
   run: CiRunScope,
