@@ -178,8 +178,7 @@ export interface CacheConfig {
 
   /**
    * Triggers that build the job's cache ahead of time, so no run waits on a
-   * cold build. Without `warm`, the first run after a change builds the cache
-   * and waits for it. A warm run does nothing when the cache already hits.
+   * cold build.
    *
    * @example
    * warm: [github.push({ branches: ["main"] }), { cron: "0 3 * * *" }]

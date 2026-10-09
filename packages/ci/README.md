@@ -55,7 +55,7 @@ Calling a job runs it every time you call it. Starting `from` a job builds it in
 
 ## Warm caches
 
-No run waits on a cold build when you `warm` a cached job. Without `warm`, the first run after a change builds the cache and waits. With it, the cache is built on your triggers, so it's ready first. A warm run does nothing when the cache already hits.
+`warm` builds a cached job on your triggers, so no run waits on a cold build. A warm run does nothing when the cache already hits.
 
 ```ts
 const base = ci.job(
