@@ -377,10 +377,16 @@ export const formatRelative = (from: string, now = Date.now()): string => {
 /**
  * Run `git` in a local directory and return its stdout.
  */
-export const git = async (cwd: string, args: string[]): Promise<string> => {
+export const git = async (
+  cwd: string,
+  args: string[],
+  /** Extra environment variables, on top of this process's. */
+  env?: Record<string, string>,
+): Promise<string> => {
   const { stdout } = await exec("git", args, {
     cwd,
     maxBuffer: 64 * 1024 * 1024,
+    ...(env ? { env: { ...process.env, ...env } } : {}),
   });
 
   return stdout;
@@ -424,4 +430,19 @@ export const parseRepo = (
   }
 
   return { owner, name };
+};
+
+/** A size for the activity line: `812 B`, `40 KB`, `3.2 MB`, `38 MB`. */
+export const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  const megabytes = bytes / 1024 / 1024;
+
+  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`;
 };
