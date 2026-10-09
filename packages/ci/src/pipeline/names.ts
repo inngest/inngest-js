@@ -134,7 +134,6 @@ export const traceName = {
   snapshotMachine: "Snapshot sandbox",
   cleanUpMachines: "Clean up sandboxes",
   cleanUpSnapshots: "Clean up snapshots",
-  recordSnapshotContents: "Record snapshot contents",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
