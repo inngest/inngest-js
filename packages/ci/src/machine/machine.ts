@@ -37,13 +37,6 @@ import {
  */
 const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 
-/**
- * How long the second try at a snapshot waits for its machine to run, where
- * the first waited the default two minutes. A snapshot that starts at all
- * does so well within it, and one that doesn't is found out sooner.
- */
-const restartTimeout = "60s";
-
 export const resolveMachineConfig = (
   config: MachineConfig | undefined,
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
@@ -171,17 +164,12 @@ const createMachine = async (
     options: {
       name: string;
       snapshotId?: string;
-      /** How long to wait for it to be running, in place of the default. */
-      runningTimeout?: string;
     },
   ): Promise<Started> => {
     const sandbox = options.snapshotId
       ? await tools.create(createStep, {
           name: options.name,
           snapshotId: options.snapshotId,
-          ...(options.runningTimeout
-            ? { runningTimeout: options.runningTimeout }
-            : {}),
         })
       : await tools.create(createStep, {
           name: options.name,
@@ -278,12 +266,14 @@ const createMachine = async (
         const restartName = machineName(run.runId, `${scope.path} restart`);
 
         try {
+          // With the default wait, the same as the first try's: a shorter one
+          // would make a slow node more likely to fail the retry, and a second
+          // failure deletes the snapshot.
           probed = await start(
             { id: restartStepId, name: traceName.restartMachine },
             {
               name: restartName,
               snapshotId,
-              runningTimeout: restartTimeout,
             },
           );
 
@@ -672,12 +662,11 @@ const createNamedSnapshot = async (
     snapshotStep(`${stepId} (unnamed)`),
   );
 
-  // Today's Cloud rejects snapshot names, so a job's snapshot falls back to an
-  // unnamed one that no later run can find. The run that invoked the build
-  // deletes it at its own end, like any run-only snapshot: the build's own
-  // cleanup would delete it while that run still starts jobs from it. Remove
-  // this once every Cloud environment has snapshot names
-  // (inngest/inngest jack/snapshot-names, monorepo jack/snapshot-names).
+  // The name was refused or couldn't be freed, so the job's snapshot falls
+  // back to an unnamed one that no later run can find. The run that invoked
+  // the build deletes it at its own end, like any run-only snapshot: the
+  // build's own cleanup would delete it while that run still starts jobs from
+  // it.
   return { snapshotId: unnamed.id, reused: false };
 };
 
@@ -701,8 +690,9 @@ const nameTakenCode = "sandbox_snapshot_name_taken";
  * Whether a named snapshot was refused for its name, so taking it without one
  * may work.
  *
- * WORKAROUND (Sandboxes API): Cloud doesn't have snapshot names yet, and
- * refuses a create with a body as a bad request. Delete this once it does.
+ * WORKAROUND (Sandboxes API): a server without snapshot names, such as an
+ * older Dev Server, refuses a create with a name as a bad request. Delete this
+ * once none is left.
  */
 const isNameRefused = (error: unknown): boolean => {
   const status = errorStatus(error);
