@@ -3025,6 +3025,46 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
+  test("snapshots are deleted when completing the pipeline check fails on the last attempt", async () => {
+    const { api, ci, reporter } = setup();
+
+    // The first check started is the pipeline's; completing it always fails.
+    const push = reporter.history.push.bind(reporter.history);
+
+    reporter.history.push = (...records) => {
+      for (const record of records) {
+        if (
+          record.status === "completed" &&
+          record.name === reporter.history[0]?.name
+        ) {
+          throw new Error("GitHub is down");
+        }
+      }
+
+      return push(...records);
+    };
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job({ id: "child", from: base }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await child();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(api.snapshots.size).toBe(0);
+  });
+
   test("a named cache snapshot survives cleanup, across two runs", async () => {
     const api = createFakeSandboxApi();
 

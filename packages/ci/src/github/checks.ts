@@ -379,26 +379,37 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       const stepId = "github › check:jobs:complete";
 
-      return run.step.run({ id: stepId, name: stepId }, async () => {
-        await tagStep(run, { kind: "check" });
+      const closed = (await run.step.run(
+        { id: stepId, name: stepId },
+        async () => {
+          await tagStep(run, { kind: "check" });
 
-        const jobs = read();
+          const jobs = read();
 
-        for (const { jobPath, name, ...result } of jobs) {
-          await sink.complete({
-            run,
-            name: jobCheckName(run, jobPath, name),
-            ...identity(run, jobPath),
-            conclusion: result.conclusion,
-            title: result.title,
-            summary: truncateSummary(result.summary ?? ""),
-            annotations: (result.annotations ?? []).map(normaliseAnnotation),
-            ...idFor(run, jobPath),
-          });
-        }
+          for (const { jobPath, name, ...result } of jobs) {
+            await sink.complete({
+              run,
+              name: jobCheckName(run, jobPath, name),
+              ...identity(run, jobPath),
+              conclusion: result.conclusion,
+              title: result.title,
+              summary: truncateSummary(result.summary ?? ""),
+              annotations: (result.annotations ?? []).map(normaliseAnnotation),
+              ...idFor(run, jobPath),
+            });
+          }
 
-        return closing(jobs);
-      }) as Promise<Array<Omit<ClosingJob, "summary" | "annotations">>>;
+          return closing(jobs);
+        },
+      )) as Array<Omit<ClosingJob, "summary" | "annotations">>;
+
+      // Outside the step, so a replay also forgets the IDs its memoized start
+      // steps put back.
+      for (const { jobPath } of closed) {
+        checkRunIds.delete(idKey(run, jobPath));
+      }
+
+      return closed;
     },
 
     retrying: async ({ run, jobPath, name, title }) => {
