@@ -281,29 +281,21 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  // A build run was handed the name the run that invoked it concurrency-limits
-  // on, so the two can't drift apart.
-  const given = run.build?.jobId === jobId ? run.build : undefined;
+  const ownKey = (await run.step.run(
+    {
+      id: `${job.path}${scopeSeparator}cache:key`,
+      name: "cache:key",
+    },
+    async () => {
+      await tagStep(run, { kind: "cache", job: job.path });
 
-  const ownKey =
-    given?.ownKey ??
-    ((await run.step.run(
-      {
-        id: `${job.path}${scopeSeparator}cache:key`,
-        name: "cache:key",
-      },
-      async () => {
-        await tagStep(run, { kind: "cache", job: job.path });
-
-        return jobCacheKey(run, cache, input, base);
-      },
-    )) as string);
+      return jobCacheKey(run, cache, input, base);
+    },
+  )) as string;
 
   return {
     ownKey,
-    name:
-      given?.cacheKey ??
-      snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    name: snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
   };
 };
 

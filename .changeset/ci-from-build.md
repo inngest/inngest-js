@@ -9,3 +9,5 @@ A cache is now named for its app as well as its repository, so two apps in one r
 A snapshot that fails to start is retried once before it is treated as broken, and a broken one is deleted once, however many jobs found it. A single timeout no longer deletes a cached snapshot that other runs share, such as the base branch's.
 
 A cached job that starts from a job without a `cache` is no longer given a cache name. Its snapshot could never be found again, so each run left a new one behind. It now builds in every run, its snapshot belongs to the run and is deleted with it, and the run warns until the job above it has a `cache`.
+
+A build is sent a job's input as given, as JSON, and validates it with the job's `input` schema itself, so a schema that turns a string into a `Date`, or a list into a `Set`, works in a cached job and in a job started from. The input you pass must survive JSON. The build also works out the job's key and snapshot name itself and fails if the ones it was sent don't match.

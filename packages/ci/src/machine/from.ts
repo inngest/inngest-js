@@ -30,7 +30,13 @@ import { errorMessage, hash, stableStringify } from "../util.ts";
 /** A `from` parent, worked out: the job's config and the input it's built with. */
 export interface Parent {
   config: JobConfig;
+  /** The input the job is built with, after its schema. */
   input: unknown;
+  /**
+   * The input as `from` named it, before the schema: what a build is sent, so
+   * its run validates it again rather than trusting the invoker's output.
+   */
+  raw: unknown;
 }
 
 /** A job's parent, and the build that gave its snapshot. */
@@ -109,7 +115,7 @@ export const parentOf = (
     );
   }
 
-  return { config: registered.config, input: ref.input };
+  return { config: registered.config, input: ref.input, raw: ref.input };
 };
 
 /**
@@ -134,8 +140,10 @@ const namedParent = async (
     config: await withoutUnreusableCache(run, {
       config: named.config,
       input: validated,
+      raw: named.raw,
     }),
     input: validated,
+    raw: named.raw,
   };
 };
 
@@ -173,6 +181,7 @@ const uncachedAncestorOf = async (
     current = {
       config: named.config,
       input: await validateInput(named.config, named.input),
+      raw: named.raw,
     };
   }
 };
@@ -310,7 +319,7 @@ const buildOf = (
   run: CiRunScope,
   parent: Parent,
 ): Promise<CacheBuildResult> => {
-  const { config, input } = parent;
+  const { config, input, raw } = parent;
   const path = buildPathOf(config.id, input);
   const existing = run.builds.get(path);
 
@@ -340,7 +349,7 @@ const buildOf = (
       path: config.id,
       stepPath: path,
       config,
-      input,
+      input: raw,
       target,
       ...(base ? { base: base.built } : {}),
     });
@@ -370,7 +379,7 @@ export const startFrom = async (
   { parent, built }: ParentBuild,
 ): Promise<void> => {
   const { run } = scope;
-  const { config, input } = parent;
+  const { config, input, raw } = parent;
 
   if (built.snapshotId) {
     const snapshotId = built.snapshotId;
@@ -389,6 +398,7 @@ export const startFrom = async (
         run,
         config,
         input,
+        raw,
         target: built.target,
         replacing: { snapshotId, ...why },
         ...(base ? { base: base.built } : {}),
@@ -436,6 +446,7 @@ const requestRebuild = ({
   run,
   config,
   input,
+  raw,
   target,
   base,
   replacing,
@@ -443,6 +454,8 @@ const requestRebuild = ({
   run: CiRunScope;
   config: JobConfig;
   input: unknown;
+  /** The input as it was named, which the build validates again. */
+  raw: unknown;
   /** The parent's key and snapshot name, which its first build worked out. */
   target: CacheTarget;
   /** What the parent starts from, which its build must start from too. */
@@ -486,7 +499,7 @@ const requestRebuild = ({
       path: config.id,
       stepPath: path,
       config,
-      input,
+      input: raw,
       target,
       lookup: false,
       ...(base ? { base } : {}),

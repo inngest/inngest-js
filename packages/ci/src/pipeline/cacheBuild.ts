@@ -44,7 +44,12 @@ export interface CacheBuildData extends Record<string, unknown> {
   jobId: string;
   /** The matrix and combination to build, when the job is one of its jobs. */
   matrix?: { id: string; combo: Record<string, unknown> };
-  /** The job's input, for jobs that take one. */
+  /**
+   * The job's input as the invoker was given it, before its schema, for jobs
+   * that take one. It is JSON, so it is the build that validates it: a schema's
+   * output may not survive JSON, such as a Date, and may not be accepted by
+   * the schema a second time.
+   */
   input?: unknown;
   /**
    * The job's resolved cache key, as the pipeline computed it. For a job
@@ -221,9 +226,6 @@ const buildSnapshot = async ({
       config: job.config,
       handler: job.handler,
       input: data.input,
-      // The invoking run validated it, and a schema may not accept its own
-      // output a second time.
-      validated: true,
     });
   }
 

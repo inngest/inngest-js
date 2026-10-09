@@ -109,6 +109,11 @@ export interface RunFunctionOptions {
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
+  /**
+   * Rewrites the data of each invoke after it went through JSON and before the
+   * invoked function runs, to play an invoker that is buggy or forged.
+   */
+  rewriteInvoke?: (data: Record<string, unknown>) => Record<string, unknown>;
 }
 
 let invokedRuns = 0;
@@ -190,9 +195,20 @@ const runInvoked = async (
     throw new Error(`No function to invoke for ${call.function_id}`);
   }
 
+  // As on the wire, the payload and the result are JSON: a Date arrives as a
+  // string and a Map as `{}`, and a value that can't be serialized fails the
+  // invoke.
+  let data: Record<string, unknown>;
+
+  try {
+    data = roundTrip(call.payload.data ?? {}) as Record<string, unknown>;
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+
   const event: EventPayload = {
     name: "inngest/function.invoked",
-    data: (call.payload.data ?? {}) as Record<string, unknown>,
+    data: opts.rewriteInvoke ? opts.rewriteInvoke(data) : data,
   };
 
   invokedRuns++;
@@ -203,9 +219,31 @@ const runInvoked = async (
     runId: `01TESTINVOKED${invokedRuns}`,
   });
 
-  return child.type === "function-resolved"
-    ? { data: child.data }
-    : { error: child.error };
+  if (child.type !== "function-resolved") {
+    return { error: child.error };
+  }
+
+  try {
+    return { data: roundTrip(child.data) };
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+};
+
+/** What a value is after being sent as JSON. */
+const roundTrip = (value: unknown): unknown => {
+  const json = JSON.stringify(value);
+
+  return json === undefined ? undefined : JSON.parse(json);
+};
+
+const serializationError = (error: unknown) => {
+  return {
+    name: "Error",
+    message: `Could not serialize the invoke: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  };
 };
 
 const isFailed = (step: Step): boolean => {
