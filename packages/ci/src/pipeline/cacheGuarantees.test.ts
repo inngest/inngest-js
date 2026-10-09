@@ -1,14 +1,16 @@
 /**
  * Tests of what the shared build function guarantees about cached snapshots:
- * a burst of runs builds a snapshot once, a chain of cached parents builds
- * each link once without holding back the jobs that need an earlier link, a
- * snapshot about to expire is replaced, and a job looks its parent up first
- * and invokes a build only on a miss. They run against the fake Sandboxes API
- * with snapshot names on.
+ * within a pipeline run each base is built once, a chain of cached parents
+ * builds each link without holding back the jobs that need an earlier link, a
+ * snapshot about to expire is replaced, and a parent is looked up first and a
+ * build invoked only on a miss. Across concurrent runs it is best-effort: runs
+ * that miss at the same time may build redundantly, at most one snapshot keeps
+ * the name and the others adopt it, so the results are correct. They run
+ * against the fake Sandboxes API with snapshot names on.
  *
- * `runFunction` runs invokes beside the function and makes runs of one
- * `event.data` concurrency key take turns, as the platform does for the build
- * function's `cacheKey` limit, so these tests see real interleaving.
+ * `runFunction` runs invokes beside the function. Its `concurrency` key limits
+ * steps running at once, as it does on the platform, not runs, so runs that
+ * miss together really do interleave.
  *
  * @module
  */
@@ -112,20 +114,28 @@ describe("a burst of runs that need one cached job", () => {
       });
   };
 
-  test("builds it once and every run reuses that snapshot", async () => {
+  test("runs that miss together may each build, and all end on the one snapshot that kept the name", async () => {
     const api = createFakeSandboxApi();
+
+    // A slow install keeps every run's lookup ahead of any snapshot.
+    api.script([{ match: "pnpm install", ticks: 5 }]);
+
     const results = await herd(api, 4);
 
     for (const result of results) {
       expect(result.type).toBe("function-resolved");
     }
 
-    expect(count(api, "pnpm install")).toBe(1);
+    // Best-effort across runs: they all missed, so more than one built.
+    expect(count(api, "pnpm install")).toBeGreaterThan(1);
     expect(count(api, "pnpm lint")).toBe(4);
 
+    // Yet one snapshot kept the name, nothing else is left behind, and every
+    // run started from it.
     const [snapshot, ...others] = named(api);
 
     expect(others).toEqual([]);
+    expect(api.snapshots.size).toBe(1);
     expect(snapshot?.status).toBe("READY");
 
     expect(startedFrom(api)).toEqual([
@@ -147,10 +157,8 @@ describe("a burst of runs that need one cached job", () => {
       expect(result.type).toBe("function-resolved");
     }
 
-    // The one build ran its commands, then lost the name to a snapshot of the
-    // same name and took that one. The runs behind it found the winner.
-    expect(count(api, "pnpm install")).toBe(1);
-
+    // Every build ran its commands, then lost the name to a snapshot of the
+    // same name and took that one.
     const [winner, ...others] = [...api.snapshots.values()];
 
     expect(others).toEqual([]);
@@ -653,7 +661,7 @@ describe("a job that starts from a job in its own app", () => {
     expect(child?.snapshotId).toBe(snapshot?.id);
   });
 
-  test("runs that all miss each invoke, and the build looks again so only the first builds", async () => {
+  test("runs that all miss each invoke, and all end on one snapshot per link", async () => {
     const api = createFakeSandboxApi();
     const pipeline = chain(api);
 
@@ -672,9 +680,34 @@ describe("a job that starts from a job in its own app", () => {
       ]);
     }
 
-    expect(count(api, "pnpm install")).toBe(1);
-    expect(count(api, "pnpm build")).toBe(1);
+    // Which run built is up to timing, and runs that miss together may each
+    // build. What is fixed is that each link keeps one snapshot, and every
+    // run's `test` started from the `build` one.
     expect(count(api, "pnpm test")).toBe(3);
+
+    const snapshots = named(api);
+
+    expect(snapshots).toHaveLength(2);
+
+    for (const snapshot of snapshots) {
+      expect(snapshot.status).toBe("READY");
+    }
+
+    const buildSnapshot = snapshots.find((snapshot) => {
+      return snapshot.name?.includes("/build/");
+    });
+
+    expect(buildSnapshot).toBeDefined();
+
+    const testMachines = [...api.sandboxes.values()].filter((machine) => {
+      return machine.name.endsWith("-test");
+    });
+
+    expect(testMachines).toHaveLength(3);
+
+    for (const machine of testMachines) {
+      expect(machine.snapshotId).toBe(buildSnapshot?.id);
+    }
   });
 });
 

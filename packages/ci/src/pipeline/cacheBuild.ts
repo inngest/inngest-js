@@ -4,10 +4,12 @@
  *
  * A pipeline invokes this function for a cached job, and for any job another
  * job starts `from`, instead of running the job inline. One function builds
- * every job: the invoke's data says which. It is limited to one run per
- * snapshot name, which is unique across jobs, and looks the snapshot up again
- * when it starts, so a burst of runs that all missed the same name builds it
- * once and every one of them gets the same snapshot.
+ * every job: the invoke's data says which. It looks the snapshot up again when
+ * it starts, so a run that queued behind another build of the same name often
+ * finds the snapshot. Within a pipeline run each base is built once. Across
+ * concurrent runs it is best-effort: runs that miss at the same time may build
+ * redundantly, at most one snapshot keeps the name and the others adopt it, so
+ * every run gets a correct snapshot.
  *
  * @module
  */
@@ -51,8 +53,7 @@ export interface CacheBuildData extends Record<string, unknown> {
   ownKey: string;
   /**
    * The name the snapshot is written under: scope, job and `ownKey`, where the
-   * scope of a job without a `cache` is the pipeline run. Builds are limited
-   * to one at a time per name.
+   * scope of a job without a `cache` is the pipeline run.
    */
   cacheKey: string;
   /**
@@ -81,7 +82,7 @@ export interface CacheBuildData extends Record<string, unknown> {
    * The ID of the pipeline run at the root of this build: the run itself for a
    * build a pipeline invokes, and the `rootRunId` the invoking build was given
    * for one a build invokes. A job without a `cache` is named under it, so
-   * every build in one pipeline shares one build per such job.
+   * every build in one pipeline shares such a job's snapshot.
    */
   rootRunId: string;
   /** The run that needs the snapshot, and the job there that waits on it. */
@@ -153,7 +154,9 @@ export const cacheBuildFunction = ({
     {
       id,
       name: "build",
-      // One build per name at a time. Whoever comes next finds it taken.
+      // Platform concurrency limits steps, not runs, so this doesn't stop
+      // runs that miss together from each building: it only keeps one step per
+      // name at a time. A build that finds the name taken adopts the winner.
       concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
       ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],

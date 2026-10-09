@@ -2,7 +2,7 @@
 "@inngest/ci": minor
 ---
 
-Build a `from` parent, and a cached job, in a run of its own with one generated `ci/build` function, so children of one parent share one build. Add an `input` schema (any Standard Schema) to `ci.job()` to validate a job's input.
+Build a `from` parent, and a cached job, in a run of its own with one generated `ci/build` function, so children of one parent, and jobs further down its chain, share one build within a pipeline run. Across concurrent runs that miss at the same time it is best-effort: they may build redundantly, at most one snapshot keeps the name and the others adopt it. Add an `input` schema (any Standard Schema) to `ci.job()` to validate a job's input.
 
 A cache is now named for its app as well as its repository, so two apps in one repository and environment no longer restore each other's snapshots. Existing cache names change once, so the first run after upgrading builds cold.
 

@@ -360,8 +360,8 @@ const buildOf = (
 /**
  * Start this job on a copy of its parent's machine, before its handler runs.
  *
- * The parent runs once however many jobs start from it, in a run of its own,
- * and each child gets its own copy of its machine, so they can't affect each
+ * Within a pipeline run the parent is built once however many jobs start from
+ * it, in a run of its own, and each child gets its own copy of its machine, so they can't affect each
  * other. The copy is made when this job runs its first command, so a job that
  * starts from another and then waits doesn't pay for a machine while it waits.
  */

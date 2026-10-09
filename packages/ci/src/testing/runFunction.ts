@@ -102,8 +102,9 @@ export interface RunFunctionOptions {
   /**
    * The functions `step.invoke` can reach. Defaults to every function the
    * test client created. An invoked function runs to completion like any
-   * other, under its own `concurrency` key, and its output or error comes
-   * back as the invoke's.
+   * other, and its output or error comes back as the invoke's. Its
+   * `concurrency` key limits steps running at once, not runs (see
+   * `inTurn`).
    */
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
@@ -112,7 +113,7 @@ export interface RunFunctionOptions {
 
 let invokedRuns = 0;
 
-/** Tails of the queues for each concurrency key, so runs of one key take turns. */
+/** Tails of the queues for each concurrency key, so steps of one key take turns. */
 const keyQueues = new Map<string, Promise<unknown>>();
 
 /** The value of a simple `event.data.<field>` concurrency key. */
@@ -141,7 +142,12 @@ const concurrencyKeyOf = (
   return `${(fn as any).opts?.id}:${String(value)}`;
 };
 
-/** Run `task` after every earlier one for `key`. */
+/**
+ * Run `task` after every earlier one for `key`. The platform's `concurrency`
+ * limits how many steps run at once, not how many runs are in flight, so this
+ * wraps one step's execution and never a whole run: runs of one key interleave
+ * between their steps.
+ */
 const inTurn = async <T>(key: string, task: () => Promise<T>): Promise<T> => {
   const before = keyQueues.get(key) ?? Promise.resolve();
   const mine = before.then(task, task);
@@ -189,18 +195,13 @@ const runInvoked = async (
     data: (call.payload.data ?? {}) as Record<string, unknown>,
   };
 
-  const key = concurrencyKeyOf(target, event);
-  const run = () => {
-    invokedRuns++;
+  invokedRuns++;
 
-    return runFunction(target, {
-      ...opts,
-      event,
-      runId: `01TESTINVOKED${invokedRuns}`,
-    });
-  };
-
-  const child = await (key ? inTurn(key, run) : run());
+  const child = await runFunction(target, {
+    ...opts,
+    event,
+    runId: `01TESTINVOKED${invokedRuns}`,
+  });
 
   return child.type === "function-resolved"
     ? { data: child.data }
@@ -228,6 +229,7 @@ export const runFunction = async (
   const maxRequests = opts.maxRequests ?? 200;
   const maxAttempts = opts.stepAttempts ?? 4;
   const retries = opts.retries ?? 0;
+  const concurrencyKey = concurrencyKeyOf(fn, event);
   let attempt = 0;
 
   // The state the executor would send back on each request.
@@ -447,7 +449,11 @@ export const runFunction = async (
         continue;
       }
 
-      const ran = await request(planned.id);
+      const ran = await (concurrencyKey
+        ? inTurn(concurrencyKey, () => {
+            return request(planned.id);
+          })
+        : request(planned.id));
 
       progressed = true;
 

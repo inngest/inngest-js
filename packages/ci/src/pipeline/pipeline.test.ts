@@ -4029,7 +4029,7 @@ describe("cache builds in their own run", () => {
     expect(installs(api)).toBe(1);
   });
 
-  test("two pipelines needing the same key build it once", async () => {
+  test("two pipelines needing the same key end on one named snapshot", async () => {
     const api = createFakeSandboxApi();
 
     // Two runs of one app, against one sandbox environment.
@@ -4048,13 +4048,23 @@ describe("cache builds in their own run", () => {
 
     expect(a.type).toBe("function-resolved");
     expect(b.type).toBe("function-resolved");
-    expect(installs(api)).toBe(1);
 
-    const snapshots = [...api.sandboxes.values()].filter((machine) => {
-      return machine.snapshotId;
+    // Runs that miss together may each build, so what is fixed is that one
+    // snapshot kept the name and the child that started from it got it.
+    const [snapshot, ...others] = [...api.snapshots.values()].filter(
+      (candidate) => {
+        return candidate.name;
+      },
+    );
+
+    expect(others).toEqual([]);
+    expect(snapshot?.status).toBe("READY");
+
+    const child = [...api.sandboxes.values()].find((machine) => {
+      return machine.name === "ci-01RUNA-lint";
     });
 
-    expect(snapshots.length).toBeGreaterThan(0);
+    expect(child?.snapshotId).toBe(snapshot?.id);
   });
 
   test("a failed build fails the job with its reason and caches nothing", async () => {

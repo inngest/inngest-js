@@ -512,7 +512,8 @@ const jobBody = async ({
 
     if (cacheAt && asksBuild) {
       // The build run looks the snapshot up when it starts, and builds only if
-      // it still has to, so a herd of runs needing one name builds it once.
+      // it still has to. Runs that miss at the same time may still build
+      // redundantly, and then only one snapshot keeps the name.
       const built = await invokeBuild({
         run,
         path: scope.path,
