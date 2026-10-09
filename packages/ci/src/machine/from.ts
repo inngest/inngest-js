@@ -266,7 +266,6 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
-
  * Whether a job has to be built in this run: it was defined here, or its
  * parent was, and either way the build function couldn't find it.
  */
