@@ -135,7 +135,15 @@ export const extendProvider = (
   if (!setup.providerFound) {
     if (behaviour !== "auto") {
       console.warn(
-        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Use @inngest/otel instead, or make sure that the provider is created and imported before the middleware is used.',
+        [
+          "Inngest extended traces are disabled: no OpenTelemetry provider was registered before the middleware initialized.",
+          "To fix, install @inngest/otel and load it before any app code:",
+          "  npm install @inngest/otel",
+          "  node --import @inngest/otel/node ./app.js",
+          'If a framework CLI owns the node process (Next.js, Vite, etc.), set NODE_OPTIONS="--import @inngest/otel/node" or add `import "@inngest/otel/node"` as the first import of your entrypoint.',
+          'Alternatively, register your own OpenTelemetry provider before creating the Inngest client, or silence this by setting the behaviour to "off".',
+          "Docs: https://www.inngest.com/docs/examples/open-telemetry",
+        ].join("\n"),
       );
     }
 
@@ -150,7 +158,8 @@ export const extendProvider = (
     console.warn(
       "Unable to add InngestSpanProcessor to existing OTel provider. " +
         "The provider does not support addSpanProcessor() (OTel SDK v1) " +
-        "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2).",
+        "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2). " +
+        "Docs: https://www.inngest.com/docs/examples/open-telemetry",
     );
   }
 
