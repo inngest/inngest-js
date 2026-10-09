@@ -93,7 +93,10 @@ describe("without the SDK's span API", () => {
 
     expect(Object.keys(withSpans.spans).length).toBeGreaterThan(0);
     expect(without.spans).toEqual({});
-    expect(without.origins).toEqual({});
+
+    // Origins aren't asserted absent: an SDK with the span API stamps a
+    // step's `~origin` option itself, whether or not `group["~span"]` is there
+    // to open spans, and this suite runs against that SDK.
   });
 });
 
