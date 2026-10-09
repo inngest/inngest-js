@@ -388,40 +388,30 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  // A build run was handed the name the run that invoked it concurrency-limits
-  // on, so the two can't drift apart.
-  const given = run.build?.jobId === jobId ? run.build : undefined;
+  await resolveKeySources(run, cache.key);
 
-  if (!given?.ownKey) {
-    await resolveKeySources(run, cache.key);
-  }
+  const ownKey = await ciRun(
+    run,
+    {
+      step: ciStep(
+        `${job.path}${scopeSeparator}cache:key`,
+        traceName.checkCache,
+      ),
+      intent: `Work out the cache key for \`${jobId}\``,
+      tag: { kind: "cache", job: job.path },
+    },
+    async (note) => {
+      const key = await jobCacheKey(run, cache, input, base);
 
-  const ownKey =
-    given?.ownKey ??
-    (await ciRun(
-      run,
-      {
-        step: ciStep(
-          `${job.path}${scopeSeparator}cache:key`,
-          traceName.checkCache,
-        ),
-        intent: `Work out the cache key for \`${jobId}\``,
-        tag: { kind: "cache", job: job.path },
-      },
-      async (note) => {
-        const key = await jobCacheKey(run, cache, input, base);
+      note.outcome({ key });
 
-        note.outcome({ key });
-
-        return key;
-      },
-    ));
+      return key;
+    },
+  );
 
   return {
     ownKey,
-    name:
-      given?.cacheKey ??
-      snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    name: snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
   };
 };
 
@@ -669,6 +659,17 @@ export const lookupCache = async (
   return found ?? undefined;
 };
 
+/**
+ * What a lookup for a `from` parent says on its row, which is the parent's own:
+ * one row however many jobs start from it.
+ */
+export interface ParentNotes {
+  /** The cached parent, which a miss means is built just in time. */
+  justInTime?: JobConfig;
+  /** A cached job whose cache is unusable because its base has none. */
+  uncachedBase?: { jobId: string; baseId: string };
+}
+
 /** A job's usable snapshot: in the scopes it reads if cached, else by its run's name. */
 const findCached = (
   run: CiRunScope,
@@ -702,6 +703,8 @@ export const lookupBeforeBuild = async (
   target: CacheTarget,
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
+  /** What to warn about, when the lookup is for a job's `from` parent. */
+  notes?: ParentNotes,
 ): Promise<CachedSnapshot | undefined> => {
   const found = await ciRun<CachedSnapshot | null>(
     run,
@@ -718,16 +721,37 @@ export const lookupBeforeBuild = async (
 
       note.outcome(lookupOutcome(hit));
 
+      if (notes?.uncachedBase) {
+        await warnStep(
+          run,
+          "ci.uncachedBase",
+          uncachedBaseNote(notes.uncachedBase.jobId, notes.uncachedBase.baseId)
+            .message,
+        );
+      } else if (notes?.justInTime && !hit) {
+        await warnStep(
+          run,
+          "ci.justInTime",
+          justInTimeNote(notes.justInTime).message,
+        );
+      }
+
       return hit ?? null;
     },
   );
+
+  // From the memoized result, so a replay says it too, once per parent however
+  // many jobs start from it.
+  if (notes?.justInTime && !found) {
+    warnJustInTime(run, notes.justInTime);
+  }
 
   return found ?? undefined;
 };
 
 /**
- * What a cached parent that was built just in time says, on the row of the job
- * that waited (`message`) and in the run's warnings (`line`). One place, so the
+ * What a cached parent that was built just in time says, on the row of its
+ * lookup (`message`) and in the run's warnings (`line`). One place, so the
  * two can't drift apart.
  *
  * A miss is more than "never built": the lookup also comes back empty on an
@@ -741,7 +765,7 @@ export const justInTimeNote = (
   const warm = Boolean(config.cache?.warm);
 
   return {
-    message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while this job waited. ${
+    message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited. ${
       warm
         ? "Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet."
         : "Add `cache.warm` to build it ahead of time."
@@ -794,113 +818,6 @@ export const warnUncachedBase = (
   if (!run.warnings.includes(line)) {
     run.warnings.push(line);
   }
-};
-
-/**
- * Look a `from` parent's snapshot up for the job that starts from it, as the
- * first memoized step inside that job. One step works out the parent's key and
- * name, then lists by name once per scope the parent reads, so the job's own
- * row shows the work from the moment the job is called. A miss is for the
- * shared build to settle, which looks again when it starts.
- */
-export const lookupParent = async (
-  scope: CiJobScope,
-  parent: {
-    config: JobConfig;
-    /** The input the parent is built with. */
-    input: unknown;
-    /** What the parent starts from. */
-    base?: BaseIdentity;
-    /**
-     * The job above the parent with no cache, when that made the parent's own
-     * cache unusable, so `config` has none.
-     */
-    uncachedBase?: string;
-  },
-): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
-  const { run } = scope;
-  const { config, input, base, uncachedBase } = parent;
-
-  if (config.cache) {
-    countApi("cache");
-  }
-
-  if (config.cache && run.build?.jobId !== config.id) {
-    await resolveKeySources(run, config.cache.key);
-  }
-
-  const found = await ciRun<{
-    target: CacheTarget;
-    hit: CachedSnapshot | null;
-  }>(
-    run,
-    {
-      step: ciStep(
-        `${scope.path}${scopeSeparator}from ${config.id}`,
-        traceName.startFrom(config.id),
-      ),
-      intent: `Look up the snapshot of \`${config.id}\` to start from`,
-      tag: { kind: "cache", job: scope.path },
-    },
-    async (note) => {
-      if (!config.cache) {
-        const target = runTarget(run, config.id, input, base);
-        const hit = await findNamed(run, target.name);
-
-        note.outcome(lookupOutcome(hit));
-
-        if (uncachedBase) {
-          // The parent is cached, but its own base has no cache.
-          await warnStep(
-            run,
-            "ci.uncachedBase",
-            uncachedBaseNote(config.id, uncachedBase).message,
-          );
-        } else if (scope.config.cache || scope.uncachedBase) {
-          await warnStep(
-            run,
-            "ci.uncachedBase",
-            uncachedBaseNote(scope.config.id, config.id).message,
-          );
-        }
-
-        return { target, hit: hit ?? null };
-      }
-
-      const given = run.build?.jobId === config.id ? run.build : undefined;
-      const ownKey =
-        given?.ownKey ?? (await jobCacheKey(run, config.cache, input, base));
-
-      const target = {
-        ownKey,
-        name:
-          given?.cacheKey ??
-          snapshotName(
-            cacheScopes(run.repo, config.cache.scope).write,
-            config.id,
-            ownKey,
-          ),
-      };
-
-      const hit = await findInScopes(run, config.id, config.cache, ownKey);
-
-      note.outcome(lookupOutcome(hit));
-
-      if (!hit) {
-        await warnStep(run, "ci.justInTime", justInTimeNote(config).message);
-      }
-
-      return { target, hit: hit ?? null };
-    },
-  );
-
-  // From the memoized result, so a replay says it too, once per parent however
-  // many jobs start from it.
-  if (config.cache && !found.hit) {
-    warnJustInTime(run, config);
-  }
-
-  return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
 };
 
 /**
