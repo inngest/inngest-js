@@ -64,8 +64,19 @@ const spanOf = <R>(span: SpanInfo, fn: () => R): R => {
   return runWithAsyncCtx(spanned, fn);
 };
 
+/** The SDK's own `"~span"`, while `removeSpanStub` has it taken off. */
+let hidden: PropertyDescriptor | undefined;
+
 /** Give the SDK's `group` a `"~span"`, unless it already has one. */
 export const installSpanStub = (): void => {
+  if (hidden) {
+    Object.defineProperty(group, "~span", hidden);
+
+    hidden = undefined;
+
+    return;
+  }
+
   if (hasSpanApi()) {
     return;
   }
@@ -79,13 +90,23 @@ export const installSpanStub = (): void => {
   installed = true;
 };
 
-/** Take the stub off again, so the SDK looks as it does without the span API. */
+/**
+ * Take the stub off again, so the SDK looks as it does without the span API.
+ * An SDK that has the span API itself has it taken off too, until
+ * `installSpanStub` puts it back.
+ */
 export const removeSpanStub = (): void => {
   if (installed) {
     Reflect.deleteProperty(group, "~span");
 
     installed = false;
+
+    return;
   }
+
+  hidden ??= Object.getOwnPropertyDescriptor(group, "~span");
+
+  Reflect.deleteProperty(group, "~span");
 };
 
 /** Whether the stub is what's providing the span API. */
