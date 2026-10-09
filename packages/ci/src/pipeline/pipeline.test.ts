@@ -3891,12 +3891,12 @@ describe("base images", () => {
     return id;
   };
 
-  test("a job from image.custom boots from that snapshot", async () => {
+  test("a job from image.snapshot boots from that snapshot", async () => {
     const { api, ci } = setup();
     const id = capture(api, "agent-deps");
 
     const test = ci.job(
-      { id: "test", from: image.custom("agent-deps") },
+      { id: "test", from: image.snapshot("agent-deps") },
       async () => {
         await $`pnpm test`;
       },
@@ -3922,7 +3922,7 @@ describe("base images", () => {
     const { ci } = setup({ api });
 
     const test = ci.job(
-      { id: "test", from: image.custom("agent-deps") },
+      { id: "test", from: image.snapshot("agent-deps") },
       async () => {
         await $`pnpm test`;
       },
@@ -3943,7 +3943,7 @@ describe("base images", () => {
 
     const ci = createCi(client, {
       github: consoleReporter(),
-      from: image.custom("agent-deps"),
+      from: image.snapshot("agent-deps"),
     });
 
     const deps = capture(api, "agent-deps");
@@ -3954,7 +3954,7 @@ describe("base images", () => {
     });
 
     const own = ci.job(
-      { id: "own", from: image.custom("agent-base") },
+      { id: "own", from: image.snapshot("agent-base") },
       async () => {
         await $`echo own`;
       },
@@ -3975,7 +3975,7 @@ describe("base images", () => {
     const { api, ci } = setup();
 
     const test = ci.job(
-      { id: "test", from: image.custom("agent-deps") },
+      { id: "test", from: image.snapshot("agent-deps") },
       async () => {
         await $`pnpm test`;
       },
@@ -4004,14 +4004,14 @@ describe("base images", () => {
     capture(api, "agent-deps");
 
     const one = ci.job(
-      { id: "one", from: image.custom("agent-deps") },
+      { id: "one", from: image.snapshot("agent-deps") },
       async () => {
         await $`echo one`;
       },
     );
 
     const two = ci.job(
-      { id: "two", from: image.custom("agent-deps") },
+      { id: "two", from: image.snapshot("agent-deps") },
       async () => {
         await $`echo two`;
       },
@@ -4041,7 +4041,7 @@ describe("base images", () => {
     api.failSnapshotStarts();
 
     const test = ci.job(
-      { id: "test", from: image.custom("agent-deps") },
+      { id: "test", from: image.snapshot("agent-deps") },
       async () => {
         await $`pnpm test`;
       },
@@ -4068,7 +4068,7 @@ describe("base images", () => {
     const id = capture(api, "agent-deps");
 
     const parent = ci.job(
-      { id: "parent", from: image.custom("agent-deps") },
+      { id: "parent", from: image.snapshot("agent-deps") },
       async () => {
         await $`pnpm install`;
       },
@@ -4101,7 +4101,7 @@ describe("base images", () => {
     const id = capture(api, "agent-deps");
 
     const parent = ci.job(
-      { id: "parent", from: image.custom("agent-deps") },
+      { id: "parent", from: image.snapshot("agent-deps") },
       async () => {},
     );
 
@@ -4130,7 +4130,7 @@ describe("base images", () => {
       const { ci } = setup({ api });
 
       const setupJob = ci.job(
-        { id: "setup", from: image.custom("x"), cache: { key: "v1" } },
+        { id: "setup", from: image.snapshot("x"), cache: { key: "v1" } },
         async () => {
           await $`pnpm install`;
         },
@@ -4180,7 +4180,7 @@ describe("base images", () => {
       const { ci } = setup({ api });
 
       const parent = ci.job(
-        { id: "parent", from: image.custom("x"), cache: { key: "v1" } },
+        { id: "parent", from: image.snapshot("x"), cache: { key: "v1" } },
         async () => {
           await $`pnpm install`;
         },
@@ -4226,7 +4226,7 @@ describe("base images", () => {
     const { ci } = setup({ api });
 
     const setupJob = ci.job(
-      { id: "setup", from: image.custom("x"), cache: { key: "v1" } },
+      { id: "setup", from: image.snapshot("x"), cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
       },
@@ -4254,22 +4254,22 @@ describe("base images", () => {
     ["agent deps", /whitespace/],
     [" agent", /whitespace/],
     ["ci/pr:7/setup/abc", /belong to CI/],
-  ])("image.custom(%j) throws at construction", (name, message) => {
+  ])("image.snapshot(%j) throws at construction", (name, message) => {
     expect(() => {
-      return image.custom(name);
+      return image.snapshot(name);
     }).toThrow(CiUsageError);
 
     expect(() => {
-      return image.custom(name);
+      return image.snapshot(name);
     }).toThrow(message);
   });
 
   test("the image value is frozen", () => {
-    const value = image.custom("agent-deps");
+    const value = image.snapshot("agent-deps");
 
     expect(value).toEqual({
       kind: "inngest/ci.image",
-      source: "custom",
+      source: "snapshot",
       name: "agent-deps",
     });
 

@@ -101,24 +101,24 @@ const image = ci.job(
 
 A run whose trigger has no repository, like a cron, needs `repo`. The GitHub App must have access to the repository. Locally, `checkout()` still uploads your working tree unless you name another repository or a `ref`.
 
-## Start from a base image
+## Start from a snapshot
 
-Capture a sandbox under a name with `sandbox.snapshot({ name: "agent-deps" })`, then start jobs from it with `image.custom()`:
+Capture a sandbox under a name with `sandbox.snapshot({ name: "agent-deps" })`, then start jobs from it with `image.snapshot()`:
 
 ```ts
 import { createCi, image } from "@inngest/ci";
 
-// Every job without its own `from` starts from this image.
-const ci = createCi(inngest, { from: image.custom("agent-deps") });
+// Every job without its own `from` starts from this snapshot.
+const ci = createCi(inngest, { from: image.snapshot("agent-deps") });
 
-ci.job({ id: "test", from: image.custom("agent-base") }, async () => {
+ci.job({ id: "test", from: image.snapshot("agent-base") }, async () => {
   await $`pnpm test`;
 });
 ```
 
-A job starts from the newest ready snapshot with exactly that name. If there is none, or it won't start, the job fails with an error naming the image. Names can't be empty, contain whitespace or start with `ci/`.
+A job starts from the ready snapshot with exactly that name. If there is none, or it won't start, the job fails with an error naming it. Names can't be empty, contain whitespace or start with `ci/`.
 
-A cached job on an image is cached against the snapshot the image names. Capture the image again and the job runs again.
+A cached job on a snapshot is cached against it. Capture it again and the job runs again.
 
 ## Start from another app's job
 
