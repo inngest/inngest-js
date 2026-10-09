@@ -7,9 +7,9 @@
 
 import { execFileSync } from "node:child_process";
 import {
-  lstatSync,
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readFileSync,
   readlinkSync,
   rmSync,
