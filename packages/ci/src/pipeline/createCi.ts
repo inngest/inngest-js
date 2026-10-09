@@ -62,7 +62,7 @@ export interface CiOptions {
    * itself.
    *
    * ```ts
-   * const ci = createCi(inngest, { from: image.custom("agent-deps") });
+   * const ci = createCi(inngest, { from: image.snapshot("agent-deps") });
    * ```
    */
   from?: BaseImage;
@@ -220,7 +220,7 @@ export interface Ci {
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   if (options.from !== undefined && !isBaseImage(options.from)) {
     throw new CiUsageError(
-      '`createCi` takes an image for `from`, like `image.custom("agent-deps")`. To start a job from another job, set `from` on that job.',
+      '`createCi` takes an image for `from`, like `image.snapshot("agent-deps")`. To start a job from another job, set `from` on that job.',
     );
   }
 

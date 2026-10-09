@@ -328,7 +328,7 @@ type JobLike = Pick<AnyJob, "id" | "kind" | "with">;
 
 /**
  * What a job can start `from`: a job, a job with input, a base image from
- * `image.custom()`, or a function of the starting job's own input that gives
+ * `image.snapshot()`, or a function of the starting job's own input that gives
  * any of them.
  */
 export type From<TInput = void> =
