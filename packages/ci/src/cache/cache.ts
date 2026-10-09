@@ -661,20 +661,26 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<void> => {
   try {
-    await run.step.run({ id: stepId, name: "cache:delete" }, async () => {
-      try {
-        const snapshot = await snapshotsClient(run).get(snapshotId);
+    const result = (await run.step.run(
+      { id: stepId, name: "cache:delete" },
+      async () => {
+        try {
+          const snapshot = await snapshotsClient(run).get(snapshotId);
 
-        await snapshot?.delete();
+          await snapshot?.delete();
 
-        // Gone now, so the run's cleanup has nothing to delete.
-        run.createdSnapshots.delete(snapshotId);
+          return { deleted: Boolean(snapshot), gone: true };
+        } catch {
+          return { deleted: false, gone: false };
+        }
+      },
+    )) as { deleted: boolean; gone: boolean };
 
-        return { deleted: Boolean(snapshot) };
-      } catch {
-        return { deleted: false };
-      }
-    });
+    // Outside the step, which a replay doesn't run: the set is rebuilt on
+    // every replay, so a snapshot gone now must leave it on each of them.
+    if (result.gone) {
+      run.createdSnapshots.delete(snapshotId);
+    }
   } catch {
     // Best effort only.
   }
