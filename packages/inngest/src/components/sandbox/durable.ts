@@ -651,10 +651,20 @@ export const createDurableSandboxFacade = (
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
   };
-  // The create and readiness wait are one call, so they share one span.
+  // The create and readiness wait are one statement, so they share one span
+  // of kind `snapshot`. A caller that already groups the statement (such as
+  // `@inngest/ci`) passes its own `"~span"`, which both steps carry, so the
+  // statement is never grouped twice.
   const snapshot: DurableSandbox["snapshot"] = (idOrOptions, ...args) => {
-    const { id, name } = getStepOptions(idOrOptions);
-    return withSpan({ id, name }, () => createSnapshot(idOrOptions, ...args));
+    const { id, name, "~span": callerSpan } = getStepOptions(idOrOptions);
+
+    if (callerSpan) {
+      return createSnapshot(idOrOptions, ...args);
+    }
+
+    return withSpan({ id, name, kind: "snapshot", origin: sdkOrigin }, () => {
+      return createSnapshot(idOrOptions, ...args);
+    });
   };
   const facade: DurableSandbox = {
     ...ref,
