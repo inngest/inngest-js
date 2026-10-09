@@ -1,9 +1,10 @@
 /**
  * Tests of what the shared build function guarantees about cached snapshots:
  * a burst of runs builds a snapshot once, a chain of cached parents builds
- * each link once without holding back the jobs that need an earlier link, and
- * a snapshot about to expire is replaced. They run against the fake Sandboxes
- * API with snapshot names on.
+ * each link once without holding back the jobs that need an earlier link, a
+ * snapshot about to expire is replaced, and a job looks its parent up first
+ * and invokes a build only on a miss. They run against the fake Sandboxes API
+ * with snapshot names on.
  *
  * `runFunction` runs invokes beside the function and makes runs of one
  * `event.data` concurrency key take turns, as the platform does for the build
@@ -578,5 +579,201 @@ describe("a snapshot older than the cache's maxAge", () => {
         async () => {},
       );
     }).toThrow(/cache\.maxAge/);
+  });
+});
+
+describe("a job that starts from a job in its own app", () => {
+  /**
+   * `test` starts from `build`, which starts from `install`, each keyed on
+   * the key given for it.
+   */
+  const chain = (api: Api, keys = { install: "v1", build: "v1" }) => {
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: keys.install } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const build = ci.job(
+      { id: "build", from: install, cache: { key: keys.build } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const test = ci.job({ id: "test", from: build }, async () => {
+      await $`pnpm test`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+  };
+
+  /** The steps that invoke the build function. */
+  const invokes = (stepIds: string[]) => {
+    return stepIds.filter((stepId) => {
+      return stepId.endsWith("› build");
+    });
+  };
+
+  test("looks every link up before it invokes that link's build", async () => {
+    const api = createFakeSandboxApi();
+
+    const result = await runFunction(chain(api), {
+      event: prEvent,
+      runId: "01COLD",
+    });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(invokes(result.stepIds)).toEqual([
+      "install (from) (base) › build",
+      "build (from) › build",
+    ]);
+
+    const at = (stepId: string) => {
+      return result.stepIds.indexOf(stepId);
+    };
+
+    // `install` is a parent's parent, so its key and lookup are steps of
+    // their own. `build` is looked up inside `test`, which starts from it.
+    expect(at("install (from) (base) › cache:key")).toBeGreaterThan(-1);
+    expect(at("install (from) (base) › lookup")).toBeGreaterThan(-1);
+
+    expect(at("install (from) (base) › lookup")).toBeLessThan(
+      at("install (from) (base) › build"),
+    );
+
+    expect(at("test › from build")).toBeGreaterThan(-1);
+    expect(at("test › from build")).toBeLessThan(at("build (from) › build"));
+  });
+
+  test("a warm run still looks every link up, and invokes nothing", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = chain(api);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01COLD" });
+
+    const warm = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01WARM",
+    });
+
+    expect(warm.type).toBe("function-resolved");
+    expect(warm.stepIds).toContain("install (from) (base) › cache:key");
+    expect(warm.stepIds).toContain("install (from) (base) › lookup");
+    expect(warm.stepIds).toContain("test › from build");
+    expect(invokes(warm.stepIds)).toEqual([]);
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm build")).toBe(1);
+    expect(count(api, "pnpm test")).toBe(2);
+  });
+
+  test("a parent whose key changed is a miss, and only it is built again", async () => {
+    const api = createFakeSandboxApi();
+
+    await runFunction(chain(api), { event: prEvent, runId: "01COLD" });
+
+    const changed = await runFunction(
+      chain(api, { install: "v1", build: "v2" }),
+      { event: prEvent, runId: "01CHANGED" },
+    );
+
+    expect(changed.type).toBe("function-resolved");
+    expect(invokes(changed.stepIds)).toEqual(["build (from) › build"]);
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm build")).toBe(2);
+  });
+
+  test("a change further up the chain is a miss for every link after it", async () => {
+    const api = createFakeSandboxApi();
+
+    await runFunction(chain(api), { event: prEvent, runId: "01COLD" });
+
+    // `build`'s own key is the same, but its name holds the snapshot it
+    // starts from, and that's a new one.
+    const changed = await runFunction(
+      chain(api, { install: "v2", build: "v1" }),
+      { event: prEvent, runId: "01CHANGED" },
+    );
+
+    expect(changed.type).toBe("function-resolved");
+
+    expect(invokes(changed.stepIds)).toEqual([
+      "install (from) (base) › build",
+      "build (from) › build",
+    ]);
+
+    expect(count(api, "pnpm install")).toBe(2);
+    expect(count(api, "pnpm build")).toBe(2);
+  });
+
+  test("a parent snapshot still being written is waited for, not built again", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job({ id: "lint", from: install }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+    });
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [snapshot] = named(api);
+
+    Object.assign(snapshot ?? {}, { status: "CREATING", readyAfterGets: 1 });
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+    expect(invokes(second.stepIds)).toEqual([]);
+    expect(count(api, "pnpm install")).toBe(1);
+
+    const child = [...api.sandboxes.values()].find((machine) => {
+      return machine.name === "ci-01SECOND-lint";
+    });
+
+    expect(child?.snapshotId).toBe(snapshot?.id);
+  });
+
+  test("runs that all miss each invoke, and the build looks again so only the first builds", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = chain(api);
+
+    const results = await Promise.all(
+      ["01A", "01B", "01C"].map((runId) => {
+        return runFunction(pipeline, { event: prEvent, runId });
+      }),
+    );
+
+    for (const result of results) {
+      expect(result.type).toBe("function-resolved");
+
+      expect(invokes(result.stepIds)).toEqual([
+        "install (from) (base) › build",
+        "build (from) › build",
+      ]);
+    }
+
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm build")).toBe(1);
+    expect(count(api, "pnpm test")).toBe(3);
   });
 });
