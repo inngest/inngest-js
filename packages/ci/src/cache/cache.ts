@@ -546,68 +546,6 @@ export const lookupBeforeBuild = async (
 };
 
 /**
- * Look a `from` parent's snapshot up for the job that starts from it, as the
- * first memoized step inside that job. One step works out the parent's key and
- * name, then lists by name once per scope the parent reads. A miss is for the
- * shared build to settle, which looks again when it starts.
- */
-export const lookupParent = async (
-  scope: CiJobScope,
-  parent: {
-    config: JobConfig;
-    /** The input the parent is built with. */
-    input: unknown;
-    /** What the parent starts from. */
-    base?: BaseIdentity;
-  },
-): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
-  const { run } = scope;
-  const { config, input, base } = parent;
-
-  if (config.cache) {
-    countApi("cache");
-  }
-
-  const found = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}from ${config.id}`,
-      name: `from ${config.id}`,
-    },
-    async () => {
-      await tagStep(run, { kind: "cache", job: scope.path });
-
-      if (!config.cache) {
-        const target = runTarget(run, config.id, input, base);
-        const hit = await findNamed(run, target.name);
-
-        return { target, hit: hit ?? null };
-      }
-
-      const given = run.build?.jobId === config.id ? run.build : undefined;
-      const ownKey =
-        given?.ownKey ?? (await jobCacheKey(run, config.cache, input, base));
-
-      const target = {
-        ownKey,
-        name:
-          given?.cacheKey ??
-          snapshotName(
-            cacheScopes(run.repo, config.cache.scope).write,
-            config.id,
-            ownKey,
-          ),
-      };
-
-      const hit = await findInScopes(run, config.id, config.cache, ownKey);
-
-      return { target, hit: hit ?? null };
-    },
-  )) as { target: CacheTarget; hit: CachedSnapshot | null };
-
-  return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
-};
-
-/**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
  * step. If it can't be used, because it is about to expire or is the bad one
  * the build replaces, it is deleted so the build can take the name after all.

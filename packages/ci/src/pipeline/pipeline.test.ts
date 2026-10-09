@@ -1446,7 +1446,7 @@ describe("from", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    expect(api.sandboxes.size).toBe(4);
+    expect(api.sandboxes.size).toBe(3);
 
     expect(
       userCommands(api).map((argv) => {
@@ -1459,8 +1459,8 @@ describe("from", () => {
       "pnpm install",
       "pnpm build",
       // test couldn't copy `build` either: `build` ran again on its machine,
-      // which asks for `install` again, then test
-      "pnpm install",
+      // which gets `install` from the same shared build (no snapshot, so it
+      // ran install again there), then test
       "pnpm install",
       "pnpm build",
       "pnpm test",
