@@ -91,6 +91,11 @@ export interface FakeSandboxApi {
   snapshots: Map<string, FakeSnapshot>;
   /** Every command or process argv the API was asked to run, in order. */
   commands: string[][];
+  /**
+   * Commands asked of machines and snapshots taken of them, in order, as
+   * `command <argv>` and `snapshot <machine name>`.
+   */
+  timeline: string[];
   /** Every request path, in order. */
   requests: string[];
   /** Every file uploaded to a sandbox, in order. */
@@ -101,10 +106,40 @@ export interface FakeSandboxApi {
   /** Make snapshot creation fail the way Cloud does when none are left. */
   exhaustSnapshots(): void;
   /**
-   * Make a sandbox created from any snapshot that exists now never start, as
-   * a stale one doesn't. Snapshots taken afterwards start normally.
+   * Make a sandbox created from any snapshot that exists now fail to start
+   * for good, as a broken one does: the machine goes `FAILED`, which the
+   * create reports as `sandbox_start_failed`. Snapshots taken afterwards
+   * start normally.
    */
   failSnapshotStarts(): void;
+  /**
+   * Like `failSnapshotStarts`, but the machine never reaches `RUNNING` in
+   * time and stays stuck `STARTING`, which the create reports as
+   * `sandbox_start_timed_out`.
+   */
+  timeoutSnapshotStarts(): void;
+  /** Make a sandbox created from any snapshot, even one taken later, never start. */
+  failAllSnapshotStarts(): void;
+  /**
+   * Make the next starts from a snapshot fail one way, then start normally:
+   * `timeout` is `sandbox_start_timed_out`, `failed` is
+   * `sandbox_start_failed`, and `capacity` is a retryable
+   * `compute_unavailable` (503) that leaves no machine behind.
+   */
+  failNextSnapshotStarts(
+    mode: StartFault,
+    options?: {
+      /** How many starts fail. Defaults to 1. */
+      count?: number;
+      /**
+       * What becomes of the snapshot when the first of them fails, as when it
+       * is deleted, or is being taken again, by the time anything looks.
+       */
+      then?: "gone" | "CREATING" | "DELETING";
+    },
+  ): void;
+  /** Make deleting any snapshot that exists now fail the way Cloud refuses some: `409`. */
+  refuseSnapshotDeletes(): void;
   /** The snapshot of every sandbox create that asked for one, in order. */
   snapshotStarts: string[];
   /**
@@ -120,6 +155,9 @@ export interface FakeSandboxApi {
    */
   loseSnapshotNameRaces(): void;
 }
+
+/** How a start from a snapshot can fail. */
+export type StartFault = "timeout" | "failed" | "capacity";
 
 // biome-ignore lint/suspicious/noExplicitAny: request bodies are untyped JSON
 type Body = any;
@@ -235,6 +273,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const processes = new Map<string, FakeProcess>();
   const snapshots = new Map<string, FakeSnapshot>();
   const commands: string[][] = [];
+  const timeline: string[] = [];
   const requests: string[] = [];
   const uploads: FakeSandboxApi["uploads"] = [];
 
@@ -300,8 +339,30 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     });
   };
 
-  const failingSnapshots = new Set<string>();
+  interface Fault {
+    mode: StartFault;
+    then?: "gone" | "CREATING" | "DELETING";
+  }
+
+  /** Snapshots whose starts fail for good, and how. */
+  const failingSnapshots = new Map<string, StartFault>();
+  let failingAllSnapshots: StartFault | undefined;
+  const queuedFaults: Fault[] = [];
+  const undeletable = new Set<string>();
   const snapshotStarts: string[] = [];
+
+  /** The fault the next start from this snapshot meets, if any. */
+  const startFaultFor = (snapshotId: string): Fault | undefined => {
+    const queued = queuedFaults.shift();
+
+    if (queued) {
+      return queued;
+    }
+
+    const mode = failingAllSnapshots ?? failingSnapshots.get(snapshotId);
+
+    return mode ? { mode } : undefined;
+  };
 
   const createSandbox: Handler = ({ body }) => {
     if (body.snapshotId) {
@@ -322,13 +383,32 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       );
     }
 
-    if (body.snapshotId && failingSnapshots.has(body.snapshotId)) {
-      // As on the real API, the sandbox exists and keeps its name, stuck in
-      // STARTING, though the create call fails.
-      const stuck: FakeSandbox = {
+    const fault = body.snapshotId ? startFaultFor(body.snapshotId) : undefined;
+
+    if (fault) {
+      const snapshot = snapshots.get(body.snapshotId);
+
+      if (snapshot && fault.then === "gone") {
+        snapshots.delete(snapshot.id);
+      } else if (snapshot && fault.then) {
+        snapshot.status = fault.then;
+      }
+
+      if (fault.mode === "capacity") {
+        return apiError(
+          503,
+          "compute_unavailable",
+          "Sandbox did not reach RUNNING: no capacity to start it right now",
+        );
+      }
+
+      // As on the real API, the sandbox exists and keeps its name though the
+      // create call fails: stuck in STARTING if it timed out, and ended if it
+      // failed.
+      const failed: FakeSandbox = {
         id: nextId(),
         name: body.name,
-        status: "STARTING",
+        status: fault.mode === "timeout" ? "STARTING" : "TERMINATED",
         vcpu: body.vcpu ?? 2,
         memoryMb: body.memoryMb ?? 2048,
         snapshotId: body.snapshotId,
@@ -336,13 +416,19 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         files: new Map(),
       };
 
-      sandboxes.set(stuck.id, stuck);
+      sandboxes.set(failed.id, failed);
 
-      return apiError(
-        422,
-        "sandbox_start_failed",
-        "Sandbox did not reach RUNNING within 120000 milliseconds",
-      );
+      return fault.mode === "timeout"
+        ? apiError(
+            504,
+            "sandbox_start_timed_out",
+            "Sandbox did not reach RUNNING within 120000 milliseconds",
+          )
+        : apiError(
+            422,
+            "sandbox_start_failed",
+            "Sandbox entered FAILED before reaching RUNNING",
+          );
     }
 
     const sandbox: FakeSandbox = {
@@ -364,6 +450,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     // CI's snapshot metadata is the one file kept: written by its own script,
     // and read with `cat` by a machine's setup.
@@ -414,6 +501,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     snapshots.set(snapshot.id, snapshot);
+    timeline.push(`snapshot ${sandbox.name}`);
 
     return snapshot;
   };
@@ -507,6 +595,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -720,6 +809,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
           );
         }
 
+        if (undeletable.has(snapshot.id)) {
+          return apiError(
+            409,
+            "sandbox_snapshot_in_use",
+            "Sandbox snapshot can't be deleted right now",
+          );
+        }
+
         snapshots.delete(snapshot.id);
 
         return noContent();
@@ -778,6 +875,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     processes,
     snapshots,
     commands,
+    timeline,
     requests,
     uploads,
     script: (next) => {
@@ -791,7 +889,28 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     },
     failSnapshotStarts: () => {
       for (const id of snapshots.keys()) {
-        failingSnapshots.add(id);
+        failingSnapshots.set(id, "failed");
+      }
+    },
+    timeoutSnapshotStarts: () => {
+      for (const id of snapshots.keys()) {
+        failingSnapshots.set(id, "timeout");
+      }
+    },
+    failAllSnapshotStarts: () => {
+      failingAllSnapshots = "failed";
+    },
+    failNextSnapshotStarts: (mode, options) => {
+      for (let i = 0; i < (options?.count ?? 1); i++) {
+        queuedFaults.push({
+          mode,
+          ...(i === 0 && options?.then ? { then: options.then } : {}),
+        });
+      }
+    },
+    refuseSnapshotDeletes: () => {
+      for (const id of snapshots.keys()) {
+        undeletable.add(id);
       }
     },
     snapshotStarts,

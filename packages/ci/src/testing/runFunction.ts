@@ -14,9 +14,11 @@
  */
 
 import type { EventPayload, InngestFunction } from "inngest";
+import { createdFunctions } from "./client.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
+  InvokeFunction: "InvokeFunction",
   StepError: "StepError",
   StepFailed: "StepFailed",
   StepPlanned: "StepPlanned",
@@ -39,6 +41,9 @@ interface Step {
   data?: unknown;
   error?: unknown;
   metadata?: MetadataUpdate[];
+  opts?: unknown;
+  /** The step's ID before hashing. */
+  userland?: { id: string };
 }
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
@@ -57,17 +62,26 @@ export interface RunResult {
   error?: unknown;
   /** For a rejected run, whether the executor would retry it. */
   retriable?: unknown;
-  /**
-   * Step names in the order they completed. The executor hashes IDs, so these
-   * are the display names CI gave each step.
-   */
+  /** Step IDs, before hashing, in the order the steps completed. */
   stepIds: string[];
-  /** Step data keyed by display name. */
+  /**
+   * The step IDs each request found at once, in request order. Steps in one
+   * batch were found while none of them had finished, so they run in parallel.
+   */
+  batches: string[][];
+  /** Each step's display name, keyed by step ID. */
+  names: Record<string, string>;
+  /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
   /**
-   * Metadata updates in the order steps ran them, each with the display name
-   * of the step that carried it. A step that fails and retries carries its
-   * metadata on every attempt, so it can appear more than once.
+   * What each `step.run` step was planned with, keyed by step ID: the options
+   * the SDK sent the executor, such as a sandbox call's input.
+   */
+  inputs: Record<string, unknown>;
+  /**
+   * Metadata updates in the order steps ran them, each with the ID of the step
+   * that carried it. A step that fails and retries carries its metadata on
+   * every attempt, so it can appear more than once.
    */
   metadata: Array<MetadataUpdate & { step: string }>;
 }
@@ -90,10 +104,160 @@ export interface RunFunctionOptions {
   retries?: number;
   /** Called before each execution request, such as to advance a fake clock. */
   beforeRequest?: () => void;
+  /**
+   * The functions `step.invoke` can reach. Defaults to every function the
+   * test client created. An invoked function runs to completion like any
+   * other, and its output or error comes back as the invoke's. Its
+   * `concurrency` key limits steps running at once, not runs (see
+   * `inTurn`).
+   */
+  functions?: InngestFunction.Any[];
+  /** The run's ID. Defaults to `01TESTRUN`. */
+  runId?: string;
+  /**
+   * Rewrites the data of each invoke after it went through JSON and before the
+   * invoked function runs, to play an invoker that is buggy or forged.
+   */
+  rewriteInvoke?: (data: Record<string, unknown>) => Record<string, unknown>;
 }
+
+let invokedRuns = 0;
+
+/** Tails of the queues for each concurrency key, so steps of one key take turns. */
+const keyQueues = new Map<string, Promise<unknown>>();
+
+/** The value of a simple `event.data.<field>` concurrency key. */
+const concurrencyKeyOf = (
+  fn: InngestFunction.Any,
+  event: EventPayload,
+): string | undefined => {
+  // biome-ignore lint/suspicious/noExplicitAny: reading the function's options
+  const limits = (fn as any).opts?.concurrency as
+    | { key?: string; limit: number }[]
+    | undefined;
+
+  const key = limits?.find((limit) => {
+    return limit.limit === 1 && limit.key?.startsWith("event.data.");
+  })?.key;
+
+  if (!key) {
+    return undefined;
+  }
+
+  const value = (event.data as Record<string, unknown>)[
+    key.slice("event.data.".length)
+  ];
+
+  // biome-ignore lint/suspicious/noExplicitAny: reading the function's options
+  return `${(fn as any).opts?.id}:${String(value)}`;
+};
+
+/**
+ * Run `task` after every earlier one for `key`. The platform's `concurrency`
+ * limits how many steps run at once, not how many runs are in flight, so this
+ * wraps one step's execution and never a whole run: runs of one key interleave
+ * between their steps.
+ */
+const inTurn = async <T>(key: string, task: () => Promise<T>): Promise<T> => {
+  const before = keyQueues.get(key) ?? Promise.resolve();
+  const mine = before.then(task, task);
+
+  keyQueues.set(
+    key,
+    mine.catch(() => {
+      return undefined;
+    }),
+  );
+
+  return mine;
+};
+
+/** Run an invoked function the way the executor would, and report the outcome. */
+const runInvoked = async (
+  caller: InngestFunction.Any,
+  opts: RunFunctionOptions,
+  planned: { id: string; opts?: unknown },
+): Promise<{ data?: unknown; error?: unknown }> => {
+  const call = planned.opts as {
+    function_id: string;
+    payload: { data?: unknown };
+  };
+
+  const functions =
+    opts.functions ??
+    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+    createdFunctions.get((caller as any).client) ??
+    [];
+
+  const target = functions.find((fn) => {
+    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+    const internals = fn as any;
+
+    return call.function_id.endsWith(`-${internals.opts.id}`);
+  });
+
+  if (!target) {
+    throw new Error(`No function to invoke for ${call.function_id}`);
+  }
+
+  // As on the wire, the payload and the result are JSON: a Date arrives as a
+  // string and a Map as `{}`, and a value that can't be serialized fails the
+  // invoke.
+  let data: Record<string, unknown>;
+
+  try {
+    data = roundTrip(call.payload.data ?? {}) as Record<string, unknown>;
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+
+  const event: EventPayload = {
+    name: "inngest/function.invoked",
+    data: opts.rewriteInvoke ? opts.rewriteInvoke(data) : data,
+  };
+
+  invokedRuns++;
+
+  const child = await runFunction(target, {
+    ...opts,
+    event,
+    runId: `01TESTINVOKED${invokedRuns}`,
+  });
+
+  if (child.type !== "function-resolved") {
+    return { error: child.error };
+  }
+
+  try {
+    return { data: roundTrip(child.data) };
+  } catch (error) {
+    return { error: serializationError(error) };
+  }
+};
+
+/** What a value is after being sent as JSON. */
+const roundTrip = (value: unknown): unknown => {
+  const json = JSON.stringify(value);
+
+  return json === undefined ? undefined : JSON.parse(json);
+};
+
+const serializationError = (error: unknown) => {
+  return {
+    name: "Error",
+    message: `Could not serialize the invoke: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  };
+};
 
 const isFailed = (step: Step): boolean => {
   return step.op === StepOpCode.StepError || step.op === StepOpCode.StepFailed;
+};
+
+/** A step's ID as CI wrote it, since the executor's `id` is hashed. */
+const stepId = (step: Step): string => {
+  return step.userland?.id ?? step.id;
 };
 
 /**
@@ -104,9 +268,11 @@ export const runFunction = async (
   opts: RunFunctionOptions = {},
 ): Promise<RunResult> => {
   const event = opts.event ?? { name: "test/event", data: {} };
+  const runId = opts.runId ?? "01TESTRUN";
   const maxRequests = opts.maxRequests ?? 200;
   const maxAttempts = opts.stepAttempts ?? 4;
   const retries = opts.retries ?? 0;
+  const concurrencyKey = concurrencyKeyOf(fn, event);
   let attempt = 0;
 
   // The state the executor would send back on each request.
@@ -119,13 +285,24 @@ export const runFunction = async (
   const attempts = new Map<string, number>();
 
   const stepIds: string[] = [];
+  const batches: string[][] = [];
+  const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const inputs: Record<string, unknown> = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
     opts.beforeRequest?.();
 
-    return runOnce(fn, event, stepState, completionOrder, attempt, runStep);
+    return runOnce(
+      fn,
+      event,
+      stepState,
+      completionOrder,
+      attempt,
+      runId,
+      runStep,
+    );
   };
 
   const record = (step: Step): void => {
@@ -140,11 +317,13 @@ export const runFunction = async (
 
     completionOrder.push(step.id);
 
-    const label = step.displayName ?? step.name ?? step.id;
+    const id = stepId(step);
 
-    stepIds.push(label);
+    stepIds.push(id);
 
-    steps[label] = step.data;
+    names[id] = step.displayName ?? step.name ?? id;
+
+    steps[id] = step.data;
   };
 
   // The executor retries a step that failed retriably, and only writes the
@@ -160,7 +339,7 @@ export const runFunction = async (
 
     for (const update of step.metadata ?? []) {
       metadata.push({
-        step: step.displayName ?? step.name ?? step.id,
+        step: stepId(step),
         ...update,
       });
     }
@@ -178,11 +357,56 @@ export const runFunction = async (
     record(step);
   };
 
+  // Invokes run beside the function, as they do on the platform: the function
+  // is called again as soon as any one of them ends, without waiting for the
+  // rest. Their outcomes are only recorded between requests, so a request
+  // never sees state change underneath it.
+  const inflight = new Map<string, Promise<void>>();
+  const started = new Set<string>();
+
+  const finished: Array<{
+    planned: Step;
+    outcome?: { data?: unknown; error?: unknown };
+    thrown?: unknown;
+  }> = [];
+
+  const settleInvokes = (): void => {
+    for (const { planned, outcome, thrown } of finished.splice(0)) {
+      if (thrown !== undefined) {
+        throw thrown;
+      }
+
+      record({
+        id: planned.id,
+        ...(planned.userland ? { userland: planned.userland } : {}),
+        ...(planned.displayName === undefined
+          ? {}
+          : { displayName: planned.displayName }),
+        ...(outcome?.error === undefined
+          ? { data: outcome?.data ?? null }
+          : { error: outcome.error }),
+      });
+    }
+  };
+
   for (let i = 0; i < maxRequests; i++) {
+    settleInvokes();
+
+    let progressed = false;
+
     const result = await request();
 
     if (result.type === "function-resolved") {
-      return { type: result.type, data: result.data, stepIds, steps, metadata };
+      return {
+        type: result.type,
+        data: result.data,
+        stepIds,
+        batches,
+        names,
+        steps,
+        inputs,
+        metadata,
+      };
     }
 
     if (result.type === "function-rejected") {
@@ -197,7 +421,10 @@ export const runFunction = async (
         error: result.error,
         retriable: result.retriable,
         stepIds,
+        batches,
+        names,
         steps,
+        inputs,
         metadata,
       };
     }
@@ -212,13 +439,53 @@ export const runFunction = async (
       throw new Error(`Unexpected execution result: ${result.type}`);
     }
 
+    // An invoke that is still running is planned again by every request.
+    const fresh = (result.steps ?? []).filter((planned) => {
+      return !started.has(planned.id);
+    });
+
+    if (fresh.length > 0) {
+      batches.push(
+        fresh.map((planned) => {
+          return stepId(planned);
+        }),
+      );
+    }
+
     for (const planned of result.steps ?? []) {
+      if (planned.op === StepOpCode.InvokeFunction) {
+        if (started.has(planned.id)) {
+          continue;
+        }
+
+        started.add(planned.id);
+
+        progressed = true;
+
+        inflight.set(
+          planned.id,
+          runInvoked(fn, opts, planned).then(
+            (outcome) => {
+              finished.push({ planned, outcome });
+              inflight.delete(planned.id);
+            },
+            (thrown) => {
+              finished.push({ planned, thrown: thrown ?? new Error("invoke") });
+              inflight.delete(planned.id);
+            },
+          ),
+        );
+
+        continue;
+      }
+
       // Only `step.run` steps are asked to run. Everything else (sleeps,
       // waits) is fulfilled by the executor writing state, so the harness
       // does the same.
       if (planned.op && planned.op !== StepOpCode.StepPlanned) {
         record({
           id: planned.id,
+          ...(planned.userland ? { userland: planned.userland } : {}),
           ...(planned.displayName === undefined
             ? {}
             : { displayName: planned.displayName }),
@@ -228,11 +495,24 @@ export const runFunction = async (
         continue;
       }
 
-      const ran = await request(planned.id);
+      inputs[stepId(planned)] = planned.opts;
+
+      const ran = await (concurrencyKey
+        ? inTurn(concurrencyKey, () => {
+            return request(planned.id);
+          })
+        : request(planned.id));
+
+      progressed = true;
 
       if (ran.type === "step-ran") {
         recordRan(ran);
       }
+    }
+
+    // Nothing new to do, so the function is waiting on its invokes.
+    if (!progressed && finished.length === 0 && inflight.size > 0) {
+      await Promise.race(inflight.values());
     }
   }
 
@@ -246,6 +526,7 @@ const runOnce = async (
   stepState: object,
   completionOrder: string[],
   attempt: number,
+  runId: string,
   runStep?: string,
 ): Promise<ExecutionResult> => {
   // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals, see the module comment
@@ -266,8 +547,8 @@ const runOnce = async (
   const execution = internals["createExecution"]({
     partialOptions: {
       client,
-      data: { event, events: [event], runId: "01TESTRUN", attempt },
-      runId: "01TESTRUN",
+      data: { event, events: [event], runId, attempt },
+      runId,
       stepState,
       stepCompletionOrder: completionOrder,
       handlerKind: "main",

@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
 
 /**
@@ -254,6 +255,27 @@ export interface JobConfig<TInput = void> {
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
+  /**
+   * The shape of the job's input, as any Standard Schema (Zod, Valibot,
+   * ArkType, …). The handler gets the validated value.
+   *
+   * A cached job, and a job another starts `from`, is built in a run of its
+   * own, which is sent the input you gave as JSON and validates it again. So
+   * the input you give must survive JSON. The cache key is built from the
+   * schema's output, so that must be plain JSON too (no `Date`, `Map`, `Set`
+   * or `bigint`). Transforms that normalise input, such as trim, lowercase or
+   * defaults, are fine, and let varied inputs share a key.
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
+   */
+  input?: StandardSchemaV1;
 }
 
 /**

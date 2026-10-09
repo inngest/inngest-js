@@ -5,9 +5,46 @@
  * @module
  */
 
-import type { Matrix, MatrixCombo, MatrixConfig, JobConfig } from "../types.ts";
+import { NonRetriableError } from "inngest";
+import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
-import { countApi } from "./scope.ts";
+import { countApi, matrixOriginKey } from "./scope.ts";
+
+/**
+ * Where a matrix keeps the function that runs exactly the combinations it's
+ * given, which is how a build runs the one combination it was asked for.
+ */
+export const runCombosKey = Symbol("inngest/ci.matrixCombos");
+
+/**
+ * A string that is the same for equal values however they were built, with
+ * object keys in sorted order. A combination that went through an invoke has
+ * the same values as the original, but never the same object references.
+ */
+const stableKey = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableKey).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => {
+        return `${JSON.stringify(key)}:${stableKey((value as Record<string, unknown>)[key])}`;
+      })
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value) ?? "undefined";
+};
+
+/** Whether two combinations have the same axes and values. */
+export const sameCombo = (
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean => {
+  return stableKey(a) === stableKey(b);
+};
 
 /**
  * Expand a matrix into its combinations and run them as jobs.
@@ -17,16 +54,8 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
   config: MatrixConfig<TAxes>,
   handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
 ): Matrix<TAxes> => {
-  const matrix = (async (only?: Partial<MatrixCombo<TAxes>>) => {
+  const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");
-
-    const combos = expandMatrix(config).filter((combo) => {
-      return only
-        ? Object.entries(only).every(([key, value]) => {
-            return combo[key as keyof MatrixCombo<TAxes>] === value;
-          })
-        : true;
-    });
 
     const tasks = combos.map((combo) => {
       return async () => {
@@ -52,14 +81,15 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
               }
             : (pick as JobConfig["from"]);
 
-        const job = ci.job<void>(
+        const job = ci.job(
           {
             id: matrixJobId(config.id, combo),
             ...(from ? { from } : {}),
             ...(machine ? { machine } : {}),
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),
-          },
+            [matrixOriginKey]: { id: config.id, combo },
+          } as JobConfig,
           () => {
             return handler(combo);
           },
@@ -70,9 +100,40 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
     });
 
     await runPool(tasks, config.concurrency, config.failFast ?? false);
+  };
+
+  const matrix = ((only?: Partial<MatrixCombo<TAxes>>) => {
+    return run(
+      expandMatrix(config).filter((combo) => {
+        return only
+          ? Object.entries(only).every(([key, value]) => {
+              return combo[key as keyof MatrixCombo<TAxes>] === value;
+            })
+          : true;
+      }),
+    );
   }) as Matrix<TAxes>;
 
-  Object.defineProperty(matrix, "id", { value: config.id, enumerable: true });
+  Object.defineProperties(matrix, {
+    id: { value: config.id, enumerable: true },
+    [runCombosKey]: {
+      value: async (combos: Record<string, unknown>[]) => {
+        const matching = expandMatrix(config).filter((combo) => {
+          return combos.some((wanted) => {
+            return sameCombo(wanted, combo);
+          });
+        });
+
+        if (matching.length === 0) {
+          throw new NonRetriableError(
+            `No combination of the matrix "${config.id}" matches the one asked for, so nothing would run. The worker's code may be out of date.`,
+          );
+        }
+
+        return run(matching);
+      },
+    },
+  });
 
   return matrix;
 };
