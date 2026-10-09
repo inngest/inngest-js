@@ -452,19 +452,18 @@ describe("the just-in-time warning", () => {
   };
 
   const unwarmed =
-    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Add `cache.warm` to build it ahead of time.";
+    "`install` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited. Add `cache.warm` to build it ahead of time.";
 
   const warmed =
-    "`install` had no usable cached snapshot for these inputs, so it was built while this job waited. Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet.";
+    "`install` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited. Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet.";
 
-  test("a miss on a parent without warm advises cache.warm, on each child's row and once in the warnings", async () => {
+  test("a miss on a parent without warm advises cache.warm, on the parent's one lookup row and once in the warnings", async () => {
     const result = await runFunction(pipelineOf({}), { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
 
     expect(warned(result.metadata)).toEqual([
-      ["a › from install", { "ci.justInTime": unwarmed }],
-      ["b › from install", { "ci.justInTime": unwarmed }],
+      ["install (from) › lookup", { "ci.justInTime": unwarmed }],
     ]);
 
     expect(result.data).toEqual([
@@ -480,8 +479,7 @@ describe("the just-in-time warning", () => {
     expect(result.type).toBe("function-resolved");
 
     expect(warned(result.metadata)).toEqual([
-      ["a › from install", { "ci.justInTime": warmed }],
-      ["b › from install", { "ci.justInTime": warmed }],
+      ["install (from) › lookup", { "ci.justInTime": warmed }],
     ]);
 
     expect(result.data).toEqual([
@@ -542,7 +540,7 @@ describe("the just-in-time warning", () => {
     expect(result.type).toBe("function-resolved");
 
     expect(warned(result.metadata)).toEqual([
-      ["lint › from install", { "ci.justInTime": unwarmed }],
+      ["install (from) › lookup", { "ci.justInTime": unwarmed }],
     ]);
 
     expect(result.data).toEqual([
@@ -601,7 +599,7 @@ describe("the uncached-base warning", () => {
     return `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`;
   };
 
-  test("a cached job on an uncached parent says so on its row and in the warnings, every run", async () => {
+  test("a cached job on an uncached parent says so on the parent's lookup row and in the warnings, every run", async () => {
     const { api, ci } = setup();
 
     const base = ci.job("base", async () => {
@@ -627,7 +625,10 @@ describe("the uncached-base warning", () => {
       expect(result.type).toBe("function-resolved");
 
       expect(warned(result.metadata)).toEqual([
-        ["build › from base", { "ci.uncachedBase": message("build", "base") }],
+        [
+          "base (from) › lookup",
+          { "ci.uncachedBase": message("build", "base") },
+        ],
       ]);
 
       expect(result.data).toEqual([line("build", "base")]);
@@ -669,7 +670,10 @@ describe("the uncached-base warning", () => {
     expect(result.type).toBe("function-resolved");
 
     expect(warned(result.metadata)).toEqual([
-      ["test › from build", { "ci.uncachedBase": message("build", "base") }],
+      [
+        "build (from) › lookup",
+        { "ci.uncachedBase": message("build", "base") },
+      ],
     ]);
 
     expect(result.data).toEqual([line("build", "base")]);

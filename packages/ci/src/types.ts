@@ -264,6 +264,11 @@ export interface JobConfig<TInput = void> {
    * The shape of the job's input, as any Standard Schema (Zod, Valibot,
    * ArkType, …). The handler gets the validated value.
    *
+   * A cached job, and a job another starts `from`, is built in a run of its
+   * own, which is sent the input you gave as JSON and validates it again. So
+   * the input you give must survive JSON (no `Date`, `Map`, `Set` or
+   * `bigint`), while the schema can turn it into any of those.
+   *
    * ```ts
    * const build = ci.job(
    *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
