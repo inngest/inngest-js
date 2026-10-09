@@ -289,36 +289,28 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  // A build run was handed the name the run that invoked it concurrency-limits
-  // on, so the two can't drift apart.
-  const given = run.build?.jobId === jobId ? run.build : undefined;
+  const ownKey = await ciRun(
+    run,
+    {
+      step: ciStep(
+        `${job.path}${scopeSeparator}cache:key`,
+        traceName.checkCache,
+      ),
+      intent: `Work out the cache key for \`${jobId}\``,
+      tag: { kind: "cache", job: job.path },
+    },
+    async (note) => {
+      const key = await jobCacheKey(run, cache, input, base);
 
-  const ownKey =
-    given?.ownKey ??
-    (await ciRun(
-      run,
-      {
-        step: ciStep(
-          `${job.path}${scopeSeparator}cache:key`,
-          traceName.checkCache,
-        ),
-        intent: `Work out the cache key for \`${jobId}\``,
-        tag: { kind: "cache", job: job.path },
-      },
-      async (note) => {
-        const key = await jobCacheKey(run, cache, input, base);
+      note.outcome({ key });
 
-        note.outcome({ key });
-
-        return key;
-      },
-    ));
+      return key;
+    },
+  );
 
   return {
     ownKey,
-    name:
-      given?.cacheKey ??
-      snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    name: snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
   };
 };
 
@@ -580,79 +572,6 @@ export const lookupBeforeBuild = async (
   );
 
   return found ?? undefined;
-};
-
-/**
- * Look a `from` parent's snapshot up for the job that starts from it, as the
- * first memoized step inside that job. One step works out the parent's key and
- * name, then lists by name once per scope the parent reads, so the job's own
- * row shows the work from the moment the job is called. A miss is for the
- * shared build to settle, which looks again when it starts.
- */
-export const lookupParent = async (
-  scope: CiJobScope,
-  parent: {
-    config: JobConfig;
-    /** The input the parent is built with. */
-    input: unknown;
-    /** What the parent starts from. */
-    base?: BaseIdentity;
-  },
-): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
-  const { run } = scope;
-  const { config, input, base } = parent;
-
-  if (config.cache) {
-    countApi("cache");
-  }
-
-  const found = await ciRun<{
-    target: CacheTarget;
-    hit: CachedSnapshot | null;
-  }>(
-    run,
-    {
-      step: ciStep(
-        `${scope.path}${scopeSeparator}from ${config.id}`,
-        traceName.startFrom(config.id),
-      ),
-      intent: `Look up the snapshot of \`${config.id}\` to start from`,
-      tag: { kind: "cache", job: scope.path },
-    },
-    async (note) => {
-      if (!config.cache) {
-        const target = runTarget(run, config.id, input, base);
-        const hit = await findNamed(run, target.name);
-
-        note.outcome(lookupOutcome(hit));
-
-        return { target, hit: hit ?? null };
-      }
-
-      const given = run.build?.jobId === config.id ? run.build : undefined;
-      const ownKey =
-        given?.ownKey ?? (await jobCacheKey(run, config.cache, input, base));
-
-      const target = {
-        ownKey,
-        name:
-          given?.cacheKey ??
-          snapshotName(
-            cacheScopes(run.repo, config.cache.scope).write,
-            config.id,
-            ownKey,
-          ),
-      };
-
-      const hit = await findInScopes(run, config.id, config.cache, ownKey);
-
-      note.outcome(lookupOutcome(hit));
-
-      return { target, hit: hit ?? null };
-    },
-  );
-
-  return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
 };
 
 /**
