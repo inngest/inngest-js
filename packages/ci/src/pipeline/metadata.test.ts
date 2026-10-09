@@ -594,7 +594,7 @@ describe("the uncached-base warning", () => {
   };
 
   const message = (jobId: string, baseId: string) => {
-    return `\`${jobId}\` is cached, but it starts from \`${baseId}\`, which has no \`cache\`. \`${baseId}\` is built fresh in every run, so \`${jobId}\` gets a new snapshot name each time and is never reused. Give \`${baseId}\` a \`cache\`.`;
+    return `\`${jobId}\` is cached, but it starts from \`${baseId}\`, which has no \`cache\`. \`${baseId}\` is built fresh in every run, so \`${jobId}\` is rebuilt in every run too and its snapshot is never reused or named. Give \`${baseId}\` a \`cache\`.`;
   };
 
   const line = (jobId: string, baseId: string) => {
