@@ -233,7 +233,8 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
 
 /**
  * Run `fn` request by request, memoizing each new step, and return the steps
- * in the order they ran.
+ * in the order they ran. A step that fails before the last request throws,
+ * since memoizing its error as data would carry the run past the failure.
  */
 export const runSteps = async (
   fn: InngestFunction.Any,
@@ -250,6 +251,13 @@ export const runSteps = async (
     }
 
     steps.push(result.step);
+
+    if (result.step.error !== undefined && i < count - 1) {
+      throw new Error(
+        `Step ${result.step.id} failed on request ${i + 1} of ${count}`,
+      );
+    }
+
     stepState = {
       ...stepState,
       [result.step.id]: { id: result.step.id, data: result.step.data },
