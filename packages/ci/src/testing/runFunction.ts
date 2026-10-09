@@ -94,7 +94,10 @@ export interface RunFunctionOptions {
    * What a sleep or wait resolves to. Defaults to `null`, which is what a
    * `waitForEvent` timeout looks like.
    */
-  resolveWait?: (step: { id: string; displayName?: string }) => unknown;
+  resolveWait?: (step: {
+    id: string;
+    displayName?: string;
+  }) => unknown | Promise<unknown>;
   /** How many times a retriable step failure is retried. Defaults to 4. */
   stepAttempts?: number;
   /**
@@ -489,7 +492,7 @@ export const runFunction = async (
           ...(planned.displayName === undefined
             ? {}
             : { displayName: planned.displayName }),
-          data: opts.resolveWait ? opts.resolveWait(planned) : null,
+          data: opts.resolveWait ? await opts.resolveWait(planned) : null,
         });
 
         continue;

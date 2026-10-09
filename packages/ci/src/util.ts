@@ -241,7 +241,7 @@ export const stableStringify = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
-const hasErrorCode = (error: unknown, code: string): boolean => {
+export const hasErrorCode = (error: unknown, code: string): boolean => {
   const { code: own, cause } = (error ?? {}) as {
     code?: string;
     cause?: { code?: string };

@@ -45,6 +45,7 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration } from "../util.ts";
+import { buildLockName } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -870,9 +871,16 @@ const permissionForComment = (
 export const cleanupFunction = ({
   client,
   config,
+  releasesBuildLocks = false,
 }: {
   client: Inngest.Any;
   config: Pick<PipelineConfig, "id">;
+  /**
+   * Whether the run may hold a build lock, which is released by destroying
+   * the machine it was building on. The lock's name is worked out from the
+   * cache entry the run was asked to build.
+   */
+  releasesBuildLocks?: boolean;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
@@ -892,8 +900,17 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
+      const cacheKey = event?.data?.event?.data?.cacheKey;
+
+      const lockName =
+        releasesBuildLocks && typeof cacheKey === "string"
+          ? buildLockName(cacheKey)
+          : undefined;
+
       return step.run("destroy-orphans", async () => {
-        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+        return runId
+          ? destroyOrphans(client, runId, lockName)
+          : { destroyed: 0 };
       });
     },
   );

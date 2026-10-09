@@ -44,7 +44,7 @@ import {
   cleanupFunction,
   definePipeline,
 } from "./pipeline.ts";
-import type { CiInternals } from "./scope.ts";
+import type { CiInternals, DedupeBuilds } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
 
 export interface CiOptions {
@@ -55,6 +55,14 @@ export interface CiOptions {
   github?: GitHubProvider;
   /** Default machine for jobs. */
   machine?: MachineConfig;
+  /**
+   * Keep concurrent runs that miss the same cached job from each building it.
+   * With `"name-lock"`, a build's own machine holds a name derived from the
+   * cache entry, so only one run builds: the others wait, then use its
+   * snapshot. Off by default, and it only covers jobs that have a `cache` and
+   * no `from`.
+   */
+  dedupeBuilds?: DedupeBuilds;
   /** Builds the link shown on checks. */
   runUrl?: (ctx: { runId: string; functionId: string }) => string;
 }
@@ -243,6 +251,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return buildFunction;
     },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
+    ...(options.dedupeBuilds ? { dedupeBuilds: options.dedupeBuilds } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
       client as unknown as { logger?: { warn: (...args: unknown[]) => void } }
@@ -318,7 +327,11 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         ...generated,
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
-        cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
+        cleanupFunction({
+          client,
+          config: { id: cacheBuildFunctionId },
+          releasesBuildLocks: options.dedupeBuilds === "name-lock",
+        }),
         ...cacheRefreshFunctions({
           client,
           internals,

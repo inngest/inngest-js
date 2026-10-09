@@ -10,5 +10,6 @@ The client and the run engine.
 - `matrix.ts`: `ci.matrix()`, matrix expansion and the concurrency pool.
 - `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, and the helpers that build and attach it.
 - `scope.ts`: the run and job scopes held in async context. Jobs only write to the run scope, except for `builds`, the promises of the builds `from` parents need.
+- `buildLock.ts`: the opt-in build lock (`createCi({ dedupeBuilds: "name-lock" })`). A build of a cached job without a `from` creates its machine under a name derived from the cache entry, owned by its run, so a run that misses at the same time is refused the name, sleeps, looks the snapshot up and adopts it. The winner destroys its machine once the snapshot is taken or the build failed; the `ci/build` cleanup function destroys the machine of a build that died.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.

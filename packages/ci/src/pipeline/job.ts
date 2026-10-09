@@ -31,6 +31,7 @@ import {
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import { claimBuildLock, releaseBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
@@ -576,16 +577,50 @@ const jobBody = async ({
         await announceBuild(run);
       }
 
-      await runJobBody(scope, async () => {
-        if (fromParent) {
-          await startFrom(scope, fromParent);
+      // A build of a cached job that starts fresh holds a lock on its entry,
+      // so a run that misses at the same time waits for this one's snapshot
+      // rather than building its own.
+      const claim =
+        builtAs &&
+        config.cache &&
+        run.ci.dedupeBuilds === "name-lock" &&
+        config.from === undefined &&
+        !run.build?.unnamed
+          ? await claimBuildLock({
+              scope,
+              cache: config.cache,
+              target: builtAs,
+              ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
+            })
+          : undefined;
+
+      if (claim?.kind === "adopted") {
+        run.outcome = {
+          snapshotId: claim.snapshot.snapshotId,
+          cached: claim.snapshot,
+          reused: true,
+          hadMachine: true,
+        };
+
+        reusedTitle = cachedTitle(claim.snapshot);
+      } else {
+        try {
+          await runJobBody(scope, async () => {
+            if (fromParent) {
+              await startFrom(scope, fromParent);
+            }
+
+            return handler(input);
+          });
+
+          if (builtAs) {
+            await snapshotBuilt(scope, builtAs);
+          }
+        } finally {
+          if (claim?.kind === "held") {
+            await releaseBuildLock(scope);
+          }
         }
-
-        return handler(input);
-      });
-
-      if (builtAs) {
-        await snapshotBuilt(scope, builtAs);
       }
     }
 

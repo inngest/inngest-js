@@ -79,6 +79,7 @@ export { sandbox } from "./machine/sandbox.ts";
 // Client and pipelines
 export type { Ci, CiOptions } from "./pipeline/createCi.ts";
 export { createCi } from "./pipeline/createCi.ts";
+export type { DedupeBuilds } from "./pipeline/scope.ts";
 // Reporting
 export { report } from "./report.ts";
 

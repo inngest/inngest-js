@@ -127,6 +127,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     options: {
       name: string;
       snapshotId?: string;
+      environment?: Record<string, string>;
     },
   ): Promise<Started> => {
     const sandbox = options.snapshotId
@@ -137,6 +138,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
       : await tools.create(createStepId, {
           name: options.name,
           ...machineConfig,
+          ...(options.environment ? { environment: options.environment } : {}),
         });
 
     await sandbox.commands.run(`${createStepId}${scopeSeparator}setup`, [
@@ -299,16 +301,59 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
       scope.startNote ?? "creating machine…",
     );
 
-    started = await start(stepId, { name });
+    // A build that claims its cache entry's lock creates its machine under
+    // the lock's name, owned by this run. Creating it again with the same
+    // name and settings, as a retry of this run does, gives the same machine
+    // back, while another run's differing owner is refused.
+    const lock = scope.buildLock;
+
+    started = lock
+      ? await start(
+          lock.attempt > 0 ? `${stepId} (claim ${lock.attempt})` : stepId,
+          { name: lock.name, environment: { [lockOwnerKey]: run.runId } },
+        )
+      : await start(stepId, { name });
   }
 
   const handle: MachineHandle = {
     sandbox: started.sandbox,
-    name,
+    name: scope.buildLock?.name ?? name,
     id: started.sandbox.id,
   };
 
   return handle;
+};
+
+/**
+ * The environment variable that says which run holds a build lock. Another
+ * run's differing value is what makes the platform refuse its create.
+ */
+export const lockOwnerKey = "OWNER";
+
+/**
+ * Destroy a job's own machine, which for a build that claimed a lock is what
+ * releases it. Never throws: a machine that is already gone is released, and
+ * one that can't be destroyed is left to the cleanup function, with a warning.
+ */
+export const destroyMachine = async (
+  scope: CiJobScope,
+  stepId: string,
+): Promise<void> => {
+  if (!scope.machine) {
+    return;
+  }
+
+  try {
+    const handle = await scope.machine;
+
+    await handle.sandbox.destroy(stepId);
+  } catch (error) {
+    if (!isSandboxNotFound(error)) {
+      scope.run.warnings.push(
+        `couldn't destroy the machine of \`${scope.path}\` (${errorMessage(error)}), so the cleanup function will`,
+      );
+    }
+  }
 };
 
 /**
@@ -766,6 +811,11 @@ export const deleteRunSnapshots = async (
 export const destroyOrphans = async (
   client: Inngest.Any,
   runId: string,
+  /**
+   * A build lock's name, whose machine is also destroyed if this run owns it.
+   * Its name is the same for every run, so the owner is read from the machine.
+   */
+  lockName?: string,
 ): Promise<{ destroyed: number }> => {
   const prefix = `ci-${runId}-`;
   let cursor: string | undefined;
@@ -778,7 +828,12 @@ export const destroyOrphans = async (
     });
 
     for (const sandbox of page.items) {
-      if (sandbox.name.startsWith(prefix)) {
+      if (
+        sandbox.name.startsWith(prefix) ||
+        (lockName !== undefined &&
+          sandbox.name === lockName &&
+          (await holdsLock(sandbox, runId)))
+      ) {
         try {
           await sandbox.destroy();
 
@@ -796,4 +851,31 @@ export const destroyOrphans = async (
   } while (cursor);
 
   return { destroyed };
+};
+
+/**
+ * Whether a machine is a build lock this run owns. A machine that has ended
+ * holds nothing, and one that can't be asked is left alone: a lock that is
+ * wrongly kept only waits for the next cleanup, while one that is wrongly
+ * destroyed would break another run's build.
+ */
+const holdsLock = async (
+  // biome-ignore lint/suspicious/noExplicitAny: SDK sandbox
+  sandbox: any,
+  runId: string,
+): Promise<boolean> => {
+  if (["TERMINATING", "TERMINATED", "FAILED"].includes(sandbox.status)) {
+    return false;
+  }
+
+  try {
+    const owner = await sandbox.commands.run(
+      ["/bin/sh", "-c", `printf %s "$${lockOwnerKey}"`],
+      { timeout: "10s" },
+    );
+
+    return owner.exitCode === 0 && owner.stdout === runId;
+  } catch {
+    return false;
+  }
 };

@@ -460,12 +460,14 @@ export const lookupCache = async (
   target: CacheTarget,
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
+  /** Which look this is, when the job looks more than once. The first is 0. */
+  look = 0,
 ): Promise<CachedSnapshot | undefined> => {
   const { run } = scope;
 
   const found = (await run.step.run(
     {
-      id: `${scope.path}${scopeSeparator}cache:lookup`,
+      id: `${scope.path}${scopeSeparator}cache:lookup${look > 0 ? ` (look ${look})` : ""}`,
       name: "cache:lookup",
     },
     async () => {

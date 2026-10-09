@@ -41,6 +41,8 @@ export interface FakeSandbox {
   stuck?: boolean;
   vcpu: number;
   memoryMb: number;
+  /** The environment it was created with. */
+  environment?: Record<string, string>;
 }
 
 export interface FakeSnapshot {
@@ -355,17 +357,24 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     }
 
     // A name identifies an *active* sandbox; once one is terminated the same
-    // name creates a new one.
-    const taken = [...sandboxes.values()].some((sandbox) => {
+    // name creates a new one. Creating it again with the same configuration
+    // gives the existing sandbox back, which is what makes a retried create
+    // safe, and a different configuration is refused.
+    const active = [...sandboxes.values()].find((sandbox) => {
       return sandbox.name === body.name && sandbox.status !== "TERMINATED";
     });
 
-    if (taken) {
-      return apiError(
-        409,
-        "sandbox_name_taken",
-        "Sandbox name is already in use",
-      );
+    if (active) {
+      const same =
+        active.vcpu === (body.vcpu ?? 2) &&
+        active.memoryMb === (body.memoryMb ?? 2048) &&
+        active.snapshotId === body.snapshotId &&
+        JSON.stringify(active.environment ?? {}) ===
+          JSON.stringify(body.environment ?? {});
+
+      return same
+        ? json(200, sandboxResource(active))
+        : apiError(409, "sandbox_name_taken", "Sandbox name is already in use");
     }
 
     const fault = body.snapshotId ? startFaultFor(body.snapshotId) : undefined;
@@ -422,6 +431,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       vcpu: body.vcpu ?? 2,
       memoryMb: body.memoryMb ?? 2048,
       ...(body.snapshotId ? { snapshotId: body.snapshotId } : {}),
+      ...(body.environment ? { environment: body.environment } : {}),
     };
 
     sandboxes.set(sandbox.id, sandbox);
@@ -434,6 +444,16 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     commands.push(argv);
     timeline.push(`command ${argv.join(" ")}`);
+
+    // Reading the lock owner out of the machine's environment.
+    if (argv.join(" ").includes('"$OWNER"')) {
+      return json(200, {
+        encoding: "base64",
+        stdout: btoa(sandbox.environment?.OWNER ?? ""),
+        stderr: "",
+        exitCode: 0,
+      });
+    }
 
     const script = scriptFor(argv);
 

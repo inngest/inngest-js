@@ -97,6 +97,9 @@ export interface JobSummary {
  * Everything a run needs from the CI client, without importing `createCi` and
  * making a cycle.
  */
+/** How builds of one cache entry are kept from running at once. */
+export type DedupeBuilds = "name-lock";
+
 export interface CiInternals {
   /** Reports checks to GitHub, the console, or nowhere. */
   // biome-ignore lint/suspicious/noExplicitAny: CheckReporter, kept loose to avoid a cycle
@@ -113,6 +116,8 @@ export interface CiInternals {
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
+  /** How concurrent runs that miss the same cache entry avoid building it twice. */
+  dedupeBuilds?: DedupeBuilds;
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   /** What the run tells a tool that watches it. Does nothing by default. */
   hooks: CiHooks;
@@ -245,6 +250,12 @@ export interface CiJobScope {
   jobPath: string;
   config: JobConfig;
   machine?: Promise<MachineHandle>;
+  /**
+   * Set while this build claims its cache entry's lock. The machine is then
+   * created under the lock's name, and `attempt` counts the claims so far, so
+   * each one is a step of its own.
+   */
+  buildLock?: { name: string; attempt: number };
   fromSnapshotId?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
