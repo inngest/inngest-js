@@ -725,7 +725,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       metadata: [
         {
           kind: "inngest.warnings",
-          op: "merge",
+          op: "set",
           values: {
             [`sdk.${kind}`]: formatLogMessage(log),
           },

@@ -1795,7 +1795,7 @@ class InngestExecutionEngine
         this.state.executingStepAIMetadata = undefined;
         const aiValues = aiMetadata && toInngestAIMetadataValues(aiMetadata);
         if (aiValues) {
-          this.addMetadata(id, "inngest.ai", "step", "merge", aiValues);
+          this.addMetadata(id, "inngest.ai", "step", "set", aiValues);
         }
 
         if (store?.execution) {
