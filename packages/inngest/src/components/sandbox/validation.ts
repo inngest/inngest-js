@@ -1,7 +1,6 @@
-import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 
-import { isTemporalDuration } from "../../helpers/temporal.ts";
+import { durationToMs } from "../../helpers/duration.ts";
 import {
   type SandboxCommand,
   type SandboxCommandOptions,
@@ -808,35 +807,14 @@ export const normalizeDurationMs = (
   maximumMs: number,
   context: string,
 ): number => {
-  let milliseconds: number | undefined;
-  if (typeof duration === "number") {
-    milliseconds = duration;
-  } else if (typeof duration === "string") {
-    milliseconds = ms(duration as StringValue);
-  } else if (isTemporalDuration(duration)) {
-    if (duration.years || duration.months || duration.weeks) {
-      throw new SandboxValidationError(
-        `${context} cannot contain calendar years, months, or weeks`,
-      );
-    }
-    milliseconds = duration.total({ unit: "milliseconds" });
-  }
-  if (
-    typeof milliseconds !== "number" ||
-    !Number.isFinite(milliseconds) ||
-    !Number.isSafeInteger(milliseconds) ||
-    milliseconds <= 0
-  ) {
+  try {
+    return durationToMs(duration, { name: context, maxMs: maximumMs });
+  } catch (error) {
     throw new SandboxValidationError(
-      `${context} must be a positive, whole number of milliseconds`,
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
     );
   }
-  if (milliseconds > maximumMs) {
-    throw new SandboxValidationError(
-      `${context} must not exceed ${maximumMs} milliseconds`,
-    );
-  }
-  return milliseconds;
 };
 
 export const normalizeFileUploadOptions = (
