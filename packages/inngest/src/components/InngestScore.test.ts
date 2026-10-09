@@ -315,6 +315,26 @@ describe("client.score.experiment", () => {
     ).rejects.toThrow("experiment.experimentName must be a non-empty string");
   });
 
+  test("rejects stepId since experiment scores must be run-scoped", async () => {
+    const client = new Inngest({ id: "app" });
+    const spy = vi.fn().mockResolvedValue(undefined);
+    (client as unknown as { updateMetadata: typeof spy }).updateMetadata = spy;
+
+    await expect(
+      client.score.experiment({
+        experiment: exp,
+        runId: "run_1",
+        // @ts-expect-error stepId isn't allowed for experiment scores
+        stepId: "my-experiment",
+        name: "rating",
+        value: 1,
+      }),
+    ).rejects.toThrow(
+      "score.experiment() does not accept stepId; experiment scores must be run-scoped",
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   test("reuses score validation for name/value", async () => {
     const client = new Inngest({ id: "app" });
     await expect(

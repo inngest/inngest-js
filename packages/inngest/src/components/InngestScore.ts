@@ -20,7 +20,12 @@ export type ScoreOptions = {
   value: ScoreValue;
 };
 
-export type ScoreExperimentOptions = ScoreOptions & {
+/**
+ * Experiment scores are always run scoped, so there's no `stepId`. A step
+ * scoped `inngest.experiment` write could land on the experiment's own step
+ * and replace its full experiment metadata.
+ */
+export type ScoreExperimentOptions = Omit<ScoreOptions, "stepId"> & {
   experiment: ExperimentRef;
 };
 
@@ -194,9 +199,16 @@ export async function sendScoreExperiment(
   options: ScoreExperimentOptions,
 ): Promise<void> {
   validateSendScoreOptions(options);
+  // Mirrors REST v2, which rejects step scoped experiment scores. Checked at
+  // runtime too since JS callers can still pass it.
+  if ((options as ScoreOptions).stepId !== undefined) {
+    throw new Error(
+      "score.experiment() does not accept stepId; experiment scores must be run-scoped",
+    );
+  }
   validateExperimentRef(options.experiment);
 
-  const target = { runId: options.runId, stepId: options.stepId };
+  const target = { runId: options.runId };
 
   // Write the experiment attribution first, then the score. These are two
   // non-atomic metadata writes; if the second fails, attribution-without-score
