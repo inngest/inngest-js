@@ -22,7 +22,13 @@ import type {
   JobConfig,
   RepoContext,
 } from "../types.ts";
-import { boundedName, formatRelative, hash, stableStringify } from "../util.ts";
+import {
+  boundedName,
+  formatRelative,
+  hash,
+  isSnapshotNotFound,
+  stableStringify,
+} from "../util.ts";
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -197,9 +203,10 @@ export const noDeployedRepo = (run: CiRunScope, what: string): string => {
 /**
  * A job's own cache key: its resolved key, with the repository, the input it
  * was called with and the snapshot it starts from folded in, since any of
- * them changing makes it a different job. Runs with no repository, like a
- * cron with no `repo` set, use the app's ID instead. Names and lookups both
- * go through this, so they always agree.
+ * them changing makes it a different job. The app's ID is always part of it,
+ * so two apps in one repository never share a snapshot, and the repository
+ * is too when the run has one (a cron with no `repo` set has none). Names and
+ * lookups both go through this, so they always agree.
  */
 export const jobCacheKey = async (
   run: CiRunScope,
@@ -210,11 +217,10 @@ export const jobCacheKey = async (
 ): Promise<string> => {
   const key = await resolveCacheKey(run, cache.key);
 
-  // Repositories can share a Sandbox environment, so the same branch, job and
-  // key in two of them are still two names.
-  const owner = run.repo
-    ? `repo:${run.repo.fullName}`
-    : `app:${run.ci.client?.id ?? ""}`;
+  // Repositories and apps can share a Sandbox environment, so the same
+  // branch, job and key in two of them are still two names.
+  const app = `app:${run.ci.client?.id ?? ""}`;
+  const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
   return identityKey(hash(`${key}\0${owner}`), input, base);
 };
@@ -674,6 +680,12 @@ export const resolveTakenName = async (
   stepId: string,
   name: string,
   exclude?: string,
+  /**
+   * Whether `exclude` was decided to be broken, which is the only case where
+   * it is deleted. A snapshot that merely failed to start once may be a
+   * shared one, such as the base branch's, that other runs still use.
+   */
+  broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
   return ciRun<{ winner?: CachedSnapshot; cleared: boolean }>(
     run,
@@ -702,7 +714,7 @@ export const resolveTakenName = async (
 
         for (const holder of page.items) {
           const unusable =
-            holder.id === exclude || isExpiring(holder.expiresAt);
+            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;
@@ -726,16 +738,61 @@ export const resolveTakenName = async (
 };
 
 /**
- * Delete a snapshot that is no use, so no run finds it again. Best effort: a
- * snapshot that can't be deleted is left to expire.
+ * What a snapshot is now, as a memoized step: `gone` if it doesn't exist or
+ * is being deleted, `creating` while it is being taken, and `ready` otherwise.
+ * `ready` is also what an unreadable answer gives, since that is the case
+ * where the snapshot has to be assumed usable.
+ */
+export const snapshotState = async (
+  run: CiRunScope,
+  stepId: string,
+  snapshotId: string,
+): Promise<"gone" | "creating" | "ready"> => {
+  return ciRun<"gone" | "creating" | "ready">(
+    run,
+    {
+      step: ciStep(stepId, traceName.checkSnapshotState),
+      intent: `Check the state of snapshot \`${snapshotId}\``,
+    },
+    async (note) => {
+      try {
+        const snapshot = (await snapshotsClient(run).get(snapshotId)) as
+          | SnapshotResource
+          | null
+          | undefined;
+
+        if (!snapshot || /^DELET/.test(snapshot.status)) {
+          note.outcome({ snapshotId, state: "gone" });
+
+          return "gone";
+        }
+
+        const state = snapshot.status === "CREATING" ? "creating" : "ready";
+
+        note.outcome({ snapshotId, state });
+
+        return state;
+      } catch {
+        note.outcome({ snapshotId, state: "ready" });
+
+        return "ready";
+      }
+    },
+  );
+};
+
+/**
+ * Delete a snapshot that is no use, so no run finds it again. Whether it is
+ * gone afterwards: `false` when it can't be deleted (as Cloud refuses some),
+ * which leaves it to expire and must not be reused.
  */
 export const deleteSnapshot = async (
   run: CiRunScope,
   stepId: string,
   snapshotId: string,
-): Promise<void> => {
+): Promise<boolean> => {
   try {
-    await ciRun(
+    const result = await ciRun<{ deleted: boolean; gone: boolean }>(
       run,
       {
         step: ciStep(stepId, traceName.deleteBadSnapshot),
@@ -747,21 +804,61 @@ export const deleteSnapshot = async (
 
           await snapshot?.delete();
 
-          // Gone now, so the run's cleanup has nothing to delete.
-          run.createdSnapshots.delete(snapshotId);
-
           note.outcome({ snapshotId, deleted: Boolean(snapshot) });
 
-          return { deleted: Boolean(snapshot) };
+          return { deleted: Boolean(snapshot), gone: true };
         } catch (error) {
-          note.outcome({ snapshotId, deleted: false, error: String(error) });
+          const gone = isSnapshotNotFound(error);
 
-          return { deleted: false };
+          note.outcome({ snapshotId, deleted: false, gone });
+
+          // Deleted meanwhile by someone else, which is as good.
+          return { deleted: false, gone };
         }
       },
     );
+
+    // Outside the step, which a replay doesn't run: the set is rebuilt on
+    // every replay, so a snapshot gone now must leave it on each of them.
+    if (result.gone) {
+      run.createdSnapshots.delete(snapshotId);
+    }
+
+    return result.gone;
   } catch {
     // Best effort only.
+    return false;
+  }
+};
+
+/**
+ * What a cached job that starts from a job with no `cache` says in the run's
+ * warnings. A job without a cache is built fresh in every run, and the cached
+ * job's key holds that build's snapshot, so the cached job could never be
+ * found again. It is built in every run, and its snapshot belongs to the run,
+ * until the job above it has a `cache`.
+ */
+export const uncachedBaseNote = (
+  /** The cached job. */
+  jobId: string,
+  /** The job it starts from, which has no cache. */
+  baseId: string,
+): { line: string } => {
+  return {
+    line: `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`,
+  };
+};
+
+/** Add a cached job's uncached-base line to the run's warnings, once. */
+export const warnUncachedBase = (
+  run: CiRunScope,
+  jobId: string,
+  baseId: string,
+): void => {
+  const { line } = uncachedBaseNote(jobId, baseId);
+
+  if (!run.warnings.includes(line)) {
+    run.warnings.push(line);
   }
 };
 
