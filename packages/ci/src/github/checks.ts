@@ -418,7 +418,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         name: traceName.report("jobs", "ended with the run"),
       };
 
-      return githubStep(run, step, async () => {
+      const closed = await githubStep(run, step, async () => {
         await tagStep(run, { kind: "check" });
 
         const jobs = read();
@@ -438,6 +438,14 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
         return closing(jobs);
       });
+
+      // Outside the step, so a replay also forgets the IDs its memoized start
+      // steps put back.
+      for (const { jobPath } of closed) {
+        checkRunIds.delete(idKey(run, jobPath));
+      }
+
+      return closed;
     },
 
     retrying: async ({ run, jobPath, name, title }) => {
