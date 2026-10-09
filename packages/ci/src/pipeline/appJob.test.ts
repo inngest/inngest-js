@@ -117,6 +117,40 @@ describe("image.job()", () => {
     expect(tests).toHaveLength(2);
   });
 
+  test("always asks the other app, which looks its job up and builds only on a miss", async () => {
+    const api = createFakeSandboxApi();
+
+    /** Machines that builds ran on, rather than pipeline jobs. */
+    const builds = () => {
+      return [...api.sandboxes.values()].filter((machine) => {
+        return machine.name.startsWith("ci-01TESTINVOKED");
+      }).length;
+    };
+
+    for (const runId of ["01COLD", "01WARM"]) {
+      const { pipeline, functions } = apps(api);
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        runId,
+        functions,
+      });
+
+      expect(result.type).toBe("function-resolved");
+
+      // The asking app can't work out the other app's snapshot names, so it
+      // has no lookup of its own: every run invokes the owner.
+      const asks = result.stepIds.filter((stepId) => {
+        return stepId.startsWith("image ");
+      });
+
+      expect(asks).toEqual(["image job:platform/node-base"]);
+    }
+
+    // The warm run's request found the snapshot without a machine.
+    expect(builds()).toBe(1);
+    expect(ran(api, "pnpm install")).toBe(1);
+  });
+
   test("a cached job on another app's job builds again when that job does", async () => {
     const api = createFakeSandboxApi();
 
