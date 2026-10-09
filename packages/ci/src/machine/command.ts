@@ -268,8 +268,9 @@ class CommandBuilder implements Command {
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
-    // Each call back into the process re-enters the command's span.
-    const process = await this.inSpan(scope, stepId, () => {
+    // Starting, awaiting, reading and killing the process are separate
+    // statements, so each is a row of its own, never one span re-entered.
+    const process = await this.inSpan(scope, stepId, undefined, () => {
       return startProcess(machine, stepId, this.spawnOptions(scope));
     });
 
@@ -278,11 +279,14 @@ class CommandBuilder implements Command {
     // Numbers the follow-up steps, so calling `exited()` or `output()` more
     // than once never reuses a step ID.
     const nextWait = counter();
+    const nextExited = counter();
 
     return {
       id: process.id,
       exited: () => {
-        return this.inSpan(scope, stepId, async () => {
+        const spanId = `${stepId}${scopeSeparator}exited #${nextExited()}`;
+
+        return this.inSpan(scope, spanId, "(exited)", async () => {
           const polled = await pollUntilTerminal({
             scope,
             machine,
@@ -295,17 +299,25 @@ class CommandBuilder implements Command {
         });
       },
       kill: async (signal = 15) => {
-        await this.inSpan(scope, stepId, () => {
-          return process.signal(
-            subStep(stepId, "kill", traceName.stopProcess),
-            { signal },
-          );
-        });
+        await this.inSpan(
+          scope,
+          `${stepId}${scopeSeparator}kill`,
+          "(kill)",
+          () => {
+            return process.signal(
+              subStep(stepId, "kill", traceName.stopProcess),
+              { signal },
+            );
+          },
+        );
       },
       output: async (opts) => {
-        const output = await this.inSpan(scope, stepId, () => {
+        const n = nextWait();
+        const spanId = `${stepId}${scopeSeparator}output #${n}`;
+
+        const output = await this.inSpan(scope, spanId, "(output)", () => {
           return process.getOutput(
-            subStep(stepId, `output #${nextWait()}`, traceName.readOutput),
+            subStep(stepId, `output #${n}`, traceName.readOutput),
             {
               tailBytes: opts?.tailBytes ?? outputTailBytes,
             },
@@ -372,10 +384,19 @@ class CommandBuilder implements Command {
   }
 
   /** Run `fn` in the command's span, in its machine's span if it's an extra. */
-  private inSpan<T>(scope: CiJobScope, stepId: string, fn: () => T): T {
+  private inSpan<T>(
+    scope: CiJobScope,
+    spanId: string,
+    /** Which statement on a background process this is, as in `(kill)`. */
+    statement: string | undefined,
+    fn: () => T,
+  ): T {
+    const name = traceName.command(this.commandText(), this.state.label);
+
     const span = {
-      id: stepId,
-      name: traceName.command(this.commandText(), this.state.label),
+      id: spanId,
+      name: statement ? `${name} ${statement}` : name,
+      kind: "command",
     };
 
     return inMachineSpan(scope, () => {
@@ -410,7 +431,7 @@ class CommandBuilder implements Command {
         return result;
       };
 
-      const result = await this.inSpan(scope, stepId, () => {
+      const result = await this.inSpan(scope, stepId, undefined, () => {
         return attempts === 1
           ? runAttempt()
           : inSpan(

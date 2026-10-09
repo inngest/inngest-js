@@ -69,7 +69,11 @@ export const ensureMachine = async (
 
       // Everything in it is CI's work, including falling back from a
       // snapshot that won't start.
-      const span = ciSpan(stepId, traceName.startMachine(scope.fromJobIds[0]));
+      const span = ciSpan(
+        stepId,
+        traceName.startMachine(scope.fromJobIds[0]),
+        "sandbox",
+      );
 
       return inSpan(span, () => {
         return createMachine(scope, stepId);
@@ -101,8 +105,9 @@ export const ensureMachine = async (
 };
 
 /**
- * Run `fn` in an extra machine's span, so its commands sit apart from the
- * job's own. A job's own machine has none: the job's span is its span.
+ * Run `fn` in an extra machine's span, of kind `sandbox` and named after the
+ * sandbox, so its commands sit apart from the job's own. A job's own
+ * machine has none: the job's span is its span.
  */
 export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
   if (scope.path === scope.jobPath) {
@@ -112,6 +117,7 @@ export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
   const span = {
     id: scope.path,
     name: traceName.extraMachine(scope.path, scope.jobPath),
+    kind: "sandbox",
   };
 
   return inSpan(span, fn);
@@ -486,14 +492,6 @@ const errorStatus = (error: unknown): number | undefined => {
   return seen?.status ?? seen?.cause?.status;
 };
 
-/** Run `fn` in a job's "Save sandbox" span, which holds snapshotting it. */
-const inSaveSpan = <R>(jobPath: string, fn: () => R): R => {
-  return inSpan(
-    ciSpan(`${jobPath}${scopeSeparator}save`, traceName.saveMachine),
-    fn,
-  );
-};
-
 /** How a job's snapshot is named. */
 export interface SnapshotCache {
   target: CacheTarget;
@@ -523,9 +521,21 @@ export interface TakenSnapshot {
   reused: boolean;
 }
 
-/** A snapshot step: its ID is the step's, its name reads as an action. */
-const snapshotStep = (id: string) => {
-  return { id, name: traceName.snapshotMachine };
+/**
+ * A snapshot step: its ID is the step's. Saving a job's sandbox is one
+ * statement, so its row is the job's "Save sandbox" span of kind
+ * `snapshot`, passed to the SDK so it doesn't open a second group around the
+ * snapshot's create and wait.
+ */
+const snapshotStep = (jobPath: string, id: string) => {
+  return {
+    id,
+    name: traceName.saveMachine,
+    "~span": {
+      ...ciSpan(`${jobPath}${scopeSeparator}save`, traceName.saveMachine),
+      kind: "snapshot",
+    },
+  };
 };
 
 /**
@@ -549,9 +559,7 @@ export const snapshotMachine = async (
 
   const handle = await scope.machine;
 
-  return inSaveSpan(scope.path, () => {
-    return takeSnapshot(run, scope.path, handle, cache);
-  });
+  return takeSnapshot(run, scope.path, handle, cache);
 };
 
 const takeSnapshot = async (
@@ -567,7 +575,7 @@ const takeSnapshot = async (
   try {
     return cache && !cache.unnamed
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
-      : await createRunSnapshot(handle, stepId);
+      : await createRunSnapshot(handle, jobPath, stepId);
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
       throw error;
@@ -601,7 +609,9 @@ const createNamedSnapshot = async (
   const name = target.name;
 
   const attempt = async (id: string): Promise<TakenSnapshot> => {
-    const snapshot = await handle.sandbox.snapshot(snapshotStep(id), { name });
+    const snapshot = await handle.sandbox.snapshot(snapshotStep(jobPath, id), {
+      name,
+    });
 
     return {
       snapshotId: snapshot.id,
@@ -659,7 +669,7 @@ const createNamedSnapshot = async (
   }
 
   const unnamed = await handle.sandbox.snapshot(
-    snapshotStep(`${stepId} (unnamed)`),
+    snapshotStep(jobPath, `${stepId} (unnamed)`),
   );
 
   // The name was refused or couldn't be freed, so the job's snapshot falls
@@ -676,9 +686,10 @@ const createNamedSnapshot = async (
  */
 const createRunSnapshot = async (
   handle: MachineHandle,
+  jobPath: string,
   stepId: string,
 ): Promise<TakenSnapshot> => {
-  const snapshot = await handle.sandbox.snapshot(snapshotStep(stepId));
+  const snapshot = await handle.sandbox.snapshot(snapshotStep(jobPath, stepId));
 
   return { snapshotId: snapshot.id, reused: false };
 };

@@ -1,7 +1,9 @@
 /**
  * Tests of the trace spans CI groups its steps under, and what it names them:
- * one span per job, and in it one per machine, one per command, and one per
- * attempt for a command with retries, with GitHub check updates in a span of
+ * one span per job (kind `job`), and in it one per extra sandbox (kind
+ * `sandbox`), one per command (kind `command`) and one per attempt for a
+ * command with retries, with a span per statement on a background process, a
+ * `snapshot` span for saving a sandbox, and GitHub check updates in a span of
  * their own. Spans and names never change a step's ID. A failed run of a
  * command ends in a failing step, so its span shows the failure. CI's own
  * work carries CI's origin, and what you wrote carries none.
@@ -175,13 +177,16 @@ const rowsPipeline = (ci: Ci) => {
 
 /** The span of a command `test` ran. */
 const command = (label: string) => {
-  return { id: `test › ${label}`, name: `$ ${label}` };
+  return { id: `test › ${label}`, name: `$ ${label}`, kind: "command" };
 };
 
 const origin = ciOrigin;
 const github = [{ id: "github", name: "GitHub", origin }];
 const job = { id: "test", name: "test", kind: "job" };
-const machine = [job, { id: "test › machine", name: "Start sandbox", origin }];
+const machine = [
+  job,
+  { id: "test › machine", name: "Start sandbox", kind: "sandbox", origin },
+];
 const quick = [job, command("quick")];
 const slow = [job, command("slow")];
 const attempt1 = [
@@ -194,6 +199,19 @@ const attempt2 = [
   command("flaky"),
   { id: "attempt-2", name: "Attempt 2", origin },
 ];
+
+/** One background statement's span: its own row, never the start's re-entered. */
+const serveStatement = (suffix: string, statement: string) => {
+  return [
+    job,
+    {
+      id: `test › serve › ${suffix}`,
+      name: `$ serve ${statement}`,
+      kind: "command",
+    },
+  ];
+};
+
 const serve = [job, command("serve")];
 
 describe("spans", () => {
@@ -202,7 +220,7 @@ describe("spans", () => {
 
     expect(result.type).toBe("function-resolved");
 
-    // Background calls re-enter their command's span. Check updates are in
+    // Each background call is a span of its own. Check updates are in
     // the run's GitHub span, and cleanup is in none.
     expect(result.spans).toEqual({
       "github › check:pr:start": github,
@@ -228,13 +246,13 @@ describe("spans", () => {
       "test › flaky #attempt-2 › output": attempt2,
       "test › flaky #attempt-2 › exit": attempt2,
       "test › serve › start": serve,
-      "test › serve › output #1": serve,
-      "test › serve › wait #2": serve,
-      "test › serve › check #2": serve,
-      "test › serve › wait #3": serve,
-      "test › serve › check #3": serve,
-      "test › serve › output": serve,
-      "test › serve › kill": serve,
+      "test › serve › output #1": serveStatement("output #1", "(output)"),
+      "test › serve › wait #2": serveStatement("exited #1", "(exited)"),
+      "test › serve › check #2": serveStatement("exited #1", "(exited)"),
+      "test › serve › wait #3": serveStatement("exited #1", "(exited)"),
+      "test › serve › check #3": serveStatement("exited #1", "(exited)"),
+      "test › serve › output": serveStatement("exited #1", "(exited)"),
+      "test › serve › kill": serveStatement("kill", "(kill)"),
       "github › check:test:complete": github,
       "github › check:jobs:complete": github,
       "github › check:pr:complete": github,
@@ -450,25 +468,25 @@ describe("spans", () => {
         "Look up cache",
         "Build base in its own run",
         "test [job]",
-        "  Start sandbox from base",
+        "  Start sandbox from base [sandbox]",
         "    Create sandbox",
         "    Prepare workspace",
-        "  $ pnpm test",
+        "  $ pnpm test [command]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
         "    Read output",
-        "  lint",
+        "  lint [command]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
         "    Read output",
         "  my-step",
-        "  api",
-        "    Start sandbox",
+        "  api [sandbox]",
+        "    Start sandbox [sandbox]",
         "      Create sandbox",
         "      Prepare workspace",
-        "    $ pnpm start",
+        "    $ pnpm start [command]",
         "      Run and read output",
         "Clean up sandboxes",
         "Clean up snapshots",
@@ -497,30 +515,64 @@ describe("spans", () => {
         "Look up cache <- ci",
         "Build base in its own run <- ci",
         "test [job]",
-        "  Start sandbox from base <- ci",
+        "  Start sandbox from base [sandbox] <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
-        "  $ pnpm test",
+        "  $ pnpm test [command]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
         "    Read output <- ci",
-        "  lint",
+        "  lint [command]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
         "    Read output <- ci",
         "  my-step",
-        "  api",
-        "    Start sandbox <- ci",
+        "  api [sandbox]",
+        "    Start sandbox [sandbox] <- ci",
         "      Create sandbox <- ci",
         "      Prepare workspace <- ci",
-        "    $ pnpm start",
+        "    $ pnpm start [command]",
         "      Run and read output <- ci",
         "Clean up sandboxes <- ci",
         "Clean up snapshots <- ci",
       ].join("\n"),
     );
+  });
+
+  test("save a kept sandbox as one snapshot row, with no second group from the SDK", async () => {
+    const result = await runPipeline(
+      (ci) => {
+        return ci.job({ id: "test", keepOnFailure: "1h" }, async () => {
+          await $`boom`;
+        });
+      },
+      [{ match: "boom", exitCode: 1 }],
+    );
+
+    const saved = result.stepIds.filter((id) => {
+      return id.startsWith("test › snapshot");
+    });
+
+    expect(saved).toEqual([
+      "test › snapshot",
+      "test › snapshot:wait-until-ready",
+    ]);
+
+    // One span for the statement, owned by CI. The SDK's own group is skipped
+    // because CI passed its span, so there is no nested "Snapshot sandbox".
+    for (const id of saved) {
+      expect(result.spans[id]).toEqual([
+        job,
+        {
+          id: "test › save",
+          name: "Save sandbox",
+          kind: "snapshot",
+          origin,
+        },
+      ]);
+    }
   });
 
   test("mark every step a command runs, through retries and background calls", async () => {
