@@ -73,6 +73,10 @@ export interface InlineBuild {
   target: CacheTarget;
   /** A bad snapshot the build must not reuse. */
   exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
   /** What the job starts from, as a build run is handed it. */
   base?: CacheBuildResult;
   /** What the job ended with, set by the job. */
@@ -292,8 +296,15 @@ export interface CiJobScope {
    * Asks for the `from` parent's snapshot to be built again, once per run
    * whatever the number of children that need it, and gives the new one. Set
    * by `startFrom`.
+   *
+   * With `broken`, the snapshot failed to start twice, so it is deleted first
+   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
+   * alone, as when another build is still taking the snapshot.
    */
-  rebuildSnapshot?: () => Promise<string | undefined>;
+  rebuildSnapshot?: (why: {
+    broken: boolean;
+    unnamed: boolean;
+  }) => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.

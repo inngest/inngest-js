@@ -27,6 +27,7 @@ import {
   ownJob,
   parentBuildOf,
   startFrom,
+  withoutUnreusableCache,
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
@@ -203,8 +204,12 @@ interface BuildArgs {
   config: JobConfig;
   input: unknown;
   target: CacheTarget;
-  /** A bad snapshot the build must not reuse. */
+  /** A snapshot that wouldn't start, which the build must not reuse. */
   exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
   check?: CacheBuildData["parent"]["check"];
   /** What the job starts from, which the build must start from too. */
   base?: CacheBuildResult;
@@ -226,6 +231,8 @@ const buildInline = async ({
   input,
   target,
   exclude,
+  broken,
+  unnamed,
   base,
 }: BuildArgs): Promise<CacheBuildResult> => {
   const registered = run.ci.jobs.get(config.id);
@@ -239,6 +246,8 @@ const buildInline = async ({
   const inline: InlineBuild = {
     target,
     ...(exclude ? { exclude } : {}),
+    ...(broken ? { broken } : {}),
+    ...(unnamed ? { unnamed } : {}),
     ...(base ? { base: baseForBuild(base) } : {}),
   };
 
@@ -274,6 +283,8 @@ const invokeBuildRun = async ({
   input,
   target,
   exclude,
+  broken,
+  unnamed,
   check,
   base,
   lookup = true,
@@ -289,6 +300,8 @@ const invokeBuildRun = async ({
     ownKey: target.ownKey,
     cacheKey: target.name,
     ...(exclude ? { exclude } : {}),
+    ...(broken ? { broken } : {}),
+    ...(unnamed ? { unnamed } : {}),
     ...(base ? { base: baseForBuild(base) } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
     ...(run.machine ? { machine: run.machine } : {}),
@@ -488,7 +501,7 @@ const jobBody = (
 
 const jobSteps = async ({
   run,
-  config,
+  config: declared,
   handler,
   input: given,
   validated,
@@ -504,8 +517,15 @@ const jobSteps = async ({
   /** Set when the job is built here for a job that starts from it. */
   inline?: InlineBuild;
 }): Promise<void> => {
-  const input = validated ? given : await validateInput(config, given);
+  const input = validated ? given : await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
+
+  // Only a cached job with a `from` has anything to work out, so any other
+  // plans its first step at once.
+  const config =
+    declared.cache && declared.from !== undefined
+      ? await withoutUnreusableCache(run, { config: declared, input })
+      : declared;
 
   const scope: CiJobScope = {
     run,
@@ -593,11 +613,10 @@ const jobSteps = async ({
         ? cacheAt
         : undefined;
 
-  const exclude = inline
-    ? inline.exclude
-    : isBuild
-      ? run.build?.exclude
-      : undefined;
+  // What a build replacing a snapshot that wouldn't start was asked to do.
+  const replacing = inline ?? (isBuild ? run.build : undefined);
+
+  const exclude = replacing?.exclude;
 
   const hit = builtAs
     ? await lookupCache(scope, config.cache, builtAs, exclude)
@@ -678,7 +697,7 @@ const jobSteps = async ({
       });
 
       if (builtAs) {
-        await snapshotBuilt(scope, builtAs, exclude);
+        await snapshotBuilt(scope, builtAs, replacing);
       }
     }
 
@@ -847,8 +866,8 @@ const restoreFromCache = (scope: CiJobScope, hit: CachedSnapshot): string => {
 const snapshotBuilt = async (
   scope: CiJobScope,
   target: CacheTarget,
-  /** A bad snapshot the name must not be satisfied by. */
-  exclude?: string,
+  /** The snapshot the build replaces, when it does. */
+  replacing?: { exclude?: string; broken?: boolean; unnamed?: boolean },
 ): Promise<void> => {
   const { run } = scope;
 
@@ -866,7 +885,9 @@ const snapshotBuilt = async (
 
   const taken = await snapshotMachine(scope, {
     target,
-    ...(exclude ? { exclude } : {}),
+    ...(replacing?.exclude ? { exclude: replacing.exclude } : {}),
+    ...(replacing?.broken ? { broken: true } : {}),
+    ...(replacing?.unnamed ? { unnamed: true } : {}),
   });
 
   setOutcome(scope, {
