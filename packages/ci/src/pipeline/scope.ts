@@ -9,8 +9,8 @@ import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
-import type { ResolvedSource } from "../github/source.ts";
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type { BaseImage } from "../image.ts";
 import type {
   CheckAnnotation,
@@ -272,6 +272,11 @@ export interface CiJobScope {
   /** The owning job's path. Same as `path` unless this is an extra machine. */
   jobPath: string;
   config: JobConfig;
+  /**
+   * The job above it with no `cache`, when that made this job's own `cache`
+   * unusable, so `config` has none. See `withoutUnreusableCache`.
+   */
+  uncachedBase?: string;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
   /** The name of the base image the job starts from, when it does. */
@@ -282,8 +287,15 @@ export interface CiJobScope {
    * Asks for the `from` parent's snapshot to be built again, once per run
    * whatever the number of children that need it, and gives the new one. Set
    * by `startFrom`.
+   *
+   * With `broken`, the snapshot failed to start twice, so it is deleted first
+   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
+   * alone, as when another build is still taking the snapshot.
    */
-  rebuildSnapshot?: () => Promise<string | undefined>;
+  rebuildSnapshot?: (why: {
+    broken: boolean;
+    unnamed: boolean;
+  }) => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.
