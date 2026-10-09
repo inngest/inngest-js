@@ -1,5 +1,21 @@
 # inngest
 
+## 4.23.0
+
+### Minor Changes
+
+- [#1763](https://github.com/inngest/inngest-js/pull/1763) [`a00d53fe`](https://github.com/inngest/inngest-js/commit/a00d53fecbc085a44e2154519e9645a8d5fdaed9) Thanks [@rhino1998](https://github.com/rhino1998)! - Add `set()` to the experimental metadata builders (`inngest.metadata` and `step.metadata()`), which replaces all values for a metadata kind, and deprecate `update()` in favor of it.
+
+  The SDK now sends metadata writes as `set`. Repeated `update()` calls to the same kind within a single step are still merged, but `update()` calls to the same kind from different steps, or sent via the API (IE targeting another run/step/attempt/span or made outside of a step), now replace each other instead of merging.
+
+- [#1753](https://github.com/inngest/inngest-js/pull/1753) [`758de572`](https://github.com/inngest/inngest-js/commit/758de572465f694fc3a6b3ea0ee1433900ff62ab) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox snapshots can be named with `snapshot({ name })` and listed by name with `snapshots.list({ name })`.
+
+### Patch Changes
+
+- [#1754](https://github.com/inngest/inngest-js/pull/1754) [`1793a5e1`](https://github.com/inngest/inngest-js/commit/1793a5e1d2ffda20ddd0dbde9edc4a7314e4ed1e) Thanks [@Linell](https://github.com/Linell)! - Warn once when the extended trace spans fail to export to Inngest.
+
+- [#1758](https://github.com/inngest/inngest-js/pull/1758) [`fceb5ef0`](https://github.com/inngest/inngest-js/commit/fceb5ef0c656fadaaf46775bab7950c34a242cfd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Traces for `step.sandbox` steps now show what each step did: its `inngest.sandbox` metadata names the action, the method called, and the machine, command, process, or snapshot involved. `snapshot()` appears as one group, "Create snapshot" and "Wait for snapshot", with its internal steps marked as Inngest's own. Also adds internal, unstable `group["~span"]()`, `"~span"`, and `"~origin"` for grouping steps and marking library-run steps in traces.
+
 ## 4.22.0
 
 ### Minor Changes
