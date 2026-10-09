@@ -293,7 +293,8 @@ export interface JobConfig<TInput = void> {
   keepOnFailure?: Duration;
   /**
    * The shape of the job's input, as any Standard Schema (Zod, Valibot,
-   * ArkType, …). The handler gets the validated value.
+   * ArkType, …). The handler gets the validated value, and `inngest-ci` asks
+   * for it field by field.
    *
    * A cached job, and a job another starts `from`, is built in a run of its
    * own, which is sent the input you gave as JSON and validates it again. So

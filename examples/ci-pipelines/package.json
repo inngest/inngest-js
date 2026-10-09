@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "ci:send": "tsx scripts/send.ts",
+    "ci": "inngest-ci",
     "ci:forward": "tsx scripts/github-forwarder.ts",
     "app:test": "tsx --test app/src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"

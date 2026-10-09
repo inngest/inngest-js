@@ -13,7 +13,8 @@ ci/
 ├─ pipelines/         one pipeline per file: pr, docs, release, deploy, prerelease
 └─ index.ts           imports every pipeline and re-exports ci
 app/              the project the pipelines install, lint, and test
-scripts/          send.ts sends local events, github-forwarder.ts forwards real ones
+scripts/          github-forwarder.ts forwards real GitHub events
+inngest.json       tells inngest-ci how to start server.ts
 server.ts         serves ci.functions()
 ```
 
@@ -40,43 +41,46 @@ pnpm -C packages/ci build
 
 ```bash
 cd examples/ci-pipelines
-pnpm install
+pnpm install --ignore-workspace
 ```
 
-## 3. Start the Dev Server
+The example isn't part of the monorepo's pnpm workspace, so a plain `pnpm install` here installs the workspace instead.
+
+## 3. Run a pipeline
 
 ```bash
-npx inngest-cli@latest dev
+pnpm run ci pr
 ```
 
-## 4. Start the app
+`inngest-ci` starts a Dev Server and `server.ts`, then sends a pull request event built from this git repository: `HEAD` is the head commit and `origin/main` is the base. `checkout()` uploads your working tree, so there is nothing to push. `inngest.json` tells it how to start the app.
+
+`inngest-ci` needs a Dev Server binary. Install `inngest-cli`, or point `INNGEST_CI_DEV_SERVER_BIN` at a local build. See [Run locally](../../packages/ci/README.md#run-locally).
+
+Press `enter` to open the run's trace. `pr` has several triggers, so a terminal run asks which one; with `--no-interactive`, pick one with `--event`. Run `pnpm run ci` with no target to pick pipelines and jobs, several at once.
+
+Try the other commands from this directory. Add `--no-interactive` to any of them for plain output.
 
 ```bash
-INNGEST_DEV=1 pnpm dev
+pnpm run ci lint                                  # one job
+pnpm run ci build --input '{"target":"web"}'      # a job with input
+pnpm run ci compat --node 22                      # the node 22 combinations
+pnpm run ci compat                                # every combination
+pnpm run ci pr --event pull_request.synchronize   # pick a trigger
+pnpm run ci deploy --data '{"target":"api"}'      # a manual trigger
+pnpm run ci deploy                                # asks for its data, field by field
+pnpm run ci --pipeline release --event push      # skipped: ci.local
 ```
 
-`server.ts` serves the pipelines at `http://localhost:3939/api/inngest`. The Dev Server finds it on its own. If it does not, add the URL in the Dev Server UI.
-
-## 5. Send a pull request
-
-```bash
-INNGEST_DEV=1 pnpm ci:send pr
-```
-
-`scripts/send.ts` builds the event from this git repository: `HEAD` is the head commit and `origin/main` is the base. `checkout()` uploads your working tree, so there is nothing to push.
-
-Open `http://localhost:8288` to see the trace. Checks print in the terminal running `pnpm dev`.
+`release` listens for pushes to `main`, so on another branch it starts no run and `inngest-ci` says so.
 
 ## Things to try
 
-1. Send `pnpm ci:send pr` again. `base` is cached on `pnpm-lock.yaml`, so its check says `Cached …` and it doesn't run again: the jobs that start from it start from its snapshot.
-2. Break a test without committing. Edit `app/src/sum.ts`, then send `pr`. `test` fails with the end of its output on the check.
-3. Send `pr` twice in a row. `singleton` cancels the first run.
-4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs/test.ts`, then send `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
-5. Send `pnpm ci:send docs` on a change with no documentation. The pipeline returns `ci.skip()` and its check still completes.
-6. Send `pnpm ci:send release --event push`, then send a `release/approved` event from the Dev Server UI with `data.sha` set to the commit being released. `release` waits for a matching event with `step.waitForEvent`.
-7. Send `pnpm ci:send prerelease --event comment --body "/prerelease beta"`.
-8. Send a `ci/manual.deploy` event from the Dev Server UI with `data` of `{ "target": "api" }`. `deploy` takes a typed payload from `ci.manual()` and builds with it.
+1. Run `pnpm run ci pr` again. `base` is cached on `pnpm-lock.yaml`, so its check says `Cached …` and it doesn't run again: the jobs that start from it start from its snapshot.
+2. Break a test without committing. Edit `app/src/sum.ts`, then run `pr`. `test` fails with the end of its output on the check.
+3. Run `pr` in two terminals at once. `singleton` cancels the first run.
+4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs/test.ts`, then run `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
+5. Run `pnpm run ci docs` on a change with no documentation. The pipeline returns `ci.skip()` and its check still completes.
+6. On `main`, run `pnpm run ci --pipeline release --event push`. The pipeline returns `ci.skip()` because `ci.local` is true, so nothing is released from your machine.
 
 ## What each file shows
 
@@ -90,6 +94,7 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 | `ci/jobs/two-machines.ts` | `sandbox()` for a second machine |
 | `ci/jobs/release.ts` | `step.waitForEvent` and `github.rest` |
 | `ci/pipelines/pr.ts` | `singleton`, `changed()`, and `ci.skip()` |
+| `ci/pipelines/release.ts` | `ci.local` to skip a release |
 | `ci/pipelines/deploy.ts` | `ci.manual()` with a typed payload |
 | `ci/pipelines/prerelease.ts` | `github.comment()` with a permission check |
 
@@ -102,7 +107,7 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 export GITHUB_APP_ID=...
 export GITHUB_APP_PRIVATE_KEY="$(cat key.pem)"
 export INNGEST_CI_GITHUB=live
-INNGEST_DEV=1 pnpm ci:send pr
+pnpm run ci pr
 ```
 
 To receive real webhooks locally, forward them to the Dev Server:
