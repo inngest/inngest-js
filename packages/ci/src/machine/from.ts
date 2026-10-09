@@ -44,6 +44,7 @@ import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
+  isInline,
   outsideJobs,
   rebuildSuffix,
   scopeSeparator,
@@ -273,6 +274,30 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
+ * Whether a job has to be built in this run: it was defined here, or its
+ * parent was, and either way the build function couldn't find it.
+ */
+export const buildsInRun = (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input, already validated. */
+  input: unknown,
+): boolean => {
+  if (isInline(config)) {
+    return true;
+  }
+
+  try {
+    const named = parentOf(run, config, input);
+
+    return named && !isBaseImage(named) ? isInline(named.config) : false;
+  } catch {
+    // A `from` that names no job is reported where the job resolves it.
+    return false;
+  }
+};
+
+/**
  * A job's `from` base, worked out: a base image as it is, or the parent job
  * with its input validated and with the cache it can actually use (see
  * `withoutUnreusableCache`).
@@ -426,7 +451,8 @@ export const parentBuildOf = async (
 
   assertNoCycle(chain, parent.config.id);
 
-  const given = run.build?.jobId === config.id ? run.build.base : undefined;
+  const given =
+    run.build?.jobId === config.id ? run.build.base : scope.inline?.base;
 
   return {
     parent,

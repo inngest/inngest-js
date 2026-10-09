@@ -10,7 +10,7 @@ import { checkStaticFrom } from "../machine/from.ts";
 import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import type { RegisteredJob } from "./job.ts";
-import { countApi, matrixOriginKey } from "./scope.ts";
+import { countApi, getRunScope, inlineKey, matrixOriginKey } from "./scope.ts";
 
 /**
  * Where a matrix keeps the function that runs exactly the combinations it's
@@ -65,6 +65,9 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
 }): Matrix<TAxes> => {
   checkStaticFrom(jobs, config);
 
+  // A matrix made inside a run is gone with it, and so are its combinations.
+  const inline = Boolean(getRunScope());
+
   const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");
 
@@ -100,6 +103,7 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),
             [matrixOriginKey]: { id: config.id, combo },
+            [inlineKey]: inline,
           } as JobConfig,
           () => {
             return handler(combo);
