@@ -33,8 +33,10 @@ import { localTargetKey } from "../local/protocol.ts";
 import { isLocal } from "../local/reporter.ts";
 import {
   deleteRunSnapshots,
+  deleteSnapshotsById,
   destroyOrphans,
   destroyRunMachines,
+  listRunSnapshots,
 } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
@@ -354,8 +356,7 @@ const runPipelineAttempt = async ({
       // A run that is about to be retried keeps its machines and snapshots:
       // the retry replays the memoized machine and snapshot IDs and needs them
       // alive. The generated cleanup function covers a run that never gets
-      // here; it finds machines by name, but snapshots carry no run name, so
-      // it can't delete them.
+      // here; it finds machines and snapshots by their run-scoped names.
       if (
         !isDeterministicFailure(outcome.error) &&
         run.willRetry(outcome.error)
@@ -404,8 +405,7 @@ const runPipelineAttempt = async ({
       await completePipeline(run, checks, outcome);
     } catch (error) {
       // Reporting failed. Another attempt replays the memoized machine and
-      // snapshot IDs, so it keeps them; the last attempt cleans up anyway,
-      // since the generated cleanup function can't find snapshots.
+      // snapshot IDs, so it keeps them; the last attempt cleans up anyway.
       if (!run.willRetry(error)) {
         await cleanUp();
       }
@@ -920,13 +920,19 @@ const permissionForComment = (
 /**
  * Destroys the machines of a run of `config.id` that ended permanently, by
  * failure or cancellation, without reaching its own cleanup step.
+ *
+ * With `snapshots` it also deletes the snapshots the run's builds named for
+ * it. Only the root pipeline run's function sets it: a build run ending leaves
+ * them, since sibling builds share them.
  */
 export const cleanupFunction = ({
   client,
   config,
+  snapshots = false,
 }: {
   client: Inngest.Any;
   config: Pick<PipelineConfig, "id">;
+  snapshots?: boolean;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
@@ -946,7 +952,7 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(
+      const machines = await step.run(
         ciStep("destroy-orphans", traceName.cleanUpMachines),
         () => {
           return withNotes(
@@ -964,6 +970,36 @@ export const cleanupFunction = ({
           );
         },
       );
+
+      if (!snapshots || !runId) {
+        return machines;
+      }
+
+      const ids: string[] = await step.run(
+        ciStep("list-run-snapshots", traceName.cleanUpSnapshots),
+        () => {
+          return listRunSnapshots(client, runId);
+        },
+      );
+
+      const deleted = await step.run(
+        ciStep("delete-run-snapshots", traceName.cleanUpSnapshots),
+        () => {
+          return withNotes(
+            { ci: {} },
+            { intent: "Delete the snapshots of a run that ended" },
+            async (note) => {
+              const result = await deleteSnapshotsById(client, ids);
+
+              note.outcome(result);
+
+              return result;
+            },
+          );
+        },
+      );
+
+      return { ...machines, ...deleted };
     },
   );
 };
@@ -980,7 +1016,7 @@ const generatedFunctions = ({
   config: PipelineConfig;
 }): InngestFunction.Any[] => {
   const functions: InngestFunction.Any[] = [
-    cleanupFunction({ client, config }),
+    cleanupFunction({ client, config, snapshots: true }),
   ];
 
   functions.push(

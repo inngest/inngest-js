@@ -8,7 +8,11 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import {
+  resolveTakenName,
+  runSnapshotPrefix,
+  snapshotState,
+} from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
@@ -912,4 +916,63 @@ export const destroyOrphans = async (
   } while (cursor);
 
   return { destroyed };
+};
+
+/**
+ * The snapshots named for a pipeline run. Listing filters by exact name only,
+ * so the prefix comparison happens here. Cache snapshots never start with it.
+ */
+export const listRunSnapshots = async (
+  client: Inngest.Any,
+  rootRunId: string,
+): Promise<string[]> => {
+  const prefix = runSnapshotPrefix(rootRunId);
+  const ids: string[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const page = await client.sandboxes.snapshots.list({
+      ...(cursor ? { cursor } : {}),
+      limit: 100,
+    });
+
+    for (const snapshot of page.items) {
+      if (snapshot.name?.startsWith(prefix)) {
+        ids.push(snapshot.id);
+      }
+    }
+
+    cursor = page.page.hasMore ? page.page.cursor : undefined;
+  } while (cursor);
+
+  return ids;
+};
+
+/**
+ * Delete snapshots by ID, tolerating ones that are already gone. Anything
+ * else fails the step so it retries.
+ */
+export const deleteSnapshotsById = async (
+  client: Inngest.Any,
+  ids: string[],
+): Promise<{ deleted: number }> => {
+  let deleted = 0;
+
+  for (const id of ids) {
+    try {
+      const snapshot = await client.sandboxes.snapshots.get(id);
+
+      if (snapshot) {
+        await snapshot.delete();
+
+        deleted++;
+      }
+    } catch (error) {
+      if (!isSnapshotNotFound(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return { deleted };
 };
