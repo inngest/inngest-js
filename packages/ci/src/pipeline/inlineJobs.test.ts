@@ -240,6 +240,72 @@ describe("inline jobs", () => {
     expect(count(api, "pnpm lint")).toBe(1);
   });
 
+  test("a parent's `from` is read from its validated input, so a parent whose parent is inline builds in the run", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    const parents: { current?: ReturnType<typeof ci.job> } = {};
+
+    // Gives { pick } from a string, and rejects anything else, as a schema
+    // that changes the shape of its input does.
+    const input = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: (value: unknown) => {
+          return typeof value === "string"
+            ? { value: { pick: value } }
+            : { issues: [{ message: "Expected string" }] };
+        },
+      },
+    };
+
+    const mid = ci.job(
+      {
+        id: "mid",
+        input: input as never,
+        from: ({ input }: { input: { pick: string } }) => {
+          if (input.pick !== "base") {
+            throw new Error("the raw input was read");
+          }
+
+          return parents.current as never;
+        },
+      },
+      async () => {
+        await $`pnpm mid`;
+      },
+    );
+
+    const leaf = ci.job(
+      {
+        id: "leaf",
+        from: (mid as unknown as { with: (value: string) => never }).with(
+          "base",
+        ),
+      },
+      async () => {
+        await $`pnpm leaf`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      parents.current = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
+
+      await leaf();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(invokes(result.stepIds)).toEqual([]);
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm mid")).toBe(1);
+    expect(count(api, "pnpm leaf")).toBe(1);
+  });
+
   test("a factory called at the top level makes a normal job", async () => {
     const api = createFakeSandboxApi();
     const { ci } = setup(api);
