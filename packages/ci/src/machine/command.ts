@@ -34,6 +34,7 @@ import type {
 } from "../types.ts";
 import {
   durationToMs,
+  formatDuration,
   maskSecrets,
   shellEscape,
   tail,
@@ -73,7 +74,9 @@ interface CommandState {
   cwd?: string;
   retries: number;
   nothrow: boolean;
-  timeout?: Duration;
+  timeoutMs?: number;
+  /** How the timeout reads in errors: as written, or formatted. */
+  timeoutLabel?: string;
   onTimeout?: () => Promise<unknown>;
 }
 
@@ -222,7 +225,11 @@ class CommandBuilder implements Command {
   }
 
   timeout(duration: Duration): Command {
-    this.state.timeout = duration;
+    this.state.timeoutMs = durationToMs(duration, "timeout");
+    this.state.timeoutLabel =
+      typeof duration === "string"
+        ? duration
+        : formatDuration(this.state.timeoutMs);
 
     return this;
   }
@@ -367,7 +374,7 @@ class CommandBuilder implements Command {
   private timeoutError(scope: CiJobScope): CommandTimeoutError {
     return new CommandTimeoutError({
       command: this.state.argv,
-      timeout: this.state.timeout ?? "",
+      timeout: this.state.timeoutLabel ?? "",
       jobPath: scope.path,
     });
   }
@@ -455,9 +462,7 @@ class CommandBuilder implements Command {
   ): Promise<CommandResult> {
     const machine = await ensureMachine(scope);
 
-    const timeoutMs = this.state.timeout
-      ? durationToMs(this.state.timeout)
-      : undefined;
+    const timeoutMs = this.state.timeoutMs;
 
     // Short commands with an explicit timeout run as one captured step, which
     // is cheaper and keeps the trace tidy.

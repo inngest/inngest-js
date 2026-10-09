@@ -4,6 +4,7 @@
  * @module
  */
 
+import { Temporal } from "temporal-polyfill";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { shard } from "../checkout/shard.ts";
 import { CiUsageError } from "../errors.ts";
@@ -469,6 +470,31 @@ describe("github helpers", () => {
       checks,
       error: (result.error as { message?: string })?.message,
     }).toEqual({ checks: { vercel: "failure" }, error: undefined });
+  });
+
+  test("waitForChecks takes a Temporal duration timeout", async () => {
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      total_count: 0,
+      check_runs: [],
+    });
+
+    const { ci } = setup(gh);
+
+    const job = ci.job("wait", async () => {
+      await github.waitForChecks({
+        names: ["vercel"],
+        timeout: Temporal.Duration.from({ minutes: 10 }),
+      });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.error).toBeUndefined();
   });
 
   test("github.token() and github.octokit() throw outside a step", async () => {

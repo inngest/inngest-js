@@ -60,7 +60,7 @@ export const waitForHttp = async (
   /** The URL to request, from the machine's point of view. */
   url: string,
   opts: {
-    /** How long to keep trying. Defaults to `"2m"`. */
+    /** How long to keep trying: milliseconds, an `ms` string or a `Temporal.Duration`. Defaults to `"2m"`. */
     timeout?: Duration;
     /** The status code to wait for. Defaults to 200. */
     status?: number;
@@ -71,7 +71,7 @@ export const waitForHttp = async (
   const target = scope ?? requireJobScope("waitForHttp");
 
   countApi("waitFor");
-  const timeoutMs = durationToMs(opts.timeout ?? "2m");
+  const timeoutMs = durationToMs(opts.timeout ?? "2m", "timeout");
   const expected = opts.status ?? 200;
 
   const script = httpWaitScript(url, expected, timeoutMs);
@@ -82,7 +82,7 @@ export const waitForHttp = async (
     },
     ["/bin/sh", "-c", script],
     { label: `waitForHttp ${url}` },
-  ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
+  ).timeout(timeoutMs + waitHeadroomMs);
 };
 
 /**
@@ -104,7 +104,7 @@ export const waitForPort = async (
   /** The port to connect to on `127.0.0.1`. */
   port: number,
   opts: {
-    /** How long to keep trying. Defaults to `"2m"`. */
+    /** How long to keep trying: milliseconds, an `ms` string or a `Temporal.Duration`. Defaults to `"2m"`. */
     timeout?: Duration;
   } = {},
   /** Internal: the machine to run on. `sandbox()` passes its own. */
@@ -113,7 +113,7 @@ export const waitForPort = async (
   const target = scope ?? requireJobScope("waitForPort");
 
   countApi("waitFor");
-  const timeoutMs = durationToMs(opts.timeout ?? "2m");
+  const timeoutMs = durationToMs(opts.timeout ?? "2m", "timeout");
 
   const script = waitScript(
     `(command -v nc >/dev/null && nc -z 127.0.0.1 ${port}) || (exec 3<>/dev/tcp/127.0.0.1/${port}) 2>/dev/null`,
@@ -126,5 +126,5 @@ export const waitForPort = async (
     },
     ["/bin/sh", "-c", script],
     { label: `waitForPort ${port}` },
-  ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
+  ).timeout(timeoutMs + waitHeadroomMs);
 };

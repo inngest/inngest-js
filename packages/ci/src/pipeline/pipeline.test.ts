@@ -11,9 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
+import { Temporal } from "temporal-polyfill";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
 import { checkout } from "../checkout/checkout.ts";
+import { waitForHttp, waitForPort } from "../checkout/wait.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -704,6 +706,73 @@ describe("commands", () => {
       message: "`hang` timed out after 2s",
       lookedAround: true,
     });
+  });
+
+  test("command timeouts take milliseconds, ms strings and Temporal durations", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "hang", execTimesOut: true }]);
+
+    const caught: string[] = [];
+
+    const job = ci.job("hang", async () => {
+      for (const timeout of [
+        2000,
+        "2s",
+        Temporal.Duration.from({ seconds: 2 }),
+      ]) {
+        try {
+          await $`hang`.timeout(timeout);
+        } catch (error) {
+          caught.push((error as Error).message);
+        }
+      }
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect([...new Set(caught)]).toEqual(["`hang` timed out after 2s"]);
+
+    expect(caught.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("waitForPort and waitForHttp take Temporal durations", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "127.0.0.1", stdout: "" }]);
+
+    const job = ci.job("wait", async () => {
+      await waitForPort(3000, {
+        timeout: Temporal.Duration.from({ seconds: 30 }),
+      });
+      await waitForHttp("http://127.0.0.1:3000", {
+        timeout: Temporal.Duration.from({ seconds: 30 }),
+      });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.error).toBeUndefined();
+  });
+
+  test("an invalid command timeout throws CiUsageError naming the field", () => {
+    expect(() => {
+      return $`x`.timeout("soon");
+    }).toThrow(/timeout must be a positive/);
+
+    expect(() => {
+      return $`x`.timeout(true as unknown as string);
+    }).toThrow(CiUsageError);
   });
 
   test("withSecret throws instead of persisting the value", async () => {

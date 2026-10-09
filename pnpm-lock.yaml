@@ -94,6 +94,9 @@ importers:
       inngest:
         specifier: link:../inngest/dist
         version: link:../inngest/dist
+      temporal-polyfill:
+        specifier: ^0.2.5
+        version: 0.2.5
       tsdown:
         specifier: ^0.23.0
         version: 0.23.0(@arethetypeswrong/core@0.18.2)(typescript@6.0.3)

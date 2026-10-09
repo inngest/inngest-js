@@ -482,7 +482,9 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
 export const maxAgeMsOf = (
   cache: CacheConfig | undefined,
 ): number | undefined => {
-  return cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
+  return cache?.maxAge === undefined
+    ? undefined
+    : durationToMs(cache.maxAge, "cache.maxAge");
 };
 
 /** Whether a snapshot was taken longer ago than a job's max age allows. */

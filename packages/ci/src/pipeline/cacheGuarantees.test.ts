@@ -13,7 +13,9 @@
  * @module
  */
 
+import { Temporal } from "temporal-polyfill";
 import { describe, expect, test } from "vitest";
+import { maxAgeMsOf } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { machineSetupScript } from "../machine/machine.ts";
@@ -617,6 +619,43 @@ describe("a snapshot older than the cache's maxAge", () => {
         },
       );
     }).toThrow(/cache\.maxAge/);
+  });
+
+  test("maxAge takes milliseconds, ms strings and Temporal durations", () => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    for (const maxAge of [
+      86_400_000,
+      "1d",
+      Temporal.Duration.from({ days: 1 }),
+    ]) {
+      expect(maxAgeMsOf({ key: "v1", maxAge })).toBe(86_400_000);
+
+      expect(() => {
+        return ci.job(
+          { id: `install-${String(maxAge)}`, cache: { key: "v1", maxAge } },
+          async () => {},
+        );
+      }).not.toThrow();
+    }
+  });
+
+  test("keepOnFailure is checked when the job is defined", () => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job(
+        { id: "kept", keepOnFailure: Temporal.Duration.from({ hours: 1 }) },
+        async () => {},
+      );
+    }).not.toThrow();
+
+    expect(() => {
+      return ci.job(
+        { id: "bad-kept", keepOnFailure: "forever" },
+        async () => {},
+      );
+    }).toThrow(/keepOnFailure/);
   });
 
   test("a zero maxAge throws when the job is defined", () => {
