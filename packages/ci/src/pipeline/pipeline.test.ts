@@ -81,6 +81,21 @@ const namedSnapshots = (api: ReturnType<typeof createFakeSandboxApi>) => {
   });
 };
 
+describe("matrix IDs", () => {
+  test("defining the same matrix ID twice is rejected", () => {
+    const { ci } = setup();
+
+    ci.matrix({ id: "compat", axes: { node: ["20"] } }, async () => {});
+
+    expect(() => {
+      return ci.matrix(
+        { id: "compat", axes: { node: ["22"] } },
+        async () => {},
+      );
+    }).toThrow(/already defined/);
+  });
+});
+
 describe("pipelines and jobs", () => {
   test("a job runs its commands on its own machine", async () => {
     const { api, ci } = setup();
