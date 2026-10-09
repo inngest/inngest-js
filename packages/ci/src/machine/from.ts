@@ -665,9 +665,8 @@ export const startFrom = async (
         : `starting ${config.id}`;
 
     scope.rebuildSnapshot = async (why) => {
-      // The parent's base is looked up again here, and an image may have been
-      // captured again since, so the name is worked out again too: the rebuild
-      // is named after what it's built on.
+      // Both are memoized for the run, so this is the base the parent was
+      // built on, an image included, and the rebuild keeps its name.
       const base = await baseOf(run, parent, [scope.config.id, config.id]);
 
       const rebuilt = await requestRebuild({
