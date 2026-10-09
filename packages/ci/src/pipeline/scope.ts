@@ -176,10 +176,9 @@ export interface CiRunScope {
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * Snapshots the builds this run asked for left for it, by ID: a `from`
-   * parent's without a `cache`, and the unnamed fallback of any build. They are
-   * deleted when the run ends. A named cache snapshot is never added, so later
-   * runs find it.
+   * Snapshots the builds this run asked for left for it, by ID: those of
+   * `from` parents without a `cache`. They are deleted when the run ends. A
+   * named cache snapshot is never added, so later runs find it.
    */
   createdSnapshots: Set<string>;
   /**

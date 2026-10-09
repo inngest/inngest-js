@@ -294,8 +294,7 @@ export const reusedBuild = (
 /**
  * Take what a build ended with as this run's concern: its warnings, and its
  * snapshot when it isn't one the cache keeps, which the run deletes when it
- * ends. That is a snapshot only this run needs, or the build's unnamed
- * fallback (see createNamedSnapshot), which the build run left for this one.
+ * ends. That is a snapshot only this run needs.
  */
 export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   run.warnings.push(...built.warnings);
@@ -750,7 +749,6 @@ const snapshotBuilt = async (
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
     ...(run.build?.broken ? { broken: true } : {}),
     ...(run.build?.unnamed ? { unnamed: true } : {}),
-    ...(scope.config.cache ? {} : { ephemeral: true }),
   });
 
   run.outcome = {

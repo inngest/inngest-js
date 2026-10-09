@@ -6,6 +6,7 @@
  */
 
 import type { Inngest } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { resolveTakenName, snapshotState } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
@@ -446,11 +447,6 @@ export interface SnapshotCache {
    * deletes it at its end.
    */
   unnamed?: boolean;
-  /**
-   * Set when the job has no `cache` and the name is only for this run, so
-   * failing to name it isn't worth a warning.
-   */
-  ephemeral?: boolean;
 }
 
 /** A snapshot of a job's machine. */
@@ -498,7 +494,7 @@ const takeSnapshot = async (
 
   try {
     return cache && !cache.unnamed
-      ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
+      ? await createNamedSnapshot(run, handle, stepId, cache)
       : await createRunSnapshot(handle, stepId);
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
@@ -519,16 +515,16 @@ const takeSnapshot = async (
  * the job's cache, and a cached one is left for later runs, as is one adopted
  * from a name race winner.
  *
- * If another build holds the name, its snapshot is used instead. If the name
- * is refused, as by a server without snapshot names, the snapshot is taken
- * without one: the invoking run still starts from it, but nothing is cached.
+ * If another build holds the name, its snapshot is used instead, or the
+ * holder is deleted when it is about to expire or is the bad one being
+ * replaced, and the create is tried again. Any other failure is the build's:
+ * one the server refused as invalid is not retried.
  */
 const createNamedSnapshot = async (
   run: CiRunScope,
   handle: MachineHandle,
-  jobPath: string,
   stepId: string,
-  { target, exclude, broken, ephemeral }: SnapshotCache,
+  { target, exclude, broken }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -542,62 +538,69 @@ const createNamedSnapshot = async (
     };
   };
 
-  let refusal: unknown;
+  let taken: unknown;
 
   try {
     return await attempt(stepId);
   } catch (error) {
     if (!hasCode(error, nameTakenCode)) {
-      if (!isNameRefused(error)) {
-        throw error;
-      }
-
-      refusal = error;
-    }
-  }
-
-  if (!refusal) {
-    const taken = await resolveTakenName(
-      run,
-      `${stepId}${scopeSeparator}name-taken`,
-      name,
-      exclude,
-      broken,
-    );
-
-    if (taken.winner) {
-      // Another build got there first, with the same key, so its snapshot is
-      // as good as this one.
-      return {
-        snapshotId: taken.winner.snapshotId,
-        named: taken.winner,
-        reused: true,
-      };
+      throw refusedAsFatal(error, name);
     }
 
-    if (taken.cleared) {
-      try {
-        return await attempt(`${stepId} (retry)`);
-      } catch (error) {
-        refusal = error;
-      }
-    }
+    taken = error;
   }
 
-  if (!ephemeral) {
-    run.warnings.push(
-      `not cached: the snapshot of \`${jobPath}\` couldn't be named${refusal ? ` (${errorMessage(refusal)})` : ""}, so later runs build it again`,
-    );
+  const held = await resolveTakenName(
+    run,
+    `${stepId}${scopeSeparator}name-taken`,
+    name,
+    exclude,
+    broken,
+  );
+
+  if (held.winner) {
+    // Another build got there first, with the same key, so its snapshot is
+    // as good as this one.
+    return {
+      snapshotId: held.winner.snapshotId,
+      named: held.winner,
+      reused: true,
+    };
   }
 
-  const unnamed = await handle.sandbox.snapshot(`${stepId} (unnamed)`);
+  if (!held.cleared) {
+    throw taken;
+  }
 
-  // The name was refused or couldn't be freed, so the job's snapshot falls
-  // back to an unnamed one that no later run can find. The run that invoked
-  // the build deletes it at its own end, like any run-only snapshot: the
-  // build's own cleanup would delete it while that run still starts jobs from
-  // it.
-  return { snapshotId: unnamed.id, reused: false };
+  try {
+    return await attempt(`${stepId} (retry)`);
+  } catch (error) {
+    throw refusedAsFatal(error, name);
+  }
+};
+
+/**
+ * Make a create the server refused as invalid, such as a name it won't take,
+ * fail the run for good: asking again gets the same answer. Anything else,
+ * including the errors the caller treats as "snapshots unavailable", comes
+ * back unchanged and takes the normal step retry.
+ */
+const refusedAsFatal = (error: unknown, name: string): unknown => {
+  const status = errorStatus(error);
+
+  const refused =
+    status === 400 ||
+    status === 422 ||
+    (error as { name?: string } | undefined)?.name === "SandboxValidationError";
+
+  if (!refused) {
+    return error;
+  }
+
+  return new NonRetriableError(
+    `the snapshot named \`${name}\` was refused (${errorMessage(error)})`,
+    { cause: error },
+  );
 };
 
 /**
@@ -617,32 +620,14 @@ const createRunSnapshot = async (
 const nameTakenCode = "sandbox_snapshot_name_taken";
 
 /**
- * Whether a named snapshot was refused for its name, so taking it without one
- * may work.
- *
- * WORKAROUND (Sandboxes API): a server without snapshot names, such as an
- * older Dev Server, refuses a create with a name as a bad request. Delete this
- * once none is left.
- */
-const isNameRefused = (error: unknown): boolean => {
-  const status = errorStatus(error);
-
-  return (
-    status === 400 ||
-    status === 422 ||
-    (error as { name?: string } | undefined)?.name === "SandboxValidationError"
-  );
-};
-
-/**
  * Whether a snapshot failed because snapshots can't be had here, as opposed
  * to a real failure. The caller falls back to re-running the parent rather
  * than failing the run.
  *
- * WORKAROUND (Sandboxes API): older Dev Servers have no snapshot endpoints
- * (404, 501 or an "unsupported" message), and an environment can run out of
- * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
- * happens; a real failure should then always surface.
+ * That is an environment that can't snapshot: an older Dev Server with no
+ * snapshot endpoints (404, 501 or an "unsupported" message), or an account out
+ * of snapshots (`sandbox_snapshot_limit_exceeded`). A refused or invalid
+ * create is not one, and fails the build.
  */
 const isSnapshotUnavailable = (error: unknown): boolean => {
   const cause = (error as { cause?: { code?: string; status?: number } })
@@ -701,7 +686,7 @@ export const destroyRunMachines = async (
 
 /**
  * Delete the snapshots the builds of this run left for it, once the run is
- * over: those of `from` parents without a cache, and unnamed fallbacks.
+ * over: those of `from` parents without a cache.
  * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
  * run only restored never was.
  *
