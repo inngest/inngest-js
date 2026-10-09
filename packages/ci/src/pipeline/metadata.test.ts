@@ -581,3 +581,166 @@ describe("the just-in-time warning", () => {
     ]);
   });
 });
+
+describe("the uncached-base warning", () => {
+  const warned = (metadata: Update[]) => {
+    return metadata
+      .filter((update) => {
+        return update.kind === "inngest.warnings";
+      })
+      .map((update) => {
+        return [update.step, update.values] as const;
+      });
+  };
+
+  const message = (jobId: string, baseId: string) => {
+    return `\`${jobId}\` is cached, but it starts from \`${baseId}\`, which has no \`cache\`. \`${baseId}\` is built fresh in every run, so \`${jobId}\` gets a new snapshot name each time and is never reused. Give \`${baseId}\` a \`cache\`.`;
+  };
+
+  const line = (jobId: string, baseId: string) => {
+    return `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`;
+  };
+
+  test("a cached job on an uncached parent says so on its row and in the warnings, every run", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const build = ci.job(
+      { id: "build", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await build();
+
+      return getRunScope()?.warnings;
+    });
+
+    for (const runId of ["01A", "01B"]) {
+      const result = await runFunction(pipeline, { event: prEvent, runId });
+
+      expect(result.type).toBe("function-resolved");
+
+      expect(warned(result.metadata)).toEqual([
+        ["build › from base", { "ci.uncachedBase": message("build", "base") }],
+      ]);
+
+      expect(result.data).toEqual([line("build", "base")]);
+    }
+
+    const builds = api.commands.filter((argv) => {
+      return argv.join(" ").includes("pnpm build");
+    });
+
+    expect(builds).toHaveLength(2);
+  });
+
+  test("a cached parent on an uncached base says so instead of suggesting warm", async () => {
+    const { ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const build = ci.job(
+      { id: "build", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const test = ci.job({ id: "test", from: build }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+
+      return getRunScope()?.warnings;
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(warned(result.metadata)).toEqual([
+      ["test › from build", { "ci.uncachedBase": message("build", "base") }],
+    ]);
+
+    expect(result.data).toEqual([line("build", "base")]);
+  });
+
+  test("every cached job below an uncached one names it, and none suggests warm", async () => {
+    const { ci } = setup();
+
+    const a = ci.job("a", async () => {
+      await $`echo a`;
+    });
+
+    const b = ci.job({ id: "b", from: a, cache: { key: "v1" } }, async () => {
+      await $`echo b`;
+    });
+
+    const c = ci.job({ id: "c", from: b, cache: { key: "v1" } }, async () => {
+      await $`echo c`;
+    });
+
+    const d = ci.job({ id: "d", from: c }, async () => {
+      await $`echo d`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await d();
+
+      return getRunScope()?.warnings;
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect([...(result.data as string[])].sort()).toEqual(
+      [line("b", "a"), line("c", "a")].sort(),
+    );
+  });
+
+  test("a cached job on a cached parent has no such warning", async () => {
+    const { ci } = setup();
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const build = ci.job(
+      { id: "build", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await build();
+
+      return getRunScope()?.warnings;
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      warned(result.metadata).filter(([, values]) => {
+        return "ci.uncachedBase" in values;
+      }),
+    ).toEqual([]);
+
+    expect(result.data).not.toContainEqual(
+      expect.stringContaining("never reused"),
+    );
+  });
+});

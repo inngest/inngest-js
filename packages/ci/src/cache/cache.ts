@@ -751,6 +751,38 @@ export const warnJustInTime = (run: CiRunScope, config: JobConfig): void => {
 };
 
 /**
+ * What a cached job that starts from a job with no `cache` says, on a row of
+ * the trace (`message`) and in the run's warnings (`line`). A job without a
+ * cache is built fresh in every run, and the cached job's name holds that
+ * build's snapshot, so the cached job is never reused. Warming can't help, so
+ * this replaces the just-in-time note.
+ */
+export const uncachedBaseNote = (
+  /** The cached job. */
+  jobId: string,
+  /** The job it starts from, which has no cache. */
+  baseId: string,
+): { message: string; line: string } => {
+  return {
+    message: `\`${jobId}\` is cached, but it starts from \`${baseId}\`, which has no \`cache\`. \`${baseId}\` is built fresh in every run, so \`${jobId}\` gets a new snapshot name each time and is never reused. Give \`${baseId}\` a \`cache\`.`,
+    line: `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`,
+  };
+};
+
+/** Add a cached job's uncached-base line to the run's warnings, once. */
+export const warnUncachedBase = (
+  run: CiRunScope,
+  jobId: string,
+  baseId: string,
+): void => {
+  const { line } = uncachedBaseNote(jobId, baseId);
+
+  if (!run.warnings.includes(line)) {
+    run.warnings.push(line);
+  }
+};
+
+/**
  * Look a `from` parent's snapshot up for the job that starts from it, as the
  * first memoized step inside that job. One step works out the parent's key and
  * name, then lists by name once per scope the parent reads, so the job's own
@@ -765,10 +797,12 @@ export const lookupParent = async (
     input: unknown;
     /** What the parent starts from. */
     base?: BaseIdentity;
+    /** The job the parent starts from, when that job has no cache. */
+    uncachedBase?: string;
   },
 ): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
   const { run } = scope;
-  const { config, input, base } = parent;
+  const { config, input, base, uncachedBase } = parent;
 
   if (config.cache) {
     countApi("cache");
@@ -798,6 +832,14 @@ export const lookupParent = async (
 
         note.outcome(lookupOutcome(hit));
 
+        if (scope.config.cache) {
+          await warnStep(
+            run,
+            "ci.uncachedBase",
+            uncachedBaseNote(scope.config.id, config.id).message,
+          );
+        }
+
         return { target, hit: hit ?? null };
       }
 
@@ -820,7 +862,13 @@ export const lookupParent = async (
 
       note.outcome(lookupOutcome(hit));
 
-      if (!hit) {
+      if (!hit && uncachedBase) {
+        await warnStep(
+          run,
+          "ci.uncachedBase",
+          uncachedBaseNote(config.id, uncachedBase).message,
+        );
+      } else if (!hit) {
         await warnStep(run, "ci.justInTime", justInTimeNote(config).message);
       }
 
@@ -830,7 +878,7 @@ export const lookupParent = async (
 
   // From the memoized result, so a replay says it too, once per parent however
   // many jobs start from it.
-  if (config.cache && !found.hit) {
+  if (config.cache && !found.hit && !uncachedBase) {
     warnJustInTime(run, config);
   }
 
