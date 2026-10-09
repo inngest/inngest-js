@@ -17,7 +17,13 @@ import { NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { cycleMessage } from "../machine/from.ts";
-import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
+import type {
+  CheckAnnotation,
+  MachineConfig,
+  Matrix,
+  MatrixAxes,
+  RepoContext,
+} from "../types.ts";
 import type { AppJobRequest } from "./appJob.ts";
 import { answerAppJob } from "./appJob.ts";
 import type { RegisteredJob } from "./job.ts";
@@ -82,6 +88,8 @@ export interface CacheBuildData extends Record<string, unknown> {
   resolve?: AppJobRequest;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
+  /** The invoking run's machine settings, for jobs that set none of their own. */
+  machine?: MachineConfig;
   /**
    * The ID of the pipeline run at the root of this build: the run itself for a
    * build a pipeline invokes, and the `rootRunId` the invoking build was given
@@ -124,6 +132,8 @@ export interface CacheBuildResult {
   summary?: JobSummary;
   /** What the invoking run should say about the build, like a fallback. */
   warnings: string[];
+  /** What the job reported while it ran, for the invoking job's check. */
+  report?: { summaries: string[]; annotations: CheckAnnotation[] };
 }
 
 /** A matrix as the build runs it: exactly one combination. */
@@ -167,7 +177,12 @@ export const cacheBuildFunction = ({
 
       return runPipeline({
         internals,
-        config: { id, on: { event: invokedEvent }, check: false },
+        config: {
+          id,
+          on: { event: invokedEvent },
+          check: false,
+          ...(data.machine ? { machine: data.machine } : {}),
+        },
         build: data,
         handler: async (): Promise<CacheBuildResult> => {
           return buildSnapshot({ data, jobs, matrices });
@@ -231,6 +246,9 @@ const buildSnapshot = async ({
       config: job.config,
       handler: job.handler,
       input: data.input,
+      // The invoking run validated it, and a schema may not accept its own
+      // output a second time.
+      validated: true,
     });
   }
 
@@ -250,5 +268,6 @@ const buildSnapshot = async ({
     createdSnapshots: [...(run?.createdSnapshots ?? [])],
     ...(summary ? { summary } : {}),
     warnings: run?.warnings ?? [],
+    ...(run?.report ? { report: run.report } : {}),
   };
 };
