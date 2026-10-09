@@ -260,7 +260,7 @@ describe("Execution engine checkpoint retry behavior", () => {
           {
             kind: "userland.test",
             scope: "step",
-            op: "merge",
+            op: "set",
             values: { status: "processing" },
           },
         ];
@@ -1278,5 +1278,200 @@ describe("defer session propagation", () => {
     expect(result).toMatchObject({
       steps: [expect.objectContaining({ op: "RunComplete", data: "done" })],
     });
+  });
+});
+
+describe("addMetadata", () => {
+  const createExecution = () => {
+    const client = createClient({ id: "test" });
+    const fn = new InngestFunction(
+      client,
+      { id: "test-fn", triggers: [{ event: "test/event" }] },
+      () => undefined,
+    );
+
+    return fn["createExecution"]({
+      partialOptions: {
+        client,
+        data: fromPartial({ event: { name: "test/event", data: {} } }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.Async,
+      },
+    });
+  };
+
+  const metadataFor = (
+    execution: ReturnType<typeof createExecution>,
+    stepId: string,
+  ) =>
+    (
+      execution as unknown as {
+        state: { metadata?: Map<string, MetadataUpdate[]> };
+      }
+    ).state.metadata?.get(stepId);
+
+  test("merges update() calls to the same kind in one step", () => {
+    const execution = createExecution();
+
+    execution.addMetadata(
+      "step",
+      "userland.default",
+      "step",
+      "set",
+      { a: 1, b: 1 },
+      { merge: true },
+    );
+    execution.addMetadata(
+      "step",
+      "userland.default",
+      "step",
+      "set",
+      { b: 2, c: 2 },
+      { merge: true },
+    );
+
+    expect(metadataFor(execution, "step")).toEqual([
+      {
+        kind: "userland.default",
+        scope: "step",
+        op: "set",
+        values: { a: 1, b: 2, c: 2 },
+      },
+    ]);
+  });
+
+  test("set() replaces earlier writes to the same kind in one step", () => {
+    const execution = createExecution();
+
+    execution.addMetadata(
+      "step",
+      "userland.default",
+      "step",
+      "set",
+      { a: 1 },
+      { merge: true },
+    );
+    execution.addMetadata("step", "userland.default", "step", "set", { b: 2 });
+
+    expect(metadataFor(execution, "step")).toEqual([
+      {
+        kind: "userland.default",
+        scope: "step",
+        op: "set",
+        values: { b: 2 },
+      },
+    ]);
+  });
+
+  test("update() after set() merges into the set values", () => {
+    const execution = createExecution();
+
+    execution.addMetadata("step", "userland.default", "step", "set", { a: 1 });
+    execution.addMetadata(
+      "step",
+      "userland.default",
+      "step",
+      "set",
+      { b: 2 },
+      { merge: true },
+    );
+
+    expect(metadataFor(execution, "step")).toEqual([
+      {
+        kind: "userland.default",
+        scope: "step",
+        op: "set",
+        values: { a: 1, b: 2 },
+      },
+    ]);
+  });
+
+  test("merge ops merge by default and keep their op", () => {
+    const execution = createExecution();
+
+    execution.addMetadata("step", "inngest.score", "step", "merge", {
+      x: { value: 1 },
+    });
+    execution.addMetadata("step", "inngest.score", "step", "merge", {
+      y: { value: 2 },
+    });
+
+    expect(metadataFor(execution, "step")).toEqual([
+      {
+        kind: "inngest.score",
+        scope: "step",
+        op: "merge",
+        values: { x: { value: 1 }, y: { value: 2 } },
+      },
+    ]);
+  });
+
+  test("doesn't mutate the values passed in", () => {
+    const execution = createExecution();
+    const first = { a: 1 };
+
+    execution.addMetadata("step", "userland.default", "step", "set", first, {
+      merge: true,
+    });
+    execution.addMetadata(
+      "step",
+      "userland.default",
+      "step",
+      "set",
+      { b: 2 },
+      { merge: true },
+    );
+
+    expect(first).toEqual({ a: 1 });
+  });
+
+  test("keeps different kinds, scopes, and steps separate", () => {
+    const execution = createExecution();
+
+    execution.addMetadata(
+      "step",
+      "userland.a",
+      "step",
+      "set",
+      { a: 1 },
+      { merge: true },
+    );
+    execution.addMetadata(
+      "step",
+      "userland.b",
+      "step",
+      "set",
+      { b: 1 },
+      { merge: true },
+    );
+    execution.addMetadata(
+      "step",
+      "userland.a",
+      "run",
+      "set",
+      { a: 2 },
+      { merge: true },
+    );
+    execution.addMetadata(
+      "other",
+      "userland.a",
+      "step",
+      "set",
+      { a: 3 },
+      { merge: true },
+    );
+
+    expect(metadataFor(execution, "step")).toEqual([
+      { kind: "userland.a", scope: "step", op: "set", values: { a: 1 } },
+      { kind: "userland.b", scope: "step", op: "set", values: { b: 1 } },
+      { kind: "userland.a", scope: "run", op: "set", values: { a: 2 } },
+    ]);
+    expect(metadataFor(execution, "other")).toEqual([
+      { kind: "userland.a", scope: "step", op: "set", values: { a: 3 } },
+    ]);
   });
 });
