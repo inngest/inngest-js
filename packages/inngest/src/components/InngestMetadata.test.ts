@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
 import type { unknown } from "zod";
 import * as experimental from "../experimental";
+import { ErrCode } from "../helpers/errors.ts";
 import type { KnownKeys } from "../helpers/types.ts";
 import { StepMode } from "../types.ts";
 import * as als from "./execution/als.ts";
@@ -241,6 +242,49 @@ describe('"lost on retries" warning at function-body level', () => {
     expect(client[internalLoggerSymbol].warn).toHaveBeenCalledWith(
       expect.stringContaining("may be lost on retries"),
     );
+  });
+});
+
+describe("warnMetadata", () => {
+  test("writes one inngest.warning.<code> kind per warning code", async () => {
+    const client = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.metadataMiddleware()],
+    });
+    const spy = vi
+      .spyOn(
+        client as unknown as { updateMetadata: () => Promise<void> },
+        "updateMetadata",
+      )
+      .mockResolvedValue(undefined);
+    vi.spyOn(client[internalLoggerSymbol], "warn").mockImplementation(() => {});
+
+    await (
+      client as unknown as {
+        warnMetadata: (
+          target: unknown,
+          kind: ErrCode,
+          log: { message: string },
+        ) => Promise<void>;
+      }
+    ).warnMetadata({ run_id: "run-1" }, ErrCode.AUTOMATIC_PARALLEL_INDEXING, {
+      message: "duplicate step ID",
+    });
+
+    expect(spy).toHaveBeenCalledWith({
+      target: { run_id: "run-1" },
+      metadata: [
+        {
+          kind: `inngest.warning.sdk.${ErrCode.AUTOMATIC_PARALLEL_INDEXING}`,
+          op: "set",
+          values: {
+            [`sdk.${ErrCode.AUTOMATIC_PARALLEL_INDEXING}`]:
+              expect.stringContaining("duplicate step ID"),
+          },
+        },
+      ],
+    });
   });
 });
 

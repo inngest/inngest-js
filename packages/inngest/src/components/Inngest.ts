@@ -67,6 +67,7 @@ import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
+  warningMetadataKind,
 } from "./InngestMetadata.ts";
 import { createSandboxClient, type SandboxClient } from "./InngestSandbox.ts";
 import {
@@ -720,14 +721,15 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       return;
     }
 
+    const code = `sdk.${kind}`;
     await this.updateMetadata({
       target: target,
       metadata: [
         {
-          kind: "inngest.warnings",
+          kind: warningMetadataKind(code),
           op: "set",
           values: {
-            [`sdk.${kind}`]: formatLogMessage(log),
+            [code]: formatLogMessage(log),
           },
         },
       ],
