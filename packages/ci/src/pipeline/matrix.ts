@@ -64,10 +64,17 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
             ? config.cache(combo)
             : config.cache;
 
+        // A function of the combination runs inside the combination's own
+        // job, like any job's `from`, so if it throws, that job fails with
+        // its own check.
+        const pick = config.from;
+
         const from: JobConfig["from"] =
-          typeof config.from === "function" && !("kind" in config.from)
-            ? config.from({ input: combo })
-            : (config.from as JobConfig["from"]);
+          typeof pick === "function" && !("kind" in pick)
+            ? () => {
+                return pick({ input: combo });
+              }
+            : (pick as JobConfig["from"]);
 
         const job = ci.job(
           {
