@@ -301,7 +301,6 @@ describe("step.sandbox trace metadata", () => {
           id: "snap",
           name: "Snapshot",
           kind: "snapshot",
-          origin: `inngest@${version}`,
         },
       ]);
       expect(step?.opts?.origin).toBe(`inngest@${version}`);

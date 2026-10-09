@@ -662,7 +662,7 @@ export const createDurableSandboxFacade = (
       return createSnapshot(idOrOptions, ...args);
     }
 
-    return withSpan({ id, name, kind: "snapshot", origin: sdkOrigin }, () => {
+    return withSpan({ id, name, kind: "snapshot" }, () => {
       return createSnapshot(idOrOptions, ...args);
     });
   };
