@@ -209,6 +209,8 @@ export interface CiRunScope {
   build?: CacheBuildData;
   /** What the build's job ended with, which the build hands back. */
   outcome?: BuildOutcome;
+  /** What the build's job reported, which the build hands back. */
+  report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
   /**
