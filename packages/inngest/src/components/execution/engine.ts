@@ -2842,6 +2842,8 @@ class InngestExecutionEngine
           return noopHandle;
         }
 
+        // This op skips the step tools' `wrappedMatchOp`, so a defer is never
+        // grouped under a `group["~span"]()` span.
         void stepHandler({
           args: [stepOptions, finalInput],
           matchOp: (stepOptions, inputArg) => ({
