@@ -14,7 +14,12 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  defaultCwd,
+  isRestoring,
+  runInScope,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
@@ -59,22 +64,20 @@ export const ensureMachine = async (
   const handle = await scope.machine;
 
   // A snapshot that wouldn't start left a fresh machine that still has to be
-  // brought to where the snapshot would have been. The commands that does
-  // run call back here, and must not wait on it.
-  if (scope.restoreFallback && !scope.restoringFallback) {
-    scope.fallbackRan ??= (async () => {
-      const rebuild = scope.restoreFallback;
+  // brought to where the snapshot would have been. Every command waits for
+  // that, except the ones it runs itself, which call back here.
+  const rebuild = scope.restoreFallback;
 
-      scope.restoringFallback = true;
-      scope.restoreFallback = undefined;
+  if (rebuild) {
+    scope.restoreFallback = undefined;
 
-      try {
-        await rebuild?.();
-      } finally {
-        scope.restoringFallback = false;
-      }
-    })();
+    scope.fallbackRan = runInScope(
+      { run: scope.run, job: scope, restoring: scope },
+      rebuild,
+    );
+  }
 
+  if (scope.fallbackRan && !isRestoring(scope)) {
     await scope.fallbackRan;
   }
 
