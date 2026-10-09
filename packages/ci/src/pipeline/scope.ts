@@ -88,21 +88,6 @@ export interface BuildOutcome {
   hadMachine: boolean;
 }
 
-/**
- * What a build run's job ended with, which the run hands back to the run that
- * invoked it. A build run has one job, so nothing else writes it.
- */
-export interface BuildOutcome {
-  /** The job's snapshot, if it had a machine and snapshots could be taken. */
-  snapshotId?: string;
-  /** Set when the snapshot is the job's cache entry, found or made. */
-  cached?: CachedSnapshot;
-  /** Whether the snapshot was already there, rather than built by this run. */
-  reused: boolean;
-  /** Whether the job ran commands, so it had a machine to snapshot. */
-  hadMachine: boolean;
-}
-
 export interface JobSummary {
   path: string;
   conclusion: CheckConclusion;
