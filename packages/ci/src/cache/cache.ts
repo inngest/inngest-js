@@ -736,6 +736,37 @@ export const deleteSnapshot = async (
 };
 
 /**
+ * What a cached job that starts from a job with no `cache` says in the run's
+ * warnings. A job without a cache is built fresh in every run, and the cached
+ * job's key holds that build's snapshot, so the cached job could never be
+ * found again. It is built in every run, and its snapshot belongs to the run,
+ * until the job above it has a `cache`.
+ */
+export const uncachedBaseNote = (
+  /** The cached job. */
+  jobId: string,
+  /** The job it starts from, which has no cache. */
+  baseId: string,
+): { line: string } => {
+  return {
+    line: `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`,
+  };
+};
+
+/** Add a cached job's uncached-base line to the run's warnings, once. */
+export const warnUncachedBase = (
+  run: CiRunScope,
+  jobId: string,
+  baseId: string,
+): void => {
+  const { line } = uncachedBaseNote(jobId, baseId);
+
+  if (!run.warnings.includes(line)) {
+    run.warnings.push(line);
+  }
+};
+
+/**
  * How a cached snapshot is described wherever it shows: `cached 10h ago`.
  */
 export const describeCached = (

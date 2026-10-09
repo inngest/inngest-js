@@ -26,6 +26,7 @@ import {
   ownJob,
   parentBuildOf,
   startFrom,
+  withoutUnreusableCache,
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
@@ -376,7 +377,7 @@ export const validateInput = async (
 
 const jobBody = async ({
   run,
-  config,
+  config: declared,
   handler,
   input: given,
   validated,
@@ -389,8 +390,15 @@ const jobBody = async ({
   /** Which run of this job in the pipeline run this is, counting from 1. */
   number: number;
 }): Promise<void> => {
-  const input = validated ? given : await validateInput(config, given);
+  const input = validated ? given : await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
+
+  // Only a cached job with a `from` has anything to work out, so any other
+  // plans its first step at once.
+  const config =
+    declared.cache && declared.from !== undefined
+      ? await withoutUnreusableCache(run, { config: declared, input })
+      : declared;
 
   const scope: CiJobScope = {
     run,
