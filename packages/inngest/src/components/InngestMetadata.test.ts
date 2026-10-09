@@ -237,6 +237,70 @@ describe('"lost on retries" warning at function-body level', () => {
   });
 });
 
+describe("MetadataBuilder.set", () => {
+  test("batches set() when execution context supports metadata", async () => {
+    const addMetadata = vi.fn(() => true);
+    const ctx = {
+      execution: {
+        ctx: { runId: "run-ctx", attempt: 0 },
+        executingStep: { id: "step-ctx" },
+        instance: { addMetadata },
+      },
+    };
+
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
+    );
+
+    const client = mockClient();
+    await new UnscopedMetadataBuilder(client).set({ foo: "bar" }, "custom");
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step-ctx",
+      "userland.custom",
+      "step",
+      "set",
+      { foo: "bar" },
+      undefined,
+    );
+    expect(client["updateMetadata"]).not.toHaveBeenCalled();
+  });
+
+  test("sends set() via API when batching unavailable", async () => {
+    const ctx = {
+      execution: {
+        ctx: { runId: "current-run" },
+        instance: {
+          options: { headers: { Authorization: "Bearer 123" } },
+        },
+      },
+    };
+
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
+    );
+
+    const client = mockClient();
+    await new UnscopedMetadataBuilder(client)
+      .run("other-run")
+      .set({ foo: "bar" });
+
+    expect(client["updateMetadata"]).toHaveBeenCalledWith({
+      target: {
+        run_id: "other-run",
+      },
+      metadata: [
+        {
+          kind: "userland.default",
+          op: "set",
+          values: { foo: "bar" },
+        },
+      ],
+      headers: { Authorization: "Bearer 123" },
+    });
+  });
+});
+
 describe("MetadataBuilder.update", () => {
   test("batches updates when execution context supports metadata", async () => {
     const addMetadata = vi.fn(() => true);
@@ -259,10 +323,11 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step",
-      "merge",
+      "set",
       {
         foo: "bar",
       },
+      { merge: true },
     );
     expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
@@ -288,10 +353,11 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step",
-      "merge",
+      "set",
       {
         foo: "bar",
       },
+      { merge: true },
     );
     expect(client["updateMetadata"]).toHaveBeenCalled();
   });
@@ -322,7 +388,7 @@ describe("MetadataBuilder.update", () => {
       metadata: [
         {
           kind: "userland.default",
-          op: "merge",
+          op: "set",
           values: { foo: "bar" },
         },
       ],

@@ -373,11 +373,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    *
    * @example
    * ```ts
-   * // Update metadata for the current run
-   * await inngest.metadata.update({ status: "processing" });
+   * // Set metadata for the current run
+   * await inngest.metadata.set({ status: "processing" });
    *
-   * // Update metadata for a different run
-   * await inngest.metadata.run(otherRunId).update({ key: "val" });
+   * // Set metadata for a different run
+   * await inngest.metadata.run(otherRunId).set({ key: "val" });
    *
    * ```
    */

@@ -413,6 +413,17 @@ export const createStepTools = <
       attempt: (attemptIndex: number) =>
         withBuilder(builder.attempt(attemptIndex)),
       span: (spanId: string) => withBuilder(builder.span(spanId)),
+      set: async (
+        values: Record<string, unknown>,
+        kind = "default",
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.set(values, kind);
+        });
+      },
+      /**
+       * @deprecated Use `set()` instead. See `MetadataBuilder.update()`.
+       */
       update: async (
         values: Record<string, unknown>,
         kind = "default",
