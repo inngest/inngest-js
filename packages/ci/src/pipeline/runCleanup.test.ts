@@ -35,7 +35,6 @@ const seed = (api: ReturnType<typeof createFakeSandboxApi>, name: string) => {
     name,
     status: "READY",
     sandboxId: "sbx",
-    files: new Map(),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
   });
