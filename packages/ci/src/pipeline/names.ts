@@ -26,8 +26,8 @@ import { originOption } from "./spans.ts";
 export const ciOrigin = `@inngest/ci@${version}`;
 
 /** A span CI opens for its own work, such as starting a sandbox. */
-export const ciSpan = (id: string, name: string) => {
-  return { id, name, origin: ciOrigin };
+export const ciSpan = (id: string, name: string, kind?: string) => {
+  return { id, name, ...(kind ? { kind } : {}), origin: ciOrigin };
 };
 
 /**

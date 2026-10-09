@@ -183,7 +183,10 @@ const command = (label: string) => {
 const origin = ciOrigin;
 const github = [{ id: "github", name: "GitHub", origin }];
 const job = { id: "test", name: "test", kind: "job" };
-const machine = [job, { id: "test › machine", name: "Start sandbox", origin }];
+const machine = [
+  job,
+  { id: "test › machine", name: "Start sandbox", kind: "sandbox", origin },
+];
 const quick = [job, command("quick")];
 const slow = [job, command("slow")];
 const attempt1 = [
@@ -465,7 +468,7 @@ describe("spans", () => {
         "Look up cache",
         "Build base in its own run",
         "test [job]",
-        "  Start sandbox from base",
+        "  Start sandbox from base [sandbox]",
         "    Create sandbox",
         "    Prepare workspace",
         "  $ pnpm test [command]",
@@ -480,7 +483,7 @@ describe("spans", () => {
         "    Read output",
         "  my-step",
         "  api [sandbox]",
-        "    Start sandbox",
+        "    Start sandbox [sandbox]",
         "      Create sandbox",
         "      Prepare workspace",
         "    $ pnpm start [command]",
@@ -512,7 +515,7 @@ describe("spans", () => {
         "Look up cache <- ci",
         "Build base in its own run <- ci",
         "test [job]",
-        "  Start sandbox from base <- ci",
+        "  Start sandbox from base [sandbox] <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
         "  $ pnpm test [command]",
@@ -527,7 +530,7 @@ describe("spans", () => {
         "    Read output <- ci",
         "  my-step",
         "  api [sandbox]",
-        "    Start sandbox <- ci",
+        "    Start sandbox [sandbox] <- ci",
         "      Create sandbox <- ci",
         "      Prepare workspace <- ci",
         "    $ pnpm start [command]",

@@ -69,7 +69,11 @@ export const ensureMachine = async (
 
       // Everything in it is CI's work, including falling back from a
       // snapshot that won't start.
-      const span = ciSpan(stepId, traceName.startMachine(scope.fromJobIds[0]));
+      const span = ciSpan(
+        stepId,
+        traceName.startMachine(scope.fromJobIds[0]),
+        "sandbox",
+      );
 
       return inSpan(span, () => {
         return createMachine(scope, stepId);
