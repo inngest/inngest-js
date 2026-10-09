@@ -14,7 +14,12 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { parentOf, parentSnapshot, startFrom } from "../machine/from.ts";
+import {
+  ownJob,
+  parentOf,
+  parentSnapshot,
+  startFrom,
+} from "../machine/from.ts";
 import { snapshotJob } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { formatDuration, shortReason } from "../util.ts";
@@ -61,6 +66,8 @@ export const defineJob = ({
       },
     },
   });
+
+  ownJob(job, jobs);
 
   return job;
 };
@@ -215,23 +222,42 @@ const jobBody = async ({
   };
 
   // A cached job is named after its parent's snapshot, so the parent comes
-  // first: a parent that changed gives this job a new name, and a miss.
-  const parent = parentOf(run, config, input);
-  const base = parent ? await parentSnapshot(scope, parent) : undefined;
+  // first: a parent that changed gives this job a new name, and a miss. A
+  // parent that failed fails this job too, once its check has started.
+  let parentFailure: { error: unknown } | undefined;
+
+  const parent = (() => {
+    try {
+      return parentOf(run, config, input);
+    } catch (error) {
+      parentFailure = { error };
+
+      return undefined;
+    }
+  })();
+
+  const base = parent
+    ? await parentSnapshot(scope, parent).catch((error: unknown) => {
+        parentFailure = { error };
+
+        return undefined;
+      })
+    : undefined;
 
   if (config.cache) {
     run.ci.hooks.activity(run, scope.jobPath, "checking cache…");
   }
 
-  const cacheAt = config.cache
-    ? await cacheTarget(
-        run,
-        { id: config.id, path: scope.path },
-        config.cache,
-        input,
-        base,
-      )
-    : undefined;
+  const cacheAt =
+    config.cache && !parentFailure
+      ? await cacheTarget(
+          run,
+          { id: config.id, path: scope.path },
+          config.cache,
+          input,
+          base,
+        )
+      : undefined;
 
   const hit =
     config.cache && cacheAt
@@ -262,6 +288,10 @@ const jobBody = async ({
   }
 
   try {
+    if (parentFailure) {
+      throw parentFailure.error;
+    }
+
     await runJobBody(scope, async () => {
       if (parent && base) {
         await startFrom(scope, parent, base);
