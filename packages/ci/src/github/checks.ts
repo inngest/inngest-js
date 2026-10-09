@@ -689,6 +689,7 @@ export const consoleSink = (
     status: "in_progress" | "completed";
     conclusion?: string;
     title?: string;
+    summary?: string;
     url?: string;
   }>,
 ): CheckSink => {
@@ -710,7 +711,7 @@ export const consoleSink = (
 
       return {};
     },
-    complete: async ({ run, name, conclusion, title, detailsUrl }) => {
+    complete: async ({ run, name, conclusion, title, summary, detailsUrl }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
@@ -718,6 +719,7 @@ export const consoleSink = (
         status: "completed",
         conclusion,
         title,
+        summary,
         url: detailsUrl,
       });
 
