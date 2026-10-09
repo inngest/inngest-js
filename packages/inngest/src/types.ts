@@ -1969,6 +1969,60 @@ export interface StepOptions {
    * `group.parallel()`.
    */
   parallelMode?: "race";
+
+  /**
+   * Group this step's trace under a span, nested inside any
+   * `group["~span"]()` scope the step is called in.
+   *
+   * @internal Unstable and may change without a major version bump.
+   */
+  "~span"?: StepSpan;
+
+  /**
+   * EXPERIMENTAL. The library that created this step on the user's behalf, as
+   * `"<package>@<version>"`, such as `"@inngest/ci@0.1.0"`. Leave it unset for
+   * steps the user wrote themselves.
+   *
+   * It separates what the user wrote from what a library does for them, so a
+   * trace can show both. The Inngest UI de-emphasises steps whose origin is
+   * an Inngest package.
+   *
+   * When unset, a step inherits the origin of the innermost span it is in
+   * that has one (see {@link StepSpan.origin}), else it has no origin. When
+   * set, it overrides any inherited origin.
+   *
+   * @internal Unstable and may change or be removed without a major version
+   * bump.
+   */
+  "~origin"?: string;
+}
+
+/**
+ * A span that groups steps in a trace. Steps under the same path of span IDs
+ * share a span, and `name` defaults to `id`. `kind` says what sort of thing
+ * the span is, such as `"job"`, so a UI can label it.
+ *
+ * @internal Unstable and may change without a major version bump.
+ */
+export interface StepSpan {
+  id: string;
+  name?: string;
+  kind?: string;
+
+  /**
+   * EXPERIMENTAL. The library that created this span on the user's behalf,
+   * as `"<package>@<version>"`, such as `"@inngest/ci@0.1.0"`. Leave it unset
+   * for spans that stand for the user's own code.
+   *
+   * Steps inside the span inherit it unless they set their own `"~origin"`,
+   * or a span nested inside this one sets its own origin. A nested span that
+   * sets none inherits this one's. The Inngest UI de-emphasises spans and
+   * steps whose origin is an Inngest package.
+   *
+   * @internal Unstable and may change or be removed without a major version
+   * bump.
+   */
+  origin?: string;
 }
 
 /**

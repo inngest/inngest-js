@@ -1,8 +1,15 @@
+import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
-import type { SandboxRawTool } from "./protocol.ts";
+import {
+  getSandboxError,
+  parseSandboxOperation,
+  type SandboxOperationResultV1,
+  type SandboxRawTool,
+} from "./protocol.ts";
+import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -14,13 +21,48 @@ type SandboxStepExtension = {
   sandbox: DurableSandboxTools;
 };
 
+/**
+ * Attach `inngest.sandbox` metadata to the step that's executing, describing
+ * the sandbox action for the trace. Tracing must never fail the step.
+ */
+const describeStep = (
+  operation: unknown,
+  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
+): void => {
+  try {
+    const execution = getAsyncCtxSync()?.execution;
+    const stepId = execution?.executingStep?.id;
+    if (!execution || !stepId) {
+      return;
+    }
+
+    execution.instance.addMetadata(
+      stepId,
+      sandboxMetadataKind,
+      "step",
+      "merge",
+      sandboxTraceMetadata(
+        parseSandboxOperation(operation),
+        "result" in outcome
+          ? outcome
+          : { error: getSandboxError(outcome.error) },
+      ),
+    );
+  } catch {
+    // An operation that fails validation has nothing to describe.
+  }
+};
+
 const executeAsStep = async (
   client: Inngest.Any,
   operation: unknown,
 ): Promise<unknown> => {
   try {
-    return await executeSandboxOperation(client.sandboxes, operation);
+    const result = await executeSandboxOperation(client.sandboxes, operation);
+    describeStep(operation, { result });
+    return result;
   } catch (error) {
+    describeStep(operation, { error });
     if (error instanceof SandboxError) {
       const cause = {
         protocolVersion: error.protocolVersion,
