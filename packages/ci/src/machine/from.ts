@@ -31,7 +31,12 @@ import {
   validateInput,
 } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, outsideJobs, rebuildSuffix } from "../pipeline/scope.ts";
+import {
+  countApi,
+  isInline,
+  outsideJobs,
+  rebuildSuffix,
+} from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -120,6 +125,30 @@ export const parentOf = (
   return { config: registered.config, input: ref.input };
 };
 
+/**
+ * Whether a job has to be built in this run: it was defined here, or its
+ * parent was, and either way the build function couldn't find it.
+ */
+export const buildsInRun = (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input, already validated. */
+  input: unknown,
+): boolean => {
+  if (isInline(config)) {
+    return true;
+  }
+
+  try {
+    const named = parentOf(run, config, input);
+
+    return named ? isInline(named.config) : false;
+  } catch {
+    // A `from` that names no job is reported where the job resolves it.
+    return false;
+  }
+};
+
 /** What a job's key knows of the parent it starts from. */
 export const identityOf = (
   jobId: string,
@@ -154,7 +183,8 @@ export const parentBuildOf = async (
     input: await validateInput(named.config, named.input),
   };
 
-  const given = run.build?.jobId === config.id ? run.build.base : undefined;
+  const given =
+    run.build?.jobId === config.id ? run.build.base : scope.inline?.base;
 
   return { parent, built: given ?? (await resolveParent(scope, parent)) };
 };
