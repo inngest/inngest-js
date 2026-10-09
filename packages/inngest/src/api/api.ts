@@ -84,6 +84,17 @@ export namespace InngestApi {
   }
 }
 
+/**
+ * The most characters of a response body to include in an error message, so
+ * that a large gateway error page doesn't produce an oversized error.
+ */
+const maxErrorBodyLength = 1000;
+
+const truncateErrorBody = (body: string): string =>
+  body.length > maxErrorBodyLength
+    ? `${body.slice(0, maxErrorBodyLength)}... (truncated)`
+    : body;
+
 export class InngestApi {
   private readonly _signingKey: () => string | undefined;
   private readonly _signingKeyFallback: () => string | undefined;
@@ -170,6 +181,45 @@ export class InngestApi {
     }
   }
 
+  /**
+   * Convert a non-2xx response into an `ErrorResponse`, falling back to the
+   * HTTP status and body text when the body isn't the expected JSON shape (for
+   * example, an HTML error page from a gateway).
+   */
+  private async parseErrorResponse(
+    res: Response,
+    action: string,
+  ): Promise<ErrorResponse> {
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (error) {
+      text = `failed to read the response body: ${getErrorMessage(error, "unknown error")}`;
+    }
+
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // Not JSON; use the text below.
+    }
+
+    const parsed = errorSchema.safeParse(json);
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    // Keep the whole body unless it holds nothing but an error message.
+    const message = z.object({ error: z.string() }).strict().safeParse(json);
+    const detail = message.success ? message.data.error : text;
+    const statusText = res.statusText ? ` ${res.statusText}` : "";
+
+    return {
+      error: `Failed to retrieve ${action}: ${res.status}${statusText} - ${truncateErrorBody(detail)}`,
+      status: res.status,
+    };
+  }
+
   async getRunSteps(
     runId: string,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
@@ -178,13 +228,14 @@ export class InngestApi {
     );
     if (result.ok) {
       const res = result.value;
-      const data: unknown = await res.json();
 
       if (res.ok) {
+        const data: unknown = await res.json();
+
         return ok(stepSchema.parse(data));
       }
 
-      return err(errorSchema.parse(data));
+      return err(await this.parseErrorResponse(res, "run steps"));
     }
 
     return err({
@@ -204,13 +255,14 @@ export class InngestApi {
     );
     if (result.ok) {
       const res = result.value;
-      const data: unknown = await res.json();
 
       if (res.ok) {
+        const data: unknown = await res.json();
+
         return ok(batchSchema.parse(data));
       }
 
-      return err(errorSchema.parse(data));
+      return err(await this.parseErrorResponse(res, "run batch"));
     }
 
     return err({
