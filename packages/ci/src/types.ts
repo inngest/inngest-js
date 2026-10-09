@@ -228,6 +228,12 @@ export interface JobConfig<TInput = void> {
    * ci.job({ id: "test", from: ({ input }) => build.with(input) }, …);
    * ```
    *
+   * A job or `job.with(input)` is checked when the app boots: it must be
+   * defined on this CI client, and its input must pass the parent's `input`
+   * schema (a schema that validates asynchronously is checked at run time).
+   * A function is checked when the job runs. A job that ends up starting from
+   * itself, through however many parents, fails with the cycle in its message.
+   *
    * To choose a parent from facts only known at run time, define two jobs and
    * choose between them in the pipeline.
    */

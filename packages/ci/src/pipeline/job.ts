@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
@@ -22,6 +23,8 @@ import {
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
 import {
+  checkStaticFrom,
+  cycleMessage,
   identityOf,
   ownJob,
   parentBuildOf,
@@ -73,6 +76,8 @@ export const defineJob = ({
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
     );
   }
+
+  checkStaticFrom(jobs, config);
 
   jobs.set(config.id, { id: config.id, config, handler });
 
@@ -190,12 +195,24 @@ export const invokeBuild = async ({
   const parent = run.build?.parent;
   const rootRunId = rootRunIdOf(run);
 
+  // Builds hold their name's one slot while they wait on what they invoke, so a
+  // build asked for again down its own chain would wait on itself forever.
+  // Refuse it here; the build function checks too, for an invoke that got by.
+  const building = run.build
+    ? [...(run.build.chain ?? []), run.build.jobId]
+    : [];
+
+  if (building.includes(config.id)) {
+    throw new NonRetriableError(cycleMessage([...building, config.id]));
+  }
+
   const data: CacheBuildData = {
     jobId: config.id,
     ...(origin ? { matrix: origin } : {}),
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
     cacheKey: target.name,
+    chain: building,
     ...(exclude ? { exclude } : {}),
     ...(broken ? { broken } : {}),
     ...(unnamed ? { unnamed } : {}),
@@ -382,19 +399,26 @@ export const validateInput = async (
     return result.value;
   }
 
-  const problems = result.issues.map((issue) => {
-    const path = (issue.path ?? [])
-      .map((segment) => {
-        return String(typeof segment === "object" ? segment.key : segment);
-      })
-      .join(".");
-
-    return `  - ${path ? `${path}: ` : ""}${issue.message}`;
-  });
-
   throw new CiUsageError(
-    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${problems.join("\n")}`,
+    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${describeIssues(result.issues)}`,
   );
+};
+
+/** A schema's issues, one per line, each with the path it's at. */
+export const describeIssues = (
+  issues: readonly StandardSchemaV1.Issue[],
+): string => {
+  return issues
+    .map((issue) => {
+      const path = (issue.path ?? [])
+        .map((segment) => {
+          return String(typeof segment === "object" ? segment.key : segment);
+        })
+        .join(".");
+
+      return `  - ${path ? `${path}: ` : ""}${issue.message}`;
+    })
+    .join("\n");
 };
 
 /** Everything a job does is in its span. */
