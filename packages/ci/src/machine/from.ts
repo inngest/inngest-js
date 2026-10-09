@@ -611,7 +611,8 @@ const notesOf = (parent: Parent, forUncached?: string): ParentNotes => {
       : {};
   }
 
-  return { justInTime: config };
+  // A job defined in the run can't be warmed, so there is nothing to suggest.
+  return isInline(config) ? {} : { justInTime: config };
 };
 
 /**
