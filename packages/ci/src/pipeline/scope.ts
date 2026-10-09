@@ -68,12 +68,6 @@ export interface MachineHandle {
    * ambiguous start never adopts one of them.
    */
   claimedProcessIds?: Set<string>;
-  /**
-   * The git tree ID of the working tree this machine has, from its last local
-   * `checkout()` or the snapshot it started from. A later `checkout()` uploads
-   * only what changed since.
-   */
-  treeId?: string;
 }
 
 /**
