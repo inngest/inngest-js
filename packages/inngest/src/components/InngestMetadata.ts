@@ -18,12 +18,16 @@ export type MetadataKind =
   | "inngest.score"
   | "inngest.warnings"
   | "inngest.ai"
+  | "inngest.sandbox"
   | `userland.${string}`;
 
 /**
- * The operation use to combine multiple metadata updates of the same kind.
+ * The operation used to combine multiple metadata updates of the same kind.
+ *
+ * `set` replaces all values for the kind. `merge` is legacy: the server treats
+ * every write as `set`, so values for a kind are always replaced.
  */
-export type MetadataOpcode = "merge";
+export type MetadataOpcode = "merge" | "set";
 
 /**
  * A metadata update containing `values` to be merged according to `op`
@@ -88,11 +92,28 @@ export type MetadataBuilder<Extras = {}> = Simplify<
     >;
 
     /**
+     * Set the metadata of the given `kind` on the configured
+     * run/step/step attempt/span, replacing any values previously set for
+     * that kind.
+     *
+     * By default it will attach metadata to the current run if
+     * executed inside the body of `createFunction` or to the
+     * current step attempt if executed inside `step.run`.
+     */
+    set(values: Record<string, unknown>, kind?: string): Promise<void>;
+
+    /**
      * Attach metadata to the configured run/step/step attempt/span.
      *
      * By default it will attach metadata to the current run if
      * executed inside the body of `createFunction` or to the
      * current step attempt if executed inside `step.run`.
+     *
+     * @deprecated Use `set()` instead. Values for a kind now replace any
+     * previous values rather than merging with them. `update()` only merges
+     * calls made within the same step that target the current run/step/step
+     * attempt. Calls that are sent via the Inngest API (IE targeting another
+     * run/step/attempt/span, or made outside of a step) replace each other.
      */
     update(values: Record<string, unknown>, kind?: string): Promise<void>;
   } & Extras
@@ -152,7 +173,7 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
     });
   }
 
-  async update(
+  async set(
     values: Record<string, unknown>,
     kind: string = "default",
   ): Promise<void> {
@@ -161,7 +182,26 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
       this.config,
       values,
       `userland.${kind}`,
-      "merge",
+      "set",
+    );
+  }
+
+  /**
+   * @deprecated Use `set()` instead. See `MetadataBuilder.update()`.
+   */
+  async update(
+    values: Record<string, unknown>,
+    kind: string = "default",
+  ): Promise<void> {
+    // Merge w/ earlier `update()` calls in the same step so that several
+    // calls in one step still behave like a merge.
+    await performOp(
+      this.client,
+      this.config,
+      values,
+      `userland.${kind}`,
+      "set",
+      { merge: true },
     );
   }
 
@@ -315,6 +355,19 @@ function targetsCurrentStep(
 }
 
 /**
+ * Options for how a metadata write combines w/ earlier writes.
+ * @internal
+ */
+export interface MetadataWriteOptions {
+  /**
+   * Merge `values` into earlier writes of the same kind and scope made in
+   * the same step instead of replacing them. Writes sent via the Inngest API
+   * can't be merged. Defaults to `op === "merge"`.
+   */
+  merge?: boolean;
+}
+
+/**
  * Internal metadata write helper shared by metadata and score helpers.
  * @internal
  */
@@ -324,6 +377,7 @@ export async function performOp(
   values: Record<string, unknown>,
   kind: MetadataKind,
   op: MetadataOpcode,
+  opts?: MetadataWriteOptions,
 ): Promise<void> {
   const ctx = await getAsyncCtx();
   const target = buildTarget(config, ctx);
@@ -334,7 +388,7 @@ export async function performOp(
     kind === "inngest.score" || kind === "inngest.experiment";
   if (isInsideRun && !isInsideStep && !isScoreOrExperimentWrite) {
     client[internalLoggerSymbol].warn(
-      "metadata.update() called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
+      "metadata.set() (or update()) called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
   }
 
@@ -356,7 +410,7 @@ export async function performOp(
     if (
       executingStep?.id &&
       execInstance &&
-      execInstance.addMetadata(executingStep.id, kind, scope, op, values)
+      execInstance.addMetadata(executingStep.id, kind, scope, op, values, opts)
     ) {
       return;
     }
@@ -408,13 +462,13 @@ export const metadataMiddleware = () => {
            *
            * @example
            * ```ts
-           * // Update metadata for the current run
-           * await step.metadata("update-status").update({ status: "processing" });
+           * // Set metadata for the current run
+           * await step.metadata("update-status").set({ status: "processing" });
            *
-           * // Update metadata for a different run
+           * // Set metadata for a different run
            * await step.metadata("notify-parent")
            *   .run(parentRunId)
-           *   .update({ childCompleted: true });
+           *   .set({ childCompleted: true });
            * ```
            */
           metadata: ExperimentalStepTools[typeof metadataSymbol];

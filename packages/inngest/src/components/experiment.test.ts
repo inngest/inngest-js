@@ -823,7 +823,7 @@ describe("group.experiment() metadata", () => {
       HASHED_STEP_ID,
       "inngest.experiment",
       "step",
-      "merge",
+      "set",
       expect.objectContaining({
         name: "checkout-flow",
         variant: "control",
@@ -904,7 +904,7 @@ describe("group.experiment() metadata", () => {
       HASHED_STEP_ID,
       "inngest.warnings",
       "step",
-      "merge",
+      "set",
       expect.objectContaining({
         "sdk.group.experiment.nullishBucket":
           expect.stringContaining("null/undefined"),
@@ -958,10 +958,10 @@ describe("group.experiment() metadata", () => {
       (c: unknown[]) => c[1] === "inngest.experiment",
     );
 
-    // kind = "inngest.experiment", scope = "step", op = "merge"
+    // kind = "inngest.experiment", scope = "step", op = "set"
     expect(call![1]).toBe("inngest.experiment" satisfies MetadataKind);
     expect(call![2]).toBe("step" satisfies MetadataScope);
-    expect(call![3]).toBe("merge" satisfies MetadataOpcode);
+    expect(call![3]).toBe("set" satisfies MetadataOpcode);
   });
 
   test("all ExperimentMetadataValues fields populated for weighted strategy", async () => {

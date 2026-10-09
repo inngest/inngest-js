@@ -421,6 +421,8 @@ class CommandBuilder implements Command {
 
       scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);
 
+      scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);
+
       if (result.exitCode === 0 || this.state.nothrow) {
         return result;
       }
