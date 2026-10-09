@@ -164,6 +164,61 @@ describe("image.job()", () => {
     expect(ran(api, "pnpm deps")).toBe(2);
   });
 
+  test("two apps asking at once for jobs that share a base build that base once", async () => {
+    const api = createFakeSandboxApi();
+    const platform = app(api, "platform");
+    const web = app(api, "web");
+    const mobile = app(api, "mobile");
+
+    const z = platform.job({ id: "z", cache: { key: "z" } }, async () => {
+      await $`pnpm build-z`;
+    });
+
+    platform.job({ id: "y", from: z, cache: { key: "y" } }, async () => {
+      await $`pnpm build-y`;
+    });
+
+    // `web` reaches `z` through `y`; `mobile` asks for `z` itself.
+    const x = web.job({ id: "x", from: image.job("platform/y") }, async () => {
+      await $`pnpm x`;
+    });
+
+    const w = mobile.job(
+      { id: "w", from: image.job("platform/z") },
+      async () => {
+        await $`pnpm w`;
+      },
+    );
+
+    const functions = [
+      ...platform.functions(),
+      ...web.functions(),
+      ...mobile.functions(),
+    ];
+
+    const [a, b] = await Promise.all([
+      runFunction(
+        web.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await x();
+        }),
+        { event: prEvent, runId: "01WEB", functions },
+      ),
+      runFunction(
+        mobile.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await w();
+        }),
+        { event: prEvent, runId: "01MOBILE", functions },
+      ),
+    ]);
+
+    expect(a.type).toBe("function-resolved");
+    expect(b.type).toBe("function-resolved");
+    expect(ran(api, "pnpm build-z")).toBe(1);
+    expect(ran(api, "pnpm build-y")).toBe(1);
+    expect(ran(api, "pnpm x")).toBe(1);
+    expect(ran(api, "pnpm w")).toBe(1);
+  });
+
   test("an input reaches the other app's job", async () => {
     const api = createFakeSandboxApi();
     const platform = app(api, "platform");
