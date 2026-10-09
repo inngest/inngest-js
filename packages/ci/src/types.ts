@@ -307,14 +307,20 @@ export interface Job<TInput = void> {
   readonly id: string;
   readonly kind: "inngest/ci.job";
   /**
-   * This job with an input, for another job to start `from`. Each distinct
-   * input is its own run of the job.
+   * This job with an input, for another job to start `from`.
    *
    * ```ts
    * ci.job({ id: "web", from: build.with("web") }, …);
    * ```
    */
   with(input: TInput): JobRef<TInput>;
+  /**
+   * The job's input type, for type checks only: it's never set. It lets a
+   * bare `from: job` accept only a job that runs without input.
+   *
+   * @internal
+   */
+  readonly "~input"?: (input: TInput) => void;
 }
 
 /**
@@ -333,10 +339,13 @@ export interface JobRef<TInput = unknown> {
 export type AnyJobRef = JobRef<any>;
 
 /**
- * A job as `from` takes it. Without the call signature, a function given to
- * `from` is typed as the function of input it is.
+ * A job as `from` takes it bare: one that runs without input. A job that
+ * needs input is given it with `job.with(input)`. Without the call signature,
+ * a function given to `from` is typed as the function of input it is.
  */
-type JobLike = Pick<AnyJob, "id" | "kind" | "with">;
+type JobLike = Pick<AnyJob, "id" | "kind" | "with"> & {
+  readonly "~input"?: (input: undefined) => void;
+};
 
 /**
  * What a job can start `from`: a job, a job with input, or a function of the
