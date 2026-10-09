@@ -7,8 +7,9 @@
 
 import { describe, expect, test } from "vitest";
 
+import { $ } from "../machine/command.ts";
 import { createCi } from "../pipeline/createCi.ts";
-import type { CiRunScope } from "../pipeline/scope.ts";
+import { type CiRunScope, getRunScope } from "../pipeline/scope.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -19,7 +20,6 @@ import {
   createCheckReporter,
   normaliseAnnotation,
   pipelineSummary,
-  resetTitleThrottle,
   statusesSink,
   truncateSummary,
 } from "./checks.ts";
@@ -205,8 +205,6 @@ describe("commit statuses", () => {
 
 describe("attempt reporting", () => {
   test("a retry updates the job check with the attempt and the error", async () => {
-    resetTitleThrottle();
-
     const updates: Array<{ name: string; title: string }> = [];
 
     const reporter = createCheckReporter({
@@ -302,7 +300,7 @@ describe("pipeline summary", () => {
           {
             path: "setup",
             conclusion: "success",
-            title: "Restored, built 5h ago",
+            title: "Cached 5h ago",
             durationMs: 0,
             cached: true,
           },
@@ -318,7 +316,7 @@ describe("pipeline summary", () => {
       }),
     );
 
-    expect(summary).toContain("| setup | success | Restored, built 5h ago |");
+    expect(summary).toContain("| setup | success | Cached 5h ago |");
     expect(summary).toContain("| test | failure |");
     expect(summary).toContain("1m 05s");
     expect(summary).toContain("[View the trace](http://trace/01TESTRUN)");
@@ -356,6 +354,176 @@ describe("a required check never hangs", () => {
     expect(pipelineCheck).toHaveLength(1);
     expect(pipelineCheck[0]?.conclusion).toBe("failure");
     expect(pipelineCheck[0]?.title).toContain("something went wrong");
+  });
+
+  test("a settled failed job leaves the pipeline passing", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([{ match: "pnpm test", exitCode: 1 }]);
+
+    const failing = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const passing = ci.job("lint", async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        await Promise.allSettled([failing(), passing()]);
+      },
+    );
+
+    const result = await runFunction(pipeline);
+
+    expect(result.type).toBe("function-resolved");
+
+    const completed = (name: string) => {
+      return reporter.history.find((entry) => {
+        return entry.name === name && entry.status === "completed";
+      });
+    };
+
+    expect(completed("pr / lint")?.conclusion).toBe("success");
+    expect(completed("pr / test")?.conclusion).toBe("failure");
+    expect(completed("pr")?.conclusion).toBe("success");
+  });
+
+  test("jobs still running when the run fails are cancelled in one step", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([
+      { match: "pnpm test", exitCode: 1 },
+      { match: "pnpm build", ticks: 50 },
+    ]);
+
+    const failing = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const slow = ci.job("slow", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        await Promise.all([failing(), slow()]);
+      },
+    );
+
+    const result = await runFunction(pipeline);
+
+    expect(result.type).toBe("function-rejected");
+
+    // One step whatever was open, so no request can ask for a per-job step
+    // that a later request, with its siblings further along, wouldn't reach.
+    expect(
+      result.stepIds.filter((id) => {
+        return id === "github › check:jobs:complete";
+      }),
+    ).toHaveLength(1);
+
+    expect(result.stepIds).not.toContain("github › check:slow:complete");
+
+    const slowCheck = reporter.history.find((entry) => {
+      return entry.name === "pr / slow" && entry.status === "completed";
+    });
+
+    expect(slowCheck?.conclusion).toBe("cancelled");
+  });
+
+  test("a job that passed is no longer open while its check completes", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const ci = createCi(client, { github: consoleReporter() });
+    const openWhenCompleting: boolean[] = [];
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        const run = getRunScope();
+
+        if (run) {
+          const tools = run.step;
+
+          run.step = new Proxy(tools, {
+            get: (target, key) => {
+              if (key !== "run") {
+                return Reflect.get(target, key);
+              }
+
+              // biome-ignore lint/suspicious/noExplicitAny: passing through
+              return (step: { id: string }, ...rest: any[]) => {
+                if (step.id === "github › check:test:complete") {
+                  openWhenCompleting.push(run.openChecks.has("test"));
+                }
+
+                // biome-ignore lint/suspicious/noExplicitAny: passing through
+                return (target.run as any)(step, ...rest);
+              };
+            },
+          });
+        }
+
+        await job();
+      },
+    );
+
+    await runFunction(pipeline);
+
+    // A sibling failing while the step is in flight would otherwise cancel a
+    // job that passed.
+    expect(openWhenCompleting.length).toBeGreaterThan(0);
+    expect(openWhenCompleting).not.toContain(true);
+  });
+
+  test("checks held back for a retry are kept in progress in one step", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([{ match: "pnpm build", ticks: 50 }]);
+
+    const failing = ci.job("test", async () => {
+      throw new Error("flaky infrastructure");
+    });
+
+    const slow = ci.job("slow", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }], retries: 1 },
+      async () => {
+        await Promise.all([failing(), slow()]);
+      },
+    );
+
+    const result = await runFunction(pipeline, { retries: 1 });
+
+    // One step per attempt whatever was held back, so no request can ask for
+    // a per-job step that a later request wouldn't reach.
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("github › check:jobs:retry:");
+      }),
+    ).toEqual(["github › check:jobs:retry:0"]);
+
+    expect(result.stepIds).not.toContain("github › check:test:retry:0");
   });
 });
 
@@ -436,14 +604,16 @@ describe("check run IDs across runs", () => {
 
     await reporter.pipelineComplete({
       run: runA,
-      conclusion: "success",
-      title: "ok",
+      result: () => {
+        return { conclusion: "success", title: "ok" };
+      },
     });
 
     await reporter.pipelineComplete({
       run: runB,
-      conclusion: "success",
-      title: "ok",
+      result: () => {
+        return { conclusion: "success", title: "ok" };
+      },
     });
 
     expect(completed).toEqual([
