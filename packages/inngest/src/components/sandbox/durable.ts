@@ -513,7 +513,7 @@ export const createDurableSandboxSnapshotFacade = (
         action: "create",
         input: [
           normalizeSandboxCreateOptions({
-            name: options.name,
+            ...options,
             snapshotId: ref.id,
             runningTimeout: options.runningTimeout ?? waitOptions?.timeout,
           }),
