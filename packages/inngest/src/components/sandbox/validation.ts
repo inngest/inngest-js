@@ -43,6 +43,27 @@ const sandboxNameControlCharacterPattern = /\p{Cc}/u;
 const sandboxNameEdgeWhitespacePattern = /^\p{White_Space}|\p{White_Space}$/u;
 const textEncoder = new TextEncoder();
 
+const imageDigestSchema = z
+  .string()
+  .length(71)
+  .regex(/^sha256:[a-f0-9]{64}$/);
+// Mirrors the image catalog's names, tags, and artifact digests. Explicit
+// selections cannot use the legacy "default" alias or fall back to it.
+export const sandboxImageSchema = z.string().refine((image) => {
+  if (image !== image.trim()) {
+    return false;
+  }
+  if (image.startsWith("sha256:")) {
+    return imageDigestSchema.safeParse(image).success;
+  }
+  if (image.split(/[:@]/)[0] === "default") {
+    return false;
+  }
+  return /^(?:inngest\/)?[a-z0-9][a-z0-9._-]{0,62}(?::[a-z0-9][a-z0-9._-]{0,127}|@sha256:[a-f0-9]{64})?$/.test(
+    image,
+  );
+}, "must be a published image name[:tag], name@sha256:<hex>, or sha256:<hex>");
+
 export const sandboxSecretNameSchema = z.string().superRefine((name, ctx) => {
   if (
     name.length === 0 ||
@@ -212,6 +233,7 @@ export const sandboxResourceSchema = z
     status: sandboxStatusSchema,
     vpcId: canonicalUuidSchema,
     imageRef: z.string().min(1),
+    imageDigest: imageDigestSchema.optional(),
     resources: sandboxResourcesSchema,
     createdAt: timestampSchema,
     startedAt: timestampSchema.optional(),
@@ -454,6 +476,9 @@ export const sandboxRefFromResource = (value: unknown): SandboxRef => {
     status: resource.status,
     vpcId: resource.vpcId,
     imageRef: resource.imageRef,
+    ...(resource.imageDigest !== undefined && {
+      imageDigest: resource.imageDigest,
+    }),
     resources: resource.resources,
     createdAt: resource.createdAt,
     ...(resource.startedAt != null && { startedAt: resource.startedAt }),
@@ -511,6 +536,7 @@ export const normalizeSandboxCreateOptions = (
           name: sandboxNameSchema,
           vcpu: z.number().int().positive().max(0xffffffff),
           memoryMb: z.number().int().positive().max(0xffffffff),
+          image: sandboxImageSchema.optional(),
           environment: z.record(z.string()).optional(),
           secrets: z.array(sandboxSecretNameSchema).optional(),
           runningTimeout: z.unknown().optional(),

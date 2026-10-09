@@ -229,6 +229,98 @@ const resultForOperation = (
 };
 
 describe("step.sandbox", () => {
+  test.each([
+    "inngest/base",
+    "inngest/base:latest",
+    "my-image:v1",
+    `my-image@sha256:${"a".repeat(64)}`,
+    `sha256:${"a".repeat(64)}`,
+  ])(
+    "preserves image selection and pinned digest in durable steps: %s",
+    async (image) => {
+      const imageDigest = `sha256:${"b".repeat(64)}`;
+      const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) => {
+        if (operation.action === "create") {
+          return {
+            protocolVersion: 1,
+            action: "create",
+            sandbox: { ...sandboxRef, imageRef: image, imageDigest },
+          };
+        }
+        return resultForOperation(operation);
+      });
+      const created = await createSandboxTools(() => rawTool).create("create", {
+        ...createOptions,
+        image,
+      });
+      expect(created.imageDigest).toBe(imageDigest);
+      expect(parseSandboxOperation(rawTool.mock.calls[0]?.[1])).toMatchObject({
+        input: [{ image }],
+      });
+      await created.commands.run("exec", "echo ok");
+      expect(parseSandboxOperation(rawTool.mock.calls[1]?.[1])).toMatchObject({
+        target: { sandbox: { imageRef: image, imageDigest } },
+      });
+    },
+  );
+
+  test.each([
+    "",
+    "default",
+    "default:latest",
+    "docker.io/library/ubuntu:latest",
+    "My-image",
+    " image",
+    "image:latest\n",
+    "image:",
+    "sha256:abc",
+    `sha256:${"A".repeat(64)}`,
+    `image@sha256:${"a".repeat(63)}`,
+    "a".repeat(64),
+    `image:${"a".repeat(129)}`,
+  ])("rejects invalid image before dispatch: %j", async (image) => {
+    const rawTool = vi.fn<SandboxRawTool>();
+    const fetch = vi.fn();
+    const inngest = new Inngest({ id: "image-validation", isDev: true, fetch });
+    const options = { ...createOptions, image };
+    await expect(
+      createSandboxTools(() => rawTool).create("create", options),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    await expect(inngest.sandboxes.create(options)).rejects.toBeInstanceOf(
+      SandboxValidationError,
+    );
+    expect(rawTool).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("rejects image selection for snapshot clones before dispatch", async () => {
+    const rawTool = vi.fn<SandboxRawTool>();
+    const fetch = vi.fn();
+    const inngest = new Inngest({
+      id: "clone-image-validation",
+      isDev: true,
+      fetch,
+    });
+    const options = { name: "clone", snapshotId, image: "inngest/base" };
+    await expect(
+      // @ts-expect-error snapshot clones must use the snapshot's pinned image
+      createSandboxTools(() => rawTool).create("create", options),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    // @ts-expect-error the direct client has the same mutual exclusion
+    await expect(inngest.sandboxes.create(options)).rejects.toBeInstanceOf(
+      SandboxValidationError,
+    );
+    expect(rawTool).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(() =>
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "create",
+        input: [options],
+      }),
+    ).toThrow();
+  });
+
   test("uses UUID identity and exposes the complete durable lifecycle", async () => {
     const operations: SandboxOperationV1[] = [];
     const rawTool: SandboxRawTool = vi.fn(async (_id, operation) => {
@@ -1023,56 +1115,74 @@ describe("step.sandbox", () => {
     });
   });
 
-  test("durable Create waits by default and replays without redispatching", async () => {
-    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-    const startingResource = {
-      ...sandboxResource,
-      status: "STARTING",
-      startedAt: undefined,
-    };
-    const methods: string[] = [];
-    const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
-      const method = init?.method ?? "GET";
-      methods.push(method);
-      return method === "POST"
-        ? Response.json({ data: startingResource }, { status: 202 })
-        : Response.json({ data: sandboxResource });
-    });
-    const client = new Inngest({
-      id: testClientId,
-      signingKey: "signkey-test",
-      baseUrl: "https://api.example.test",
-      fetch: fetchMock,
-      middleware: [sandboxMiddleware()],
-    });
-    const fn = client.createFunction(
-      { id: "sandbox-create", triggers: [{ event: "sandbox/create" }] },
-      async ({ step }) =>
-        (await step.sandbox.create("create", createOptions)).id,
-    );
-    const run = createFnRunner(fn);
-
-    const first = await run();
-    expect(first.result).toMatchObject({
-      type: "step-ran",
-      step: {
-        op: StepOpCode.StepRun,
-        data: {
-          protocolVersion: 1,
-          action: "create",
-          sandbox: sandboxRef,
+  test.each([undefined, "inngest/base:latest"])(
+    "durable Create waits and replays without redispatching (%s)",
+    async (image) => {
+      const resolved = {
+        ...sandboxRef,
+        ...(image !== undefined && {
+          imageRef: image,
+          imageDigest: `sha256:${"a".repeat(64)}`,
+        }),
+      };
+      const { kind: _kind, version: _version, ...sandboxResource } = resolved;
+      const startingResource = {
+        ...sandboxResource,
+        status: "STARTING",
+        startedAt: undefined,
+      };
+      const methods: string[] = [];
+      const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+        const method = init?.method ?? "GET";
+        methods.push(method);
+        return method === "POST"
+          ? Response.json({ data: startingResource }, { status: 202 })
+          : Response.json({ data: sandboxResource });
+      });
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+        middleware: [sandboxMiddleware()],
+      });
+      const fn = client.createFunction(
+        { id: "sandbox-create", triggers: [{ event: "sandbox/create" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.create("create", {
+            ...createOptions,
+            ...(image !== undefined && { image }),
+          });
+          return { id: sandbox.id, imageDigest: sandbox.imageDigest };
         },
-      },
-    });
-    expect(methods).toEqual(["POST", "GET"]);
+      );
+      const run = createFnRunner(fn);
 
-    const replay = await run();
-    expect(replay.result).toMatchObject({
-      type: "function-resolved",
-      data: sandboxId,
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
+      const first = await run();
+      expect(first.result).toMatchObject({
+        type: "step-ran",
+        step: {
+          op: StepOpCode.StepRun,
+          data: {
+            protocolVersion: 1,
+            action: "create",
+            sandbox: resolved,
+          },
+        },
+      });
+      expect(methods).toEqual(["POST", "GET"]);
+
+      const replay = await run();
+      expect(replay.result).toMatchObject({
+        type: "function-resolved",
+        data: {
+          id: sandboxId,
+          ...(image !== undefined && { imageDigest: resolved.imageDigest }),
+        },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
 
   test("executes durable snapshot creation once before polling readiness", async () => {
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
@@ -1706,6 +1816,43 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  test.each([
+    undefined,
+    "inngest/base:latest",
+    "my-image:v1",
+    `sha256:${"a".repeat(64)}`,
+  ])(
+    "sends image selection and exposes its pinned digest: %s",
+    async (image) => {
+      const imageDigest = image ? `sha256:${"b".repeat(64)}` : undefined;
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            data: {
+              ...sandboxRef,
+              imageRef: image ?? "default",
+              ...(imageDigest && { imageDigest }),
+            },
+            metadata: { fetchedAt: now },
+          },
+          { status: 201 },
+        ),
+      );
+      const inngest = new Inngest({ id: "select-image", isDev: true, fetch });
+      const created = await inngest.sandboxes.create({
+        ...createOptions,
+        ...(image !== undefined && { image }),
+      });
+      expect(created.imageRef).toBe(image ?? "default");
+      expect(created.imageDigest).toBe(imageDigest);
+      const body = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string);
+      expect(body).toEqual({
+        ...createOptions,
+        ...(image !== undefined && { image }),
+      });
+    },
+  );
+
   const listResponse = () =>
     Response.json({
       data: [],
