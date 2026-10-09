@@ -177,10 +177,13 @@ export interface CacheConfig {
   key?: CacheKey;
 
   /**
-   * Triggers that rebuild the cache ahead of time, like a nightly cron, so
-   * pull requests don't pay for it.
+   * Triggers that build the job's cache ahead of time, so no run waits on a
+   * cold build.
+   *
+   * @example
+   * warm: [github.push({ branches: ["main"] }), { cron: "0 3 * * *" }]
    */
-  refresh?: CiTrigger[];
+  warm?: CiTrigger[];
 
   /**
    * Defaults to `"branch"`: PRs read from the default branch and write to

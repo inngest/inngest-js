@@ -28,7 +28,7 @@ describe("functions that run a pipeline", () => {
     });
 
     const base = ci.job(
-      { id: "base", cache: { key: "v1", refresh: [{ cron: "0 3 * * *" }] } },
+      { id: "base", cache: { key: "v1", warm: [{ cron: "0 3 * * *" }] } },
       async () => {
         await $`pnpm install`;
       },

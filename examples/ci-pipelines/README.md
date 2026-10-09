@@ -82,7 +82,7 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 
 | File | Look at |
 | --- | --- |
-| `ci/jobs/base.ts` | A cached job with a nightly refresh |
+| `ci/jobs/base.ts` | A cached job with a nightly warm |
 | `ci/jobs/lint.ts`, `ci/jobs/test.ts` | `from: base` starts on a copy of the `base` machine |
 | `ci/jobs/build.ts` | A job that takes input, checked by a schema |
 | `ci/jobs/compat.ts` | `ci.matrix`, one job per Node version |

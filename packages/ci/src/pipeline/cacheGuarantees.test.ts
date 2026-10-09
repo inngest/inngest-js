@@ -358,6 +358,55 @@ describe("a warm cache", () => {
   });
 });
 
+const cronEvent = { name: "inngest/scheduled.timer", data: {} };
+
+describe("the warm function", () => {
+  test("builds a cold cache, and reuses a cache that hits without running the job", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    ci.job(
+      {
+        id: "install",
+        cache: { key: "v1", warm: [{ cron: "0 3 * * *" }] },
+      },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const warm = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/cache-warm/install";
+    });
+
+    expect(warm).toBeDefined();
+
+    if (!warm) {
+      return;
+    }
+
+    const cold = await runFunction(warm, {
+      event: cronEvent,
+      runId: "01WARM1",
+    });
+
+    expect(cold.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(1);
+
+    const machines = api.sandboxes.size;
+
+    const hit = await runFunction(warm, {
+      event: cronEvent,
+      runId: "01WARM2",
+    });
+
+    expect(hit.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(api.sandboxes.size).toBe(machines);
+    expect(named(api)).toHaveLength(1);
+  });
+});
+
 describe("a snapshot that is about to expire", () => {
   test("is rebuilt rather than reused, and its replacement takes the name", async () => {
     const api = createFakeSandboxApi();

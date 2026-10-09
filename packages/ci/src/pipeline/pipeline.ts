@@ -1,7 +1,7 @@
 /**
  * Defining and running a pipeline: the `ci.pipeline()` factory, the run itself
  * (scope, checks, cleanup), and the functions generated beside each pipeline
- * and for cache refreshes.
+ * and for cache warming.
  *
  * @module
  */
@@ -62,7 +62,7 @@ import {
 
 /**
  * Options for every function that runs a pipeline: pipelines, cache builds and
- * refreshes.
+ * warming.
  *
  * With parallelism optimized, the executor waits for every step in a parallel
  * batch before it calls the function again, so a slow step in one job holds
@@ -946,14 +946,14 @@ const generatedFunctions = ({
 };
 
 /**
- * One function per cached job with `refresh` triggers, so the cache is built
+ * One function per cached job with `warm` triggers, so the cache is built
  * ahead of time rather than by whichever pull request gets there first.
  *
  * These are built when `ci.functions()` is called, because a job may be
  * registered after the pipelines that use it, and because a job used by
- * several pipelines still only needs one refresh function.
+ * several pipelines still only needs one warm function.
  */
-export const cacheRefreshFunctions = ({
+export const cacheWarmFunctions = ({
   client,
   internals,
   jobs,
@@ -967,19 +967,19 @@ export const cacheRefreshFunctions = ({
   const functions: InngestFunction.Any[] = [];
 
   for (const job of jobs.values()) {
-    const refresh = job.config.cache?.refresh;
+    const warm = job.config.cache?.warm;
 
-    if (!refresh || refresh.length === 0) {
+    if (!warm || warm.length === 0) {
       continue;
     }
 
-    const id = `ci/cache-refresh/${job.id}`;
+    const id = `ci/cache-warm/${job.id}`;
 
     functions.push(
       client.createFunction(
         {
           id,
-          triggers: refresh,
+          triggers: warm,
           singleton: { key: `"${job.id}"`, mode: "skip" },
           ...pipelineFunctionOptions,
           middleware: [sandboxMiddleware(), metadataMiddleware()],
@@ -990,7 +990,7 @@ export const cacheRefreshFunctions = ({
             internals,
             config: {
               id,
-              on: refresh,
+              on: warm,
               check: false,
               ...(repo ? { repo } : {}),
             },
