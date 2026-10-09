@@ -36,6 +36,7 @@ import type {
 } from "../types.ts";
 import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
 import { noopHooks } from "./hooks.ts";
+import { invalidateFunction } from "./invalidate.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
@@ -319,6 +320,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
+        invalidateFunction({ client, jobs }),
         ...cacheRefreshFunctions({
           client,
           internals,

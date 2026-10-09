@@ -10,6 +10,7 @@
  * @module
  */
 
+import type { Inngest } from "inngest";
 import { ciRun, shorten } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
@@ -357,10 +358,17 @@ interface SnapshotResource {
   expiresAt?: string;
 }
 
+/** The direct snapshots client of an Inngest client. */
+// biome-ignore lint/suspicious/noExplicitAny: SandboxClient["snapshots"], kept loose
+export const clientSnapshots = (client: Inngest.Any): any => {
+  // biome-ignore lint/suspicious/noExplicitAny: the SDK's sandboxes client
+  return (client as any).sandboxes.snapshots;
+};
+
 /** The direct snapshots client, for CI's own steps. */
 // biome-ignore lint/suspicious/noExplicitAny: SandboxClient["snapshots"], kept loose
 const snapshotsClient = (run: CiRunScope): any => {
-  return run.ci.client.sandboxes.snapshots;
+  return clientSnapshots(run.ci.client);
 };
 
 /**
