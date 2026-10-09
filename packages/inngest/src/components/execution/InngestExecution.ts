@@ -16,6 +16,7 @@ import type {
   MetadataKind,
   MetadataOpcode,
   MetadataScope,
+  MetadataWriteOptions,
 } from "../InngestMetadata.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 
@@ -236,5 +237,6 @@ export interface IInngestExecution {
     scope: MetadataScope,
     op: MetadataOpcode,
     values: Record<string, unknown>,
+    opts?: MetadataWriteOptions,
   ): boolean;
 }
