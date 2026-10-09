@@ -14,6 +14,8 @@ import {
   normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
   parseWithSchema,
+  sandboxImageOptionsSchema,
+  sandboxImageReferenceSchema,
   sandboxNameSchema,
   sandboxProcessRefSchema,
   sandboxRefSchema,
@@ -52,6 +54,8 @@ const createInputSchema = z
         name: sandboxNameSchema,
         vcpu: z.number().int().positive().max(0xffffffff),
         memoryMb: z.number().int().positive().max(0xffffffff),
+        image: sandboxImageReferenceSchema.optional(),
+        imageOptions: sandboxImageOptionsSchema.optional(),
         environment: z.record(z.string()).optional(),
         secrets: z.array(sandboxSecretNameSchema).optional(),
         runningTimeoutMs: z

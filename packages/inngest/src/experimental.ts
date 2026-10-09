@@ -12,7 +12,6 @@ export { extendedTracesMiddleware } from "./components/execution/otel/middleware
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
-// Sandboxes
 export type {
   DurableSandbox,
   DurableSandboxProcess,
@@ -35,6 +34,7 @@ export type {
   SandboxFileDownloadOptions,
   SandboxFileUploadOptions,
   SandboxFileUploadResult,
+  SandboxImageOptions,
   SandboxLifecycleOptions,
   SandboxListOptions,
   SandboxListResult,
@@ -76,4 +76,21 @@ export {
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
+export type {
+  Image,
+  ImageBuild,
+  ImageBuildOptions,
+  ImageBuildRecipe,
+  ImageClient,
+  ImageConfig,
+  ImageDefinition,
+  ImageListOptions,
+  ImagePage,
+  ImageTag,
+  ImageUploadGrant,
+  ImageUploadRequest,
+  ImageUsage,
+} from "./components/sandbox/images.ts";
+// Sandboxes
+export { defineImage, ImageError } from "./components/sandbox/images.ts";
 export type { ExperimentRef } from "./types.ts";
