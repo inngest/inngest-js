@@ -32,6 +32,19 @@ const isJobRef = (value: unknown): value is JobRef => {
 };
 
 /**
+ * The registry of the CI client each job object was defined on. A job is
+ * compared by this rather than by ID, so a job of the same ID from another
+ * client is caught. Curried factories make a new job object per call, so it's
+ * the registry that has to match, not the registered entry.
+ */
+const jobOwners = new WeakMap<object, unknown>();
+
+/** Record which client's registry a job was defined on. */
+export const ownJob = (job: object, jobs: unknown): void => {
+  jobOwners.set(job, jobs);
+};
+
+/**
  * What a job's `from` names for this call: the parent job and the input it's
  * built with, or nothing for a job without one. A function is called with the
  * job's input. Pure, so a handler replaying from the top gets the same answer
@@ -71,7 +84,7 @@ export const parentOf = (
 
   const registered = run.ci.jobs.get(ref.job.id);
 
-  if (!registered) {
+  if (!registered || jobOwners.get(ref.job) !== run.ci.jobs) {
     throw new CiUsageError(
       `Job "${config.id}" starts from \`${ref.job.id}\`, which isn't defined on this CI client.`,
     );

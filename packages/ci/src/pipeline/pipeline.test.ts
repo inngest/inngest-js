@@ -908,6 +908,33 @@ describe("from", () => {
     );
   });
 
+  test("a `from` naming another client's job throws, even when this client has a job of that ID", async () => {
+    const { api, ci } = setup();
+    const other = setup().ci;
+
+    ci.job("setup", async () => {
+      await $`pnpm install`;
+    });
+
+    const foreign = other.job("setup", async () => {
+      await $`pnpm foreign`;
+    });
+
+    const child = ci.job({ id: "child", from: foreign }, async () => {});
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return child();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "isn't defined on this CI client",
+    );
+
+    expect(api.commands).toEqual([]);
+  });
+
   test("a `from` function picks the parent from the job's input", async () => {
     const { api, ci } = setup();
 
@@ -1191,6 +1218,56 @@ describe("matrix", () => {
         return id.startsWith("compat (node:20) › machine");
       }),
     ).toBe(true);
+  });
+
+  test("a `from` function that throws fails only its combination's job", async () => {
+    const { api, ci, reporter } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const compat = ci.matrix(
+      {
+        id: "compat",
+        axes: { node: ["20", "22"] },
+        from: ({ input }) => {
+          if (input.node === "20") {
+            throw new Error("no base for node 20");
+          }
+
+          return base;
+        },
+      },
+      async ({ node }) => {
+        await $`pnpm test --node ${node}`;
+      },
+    );
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await compat();
+      },
+    );
+
+    await runFunction(pipeline, { event: prEvent });
+
+    const failed = reporter.history
+      .filter((entry) => {
+        return entry.status === "completed" && entry.conclusion === "failure";
+      })
+      .map((entry) => {
+        return entry.name;
+      });
+
+    expect(failed).toContain("pr / compat (node:20)");
+
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toContain("pnpm test --node 22");
   });
 
   test("a matrix can run one combination", async () => {
