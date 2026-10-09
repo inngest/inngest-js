@@ -23,7 +23,6 @@ const methodForAction: Partial<Record<SandboxOperationV1["action"], string>> = {
   "process.list": "processes.list",
   "process.get": "processes.get",
   "process.output": "process.getOutput",
-  "snapshot.create": "snapshot",
   "snapshot.list": "snapshots.list",
   "snapshot.get": "snapshots.get",
 };
@@ -157,6 +156,7 @@ const resultMetadata = (
       return {
         process_state: result.process?.state,
         exit_code: result.process?.exitCode,
+        termination_signal: result.process?.terminationSignal,
       };
     case "snapshot.create":
     case "snapshot.waitUntilReady":

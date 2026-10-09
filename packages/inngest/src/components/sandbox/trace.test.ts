@@ -2,7 +2,6 @@ import { runSteps, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { version } from "../../version.ts";
 import { Inngest } from "../Inngest.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
 import { sandboxMiddleware } from "./middleware.ts";
 import { parseSandboxOperation } from "./protocol.ts";
 import { sandboxTraceMetadata } from "./trace.ts";
@@ -144,6 +143,40 @@ describe("sandboxTraceMetadata", () => {
     expect(metadata.process_id).toBeUndefined();
   });
 
+  test("records the signal that killed a process it looks up", () => {
+    const processId = "33333333-3333-4333-8333-333333333333";
+
+    const metadata = sandboxTraceMetadata(
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "process.get",
+        target: { sandbox: sandboxRef, processId },
+        input: [],
+      }),
+      {
+        result: {
+          protocolVersion: 1,
+          action: "process.get",
+          process: {
+            kind: "inngest/sandbox.process",
+            version: 1,
+            sandboxId,
+            id: processId,
+            command: ["node", "server.js"],
+            state: "KILLED",
+            terminationSignal: 9,
+          },
+        },
+      },
+    );
+
+    expect(metadata).toMatchObject({
+      method: "processes.get",
+      process_state: "KILLED",
+      termination_signal: 9,
+    });
+  });
+
   test("identifies the machine from the operation, even when it fails", () => {
     // The machine may have been created outside this run, so its identity
     // must come from the reference the operation targets, not a result.
@@ -241,7 +274,7 @@ describe("step.sandbox trace metadata", () => {
     expect(sandboxEntries(snapshot)).toEqual([
       expect.objectContaining({
         action: "snapshot.create",
-        method: "snapshot",
+        method: "snapshot.create",
         sandbox_id: sandboxId,
         snapshot_id: snapshotId,
         snapshot_status: "CREATING",
