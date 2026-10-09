@@ -11,6 +11,10 @@ on:
   pull_request:
     types: [labeled, opened, reopened, synchronize]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     if: github.event_name == 'push'
@@ -25,16 +29,38 @@ jobs:
           # Used to fetch all history so that changesets doesn't attempt to
           # publish duplicate tags.
           fetch-depth: 0
-      # Replaces `concurrency` - never cancels any jobs
-      - uses: softprops/turnstyle@v1
-        with:
-          poll-interval-seconds: 30
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-and-build
       - run: node scripts/generateReleaseConfig.js
         env:
           BRANCH: ${{ github.ref_name }}
+      - name: Remove stale tags that conflict with pending releases
+        run: |
+          # Configure git to authenticate with the token for push operations
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Identify tags that changesets would create but already exist on the
+          # remote. This handles the race where a prior run pushed a tag but
+          # failed to push the version-bump commit to main.
+          for pkg_json in packages/*/package.json; do
+            pkg_name=$(jq -r '.name' "$pkg_json")
+            pkg_version=$(jq -r '.version' "$pkg_json")
+            tag="${pkg_name}@${pkg_version}"
+
+            # Check if this tag already exists on the remote
+            if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+              # Only delete if the tag points to a commit NOT on this branch
+              # (i.e., it's an orphaned tag from a failed push)
+              if ! git tag -l "$tag" | grep -q .; then
+                echo "Deleting stale remote tag: $tag"
+                git push origin ":refs/tags/${tag}" || true
+              elif ! git merge-base --is-ancestor "$(git rev-list -n 1 "$tag")" HEAD 2>/dev/null; then
+                echo "Deleting stale remote tag: $tag (not ancestor of HEAD)"
+                git push origin ":refs/tags/${tag}" || true
+              fi
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
       - uses: changesets/action@v1
         id: changesets
         with:
