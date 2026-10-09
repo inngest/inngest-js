@@ -157,6 +157,8 @@ export const invokeBuild = async ({
   input,
   target,
   exclude,
+  broken,
+  unnamed,
   check,
   base,
   lookup = true,
@@ -169,8 +171,12 @@ export const invokeBuild = async ({
   config: JobConfig;
   input: unknown;
   target: CacheTarget;
-  /** A bad snapshot the build must not reuse. */
+  /** A snapshot that wouldn't start, which the build must not reuse. */
   exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
   check?: CacheBuildData["parent"]["check"];
   /** What the job starts from, which the build must start from too. */
   base?: CacheBuildResult;
@@ -188,6 +194,8 @@ export const invokeBuild = async ({
     ownKey: target.ownKey,
     cacheKey: target.name,
     ...(exclude ? { exclude } : {}),
+    ...(broken ? { broken } : {}),
+    ...(unnamed ? { unnamed } : {}),
     ...(base ? { base: baseForBuild(base) } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
     ...(run.machine ? { machine: run.machine } : {}),
@@ -692,6 +700,8 @@ const snapshotBuilt = async (
   const taken = await snapshotMachine(scope, {
     target,
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
+    ...(run.build?.broken ? { broken: true } : {}),
+    ...(run.build?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
 

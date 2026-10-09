@@ -2132,6 +2132,312 @@ describe("cache", () => {
     ).toEqual([]);
   });
 
+  describe("a snapshot that fails to start", () => {
+    /**
+     * `base` is cached and the children start from it. Runs on a shared fake
+     * API, so a second call restores what the first built.
+     */
+    const runPipeline = async (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      options: {
+        event?: { name: string; data: unknown };
+        on?: { event: string }[];
+        children?: string[];
+      } = {},
+    ) => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const children = (options.children ?? ["lint"]).map((id) => {
+        return ci.job({ id, from: base }, async () => {
+          await $`pnpm ${id}`;
+        });
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "ci", on: options.on ?? prTrigger }, async () => {
+          await Promise.all(
+            children.map((child) => {
+              return child();
+            }),
+          );
+
+          return getRunScope()?.warnings;
+        }),
+        { event: options.event ?? prEvent },
+      );
+
+      return result;
+    };
+
+    const deletesOf = (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      snapshotId: string | undefined,
+    ) => {
+      return api.requests.filter((request) => {
+        return request === `DELETE /v2/snapshots/${snapshotId}`;
+      }).length;
+    };
+
+    const leftoverMachines = (api: ReturnType<typeof createFakeSandboxApi>) => {
+      return [...api.sandboxes.values()].filter((machine) => {
+        return machine.stuck && machine.status !== "TERMINATED";
+      });
+    };
+
+    /** A cached `base` from a first run, ready to be restored by the next. */
+    const built = async () => {
+      const api = createFakeSandboxApi();
+
+      expect((await runPipeline(api)).type).toBe("function-resolved");
+
+      const [snapshot] = [...api.snapshots.values()];
+
+      return { api, snapshot };
+    };
+
+    test("a capacity error that clears is retried as any step is, with nothing deleted or rebuilt", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("capacity");
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+      expect(second.data).toEqual([]);
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(1);
+    });
+
+    test("a capacity error that doesn't clear fails the job, and is not a start failure", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("capacity", { count: 50 });
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-rejected");
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(1);
+
+      // No second try at the snapshot: capacity is not the snapshot's fault.
+      expect(second.stepIds.filter((id) => id.includes("restart"))).toEqual([]);
+    });
+
+    test.each([
+      ["gone", "gone"],
+      ["deleting", "DELETING"],
+    ] as const)(
+      "a snapshot that is %s is rebuilt, not deleted",
+      async (_label, then) => {
+        const { api, snapshot } = await built();
+
+        api.failNextSnapshotStarts("timeout", { then });
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining(
+            "fell back: snapshot of `base` wouldn't start",
+          ),
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(0);
+        expect(ran(api, "pnpm install")).toBe(2);
+        expect(ran(api, "pnpm lint")).toBe(2);
+
+        // Rebuilt under the name, once nothing holds it. A snapshot that is
+        // being deleted is on its way out and doesn't count.
+        expect(
+          [...api.snapshots.values()]
+            .filter((candidate) => {
+              return candidate.status === "READY";
+            })
+            .map((candidate) => {
+              return candidate.name;
+            }),
+        ).toEqual([expect.stringMatching(/^ci\/pr:7\/base\//)]);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test("a snapshot still being created is rebuilt unnamed, leaving it alone", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("timeout", { then: "CREATING" });
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+
+      // Unnamed on purpose, so it didn't try for the name and give up on it.
+      expect(second.data).toEqual([
+        expect.stringContaining("fell back: snapshot of `base` wouldn't start"),
+      ]);
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(ran(api, "pnpm install")).toBe(2);
+
+      // The other build keeps the name. This run's copy had none, and was
+      // deleted with the rest of the run's snapshots.
+      expect([...api.snapshots.values()].map((s) => s.id)).toEqual([
+        snapshot?.id,
+      ]);
+
+      expect(api.snapshotStarts.at(-1)).not.toBe(snapshot?.id);
+    });
+
+    test.each(["timeout", "failed"] as const)(
+      "one %s is retried once, and the snapshot is kept",
+      async (mode) => {
+        const { api, snapshot } = await built();
+
+        api.failNextSnapshotStarts(mode);
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining("snapshot of `base` needed a retry to start"),
+        ]);
+
+        // Restored on the second try; nothing deleted or rebuilt.
+        expect(api.snapshotStarts.slice(-2)).toEqual([
+          snapshot?.id,
+          snapshot?.id,
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(0);
+        expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+        expect(ran(api, "pnpm install")).toBe(1);
+        expect(ran(api, "pnpm lint")).toBe(2);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test.each([
+      ["timeouts", "timeoutSnapshotStarts"],
+      ["failures", "failSnapshotStarts"],
+    ] as const)(
+      "when the retry fails too, the snapshot is deleted and rebuilt (%s)",
+      async (_label, method) => {
+        const { api, snapshot } = await built();
+
+        api[method]();
+
+        const second = await runPipeline(api);
+
+        expect(second.type).toBe("function-resolved");
+        expect(second.data).toEqual([
+          expect.stringContaining(
+            "fell back: snapshot of `base` wouldn't start",
+          ),
+        ]);
+        expect(deletesOf(api, snapshot?.id)).toBe(1);
+        expect(api.snapshots.has(snapshot?.id ?? "")).toBe(false);
+        expect(ran(api, "pnpm install")).toBe(2);
+        expect(ran(api, "pnpm lint")).toBe(2);
+
+        // The rebuild is cached under the freed name for the next run.
+        expect(namedSnapshots(api)).toEqual([
+          expect.stringMatching(/^ci\/pr:7\/base\//),
+        ]);
+        expect(leftoverMachines(api)).toEqual([]);
+      },
+    );
+
+    test("when the snapshot can't be deleted, the rebuild is unnamed and the broken one is never reused", async () => {
+      const { api, snapshot } = await built();
+
+      api.timeoutSnapshotStarts();
+      api.refuseSnapshotDeletes();
+      const startsBefore = api.snapshotStarts.length;
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+      expect(second.data).toEqual([
+        expect.stringContaining("fell back: snapshot of `base` wouldn't start"),
+        expect.stringContaining("couldn't be deleted"),
+      ]);
+
+      // The broken snapshot is still there and still holds the name, so the
+      // rebuild has none, and the run deleted its copy at its end.
+      expect(deletesOf(api, snapshot?.id)).toBe(1);
+      expect([...api.snapshots.values()].map((s) => s.id)).toEqual([
+        snapshot?.id,
+      ]);
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
+
+      // Two tries at the broken snapshot, then only the rebuilt one.
+      expect(
+        api.snapshotStarts
+          .slice(startsBefore)
+          .filter((id) => id === snapshot?.id),
+      ).toHaveLength(2);
+    });
+
+    test("a pull request run whose restore of main's snapshot times out once leaves it alone", async () => {
+      const api = createFakeSandboxApi();
+
+      const first = await runPipeline(api, {
+        event: pushEvent,
+        on: pushTrigger,
+      });
+
+      expect(first.type).toBe("function-resolved");
+
+      const [main] = [...api.snapshots.values()];
+
+      expect(main?.name).toMatch(/^ci\/main\/base\//);
+
+      api.failNextSnapshotStarts("timeout");
+
+      const pr = await runPipeline(api);
+
+      expect(pr.type).toBe("function-resolved");
+      expect(deletesOf(api, main?.id)).toBe(0);
+      expect(namedSnapshots(api)).toEqual([main?.name]);
+      expect(ran(api, "pnpm install")).toBe(1);
+      expect(ran(api, "pnpm lint")).toBe(2);
+    });
+
+    test("several jobs on the same broken snapshot delete it once", async () => {
+      const api = createFakeSandboxApi();
+
+      expect(
+        (await runPipeline(api, { children: ["lint", "test", "build"] })).type,
+      ).toBe("function-resolved");
+
+      const [snapshot] = [...api.snapshots.values()];
+
+      api.timeoutSnapshotStarts();
+
+      const second = await runPipeline(api, {
+        children: ["lint", "test", "build"],
+      });
+
+      expect(second.type).toBe("function-resolved");
+      expect(deletesOf(api, snapshot?.id)).toBe(1);
+
+      // One delete for all three, not one each that happens to find it gone.
+      expect(
+        second.stepIds.filter((id) => id.includes("cache:delete")),
+      ).toHaveLength(1);
+
+      // One rebuild for all three.
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
+      expect(ran(api, "pnpm test")).toBe(2);
+      expect(ran(api, "pnpm build")).toBe(2);
+      expect(leftoverMachines(api)).toEqual([]);
+    });
+  });
+
   test("a cached job's build uses the pipeline's machine", async () => {
     const { api, ci } = setup();
 

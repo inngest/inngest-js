@@ -20,7 +20,13 @@ import type {
   JobConfig,
   RepoContext,
 } from "../types.ts";
-import { boundedName, formatRelative, hash, stableStringify } from "../util.ts";
+import {
+  boundedName,
+  formatRelative,
+  hash,
+  isSnapshotNotFound,
+  stableStringify,
+} from "../util.ts";
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -611,6 +617,12 @@ export const resolveTakenName = async (
   stepId: string,
   name: string,
   exclude?: string,
+  /**
+   * Whether `exclude` was decided to be broken, which is the only case where
+   * it is deleted. A snapshot that merely failed to start once may be a
+   * shared one, such as the base branch's, that other runs still use.
+   */
+  broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
   return (await run.step.run(
     { id: stepId, name: "cache:name-taken" },
@@ -630,7 +642,7 @@ export const resolveTakenName = async (
 
         for (const holder of page.items) {
           const unusable =
-            holder.id === exclude || isExpiring(holder.expiresAt);
+            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;
@@ -652,14 +664,47 @@ export const resolveTakenName = async (
 };
 
 /**
- * Delete a snapshot that is no use, so no run finds it again. Best effort: a
- * snapshot that can't be deleted is left to expire.
+ * What a snapshot is now, as a memoized step: `gone` if it doesn't exist or
+ * is being deleted, `creating` while it is being taken, and `ready` otherwise.
+ * `ready` is also what an unreadable answer gives, since that is the case
+ * where the snapshot has to be assumed usable.
+ */
+export const snapshotState = async (
+  run: CiRunScope,
+  stepId: string,
+  snapshotId: string,
+): Promise<"gone" | "creating" | "ready"> => {
+  return (await run.step.run(
+    { id: stepId, name: "cache:snapshot-state" },
+    async () => {
+      try {
+        const snapshot = (await snapshotsClient(run).get(snapshotId)) as
+          | SnapshotResource
+          | null
+          | undefined;
+
+        if (!snapshot || /^DELET/.test(snapshot.status)) {
+          return "gone";
+        }
+
+        return snapshot.status === "CREATING" ? "creating" : "ready";
+      } catch {
+        return "ready";
+      }
+    },
+  )) as "gone" | "creating" | "ready";
+};
+
+/**
+ * Delete a snapshot that is no use, so no run finds it again. Whether it is
+ * gone afterwards: `false` when it can't be deleted (as Cloud refuses some),
+ * which leaves it to expire and must not be reused.
  */
 export const deleteSnapshot = async (
   run: CiRunScope,
   stepId: string,
   snapshotId: string,
-): Promise<void> => {
+): Promise<boolean> => {
   try {
     const result = (await run.step.run(
       { id: stepId, name: "cache:delete" },
@@ -670,8 +715,9 @@ export const deleteSnapshot = async (
           await snapshot?.delete();
 
           return { deleted: Boolean(snapshot), gone: true };
-        } catch {
-          return { deleted: false, gone: false };
+        } catch (error) {
+          // Deleted meanwhile by someone else, which is as good.
+          return { deleted: false, gone: isSnapshotNotFound(error) };
         }
       },
     )) as { deleted: boolean; gone: boolean };
@@ -681,8 +727,11 @@ export const deleteSnapshot = async (
     if (result.gone) {
       run.createdSnapshots.delete(snapshotId);
     }
+
+    return result.gone;
   } catch {
     // Best effort only.
+    return false;
   }
 };
 

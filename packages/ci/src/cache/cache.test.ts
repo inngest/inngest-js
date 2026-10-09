@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot } from "./cache.ts";
+import { deleteSnapshot, resolveTakenName } from "./cache.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -84,5 +84,71 @@ describe("deleteSnapshot", () => {
     await deleteRunSnapshots(replay);
 
     expect(gets).toEqual(["snap-1"]);
+  });
+});
+
+describe("resolveTakenName", () => {
+  /** A run whose only snapshot holds the name, recording what is deleted. */
+  const holding = (deleted: string[]): CiRunScope => {
+    const holder = {
+      id: "main-snapshot",
+      name: "ci/main/base/k",
+      status: "READY",
+      createdAt: new Date().toISOString(),
+    };
+
+    const snapshots = {
+      list: async () => {
+        return { items: [holder] };
+      },
+      get: async (id: string) => {
+        return {
+          delete: async () => {
+            deleted.push(id);
+          },
+        };
+      },
+    };
+
+    return {
+      runId: "01TESTRUN",
+      createdSnapshots: new Set<string>(),
+      ci: { client: { sandboxes: { snapshots } } },
+      step: {
+        run: async (_options: unknown, body: () => Promise<unknown>) => {
+          return body();
+        },
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
+    } as any;
+  };
+
+  test("an excluded holder that isn't known to be broken is left alone", async () => {
+    const deleted: string[] = [];
+
+    const taken = await resolveTakenName(
+      holding(deleted),
+      "name-taken",
+      "ci/main/base/k",
+      "main-snapshot",
+    );
+
+    expect(deleted).toEqual([]);
+    expect(taken.cleared).toBe(false);
+  });
+
+  test("an excluded holder that is broken is deleted, freeing the name", async () => {
+    const deleted: string[] = [];
+
+    const taken = await resolveTakenName(
+      holding(deleted),
+      "name-taken",
+      "ci/main/base/k",
+      "main-snapshot",
+      true,
+    );
+
+    expect(deleted).toEqual(["main-snapshot"]);
+    expect(taken.cleared).toBe(true);
   });
 });

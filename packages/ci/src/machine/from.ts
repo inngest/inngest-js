@@ -18,6 +18,7 @@ import type {
 } from "../cache/cache.ts";
 import {
   cacheTarget,
+  deleteSnapshot,
   describeCached,
   lookupParent,
   runTarget,
@@ -31,7 +32,7 @@ import {
   validateInput,
 } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rebuildSuffix } from "../pipeline/scope.ts";
+import { countApi, rebuildSuffix, scopeSeparator } from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -295,7 +296,7 @@ export const startFrom = async (
         ? `starting ${config.id} · ${describeCached(built.cached.createdAt)}`
         : `starting ${config.id}`;
 
-    scope.rebuildSnapshot = async () => {
+    scope.rebuildSnapshot = async (why) => {
       const base = await baseOf(run, parent);
 
       const rebuilt = await requestBuild({
@@ -303,7 +304,7 @@ export const startFrom = async (
         config,
         input,
         target: built.target,
-        replacing: { snapshotId },
+        replacing: { snapshotId, ...why },
         ...(base ? { base: base.built } : {}),
       });
 
@@ -352,7 +353,8 @@ const buildPathOf = (jobId: string, input: unknown): string => {
  * finds the first's snapshot instead of making another.
  *
  * With `replacing`, it's the one build of the same parent that replaces a
- * snapshot that wouldn't start, shared by every child that found it bad.
+ * snapshot that wouldn't start, shared by every child that had the trouble.
+ * If the snapshot is broken, that build deletes it first.
  */
 const requestBuild = ({
   run,
@@ -372,8 +374,8 @@ const requestBuild = ({
   hit?: CachedSnapshot;
   /** What the parent starts from, which its build must start from too. */
   base?: CacheBuildResult;
-  /** The bad snapshot the build replaces. */
-  replacing?: { snapshotId: string };
+  /** The snapshot that wouldn't start, which the build replaces. */
+  replacing?: { snapshotId: string; broken: boolean; unnamed: boolean };
 }): Promise<CacheBuildResult> => {
   const own = buildPathOf(config.id, input);
   const path = replacing ? `${own}${rebuildSuffix}` : own;
@@ -384,6 +386,27 @@ const requestBuild = ({
   }
 
   const built = (async () => {
+    let unnamed = replacing?.unnamed ?? false;
+
+    // Here, not in each child, so a snapshot that every child found broken is
+    // deleted once. One that can't be deleted still holds its name, so what
+    // replaces it can't have one.
+    if (replacing?.broken) {
+      const gone = await deleteSnapshot(
+        run,
+        `${path}${scopeSeparator}cache:delete`,
+        replacing.snapshotId,
+      );
+
+      if (!gone) {
+        unnamed = true;
+
+        run.warnings.push(
+          `not cached: the broken snapshot of \`${config.id}\` couldn't be deleted, so it was rebuilt without a name and later runs build it again`,
+        );
+      }
+    }
+
     // Every child that asked has just looked the snapshot up itself, so the
     // build function is the only guard left against a build that raced it.
     const result =
@@ -398,7 +421,13 @@ const requestBuild = ({
             target,
             lookup: false,
             ...(base ? { base } : {}),
-            ...(replacing ? { exclude: replacing.snapshotId } : {}),
+            ...(replacing
+              ? {
+                  exclude: replacing.snapshotId,
+                  broken: replacing.broken,
+                  unnamed,
+                }
+              : {}),
           });
 
     adoptBuilt(run, result);
