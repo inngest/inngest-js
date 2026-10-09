@@ -8,7 +8,11 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
-import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import type {
+  CachedSnapshot,
+  CacheTarget,
+  ParentNotes,
+} from "../cache/cache.ts";
 import {
   cacheTarget,
   describeCached,
@@ -205,6 +209,7 @@ export const invokeBuild = async ({
   check,
   base,
   lookup = true,
+  notes,
 }: {
   run: CiRunScope;
   /** The job's path here, which is where the build's activity goes. */
@@ -229,6 +234,8 @@ export const invokeBuild = async ({
   base?: FromBase;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
+  /** What the lookup warns about, when the job is a `from` parent. */
+  notes?: ParentNotes;
 }): Promise<CacheBuildResult> => {
   const origin = matrixOriginOf(config);
   const parent = run.build?.parent;
@@ -280,6 +287,7 @@ export const invokeBuild = async ({
       config.cache,
       target,
       exclude,
+      notes,
     );
 
     if (hit) {

@@ -23,8 +23,8 @@ import {
   deleteSnapshot,
   describeCached,
   findNamed,
+  type ParentNotes,
   runTarget,
-  warnJustInTime,
   warnUncachedBase,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
@@ -457,7 +457,12 @@ const resolveParent = (
   run.ci.hooks.jobFrom(scope, config.id);
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
-  return buildOf(run, parent, chain);
+  return buildOf(
+    run,
+    parent,
+    chain,
+    scope.config.cache || scope.uncachedBase ? scope.config.id : undefined,
+  );
 };
 
 /**
@@ -520,6 +525,12 @@ export const buildOf = (
   parent: Parent,
   /** The jobs being started from, ending with `parent`. */
   chain: string[],
+  /**
+   * The cached job that starts from this parent while its own cache is
+   * unusable, which the parent's lookup row says when the parent is the job it
+   * can't be cached below.
+   */
+  forUncached?: string,
 ): Promise<CacheBuildResult> => {
   const { config, input, raw } = parent;
   const path = buildPathOf(config.id, input);
@@ -540,16 +551,11 @@ export const buildOf = (
       config,
       input: raw,
       target,
+      notes: notesOf(parent, forUncached),
       ...(base ? { base } : {}),
     });
 
     adoptBuilt(run, result);
-
-    // From the resolved result, so it's the same on every replay. A job whose
-    // cache is unusable has none here, and has said so already.
-    if (config.cache && !result.reused) {
-      warnJustInTime(run, config);
-    }
 
     return result;
   });
@@ -559,6 +565,27 @@ export const buildOf = (
   reportBuilt(run, config.id, built);
 
   return built;
+};
+
+/**
+ * What the lookup of a parent warns about on its row: a parent whose own cache
+ * is unusable says so, as does an uncached parent a cached job starts from, and
+ * a cached parent says a miss is built just in time.
+ */
+const notesOf = (parent: Parent, forUncached?: string): ParentNotes => {
+  const { config, uncachedBase } = parent;
+
+  if (uncachedBase) {
+    return { uncachedBase: { jobId: config.id, baseId: uncachedBase } };
+  }
+
+  if (!config.cache) {
+    return forUncached
+      ? { uncachedBase: { jobId: forUncached, baseId: config.id } }
+      : {};
+  }
+
+  return { justInTime: config };
 };
 
 /**

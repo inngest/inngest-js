@@ -657,6 +657,17 @@ export const lookupCache = async (
   return found ?? undefined;
 };
 
+/**
+ * What a lookup for a `from` parent says on its row, which is the parent's own:
+ * one row however many jobs start from it.
+ */
+export interface ParentNotes {
+  /** The cached parent, which a miss means is built just in time. */
+  justInTime?: JobConfig;
+  /** A cached job whose cache is unusable because its base has none. */
+  uncachedBase?: { jobId: string; baseId: string };
+}
+
 /** A job's usable snapshot: in the scopes it reads if cached, else by its run's name. */
 const findCached = (
   run: CiRunScope,
@@ -690,6 +701,8 @@ export const lookupBeforeBuild = async (
   target: CacheTarget,
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
+  /** What to warn about, when the lookup is for a job's `from` parent. */
+  notes?: ParentNotes,
 ): Promise<CachedSnapshot | undefined> => {
   const found = await ciRun<CachedSnapshot | null>(
     run,
@@ -706,16 +719,37 @@ export const lookupBeforeBuild = async (
 
       note.outcome(lookupOutcome(hit));
 
+      if (notes?.uncachedBase) {
+        await warnStep(
+          run,
+          "ci.uncachedBase",
+          uncachedBaseNote(notes.uncachedBase.jobId, notes.uncachedBase.baseId)
+            .message,
+        );
+      } else if (notes?.justInTime && !hit) {
+        await warnStep(
+          run,
+          "ci.justInTime",
+          justInTimeNote(notes.justInTime).message,
+        );
+      }
+
       return hit ?? null;
     },
   );
+
+  // From the memoized result, so a replay says it too, once per parent however
+  // many jobs start from it.
+  if (notes?.justInTime && !found) {
+    warnJustInTime(run, notes.justInTime);
+  }
 
   return found ?? undefined;
 };
 
 /**
- * What a cached parent that was built just in time says, on the row of the job
- * that waited (`message`) and in the run's warnings (`line`). One place, so the
+ * What a cached parent that was built just in time says, on the row of its
+ * lookup (`message`) and in the run's warnings (`line`). One place, so the
  * two can't drift apart.
  *
  * A miss is more than "never built": the lookup also comes back empty on an
@@ -729,7 +763,7 @@ export const justInTimeNote = (
   const warm = Boolean(config.cache?.warm);
 
   return {
-    message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while this job waited. ${
+    message: `\`${config.id}\` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited. ${
       warm
         ? "Its `cache.warm` triggers hadn't built a usable snapshot for these inputs yet."
         : "Add `cache.warm` to build it ahead of time."
