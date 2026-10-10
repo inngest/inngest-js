@@ -19,7 +19,7 @@ import type {
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import type { CiHooks } from "./hooks.ts";
-import { ciSpan, traceName } from "./names.ts";
+import { spans } from "./names.ts";
 import { inSpan } from "./spans.ts";
 
 /**
@@ -28,6 +28,11 @@ import { inSpan } from "./spans.ts";
  * readable in the trace.
  */
 export const scopeSeparator = " › ";
+
+/** A step ID built from parts, as in `test › machine › setup`. */
+export const joinId = (...parts: string[]): string => {
+  return parts.join(scopeSeparator);
+};
 
 /** What a rebuilt job's path adds to its ID, as in `base (rebuild)`. */
 export const rebuildSuffix = " (rebuild)";
@@ -453,7 +458,7 @@ export const nextStepId = (
   scopePath: string | undefined,
   label: string,
 ): string => {
-  const base = scopePath ? `${scopePath}${scopeSeparator}${label}` : label;
+  const base = scopePath ? joinId(scopePath, label) : label;
   const seen = (run.counters.get(base) ?? 0) + 1;
 
   run.counters.set(base, seen);
@@ -556,7 +561,7 @@ export const withScopePreserved = <T extends object>(tools: T): T => {
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {
     return {
-      id: `${prefix}${scopeSeparator}${idOrOptions}`,
+      id: joinId(prefix, idOrOptions),
       name: idOrOptions,
     };
   }
@@ -571,7 +576,7 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
 
     return {
       ...opts,
-      id: `${prefix}${scopeSeparator}${opts.id}`,
+      id: joinId(prefix, opts.id),
       name: opts.name ?? opts.id,
     };
   }
@@ -592,10 +597,7 @@ export const inJobSpan = <R>(
   name?: string,
 ): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
-    return inSpan(
-      { id: jobPath, name: name ?? traceName.job(run, jobPath), kind: "job" },
-      fn,
-    );
+    return inSpan(spans.job(run, jobPath, name), fn);
   });
 };
 
@@ -616,7 +618,7 @@ export const outsideJobs = <R>(run: CiRunScope, fn: () => R): R => {
  */
 export const inGitHubSpan = <R>(run: CiRunScope, fn: () => R): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
-    return inSpan(ciSpan("github", traceName.github), fn);
+    return inSpan(spans.github(), fn);
   });
 };
 

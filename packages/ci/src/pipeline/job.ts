@@ -34,7 +34,7 @@ import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
-import { ciStep, traceName } from "./names.ts";
+import { ciStep, steps, traceName } from "./names.ts";
 import type {
   BuildOutcome,
   CiJobScope,
@@ -47,10 +47,10 @@ import {
   inJobSpan,
   inlineKey,
   isInline,
+  joinId,
   matrixOriginOf,
   rootRunIdOf,
   runJobBody,
-  scopeSeparator,
 } from "./scope.ts";
 
 export interface RegisteredJob {
@@ -338,10 +338,7 @@ const invokeBuildRun = async ({
 
   try {
     output = (await run.step.invoke(
-      ciStep(
-        `${stepPath}${scopeSeparator}build`,
-        traceName.buildInOwnRun(path),
-      ),
+      ciStep(joinId(stepPath, "build"), traceName.buildInOwnRun(path)),
       { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {
@@ -680,13 +677,7 @@ const jobSteps = async ({
   const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
   const startedAt =
     checkStartedAt ??
-    (await durableNow(
-      run,
-      `start:${scope.path}`,
-      traceName.recordStartTime,
-      scope.path,
-      "started",
-    ));
+    (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
 
   if (checked) {
     run.openChecks.set(scope.path, checkName);
@@ -769,13 +760,7 @@ const jobSteps = async ({
 
     const endedAt =
       checkEndedAt ??
-      (await durableNow(
-        run,
-        `end:${scope.path}`,
-        traceName.recordEndTime,
-        scope.path,
-        "ended",
-      ));
+      (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
     const durationMs = endedAt - startedAt;
 
     recordSummary(scope, {
@@ -820,13 +805,7 @@ const jobSteps = async ({
 
     const endedAt =
       checkEndedAt ??
-      (await durableNow(
-        run,
-        `end:${scope.path}`,
-        traceName.recordEndTime,
-        scope.path,
-        "ended",
-      ));
+      (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
 
     run.summaries.push({
       path: scope.path,
@@ -847,25 +826,12 @@ const jobSteps = async ({
 const durableNow = (
   run: CiRunScope,
   id: string,
-  name: string,
   jobPath: string,
   edge: "started" | "ended",
 ): Promise<number> => {
-  return ciRun(
-    run,
-    {
-      step: ciStep(id, name),
-      intent: `Record when \`${jobPath}\` ${edge}`,
-      tag: { kind: "job", job: jobPath },
-    },
-    (note) => {
-      const now = Date.now();
-
-      note.outcome({ at: new Date(now).toISOString() });
-
-      return now;
-    },
-  );
+  return ciRun(run, steps.recordTime(id, jobPath, edge), () => {
+    return Date.now();
+  });
 };
 
 /** What a job's check says when its snapshot was reused rather than built. */

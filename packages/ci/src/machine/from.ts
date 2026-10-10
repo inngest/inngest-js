@@ -26,9 +26,9 @@ import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
   isInline,
+  joinId,
   outsideJobs,
   rebuildSuffix,
-  scopeSeparator,
 } from "../pipeline/scope.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
@@ -512,7 +512,7 @@ const requestRebuild = ({
     if (replacing.broken) {
       const gone = await deleteSnapshot(
         run,
-        `${path}${scopeSeparator}cache:delete`,
+        joinId(path, "cache:delete"),
         replacing.snapshotId,
       );
 
