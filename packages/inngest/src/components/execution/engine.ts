@@ -2657,7 +2657,7 @@ class InngestExecutionEngine
 
       const step: FoundStep = {
         ...opId,
-        ...(stepOptions.metadata ? { stepMetadata: stepOptions.metadata } : {}),
+        stepMetadata: stepOptions.metadata,
         opts: { ...opId.opts, ...extraOpts },
         rawArgs: fnArgs,
         hashedId,

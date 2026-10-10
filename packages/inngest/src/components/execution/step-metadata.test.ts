@@ -1,7 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createClient, runFnWithStack } from "../../test/helpers.ts";
-import { StepOpCode } from "../../types.ts";
+import { StepOpCode, type StepOptions } from "../../types.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
+import { _internals } from "./engine.ts";
 
 const kind = "userland.test";
 
@@ -12,71 +13,57 @@ const fnOptions = {
   triggers: [{ event: "foo" }],
 };
 
-describe("StepOptions.metadata", () => {
-  test("a static record lands on the step op", async () => {
-    const fn = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run(
-        { id: "a", metadata: { kind, values: { intent: "build" } } },
-        () => "ok",
-      );
-    });
+const createStepFn = (
+  metadata: NonNullable<StepOptions["metadata"]>,
+  fn: () => unknown = () => "ok",
+) => {
+  return client.createFunction(fnOptions, async ({ step }) => {
+    await step.run({ id: "a", metadata }, fn);
+  });
+};
 
-    const result = await runFnWithStack(fn, {});
+describe("StepOptions.metadata", () => {
+  test.each([
+    {
+      name: "a static record lands on the step op",
+      values: { intent: "build" },
+      expected: { intent: "build" },
+    },
+    {
+      name: "a function receives the result of the step",
+      values: (outcome: { data?: unknown }) => {
+        return { outcome: outcome.data };
+      },
+      expected: { outcome: "ok" },
+    },
+  ])("$name", async ({ values, expected }) => {
+    const handler = createStepFn({ kind, values });
+
+    const result = await runFnWithStack(handler, {});
 
     expect(result).toMatchObject({
       type: "step-ran",
       step: {
         data: "ok",
-        metadata: [
-          { kind, scope: "step", op: "merge", values: { intent: "build" } },
-        ],
+        metadata: [{ kind, scope: "step", op: "merge", values: expected }],
       },
     });
   });
 
-  test("a function receives the result of the step", async () => {
-    const fn = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run(
-        {
-          id: "a",
-          metadata: {
-            kind,
-            values: (outcome) => {
-              return { outcome: outcome.data };
-            },
-          },
-        },
-        () => "ok",
-      );
-    });
-
-    const result = await runFnWithStack(fn, {});
-
-    expect(result).toMatchObject({
-      type: "step-ran",
-      step: { metadata: [{ kind, values: { outcome: "ok" } }] },
-    });
-  });
-
   test("a function receives the error of a failed step", async () => {
-    const fn = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run(
-        {
-          id: "a",
-          metadata: {
-            kind,
-            values: (outcome) => {
-              return { failed: String(outcome.error), data: outcome.data };
-            },
-          },
+    const handler = createStepFn(
+      {
+        kind,
+        values: (outcome) => {
+          return { failed: String(outcome.error), data: outcome.data };
         },
-        () => {
-          throw new Error("boom");
-        },
-      );
-    });
+      },
+      () => {
+        throw new Error("boom");
+      },
+    );
 
-    const result = await runFnWithStack(fn, {});
+    const result = await runFnWithStack(handler, {});
 
     expect(result).toMatchObject({
       type: "step-ran",
@@ -88,29 +75,35 @@ describe("StepOptions.metadata", () => {
   });
 
   test("a throwing function doesn't change the step's outcome", async () => {
-    const fn = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run(
-        {
-          id: "a",
-          metadata: {
-            kind,
-            values: () => {
-              throw new Error("bad metadata");
-            },
-          },
-        },
-        () => "ok",
-      );
+    const handler = createStepFn({
+      kind,
+      values: () => {
+        throw new Error("bad metadata");
+      },
     });
 
-    const result = await runFnWithStack(fn, {});
+    const result = await runFnWithStack(handler, {});
 
     expect(result).toMatchObject({ type: "step-ran", step: { data: "ok" } });
     expect(result).not.toHaveProperty("step.metadata");
   });
 
+  test("a function isn't called when the step is memoized", async () => {
+    const values = vi.fn(() => {
+      return {};
+    });
+    const handler = createStepFn({ kind, values });
+
+    const result = await runFnWithStack(handler, {
+      [_internals.hashId("a")]: { id: _internals.hashId("a"), data: "ok" },
+    });
+
+    expect(result).toMatchObject({ type: "function-resolved" });
+    expect(values).not.toHaveBeenCalled();
+  });
+
   test("a static record lands on a planned step.invoke", async () => {
-    const fn = client.createFunction(fnOptions, async ({ step }) => {
+    const handler = client.createFunction(fnOptions, async ({ step }) => {
       await step.invoke(
         { id: "inv", metadata: { kind, values: { intent: "from" } } },
         {
@@ -120,7 +113,7 @@ describe("StepOptions.metadata", () => {
       );
     });
 
-    const result = await runFnWithStack(fn, {});
+    const result = await runFnWithStack(handler, {});
 
     expect(result).toMatchObject({
       type: "steps-found",
@@ -134,11 +127,9 @@ describe("StepOptions.metadata", () => {
   });
 
   test("metadata adds no steps and keeps step IDs", async () => {
-    const withMetadata = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run({ id: "a", metadata: { kind, values: {} } }, () => 1);
-    });
+    const withMetadata = createStepFn({ kind, values: {} });
     const without = client.createFunction(fnOptions, async ({ step }) => {
-      await step.run("a", () => 1);
+      await step.run("a", () => "ok");
     });
 
     const a = await runFnWithStack(withMetadata, {});
