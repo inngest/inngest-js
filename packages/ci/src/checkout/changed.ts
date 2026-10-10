@@ -7,7 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { countApi, getRunScope } from "../pipeline/scope.ts";
+import { countApi, getRunScope, localRepo } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { filterPaths, git } from "../util.ts";
 import { parsePorcelainPaths } from "./porcelain.ts";
@@ -94,7 +94,7 @@ const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
     { id: "changed", name: "changed" },
     async () => {
       try {
-        return await listChangedFiles(run.repo);
+        return await listChangedFiles(run);
       } catch (error) {
         if (!(error instanceof CiUsageError)) {
           throw error;
@@ -118,9 +118,9 @@ const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
   return files;
 };
 
-const listChangedFiles = async (
-  repo: RepoContext | undefined,
-): Promise<string[]> => {
+const listChangedFiles = async (run: CiRunScope): Promise<string[]> => {
+  const { repo } = run;
+
   // Without a repository there's nothing to compare, and an empty list would
   // skip work that may have changed, so say so and the caller assumes
   // everything changed.
@@ -128,8 +128,10 @@ const listChangedFiles = async (
     throw new CiUsageError("this run has no repository to read changes from.");
   }
 
-  if (repo.local && process.env.INNGEST_CI_GITHUB !== "live") {
-    return localChangedFiles(repo.local.path, repo.local.baseRef);
+  const local = localRepo(run);
+
+  if (local) {
+    return localChangedFiles(local.path, local.baseRef);
   }
 
   const { paginate } = await import("../github/helpers.ts");

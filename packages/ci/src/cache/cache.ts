@@ -12,7 +12,12 @@
 
 import { tagStep } from "../pipeline/metadata.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  countApi,
+  localRepo,
+  rootRunIdOf,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -135,10 +140,12 @@ const resolveFilesPart = async (
 ): Promise<string> => {
   const repo = run.repo;
 
-  if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
+  const local = localRepo(run);
+
+  if (local) {
     const { hashLocalFiles } = await import("./localCache.ts");
 
-    return hashLocalFiles(repo.local.path, part.patterns);
+    return hashLocalFiles(local.path, part.patterns);
   }
 
   if (!repo) {

@@ -34,6 +34,20 @@ export const rebuildSuffix = " (rebuild)";
 export const defaultCwd = "/work";
 
 /**
+ * The local working tree this run reads, when it has one. A run with local
+ * repository data still talks to GitHub when `INNGEST_CI_GITHUB=live`.
+ */
+export const localRepo = (
+  run: Pick<CiRunScope, "repo">,
+): NonNullable<RepoContext["local"]> | undefined => {
+  if (process.env.INNGEST_CI_GITHUB === "live") {
+    return undefined;
+  }
+
+  return run.repo?.local;
+};
+
+/**
  * Where a matrix combination's job config remembers the matrix and combination
  * it came from, so its snapshot is built by the matrix's build function.
  */
