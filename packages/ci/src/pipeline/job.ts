@@ -114,19 +114,13 @@ const checkMaxAge = (config: JobConfig): void => {
     return;
   }
 
-  let ms: number;
-
   try {
-    ms = durationToMs(maxAge);
+    if (durationToMs(maxAge) <= 0) {
+      throw new Error("It must be longer than zero.");
+    }
   } catch (error) {
     throw new CiUsageError(
       `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
-    );
-  }
-
-  if (ms <= 0) {
-    throw new CiUsageError(
-      `Job "${config.id}" has a \`cache.maxAge\` of zero. It must be longer than that.`,
     );
   }
 };
