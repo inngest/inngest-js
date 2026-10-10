@@ -10,6 +10,7 @@ import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -175,6 +176,18 @@ export interface CiRunScope {
    * else, and no job reads another job's state through it.
    */
   builds: Map<string, Promise<CacheBuildResult>>;
+  /**
+   * The repositories and refs `checkout()` and `files()` have resolved to a
+   * commit, keyed by repository and ref, so each is resolved by one step per
+   * run. It holds promises and nothing else.
+   */
+  sources: Map<string, Promise<ResolvedSource>>;
+  /**
+   * The default branch of each repository `checkout()` and `files()` have
+   * asked for without a `ref`, keyed by repository, so a repository's default
+   * branch is found by one step per run. It holds promises and nothing else.
+   */
+  defaultBranches: Map<string, Promise<string>>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**

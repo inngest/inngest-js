@@ -385,3 +385,30 @@ export const git = async (cwd: string, args: string[]): Promise<string> => {
 export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
+
+const ownerPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]*)$/;
+
+const namePattern = /^[A-Za-z0-9._-]+$/;
+
+/** Split `owner/name`, or say what a repository should look like. */
+export const parseRepo = (
+  fullName: string,
+): { owner: string; name: string } => {
+  const [owner, name, ...rest] = fullName.split("/");
+
+  if (
+    !owner ||
+    !name ||
+    rest.length > 0 ||
+    !ownerPattern.test(owner) ||
+    !namePattern.test(name) ||
+    name === "." ||
+    name === ".."
+  ) {
+    throw new CiUsageError(
+      `\`repo\` must be "owner/name", but got "${fullName}".`,
+    );
+  }
+
+  return { owner, name };
+};

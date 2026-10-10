@@ -122,6 +122,7 @@ export const traceName = {
 
   github: "GitHub",
   resolveRepository: "Resolve repository",
+  resolveRef: "Resolve ref",
   commentNotAllowed: "Comment: not allowed",
 
   createMachine: "Create sandbox",
