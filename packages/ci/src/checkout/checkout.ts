@@ -6,6 +6,7 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciStepOptions } from "../pipeline/metadata.ts";
 import { steps } from "../pipeline/names.ts";
@@ -82,6 +83,8 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
   const local =
     repo?.local && process.env.INNGEST_CI_GITHUB !== "live" ? repo.local : null;
+
+  requireDeployedRepo(run, "`checkout()`");
 
   if (!local && !repo) {
     throw new CiUsageError(

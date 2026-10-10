@@ -26,6 +26,8 @@ import type {
   MatrixAxes,
   RepoContext,
 } from "../types.ts";
+import type { AppJobRequest } from "./appJob.ts";
+import { answerAppJob } from "./appJob.ts";
 import type { RegisteredJob } from "./job.ts";
 import { builtResult, runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
@@ -85,6 +87,11 @@ export interface CacheBuildData extends Record<string, unknown> {
    * looking its parent up again.
    */
   base?: CacheBuildResult;
+  /**
+   * Set when another app asks for one of this app's jobs with `image.job()`.
+   * The asking app can't name the job's snapshot, so this run resolves it.
+   */
+  resolve?: AppJobRequest;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
   /** The invoking run's machine settings, for jobs that set none of their own. */
@@ -211,6 +218,17 @@ const buildSnapshot = async ({
     throw new NonRetriableError(cycleMessage([...data.chain, data.jobId]));
   }
 
+  const run = getRunScope();
+
+  if (data.resolve && run) {
+    return answerAppJob({
+      run,
+      request: data.resolve,
+      input: data.input,
+      jobs,
+    });
+  }
+
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
 
@@ -239,7 +257,6 @@ const buildSnapshot = async ({
     });
   }
 
-  const run = getRunScope();
   const request = run?.request ?? requestOf(data);
 
   // The job's line is the build run's own too, whose totals count it.

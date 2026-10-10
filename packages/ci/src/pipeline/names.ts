@@ -14,6 +14,7 @@ import type { CachedSnapshot } from "../cache/cache.ts";
 import type { CheckConclusion, RepoContext } from "../types.ts";
 import { formatDuration, truncateLabel } from "../util.ts";
 import { version } from "../version.ts";
+import type { CacheBuildResult } from "./cacheBuild.ts";
 import type { StepTag } from "./metadata.ts";
 import type { CiRunScope } from "./scope.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
@@ -206,15 +207,47 @@ export const steps = {
     };
   },
 
-  findBaseImage: (name: string): StepSpec<CachedSnapshot | null> => {
+  findBaseImage: (
+    id: string,
+    name: string,
+  ): StepSpec<CachedSnapshot | null> => {
     return {
-      id: `image ${name}`,
+      id,
       name: `Find base image ${name}`,
       intent: `Find the newest ready snapshot named \`${name}\``,
       outcome: (hit) => {
         return hit
           ? { found: true, snapshotId: hit.snapshotId }
           : { found: false };
+      },
+    };
+  },
+
+  buildAppJob: (
+    id: string,
+    name: string,
+  ): StepSpec<CacheBuildResult | null> => {
+    return {
+      id,
+      name: `Build ${name} in its app`,
+      intent: `Ask the app that defines \`${name}\` for its snapshot, which it builds if it's missing`,
+      outcome: (built) => {
+        return built?.snapshotId
+          ? { snapshotId: built.snapshotId, reused: built.reused }
+          : { snapshotId: null };
+      },
+    };
+  },
+
+  findDeployedRepo: (): StepSpec<RepoContext | null> => {
+    return {
+      id: joinId("deploy", "repo"),
+      name: "Find deployed repository",
+      intent: "Find the repository and commit this app was deployed from",
+      outcome: (repo) => {
+        return repo
+          ? { repo: repo.fullName, sha: repo.sha, ref: repo.ref }
+          : { repo: null };
       },
     };
   },

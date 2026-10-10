@@ -30,7 +30,8 @@ import type { NamePolicy } from "../cache/namePolicy.ts";
 import { deletesHolder } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type { BaseImage } from "../image.ts";
-import { isBaseImage } from "../image.ts";
+import { imageKey, isBaseImage } from "../image.ts";
+import { requestAppJob } from "../pipeline/appJob.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
 import {
@@ -96,7 +97,7 @@ const resolvedBase = (named: Named, built: CacheBuildResult): ResolvedBase => {
     return {
       id: named.name,
       built,
-      identity: { from: `image:${named.name}`, ...snapshot },
+      identity: { from: `image:${imageKey(named)}`, ...snapshot },
     };
   }
 
@@ -510,8 +511,11 @@ const buildNamed = (
  * A parent without a `cache` is built under a name that belongs to this
  * pipeline run, which a second build anywhere in the run finds rather than
  * makes again.
+ *
+ * Exported for `answerAppJob`, which builds a job another app asked for the
+ * same way.
  */
-const buildOf = (
+export const buildOf = (
   run: CiRunScope,
   parent: Parent,
 ): Promise<CacheBuildResult> => {
@@ -559,46 +563,72 @@ const buildOf = (
 };
 
 /**
- * A base image as a build that was already done: the newest ready snapshot
- * with its name, found once per pipeline run however many jobs start from it.
- * It lives in `run.builds` beside the parents' builds, so the first job to ask
- * makes the one lookup step and the rest wait on its promise, and which job
- * asks first never changes the steps the run plans.
+ * A base image as a build that was already done, found once per pipeline run
+ * however many jobs start from it. It lives in `run.builds` beside the
+ * parents' builds, so the first job to ask makes the one step and the rest wait
+ * on its promise, and which job asks first never changes the steps the run
+ * plans.
  *
- * @throws {NonRetriableError} When no ready snapshot has that name.
+ * @throws {NonRetriableError} When the image can't be found or built.
  */
 const imageBuildOf = (
   run: CiRunScope,
   image: BaseImage,
 ): Promise<CacheBuildResult> => {
-  const key = `image ${image.name}`;
-  const existing = run.builds.get(key);
+  const stepId = `image ${imageKey(image)}`;
+  const existing = run.builds.get(stepId);
 
   if (existing) {
     return existing;
   }
 
-  const built = outsideJobs(run, async () => {
-    const found = await ciRun(
-      run,
-      steps.findBaseImage(image.name),
-      async () => {
-        return (await findNamed(run, image.name)) ?? null;
-      },
-    );
-
-    if (!found) {
-      throw new NonRetriableError(
-        `No base image named \`${image.name}\`. Capture one with \`sandbox.snapshot({ name: "${image.name}" })\`.`,
-      );
-    }
-
-    return imageBuild(found);
+  const built = outsideJobs(run, () => {
+    return resolveImage(run, image, stepId);
   });
 
-  run.builds.set(key, built);
+  run.builds.set(stepId, built);
 
   return built;
+};
+
+/**
+ * Where each kind of image comes from. A new kind is a new case here, and the
+ * rest of a run only ever sees the build it gives back.
+ */
+const resolveImage = (
+  run: CiRunScope,
+  image: BaseImage,
+  stepId: string,
+): Promise<CacheBuildResult> => {
+  switch (image.source) {
+    case "snapshot":
+      return findSnapshotImage(run, image.name, stepId);
+    case "job":
+      return requestAppJob(run, image, stepId);
+  }
+};
+
+/** A captured snapshot: the newest ready one with exactly this name. */
+const findSnapshotImage = async (
+  run: CiRunScope,
+  name: string,
+  stepId: string,
+): Promise<CacheBuildResult> => {
+  const found = await ciRun(
+    run,
+    steps.findBaseImage(stepId, name),
+    async () => {
+      return (await findNamed(run, name)) ?? null;
+    },
+  );
+
+  if (!found) {
+    throw new NonRetriableError(
+      `No base image named \`${name}\`. Capture one with \`sandbox.snapshot({ name: "${name}" })\`.`,
+    );
+  }
+
+  return imageBuild(found);
 };
 
 /**
