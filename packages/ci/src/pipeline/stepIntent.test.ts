@@ -14,7 +14,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { createCi } from "./createCi.ts";
-import { ciStepOptions } from "./metadata.ts";
+import { ciStepOptions, metadataKind } from "./metadata.ts";
 import { ciOrigin, type StepSpec, steps } from "./names.ts";
 
 const setup = () => {
@@ -46,7 +46,11 @@ type Metadata = Awaited<ReturnType<typeof runFunction>>["metadata"];
 const stepValues = (metadata: Metadata, step: string) => {
   return metadata
     .filter((update) => {
-      return update.step === step && update.scope === "step";
+      return (
+        update.step === step &&
+        update.scope === "step" &&
+        update.kind === metadataKind
+      );
     })
     .map((update) => {
       return update.values;

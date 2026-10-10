@@ -101,39 +101,55 @@ export const runEndMetadata = (
 };
 
 /**
- * Attach values to the run's own metadata, from the step whose callback is
- * running.
+ * Queue metadata of one `kind` on the step whose callback is running, at the
+ * `scope` given.
  *
- * It only queues the update on the step's own result, so it adds no request,
- * and a step that's already memoized never runs its callback again, so nothing
- * is sent twice on replay. It must never fail the step, so anything that goes
- * wrong is a warning.
+ * It only adds to the step's own result, so it adds no request, and a step
+ * that's already memoized never runs its callback again, so nothing is sent
+ * twice on replay. It must never fail the step, so anything that goes wrong is
+ * a warning.
  */
-export const tagRun = async (
+const addStepMetadata = async (
   run: CiRunScope,
-  values: Record<string, unknown> | undefined,
+  kind: "userland.inngest-ci" | "inngest.warnings",
+  scope: "run" | "step",
+  values: Record<string, unknown>,
 ): Promise<void> => {
   try {
     const execution = (await getAsyncCtx())?.execution;
     const stepId = execution?.executingStep?.id;
 
-    if (!execution || !stepId || !values) {
+    if (!execution || !stepId) {
       return;
     }
 
-    execution.instance.addMetadata(
-      stepId,
-      metadataKind,
-      "run",
-      "merge",
-      values,
-    );
+    execution.instance.addMetadata(stepId, kind, scope, "merge", values);
   } catch (error) {
-    run.ci.logger?.warn(
-      { error },
-      "Couldn't attach userland.inngest-ci metadata",
-    );
+    run.ci.logger?.warn({ error }, `Couldn't attach ${kind} metadata`);
   }
+};
+
+/** Attach values to the run's own metadata, from the step whose callback is running. */
+export const tagRun = async (
+  run: CiRunScope,
+  values: Record<string, unknown> | undefined,
+): Promise<void> => {
+  if (values) {
+    await addStepMetadata(run, metadataKind, "run", values);
+  }
+};
+
+/**
+ * Put a warning on the row of the step whose callback is running, as
+ * `inngest.warnings` metadata. `key` names the warning, so saying it again
+ * replaces it rather than adding another.
+ */
+export const warnStep = async (
+  run: CiRunScope,
+  key: string,
+  message: string,
+): Promise<void> => {
+  await addStepMetadata(run, "inngest.warnings", "step", { [key]: message });
 };
 
 /** The longest a string in a step's outcome gets before it's cut. */

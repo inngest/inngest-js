@@ -10,11 +10,12 @@
  * @module
  */
 
-import { ciRun } from "../pipeline/metadata.ts";
+import { ciRun, warnStep } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, joinId, rootRunIdOf } from "../pipeline/scope.ts";
+import { builtJustInTime, warnOnce } from "../pipeline/warnings.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -466,7 +467,13 @@ export const lookupCache = async (
   );
 };
 
-/** A lookup as a memoized step: a hit is returned, a miss is `null` in the step. */
+/**
+ * A lookup as a memoized step: a hit is returned, a miss is `null` in the step.
+ *
+ * A miss on a cached `from` parent (`asParent`) means it is built while the
+ * jobs that start from it wait. That is said on the lookup's row and, from the
+ * memoized result so a replay says it too, once in the run's warnings.
+ */
 const lookUp = async (
   run: CiRunScope,
   spec: StepSpec<CachedSnapshot | null>,
@@ -474,10 +481,24 @@ const lookUp = async (
   cache: CacheConfig | undefined,
   target: CacheTarget,
   exclude?: string,
+  asParent?: boolean,
 ): Promise<CachedSnapshot | undefined> => {
+  const justInTime =
+    asParent && cache ? builtJustInTime(jobId, cache) : undefined;
+
   const found = await ciRun(run, spec, async () => {
-    return (await findCached(run, jobId, cache, target, exclude)) ?? null;
+    const hit = await findCached(run, jobId, cache, target, exclude);
+
+    if (!hit && justInTime) {
+      await warnStep(run, "ci.justInTime", justInTime.message);
+    }
+
+    return hit ?? null;
   });
+
+  if (!found && justInTime) {
+    warnOnce(run, justInTime.line);
+  }
 
   return found ?? undefined;
 };
@@ -510,6 +531,8 @@ export const lookupBeforeBuild = async (
     path: string;
     /** What the step's ID is built on. */
     stepPath: string;
+    /** Whether the job is a `from` parent, which a miss builds while its children wait. */
+    asParent?: boolean;
   },
   cache: CacheConfig | undefined,
   target: CacheTarget,
@@ -523,6 +546,7 @@ export const lookupBeforeBuild = async (
     cache,
     target,
     exclude,
+    job.asParent,
   );
 };
 
@@ -673,19 +697,6 @@ export const uncachedBaseNote = (
   return {
     line: `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`,
   };
-};
-
-/** Add a cached job's uncached-base line to the run's warnings, once. */
-export const warnUncachedBase = (
-  run: CiRunScope,
-  jobId: string,
-  baseId: string,
-): void => {
-  const { line } = uncachedBaseNote(jobId, baseId);
-
-  if (!run.warnings.includes(line)) {
-    run.warnings.push(line);
-  }
 };
 
 /**
