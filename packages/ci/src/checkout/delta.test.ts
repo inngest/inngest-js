@@ -7,15 +7,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -33,73 +25,43 @@ import { runFunction } from "../testing/runFunction.ts";
 import { checkout } from "./checkout.ts";
 import { workingTreeId } from "./tree.ts";
 
-const git = (cwd: string, ...args: string[]): string => {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-};
+const everything = ["dir/nested.txt", "edit.txt", "gone.txt", "keep.txt"];
 
-const event = (path: string) => {
-  return {
-    ...prEvent,
-    data: { ...prEvent.data, local: { path, baseRef: "main" } },
-  };
-};
-
-/** The files in an uploaded tar, by unpacking it with the system's `tar`. */
+/** The files in an uploaded tar, by reading it with the system's `tar`. */
 const unpack = (bytes: Uint8Array): Record<string, string> => {
-  const dir = mkdtempSync(join(tmpdir(), "ci-delta-unpack-"));
+  const tar = (...args: string[]) => {
+    return execFileSync("tar", args, { input: bytes, encoding: "utf8" });
+  };
 
-  try {
-    writeFileSync(join(dir, "in.tar"), bytes);
+  const names = tar("-tf", "-")
+    .split("\n")
+    .filter((name) => {
+      return name && !name.endsWith("/");
+    });
 
-    mkdirSync(join(dir, "out"));
-
-    execFileSync("tar", ["-xf", join(dir, "in.tar"), "-C", join(dir, "out")]);
-
-    const files: Record<string, string> = {};
-
-    const walk = (prefix: string) => {
-      for (const name of readdirSync(join(dir, "out", prefix))) {
-        const relative = prefix ? `${prefix}/${name}` : name;
-
-        if (statSync(join(dir, "out", relative)).isDirectory()) {
-          walk(relative);
-        } else {
-          files[relative] = readFileSync(join(dir, "out", relative), "utf8");
-        }
-      }
-    };
-
-    walk("");
-
-    return files;
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  return Object.fromEntries(
+    names.map((name) => {
+      return [name, tar("-xOf", "-", name)];
+    }),
+  );
 };
 
 /** The uploaded tars, which are the working tree or changes to it. */
 const tarballs = (api: FakeSandboxApi) => {
-  return api.uploads.filter((upload) => {
-    return upload.path.endsWith(".inngest-ci-source.tar");
-  });
+  return api.uploads
+    .filter((upload) => {
+      return upload.path.endsWith(".inngest-ci-source.tar");
+    })
+    .map((upload) => {
+      return unpack(upload.bytes);
+    });
 };
 
-/** The snapshot `base` is cached under, and the metadata inside it. */
+/** The snapshot `base` is cached under. */
 const cachedBase = (api: FakeSandboxApi) => {
-  const snapshot = [...api.snapshots.values()].find((candidate) => {
+  return [...api.snapshots.values()].find((candidate) => {
     return candidate.name?.includes("/base/");
   });
-
-  const meta = JSON.parse(
-    snapshot?.files.get(snapshotMetaPath) ?? "{}",
-  ) as SnapshotMeta;
-
-  /** Change what the snapshot says about itself, as another machine might. */
-  const rewrite = (change: (meta: SnapshotMeta) => SnapshotMeta) => {
-    snapshot?.files.set(snapshotMetaPath, JSON.stringify(change(meta)));
-  };
-
-  return { snapshot, meta, rewrite };
 };
 
 describe("checkout() of a local working tree", () => {
@@ -112,8 +74,16 @@ describe("checkout() of a local working tree", () => {
     writeFileSync(join(repo, path), contents);
   };
 
-  /** A client over `api`, which later runs share like one environment. */
-  const harness = (api = createFakeSandboxApi()) => {
+  const git = (...args: string[]) => {
+    execFileSync("git", args, { cwd: repo });
+  };
+
+  /**
+   * Run a pipeline over `api`, which later runs share like one environment.
+   * `base` is cached and installed once, the way the example's is; `lint`
+   * starts from it and checks out again.
+   */
+  const run = async (api: FakeSandboxApi, job: "base" | "lint") => {
     const ci = createCi(createCiTestClient(api), {
       github: consoleReporter(),
       runUrl: ({ runId }) => {
@@ -121,19 +91,11 @@ describe("checkout() of a local working tree", () => {
       },
     });
 
-    // Installed once, the way the example's `base` does.
     const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
       await checkout();
 
       await $`pnpm install`;
     });
-
-    return { api, ci, base };
-  };
-
-  /** Run `lint`, which starts from `base` and checks out again. */
-  const runLint = async (api: FakeSandboxApi) => {
-    const { ci, base } = harness(api);
 
     const lint = ci.job({ id: "lint", from: base }, async () => {
       await checkout();
@@ -143,21 +105,14 @@ describe("checkout() of a local working tree", () => {
 
     await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return lint();
+        return job === "base" ? base() : lint();
       }),
-      { event: event(repo) },
-    );
-  };
-
-  /** Run `base` on its own, which caches it. */
-  const runBase = async (api: FakeSandboxApi) => {
-    const { ci, base } = harness(api);
-
-    await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return base();
-      }),
-      { event: event(repo) },
+      {
+        event: {
+          ...prEvent,
+          data: { ...prEvent.data, local: { path: repo, baseRef: "main" } },
+        },
+      },
     );
   };
 
@@ -167,17 +122,17 @@ describe("checkout() of a local working tree", () => {
 
     mkdirSync(repo);
 
-    git(repo, "init", "-q", "-b", "main");
-    git(repo, "config", "user.email", "ci@example.com");
-    git(repo, "config", "user.name", "ci");
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "ci@example.com");
+    git("config", "user.name", "ci");
 
     write("keep.txt", "keep");
     write("edit.txt", "before");
     write("gone.txt", "gone");
     write("dir/nested.txt", "nested");
 
-    git(repo, "add", ".");
-    git(repo, "commit", "-q", "-m", "init");
+    git("add", ".");
+    git("commit", "-q", "-m", "init");
   });
 
   afterEach(() => {
@@ -187,48 +142,63 @@ describe("checkout() of a local working tree", () => {
   test("a job that starts from a snapshot uploads only what changed since", async () => {
     const api = createFakeSandboxApi();
 
-    await runLint(api);
+    await run(api, "lint");
 
     // The base job uploaded everything; lint found the same tree there.
-    expect(tarballs(api)).toHaveLength(1);
-
-    expect(
-      Object.keys(unpack(tarballs(api)[0]?.bytes as Uint8Array)).sort(),
-    ).toEqual(["dir/nested.txt", "edit.txt", "gone.txt", "keep.txt"]);
+    expect(tarballs(api).map(Object.keys)).toEqual([everything]);
 
     // The tree is kept in the cached snapshot's own metadata.
-    expect(cachedBase(api).meta.treeId).toBe(await workingTreeId(repo));
+    expect(
+      JSON.parse(cachedBase(api)?.files.get(snapshotMetaPath) ?? "{}"),
+    ).toEqual({ treeId: await workingTreeId(repo) });
 
     write("edit.txt", "after");
     write("added.txt", "added");
     rmSync(join(repo, "gone.txt"));
 
-    await runLint(api);
+    await run(api, "lint");
 
-    // The base came from the cache, so only the second job uploaded: a tar of
-    // the two files that were added or changed, and one command that removes
-    // the one that's gone.
-    expect(tarballs(api)).toHaveLength(2);
-
-    expect(unpack(tarballs(api)[1]?.bytes as Uint8Array)).toEqual({
+    // The base came from the cache, so only the second job uploaded: the two
+    // files that were added or changed, and one command that removes the one
+    // that's gone.
+    expect(tarballs(api)[1]).toEqual({
       "added.txt": "added",
       "edit.txt": "after",
     });
 
-    const removals = api.commands.filter((argv) => {
-      return argv.join(" ").includes("rm -f --");
-    });
+    expect(
+      api.commands
+        .filter((argv) => {
+          return argv.join(" ").includes("rm -f --");
+        })
+        .map((argv) => {
+          return argv.slice(-1);
+        }),
+    ).toEqual([["gone.txt"]]);
+  });
 
-    expect(removals).toHaveLength(1);
-    expect(removals[0]?.slice(-1)).toEqual(["gone.txt"]);
+  test.each([
+    ["a tree this machine's git has never seen", { treeId: "0".repeat(40) }],
+    ["a snapshot that says nothing about its tree", {}],
+  ])("%s falls back to the whole tree", async (_label, meta: SnapshotMeta) => {
+    const api = createFakeSandboxApi();
+
+    await run(api, "base");
+
+    cachedBase(api)?.files.set(snapshotMetaPath, JSON.stringify(meta));
+
+    write("edit.txt", "after");
+
+    await run(api, "lint");
+
+    expect(tarballs(api).map(Object.keys)).toEqual([everything, everything]);
   });
 
   test("a snapshot of a job that isn't cached carries its tree too", async () => {
-    const { api, ci } = harness();
+    const api = createFakeSandboxApi();
 
-    const parent = ci.job("parent", async () => {
-      await checkout();
-    });
+    const ci = createCi(createCiTestClient(api), { github: consoleReporter() });
+    const parent = ci.job("parent", checkout);
 
     const child = ci.job({ id: "child", from: parent }, async () => {
       write("edit.txt", "edited by the child's run");
@@ -240,46 +210,16 @@ describe("checkout() of a local working tree", () => {
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return child();
       }),
-      { event: event(repo) },
+      {
+        event: {
+          ...prEvent,
+          data: { ...prEvent.data, local: { path: repo, baseRef: "main" } },
+        },
+      },
     );
 
-    expect(tarballs(api)).toHaveLength(2);
-
-    expect(unpack(tarballs(api)[1]?.bytes as Uint8Array)).toEqual({
+    expect(tarballs(api)[1]).toEqual({
       "edit.txt": "edited by the child's run",
     });
-  });
-
-  test.each([
-    [
-      "a tree this machine's git has never seen",
-      (meta: SnapshotMeta) => {
-        return { ...meta, treeId: "0".repeat(40) };
-      },
-    ],
-    [
-      "a snapshot that says nothing about its tree",
-      (meta: SnapshotMeta) => {
-        const { treeId: _dropped, ...rest } = meta;
-
-        return rest;
-      },
-    ],
-  ])("%s falls back to the whole tree", async (_label, change) => {
-    const api = createFakeSandboxApi();
-
-    await runBase(api);
-
-    cachedBase(api).rewrite(change);
-
-    write("edit.txt", "after");
-
-    await runLint(api);
-
-    expect(tarballs(api)).toHaveLength(2);
-
-    expect(
-      Object.keys(unpack(tarballs(api)[1]?.bytes as Uint8Array)).sort(),
-    ).toEqual(["dir/nested.txt", "edit.txt", "gone.txt", "keep.txt"]);
   });
 });

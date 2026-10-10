@@ -28,7 +28,6 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
-import type { SnapshotMeta } from "./snapshotMeta.ts";
 import {
   parseSnapshotMeta,
   snapshotMetaPath,
@@ -109,8 +108,8 @@ export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 
 interface Started {
   // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
   sandbox: any;
-  /** What the snapshot it started from says about itself, if anything. */
-  meta?: SnapshotMeta;
+  /** The working tree the snapshot it started from holds, if it says. */
+  treeId?: string;
 }
 
 const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
@@ -153,11 +152,11 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
       ["/bin/sh", "-c", machineSetupScript],
     );
 
-    const meta = options.snapshotId
+    const { treeId } = options.snapshotId
       ? parseSnapshotMeta(setup?.stdout ?? "")
-      : undefined;
+      : {};
 
-    return { sandbox, ...(meta ? { meta } : {}) };
+    return { sandbox, treeId };
   };
 
   const startFresh = (note: string) => {
@@ -318,13 +317,9 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     sandbox: started.sandbox,
     name,
     id: started.sandbox.id,
+    // Lets `checkout()` upload only what changed since the snapshot.
+    treeId: started.treeId,
   };
-
-  // A machine from a snapshot has the working tree that snapshot was taken
-  // with, which is what lets `checkout()` upload only what changed since.
-  if (started.meta?.treeId) {
-    handle.treeId = started.meta.treeId;
-  }
 
   return handle;
 };

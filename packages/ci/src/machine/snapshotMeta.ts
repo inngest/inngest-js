@@ -37,24 +37,14 @@ export const writeSnapshotMetaCommand = (meta: SnapshotMeta): string[] => {
 
 /**
  * Read the file's contents, as printed by a machine's setup. Anything that
- * isn't the file, such as nothing at all on a fresh machine, is `undefined`.
+ * isn't the file, such as nothing at all on a fresh machine, says nothing.
  */
-export const parseSnapshotMeta = (stdout: string): SnapshotMeta | undefined => {
-  const text = stdout.trim();
-
-  if (!text) {
-    return undefined;
-  }
-
+export const parseSnapshotMeta = (stdout: string): SnapshotMeta => {
   try {
-    const parsed = JSON.parse(text) as Partial<SnapshotMeta>;
+    const { treeId } = JSON.parse(stdout) as SnapshotMeta;
 
-    if (!parsed || typeof parsed !== "object") {
-      return undefined;
-    }
-
-    return typeof parsed.treeId === "string" ? { treeId: parsed.treeId } : {};
+    return typeof treeId === "string" ? { treeId } : {};
   } catch {
-    return undefined;
+    return {};
   }
 };

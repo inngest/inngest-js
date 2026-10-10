@@ -392,17 +392,11 @@ export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
-/** A size for the activity line: `812 B`, `40 KB`, `3.2 MB`, `38 MB`. */
+/** A size for the activity line: `40 KB`, `3.2 MB`. */
 export const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
   if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
+    return `${Math.ceil(bytes / 1024)} KB`;
   }
 
-  const megabytes = bytes / 1024 / 1024;
-
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };

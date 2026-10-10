@@ -92,32 +92,21 @@ export const treeDelta = async (
   try {
     await git(cwd, ["cat-file", "-e", `${from}^{tree}`]);
 
-    const output = await git(cwd, [
-      "diff",
-      "--name-status",
-      "-z",
-      "--no-renames",
-      from,
-      to,
-    ]);
+    const paths = async (filter: string) => {
+      const output = await git(cwd, [
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-renames",
+        `--diff-filter=${filter}`,
+        from,
+        to,
+      ]);
 
-    const parts = output.split("\0");
-    const delta: TreeDelta = { changed: [], deleted: [] };
+      return output.split("\0").filter(Boolean);
+    };
 
-    for (let i = 0; i + 1 < parts.length; i += 2) {
-      const status = parts[i] as string;
-      const path = parts[i + 1] as string;
-
-      if (status === "D") {
-        delta.deleted.push(path);
-      } else if (status === "A" || status === "M" || status === "T") {
-        delta.changed.push(path);
-      } else {
-        return undefined;
-      }
-    }
-
-    return delta;
+    return { changed: await paths("AMT"), deleted: await paths("D") };
   } catch {
     return undefined;
   }
