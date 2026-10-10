@@ -25,15 +25,17 @@ import { runFunction } from "../testing/runFunction.ts";
 import type { GitHubProvider } from "./auth.ts";
 import { githubApp, githubToken } from "./auth.ts";
 
+type FakeGitHub = ReturnType<typeof createFakeGitHub>;
+
+type Ci = ReturnType<typeof setup>["ci"];
+
 const secret = "ghs_never_in_a_trace";
 
 const nightly = { name: "test/nightly", data: {} };
 
 /** A CI client whose GitHub calls go to a fake, with the given provider. */
 const setup = (
-  provider: (gh: ReturnType<typeof createFakeGitHub>) => GitHubProvider = (
-    gh,
-  ) => {
+  provider: (gh: FakeGitHub) => GitHubProvider = (gh) => {
     return githubToken({
       token: secret,
       baseUrl: "https://api.github.test",
@@ -55,15 +57,19 @@ const setup = (
 };
 
 /** Make `acme/platform`'s `main` branch resolve to a commit. */
-const platform = (
-  gh: ReturnType<typeof createFakeGitHub>,
-  sha = "cafe1234",
-) => {
+const platform = (gh: FakeGitHub, sha = "cafe1234") => {
   gh.route("GET /repos/acme/platform", { default_branch: "main" });
 
   gh.route("GET /repos/acme/platform/commits/main", { sha });
 
   gh.route("GET /repos/acme/platform/commits/v2", { sha: "beef5678" });
+};
+
+/** Make `ref` of the run's own repository resolve to a commit. */
+const ownRepo = (gh: FakeGitHub, ref: string, sha: string) => {
+  gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
+
+  gh.route(`GET /repos/inngest/inngest-js/commits/${ref}`, { sha });
 };
 
 const cloneScripts = (api: ReturnType<typeof createFakeSandboxApi>) => {
@@ -76,22 +82,92 @@ const cloneScripts = (api: ReturnType<typeof createFakeSandboxApi>) => {
     });
 };
 
+type Checkout = Parameters<typeof checkout>[0];
+
+/**
+ * Run jobs that each call `checkout()` with their own options, side by side,
+ * in a pull request run or, with no repository in the trigger, a cron.
+ */
+const checkingOut = (
+  ci: Ci,
+  jobs: Record<string, Checkout>,
+  event: typeof prEvent | typeof nightly = prEvent,
+) => {
+  return running(
+    ci,
+    Object.fromEntries(
+      Object.entries(jobs).map(([id, opts]) => {
+        return [
+          id,
+          async () => {
+            await checkout(opts);
+          },
+        ];
+      }),
+    ),
+    event,
+  );
+};
+
+/** Run jobs side by side in a pull request run or a cron. */
+const running = (
+  ci: Ci,
+  bodies: Record<string, () => Promise<void>>,
+  event: typeof prEvent | typeof nightly = prEvent,
+) => {
+  const jobs = Object.entries(bodies).map(([id, body]) => {
+    return ci.job(id, body);
+  });
+
+  const options =
+    event === nightly
+      ? {
+          id: "nightly",
+          on: [{ event: "test/nightly" }],
+          check: false as const,
+        }
+      : { id: "pr", on: prTrigger };
+
+  return runFunction(
+    ci.pipeline(options, async () => {
+      await Promise.all(
+        jobs.map((job) => {
+          return job();
+        }),
+      );
+    }),
+    { event },
+  );
+};
+
+const refSteps = (stepIds: string[]) => {
+  return stepIds.filter((id) => {
+    return id.startsWith("github › ref:");
+  });
+};
+
+/** What each step says it set out to do, by step ID. */
+const intents = (metadata: Awaited<ReturnType<typeof running>>["metadata"]) => {
+  return Object.fromEntries(
+    metadata.map((update) => {
+      return [update.step, update.values.intent];
+    }),
+  );
+};
+
+const requestsTo = (gh: FakeGitHub, path: string) => {
+  return gh.requests.filter((request) => {
+    return request.path === path;
+  });
+};
+
 describe("checkout() of another repository", () => {
   test("clones the commit the default branch resolves to", async () => {
     const { api, gh, ci } = setup();
 
     platform(gh);
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
+    const result = await checkingOut(ci, { build: { repo: "acme/platform" } });
 
     expect(result.type).toBe("function-resolved");
     expect(result.stepIds).toContain("github › default-branch:acme/platform");
@@ -106,27 +182,29 @@ describe("checkout() of another repository", () => {
       sha: "cafe1234",
       source: "github",
     });
+
+    expect(intents(result.metadata)).toMatchObject({
+      "github › default-branch:acme/platform":
+        "Find the default branch of `acme/platform`",
+      "github › ref:acme/platform@main":
+        "Resolve `main` of `acme/platform` to a commit",
+      "build › checkout": "Clone `acme/platform` into `/work`",
+    });
   });
 
   test("keeps the installation token out of every step", async () => {
-    const { gh, ci } = setup();
+    const { api, gh, ci } = setup();
 
     platform(gh);
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform", ref: "v2" });
+    const result = await checkingOut(ci, {
+      build: { repo: "acme/platform", ref: "v2" },
     });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
 
     expect(result.type).toBe("function-resolved");
     expect(JSON.stringify(result.steps)).not.toContain(secret);
     expect(JSON.stringify(result.metadata)).not.toContain(secret);
+    expect(JSON.stringify(api.commands)).not.toContain(secret);
   });
 
   test("resolves a ref to a commit once per run", async () => {
@@ -134,36 +212,38 @@ describe("checkout() of another repository", () => {
 
     platform(gh);
 
-    const first = ci.job("first", async () => {
-      await checkout({ repo: "acme/platform", ref: "main" });
+    const result = await checkingOut(ci, {
+      first: { repo: "acme/platform", ref: "main" },
+      second: { repo: "acme/platform", ref: "main", path: "/other" },
     });
-
-    const second = ci.job("second", async () => {
-      await checkout({ repo: "acme/platform", ref: "main", path: "/other" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await Promise.all([first(), second()]);
-      }),
-      { event: prEvent },
-    );
 
     expect(result.type).toBe("function-resolved");
-
-    expect(
-      result.stepIds.filter((id) => {
-        return id.startsWith("github › ref:");
-      }),
-    ).toEqual(["github › ref:acme/platform@main"]);
-
-    expect(
-      gh.requests.filter((request) => {
-        return request.path === "/repos/acme/platform/commits/main";
-      }),
-    ).toHaveLength(1);
-
+    expect(refSteps(result.stepIds)).toEqual([
+      "github › ref:acme/platform@main",
+    ]);
+    expect(requestsTo(gh, "/repos/acme/platform/commits/main")).toHaveLength(1);
     expect(cloneScripts(api)).toHaveLength(2);
+  });
+
+  test("repo alone and repo with the default branch share one resolve step", async () => {
+    const { gh, ci } = setup();
+
+    platform(gh);
+
+    const result = await checkingOut(ci, {
+      first: { repo: "acme/platform" },
+      second: { repo: "acme/platform", ref: "main", path: "/other" },
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(refSteps(result.stepIds)).toEqual([
+      "github › ref:acme/platform@main",
+    ]);
+    expect(requestsTo(gh, "/repos/acme/platform/commits/main")).toHaveLength(1);
+    expect(result.steps["first › checkout"]).toMatchObject({ sha: "cafe1234" });
+    expect(result.steps["second › checkout"]).toMatchObject({
+      sha: "cafe1234",
+    });
   });
 
   test("works when the run's trigger has no repository", async () => {
@@ -171,18 +251,10 @@ describe("checkout() of another repository", () => {
 
     platform(gh);
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform", ref: "main" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline(
-        { id: "nightly", on: [{ event: "test/nightly" }], check: false },
-        async () => {
-          return build();
-        },
-      ),
-      { event: nightly },
+    const result = await checkingOut(
+      ci,
+      { build: { repo: "acme/platform", ref: "main" } },
+      nightly,
     );
 
     expect(result.type).toBe("function-resolved");
@@ -192,19 +264,7 @@ describe("checkout() of another repository", () => {
   test("still needs a repository when none is given", async () => {
     const { ci } = setup();
 
-    const build = ci.job("build", async () => {
-      await checkout();
-    });
-
-    const result = await runFunction(
-      ci.pipeline(
-        { id: "nightly", on: [{ event: "test/nightly" }], check: false },
-        async () => {
-          return build();
-        },
-      ),
-      { event: nightly },
-    );
+    const result = await checkingOut(ci, { build: {} }, nightly);
 
     expect(result.type).toBe("function-rejected");
     expect(JSON.stringify(result.error)).toContain("needs a repository");
@@ -213,91 +273,12 @@ describe("checkout() of another repository", () => {
   test("a ref alone overrides the run's commit for its own repository", async () => {
     const { api, gh, ci } = setup();
 
-    gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
+    ownRepo(gh, "release", "feed9999");
 
-    gh.route("GET /repos/inngest/inngest-js/commits/release", {
-      sha: "feed9999",
-    });
-
-    const build = ci.job("build", async () => {
-      await checkout({ ref: "release" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
+    const result = await checkingOut(ci, { build: { ref: "release" } });
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'feed9999'");
-  });
-
-  test("a ref that doesn't exist is named in the error", async () => {
-    const { gh, ci } = setup();
-
-    platform(gh);
-
-    gh.route("GET /repos/acme/platform/commits/nope", {}, 422);
-
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform", ref: "nope" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-rejected");
-    expect(JSON.stringify(result.error)).toContain("`nope`");
-    expect(JSON.stringify(result.error)).toContain("acme/platform");
-  });
-});
-
-describe("one commit per repository per run", () => {
-  test("repo alone and repo with the default branch share one resolve step", async () => {
-    const { gh, ci } = setup();
-
-    platform(gh);
-
-    const first = ci.job("first", async () => {
-      await checkout({ repo: "acme/platform" });
-    });
-
-    const second = ci.job("second", async () => {
-      await checkout({ repo: "acme/platform", ref: "main", path: "/other" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await Promise.all([first(), second()]);
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-resolved");
-
-    expect(
-      result.stepIds.filter((id) => {
-        return id.startsWith("github › ref:");
-      }),
-    ).toEqual(["github › ref:acme/platform@main"]);
-
-    expect(
-      gh.requests.filter((request) => {
-        return request.path === "/repos/acme/platform/commits/main";
-      }),
-    ).toHaveLength(1);
-
-    expect(result.steps["build › checkout"]).toBeUndefined();
-    expect(result.steps["first › checkout"]).toMatchObject({ sha: "cafe1234" });
-    expect(result.steps["second › checkout"]).toMatchObject({
-      sha: "cafe1234",
-    });
   });
 
   test("a long ref keeps the step ID bounded", async () => {
@@ -308,161 +289,15 @@ describe("one commit per repository per run", () => {
 
     gh.route(`GET /repos/acme/platform/commits/${ref}`, { sha: "aaaa0000" });
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform", ref });
+    const result = await checkingOut(ci, {
+      build: { repo: "acme/platform", ref },
     });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
 
     expect(result.type).toBe("function-resolved");
 
     for (const id of result.stepIds) {
       expect(id.length).toBeLessThanOrEqual(255);
     }
-  });
-});
-
-describe("what a failed lookup says", () => {
-  const failed = async (
-    prepare: (gh: ReturnType<typeof createFakeGitHub>) => void,
-    opts: { repo: string; ref?: string } = { repo: "acme/platform" },
-    provider?: Parameters<typeof setup>[0],
-  ) => {
-    const { ci, gh } = setup(provider);
-
-    prepare(gh);
-
-    const build = ci.job("build", async () => {
-      await checkout(opts);
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-rejected");
-
-    return JSON.stringify(result.error);
-  };
-
-  test("no ref and no default branch says so, not undefined", async () => {
-    const message = await failed((gh) => {
-      gh.route("GET /repos/acme/platform", {});
-    });
-
-    expect(message).toContain("the default branch");
-    expect(message).not.toContain("undefined");
-  });
-
-  test("an empty repository is called empty", async () => {
-    const message = await failed((gh) => {
-      gh.route("GET /repos/acme/platform", { default_branch: "main" });
-
-      gh.route(
-        "GET /repos/acme/platform/commits/main",
-        { message: "Git Repository is empty." },
-        409,
-      );
-    });
-
-    expect(message).toContain("the repository is empty");
-  });
-
-  test("the token provider says the token, not the GitHub App", async () => {
-    const message = await failed((gh) => {
-      gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
-    });
-
-    expect(message).toContain("The token can't access");
-    expect(message).not.toContain("GitHub App");
-  });
-
-  test.each([
-    "acme",
-    "acme/platform/extra",
-    "-acme/platform",
-    "ac me/platform",
-    "acme/plat form",
-    "acme/..",
-    "acme/.",
-    "acme/pla\ttform",
-    "ac_me/platform",
-  ])("rejects the repo %j", async (repo) => {
-    const message = await failed(() => {}, { repo });
-
-    expect(message).toContain("`repo` must be");
-  });
-});
-
-describe("a truncated tree", () => {
-  test("throws instead of hashing part of the files", async () => {
-    const { gh, ci } = setup();
-
-    platform(gh);
-
-    gh.route("GET /repos/acme/platform/git/trees/cafe1234", {
-      truncated: true,
-      tree: [{ type: "blob", path: "a", sha: "1" }],
-    });
-
-    const image = ci.job(
-      {
-        id: "image",
-        cache: { key: files("**", { repo: "acme/platform" }) },
-      },
-      async () => {
-        await $`build image`;
-      },
-    );
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return image();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-rejected");
-    expect(result.retriable).toBe(false);
-
-    const message = JSON.stringify(result.error);
-
-    expect(message).toContain("too large to hash");
-    expect(message).toContain("narrower patterns");
-  });
-});
-
-describe("the clone", () => {
-  test("keeps the token out of the clone script and commands", async () => {
-    const { api, gh, ci } = setup();
-
-    platform(gh);
-
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.type).toBe("function-resolved");
-
-    const script = cloneScripts(api)[0] ?? "";
-
-    expect(script).not.toContain(secret);
-    expect(JSON.stringify(api.commands)).not.toContain(secret);
   });
 
   test("fetches a fork's pull request head when the repo's case differs", async () => {
@@ -472,25 +307,18 @@ describe("the clone", () => {
       sha: "abc1234",
     });
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "INNGEST/Inngest-JS", ref: "abc1234" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
+    const result = await checkingOut(
+      ci,
+      { build: { repo: "INNGEST/Inngest-JS", ref: "abc1234" } },
       {
-        event: {
-          ...prEvent,
-          data: {
-            ...prEvent.data,
-            pull_request: {
-              ...prEvent.data.pull_request,
-              head: {
-                ...prEvent.data.pull_request.head,
-                repo: { full_name: "someone/inngest-js" },
-              },
+        ...prEvent,
+        data: {
+          ...prEvent.data,
+          pull_request: {
+            ...prEvent.data.pull_request,
+            head: {
+              ...prEvent.data.pull_request.head,
+              repo: { full_name: "someone/inngest-js" },
             },
           },
         },
@@ -502,6 +330,103 @@ describe("the clone", () => {
   });
 });
 
+describe("what a failed lookup says", () => {
+  const cases: {
+    name: string;
+    routes?: (gh: FakeGitHub) => void;
+    opts?: Checkout;
+    provider?: Parameters<typeof setup>[0];
+    contains: string[];
+    excludes?: string[];
+  }[] = [
+    {
+      name: "a ref that doesn't exist is named",
+      routes: (gh) => {
+        platform(gh);
+
+        gh.route("GET /repos/acme/platform/commits/nope", {}, 422);
+      },
+      opts: { repo: "acme/platform", ref: "nope" },
+      contains: ["`nope`", "acme/platform"],
+    },
+    {
+      name: "no default branch says so, not undefined",
+      routes: (gh) => {
+        gh.route("GET /repos/acme/platform", {});
+      },
+      contains: ["the default branch"],
+      excludes: ["undefined"],
+    },
+    {
+      name: "an empty repository is called empty",
+      routes: (gh) => {
+        platform(gh);
+
+        gh.route(
+          "GET /repos/acme/platform/commits/main",
+          { message: "Git Repository is empty." },
+          409,
+        );
+      },
+      contains: ["the repository is empty"],
+    },
+    {
+      name: "the token provider says the token, not the GitHub App",
+      routes: (gh) => {
+        gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+      },
+      contains: ["The token can't access"],
+      excludes: ["GitHub App"],
+    },
+    ...[
+      "acme",
+      "acme/platform/extra",
+      "-acme/platform",
+      "ac me/platform",
+      "acme/plat form",
+      "acme/..",
+      "acme/.",
+      "acme/pla\ttform",
+      "ac_me/platform",
+    ].map((repo) => {
+      return {
+        name: `the repo ${JSON.stringify(repo)} is rejected`,
+        opts: { repo },
+        contains: ["`repo` must be"],
+      };
+    }),
+  ];
+
+  test.each(cases)(
+    "$name",
+    async ({
+      routes,
+      opts = { repo: "acme/platform" },
+      provider,
+      contains,
+      excludes = [],
+    }) => {
+      const { ci, gh } = setup(provider);
+
+      routes?.(gh);
+
+      const result = await checkingOut(ci, { build: opts });
+
+      expect(result.type).toBe("function-rejected");
+
+      const message = JSON.stringify(result.error);
+
+      for (const text of contains) {
+        expect(message).toContain(text);
+      }
+
+      for (const text of excludes) {
+        expect(message).not.toContain(text);
+      }
+    },
+  );
+});
+
 describe("the GitHub App's installation", () => {
   const key = generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -509,7 +434,7 @@ describe("the GitHub App's installation", () => {
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   }).privateKey;
 
-  const app = (gh: ReturnType<typeof createFakeGitHub>) => {
+  const app = (gh: FakeGitHub) => {
     return githubApp({
       appId: "123",
       privateKey: key,
@@ -518,7 +443,7 @@ describe("the GitHub App's installation", () => {
     });
   };
 
-  const tokenRoutes = (gh: ReturnType<typeof createFakeGitHub>) => {
+  const tokenRoutes = (gh: FakeGitHub) => {
     const expires = new Date(Date.now() + 3600_000).toISOString();
 
     gh.route("POST /app/installations/1/access_tokens", {
@@ -532,26 +457,33 @@ describe("the GitHub App's installation", () => {
     });
   };
 
-  const requestsOf = (gh: ReturnType<typeof createFakeGitHub>) => {
+  const requestsOf = (gh: FakeGitHub) => {
     return gh.requests.map((request) => {
       return `${request.method} ${request.path}`;
     });
   };
 
-  const checkoutPlatform = async (
-    ci: ReturnType<typeof setup>["ci"],
-    opts: { repo: string } = { repo: "acme/platform" },
-  ) => {
-    const build = ci.job("build", async () => {
-      await checkout(opts);
+  /** Answer as the other installation would, and 404 for the run's own. */
+  const onlyInstallation99 = (gh: FakeGitHub, path: string, body: unknown) => {
+    gh.handle(`GET ${path}`, (request) => {
+      return request.authorization?.includes("tok_run")
+        ? { body: { message: "Not Found" }, status: 404 }
+        : { body };
     });
+  };
 
-    return runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event: prEvent },
-    );
+  const rateLimited = (headers: Record<string, string>) => {
+    return () => {
+      return {
+        body: { message: "API rate limit exceeded" },
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0", ...headers },
+      };
+    };
+  };
+
+  const checkoutRepo = (ci: Ci, repo = "acme/platform") => {
+    return checkingOut(ci, { build: { repo } });
   };
 
   test("the run's own installation is used first", async () => {
@@ -560,7 +492,7 @@ describe("the GitHub App's installation", () => {
     platform(gh);
     tokenRoutes(gh);
 
-    const result = await checkoutPlatform(ci);
+    const result = await checkoutRepo(ci);
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
@@ -578,7 +510,7 @@ describe("the GitHub App's installation", () => {
     platform(gh);
     tokenRoutes(gh);
 
-    await checkoutPlatform(ci);
+    await checkoutRepo(ci);
 
     const minted = gh.requests.filter((request) => {
       return (
@@ -600,19 +532,13 @@ describe("the GitHub App's installation", () => {
 
     gh.route("GET /repos/acme/platform/installation", { id: 99 });
 
-    gh.handle("GET /repos/acme/platform", (request) => {
-      return request.authorization?.includes("tok_run")
-        ? { body: { message: "Not Found" }, status: 404 }
-        : { body: { default_branch: "main" } };
+    onlyInstallation99(gh, "/repos/acme/platform", { default_branch: "main" });
+
+    onlyInstallation99(gh, "/repos/acme/platform/commits/main", {
+      sha: "cafe1234",
     });
 
-    gh.handle("GET /repos/acme/platform/commits/main", (request) => {
-      return request.authorization?.includes("tok_run")
-        ? { body: { message: "Not Found" }, status: 404 }
-        : { body: { sha: "cafe1234" } };
-    });
-
-    const result = await checkoutPlatform(ci);
+    const result = await checkoutRepo(ci);
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
@@ -643,7 +569,7 @@ describe("the GitHub App's installation", () => {
       404,
     );
 
-    const result = await checkoutPlatform(ci, { repo: "acme/secret" });
+    const result = await checkoutRepo(ci, "acme/secret");
 
     expect(result.type).toBe("function-rejected");
     expect(result.retriable).toBe(false);
@@ -661,22 +587,13 @@ describe("the GitHub App's installation", () => {
 
     tokenRoutes(gh);
 
-    gh.handle("GET /repos/acme/platform", () => {
-      return {
-        body: { message: "API rate limit exceeded" },
-        status: 403,
-        headers: { "x-ratelimit-remaining": "0", "retry-after": "1" },
-      };
-    });
+    gh.handle("GET /repos/acme/platform", rateLimited({ "retry-after": "1" }));
 
-    const result = await checkoutPlatform(ci);
+    const result = await checkoutRepo(ci);
 
     expect(result.type).toBe("function-rejected");
-
-    const message = JSON.stringify(result.error);
-
-    expect(message).toContain("rate limit");
-    expect(message).not.toContain("can't access");
+    expect(JSON.stringify(result.error)).toContain("rate limit");
+    expect(JSON.stringify(result.error)).not.toContain("can't access");
 
     expect(
       requestsOf(gh).filter((path) => {
@@ -692,15 +609,9 @@ describe("the GitHub App's installation", () => {
 
     gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
 
-    gh.handle("GET /repos/acme/platform/installation", () => {
-      return {
-        body: { message: "API rate limit exceeded" },
-        status: 403,
-        headers: { "x-ratelimit-remaining": "0" },
-      };
-    });
+    gh.handle("GET /repos/acme/platform/installation", rateLimited({}));
 
-    const result = await checkoutPlatform(ci);
+    const result = await checkoutRepo(ci);
 
     expect(result.type).toBe("function-rejected");
     expect(JSON.stringify(result.error)).toContain("rate limit");
@@ -720,7 +631,7 @@ describe("the GitHub App's installation", () => {
       401,
     );
 
-    const result = await checkoutPlatform(ci);
+    const result = await checkoutRepo(ci);
 
     expect(result.type).toBe("function-rejected");
     expect(result.retriable).toBe(false);
@@ -729,46 +640,39 @@ describe("the GitHub App's installation", () => {
 });
 
 describe("files() of another repository or ref", () => {
-  const tree = (sha: string) => {
-    return {
-      tree: [
-        { type: "blob", path: "images/node-base/Dockerfile", sha },
-        { type: "blob", path: "README.md", sha: "ignored" },
-      ],
-    };
-  };
+  /** A job cached on `files()`, in a run of its own. */
+  const runImage = (ci: Ci, part: ReturnType<typeof files>) => {
+    const image = ci.job({ id: "image", cache: { key: part } }, async () => {
+      await $`build image`;
+    });
 
-  /** Names of the cached snapshots after one run with the given tree. */
-  const cachedNames = async (
-    base: string,
-    opts: { ref?: string } = {},
-  ): Promise<{ names: string[]; paths: string[] }> => {
-    const { api, gh, ci } = setup();
-
-    platform(gh, "cafe1234");
-
-    gh.route("GET /repos/acme/platform/git/trees/cafe1234", tree(base));
-
-    const image = ci.job(
-      {
-        id: "image",
-        cache: {
-          key: files("images/node-base/**", {
-            repo: "acme/platform",
-            ...opts,
-          }),
-        },
-      },
-      async () => {
-        await $`build image`;
-      },
-    );
-
-    const result = await runFunction(
+    return runFunction(
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return image();
       }),
       { event: prEvent },
+    );
+  };
+
+  /** Names of the cached snapshots after one run with the given tree. */
+  const cachedNames = async (base: string, ref?: string) => {
+    const { api, gh, ci } = setup();
+
+    platform(gh);
+
+    gh.route("GET /repos/acme/platform/git/trees/cafe1234", {
+      tree: [
+        { type: "blob", path: "images/node-base/Dockerfile", sha: base },
+        { type: "blob", path: "README.md", sha: "ignored" },
+      ],
+    });
+
+    const result = await runImage(
+      ci,
+      files("images/node-base/**", {
+        repo: "acme/platform",
+        ...(ref ? { ref } : {}),
+      }),
     );
 
     expect(result.type).toBe("function-resolved");
@@ -784,16 +688,16 @@ describe("files() of another repository or ref", () => {
   };
 
   test("reads the tree of the resolved commit, not the ref name", async () => {
-    const { paths } = await cachedNames("blob1", { ref: "main" });
+    const { paths } = await cachedNames("blob1", "main");
 
     expect(paths).toContain("/repos/acme/platform/git/trees/cafe1234");
     expect(paths).not.toContain("/repos/acme/platform/git/trees/main");
   });
 
   test("the key changes when the commit's matched files change", async () => {
-    const before = await cachedNames("blob1", { ref: "main" });
-    const same = await cachedNames("blob1", { ref: "main" });
-    const after = await cachedNames("blob2", { ref: "main" });
+    const before = await cachedNames("blob1", "main");
+    const same = await cachedNames("blob1", "main");
+    const after = await cachedNames("blob2", "main");
 
     expect(before.names).toHaveLength(1);
     expect(same.names).toEqual(before.names);
@@ -804,6 +708,27 @@ describe("files() of another repository or ref", () => {
     const { paths } = await cachedNames("blob1");
 
     expect(paths).toContain("/repos/acme/platform/commits/main");
+  });
+
+  test("a truncated tree throws instead of hashing part of the files", async () => {
+    const { gh, ci } = setup();
+
+    platform(gh);
+
+    gh.route("GET /repos/acme/platform/git/trees/cafe1234", {
+      truncated: true,
+      tree: [{ type: "blob", path: "a", sha: "1" }],
+    });
+
+    const result = await runImage(ci, files("**", { repo: "acme/platform" }));
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const message = JSON.stringify(result.error);
+
+    expect(message).toContain("too large to hash");
+    expect(message).toContain("narrower patterns");
   });
 
   test("keeps the part's own options", () => {
@@ -847,45 +772,42 @@ describe("a local run", () => {
     };
   };
 
-  test("uploads the working tree without options", async () => {
-    const { api, gh, ci } = setup();
-    const event = localEvent();
-
+  const runLocal = (ci: Ci, opts: Checkout[]) => {
     const build = ci.job("build", async () => {
-      await checkout();
-
-      await checkout({ repo: "inngest/inngest-js" });
+      for (const each of opts) {
+        await checkout(each);
+      }
     });
 
-    const result = await runFunction(
+    return runFunction(
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return build();
       }),
-      { event },
+      { event: localEvent() },
     );
+  };
+
+  test("uploads the working tree without options", async () => {
+    const { api, gh, ci } = setup();
+
+    const result = await runLocal(ci, [{}, { repo: "inngest/inngest-js" }]);
 
     expect(result.type).toBe("function-resolved");
     expect(result.steps["build › checkout"]).toMatchObject({ source: "local" });
+
+    expect(intents(result.metadata)["build › checkout"]).toBe(
+      "Upload the working tree to `/work`",
+    );
     expect(cloneScripts(api)).toHaveLength(0);
     expect(gh.requests).toHaveLength(0);
   });
 
   test("clones from GitHub for another repository", async () => {
     const { api, gh, ci } = setup();
-    const event = localEvent();
 
     platform(gh);
 
-    const build = ci.job("build", async () => {
-      await checkout({ repo: "acme/platform" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event },
-    );
+    const result = await runLocal(ci, [{ repo: "acme/platform" }]);
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
@@ -893,24 +815,10 @@ describe("a local run", () => {
 
   test("clones from GitHub for an explicit ref", async () => {
     const { api, gh, ci } = setup();
-    const event = localEvent();
 
-    gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
+    ownRepo(gh, "release", "feed9999");
 
-    gh.route("GET /repos/inngest/inngest-js/commits/release", {
-      sha: "feed9999",
-    });
-
-    const build = ci.job("build", async () => {
-      await checkout({ ref: "release" });
-    });
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build();
-      }),
-      { event },
-    );
+    const result = await runLocal(ci, [{ ref: "release" }]);
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain("checkout 'feed9999'");

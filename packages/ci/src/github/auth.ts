@@ -100,21 +100,28 @@ export const githubApp = (
     return { appId, privateKey: privateKey.replace(/\\n/g, "\n") };
   };
 
-  const appOctokit = (): Octokit => {
+  /** Where and how every client here makes its calls. */
+  const transport = {
+    ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+    ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+  };
+
+  const appOctokit = (installationId?: number): Octokit => {
     const { appId, privateKey } = resolve();
 
     return new Octokit({
       authStrategy: createAppAuth,
-      auth: { appId, privateKey },
-      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
+      auth: {
+        appId,
+        privateKey,
+        ...(installationId ? { installationId } : {}),
+      },
+      ...transport,
     });
   };
 
   /** A client for the installation, which can reach all of it. */
   const installationOctokit = (ctx?: AuthContext): Octokit => {
-    const { appId, privateKey } = resolve();
-
     const installationId =
       ctx?.installationId ??
       (process.env.GITHUB_INSTALLATION_ID
@@ -127,12 +134,7 @@ export const githubApp = (
       );
     }
 
-    return new Octokit({
-      authStrategy: createAppAuth,
-      auth: { appId, privateKey, installationId },
-      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
-    });
+    return appOctokit(installationId);
   };
 
   /** A token for the installation, narrowed to `repositoryNames` when given. */
@@ -152,11 +154,7 @@ export const githubApp = (
 
     // A narrowed client authenticates with a token that reaches only those
     // repositories.
-    return new Octokit({
-      auth: await installationToken(ctx),
-      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
-    });
+    return new Octokit({ auth: await installationToken(ctx), ...transport });
   };
 
   return {

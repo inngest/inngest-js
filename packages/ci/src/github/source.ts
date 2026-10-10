@@ -11,7 +11,7 @@ import { ciRun } from "../pipeline/metadata.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
-import type { FilesOptions, RepoContext } from "../types.ts";
+import type { FilesOptions } from "../types.ts";
 import { once, parseRepo } from "../util.ts";
 import type { AuthContext, GitHubProvider, Octokit } from "./auth.ts";
 import { mapGitHubError } from "./rest.ts";
@@ -44,19 +44,6 @@ export const targetsRunRepo = (run: CiRunScope, spec: SourceSpec): boolean => {
     spec.ref === undefined &&
     (spec.repo === undefined || sameRepo(spec.repo, run.repo?.fullName))
   );
-};
-
-/** The run's own repository and commit as a source. */
-const toSource = (repo: RepoContext): ResolvedSource => {
-  return {
-    owner: repo.owner,
-    name: repo.name,
-    fullName: repo.fullName,
-    sha: repo.sha,
-    ...(repo.installationId === undefined
-      ? {}
-      : { installationId: repo.installationId }),
-  };
 };
 
 const sourceKey = (fullName: string, ref: string): string => {
@@ -287,7 +274,8 @@ const defaultBranch = (run: CiRunScope, fullName: string): Promise<string> => {
  * whichever job asked first, so every replay and every job sees the same
  * commit: one step finds a repository's default branch when no `ref` is given,
  * and one step per repository and branch finds the commit. Call it outside a
- * step: a step can't start another.
+ * step: a step can't start another. Called again for what it already resolved,
+ * it starts nothing, so a step can call it.
  */
 export const resolveSource = async (
   run: CiRunScope,
@@ -300,7 +288,7 @@ export const resolveSource = async (
       );
     }
 
-    return toSource(run.repo);
+    return run.repo;
   }
 
   const fullName = spec.repo ?? run.repo?.fullName;
@@ -335,30 +323,4 @@ export const resolveSource = async (
       });
     });
   });
-};
-
-/**
- * A source that `resolveSource` already resolved, for use inside a step where
- * resolving is not possible.
- */
-export const resolvedSource = async (
-  run: CiRunScope,
-  spec: SourceSpec,
-): Promise<ResolvedSource> => {
-  if (targetsRunRepo(run, spec)) {
-    return resolveSource(run, spec);
-  }
-
-  const fullName = spec.repo ?? run.repo?.fullName ?? "";
-  const ref =
-    spec.ref ?? (await run.defaultBranches.get(fullName.toLowerCase()));
-  const known = ref ? run.sources.get(sourceKey(fullName, ref)) : undefined;
-
-  if (!known) {
-    throw new Error(
-      `\`${fullName}\` wasn't resolved before it was read. This is a bug in @inngest/ci.`,
-    );
-  }
-
-  return known;
 };

@@ -15,7 +15,6 @@ import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
   octokitForSource,
-  resolvedSource,
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
@@ -155,7 +154,7 @@ const resolveFilesPart = async (
   part: CacheKeyPart,
 ): Promise<string> => {
   if (!targetsRunRepo(run, part)) {
-    return hashRemoteFiles(run, await resolvedSource(run, part), part);
+    return hashRemoteFiles(run, await resolveSource(run, part), part);
   }
 
   const local = localRepo(run);
