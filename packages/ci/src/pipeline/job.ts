@@ -13,6 +13,7 @@ import {
   describeCached,
   lookupBeforeBuild,
   lookupCache,
+  maxAgeMsOf,
   runTarget,
 } from "../cache/cache.ts";
 import {
@@ -30,7 +31,12 @@ import {
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  shortReason,
+} from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, traceName } from "./names.ts";
@@ -66,6 +72,8 @@ export const defineJob = ({
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
+  checkMaxAge(config);
+
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
   if (jobs.has(config.id) && !getRunScope()) {
@@ -93,6 +101,35 @@ export const defineJob = ({
   ownJob(job, jobs);
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  let ms: number;
+
+  try {
+    ms = durationToMs(maxAge);
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
+
+  if (ms <= 0) {
+    throw new CiUsageError(
+      `Job "${config.id}" has a \`cache.maxAge\` of zero. It must be longer than that.`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
@@ -789,8 +826,11 @@ const snapshotBuilt = async (
     return;
   }
 
+  const maxAgeMs = maxAgeMsOf(scope.config.cache);
+
   const taken = await snapshotMachine(scope, {
     target,
+    ...(maxAgeMs === undefined ? {} : { maxAgeMs }),
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
     ...(run.build?.broken ? { broken: true } : {}),
     ...(run.build?.unnamed ? { unnamed: true } : {}),

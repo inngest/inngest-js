@@ -503,6 +503,104 @@ describe("jobs that start from one parent", () => {
   });
 });
 
+describe("a snapshot older than the cache's maxAge", () => {
+  const defineOldPipeline = (ci: ReturnType<typeof setup>["ci"]) => {
+    const install = ci.job(
+      { id: "install", cache: { key: "v1", maxAge: "1d" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job({ id: "lint", from: install }, async () => {
+      await $`pnpm lint`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+    });
+  };
+
+  test("is reused while it is younger", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+    const pipeline = defineOldPipeline(ci);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [holder] = named(api);
+
+    (holder as { createdAt: string }).createdAt = new Date(
+      Date.now() - 60 * 60 * 1000,
+    ).toISOString();
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(true);
+  });
+
+  test("is rebuilt, and the rebuild takes the name", async () => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+    const pipeline = defineOldPipeline(ci);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [holder, ...others] = named(api);
+
+    expect(others).toEqual([]);
+
+    (holder as { createdAt: string }).createdAt = new Date(
+      Date.now() - 2 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(2);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(false);
+
+    const [replacement, ...rest] = named(api);
+
+    expect(rest).toEqual([]);
+    expect(replacement?.id).not.toBe(holder?.id);
+    expect(replacement?.name).toBe(holder?.name);
+    expect(replacement?.status).toBe("READY");
+  });
+
+  test("a malformed maxAge throws when the job is defined", () => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job(
+        { id: "install", cache: { key: "v1", maxAge: "a day" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+    }).toThrow(/cache\.maxAge/);
+  });
+
+  test("a zero maxAge throws when the job is defined", () => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job(
+        { id: "install", cache: { key: "v1", maxAge: "0s" } },
+        async () => {},
+      );
+    }).toThrow(/cache\.maxAge/);
+  });
+});
+
 describe("a job that starts from a job in its own app", () => {
   /**
    * `test` starts from `build`, which starts from `install`, each keyed on

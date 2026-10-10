@@ -522,6 +522,8 @@ export interface SnapshotCache {
    * failing to name it isn't worth a warning.
    */
   ephemeral?: boolean;
+  /** How old a snapshot holding the name may be, in milliseconds. */
+  maxAgeMs?: number;
 }
 
 /** A snapshot of a job's machine. */
@@ -606,7 +608,7 @@ const createNamedSnapshot = async (
   handle: MachineHandle,
   jobPath: string,
   stepId: string,
-  { target, exclude, broken, ephemeral }: SnapshotCache,
+  { target, exclude, broken, ephemeral, maxAgeMs }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -641,6 +643,7 @@ const createNamedSnapshot = async (
       name,
       exclude,
       broken,
+      maxAgeMs,
     );
 
     if (taken.winner) {
