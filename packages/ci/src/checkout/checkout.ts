@@ -7,13 +7,14 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
-import { ciRun } from "../pipeline/metadata.ts";
+import { ciStepOptions } from "../pipeline/metadata.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   countApi,
   defaultCwd,
+  joinId,
   requireJobScope,
-  scopeSeparator,
 } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { shellEscape } from "../util.ts";
@@ -89,43 +90,19 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   }
 
   const machine = await ensureMachine(scope);
-  const stepId = `${scope.path}${scopeSeparator}checkout`;
+  const stepId = joinId(scope.path, "checkout");
 
-  await ciRun(
-    run,
-    {
-      step: { id: stepId, name: stepId },
-      intent: local
-        ? `Upload the working tree to \`${target}\``
-        : `Clone \`${repo?.fullName}\` into \`${target}\``,
-    },
-    async (note) => {
-      if (local) {
-        const uploaded = await uploadWorkingTree(
-          run,
-          machine,
-          local.path,
-          target,
-        );
+  const spec = local
+    ? steps.uploadWorkingTree(stepId, target)
+    : steps.cloneRepository(stepId, (repo as RepoContext).fullName, target);
 
-        note.outcome({ path: target, source: "local" });
+  await run.step.run(ciStepOptions(spec), async () => {
+    if (local) {
+      return uploadWorkingTree(run, machine, local.path, target);
+    }
 
-        return uploaded;
-      }
-
-      const cloned = await cloneFromGithub(
-        run,
-        machine,
-        repo as RepoContext,
-        opts,
-        target,
-      );
-
-      note.outcome({ path: target, sha: repo?.sha });
-
-      return cloned;
-    },
-  );
+    return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
+  });
 
   scope.cwd ??= target;
 };

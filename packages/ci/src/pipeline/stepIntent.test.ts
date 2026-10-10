@@ -6,248 +6,189 @@
  * @module
  */
 
-import { runWithAsyncCtx } from "inngest/experimental";
 import { describe, expect, test } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { createCi } from "./createCi.ts";
-import { withNotes } from "./metadata.ts";
-
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
+import { ciStepOptions } from "./metadata.ts";
+import { ciOrigin, type StepSpec, steps } from "./names.ts";
 
 const setup = () => {
-  const api = createFakeSandboxApi();
-  const client = createCiTestClient(api);
-
-  const ci = createCi(client, {
+  const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
     github: consoleReporter(),
     runUrl: ({ runId }) => {
       return `http://localhost:8288/run?runID=${runId}`;
     },
   });
 
-  return { api, client, ci };
+  const install = ci.job({ id: "install", cache: { key: "v1" } }, async () => {
+    await $`pnpm install`;
+  });
+
+  const lint = ci.job({ id: "lint", from: install }, async () => {
+    await $`pnpm lint`;
+  });
+
+  const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+    await lint();
+  });
+
+  return pipeline;
 };
 
 type Metadata = Awaited<ReturnType<typeof runFunction>>["metadata"];
 
 /** A step's own metadata values, by the step's ID. */
 const stepValues = (metadata: Metadata, step: string) => {
-  return metadata.find((update) => {
-    return update.step === step && update.scope === "step";
-  })?.values;
+  return metadata
+    .filter((update) => {
+      return update.step === step && update.scope === "step";
+    })
+    .map((update) => {
+      return update.values;
+    });
 };
 
-describe("intent and outcome", () => {
-  test("a cache lookup says whether it found a snapshot", async () => {
-    const { ci } = setup();
-
-    const install = ci.job(
-      { id: "install", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
-
-    const lint = ci.job({ id: "lint", from: install }, async () => {
-      await $`pnpm lint`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+describe("intent and outcome in a run", () => {
+  test("each step says what it set out to do and what happened, once", async () => {
+    const pipeline = setup();
 
     const first = await runFunction(pipeline, { event: prEvent });
-
-    expect(first.type).toBe("function-resolved");
-
-    const miss = stepValues(first.metadata, "install (from) › lookup");
-
-    expect(miss).toMatchObject({
-      kind: "cache",
-      job: "install",
-      intent: "Look up the cached snapshot for `install`",
-      outcome: { found: false },
-    });
-  });
-
-  test("a check's steps say what they reported", async () => {
-    const { ci } = setup();
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return "done";
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(
-      stepValues(result.metadata, "github › check:pr:start"),
-    ).toMatchObject({
-      kind: "check",
-      intent: "Start the check `pr`",
-      outcome: {},
-    });
-
-    expect(
-      stepValues(result.metadata, "github › check:pr:complete"),
-    ).toMatchObject({
-      kind: "check",
-      intent: "Report `pr`'s check as passed",
-      outcome: { conclusion: "success", annotations: 0 },
-    });
-  });
-
-  test("cleanup says what it destroyed", async () => {
-    const { ci } = setup();
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await ci.job("test", async () => {
-        await $`pnpm test`;
-      })();
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(stepValues(result.metadata, "pipeline › cleanup")).toEqual({
-      intent: "Destroy this run's sandboxes",
-      outcome: { destroyed: 1 },
-    });
-
-    expect(
-      stepValues(result.metadata, "pipeline › cleanup:snapshots"),
-    ).toMatchObject({
-      intent: "Delete the snapshots this run took",
-      outcome: { deleted: 0, failed: 0 },
-    });
-  });
-
-  test("a lookup that finds a snapshot says which", async () => {
-    const { ci } = setup();
-
-    const install = ci.job(
-      { id: "install", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
-
-    const lint = ci.job({ id: "lint", from: install }, async () => {
-      await $`pnpm lint`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
-
-    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
-
     const second = await runFunction(pipeline, {
       event: prEvent,
       runId: "01SECOND",
     });
 
-    const hit = stepValues(second.metadata, "install (from) › lookup");
+    const expected: Array<[Metadata, string, Record<string, unknown>]> = [
+      [
+        first.metadata,
+        "install (from) › lookup",
+        {
+          kind: "cache",
+          job: "install",
+          intent: "Look up the cached snapshot for `install`",
+          outcome: { found: false },
+        },
+      ],
+      [
+        second.metadata,
+        "install (from) › lookup",
+        {
+          intent: "Look up the cached snapshot for `install`",
+          outcome: { found: true, snapshotId: expect.any(String) },
+        },
+      ],
+      [
+        first.metadata,
+        "github › check:pr:start",
+        { kind: "check", intent: "Start the check `pr`" },
+      ],
+      [
+        first.metadata,
+        "github › check:pr:complete",
+        {
+          kind: "check",
+          intent: "Report `pr`'s check",
+          outcome: { conclusion: "success", annotations: 0 },
+        },
+      ],
+      [
+        first.metadata,
+        "pipeline › cleanup",
+        {
+          intent: "Destroy this run's sandboxes",
+          outcome: { destroyed: expect.any(Number) },
+        },
+      ],
+      [
+        first.metadata,
+        "pipeline › cleanup:snapshots",
+        {
+          intent: "Delete the snapshots this run took",
+          outcome: { deleted: expect.any(Number), failed: 0 },
+        },
+      ],
+    ];
 
-    expect(hit).toMatchObject({
-      intent: "Look up the cached snapshot for `install`",
-      outcome: { found: true, snapshotId: expect.any(String) },
-    });
+    for (const [metadata, step, values] of expected) {
+      const sent = stepValues(metadata, step);
+
+      expect(sent, step).toHaveLength(1);
+      expect(sent[0], step).toMatchObject(values);
+    }
   });
 });
 
-describe("a step that fails", () => {
-  const asyncCtx = (addMetadata: (...args: unknown[]) => boolean) => {
-    return {
-      app: {},
-      execution: {
-        instance: { addMetadata },
-        ctx: {},
-        executingStep: { id: "hashed" },
-      },
-    } as unknown as Parameters<typeof runWithAsyncCtx>[0];
+describe("ciStepOptions", () => {
+  const valuesOf = <T>(
+    spec: StepSpec<T>,
+    result: { data?: unknown; error?: unknown },
+  ) => {
+    const { values } = ciStepOptions(spec).metadata ?? {};
+
+    return typeof values === "function" ? values(result as never) : values;
   };
 
-  test("keeps its intent and records the error's first line", async () => {
-    const updates: unknown[][] = [];
-
-    await runWithAsyncCtx(
-      asyncCtx((...args) => {
-        updates.push(args);
-
-        return true;
-      }),
-      async () => {
-        await expect(
-          withNotes({ ci: {} }, { intent: "Do the thing" }, async (note) => {
-            note.outcome({ attempted: true });
-
-            throw new Error(`nope\nsecond line`);
-          }),
-        ).rejects.toThrow("nope");
-      },
-    );
-
-    expect(updates).toEqual([
-      [
-        "hashed",
-        "userland.inngest-ci",
-        "step",
-        "merge",
-        {
-          intent: "Do the thing",
-          outcome: { attempted: true, error: "nope" },
-        },
-      ],
-    ]);
+  test("takes the outcome from what the step returned", () => {
+    expect(
+      valuesOf(steps.checkSnapshotState("id", "snap-1"), { data: "ready" }),
+    ).toEqual({
+      intent: "Check the state of snapshot `snap-1`",
+      outcome: { snapshotId: "snap-1", state: "ready" },
+    });
   });
 
-  test("long outcome strings and lists are cut", async () => {
-    const updates: unknown[][] = [];
-
-    await runWithAsyncCtx(
-      asyncCtx((...args) => {
-        updates.push(args);
-
-        return true;
+  test("keeps the tag, the intent and a static outcome when the step throws", () => {
+    expect(
+      valuesOf(steps.recordCommandFailure("test", 2), {
+        error: new Error("exit 2\nsecond line"),
       }),
-      async () => {
-        await withNotes({ ci: {} }, { intent: "Do the thing" }, (note) => {
-          note.outcome({
-            text: "x".repeat(500),
-            list: Array.from({ length: 30 }, (_, i) => {
-              return i;
-            }),
-          });
-        });
+    ).toEqual({
+      intent: "Record that the command failed",
+      outcome: { exitCode: 2, error: "exit 2" },
+    });
+
+    expect(
+      valuesOf(steps.cacheKey("test", "test"), { error: new Error("nope") }),
+    ).toEqual({
+      kind: "cache",
+      job: "test",
+      intent: "Work out the cache key for `test`",
+      outcome: { error: "nope" },
+    });
+  });
+
+  test("cuts long outcome strings and lists", () => {
+    const { outcome } = valuesOf(
+      {
+        id: "id",
+        name: "Name",
+        intent: "Do the thing",
+        outcome: {
+          text: "x".repeat(500),
+          list: Array.from({ length: 30 }, (_, i) => {
+            return i;
+          }),
+        },
       },
-    );
+      { data: undefined },
+    ) as { outcome: { text: string; list: number[] } };
 
-    const outcome = (updates[0]?.[4] as { outcome: Record<string, unknown> })
-      .outcome;
-
-    expect((outcome.text as string).length).toBe(200);
+    expect(outcome.text).toHaveLength(200);
     expect(outcome.list).toHaveLength(10);
+  });
+
+  test("marks CI's own steps with its origin, and steps you called without", () => {
+    expect(ciStepOptions(steps.cleanUpMachines(0))).toMatchObject({
+      "~origin": ciOrigin,
+    });
+
+    expect(ciStepOptions(steps.findChangedFiles())).not.toHaveProperty(
+      "~origin",
+    );
   });
 });

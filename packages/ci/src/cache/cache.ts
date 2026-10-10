@@ -10,10 +10,11 @@
  * @module
  */
 
-import { ciRun, shorten } from "../pipeline/metadata.ts";
-import { ciStep, traceName } from "../pipeline/names.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import type { StepSpec } from "../pipeline/names.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, joinId, rootRunIdOf } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -22,13 +23,13 @@ import type {
   RepoContext,
 } from "../types.ts";
 import {
-  boundedName,
   durationToMs,
   formatRelative,
   hash,
   isSnapshotNotFound,
   stableStringify,
 } from "../util.ts";
+import { formatName } from "./names.ts";
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -81,19 +82,6 @@ const sharedScopes = (
   const branch = repo.ref?.replace(/^refs\/heads\//, "") ?? base;
 
   return { read: [branch], write: branch };
-};
-
-/**
- * The name a job's cached snapshot has in a scope: `ci/<scope>/<job>/<key>`.
- * A name too long for a snapshot keeps its start and gains a hash of the
- * whole, so it stays unique.
- */
-export const snapshotName = (
-  scope: string,
-  jobId: string,
-  ownKey: string,
-): string => {
-  return boundedName(`ci/${scope}/${jobId}/${ownKey}`);
 };
 
 /**
@@ -283,28 +271,18 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  const ownKey = await ciRun(
-    run,
-    {
-      step: ciStep(
-        `${job.path}${scopeSeparator}cache:key`,
-        traceName.checkCache,
-      ),
-      intent: `Work out the cache key for \`${jobId}\``,
-      tag: { kind: "cache", job: job.path },
-    },
-    async (note) => {
-      const key = await jobCacheKey(run, cache, input, base);
-
-      note.outcome({ key });
-
-      return key;
-    },
-  );
+  const ownKey = await ciRun(run, steps.cacheKey(job.path, jobId), () => {
+    return jobCacheKey(run, cache, input, base);
+  });
 
   return {
     ownKey,
-    name: snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    name: formatName({
+      kind: "cache",
+      scope: cacheScopes(run.repo, cache.scope).write,
+      jobId,
+      ownKey,
+    }),
   };
 };
 
@@ -325,7 +303,12 @@ export const runTarget = (
 
   return {
     ownKey,
-    name: snapshotName(`run:${rootRunIdOf(run)}`, jobId, ownKey),
+    name: formatName({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId,
+      ownKey,
+    }),
   };
 };
 
@@ -346,25 +329,44 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
+/** The parts of a snapshot that decide whether a job may use it. */
+export interface SnapshotInfo {
+  id: string;
+  status: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/** Whether a job may use a snapshot. */
+export type Usable = (snapshot: SnapshotInfo) => boolean;
+
 /**
- * A job's `maxAge` in milliseconds, or none if it has no cache or no max age.
- * `defineJob` has already checked that it parses.
+ * What makes a snapshot usable: ready, not the one to avoid, not about to
+ * expire, and not older than the job's `cache.maxAge`. A new freshness rule is
+ * one more clause here. `defineJob` has already checked that `maxAge` parses.
  */
-export const maxAgeMsOf = (
+export const usableFor = (
   cache: CacheConfig | undefined,
-): number | undefined => {
-  return cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
-};
+  /** A snapshot that must not be used, though it may still hold the name. */
+  exclude?: string,
+): Usable => {
+  const maxAgeMs =
+    cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
 
-/** Whether a snapshot was taken longer ago than a job's max age allows. */
-const isTooOld = (createdAt: string, maxAgeMs: number | undefined): boolean => {
-  if (maxAgeMs === undefined) {
-    return false;
-  }
+  return (snapshot) => {
+    const createdAt = Date.parse(snapshot.createdAt);
+    const tooOld =
+      maxAgeMs !== undefined &&
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt > maxAgeMs;
 
-  const at = Date.parse(createdAt);
-
-  return Number.isFinite(at) && Date.now() - at > maxAgeMs;
+    return (
+      snapshot.status === "READY" &&
+      snapshot.id !== exclude &&
+      !isExpiring(snapshot.expiresAt) &&
+      !tooOld
+    );
+  };
 };
 
 /** How long a lookup waits for a snapshot another build is still taking. */
@@ -426,10 +428,7 @@ const waitUntilReady = async (
 const findNamed = async (
   run: CiRunScope,
   name: string,
-  /** A snapshot that must not be used, though it may still hold the name. */
-  exclude?: string,
-  /** How old a snapshot may be, in milliseconds, from the job's `maxAge`. */
-  maxAgeMs?: number,
+  usable: Usable,
 ): Promise<CachedSnapshot | undefined> => {
   try {
     const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
@@ -440,7 +439,8 @@ const findNamed = async (
       return snapshot.name === name;
     });
 
-    if (!newest || newest.id === exclude) {
+    // Waiting is only worth it for a snapshot that would be usable once ready.
+    if (!newest || !usable({ ...newest, status: "READY" })) {
       return undefined;
     }
 
@@ -449,11 +449,7 @@ const findNamed = async (
         ? await waitUntilReady(run, newest.id)
         : newest;
 
-    if (
-      ready?.status !== "READY" ||
-      isExpiring(ready.expiresAt) ||
-      isTooOld(ready.createdAt, maxAgeMs)
-    ) {
+    if (!ready || !usable(ready)) {
       return undefined;
     }
 
@@ -471,14 +467,13 @@ const findInScopes = async (
   ownKey: string,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const maxAgeMs = maxAgeMsOf(cache);
+  const usable = usableFor(cache, exclude);
 
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
-      snapshotName(scope, jobId, ownKey),
-      exclude,
-      maxAgeMs,
+      formatName({ kind: "cache", scope, jobId, ownKey }),
+      usable,
     );
 
     if (found) {
@@ -487,18 +482,6 @@ const findInScopes = async (
   }
 
   return undefined;
-};
-
-/** What a lookup step sets out to do, for the job it looks a snapshot up for. */
-const lookupIntent = (jobId: string): string => {
-  return `Look up the cached snapshot for \`${jobId}\``;
-};
-
-/** What a lookup step found, for its outcome. */
-const lookupOutcome = (hit: CachedSnapshot | undefined) => {
-  return hit
-    ? { found: true, snapshotId: hit.snapshotId, name: hit.name }
-    : { found: false };
 };
 
 /**
@@ -513,32 +496,32 @@ export const lookupCache = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const { run } = scope;
-
-  const found = await ciRun<CachedSnapshot | null>(
-    run,
-    {
-      step: ciStep(
-        `${scope.path}${scopeSeparator}cache:lookup`,
-        traceName.lookUpCache,
-      ),
-      intent: lookupIntent(scope.config.id),
-      tag: { kind: "cache", job: scope.path },
-    },
-    async (note) => {
-      const hit = await findCached(
-        run,
-        scope.config.id,
-        cache,
-        target,
-        exclude,
-      );
-
-      note.outcome(lookupOutcome(hit));
-
-      return hit ?? null;
-    },
+  return lookUp(
+    scope.run,
+    steps.lookUpCache(
+      joinId(scope.path, "cache:lookup"),
+      scope.config.id,
+      scope.path,
+    ),
+    scope.config.id,
+    cache,
+    target,
+    exclude,
   );
+};
+
+/** A lookup as a memoized step: a hit is returned, a miss is `null` in the step. */
+const lookUp = async (
+  run: CiRunScope,
+  spec: StepSpec<CachedSnapshot | null>,
+  jobId: string,
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  const found = await ciRun(run, spec, async () => {
+    return (await findCached(run, jobId, cache, target, exclude)) ?? null;
+  });
 
   return found ?? undefined;
 };
@@ -553,7 +536,7 @@ const findCached = (
 ): Promise<CachedSnapshot | undefined> => {
   return cache
     ? findInScopes(run, jobId, cache, target.ownKey, exclude)
-    : findNamed(run, target.name, exclude);
+    : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
 /**
@@ -577,26 +560,14 @@ export const lookupBeforeBuild = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const found = await ciRun<CachedSnapshot | null>(
+  return lookUp(
     run,
-    {
-      step: ciStep(
-        `${job.stepPath}${scopeSeparator}lookup`,
-        traceName.lookUpCache,
-      ),
-      intent: lookupIntent(job.id),
-      tag: { kind: "cache", job: job.path },
-    },
-    async (note) => {
-      const hit = await findCached(run, job.id, cache, target, exclude);
-
-      note.outcome(lookupOutcome(hit));
-
-      return hit ?? null;
-    },
+    steps.lookUpCache(joinId(job.stepPath, "lookup"), job.id, job.path),
+    job.id,
+    cache,
+    target,
+    exclude,
   );
-
-  return found ?? undefined;
 };
 
 /**
@@ -609,6 +580,8 @@ export const resolveTakenName = async (
   run: CiRunScope,
   stepId: string,
   name: string,
+  /** The job's `cache`, whose `maxAge` a holder may be past. */
+  cache?: CacheConfig,
   exclude?: string,
   /**
    * Whether `exclude` was decided to be broken, which is the only case where
@@ -616,24 +589,14 @@ export const resolveTakenName = async (
    * shared one, such as the base branch's, that other runs still use.
    */
   broken?: boolean,
-  /** How old a snapshot may be, in milliseconds, from the job's `maxAge`. */
-  maxAgeMs?: number,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-  return ciRun<{ winner?: CachedSnapshot; cleared: boolean }>(
+  return ciRun(
     run,
-    {
-      step: ciStep(stepId, traceName.resolveCacheName),
-      intent: `Find who holds the snapshot name \`${shorten(name, 80)}\``,
-    },
-    async (note) => {
-      const winner = await findNamed(run, name, exclude, maxAgeMs);
+    steps.resolveCacheName(stepId, name),
+    async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
+      const winner = await findNamed(run, name, usableFor(cache, exclude));
 
       if (winner) {
-        note.outcome({
-          winner: winner.snapshotId,
-          cleared: false,
-        });
-
         return { winner, cleared: false };
       }
 
@@ -644,11 +607,10 @@ export const resolveTakenName = async (
           items: SnapshotResource[];
         };
 
+        const usable = usableFor(cache);
+
         for (const holder of page.items) {
-          const unusable =
-            (broken && holder.id === exclude) ||
-            isExpiring(holder.expiresAt) ||
-            isTooOld(holder.createdAt, maxAgeMs);
+          const unusable = (broken && holder.id === exclude) || !usable(holder);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;
@@ -663,8 +625,6 @@ export const resolveTakenName = async (
       } catch {
         // Nothing more to try: the build keeps its snapshot without a name.
       }
-
-      note.outcome({ cleared });
 
       return { cleared };
     },
@@ -682,13 +642,10 @@ export const snapshotState = async (
   stepId: string,
   snapshotId: string,
 ): Promise<"gone" | "creating" | "ready"> => {
-  return ciRun<"gone" | "creating" | "ready">(
+  return ciRun(
     run,
-    {
-      step: ciStep(stepId, traceName.checkSnapshotState),
-      intent: `Check the state of snapshot \`${snapshotId}\``,
-    },
-    async (note) => {
+    steps.checkSnapshotState(stepId, snapshotId),
+    async (): Promise<"gone" | "creating" | "ready"> => {
       try {
         const snapshot = (await snapshotsClient(run).get(snapshotId)) as
           | SnapshotResource
@@ -696,19 +653,11 @@ export const snapshotState = async (
           | undefined;
 
         if (!snapshot || /^DELET/.test(snapshot.status)) {
-          note.outcome({ snapshotId, state: "gone" });
-
           return "gone";
         }
 
-        const state = snapshot.status === "CREATING" ? "creating" : "ready";
-
-        note.outcome({ snapshotId, state });
-
-        return state;
+        return snapshot.status === "CREATING" ? "creating" : "ready";
       } catch {
-        note.outcome({ snapshotId, state: "ready" });
-
         return "ready";
       }
     },
@@ -726,28 +675,19 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<boolean> => {
   try {
-    const result = await ciRun<{ deleted: boolean; gone: boolean }>(
+    const result = await ciRun(
       run,
-      {
-        step: ciStep(stepId, traceName.deleteBadSnapshot),
-        intent: `Delete the bad snapshot \`${snapshotId}\``,
-      },
-      async (note) => {
+      steps.deleteBadSnapshot(stepId, snapshotId),
+      async () => {
         try {
           const snapshot = await snapshotsClient(run).get(snapshotId);
 
           await snapshot?.delete();
 
-          note.outcome({ snapshotId, deleted: Boolean(snapshot) });
-
           return { deleted: Boolean(snapshot), gone: true };
         } catch (error) {
-          const gone = isSnapshotNotFound(error);
-
-          note.outcome({ snapshotId, deleted: false, gone });
-
           // Deleted meanwhile by someone else, which is as good.
-          return { deleted: false, gone };
+          return { deleted: false, gone: isSnapshotNotFound(error) };
         }
       },
     );

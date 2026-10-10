@@ -15,7 +15,6 @@
 
 import type { EventPayload, InngestFunction } from "inngest";
 import { createdFunctions } from "./client.ts";
-import { SpanStubMiddleware, spanStubInstalled, stampOf } from "./spanStub.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
@@ -340,12 +339,8 @@ export const runFunction = async (
 
     steps[id] = step.data;
 
-    // Where the SDK has the span API it stamps these on the step. Where the
-    // test stub provides it, the stub recorded them instead.
-    const stamp = spanStubInstalled() ? stampOf(id) : undefined;
-    const span =
-      step.opts?.span ?? (stamp?.span.length ? stamp.span : undefined);
-    const origin = step.opts?.origin ?? stamp?.origin;
+    // The SDK stamps a step's spans and origin on it.
+    const { span, origin } = step.opts ?? {};
 
     if (span) {
       spans[id] = span;
@@ -579,11 +574,6 @@ const runOnce = async (
   ].map((Middleware: any) => {
     return new Middleware({ client });
   });
-
-  if (spanStubInstalled()) {
-    // First, so the other middleware builds on step tools that record.
-    middlewareInstances.unshift(new SpanStubMiddleware({ client }));
-  }
 
   const execution = internals["createExecution"]({
     partialOptions: {
