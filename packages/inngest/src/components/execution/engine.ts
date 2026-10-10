@@ -1312,14 +1312,9 @@ class InngestExecutionEngine
           };
         }
 
-        // The handler returning is the end of the run. Steps that were never
-        // awaited (e.g. a floating `waitForEvent`, or the losers of a
-        // `Promise.race`) ride along with `RunComplete` so they can't hold the
-        // run open. `filterNewSteps` excludes lazy ops, so `attachLazyOps`
-        // folds those in too.
-        const newSteps = await this.filterNewSteps(
-          Array.from(this.state.steps.values()),
-        );
+        // The handler returning is the end of the run. Steps it never awaited
+        // and that were never run (a floating `waitForEvent`, `sleep` or
+        // `step.run`, or the losers of a race) are not scheduled. Buffered lazy
 
         // Function is truly done. Close the stream with a terminal
         // succeeded event.
@@ -1339,10 +1334,7 @@ class InngestExecutionEngine
 
         // Terminal. `attachLazyOps` bundles any buffered ops with
         // `RunComplete` so the executor finalizes in one round-trip.
-        return this.attachLazyOps(
-          this.transformOutput({ data }),
-          newSteps ?? [],
-        );
+        return this.attachLazyOps(this.transformOutput({ data }));
       },
 
       /**
@@ -1449,30 +1441,6 @@ class InngestExecutionEngine
                 ctx: output.ctx,
                 ops: output.ops,
                 steps,
-              };
-            }
-          }
-
-          // Unreported steps were bundled with `RunComplete`. Keep the buffered
-          // steps and lazy ops ahead of it, as in the case above.
-          if (output?.type === "steps-found") {
-            const runComplete = output.steps.find((step) => {
-              return step.op === StepOpCode.RunComplete;
-            });
-
-            if (runComplete) {
-              const steps: OutgoingOp[] = [
-                ...this.state.checkpointingStepBuffer,
-                ...output.steps.filter((step) => {
-                  return step !== runComplete;
-                }),
-                ...lazyOps,
-                runComplete,
-              ];
-
-              return {
-                ...output,
-                steps: steps as [OutgoingOp, ...OutgoingOp[]],
               };
             }
           }

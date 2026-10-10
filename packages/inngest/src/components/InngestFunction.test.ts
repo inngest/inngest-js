@@ -914,32 +914,19 @@ describe("runFn", () => {
           },
 
           // The function returned while the losing 'A' was never reported. That
-          // return ends the run, so 'A' rides along with `RunComplete` instead
-          // of holding the run open for another request.
-          "request following 'B wins' reports missing 'A' step with RunComplete":
-            {
-              stack: {
-                [B]: { id: B, data: "B" },
-                [BWins]: { id: BWins, data: "B wins" },
-              },
-              stackOrder: [B, BWins],
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: A,
-                    name: "A",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A",
-                  }),
-                  expect.objectContaining({
-                    op: StepOpCode.RunComplete,
-                    data: null,
-                  }),
-                ],
-              },
-              disableImmediateExecution: true,
+          // return ends the run, so 'A' is not scheduled.
+          "request following 'B wins' completes without scheduling 'A'": {
+            stack: {
+              [B]: { id: B, data: "B" },
+              [BWins]: { id: BWins, data: "B wins" },
             },
+            stackOrder: [B, BWins],
+            expectedReturn: {
+              type: "function-resolved",
+              data: null,
+            },
+            disableImmediateExecution: true,
+          },
 
           // A plain `Promise.race` under the default: the executor only calls
           // back once every branch has finished, so nothing is left pending
@@ -985,21 +972,18 @@ describe("runFn", () => {
     const unawaitedCases: {
       name: string;
       start: (step: Context.Any["step"]) => void;
-      expectedStep: Record<string, unknown>;
     }[] = [
       {
         name: "waitForEvent",
         start: (step) => {
           void step.waitForEvent("floating", { event: "never", timeout: "1h" });
         },
-        expectedStep: { op: StepOpCode.WaitForEvent, displayName: "floating" },
       },
       {
         name: "sleep",
         start: (step) => {
           void step.sleep("floating", "1h");
         },
-        expectedStep: { op: StepOpCode.Sleep, displayName: "floating" },
       },
       {
         name: "run",
@@ -1008,7 +992,6 @@ describe("runFn", () => {
             return "floating";
           });
         },
-        expectedStep: { op: StepOpCode.StepPlanned, displayName: "floating" },
       },
     ];
 
@@ -1033,17 +1016,11 @@ describe("runFn", () => {
         {
           hashes: { A: "A" },
           tests: ({ A }) => ({
-            "reports the step and RunComplete together": {
+            "completes without scheduling the step": {
               stack: { [A]: { id: A, data: "A" } },
               expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining(c.expectedStep),
-                  expect.objectContaining({
-                    op: StepOpCode.RunComplete,
-                    data: "done",
-                  }),
-                ],
+                type: "function-resolved",
+                data: "done",
               },
             },
           }),
@@ -1132,20 +1109,11 @@ describe("runFn", () => {
       {
         hashes: { fast: "fast", slow: "slow" },
         tests: ({ fast }) => ({
-          "reports the losers with RunComplete": {
+          "completes without scheduling the losers": {
             stack: { [fast]: { id: fast, data: "fast" } },
             expectedReturn: {
-              type: "steps-found",
-              steps: [
-                expect.objectContaining({
-                  op: StepOpCode.StepPlanned,
-                  displayName: "slow",
-                }),
-                expect.objectContaining({
-                  op: StepOpCode.RunComplete,
-                  data: "done",
-                }),
-              ],
+              type: "function-resolved",
+              data: "done",
             },
           },
         }),

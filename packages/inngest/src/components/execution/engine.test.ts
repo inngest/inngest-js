@@ -108,12 +108,14 @@ describe("Execution engine checkpoint retry behavior", () => {
   const runDeferExecution = async ({
     handler,
     priorDefers,
+    stepMode = StepMode.AsyncCheckpointing,
   }: {
     handler: (
       ctx: Context.Any,
       deferFn: ReturnType<typeof createDefer>,
     ) => unknown;
     priorDefers?: Record<string, { abortable?: boolean }>;
+    stepMode?: StepMode;
   }) => {
     const client = createClient({ id: "test" });
     const deferFn = createDefer(client, { id: "foo" }, async () => {});
@@ -131,7 +133,7 @@ describe("Execution engine checkpoint retry behavior", () => {
         stepCompletionOrder: [],
         reqArgs: [],
         headers: {},
-        stepMode: StepMode.AsyncCheckpointing,
+        stepMode,
         queueItemId: "queue-item-123",
         internalFnId: "internal-fn-456",
         priorDefers,
@@ -368,6 +370,32 @@ describe("Execution engine checkpoint retry behavior", () => {
         ).toBe(false);
       });
     });
+
+    test.each([
+      { mode: "async", stepMode: StepMode.Async },
+      { mode: "async checkpointing", stepMode: StepMode.AsyncCheckpointing },
+    ])(
+      "ships lazy ops with RunComplete and drops unawaited steps ($mode)",
+      async ({ stepMode }) => {
+        const result = await runDeferExecution({
+          stepMode,
+          handler: ({ defer, step }, deferFn) => {
+            defer("foo", { function: deferFn, data: {} });
+            void step.sleep("floating", "1h");
+
+            return "done";
+          },
+        });
+
+        expect(result.type).toBe("steps-found");
+        const stepsFound = result as ExecutionResults["steps-found"];
+        expect(
+          stepsFound.steps.map((step) => {
+            return step.op;
+          }),
+        ).toEqual([StepOpCode.DeferAdd, StepOpCode.RunComplete]);
+      },
+    );
 
     test("flushes buffered steps before returning parallel steps to executor", async () => {
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
