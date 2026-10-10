@@ -351,7 +351,9 @@ export const usableFor = (
   exclude?: string,
 ): Usable => {
   const maxAgeMs =
-    cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
+    cache?.maxAge === undefined
+      ? undefined
+      : durationToMs(cache.maxAge, "cache.maxAge");
 
   return (snapshot) => {
     const createdAt = Date.parse(snapshot.createdAt);

@@ -8,7 +8,9 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+import { durationToMs as sdkDurationToMs } from "inngest/experimental";
 import { CiUsageError } from "./errors.ts";
+import type { Duration } from "./types.ts";
 
 const exec = promisify(execFile);
 
@@ -179,35 +181,20 @@ export const filterPaths = (
   });
 };
 
-const msPerUnit: Record<string, number> = {
-  ms: 1,
-  s: 1000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
-
 /**
- * Parse a duration string like `"10m"` into milliseconds. Only the small
- * subset CI uses is supported, because these are written by hand in pipelines.
- * The whole string must be made of durations, so a typo fails instead of
- * silently changing a timeout.
+ * Turn a `Duration` (milliseconds, an `ms` string like `"10m"` or `"1h30m"`,
+ * or a `Temporal.Duration`) into positive milliseconds. This is the one place
+ * CI reads a duration. A bad value throws `CiUsageError` naming `field`, so a
+ * typo fails instead of silently changing a timeout.
  */
-export const durationToMs = (duration: string): number => {
-  if (!/^\s*(?:\d+\s*(?:ms|s|m|h|d|w)\s*)+$/.test(duration)) {
+export const durationToMs = (duration: Duration, field: string): number => {
+  try {
+    return sdkDurationToMs(duration, { name: field });
+  } catch (error) {
     throw new CiUsageError(
-      `Could not parse duration "${duration}". Use a number and a unit, like "90s", "10m" or "1h30m". Units are ms, s, m, h, d and w.`,
+      `${errorMessage(error)}. Use milliseconds, a string like "90s", "10m" or "1d", or a Temporal.Duration.`,
     );
   }
-
-  let total = 0;
-
-  for (const match of duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g)) {
-    total += Number(match[1]) * (msPerUnit[match[2] as string] as number);
-  }
-
-  return total;
 };
 
 /**

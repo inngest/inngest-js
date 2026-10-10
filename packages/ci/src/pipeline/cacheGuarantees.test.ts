@@ -23,6 +23,7 @@ import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { temporalDuration } from "../testing/temporal.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
@@ -561,19 +562,31 @@ describe("a snapshot older than the cache's maxAge", () => {
     expect(replacement?.status).toBe("READY");
   });
 
-  test.each(["a day", "0s"])(
-    "a maxAge of %j throws when the job is defined",
-    (maxAge) => {
-      const { ci } = setup(createFakeSandboxApi());
+  test.each([
+    ["cache.maxAge", { cache: { key: "v1", maxAge: "a day" } }],
+    ["cache.maxAge", { cache: { key: "v1", maxAge: "0s" } }],
+    ["cache.maxAge", { cache: { key: "v1", maxAge: 0 } }],
+    ["keepOnFailure", { keepOnFailure: "soon" }],
+  ])("an invalid %s throws when the job is defined", (field, options) => {
+    const { ci } = setup(createFakeSandboxApi());
 
-      expect(() => {
-        return ci.job(
-          { id: "install", cache: { key: "v1", maxAge } },
-          async () => {},
-        );
-      }).toThrow(/cache\.maxAge/);
-    },
-  );
+    expect(() => {
+      return ci.job({ id: "install", ...options }, async () => {});
+    }).toThrow(field);
+  });
+
+  test.each([
+    { cache: { key: "v1", maxAge: 86_400_000 } },
+    { cache: { key: "v1", maxAge: temporalDuration(86_400_000) } },
+    { keepOnFailure: 0 },
+    { keepOnFailure: "1h" },
+  ])("a valid duration option %j is accepted", (options) => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job({ id: "install", ...options }, async () => {});
+    }).not.toThrow();
+  });
 });
 
 describe("a job that starts from a job in its own app", () => {

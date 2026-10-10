@@ -36,6 +36,7 @@ import {
   runPool,
   sameCombo,
 } from "./pipeline/matrix.ts";
+import { temporalDuration } from "./testing/temporal.ts";
 import {
   durationToMs,
   filterPaths,
@@ -644,24 +645,37 @@ describe("formatting", () => {
     );
   });
 
-  test("durations parse", () => {
-    expect(durationToMs("10m")).toBe(600_000);
-    expect(durationToMs("1h30m")).toBe(5_400_000);
-    expect(durationToMs("250ms")).toBe(250);
-
-    expect(() => {
-      return durationToMs("soon");
-    }).toThrow(CiUsageError);
+  test.each([
+    ["10m", 600_000],
+    ["1h30m", 5_400_000],
+    ["1h 30m", 5_400_000],
+    ["250ms", 250],
+    [90_000, 90_000],
+    [temporalDuration(5_000), 5_000],
+  ])("the duration %j is %d ms", (duration, expected) => {
+    expect(durationToMs(duration, "timeout")).toBe(expected);
   });
 
-  test("malformed durations are rejected rather than partly read", () => {
-    for (const bad of ["1 month", "1h garbage", "10", "", "m5", "-5m"]) {
-      expect(() => {
-        return durationToMs(bad);
-      }).toThrow(CiUsageError);
-    }
+  test.each([
+    "soon",
+    "1 month",
+    "1h garbage",
+    "",
+    "m5",
+    "-5m",
+    "0s",
+    0,
+    -1,
+    1.5,
+    temporalDuration(5_000, { weeks: 1 }),
+  ])("the duration %j is rejected, naming the field", (bad) => {
+    expect(() => {
+      return durationToMs(bad, "cache.maxAge");
+    }).toThrow(CiUsageError);
 
-    expect(durationToMs("1h 30m")).toBe(5_400_000);
+    expect(() => {
+      return durationToMs(bad, "cache.maxAge");
+    }).toThrow(/cache\.maxAge/);
   });
 
   test("stable strings ignore key order", () => {

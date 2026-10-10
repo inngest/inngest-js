@@ -35,6 +35,7 @@ import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
+import { temporalDuration } from "../testing/temporal.ts";
 import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
 import { runCombosKey } from "./matrix.ts";
@@ -854,37 +855,40 @@ describe("commands", () => {
     ).toBe(4);
   });
 
-  test("a short command with a timeout runs as one captured step", async () => {
-    const { api, ci } = setup();
+  test.each(["30s", 30_000, temporalDuration(30_000)])(
+    "a short command with a %j timeout runs as one captured step",
+    async (timeout) => {
+      const { api, ci } = setup();
 
-    api.script([{ match: "quick", stdout: "fast" }]);
+      api.script([{ match: "quick", stdout: "fast" }]);
 
-    let output: string | undefined;
+      let output: string | undefined;
 
-    const job = ci.job("quick", async () => {
-      output = await $`quick`.timeout("30s").text();
-    });
+      const job = ci.job("quick", async () => {
+        output = await $`quick`.timeout(timeout).text();
+      });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      });
 
-    const result = await runFunction(pipeline, { event: prEvent });
+      const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(output).toBe("fast");
+      expect(output).toBe("fast");
 
-    expect(
-      api.requests.some((request) => {
-        return request.endsWith("/exec");
-      }),
-    ).toBe(true);
+      expect(
+        api.requests.some((request) => {
+          return request.endsWith("/exec");
+        }),
+      ).toBe(true);
 
-    expect(
-      result.stepIds.some((id) => {
-        return id.includes("wait #");
-      }),
-    ).toBe(false);
-  });
+      expect(
+        result.stepIds.some((id) => {
+          return id.includes("wait #");
+        }),
+      ).toBe(false);
+    },
+  );
 
   test("a captured command that times out throws CommandTimeoutError", async () => {
     const { api, ci } = setup();
@@ -4793,35 +4797,38 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
-  test("a keepOnFailure snapshot is kept on the failing run", async () => {
-    const { api, ci } = setup();
+  test.each(["1h", 0])(
+    "a keepOnFailure of %j keeps the snapshot on the failing run",
+    async (keepOnFailure) => {
+      const { api, ci } = setup();
 
-    const base = ci.job("base", async () => {
-      await $`pnpm install`;
-    });
+      const base = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
 
-    const child = ci.job(
-      { id: "child", from: base, keepOnFailure: "1h" },
-      async () => {
-        await $`pnpm build`;
+      const child = ci.job(
+        { id: "child", from: base, keepOnFailure },
+        async () => {
+          await $`pnpm build`;
 
-        throw new Error("boom");
-      },
-    );
+          throw new Error("boom");
+        },
+      );
 
-    const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, retries: 0 },
-      async () => {
-        await child();
-      },
-    );
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 0 },
+        async () => {
+          await child();
+        },
+      );
 
-    const result = await runFunction(pipeline, { event: prEvent });
+      const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(result.type).toBe("function-rejected");
-    // `base`'s snapshot is deleted, the kept one of `child` stays.
-    expect(api.snapshots.size).toBe(1);
-  });
+      expect(result.type).toBe("function-rejected");
+      // `base`'s snapshot is deleted, the kept one of `child` stays.
+      expect(api.snapshots.size).toBe(1);
+    },
+  );
 
   test("a delete that throws is logged and doesn't fail the run", async () => {
     const real = createFakeSandboxApi();

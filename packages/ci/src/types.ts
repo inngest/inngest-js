@@ -8,11 +8,13 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
+import type { DurationInput } from "inngest/experimental";
 
 /**
- * A duration, expressed as a time string like `"10m"`, `"24h"`, or `"1h30m"`.
+ * A length of time: a number of milliseconds, an `ms` string like `"10m"`,
+ * `"24h"` or `"1h30m"`, or a `Temporal.Duration`.
  */
-export type Duration = string;
+export type Duration = DurationInput;
 
 /**
  * A trigger for a pipeline. This is an Inngest function trigger, so
