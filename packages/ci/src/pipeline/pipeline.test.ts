@@ -22,9 +22,12 @@ import {
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
-import { destroyOrphans, destroyRunMachines } from "../machine/machine.ts";
+import {
+  destroyOrphans,
+  destroyRunMachines,
+  machineSetupScript,
+} from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
-import { machineSetupScript } from "../machine/start.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
