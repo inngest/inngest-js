@@ -55,7 +55,7 @@ const createInputSchema = z
         environment: z.record(z.string()).optional(),
         secrets: z.array(sandboxSecretNameSchema).optional(),
         runningTimeoutMs: z
-          .union([z.number().int().positive().max(300_000), z.literal(false)])
+          .union([z.number().int().positive(), z.literal(false)])
           .optional(),
       })
       .strict(),
@@ -64,7 +64,7 @@ const createInputSchema = z
         name: sandboxNameSchema,
         snapshotId: canonicalUuidSchema,
         runningTimeoutMs: z
-          .union([z.number().int().positive().max(300_000), z.literal(false)])
+          .union([z.number().int().positive(), z.literal(false)])
           .optional(),
       })
       .strict(),
@@ -130,7 +130,7 @@ const processSpecInputSchema = z
 const execInputSchema = z
   .object({
     ...processSpecShape,
-    timeoutMs: z.number().int().positive().max(300_000),
+    timeoutMs: z.number().int().positive(),
   })
   .strict()
   .superRefine(validateProcessSpec);
@@ -141,7 +141,7 @@ const signalInputSchema = z
   })
   .strict();
 const waitInputSchema = z
-  .object({ timeoutMs: z.number().int().positive().max(300_000) })
+  .object({ timeoutMs: z.number().int().positive() })
   .strict();
 const lifecycleInputSchema = waitInputSchema;
 const outputInputSchema = z

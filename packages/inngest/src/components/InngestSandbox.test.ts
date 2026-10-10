@@ -1297,7 +1297,7 @@ describe("step.sandbox", () => {
     const direct = await directSandbox.commands.run("printf ok", {
       cwd: "/workspace",
       environment: { CI: "true" },
-      timeout: "5m",
+      timeout: "1h",
     });
     expect(direct.stdout.startsWith("\u0001\u0002\u0003")).toBe(true);
     expect(direct.stdout).toContain("€");
@@ -1314,7 +1314,7 @@ describe("step.sandbox", () => {
         const result = await sandbox.commands.run("exec", "printf ok", {
           cwd: "/workspace",
           environment: { CI: "true" },
-          timeout: "5m",
+          timeout: "1h",
         });
         return {
           stdoutStartsWithReplacement: result.stdout.startsWith("\uFFFD"),
@@ -1413,13 +1413,13 @@ describe("step.sandbox", () => {
         command: ["/bin/sh", "-c", "printf ok"],
         cwd: "/workspace",
         environment: { CI: "true" },
-        timeout: "300000ms",
+        timeout: "3600000ms",
       },
       {
         command: ["/bin/sh", "-c", "printf ok"],
         cwd: "/workspace",
         environment: { CI: "true" },
-        timeout: "300000ms",
+        timeout: "3600000ms",
       },
     ]);
   });

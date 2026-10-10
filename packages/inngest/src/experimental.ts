@@ -76,4 +76,7 @@ export {
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
+// Durations
+export type { DurationInput } from "./helpers/duration.ts";
+export { durationToMs } from "./helpers/duration.ts";
 export type { ExperimentRef } from "./types.ts";
