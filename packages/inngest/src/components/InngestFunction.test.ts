@@ -33,6 +33,7 @@ import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
+  type Context,
   type FailureEventPayload,
   type OutgoingOp,
   StepMode,
@@ -912,25 +913,33 @@ describe("runFn", () => {
             disableImmediateExecution: true,
           },
 
-          "request following 'B wins' re-reports missing 'A' step": {
-            stack: {
-              [B]: { id: B, data: "B" },
-              [BWins]: { id: BWins, data: "B wins" },
+          // The function returned while the losing 'A' was never reported. That
+          // return ends the run, so 'A' rides along with `RunComplete` instead
+          // of holding the run open for another request.
+          "request following 'B wins' reports missing 'A' step with RunComplete":
+            {
+              stack: {
+                [B]: { id: B, data: "B" },
+                [BWins]: { id: BWins, data: "B wins" },
+              },
+              stackOrder: [B, BWins],
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                  expect.objectContaining({
+                    op: StepOpCode.RunComplete,
+                    data: null,
+                  }),
+                ],
+              },
+              disableImmediateExecution: true,
             },
-            stackOrder: [B, BWins],
-            expectedReturn: {
-              type: "steps-found",
-              steps: [
-                expect.objectContaining({
-                  id: A,
-                  name: "A",
-                  op: StepOpCode.StepPlanned,
-                  displayName: "A",
-                }),
-              ],
-            },
-            disableImmediateExecution: true,
-          },
 
           "request following A completion resolves": {
             stack: {
@@ -963,6 +972,130 @@ describe("runFn", () => {
               ],
             },
             disableImmediateExecution: true,
+          },
+        }),
+      },
+    );
+
+    // A handler returning during discovery is the end of the run, whatever it
+    // left unawaited.
+    const unawaitedCases: {
+      name: string;
+      start: (step: Context.Any["step"]) => void;
+      expectedStep: Record<string, unknown>;
+    }[] = [
+      {
+        name: "waitForEvent",
+        start: (step) => {
+          void step.waitForEvent("floating", { event: "never", timeout: "1h" });
+        },
+        expectedStep: { op: StepOpCode.WaitForEvent, displayName: "floating" },
+      },
+      {
+        name: "sleep",
+        start: (step) => {
+          void step.sleep("floating", "1h");
+        },
+        expectedStep: { op: StepOpCode.Sleep, displayName: "floating" },
+      },
+      {
+        name: "run",
+        start: (step) => {
+          void step.run("floating", () => {
+            return "floating";
+          });
+        },
+        expectedStep: { op: StepOpCode.StepPlanned, displayName: "floating" },
+      },
+    ];
+
+    for (const c of unawaitedCases) {
+      testFn(
+        `unawaited ${c.name} when the handler returns`,
+        () => {
+          const A = vi.fn(() => "A");
+
+          const fn = inngest.createFunction(
+            { id: "name", triggers: [{ event: "foo" }] },
+            async ({ step }) => {
+              await step.run("A", A);
+              c.start(step);
+
+              return "done";
+            },
+          );
+
+          return { fn, steps: { A } };
+        },
+        {
+          hashes: { A: "A" },
+          tests: ({ A }) => ({
+            "reports the step and RunComplete together": {
+              stack: { [A]: { id: A, data: "A" } },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining(c.expectedStep),
+                  expect.objectContaining({
+                    op: StepOpCode.RunComplete,
+                    data: "done",
+                  }),
+                ],
+              },
+            },
+          }),
+        },
+      );
+    }
+
+    testFn(
+      "handler returns before the requested step runs",
+      () => {
+        const A = vi.fn(() => "A");
+        const bg = vi.fn(() => "bg");
+
+        const fn = inngest.createFunction(
+          { id: "name", triggers: [{ event: "foo" }] },
+          async ({ step }) => {
+            await step.run("A", A);
+            void step.run("bg", bg);
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { A, bg } };
+      },
+      {
+        hashes: { A: "A", bg: "bg" },
+        tests: ({ A, bg }) => ({
+          "a targeted request runs the step and never completes the run": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: bg,
+            expectedReturn: {
+              type: "step-ran",
+              step: expect.objectContaining({
+                id: bg,
+                name: "bg",
+                op: StepOpCode.StepRun,
+                data: "bg",
+              }),
+            },
+            expectedStepsRun: ["bg"],
+          },
+
+          "a targeted request for a step that doesn't exist is not found": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: "missing",
+            expectedReturn: {
+              type: "step-not-found",
+              step: expect.objectContaining({
+                id: "missing",
+                op: StepOpCode.StepNotFound,
+              }),
+              foundSteps: expect.any(Array),
+              totalFoundSteps: expect.any(Number),
+            },
           },
         }),
       },
