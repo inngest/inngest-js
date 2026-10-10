@@ -10,7 +10,16 @@
  * @module
  */
 
-import { group } from "inngest";
+import { group, version as sdkVersion } from "inngest";
+
+/** What a span stands for. Every span CI opens has one. */
+export type SpanKind =
+  | "job"
+  | "sandbox"
+  | "command"
+  | "snapshot"
+  | "github"
+  | "attempt";
 
 /** A trace span, as the SDK's span API takes it. */
 export interface SpanInfo {
@@ -18,8 +27,8 @@ export interface SpanInfo {
   id: string;
   /** What the span is called in the trace. */
   name: string;
-  /** What kind of span it is, as in `job`. */
-  kind?: string;
+  /** What kind of span it is. */
+  kind: SpanKind;
   /** Who did the work in it, inherited by the steps and spans inside. */
   origin?: string;
 }
@@ -67,4 +76,50 @@ export const originOption = (
   origin: string,
 ): { "~origin": string } => {
   return { "~origin": origin };
+};
+
+/** The first SDK whose snapshot takes a caller's `"~span"` as its own span. */
+const snapshotSpanSince = "4.23.1";
+
+/** Whether `version` is `since` or later, as in `4.23.1`. */
+export const versionAtLeast = (version: string, since: string): boolean => {
+  const have = version.split(/[.-]/).map(Number);
+
+  for (const [index, want] of since.split(".").map(Number).entries()) {
+    const got = have[index] ?? 0;
+
+    if (got !== want) {
+      return got > want;
+    }
+  }
+
+  return true;
+};
+
+/**
+ * What the SDK in use can do beyond the span API. Older SDKs ignore the step
+ * options they don't know, so each is detected here rather than assumed.
+ */
+export const sdk = {
+  /**
+   * Whether a snapshot step's `"~span"` option stands in for the span the SDK
+   * would open around its create and wait. Older SDKs ignore the option and
+   * open their own, which then sits inside the span CI opens.
+   */
+  takesSnapshotSpan: (): boolean => {
+    return versionAtLeast(sdkVersion, snapshotSpanSince);
+  },
+};
+
+/**
+ * The step option that makes a snapshot one statement in `span`, where the
+ * SDK takes one. Elsewhere there is none, and `inSnapshotSpan` opens it.
+ */
+export const snapshotSpanOption = (span: SpanInfo): { "~span"?: SpanInfo } => {
+  return sdk.takesSnapshotSpan() ? { "~span": span } : {};
+};
+
+/** Run `fn`, which takes snapshots, in `span` unless the SDK does it itself. */
+export const inSnapshotSpan = <R>(span: SpanInfo, fn: () => R): R => {
+  return sdk.takesSnapshotSpan() ? fn() : inSpan(span, fn);
 };

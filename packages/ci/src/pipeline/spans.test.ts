@@ -1,45 +1,45 @@
 /**
  * Tests of the span helpers, and of CI on an SDK without the span API: with
  * none, functions still run, step IDs and names are exactly what they are
- * with it, and the trace just has no spans or origins. The rest of the suite
- * runs with the test stub in place.
+ * with it, and the trace just has no spans or origins. The same goes for an
+ * SDK that doesn't take a snapshot's own span. The rest of the suite runs
+ * with the test stub in place.
  *
  * @module
  */
 
 import { group, step } from "inngest";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { consoleReporter } from "../github/auth.ts";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { $ } from "../machine/command.ts";
-import { createCiTestClient } from "../testing/client.ts";
-import { prEvent } from "../testing/events.ts";
-import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { runFunction } from "../testing/runFunction.ts";
+import { snapshotMachine } from "../machine/machine.ts";
+import { ciTest } from "../testing/harness.ts";
 import { installSpanStub, removeSpanStub } from "../testing/spanStub.ts";
-import { createCi } from "./createCi.ts";
-import { hasSpanApi, inSpan, originOption } from "./spans.ts";
+import { ciOrigin } from "./names.ts";
+import type { CiJobScope } from "./scope.ts";
+import {
+  hasSpanApi,
+  inSnapshotSpan,
+  inSpan,
+  originOption,
+  sdk,
+  snapshotSpanOption,
+  versionAtLeast,
+} from "./spans.ts";
 
 /** Run a job with a command and a step of your own. */
 const run = () => {
-  const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
-    github: consoleReporter(),
-  });
+  return ciTest().run((ci) => {
+    return ci.job("test", async () => {
+      await $`pnpm test`;
 
-  const job: () => Promise<unknown> = ci.job("test", async () => {
-    await $`pnpm test`;
-
-    await step.run("mine", () => {
-      return "done";
+      await step.run("mine", () => {
+        return "done";
+      });
     });
   });
-
-  const pipeline = ci.pipeline(
-    { id: "pr", on: [{ event: "github/pull_request.opened" }] },
-    job,
-  );
-
-  return runFunction(pipeline, { event: prEvent });
 };
+
+const span = { id: "a", name: "A", kind: "job" } as const;
 
 describe("without the SDK's span API", () => {
   beforeEach(() => {
@@ -57,8 +57,6 @@ describe("without the SDK's span API", () => {
   });
 
   test("inSpan runs the function and returns what it returns", async () => {
-    const span = { id: "a", name: "A" };
-
     expect(inSpan(span, () => 7)).toBe(7);
 
     await expect(
@@ -109,8 +107,8 @@ describe("with the SDK's span API", () => {
     const calls: unknown[] = [];
 
     Object.defineProperty(group, "~span", {
-      value: (span: unknown, fn: () => unknown) => {
-        calls.push(span);
+      value: (opened: unknown, fn: () => unknown) => {
+        calls.push(opened);
 
         return `wrapped ${String(fn())}`;
       },
@@ -118,13 +116,7 @@ describe("with the SDK's span API", () => {
     });
 
     try {
-      const span = { id: "a", name: "A", kind: "job" };
-
-      expect(
-        inSpan(span, () => {
-          return "inner";
-        }),
-      ).toBe("wrapped inner");
+      expect(inSpan(span, () => "inner")).toBe("wrapped inner");
 
       expect(calls).toEqual([span]);
     } finally {
@@ -142,5 +134,110 @@ describe("originOption", () => {
       name: "A",
       "~origin": "x",
     });
+  });
+});
+
+describe("versionAtLeast", () => {
+  test.each([
+    ["4.23.1", true],
+    ["4.23.2", true],
+    ["4.24.0", true],
+    ["5.0.0", true],
+    ["4.23.1-pr.1", true],
+    ["4.23.0", false],
+    ["4.22.9", false],
+    ["3.99.99", false],
+  ])("%s", (version, expected) => {
+    expect(versionAtLeast(version, "4.23.1")).toBe(expected);
+  });
+});
+
+describe("a snapshot's span", () => {
+  /** What a job's snapshot passes the SDK, and the spans opened around it. */
+  const snapshotWith = async (takesSpan: boolean) => {
+    vi.spyOn(sdk, "takesSnapshotSpan").mockReturnValue(takesSpan);
+
+    const steps: unknown[] = [];
+    const opened: unknown[] = [];
+
+    const open = vi.fn((spanned: unknown, fn: () => unknown) => {
+      opened.push(spanned);
+
+      return fn();
+    });
+
+    Object.defineProperty(group, "~span", {
+      value: open,
+      configurable: true,
+    });
+
+    const scope = {
+      path: "test",
+      machine: Promise.resolve({
+        sandbox: {
+          snapshot: (options: unknown) => {
+            steps.push(options);
+
+            return Promise.resolve({ id: "snap" });
+          },
+        },
+      }),
+      run: { ci: { hooks: { activity: vi.fn() } } },
+    } as unknown as CiJobScope;
+
+    try {
+      await snapshotMachine(scope);
+    } finally {
+      Reflect.deleteProperty(group, "~span");
+
+      installSpanStub();
+
+      vi.restoreAllMocks();
+    }
+
+    return { steps, opened };
+  };
+
+  const save = {
+    id: "test › save",
+    name: "Save sandbox",
+    kind: "snapshot",
+    origin: ciOrigin,
+  };
+
+  test("goes to an SDK that takes it, as the step's own span", async () => {
+    removeSpanStub();
+
+    const { steps, opened } = await snapshotWith(true);
+
+    expect(steps).toEqual([
+      expect.objectContaining({ id: "test › snapshot", "~span": save }),
+    ]);
+
+    expect(opened).toEqual([]);
+  });
+
+  test("is opened here for an SDK that doesn't, which would open its own", async () => {
+    removeSpanStub();
+
+    const { steps, opened } = await snapshotWith(false);
+
+    expect(steps).toEqual([expect.not.objectContaining({ "~span": save })]);
+
+    expect(opened).toEqual([save]);
+  });
+
+  test("is a step option only where the SDK takes it", () => {
+    vi.spyOn(sdk, "takesSnapshotSpan").mockReturnValue(true);
+
+    expect(snapshotSpanOption(span)).toEqual({ "~span": span });
+
+    vi.spyOn(sdk, "takesSnapshotSpan").mockReturnValue(false);
+
+    expect(snapshotSpanOption(span)).toEqual({});
+
+    expect(inSnapshotSpan(span, () => "ran")).toBe("ran");
+
+    vi.restoreAllMocks();
   });
 });

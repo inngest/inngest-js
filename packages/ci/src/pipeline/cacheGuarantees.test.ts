@@ -18,7 +18,7 @@
 import { describe, expect, test } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { machineSetupScript } from "../machine/machine.ts";
+import { machineSetupScript } from "../machine/start.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";

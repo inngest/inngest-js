@@ -13,7 +13,7 @@
 import { tagStep } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, joinId, rootRunIdOf } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -283,7 +283,7 @@ export const cacheTarget = async (
   countApi("cache");
 
   const ownKey = (await run.step.run(
-    ciStep(`${job.path}${scopeSeparator}cache:key`, traceName.checkCache),
+    ciStep(joinId(job.path, "cache:key"), traceName.checkCache),
     async () => {
       await tagStep(run, { kind: "cache", job: job.path });
 
@@ -462,7 +462,7 @@ export const lookupCache = async (
   const { run } = scope;
 
   const found = (await run.step.run(
-    ciStep(`${scope.path}${scopeSeparator}cache:lookup`, traceName.lookUpCache),
+    ciStep(joinId(scope.path, "cache:lookup"), traceName.lookUpCache),
     async () => {
       await tagStep(run, { kind: "cache", job: scope.path });
 
@@ -516,7 +516,7 @@ export const lookupBeforeBuild = async (
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
   const found = (await run.step.run(
-    ciStep(`${job.stepPath}${scopeSeparator}lookup`, traceName.lookUpCache),
+    ciStep(joinId(job.stepPath, "lookup"), traceName.lookUpCache),
     async () => {
       await tagStep(run, { kind: "cache", job: job.path });
 

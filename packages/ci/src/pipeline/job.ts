@@ -38,10 +38,10 @@ import type { CiJobScope, CiRunScope } from "./scope.ts";
 import {
   getRunScope,
   inJobSpan,
+  joinId,
   matrixOriginOf,
   rootRunIdOf,
   runJobBody,
-  scopeSeparator,
 } from "./scope.ts";
 
 export interface RegisteredJob {
@@ -234,10 +234,7 @@ export const invokeBuild = async ({
 
   try {
     output = (await run.step.invoke(
-      ciStep(
-        `${stepPath}${scopeSeparator}build`,
-        traceName.buildInOwnRun(path),
-      ),
+      ciStep(joinId(stepPath, "build"), traceName.buildInOwnRun(path)),
       { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {

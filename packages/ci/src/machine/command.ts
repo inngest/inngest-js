@@ -13,14 +13,14 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
-import { ciSpan, ciStep, traceName } from "../pipeline/names.ts";
+import { ciStep, spans, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   countApi,
   defaultCwd,
+  joinId,
   nextStepId,
   requireJobScope,
-  scopeSeparator,
 } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
 import type {
@@ -176,7 +176,7 @@ export const buildShellString = (
  * command's span is yours, but how CI runs it isn't.
  */
 const subStep = (stepId: string, suffix: string, name: string) => {
-  return ciStep(`${stepId}${scopeSeparator}${suffix}`, name);
+  return ciStep(joinId(stepId, suffix), name);
 };
 
 class CommandBuilder implements Command {
@@ -268,7 +268,8 @@ class CommandBuilder implements Command {
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
-    // Each call back into the process re-enters the command's span.
+    // Starting, awaiting, reading and killing the process are separate
+    // statements, so each is a row of its own, never one span re-entered.
     const process = await this.inSpan(scope, stepId, () => {
       return startProcess(machine, stepId, this.spawnOptions(scope));
     });
@@ -278,39 +279,60 @@ class CommandBuilder implements Command {
     // Numbers the follow-up steps, so calling `exited()` or `output()` more
     // than once never reuses a step ID.
     const nextWait = counter();
+    const nextExited = counter();
 
     return {
       id: process.id,
       exited: () => {
-        return this.inSpan(scope, stepId, async () => {
-          const polled = await pollUntilTerminal({
-            scope,
-            machine,
-            process,
-            stepId,
-            nextWait,
-          });
+        return this.inSpan(
+          scope,
+          stepId,
+          async () => {
+            const polled = await pollUntilTerminal({
+              scope,
+              machine,
+              process,
+              stepId,
+              nextWait,
+            });
 
-          return readResult({ process: polled.process, stepId, argv, secrets });
-        });
+            return readResult({
+              process: polled.process,
+              stepId,
+              argv,
+              secrets,
+            });
+          },
+          { suffix: `exited #${nextExited()}`, label: "exited" },
+        );
       },
       kill: async (signal = 15) => {
-        await this.inSpan(scope, stepId, () => {
-          return process.signal(
-            subStep(stepId, "kill", traceName.stopProcess),
-            { signal },
-          );
-        });
+        await this.inSpan(
+          scope,
+          stepId,
+          () => {
+            return process.signal(
+              subStep(stepId, "kill", traceName.stopProcess),
+              { signal },
+            );
+          },
+          { suffix: "kill", label: "kill" },
+        );
       },
       output: async (opts) => {
-        const output = await this.inSpan(scope, stepId, () => {
-          return process.getOutput(
-            subStep(stepId, `output #${nextWait()}`, traceName.readOutput),
-            {
-              tailBytes: opts?.tailBytes ?? outputTailBytes,
-            },
-          );
-        });
+        const suffix = `output #${nextWait()}`;
+
+        const output = await this.inSpan(
+          scope,
+          stepId,
+          () => {
+            return process.getOutput(
+              subStep(stepId, suffix, traceName.readOutput),
+              { tailBytes: opts?.tailBytes ?? outputTailBytes },
+            );
+          },
+          { suffix, label: "output" },
+        );
 
         const decoded = decodeChunks(output);
 
@@ -371,12 +393,23 @@ class CommandBuilder implements Command {
     });
   }
 
-  /** Run `fn` in the command's span, in its machine's span if it's an extra. */
-  private inSpan<T>(scope: CiJobScope, stepId: string, fn: () => T): T {
-    const span = {
-      id: stepId,
-      name: traceName.command(this.commandText(), this.state.label),
-    };
+  /**
+   * Run `fn` in the command's span, in its machine's span if it's an extra.
+   * A statement on a background process, such as its `kill`, is a span of its
+   * own beside the command's.
+   */
+  private inSpan<T>(
+    scope: CiJobScope,
+    stepId: string,
+    fn: () => T,
+    statement?: { suffix: string; label: string },
+  ): T {
+    const span = spans.command(
+      stepId,
+      this.commandText(),
+      this.state.label,
+      statement,
+    );
 
     return inMachineSpan(scope, () => {
       return inSpan(span, fn);
@@ -413,10 +446,7 @@ class CommandBuilder implements Command {
       const result = await this.inSpan(scope, stepId, () => {
         return attempts === 1
           ? runAttempt()
-          : inSpan(
-              ciSpan(`attempt-${attempt}`, traceName.attempt(attempt)),
-              runAttempt,
-            );
+          : inSpan(spans.attempt(attempt), runAttempt);
       });
 
       scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);

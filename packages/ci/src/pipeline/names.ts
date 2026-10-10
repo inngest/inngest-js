@@ -14,7 +14,8 @@ import type { CheckConclusion } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import { version } from "../version.ts";
 import type { CiRunScope } from "./scope.ts";
-import { scopeSeparator } from "./scope.ts";
+import { joinId, scopeSeparator } from "./scope.ts";
+import type { SpanInfo, SpanKind } from "./spans.ts";
 import { originOption } from "./spans.ts";
 
 /**
@@ -25,9 +26,72 @@ import { originOption } from "./spans.ts";
  */
 export const ciOrigin = `@inngest/ci@${version}`;
 
+/** A span for something you wrote or asked for, such as a job or a command. */
+const userSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
+  return { kind, id, name };
+};
+
 /** A span CI opens for its own work, such as starting a sandbox. */
-export const ciSpan = (id: string, name: string) => {
-  return { id, name, origin: ciOrigin };
+const ciSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
+  return { ...userSpan(kind, id, name), origin: ciOrigin };
+};
+
+/**
+ * Every span CI opens: its kind, ID, name and whose work it is, in one place.
+ * A new span is an entry here and a `inSpan(spans.x(...), fn)` where it
+ * opens. Spans of what you wrote have no origin.
+ */
+export const spans = {
+  /** A job, which holds everything it does. */
+  job: (run: CiRunScope, path: string): SpanInfo => {
+    return userSpan("job", path, traceName.job(run, path));
+  },
+
+  /** The run's one span for reporting to GitHub. */
+  github: (): SpanInfo => {
+    return ciSpan("github", "github", traceName.github);
+  },
+
+  /** A machine starting, with its fallbacks. */
+  startMachine: (stepId: string, parent?: string): SpanInfo => {
+    return ciSpan("sandbox", stepId, traceName.startMachine(parent));
+  },
+
+  /** An extra sandbox, named as `sandbox()` was. */
+  extraMachine: (path: string, jobPath: string): SpanInfo => {
+    return userSpan("sandbox", path, traceName.extraMachine(path, jobPath));
+  },
+
+  /**
+   * A command. A statement on a background process, such as its `kill`, is a
+   * span of its own beside the command's.
+   */
+  command: (
+    stepId: string,
+    text: string,
+    label?: string,
+    statement?: { suffix: string; label: string },
+  ): SpanInfo => {
+    const name = traceName.command(text, label);
+
+    return statement
+      ? userSpan(
+          "command",
+          joinId(stepId, statement.suffix),
+          `${name} (${statement.label})`,
+        )
+      : userSpan("command", stepId, name);
+  },
+
+  /** One attempt of a command that has retries. */
+  attempt: (attempt: number): SpanInfo => {
+    return ciSpan("attempt", `attempt-${attempt}`, traceName.attempt(attempt));
+  },
+
+  /** Saving a job's sandbox: one statement, whatever steps it takes. */
+  save: (jobPath: string): SpanInfo => {
+    return ciSpan("snapshot", joinId(jobPath, "save"), traceName.saveMachine);
+  },
 };
 
 /**
@@ -150,6 +214,8 @@ export const traceName = {
   deleteBadSnapshot: "Delete bad snapshot",
   checkSnapshotState: "Check snapshot state",
 
+  cloneRepository: "Clone repository",
+  uploadWorkingTree: "Upload working tree",
   findChangedFiles: "Find changed files",
 
   recordStartTime: "Record start time",
