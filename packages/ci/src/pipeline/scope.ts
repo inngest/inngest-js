@@ -9,6 +9,8 @@ import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import type { NamePolicy } from "../cache/namePolicy.ts";
+import { policyFromFlags } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type {
   CheckAnnotation,
@@ -70,24 +72,24 @@ export const isInline = (config: JobConfig): boolean => {
 };
 
 /**
- * A job built in the run that needs it rather than by the build function: one
- * the build function can't find, because it exists only in this run.
+ * What a job is asked to build, whether by the build function's run or by the
+ * run that defined it: where its snapshot goes, how the name is treated, what
+ * it starts from, and where it leaves what it ended with.
  */
-export interface InlineBuild {
+export interface BuildRequest {
   /** The key and snapshot name to build under. */
   target: CacheTarget;
-  /** A bad snapshot the build must not reuse. */
-  exclude?: string;
-  /** Whether `exclude` was decided to be broken, so the build may delete it. */
-  broken?: boolean;
-  /** Whether the build leaves the name alone and takes a snapshot of its own. */
-  unnamed?: boolean;
-  /** What the job starts from, as a build run is handed it. */
+  /** What to do about the name, which a rebuild of a bad snapshot changes. */
+  name: NamePolicy;
+  /** What the job starts from, as a build is handed it. */
   base?: CacheBuildResult;
-  /** What the job ended with, set by the job. */
-  outcome?: BuildOutcome;
-  /** The job's line in the summary, left for the run that asked to report. */
-  summary?: JobSummary;
+  /** What the job leaves for whoever asked: the job sets it, they read it. */
+  sink: {
+    /** What the job ended with. */
+    outcome?: BuildOutcome;
+    /** The job's line in the summary, for the asker to report. */
+    summary?: JobSummary;
+  };
 }
 
 /**
@@ -107,10 +109,17 @@ export interface MachineHandle {
   claimedProcessIds?: Set<string>;
 }
 
-/**
- * What a build run's job ended with, which the run hands back to the run that
- * invoked it. A build run has one job, so nothing else writes it.
- */
+/** What a build run is asked to build, from the data it was invoked with. */
+export const requestOf = (data: CacheBuildData): BuildRequest => {
+  return {
+    target: { ownKey: data.ownKey, name: data.cacheKey },
+    name: policyFromFlags(data),
+    ...(data.base ? { base: data.base } : {}),
+    sink: {},
+  };
+};
+
+/** What a built job ended with, which the asker takes as its own. */
 export interface BuildOutcome {
   /** The job's snapshot, if it had a machine and snapshots could be taken. */
   snapshotId?: string;
@@ -229,8 +238,8 @@ export interface CiRunScope {
    * invoked it. It has no checks of its own and reports to that run.
    */
   build?: CacheBuildData;
-  /** What the build's job ended with, which the build hands back. */
-  outcome?: BuildOutcome;
+  /** What a build run is asked to build, from `build`. */
+  request?: BuildRequest;
   /** What the build's job reported, which the build hands back. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */
@@ -287,8 +296,8 @@ export interface CiJobScope {
   jobPath: string;
   config: JobConfig;
   machine?: Promise<MachineHandle>;
-  /** Set when the job is being built in this run for a job that starts from it. */
-  inline?: InlineBuild;
+  /** Set when the job builds a snapshot for someone who asked for it. */
+  request?: BuildRequest;
   fromSnapshotId?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
@@ -297,14 +306,11 @@ export interface CiJobScope {
    * whatever the number of children that need it, and gives the new one. Set
    * by `startFrom`.
    *
-   * With `broken`, the snapshot failed to start twice, so it is deleted first
-   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
-   * alone, as when another build is still taking the snapshot.
+   * The name policy says how the rebuild treats the name: a snapshot that
+   * failed to start twice is deleted first (once, whichever child asks), and a
+   * snapshot another build is still taking leaves the name alone.
    */
-  rebuildSnapshot?: (why: {
-    broken: boolean;
-    unnamed: boolean;
-  }) => Promise<string | undefined>;
+  rebuildSnapshot?: (name: NamePolicy) => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.

@@ -33,9 +33,10 @@ import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { runFunction } from "../testing/runFunction.ts";
+import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import type { Job } from "../types.ts";
+import type { Ci } from "./createCi.ts";
 import { createCi } from "./createCi.ts";
 import { runCombosKey } from "./matrix.ts";
 import { getRunScope } from "./scope.ts";
@@ -1485,11 +1486,119 @@ describe("from", () => {
     expect(cloned).toHaveLength(2);
   });
 
-  test("a `from` that isn't a job throws", async () => {
+  test("a `from` that isn't a job throws when the job is defined", () => {
+    const { ci } = setup();
+
+    expect(() => {
+      ci.job({ id: "child", from: "parent" as unknown as Job }, async () => {});
+    }).toThrow(
+      'The `from` of job "child" must name a job, or a job with input from `job.with(input)`.',
+    );
+
+    expect(() => {
+      ci.job({ id: "other", from: {} as unknown as Job }, async () => {});
+    }).toThrow("must name a job");
+  });
+
+  test("a `from` naming another client's job throws when the job is defined", () => {
+    const { ci } = setup();
+    const other = setup().ci;
+
+    const parent = other.job("parent", async () => {});
+
+    expect(() => {
+      ci.job({ id: "child", from: parent }, async () => {});
+    }).toThrow("`parent`, which isn't defined on this CI client");
+
+    // The ID matches a job on this client, which isn't the one named.
+    ci.job("same", async () => {});
+
+    const impostor = other.job("same", async () => {});
+
+    expect(() => {
+      ci.job({ id: "child", from: impostor.with() }, async () => {});
+    }).toThrow("isn't defined on this CI client");
+  });
+
+  test("input that fails the parent's schema throws when the job is defined", () => {
+    const { ci } = setup();
+
+    const build = ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async () => {},
+    );
+
+    expect(() => {
+      ci.job(
+        {
+          id: "test",
+          from: build.with({ target: 1 as unknown as string }),
+        },
+        async () => {},
+      );
+    }).toThrow(/target: Expected string/);
+
+    expect(() => {
+      ci.job({ id: "ok", from: build.with({ target: "web" }) }, async () => {});
+    }).not.toThrow();
+  });
+
+  test("input checked by an async schema waits for run time", () => {
+    const { ci } = setup();
+
+    const input: StandardSchemaV1<unknown, { target: string }> = {
+      "~standard": {
+        version: 1,
+        vendor: "fake",
+        validate: async () => {
+          return { issues: [{ message: "never" }] };
+        },
+      },
+    };
+
+    const build = ci.job({ id: "build", input }, async () => {});
+
+    expect(() => {
+      ci.job(
+        { id: "test", from: build.with({ target: "web" }) },
+        async () => {},
+      );
+    }).not.toThrow();
+  });
+
+  test("a matrix with a bad static `from` throws when it's defined", () => {
+    const { ci } = setup();
+    const other = setup().ci;
+
+    const parent = other.job("parent", async () => {});
+
+    expect(() => {
+      ci.matrix(
+        { id: "compat", axes: { node: ["20"] }, from: parent },
+        async () => {},
+      );
+    }).toThrow("isn't defined on this CI client");
+
+    expect(() => {
+      ci.matrix(
+        {
+          id: "compat2",
+          axes: { node: ["20"] },
+          from: "parent" as unknown as Job,
+        },
+        async () => {},
+      );
+    }).toThrow("must name a job");
+  });
+
+  test("a `from` function that returns a non-job fails the run for good", async () => {
     const { ci } = setup();
 
     const child = ci.job(
-      { id: "child", from: "parent" as unknown as Job },
+      { id: "child", from: (() => "nope") as unknown as () => Job },
       async () => {},
     );
 
@@ -1499,56 +1608,67 @@ describe("from", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
     expect(String((result.error as { message?: string })?.message)).toContain(
       "must name a job",
     );
   });
 
-  test("a `from` naming another client's job throws", async () => {
-    const { ci } = setup();
-    const other = setup().ci;
+  test.each([
+    {
+      name: "a `from` function that leads back to the start",
+      message: "`a` → `b` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
+        const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
 
-    const parent = other.job("parent", async () => {});
+        return a;
+      },
+    },
+    {
+      name: "a cycle only reachable through a parent's own parent",
+      message: "`c` → `a` → `b` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
+        const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
 
-    const child = ci.job({ id: "child", from: parent }, async () => {});
+        return ci.job({ id: "c", from: a }, async () => {});
+      },
+    },
+    {
+      name: "a job that names itself",
+      message: "`a` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => a }, async () => {});
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return child();
-    });
+        return a;
+      },
+    },
+  ])(
+    "$name fails the run once, before any build",
+    async ({ define, message }) => {
+      const { ci } = setup();
+      const entry = define(ci);
 
-    const result = await runFunction(pipeline, { event: prEvent });
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return entry();
+      });
 
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "isn't defined on this CI client",
-    );
-  });
+      const before = invokedRunCount();
+      const result = await runFunction(pipeline, { event: prEvent });
 
-  test("a `from` naming another client's job throws, even when this client has a job of that ID", async () => {
-    const { api, ci } = setup();
-    const other = setup().ci;
+      expect(result.type).toBe("function-rejected");
+      expect(result.retriable).toBe(false);
 
-    ci.job("setup", async () => {
-      await $`pnpm install`;
-    });
+      expect(String((result.error as { message?: string })?.message)).toContain(
+        message,
+      );
 
-    const foreign = other.job("setup", async () => {
-      await $`pnpm foreign`;
-    });
-
-    const child = ci.job({ id: "child", from: foreign }, async () => {});
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return child();
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "isn't defined on this CI client",
-    );
-
-    expect(api.commands).toEqual([]);
-  });
+      expect(invokedRunCount() - before).toBe(0);
+    },
+  );
 
   test("a `from` function picks the parent from the job's input", async () => {
     const { api, ci } = setup();

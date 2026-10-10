@@ -8,6 +8,8 @@
 import type { Inngest } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import type { NamePolicy } from "../cache/namePolicy.ts";
+import { deletesHolder, excludedBy } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
@@ -270,7 +272,11 @@ const startSandbox = async (
   let bad = `wouldn't start (${errorMessage(first.failure)})`;
 
   /** How to replace it. */
-  let rebuild = { broken: false, unnamed: false };
+  let rebuild: NamePolicy = {
+    kind: "replace",
+    exclude: snapshotId,
+    deleteHolder: false,
+  };
 
   // WORKAROUND (Sandboxes API): a snapshot can't be told to be broken, so
   // it is retried before it is deleted. Delete this once snapshots or
@@ -293,7 +299,7 @@ const startSandbox = async (
   if (state === "creating") {
     // Another build is still taking it and may yet finish, so this
     // run rebuilds without contending for its name.
-    rebuild = { broken: false, unnamed: true };
+    rebuild = { kind: "unnamed", exclude: snapshotId };
   } else if (state === "ready") {
     // With the default wait, the same as the first try's: a shorter one
     // would make a slow node more likely to fail the retry, and a second
@@ -310,7 +316,7 @@ const startSandbox = async (
 
     bad = `wouldn't start twice (${errorMessage(second.failure)})`;
 
-    rebuild = { broken: true, unnamed: false };
+    rebuild = { kind: "replace", exclude: snapshotId, deleteHolder: true };
   }
 
   run.warnings.push(
@@ -457,16 +463,11 @@ export const errorStatus = (error: unknown): number | undefined => {
 /** How a job's snapshot is named. */
 export interface SnapshotCache {
   target: CacheTarget;
-  /** A snapshot that may still hold the name, which must not be used. */
-  exclude?: string;
-  /** Whether `exclude` was decided to be broken, so it may be deleted. */
-  broken?: boolean;
   /**
-   * Take the snapshot without the name, which another build may be taking or a
-   * snapshot that can't be deleted still holds. It belongs to this run, which
+   * What to do about the name. An unnamed snapshot belongs to this run, which
    * deletes it at its end.
    */
-  unnamed?: boolean;
+  name: NamePolicy;
   /**
    * Set when the job has no `cache` and the name is only for this run, so
    * failing to name it isn't worth a warning.
@@ -531,7 +532,7 @@ const takeSnapshot = async (
   const stepId = joinId(jobPath, "snapshot");
 
   try {
-    return cache && !cache.unnamed
+    return cache && cache.name.kind !== "unnamed"
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
       : await createRunSnapshot(handle, jobPath, stepId);
   } catch (error) {
@@ -562,7 +563,7 @@ const createNamedSnapshot = async (
   handle: MachineHandle,
   jobPath: string,
   stepId: string,
-  { target, exclude, broken, ephemeral }: SnapshotCache,
+  { target, name: policy, ephemeral }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -597,8 +598,8 @@ const createNamedSnapshot = async (
       run,
       `${stepId}${scopeSeparator}name-taken`,
       name,
-      exclude,
-      broken,
+      excludedBy(policy),
+      deletesHolder(policy),
     );
 
     if (taken.winner) {

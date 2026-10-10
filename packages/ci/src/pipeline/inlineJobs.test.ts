@@ -19,7 +19,7 @@ import { getRunScope } from "./scope.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
 
-const setup = (api: Api) => {
+const setup = (api: Api = createFakeSandboxApi()) => {
   const client = createCiTestClient(api);
 
   const ci = createCi(client, {
@@ -29,7 +29,7 @@ const setup = (api: Api) => {
     },
   });
 
-  return { ci };
+  return { api, ci };
 };
 
 const count = (api: Api, command: string): number => {
@@ -63,8 +63,7 @@ const snapshotNamed = (api: Api, name: RegExp) => {
 
 describe("inline jobs", () => {
   test("an inline parent builds in the run and its child starts from the run's snapshot", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { api, ci } = setup();
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       const base = ci.job("base", async () => {
@@ -99,8 +98,7 @@ describe("inline jobs", () => {
   });
 
   test("an inline cached job is found by its name in a later run", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { api, ci } = setup();
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
@@ -147,8 +145,7 @@ describe("inline jobs", () => {
   });
 
   test("an inline cached job called directly builds in the run and is reused by the next", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { api, ci } = setup();
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       const install = ci.job(
@@ -182,8 +179,7 @@ describe("inline jobs", () => {
   });
 
   test("a top-level cached job still goes through the build function", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { ci } = setup();
 
     const install = ci.job(
       { id: "install", cache: { key: "v1" } },
@@ -206,8 +202,7 @@ describe("inline jobs", () => {
   });
 
   test("a top-level job whose parent is inline builds in the run too", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { api, ci } = setup();
 
     const parents: { current?: ReturnType<typeof ci.job> } = {};
 
@@ -241,8 +236,7 @@ describe("inline jobs", () => {
   });
 
   test("a parent's `from` is read from its validated input, so a parent whose parent is inline builds in the run", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { api, ci } = setup();
 
     const parents: { current?: ReturnType<typeof ci.job> } = {};
 
@@ -306,30 +300,8 @@ describe("inline jobs", () => {
     expect(count(api, "pnpm leaf")).toBe(1);
   });
 
-  test("a factory called at the top level makes a normal job", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
-
-    const makeInstall = (id: string) => {
-      return ci.job({ id, cache: { key: "v1" } }, async () => {
-        await $`pnpm install`;
-      });
-    };
-
-    const install = makeInstall("install");
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await install();
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(invokes(result.stepIds)).toEqual(["install › build"]);
-  });
-
   test("defining one ID twice in a run says to put what varies in the id", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { ci } = setup();
 
     const makeTest = (pkg: string) => {
       return ci.job("test", async () => {
@@ -352,8 +324,7 @@ describe("inline jobs", () => {
   });
 
   test("the same factory in two runs is fine", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup(api);
+    const { ci } = setup();
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       for (const pkg of ["a", "b"]) {
