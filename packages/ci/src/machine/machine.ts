@@ -31,6 +31,7 @@ import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
   errorMessage,
+  hash,
   isSandboxNotFound,
   isSnapshotNotFound,
   slug,
@@ -117,6 +118,22 @@ const machineName = (runId: string, path: string): string => {
 };
 
 /**
+ * The name of the machine that holds a cache entry's build lock. The entry's
+ * name carries its scope, job and key, which include the app and the
+ * repository, so apps and repositories never block each other.
+ */
+export const lockMachineName = (cacheKey: string): string => {
+  return `ci-build-${hash(cacheKey, 32)}`;
+};
+
+/**
+ * The environment variable that says which run holds a build lock, namespaced
+ * so it can not clash with a job's own. The platform refuses a create of the
+ * lock's name with another value, and gives the same machine back for the same.
+ */
+const lockOwnerKey = "INNGEST_CI_LOCK_OWNER";
+
+/**
  * Run once on every machine before its first command.
  *
  * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
@@ -198,11 +215,25 @@ const startSandbox = async (
   /** Create a machine at a stage, from a snapshot if one is given, and set it up. */
   const start = async (stage: Stage, snapshotId?: string): Promise<Sandbox> => {
     const step = { id: idOf(stage), name: stages[stage] };
-    const name = nameOf(stage);
+
+    // The build that answers for a lock claims it by creating its job's
+    // machine under the lock's name, owned by this run.
+    const lock =
+      stage === "first" && run.buildLock?.path === scope.path
+        ? run.buildLock.name
+        : undefined;
+
+    const name = lock ?? nameOf(stage);
 
     const sandbox = await tools.create(
       step,
-      snapshotId ? { name, snapshotId } : { name, ...machineConfig },
+      snapshotId
+        ? { name, snapshotId }
+        : {
+            name,
+            ...machineConfig,
+            ...(lock ? { environment: { [lockOwnerKey]: run.runId } } : {}),
+          },
     );
 
     await sandbox.commands.run(
@@ -729,7 +760,7 @@ export const destroyRunMachines = async (
   attempt = 0,
 ): Promise<void> => {
   await ciRun(run, steps.cleanUpMachines(attempt), () => {
-    return destroyOrphans(run.ci.client, run.runId);
+    return destroyOrphans(run.ci.client, run.runId, run.buildLock?.name);
   });
 };
 
@@ -768,17 +799,23 @@ export const deleteRunSnapshots = async (
 /**
  * A run that ended permanently never reached its own cleanup step, so its
  * machines are found by name. Listing has no name filter, so the comparison
- * happens here.
+ * happens here. A build lock's name is the same for every run, so its machine
+ * is also destroyed if this run is the one that holds it.
  */
 export const destroyOrphans = async (
   client: Inngest.Any,
   runId: string,
+  /** The lock whose machine this run may hold. */
+  lock?: string,
 ): Promise<{ destroyed: number }> => {
   const prefix = `ci-${runId}-`;
   let destroyed = 0;
 
   for await (const sandbox of listSandboxes(client)) {
-    if (sandbox.name.startsWith(prefix)) {
+    if (
+      sandbox.name.startsWith(prefix) ||
+      (sandbox.name === lock && (await holdsLock(sandbox, runId)))
+    ) {
       try {
         await sandbox.destroy();
 
@@ -793,4 +830,49 @@ export const destroyOrphans = async (
   }
 
   return { destroyed };
+};
+
+/** Whether a machine is still there to hold a name. */
+const isLive = (sandbox: { status: string }): boolean => {
+  return !["TERMINATING", "TERMINATED", "FAILED"].includes(sandbox.status);
+};
+
+/**
+ * Whether a lock's machine is this run's. One that can't be asked is left
+ * alone: a lock wrongly kept only waits for the next cleanup, while one wrongly
+ * destroyed would break another run's build.
+ */
+const holdsLock = async (
+  // biome-ignore lint/suspicious/noExplicitAny: SDK sandbox
+  sandbox: any,
+  runId: string,
+): Promise<boolean> => {
+  if (!isLive(sandbox)) {
+    return false;
+  }
+
+  try {
+    const owner = await sandbox.commands.run(
+      ["/bin/sh", "-c", `printf %s "$${lockOwnerKey}"`],
+      { timeout: "10s" },
+    );
+
+    return owner.exitCode === 0 && owner.stdout === runId;
+  } catch {
+    return false;
+  }
+};
+
+/** Whether the machine holding a build lock's name is still alive. */
+export const lockMachineAlive = async (
+  client: Inngest.Any,
+  name: string,
+): Promise<boolean> => {
+  for await (const sandbox of listSandboxes(client)) {
+    if (sandbox.name === name && isLive(sandbox)) {
+      return true;
+    }
+  }
+
+  return false;
 };

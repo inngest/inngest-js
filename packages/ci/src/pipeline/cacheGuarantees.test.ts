@@ -3,10 +3,11 @@
  * within a pipeline run each base is built once, a chain of cached parents
  * builds each link without holding back the jobs that need an earlier link, a
  * snapshot about to expire is replaced, and a parent is looked up first and a
- * build invoked only on a miss. Across concurrent runs it is best-effort: runs
- * that miss at the same time may build redundantly, at most one snapshot keeps
- * the name and the others adopt it, so the results are correct. They run
- * against the fake Sandboxes API with snapshot names on.
+ * build asked for only on a miss. Across concurrent runs a job that starts
+ * fresh is built once (see buildLock.test.ts), while one that starts `from`
+ * another is best-effort: runs that miss at the same time may build it
+ * redundantly, at most one snapshot keeps the name and the others adopt it.
+ * They run against the fake Sandboxes API with snapshot names on.
  *
  * `runFunction` runs invokes beside the function. Its `concurrency` key limits
  * steps running at once, as it does on the platform, not runs, so runs that
@@ -114,7 +115,7 @@ describe("a burst of runs that need one cached job", () => {
       });
   };
 
-  test("runs that miss together may each build, and all end on the one snapshot that kept the name", async () => {
+  test("runs that miss together build once, and all end on the one snapshot", async () => {
     const api = createFakeSandboxApi();
 
     // A slow install keeps every run's lookup ahead of any snapshot.
@@ -126,8 +127,9 @@ describe("a burst of runs that need one cached job", () => {
       expect(result.type).toBe("function-resolved");
     }
 
-    // Best-effort across runs: they all missed, so more than one built.
-    expect(count(api, "pnpm install")).toBeGreaterThan(1);
+    // They all missed, and one built: the rest waited for its snapshot (see
+    // buildLock.test.ts).
+    expect(count(api, "pnpm install")).toBe(1);
     expect(count(api, "pnpm lint")).toBe(4);
 
     // Yet one snapshot kept the name, nothing else is left behind, and every
@@ -268,7 +270,11 @@ describe("a chain of cached jobs", () => {
       /** When the snapshot of a job's build run was taken. */
       snapshot: (job: string) => {
         return order.findIndex((event) => {
-          return event.startsWith("snapshot ") && event.endsWith(`-${job}`);
+          return (
+            event.startsWith("snapshot ") &&
+            (event.endsWith(`-${job}`) ||
+              (job === "install" && event.includes("ci-build-")))
+          );
         });
       },
     };
@@ -331,7 +337,10 @@ describe("a warm cache", () => {
 
     const builds = () => {
       return [...api.sandboxes.values()].filter((machine) => {
-        return machine.name.startsWith("ci-01TESTINVOKED");
+        return (
+          machine.name.startsWith("ci-01TESTINVOKED") ||
+          machine.name.startsWith("ci-build-")
+        );
       }).length;
     };
 

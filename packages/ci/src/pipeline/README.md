@@ -12,5 +12,6 @@ The client and the run engine.
 - `scope.ts`: the run and job scopes held in async context. Jobs only write to the run scope, except for `builds`, the promises of the builds `from` parents need.
 - `names.ts`: what each step and span CI writes is called in the trace, and the origin that marks CI's own work.
 - `spans.ts`: the one place CI touches the SDK's experimental trace-span API.
+- `buildLock.ts`: how concurrent runs that miss the same cached job build it once. A run listens for `ci/build.done`, looks the snapshot up, and on a miss sends `ci/build.requested`. The `ci/build` function that takes it claims a machine named for the entry (`ci-build-<hash>`); only one succeeds, builds, snapshots, and when its run ends destroys the machine and sends `ci/build.done` with what the build gave back. The `ci/build` cleanup function releases the lock of a build that died. Jobs with a `from` are invoked instead.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.

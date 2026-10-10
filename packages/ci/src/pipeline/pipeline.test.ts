@@ -29,7 +29,7 @@ import {
 } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { report } from "../report.ts";
-import { createCiTestClient } from "../testing/client.ts";
+import { busOf, createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -621,56 +621,56 @@ describe("a job's input in its build run", () => {
       return { ...data, cacheKey: "ci/global/base/forged" };
     };
 
-    test("is refused, and writes nothing", async () => {
-      const { api, ci } = setup();
+    // A cached job is asked for by event, so the forgery is of a genuine
+    // request, played to the build function with the fake cleared.
+    test.each([
+      ["a snapshot name", forge, "doesn't match"],
+      [
+        "an own key",
+        (data: Record<string, unknown>) => ({ ...data, ownKey: "forged" }),
+        undefined,
+      ],
+    ])("is refused for %s, and writes nothing", async (_, change, message) => {
+      const { api, client, ci } = setup();
 
       const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
         await $`pnpm install`;
       });
 
-      const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 0 },
-        async () => {
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger, retries: 0 }, async () => {
           return base();
-        },
+        }),
+        { event: prEvent },
       );
 
-      const result = await runFunction(pipeline, {
-        event: prEvent,
-        rewriteInvoke: forge,
+      const request = busOf(client)?.sent.find((event) => {
+        return event.name === "ci/build.requested";
+      });
+
+      const build = ci.functions().find((fn) => {
+        return fn.opts.id === "ci/build";
+      });
+
+      api.sandboxes.clear();
+      api.snapshots.clear();
+      api.commands.length = 0;
+
+      if (!request || !build) {
+        throw new Error("no request for a build was sent");
+      }
+
+      const result = await runFunction(build, {
+        event: { name: request.name, data: change(request.data) },
       });
 
       expect(result.type).toBe("function-rejected");
-      expect(String((result.error as Error).message)).toContain(
-        "doesn't match",
-      );
+
+      if (message) {
+        expect(String((result.error as Error).message)).toContain(message);
+      }
 
       expect(userCommands(api)).toEqual([]);
-      expect(namedSnapshots(api)).toEqual([]);
-    });
-
-    test("is refused for an own key that isn't the job's, too", async () => {
-      const { api, ci } = setup();
-
-      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
-        await $`pnpm install`;
-      });
-
-      const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 0 },
-        async () => {
-          return base();
-        },
-      );
-
-      const result = await runFunction(pipeline, {
-        event: prEvent,
-        rewriteInvoke: (data) => {
-          return { ...data, ownKey: "forged" };
-        },
-      });
-
-      expect(result.type).toBe("function-rejected");
       expect(namedSnapshots(api)).toEqual([]);
     });
 
@@ -4357,7 +4357,7 @@ describe("cache builds in their own run", () => {
     const machines = [...api.sandboxes.values()];
 
     // The build's machine belongs to the build's run, not the pipeline's.
-    expect(machines[0]?.name).toMatch(/^ci-01TESTINVOKED\d+-base$/);
+    expect(machines[0]?.name).toMatch(/^ci-build-[0-9a-f]{32}$/);
 
     const child = machines.find((machine) => {
       return machine.name === "ci-01TESTRUN-lint";
@@ -4513,7 +4513,7 @@ describe("cache builds in their own run", () => {
         return (
           line.includes("pr / base") &&
           line.includes("Building in its own run") &&
-          /localhost:8288\/run\?runID=01TESTINVOKED\d+/.test(line)
+          /localhost:8288\/run\?runID=01(TESTINVOKED|BUILD)\d+/.test(line)
         );
       }),
     ).toBe(true);

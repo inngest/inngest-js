@@ -560,6 +560,17 @@ export const steps = {
     };
   },
 
+  checkBuildLock: (id: string, lock: string): StepSpec<boolean> => {
+    return {
+      id,
+      name: "Check build",
+      intent: `Check that the build holding \`${lock}\` is still going`,
+      outcome: (alive) => {
+        return { alive };
+      },
+    };
+  },
+
   recordRunDetails: (id: string): StepSpec => {
     return {
       id,
@@ -605,6 +616,16 @@ export const traceName = {
   buildInline: (jobId: string): string => {
     return `Build ${jobId} inline`;
   },
+
+  askForBuild: (path: string): string => {
+    return `Ask for a build of ${path}`;
+  },
+
+  waitForBuild: (path: string): string => {
+    return `Wait for a build of ${path}`;
+  },
+
+  announceBuild: "Tell the runs waiting on a build",
 
   canUser: (login: string, permission: string): string => {
     return `Check ${login} can ${permission}`;

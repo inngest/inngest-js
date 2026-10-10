@@ -33,6 +33,7 @@ import {
   deleteRunSnapshots,
   destroyOrphans,
   destroyRunMachines,
+  lockMachineName,
 } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
@@ -45,6 +46,8 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration } from "../util.ts";
+import type { BuildDone } from "./buildLock.ts";
+import { buildDoneEvent, endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -390,6 +393,9 @@ const runPipelineAttempt = async ({
     const cleanUp = async () => {
       await destroyRunMachines(run, ctx.attempt ?? 0);
       await deleteRunSnapshots(run, ctx.attempt ?? 0);
+
+      // Last, so the runs it wakes find the lock free.
+      await endBuild(run, outcome);
     };
 
     try {
@@ -910,9 +916,35 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(ciStepOptions(steps.cleanUpEndedRun()), () => {
-        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-      });
+      // A build that others waited on took a lock on its cache entry, whose
+      // name is worked out from the request it failed on.
+      const request = event?.data?.event?.data;
+
+      const lock =
+        request?.locked === true && typeof request.cacheKey === "string"
+          ? lockMachineName(request.cacheKey)
+          : undefined;
+
+      const destroyed = await step.run(
+        ciStepOptions(steps.cleanUpEndedRun()),
+        () => {
+          return runId ? destroyOrphans(client, runId, lock) : { destroyed: 0 };
+        },
+      );
+
+      // The runs waiting on it would otherwise wait for a build that is gone.
+      if (lock) {
+        await step.sendEvent("announce-lock-released", {
+          name: buildDoneEvent,
+          data: {
+            name: lock,
+            status: "failed",
+            reason: "the build run ended before it finished",
+          } satisfies BuildDone,
+        });
+      }
+
+      return destroyed;
     },
   );
 };

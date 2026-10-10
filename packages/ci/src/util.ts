@@ -259,6 +259,14 @@ export const isSandboxNotFound = (error: unknown): boolean => {
 };
 
 /**
+ * Whether the Sandbox API refused a machine because a live one holds its name,
+ * which is how a build that lost its lock finds out.
+ */
+export const isSandboxNameTaken = (error: unknown): boolean => {
+  return hasErrorCode(error, "sandbox_name_taken");
+};
+
+/**
  * Whether the Sandbox API said the snapshot doesn't exist, which is fine when
  * deleting one that is already gone.
  */

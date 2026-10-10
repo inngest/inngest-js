@@ -231,7 +231,7 @@ describe("the example's pr pipeline", () => {
         return machine.name;
       }),
     ).toEqual([
-      expect.stringMatching(/^ci-01TESTINVOKED\d+-setup$/),
+      expect.stringMatching(/^ci-build-[0-9a-f]{32}$/),
       "ci-01TESTRUN-lint",
       "ci-01TESTRUN-test",
       "ci-01TESTRUN-compat-node-20",
