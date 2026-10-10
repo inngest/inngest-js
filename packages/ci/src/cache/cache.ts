@@ -308,6 +308,14 @@ export const cacheTarget = async (
 };
 
 /**
+ * The start of every name a pipeline run's builds give their snapshots. The
+ * trailing `/` keeps one run's prefix from matching another run's longer ID.
+ */
+export const runSnapshotPrefix = (rootRunId: string): string => {
+  return `ci/run:${rootRunId}/`;
+};
+
+/**
  * Where a job without a `cache` has its snapshot for `from`: a name that
  * belongs to the pipeline run at the root, so another run never starts from
  * it, and that a second build anywhere in that pipeline finds rather than
