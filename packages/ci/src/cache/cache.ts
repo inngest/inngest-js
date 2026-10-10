@@ -10,10 +10,10 @@
  * @module
  */
 
-import { ciRun, shorten } from "../pipeline/metadata.ts";
+import { tagStep } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, joinId, rootRunIdOf } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -282,24 +282,14 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  const ownKey = await ciRun(
-    run,
-    {
-      step: ciStep(
-        `${job.path}${scopeSeparator}cache:key`,
-        traceName.checkCache,
-      ),
-      intent: `Work out the cache key for \`${jobId}\``,
-      tag: { kind: "cache", job: job.path },
-    },
-    async (note) => {
-      const key = await jobCacheKey(run, cache, input, base);
+  const ownKey = (await run.step.run(
+    ciStep(joinId(job.path, "cache:key"), traceName.checkCache),
+    async () => {
+      await tagStep(run, { kind: "cache", job: job.path });
 
-      note.outcome({ key });
-
-      return key;
+      return jobCacheKey(run, cache, input, base);
     },
-  );
+  )) as string;
 
   return {
     ownKey,
@@ -457,18 +447,6 @@ const findInScopes = async (
   return undefined;
 };
 
-/** What a lookup step sets out to do, for the job it looks a snapshot up for. */
-const lookupIntent = (jobId: string): string => {
-  return `Look up the cached snapshot for \`${jobId}\``;
-};
-
-/** What a lookup step found, for its outcome. */
-const lookupOutcome = (hit: CachedSnapshot | undefined) => {
-  return hit
-    ? { found: true, snapshotId: hit.snapshotId, name: hit.name }
-    : { found: false };
-};
-
 /**
  * Look a job's cached snapshot up, as a memoized step. Its parents need no
  * check: they are part of its name.
@@ -483,17 +461,11 @@ export const lookupCache = async (
 ): Promise<CachedSnapshot | undefined> => {
   const { run } = scope;
 
-  const found = await ciRun<CachedSnapshot | null>(
-    run,
-    {
-      step: ciStep(
-        `${scope.path}${scopeSeparator}cache:lookup`,
-        traceName.lookUpCache,
-      ),
-      intent: lookupIntent(scope.config.id),
-      tag: { kind: "cache", job: scope.path },
-    },
-    async (note) => {
+  const found = (await run.step.run(
+    ciStep(joinId(scope.path, "cache:lookup"), traceName.lookUpCache),
+    async () => {
+      await tagStep(run, { kind: "cache", job: scope.path });
+
       const hit = await findCached(
         run,
         scope.config.id,
@@ -502,11 +474,9 @@ export const lookupCache = async (
         exclude,
       );
 
-      note.outcome(lookupOutcome(hit));
-
       return hit ?? null;
     },
-  );
+  )) as CachedSnapshot | null;
 
   return found ?? undefined;
 };
@@ -545,24 +515,16 @@ export const lookupBeforeBuild = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const found = await ciRun<CachedSnapshot | null>(
-    run,
-    {
-      step: ciStep(
-        `${job.stepPath}${scopeSeparator}lookup`,
-        traceName.lookUpCache,
-      ),
-      intent: lookupIntent(job.id),
-      tag: { kind: "cache", job: job.path },
-    },
-    async (note) => {
-      const hit = await findCached(run, job.id, cache, target, exclude);
+  const found = (await run.step.run(
+    ciStep(joinId(job.stepPath, "lookup"), traceName.lookUpCache),
+    async () => {
+      await tagStep(run, { kind: "cache", job: job.path });
 
-      note.outcome(lookupOutcome(hit));
+      const hit = await findCached(run, job.id, cache, target, exclude);
 
       return hit ?? null;
     },
-  );
+  )) as CachedSnapshot | null;
 
   return found ?? undefined;
 };
@@ -584,21 +546,12 @@ export const resolveTakenName = async (
    */
   broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-  return ciRun<{ winner?: CachedSnapshot; cleared: boolean }>(
-    run,
-    {
-      step: ciStep(stepId, traceName.resolveCacheName),
-      intent: `Find who holds the snapshot name \`${shorten(name, 80)}\``,
-    },
-    async (note) => {
+  return (await run.step.run(
+    ciStep(stepId, traceName.resolveCacheName),
+    async () => {
       const winner = await findNamed(run, name, exclude);
 
       if (winner) {
-        note.outcome({
-          winner: winner.snapshotId,
-          cleared: false,
-        });
-
         return { winner, cleared: false };
       }
 
@@ -627,11 +580,9 @@ export const resolveTakenName = async (
         // Nothing more to try: the build keeps its snapshot without a name.
       }
 
-      note.outcome({ cleared });
-
       return { cleared };
     },
-  );
+  )) as { winner?: CachedSnapshot; cleared: boolean };
 };
 
 /**
@@ -645,13 +596,9 @@ export const snapshotState = async (
   stepId: string,
   snapshotId: string,
 ): Promise<"gone" | "creating" | "ready"> => {
-  return ciRun<"gone" | "creating" | "ready">(
-    run,
-    {
-      step: ciStep(stepId, traceName.checkSnapshotState),
-      intent: `Check the state of snapshot \`${snapshotId}\``,
-    },
-    async (note) => {
+  return (await run.step.run(
+    ciStep(stepId, traceName.checkSnapshotState),
+    async () => {
       try {
         const snapshot = (await snapshotsClient(run).get(snapshotId)) as
           | SnapshotResource
@@ -659,23 +606,15 @@ export const snapshotState = async (
           | undefined;
 
         if (!snapshot || /^DELET/.test(snapshot.status)) {
-          note.outcome({ snapshotId, state: "gone" });
-
           return "gone";
         }
 
-        const state = snapshot.status === "CREATING" ? "creating" : "ready";
-
-        note.outcome({ snapshotId, state });
-
-        return state;
+        return snapshot.status === "CREATING" ? "creating" : "ready";
       } catch {
-        note.outcome({ snapshotId, state: "ready" });
-
         return "ready";
       }
     },
-  );
+  )) as "gone" | "creating" | "ready";
 };
 
 /**
@@ -689,31 +628,21 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<boolean> => {
   try {
-    const result = await ciRun<{ deleted: boolean; gone: boolean }>(
-      run,
-      {
-        step: ciStep(stepId, traceName.deleteBadSnapshot),
-        intent: `Delete the bad snapshot \`${snapshotId}\``,
-      },
-      async (note) => {
+    const result = (await run.step.run(
+      ciStep(stepId, traceName.deleteBadSnapshot),
+      async () => {
         try {
           const snapshot = await snapshotsClient(run).get(snapshotId);
 
           await snapshot?.delete();
 
-          note.outcome({ snapshotId, deleted: Boolean(snapshot) });
-
           return { deleted: Boolean(snapshot), gone: true };
         } catch (error) {
-          const gone = isSnapshotNotFound(error);
-
-          note.outcome({ snapshotId, deleted: false, gone });
-
           // Deleted meanwhile by someone else, which is as good.
-          return { deleted: false, gone };
+          return { deleted: false, gone: isSnapshotNotFound(error) };
         }
       },
-    );
+    )) as { deleted: boolean; gone: boolean };
 
     // Outside the step, which a replay doesn't run: the set is rebuilt on
     // every replay, so a snapshot gone now must leave it on each of them.

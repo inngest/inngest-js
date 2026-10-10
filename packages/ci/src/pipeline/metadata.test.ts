@@ -291,12 +291,7 @@ describe("step metadata", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     const tags = stepScoped(result.metadata).map((update) => {
-      const { kind, job } = update.values as { kind?: string; job?: string };
-
-      return [
-        update.step,
-        { ...(kind ? { kind } : {}), ...(job ? { job } : {}) },
-      ];
+      return [update.step, update.values];
     });
 
     expect(tags).toEqual([
@@ -309,8 +304,6 @@ describe("step metadata", () => {
       ["end:plain", { kind: "job", job: "plain" }],
       ["github › check:jobs:complete", { kind: "check" }],
       ["github › check:pr:complete", { kind: "check" }],
-      ["pipeline › cleanup", {}],
-      ["pipeline › cleanup:snapshots", {}],
     ]);
 
     for (const update of stepScoped(result.metadata)) {

@@ -8,7 +8,6 @@
 import { RetryAfterError } from "inngest";
 import { CiUsageError } from "../errors.ts";
 import { durablePath } from "../pipeline/durable.ts";
-import { ciRun } from "../pipeline/metadata.ts";
 import { traceName } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import {
@@ -55,17 +54,7 @@ const helperStep = async <T>(
   const id = `${job ? `${job.path} › ` : ""}github › ${helper}:${key}`;
 
   return inHelperSpan(run, () => {
-    return ciRun(
-      run,
-      { step: { id, name }, intent: `Call \`github.${helper}\`` },
-      async (note) => {
-        const result = await fn();
-
-        note.outcome({ helper, key });
-
-        return result;
-      },
-    );
+    return run.step.run({ id, name }, fn) as Promise<T>;
   });
 };
 

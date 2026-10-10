@@ -6,7 +6,6 @@
  */
 
 import { CiUsageError } from "../errors.ts";
-import { ciRun } from "../pipeline/metadata.ts";
 import { traceName } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { countApi, getRunScope } from "../pipeline/scope.ts";
@@ -92,32 +91,22 @@ export const changedFiles = async (): Promise<string[] | null> => {
 };
 
 const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
-  const files = await ciRun<string[] | { unknown: true; reason: string }>(
-    run,
-    {
-      step: { id: "changed", name: traceName.findChangedFiles },
-      intent: "Find the files this change touched",
-    },
-    async (note) => {
+  const files = (await run.step.run(
+    { id: "changed", name: traceName.findChangedFiles },
+    async () => {
       try {
-        const listed = await listChangedFiles(run.repo);
-
-        note.outcome({ count: listed.length });
-
-        return listed;
+        return await listChangedFiles(run.repo);
       } catch (error) {
         if (!(error instanceof CiUsageError)) {
           throw error;
         }
-
-        note.outcome({ count: null, unknown: true });
 
         // No credentials, so the change can't be read. The caller assumes
         // everything changed rather than skipping work it shouldn't.
         return { unknown: true as const, reason: error.message };
       }
     },
-  );
+  )) as string[] | { unknown: true; reason: string };
 
   if (!Array.isArray(files)) {
     run.warnings.push(
