@@ -4797,9 +4797,12 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
-  test.each(["1h", 0])(
-    "a keepOnFailure of %j keeps the snapshot on the failing run",
-    async (keepOnFailure) => {
+  test.each([
+    ["1h", 1],
+    [0, 0],
+  ])(
+    "a keepOnFailure of %j leaves %d kept snapshots on the failing run",
+    async (keepOnFailure, kept) => {
       const { api, ci } = setup();
 
       const base = ci.job("base", async () => {
@@ -4825,8 +4828,8 @@ describe("run snapshot cleanup", () => {
       const result = await runFunction(pipeline, { event: prEvent });
 
       expect(result.type).toBe("function-rejected");
-      // `base`'s snapshot is deleted, the kept one of `child` stays.
-      expect(api.snapshots.size).toBe(1);
+      // `base`'s snapshot is deleted, a kept one of `child` stays.
+      expect(api.snapshots.size).toBe(kept);
     },
   );
 

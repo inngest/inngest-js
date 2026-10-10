@@ -110,7 +110,7 @@ export const defineJob = ({
 const checkDurations = (config: JobConfig): void => {
   const fields: [string, Duration | undefined][] = [
     ["cache.maxAge", config.cache?.maxAge],
-    // `0` keeps the snapshot without naming a duration.
+    // `0` means don't keep, so it has no duration to check.
     [
       "keepOnFailure",
       config.keepOnFailure === 0 ? undefined : config.keepOnFailure,
@@ -674,10 +674,9 @@ const jobSteps = async ({
     const title = jobErrorTitle(error);
 
     // Kept on purpose, so the run's cleanup leaves it alone.
-    const keptSnapshotId =
-      config.keepOnFailure !== undefined
-        ? (await snapshotMachine(scope))?.snapshotId
-        : undefined;
+    const keptSnapshotId = config.keepOnFailure
+      ? (await snapshotMachine(scope))?.snapshotId
+      : undefined;
 
     let checkEndedAt: number | undefined;
 

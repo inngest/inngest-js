@@ -650,6 +650,8 @@ describe("formatting", () => {
     ["1h30m", 5_400_000],
     ["1h 30m", 5_400_000],
     ["250ms", 250],
+    // A bare number in a string is milliseconds.
+    ["10", 10],
     [90_000, 90_000],
     [temporalDuration(5_000), 5_000],
   ])("the duration %j is %d ms", (duration, expected) => {
