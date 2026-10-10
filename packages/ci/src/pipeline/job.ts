@@ -24,6 +24,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
+import type { BaseImage } from "../image.ts";
 import {
   ancestry,
   buildsInRun,
@@ -68,16 +69,22 @@ export const defineJob = ({
   jobs,
   idOrConfig,
   handler,
+  from,
 }: {
   jobs: Map<string, RegisteredJob>;
   // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
   idOrConfig: any;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
   handler: any;
+  /** What a job without a `from` of its own starts from. */
+  from?: BaseImage;
   // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
 }): any => {
-  const given: JobConfig =
+  const declared: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
+
+  const given: JobConfig =
+    from && declared.from === undefined ? { ...declared, from } : declared;
 
   const run = getRunScope();
 

@@ -35,6 +35,8 @@ import type { GitHubEventData } from "./github/events.ts";
 import { fixtures } from "./github/fixtures.ts";
 import type { RunRepo } from "./github/helpers.ts";
 import { github } from "./github/index.ts";
+import type { BaseImage } from "./image.ts";
+import { image } from "./image.ts";
 import type {
   BackgroundProcess as EntryBackgroundProcess,
   CacheConfig as EntryCacheConfig,
@@ -481,6 +483,37 @@ describe("from starts from a job", () => {
       // @ts-expect-error not a job
       ci.job({ id: "from-string", from: "setup" }, async () => {});
     }).toThrow("must name a job");
+  });
+});
+
+describe("from starts from a base image", () => {
+  test("a job takes image.snapshot, directly or from a function", () => {
+    ci.job(
+      { id: "from-image", from: image.snapshot("agent-deps") },
+      async () => {},
+    );
+
+    ci.job(
+      { id: "from-image-fn", from: () => image.snapshot("agent-deps") },
+      async () => {},
+    );
+
+    expectTypeOf(image.snapshot("agent-deps")).toEqualTypeOf<BaseImage>();
+  });
+
+  test("createCi takes an image as its default, and rejects a job", () => {
+    const base = ci.job("default-base", async () => {});
+
+    const client = createCiTestClient(createFakeSandboxApi());
+
+    createCi(client, { from: image.snapshot("agent-deps") });
+
+    types(() => {
+      return createCi(client, {
+        // @ts-expect-error a default job would make every job start from itself
+        from: base,
+      });
+    });
   });
 });
 

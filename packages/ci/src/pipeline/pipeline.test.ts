@@ -1492,7 +1492,7 @@ describe("from", () => {
     expect(() => {
       ci.job({ id: "child", from: "parent" as unknown as Job }, async () => {});
     }).toThrow(
-      'The `from` of job "child" must name a job, or a job with input from `job.with(input)`.',
+      'The `from` of job "child" must name a job, a job with input from `job.with(input)`, or an image.',
     );
 
     expect(() => {

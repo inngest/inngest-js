@@ -206,6 +206,19 @@ export const steps = {
     };
   },
 
+  findBaseImage: (name: string): StepSpec<CachedSnapshot | null> => {
+    return {
+      id: `image ${name}`,
+      name: `Find base image ${name}`,
+      intent: `Find the newest ready snapshot named \`${name}\``,
+      outcome: (hit) => {
+        return hit
+          ? { found: true, snapshotId: hit.snapshotId }
+          : { found: false };
+      },
+    };
+  },
+
   resolveCacheName: (
     id: string,
     name: string,

@@ -299,6 +299,8 @@ export interface CiJobScope {
   /** Set when the job builds a snapshot for someone who asked for it. */
   request?: BuildRequest;
   fromSnapshotId?: string;
+  /** The name of the base image the job starts from, when it does. */
+  fromImage?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
   /**

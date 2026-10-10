@@ -6,6 +6,7 @@
  */
 
 import type { Inngest } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { resolveTakenName, snapshotState } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
@@ -266,6 +267,13 @@ const startSandbox = async (
 
   if ("started" in first) {
     return first.started;
+  }
+
+  // An image isn't built by any job, so there is nothing to rebuild it with.
+  if (scope.fromImage) {
+    throw new NonRetriableError(
+      `The base image \`${scope.fromImage}\` wouldn't start (${errorMessage(first.failure)}). Capture it again with \`sandbox.snapshot({ name: "${scope.fromImage}" })\`.`,
+    );
   }
 
   /** Why the snapshot can't be used. */

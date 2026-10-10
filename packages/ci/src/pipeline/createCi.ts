@@ -20,6 +20,8 @@ import {
   statusesSink,
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
+import type { BaseImage } from "../image.ts";
+import { isBaseImage } from "../image.ts";
 import type {
   CiSkip,
   CiTrigger,
@@ -55,6 +57,16 @@ export interface CiOptions {
   github?: GitHubProvider;
   /** Default machine for jobs. */
   machine?: MachineConfig;
+  /**
+   * The image every job without its own `from` starts from. Only an image is
+   * allowed: a default job would make every job, itself included, start from
+   * itself.
+   *
+   * ```ts
+   * const ci = createCi(inngest, { from: image.snapshot("agent-deps") });
+   * ```
+   */
+  from?: BaseImage;
   /** Builds the link shown on checks. */
   runUrl?: (ctx: { runId: string; functionId: string }) => string;
 }
@@ -207,6 +219,12 @@ export interface Ci {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
+  if (options.from !== undefined && !isBaseImage(options.from)) {
+    throw new CiUsageError(
+      '`createCi` takes an image for `from`, like `image.snapshot("agent-deps")`. To start a job from another job, set `from` on that job.',
+    );
+  }
+
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
   const isDev = () => {
@@ -281,7 +299,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
     // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     job: ((idOrConfig: any, handler: any) => {
-      return defineJob({ jobs, idOrConfig, handler });
+      return defineJob({ jobs, idOrConfig, handler, from: options.from });
       // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     }) as any,
 

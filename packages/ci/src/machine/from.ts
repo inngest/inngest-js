@@ -1,27 +1,36 @@
 /**
- * Starting a job from its `from` parent's machine: working out what `from`
- * names, asking the parent's build function for a snapshot and starting from
- * it, plus the fallback that re-runs the parent's handler when no snapshot is
- * available.
+ * Starting a job from its `from` base: working out what `from` names, asking
+ * a parent job's build function for a snapshot and starting from it, plus the
+ * fallback that re-runs the parent's handler when no snapshot is available. A
+ * base image is the other kind of base: a snapshot captured by name, which
+ * the run looks up once.
  *
- * A job's name includes the snapshot of the parent it starts from, so a
- * parent's own parent is resolved first, and its build is handed that same
+ * A job's name includes the snapshot of the base it starts from, so a
+ * parent's own base is resolved first, and its build is handed that same
  * snapshot to start from.
  *
  * @module
  */
 
-import type { BaseIdentity, CacheTarget } from "../cache/cache.ts";
+import { NonRetriableError } from "inngest";
+import type {
+  BaseIdentity,
+  CachedSnapshot,
+  CacheTarget,
+} from "../cache/cache.ts";
 import {
   cacheTarget,
   deleteSnapshot,
   describeCached,
+  findNamed,
   runTarget,
   warnUncachedBase,
 } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
 import { deletesHolder } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
+import type { BaseImage } from "../image.ts";
+import { isBaseImage } from "../image.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
 import {
@@ -30,6 +39,8 @@ import {
   invokeBuild,
   validateInput,
 } from "../pipeline/job.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
@@ -57,27 +68,43 @@ export interface Parent {
 }
 
 /**
- * What a job starts from: its parent, the build that gave the snapshot, and
- * what the job's own key knows of both.
+ * What a job starts from, the one record everything reads: a parent job or a
+ * base image, the build that gave the snapshot, and what the job's own key
+ * knows of both. Whoever starts from it, names itself after it or hands it to
+ * a build reads these fields and never asks which kind it is.
  */
 export interface ResolvedBase {
-  parent: Parent;
+  /** The parent's job ID, or the image's name. */
+  id: string;
+  /**
+   * The parent job. An image has none, which also means there is nothing to
+   * rebuild it with, or to re-run on a machine that has started.
+   */
+  parent?: Parent;
   built: CacheBuildResult;
   identity: BaseIdentity;
 }
 
-/** A parent with the build that gave its snapshot, as a base to start from. */
-const resolvedBase = (
-  parent: Parent,
-  built: CacheBuildResult,
-): ResolvedBase => {
+/** What a `from` names: a parent job, or a base image. */
+type Named = Parent | BaseImage;
+
+/** What a name resolved to, with the build that gave its snapshot. */
+const resolvedBase = (named: Named, built: CacheBuildResult): ResolvedBase => {
+  const snapshot = built.snapshotId ? { snapshotId: built.snapshotId } : {};
+
+  if (isBaseImage(named)) {
+    return {
+      id: named.name,
+      built,
+      identity: { from: `image:${named.name}`, ...snapshot },
+    };
+  }
+
   return {
-    parent,
+    id: named.config.id,
+    parent: named,
     built,
-    identity: {
-      jobId: parent.config.id,
-      ...(built.snapshotId ? { snapshotId: built.snapshotId } : {}),
-    },
+    identity: { from: named.config.id, ...snapshot },
   };
 };
 
@@ -129,7 +156,7 @@ const resolveRef = (
 
   if (!ref) {
     throw new CiUsageError(
-      `The \`from\` of job "${config.id}" must name a job, or a job with input from \`job.with(input)\`.`,
+      `The \`from\` of job "${config.id}" must name a job, a job with input from \`job.with(input)\`, or an image.`,
     );
   }
 
@@ -158,7 +185,11 @@ export const checkStaticFrom = (
 ): void => {
   const from = config.from;
 
-  if (from === undefined || (typeof from === "function" && !isJob(from))) {
+  if (
+    from === undefined ||
+    isBaseImage(from) ||
+    (typeof from === "function" && !isJob(from))
+  ) {
     return;
   }
 
@@ -187,19 +218,19 @@ export const checkStaticFrom = (
 
 /**
  * What a job's `from` names for this call: the parent job and the input it's
- * built with, or nothing for a job without one. A function is called with the
- * job's input. Pure, so a handler replaying from the top gets the same answer
- * without a step.
+ * built with, a base image, or nothing for a job without one. A function is
+ * called with the job's input. Pure, so a handler replaying from the top gets
+ * the same answer without a step.
  *
  * @throws {CiUsageError} When `from` names something that isn't a job of this
- * client.
+ * client or an image.
  */
 export const parentOf = (
   run: CiRunScope,
   config: JobConfig,
   /** The job's own input, already validated. */
   input: unknown,
-): Parent | undefined => {
+): Named | undefined => {
   const from = config.from;
 
   if (from === undefined) {
@@ -210,6 +241,10 @@ export const parentOf = (
     typeof from === "function" && !isJob(from)
       ? (from as (ctx: { input: unknown }) => unknown)({ input })
       : from;
+
+  if (isBaseImage(named)) {
+    return named;
+  }
 
   const ref = resolveRef(run.ci.jobs, config, named);
 
@@ -268,7 +303,8 @@ const walkParents = async (
   while (true) {
     const named = parentOf(run, current.config, current.input);
 
-    if (!named) {
+    // An image is where a chain ends: it is no job to build or to cycle.
+    if (!named || isBaseImage(named)) {
       return parents;
     }
 
@@ -308,8 +344,8 @@ const reusableConfig = (
   /** The jobs above it, nearest first, as `walkParents` found them. */
   above: readonly Parent[],
 ): JobConfig => {
-  // Every parent here is a job, so each is either cached or not. The base
-  // images of later work will be stable like a cached job and end this search.
+  // Every parent here is a job, so each is either cached or not. A base image
+  // is stable like a cached job, and ends the chain before it gets here.
   const uncached = above.find((parent) => {
     return !parent.config.cache;
   });
@@ -362,20 +398,25 @@ export const withoutUnreusableCache = async (
   return reusableConfig(run, config, await walkParents(run, config, input));
 };
 
-/** A job's `from` parent, as `ancestry` found it. */
-const namedParent = async (
+/**
+ * What a job's `from` names, as `ancestry` found it: its parent job, or the
+ * image that ended an empty chain.
+ */
+const namedBase = async (
   run: CiRunScope,
   config: JobConfig,
   input: unknown,
-): Promise<Parent | undefined> => {
-  return (await ancestry(run, config, input))[0];
+): Promise<Named | undefined> => {
+  const [parent] = await ancestry(run, config, input);
+
+  return parent ?? parentOf(run, config, input);
 };
 
 /**
- * A job's parent and its snapshot, for this call of the job, or nothing for a
- * job without a `from`. A build run is handed its job's parent by the run
- * that asked for it, so it starts from exactly the snapshot its name was
- * worked out from.
+ * A job's base and its snapshot, for this call of the job, or nothing for a
+ * job without a `from`. A build run is handed its job's base by the run that
+ * asked for it, so it starts from exactly the snapshot its name was worked out
+ * from, and never looks an image up again.
  */
 export const parentBuildOf = async (
   scope: CiJobScope,
@@ -383,15 +424,18 @@ export const parentBuildOf = async (
   input: unknown,
 ): Promise<ResolvedBase | undefined> => {
   const { run, config } = scope;
-  const parent = await namedParent(run, config, input);
+  const named = await namedBase(run, config, input);
 
-  if (!parent) {
+  if (!named) {
     return undefined;
   }
 
   return resolvedBase(
-    parent,
-    scope.request?.base ?? (await resolveParent(scope, parent)),
+    named,
+    scope.request?.base ??
+      (await buildNamed(run, named, (parent) => {
+        return resolveParent(scope, parent);
+      })),
   );
 };
 
@@ -419,20 +463,35 @@ const resolveParent = (
 
 /**
  * What a job's parent itself starts from, built for this pipeline run once
- * however many jobs need it. It's a parent's parent, so no job of this run
+ * however many jobs need it. It's a parent's own base, so no job of this run
  * starts from it directly: its key, lookup and build are steps of its own.
  */
 const baseOf = async (
   run: CiRunScope,
   parent: Parent,
 ): Promise<ResolvedBase | undefined> => {
-  const grandparent = await namedParent(run, parent.config, parent.input);
+  const named = await namedBase(run, parent.config, parent.input);
 
-  if (!grandparent) {
+  if (!named) {
     return undefined;
   }
 
-  return resolvedBase(grandparent, await buildOf(run, grandparent));
+  return resolvedBase(named, await buildNamed(run, named));
+};
+
+/**
+ * The build of what a `from` names in this pipeline run: a parent job's, or an
+ * image's snapshot. A parent job is built the way `buildJob` says, which is
+ * the run's shared build unless the caller is a job that counts it as its own.
+ */
+const buildNamed = (
+  run: CiRunScope,
+  named: Named,
+  buildJob: (parent: Parent) => Promise<CacheBuildResult> = (parent) => {
+    return buildOf(run, parent);
+  },
+): Promise<CacheBuildResult> => {
+  return isBaseImage(named) ? imageBuildOf(run, named) : buildJob(named);
 };
 
 /**
@@ -500,7 +559,65 @@ const buildOf = (
 };
 
 /**
- * Start this job on a copy of its parent's machine, before its handler runs.
+ * A base image as a build that was already done: the newest ready snapshot
+ * with its name, found once per pipeline run however many jobs start from it.
+ * It lives in `run.builds` beside the parents' builds, so the first job to ask
+ * makes the one lookup step and the rest wait on its promise, and which job
+ * asks first never changes the steps the run plans.
+ *
+ * @throws {NonRetriableError} When no ready snapshot has that name.
+ */
+const imageBuildOf = (
+  run: CiRunScope,
+  image: BaseImage,
+): Promise<CacheBuildResult> => {
+  const key = `image ${image.name}`;
+  const existing = run.builds.get(key);
+
+  if (existing) {
+    return existing;
+  }
+
+  const built = outsideJobs(run, async () => {
+    const found = await ciRun(
+      run,
+      steps.findBaseImage(image.name),
+      async () => {
+        return (await findNamed(run, image.name)) ?? null;
+      },
+    );
+
+    if (!found) {
+      throw new NonRetriableError(
+        `No base image named \`${image.name}\`. Capture one with \`sandbox.snapshot({ name: "${image.name}" })\`.`,
+      );
+    }
+
+    return imageBuild(found);
+  });
+
+  run.builds.set(key, built);
+
+  return built;
+};
+
+/**
+ * What a build would have given back for a snapshot that was already there. An
+ * image is never built or rebuilt, so its target is only its own name.
+ */
+const imageBuild = (snapshot: CachedSnapshot): CacheBuildResult => {
+  return {
+    snapshotId: snapshot.snapshotId,
+    reused: true,
+    target: { ownKey: "", name: snapshot.name },
+    hadMachine: true,
+    createdSnapshots: [],
+    warnings: [],
+  };
+};
+
+/**
+ * Start this job on a copy of its base's machine, before its handler runs.
  *
  * Within a pipeline run the parent is built once however many jobs start from
  * it, in a run of its own, and each child gets its own copy of its machine, so they can't affect each
@@ -509,9 +626,25 @@ const buildOf = (
  */
 export const startFrom = async (
   scope: CiJobScope,
-  { parent, built }: ResolvedBase,
+  { id, parent, built }: ResolvedBase,
 ): Promise<void> => {
   const { run } = scope;
+
+  // An image is a machine to start on, not a handler to run, and there is
+  // nothing to rebuild it from: a snapshot of it that won't start fails the
+  // job (see `startSandbox`).
+  if (!parent) {
+    scope.fromSnapshotId = built.snapshotId;
+
+    scope.fromImage = id;
+
+    scope.startNote = `starting image ${id}`;
+
+    run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
+
+    return;
+  }
+
   const { config, input, raw } = parent;
 
   if (built.snapshotId) {
@@ -555,6 +688,14 @@ export const startFrom = async (
     run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
     await rerunOnThisMachine(scope, parent);
+  } else {
+    // A parent that ran no commands has no machine to copy, but what it
+    // starts from, such as an image, is still where its children begin.
+    const parentBase = await baseOf(run, parent);
+
+    if (parentBase) {
+      await startFrom(scope, parentBase);
+    }
   }
 };
 
@@ -707,20 +848,23 @@ const rerunOnThisMachine = async (
     return;
   }
 
-  const grandparent = await namedParent(run, parent.config, parent.input);
+  const grandparent = await namedBase(run, parent.config, parent.input);
 
-  if (grandparent) {
-    // Before the machine exists, it can still start from the grandparent's
-    // snapshot. After, as when a snapshot wouldn't start, the grandparent has
-    // to run here too.
-    if (scope.machine) {
-      await rerunOnThisMachine(scope, grandparent);
-    } else {
-      await startFrom(
-        scope,
-        resolvedBase(grandparent, await resolveParent(scope, grandparent)),
-      );
-    }
+  // Before the machine exists, it can still start from the grandparent's
+  // snapshot. After, as when a snapshot wouldn't start, the grandparent has to
+  // run here too.
+  if (grandparent && !scope.machine) {
+    const built = await buildNamed(run, grandparent, (job) => {
+      return resolveParent(scope, job);
+    });
+
+    await startFrom(scope, resolvedBase(grandparent, built));
+  } else if (grandparent && isBaseImage(grandparent)) {
+    throw new NonRetriableError(
+      `\`${parent.config.id}\` starts from image \`${grandparent.name}\`, which can't be applied to a machine that already started.`,
+    );
+  } else if (grandparent) {
+    await rerunOnThisMachine(scope, grandparent);
   }
 
   await registered.handler(parent.input);
