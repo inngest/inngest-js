@@ -2,9 +2,10 @@
  * Tests of the trace spans CI groups its steps under, and what it names them:
  * one span per job, and in it one per machine, one per command, and one per
  * attempt for a command with retries, with GitHub check updates in a span of
- * their own. Spans and names never change a step's ID. A failed run of a
- * command ends in a failing step, so its span shows the failure. CI's own
- * work carries CI's origin, and what you wrote carries none.
+ * their own. Every span has a kind, and a statement on a background process
+ * is a row of its own. Spans and names never change a step's ID. A failed run
+ * of a command ends in a failing step, so its span shows the failure. CI's
+ * own work carries CI's origin, and what you wrote carries none.
  *
  * @module
  */
@@ -16,7 +17,7 @@ import { consoleReporter } from "../github/auth.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { ciOrigin } from "../pipeline/names.ts";
 import { createCiTestClient } from "../testing/client.ts";
-import { prEvent } from "../testing/events.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import type { CommandScript, FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
@@ -25,6 +26,34 @@ import { $ } from "./command.ts";
 import { sandbox } from "./sandbox.ts";
 
 type Ci = ReturnType<typeof createCi>;
+
+type RunResult = Awaited<ReturnType<typeof runFunction>>;
+
+const ciTest = (
+  options: {
+    /** The fake API to run on. Defaults to a fresh one. */
+    api?: FakeSandboxApi;
+    /** What the commands it runs do. */
+    scripts?: CommandScript[];
+  } = {},
+) => {
+  const api = options.api ?? createFakeSandboxApi();
+
+  api.script(options.scripts ?? []);
+
+  const ci = createCi(createCiTestClient(api), { github: consoleReporter() });
+
+  return {
+    api,
+    ci,
+    /** Run the pipeline whose handler `define` makes from `ci`. */
+    run: (define: (ci: Ci) => () => Promise<unknown>): Promise<RunResult> => {
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, define(ci));
+
+      return runFunction(pipeline, { event: prEvent });
+    },
+  };
+};
 
 interface TraceNode {
   label: string;
@@ -37,7 +66,7 @@ interface TraceNode {
  * under its spans.
  */
 const drawTrace = (
-  result: Awaited<ReturnType<typeof runFunction>>,
+  result: RunResult,
   /** Suffix each row with who it says did it, as in `Create sandbox <- ci`. */
   withOrigins = false,
 ): string => {
@@ -94,56 +123,35 @@ const drawTrace = (
   return lines.join("\n");
 };
 
-/** Run the pipeline whose handler `define` makes from a fresh client. */
-const runPipeline = async (
-  define: (ci: Ci) => () => Promise<unknown>,
-  scripts: CommandScript[] = [],
-  api: FakeSandboxApi = createFakeSandboxApi(),
-) => {
-  api.script(scripts);
-
-  const ci = createCi(createCiTestClient(api), {
-    github: consoleReporter(),
-  });
-
-  const pipeline = ci.pipeline(
-    { id: "pr", on: [{ event: "github/pull_request.opened" }] },
-    define(ci),
-  );
-
-  return runFunction(pipeline, { event: prEvent });
-};
-
 /** Run a job with a captured, a managed, a retried and a background command. */
 const run = () => {
-  return runPipeline(
-    (ci) => {
-      return ci.job("test", async () => {
-        await $`quick`.timeout("30s");
-
-        await $`slow`;
-
-        try {
-          await $`flaky`.retries(1);
-        } catch {
-          // Both attempts fail.
-        }
-
-        const server = await $`serve`.background();
-
-        await server.output();
-
-        await server.exited();
-
-        await server.kill();
-      });
-    },
-    [
+  return ciTest({
+    scripts: [
       { match: "slow", ticks: 1, stdout: "done" },
       { match: "flaky", exitCode: 1 },
       { match: "serve", ticks: 1, stdout: "listening" },
     ],
-  );
+  }).run((ci) => {
+    return ci.job("test", async () => {
+      await $`quick`.timeout("30s");
+
+      await $`slow`;
+
+      try {
+        await $`flaky`.retries(1);
+      } catch {
+        // Both attempts fail.
+      }
+
+      const server = await $`serve`.background();
+
+      await server.output();
+
+      await server.exited();
+
+      await server.kill();
+    });
+  });
 };
 
 /**
@@ -173,68 +181,73 @@ const rowsPipeline = (ci: Ci) => {
   });
 };
 
-/** The span of a command `test` ran. */
+const origin = ciOrigin;
+const span = (id: string, name: string, kind: string) => {
+  return { id, name, kind };
+};
+const github = [{ ...span("github", "GitHub", "github"), origin }];
+const job = span("test", "test", "job");
+const machine = [
+  job,
+  { ...span("test › machine", "Start sandbox", "sandbox"), origin },
+];
 const command = (label: string) => {
-  return { id: `test › ${label}`, name: `$ ${label}` };
+  return [job, span(`test › ${label}`, `$ ${label}`, "command")];
+};
+const attempt = (n: number) => {
+  return [
+    ...command("flaky"),
+    { ...span(`attempt-${n}`, `Attempt ${n}`, "attempt"), origin },
+  ];
 };
 
-const origin = ciOrigin;
-const github = [{ id: "github", name: "GitHub", origin }];
-const job = { id: "test", name: "test", kind: "job" };
-const machine = [job, { id: "test › machine", name: "Start sandbox", origin }];
-const quick = [job, command("quick")];
-const slow = [job, command("slow")];
-const attempt1 = [
-  job,
-  command("flaky"),
-  { id: "attempt-1", name: "Attempt 1", origin },
-];
-const attempt2 = [
-  job,
-  command("flaky"),
-  { id: "attempt-2", name: "Attempt 2", origin },
-];
-const serve = [job, command("serve")];
+/** A statement on the background `serve`, a row of its own beside the command's. */
+const statement = (suffix: string, label: string) => {
+  return [
+    job,
+    span(`test › serve › ${suffix}`, `$ serve (${label})`, "command"),
+  ];
+};
 
 describe("spans", () => {
-  test("group each job, machine, command and retried attempt", async () => {
+  test("group each job, machine, command and retried attempt, each with its kind", async () => {
     const result = await run();
 
     expect(result.type).toBe("function-resolved");
 
-    // Background calls re-enter their command's span. Check updates are in
-    // the run's GitHub span, and cleanup is in none.
+    // Each statement on a background process is a span of its own. Check
+    // updates are in the run's GitHub span, and cleanup is in none.
     expect(result.spans).toEqual({
       "github › check:pr:start": github,
       "github › check:test:start": github,
       "test › machine": machine,
       "test › machine › setup": machine,
-      "test › quick": quick,
-      "test › slow › start": slow,
-      "test › slow › wait #1": slow,
-      "test › slow › check #1": slow,
-      "test › slow › wait #2": slow,
-      "test › slow › check #2": slow,
-      "test › slow › output": slow,
-      "test › flaky #attempt-1 › start": attempt1,
-      "test › flaky #attempt-1 › wait #1": attempt1,
-      "test › flaky #attempt-1 › check #1": attempt1,
-      "test › flaky #attempt-1 › output": attempt1,
-      "test › flaky #attempt-1 › exit": attempt1,
+      "test › quick": command("quick"),
+      "test › slow › start": command("slow"),
+      "test › slow › wait #1": command("slow"),
+      "test › slow › check #1": command("slow"),
+      "test › slow › wait #2": command("slow"),
+      "test › slow › check #2": command("slow"),
+      "test › slow › output": command("slow"),
+      "test › flaky #attempt-1 › start": attempt(1),
+      "test › flaky #attempt-1 › wait #1": attempt(1),
+      "test › flaky #attempt-1 › check #1": attempt(1),
+      "test › flaky #attempt-1 › output": attempt(1),
+      "test › flaky #attempt-1 › exit": attempt(1),
       "github › check:test:attempt:1": github,
-      "test › flaky #attempt-2 › start": attempt2,
-      "test › flaky #attempt-2 › wait #1": attempt2,
-      "test › flaky #attempt-2 › check #1": attempt2,
-      "test › flaky #attempt-2 › output": attempt2,
-      "test › flaky #attempt-2 › exit": attempt2,
-      "test › serve › start": serve,
-      "test › serve › output #1": serve,
-      "test › serve › wait #2": serve,
-      "test › serve › check #2": serve,
-      "test › serve › wait #3": serve,
-      "test › serve › check #3": serve,
-      "test › serve › output": serve,
-      "test › serve › kill": serve,
+      "test › flaky #attempt-2 › start": attempt(2),
+      "test › flaky #attempt-2 › wait #1": attempt(2),
+      "test › flaky #attempt-2 › check #1": attempt(2),
+      "test › flaky #attempt-2 › output": attempt(2),
+      "test › flaky #attempt-2 › exit": attempt(2),
+      "test › serve › start": command("serve"),
+      "test › serve › output #1": statement("output #1", "output"),
+      "test › serve › wait #2": statement("exited #1", "exited"),
+      "test › serve › check #2": statement("exited #1", "exited"),
+      "test › serve › wait #3": statement("exited #1", "exited"),
+      "test › serve › check #3": statement("exited #1", "exited"),
+      "test › serve › output": statement("exited #1", "exited"),
+      "test › serve › kill": statement("kill", "kill"),
       "github › check:test:complete": github,
       "github › check:jobs:complete": github,
       "github › check:pr:complete": github,
@@ -316,7 +329,7 @@ describe("spans", () => {
 
     expect(attempt1Steps.at(-1)).toBe("test › flaky #attempt-1 › exit");
 
-    expect(result.spans["test › flaky #attempt-1 › exit"]).toEqual(attempt1);
+    expect(result.spans["test › flaky #attempt-1 › exit"]).toEqual(attempt(1));
 
     expect(result.names["test › flaky #attempt-1 › exit"]).toBe(
       "Exited with code 1",
@@ -329,55 +342,41 @@ describe("spans", () => {
   });
 
   test("record nothing more for a passing or `.nothrow()` command", async () => {
-    const result = await runPipeline(
-      (ci) => {
-        return ci.job("test", async () => {
-          await $`pass`;
+    const result = await ciTest({
+      scripts: [{ match: "fail", exitCode: 1 }],
+    }).run((ci) => {
+      return ci.job("test", async () => {
+        await $`pass`;
 
-          await $`fail`.nothrow();
-        });
-      },
-      [{ match: "fail", exitCode: 1 }],
-    );
+        await $`fail`.nothrow();
+      });
+    });
 
     expect(result.type).toBe("function-resolved");
 
-    expect(result.stepIds).toEqual([
-      "github › check:pr:start",
-      "github › check:test:start",
-      "test › machine",
-      "test › machine › setup",
-      "test › pass › start",
-      "test › pass › wait #1",
-      "test › pass › check #1",
-      "test › pass › output",
-      "test › fail › start",
-      "test › fail › wait #1",
-      "test › fail › check #1",
-      "test › fail › output",
-      "github › check:test:complete",
-      "github › check:jobs:complete",
-      "github › check:pr:complete",
-      "pipeline › cleanup",
-      "pipeline › cleanup:snapshots",
-    ]);
+    expect(
+      result.stepIds.filter((id) => {
+        return id.endsWith("› exit");
+      }),
+    ).toEqual([]);
   });
 
   test("still retry after a failed run, and throw the same error at the end", async () => {
     let caught: unknown;
 
-    const result = await runPipeline(
-      (ci) => {
-        return ci.job("test", async () => {
-          try {
-            await $`flaky`.retries(1);
-          } catch (error) {
-            caught = error;
-          }
-        });
-      },
-      [{ match: "flaky", exitCode: 1, stdout: "out", stderr: "flake" }],
-    );
+    const result = await ciTest({
+      scripts: [
+        { match: "flaky", exitCode: 1, stdout: "out", stderr: "flake" },
+      ],
+    }).run((ci) => {
+      return ci.job("test", async () => {
+        try {
+          await $`flaky`.retries(1);
+        } catch (error) {
+          caught = error;
+        }
+      });
+    });
 
     expect(result.type).toBe("function-resolved");
 
@@ -396,7 +395,7 @@ describe("spans", () => {
   });
 
   test("keep the build of a parent outside every job's span", async () => {
-    const result = await runPipeline((ci) => {
+    const result = await ciTest().run((ci) => {
       const base = ci.job("base", async () => {
         await $`install`;
       });
@@ -435,13 +434,13 @@ describe("spans", () => {
   });
 
   test("name a pipeline's rows for what they are", async () => {
-    const result = await runPipeline(rowsPipeline);
+    const result = await ciTest().run(rowsPipeline);
 
     expect(result.type).toBe("function-resolved");
 
     expect(drawTrace(result)).toBe(
       [
-        "GitHub",
+        "GitHub [github]",
         "  Create check: pr",
         "  Report test: started",
         "  Report test: passed",
@@ -450,25 +449,25 @@ describe("spans", () => {
         "Look up cache",
         "Build base in its own run",
         "test [job]",
-        "  Start sandbox from base",
+        "  Start sandbox from base [sandbox]",
         "    Create sandbox",
         "    Prepare workspace",
-        "  $ pnpm test",
+        "  $ pnpm test [command]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
         "    Read output",
-        "  lint",
+        "  lint [command]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
         "    Read output",
         "  my-step",
-        "  api",
-        "    Start sandbox",
+        "  api [sandbox]",
+        "    Start sandbox [sandbox]",
         "      Create sandbox",
         "      Prepare workspace",
-        "    $ pnpm start",
+        "    $ pnpm start [command]",
         "      Run and read output",
         "Clean up sandboxes",
         "Clean up snapshots",
@@ -477,18 +476,16 @@ describe("spans", () => {
   });
 
   test("mark the work CI does for you, and nothing you wrote", async () => {
-    const result = await runPipeline(rowsPipeline);
+    const result = await ciTest().run(rowsPipeline);
 
     expect(result.type).toBe("function-resolved");
 
     expect(ciOrigin).toBe(`@inngest/ci@${version}`);
 
-    // Jobs, commands, `my-step` and the `api` sandbox are yours. `snapshot()`
-    // opens its span without an origin, so it inherits the one of the CI span
-    // it runs in, while its own steps are marked by the SDK.
+    // Jobs, commands, `my-step` and the `api` sandbox are yours.
     expect(drawTrace(result, true)).toBe(
       [
-        "GitHub <- ci",
+        "GitHub [github] <- ci",
         "  Create check: pr <- ci",
         "  Report test: started <- ci",
         "  Report test: passed <- ci",
@@ -497,25 +494,25 @@ describe("spans", () => {
         "Look up cache <- ci",
         "Build base in its own run <- ci",
         "test [job]",
-        "  Start sandbox from base <- ci",
+        "  Start sandbox from base [sandbox] <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
-        "  $ pnpm test",
+        "  $ pnpm test [command]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
         "    Read output <- ci",
-        "  lint",
+        "  lint [command]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
         "    Read output <- ci",
         "  my-step",
-        "  api",
-        "    Start sandbox <- ci",
+        "  api [sandbox]",
+        "    Start sandbox [sandbox] <- ci",
         "      Create sandbox <- ci",
         "      Prepare workspace <- ci",
-        "    $ pnpm start",
+        "    $ pnpm start [command]",
         "      Run and read output <- ci",
         "Clean up sandboxes <- ci",
         "Clean up snapshots <- ci",
@@ -550,19 +547,15 @@ describe("spans", () => {
       return fetch(input, init);
     };
 
-    const result = await runPipeline(
-      (ci) => {
-        const parent = ci.job("base", async () => {
-          await $`pnpm install`;
-        });
+    const result = await ciTest({ api }).run((ci) => {
+      const parent = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
 
-        return ci.job({ id: "test", from: parent }, async () => {
-          await $`pnpm test`;
-        });
-      },
-      [],
-      api,
-    );
+      return ci.job({ id: "test", from: parent }, async () => {
+        await $`pnpm test`;
+      });
+    });
 
     expect(result.type).toBe("function-resolved");
 

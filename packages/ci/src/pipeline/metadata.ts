@@ -2,19 +2,22 @@
  * Run metadata: the `userland.inngest-ci` metadata attached to runs and steps, so
  * Inngest can tell a run is a CI run and see how `@inngest/ci` is used.
  *
- * Metadata rides on steps CI already runs, so it adds no trace rows. Only a
- * pipeline with its check turned off has no such step, and gets two of its own.
+ * Run values, and each step's intent and outcome, ride on steps CI already
+ * runs, so they add no trace rows. Only a pipeline with its check turned off
+ * has no such step, and gets two of its own.
  *
  * @module
  */
 
+import type { StepOptions } from "inngest";
 import { getAsyncCtx } from "inngest/experimental";
 import type { CheckConclusion } from "../types.ts";
-import { errorMessage } from "../util.ts";
+import { errorMessage, truncateLabel } from "../util.ts";
 import { version } from "../version.ts";
-import { ciStep, traceName } from "./names.ts";
+import { ciOrigin, type StepSpec, steps } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 import { apiNames } from "./scope.ts";
+import { originOption } from "./spans.ts";
 
 /**
  * The metadata kind everything here is attached under. It moves to
@@ -27,14 +30,6 @@ export interface StepTag {
   kind: "job" | "check" | "cache";
   /** The job's path. Left out for the pipeline's own check. */
   job?: string;
-}
-
-/** What a step records about itself, on top of its tag. */
-export interface StepMetadata extends Partial<StepTag> {
-  /** A short sentence for what the step sets out to do, written before the work. */
-  intent?: string;
-  /** What actually happened, in a few small fields. No secrets or output bodies. */
-  outcome?: Record<string, unknown>;
 }
 
 /**
@@ -105,46 +100,34 @@ export const runEndMetadata = (
   };
 };
 
-/** All that tagging needs of a run: somewhere to warn. */
-export type Loggable = { ci: Pick<CiRunScope["ci"], "logger"> };
-
 /**
- * Attach metadata to the step whose callback is running: `runValues` to the
- * run, and `step` to the step itself.
+ * Attach values to the run's own metadata, from the step whose callback is
+ * running.
  *
  * It only queues the update on the step's own result, so it adds no request,
  * and a step that's already memoized never runs its callback again, so nothing
  * is sent twice on replay. It must never fail the step, so anything that goes
  * wrong is a warning.
  */
-export const tagStep = async (
-  run: Loggable,
-  step?: StepMetadata,
-  runValues?: Record<string, unknown>,
+export const tagRun = async (
+  run: CiRunScope,
+  values: Record<string, unknown> | undefined,
 ): Promise<void> => {
   try {
     const execution = (await getAsyncCtx())?.execution;
     const stepId = execution?.executingStep?.id;
 
-    if (!execution || !stepId) {
+    if (!execution || !stepId || !values) {
       return;
     }
 
-    if (runValues) {
-      execution.instance.addMetadata(
-        stepId,
-        metadataKind,
-        "run",
-        "merge",
-        runValues,
-      );
-    }
-
-    if (step) {
-      execution.instance.addMetadata(stepId, metadataKind, "step", "merge", {
-        ...step,
-      });
-    }
+    execution.instance.addMetadata(
+      stepId,
+      metadataKind,
+      "run",
+      "merge",
+      values,
+    );
   } catch (error) {
     run.ci.logger?.warn(
       { error },
@@ -159,15 +142,10 @@ const maxOutcomeString = 200;
 /** The most items of a list a step's outcome keeps. */
 const maxOutcomeItems = 10;
 
-/** Cut a string to a length that reads in a trace, ending in an ellipsis. */
-export const shorten = (text: string, max = maxOutcomeString): string => {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-};
-
 /** Keep an outcome compact: long strings are cut and long lists trimmed. */
 const compact = (value: unknown, depth = 0): unknown => {
   if (typeof value === "string") {
-    return shorten(value);
+    return truncateLabel(value, maxOutcomeString);
   }
 
   if (Array.isArray(value)) {
@@ -187,114 +165,55 @@ const compact = (value: unknown, depth = 0): unknown => {
   return value;
 };
 
-/** What a CI step's callback is given to say what happened. */
-export interface StepNote {
-  /** Say more exactly what the step set out to do, once that's known. */
-  intent: (text: string) => void;
-  /** Record what the step did. Called again, it adds to what was said. */
-  outcome: (values: Record<string, unknown>) => void;
-}
-
-/** What every step CI generates says about itself. */
-export interface CiStepSpec {
-  /** A short sentence for what the step sets out to do. */
-  intent: string;
-  /** The step's tag, when it has one. */
-  tag?: StepTag;
-  /** Values for the run's own metadata, for a step that carries them. */
-  runValues?: () => Record<string, unknown>;
-}
-
 /**
- * Run a CI step's work and record its `intent` and `outcome` on the step.
+ * The step options for one of CI's steps: its ID, name and origin, and its
+ * `userland.inngest-ci` metadata. The SDK attaches the metadata when the step
+ * ends, so the step's body never mentions it, a replayed step sends it once,
+ * and a step that throws still says what it set out to do, with the error's
+ * first line as its outcome.
  *
- * Both go in one update when the work ends, so a step is never left with an
- * intent and no outcome. A step that throws still records its intent, with the
- * error's first line as its outcome, since the SDK carries metadata on a
- * failed step too. The error is thrown on, unchanged.
+ * Works for anything that takes step options, such as `step.run`.
  */
-export const withNotes = async <T>(
-  run: Loggable,
-  spec: CiStepSpec,
-  work: (note: StepNote) => Promise<T> | T,
-): Promise<T> => {
-  let outcome: Record<string, unknown> = {};
-  let intent = spec.intent;
+export const ciStepOptions = <T>(spec: StepSpec<T>): StepOptions => {
+  const { outcome } = spec;
 
-  const note: StepNote = {
-    intent: (text) => {
-      intent = text;
-    },
-    outcome: (values) => {
-      outcome = { ...outcome, ...values };
+  return {
+    id: spec.id,
+    name: spec.name,
+    ...(spec.yours ? {} : originOption(ciOrigin)),
+    metadata: {
+      kind: metadataKind,
+      values: (result: { data?: unknown; error?: unknown }) => {
+        const settled =
+          result.error === undefined
+            ? typeof outcome === "function"
+              ? outcome(result.data as T)
+              : outcome
+            : {
+                ...(typeof outcome === "function" ? {} : outcome),
+                error: errorMessage(result.error).split("\n")[0] ?? "",
+              };
+
+        return {
+          ...spec.tag,
+          intent: truncateLabel(spec.intent, maxOutcomeString),
+          outcome: compact(settled ?? {}),
+        };
+      },
     },
   };
-
-  try {
-    const result = await work(note);
-
-    await tagStep(
-      run,
-      {
-        ...spec.tag,
-        intent: shorten(intent),
-        outcome: compact(outcome) as Record<string, unknown>,
-      },
-      spec.runValues?.(),
-    );
-
-    return result;
-  } catch (error) {
-    await tagStep(
-      run,
-      {
-        ...spec.tag,
-        intent: shorten(intent),
-        outcome: compact({
-          ...outcome,
-          error: errorMessage(error).split("\n")[0] ?? "",
-        }) as Record<string, unknown>,
-      },
-      spec.runValues?.(),
-    );
-
-    throw error;
-  }
 };
 
 /**
- * Run `work` as one of CI's own steps, with its `intent` and `outcome` on the
- * step's `userland.inngest-ci` metadata. Every step CI generates goes through
- * this, so none is left unexplained.
- *
- * ```ts
- * await ciRun(
- *   run,
- *   {
- *     step: ciStep(id, name),
- *     intent: "Look up the cached snapshot for `install`",
- *   },
- *   async (note) => {
- *     const hit = await find();
- *
- *     note.outcome({ found: Boolean(hit) });
- *
- *     return hit ?? null;
- *   },
- * );
- * ```
+ * Run `fn` as one of CI's own steps, with its intent and outcome on the step's
+ * `userland.inngest-ci` metadata. The spec comes from the `steps` catalog.
  */
 export const ciRun = <T>(
-  run: CiRunScope,
-  spec: CiStepSpec & {
-    /** The step's ID and name, as `run.step.run` takes them. */
-    step: { id: string; name: string };
-  },
-  work: (note: StepNote) => Promise<T> | T,
+  run: Pick<CiRunScope, "step">,
+  spec: StepSpec<T>,
+  fn: () => T | Promise<T>,
 ): Promise<T> => {
-  return run.step.run(spec.step, () => {
-    return withNotes(run, spec, work);
-  }) as Promise<T>;
+  return run.step.run(ciStepOptions(spec), fn) as Promise<T>;
 };
 
 /**
@@ -306,15 +225,9 @@ export const metadataStep = (
   id: string,
   runValues: () => Record<string, unknown>,
 ): Promise<number> => {
-  return ciRun(
-    run,
-    {
-      step: ciStep(id, traceName.recordRunDetails),
-      intent: "Record this run's details",
-      runValues,
-    },
-    () => {
-      return Date.now();
-    },
-  );
+  return ciRun(run, steps.recordRunDetails(id), async () => {
+    await tagRun(run, runValues());
+
+    return Date.now();
+  });
 };

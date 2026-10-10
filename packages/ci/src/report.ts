@@ -5,7 +5,7 @@
  */
 
 import { ciRun } from "./pipeline/metadata.ts";
-import { traceName } from "./pipeline/names.ts";
+import { steps } from "./pipeline/names.ts";
 import {
   countApi,
   getJobScope,
@@ -45,20 +45,11 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:summary");
 
-    await ciRun(
-      run,
-      {
-        step: { id, name: traceName.addSummary },
-        intent: "Add a section to the check summary",
-      },
-      (note) => {
-        note.outcome({ length: markdown.length });
-
-        return {
-          length: markdown.length,
-        };
-      },
-    );
+    await ciRun(run, steps.addSummary(id), () => {
+      return {
+        length: markdown.length,
+      };
+    });
 
     if (job) {
       job.summaries.push(markdown);
@@ -105,23 +96,11 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:annotate");
 
-    await ciRun(
-      run,
-      {
-        step: { id, name: traceName.addAnnotations },
-        intent: `Add ${valid.length} annotations to the check`,
-      },
-      (note) => {
-        note.outcome({
-          count: valid.length,
-          dropped: annotations.length - valid.length,
-        });
-
-        return {
-          count: valid.length,
-        };
-      },
-    );
+    await ciRun(run, steps.addAnnotations(id, valid.length), () => {
+      return {
+        count: valid.length,
+      };
+    });
 
     if (job) {
       job.annotations.push(...valid);
