@@ -941,6 +941,9 @@ describe("runFn", () => {
               disableImmediateExecution: true,
             },
 
+          // A plain `Promise.race` under the default: the executor only calls
+          // back once every branch has finished, so nothing is left pending
+          // and the run completes as before.
           "request following A completion resolves": {
             stack: {
               [A]: { id: A, data: "A" },
@@ -1095,6 +1098,54 @@ describe("runFn", () => {
               }),
               foundSteps: expect.any(Array),
               totalFoundSteps: expect.any(Number),
+            },
+          },
+        }),
+      },
+    );
+
+    // With the default optimized parallelism, `group.parallel` race mode calls
+    // back as soon as the first branch finishes, so the losers are still
+    // pending when the handler returns.
+    testFn(
+      "group.parallel race when the handler returns with losers pending",
+      () => {
+        const fast = vi.fn(() => "fast");
+        const slow = vi.fn(() => "slow");
+
+        const fn = inngest.createFunction(
+          { id: "name", triggers: [{ event: "foo" }] },
+          async ({ step, group }) => {
+            await group.parallel({ mode: "race" }, async () => {
+              return Promise.race([
+                step.run("fast", fast),
+                step.run("slow", slow),
+              ]);
+            });
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { fast, slow } };
+      },
+      {
+        hashes: { fast: "fast", slow: "slow" },
+        tests: ({ fast }) => ({
+          "reports the losers with RunComplete": {
+            stack: { [fast]: { id: fast, data: "fast" } },
+            expectedReturn: {
+              type: "steps-found",
+              steps: [
+                expect.objectContaining({
+                  op: StepOpCode.StepPlanned,
+                  displayName: "slow",
+                }),
+                expect.objectContaining({
+                  op: StepOpCode.RunComplete,
+                  data: "done",
+                }),
+              ],
             },
           },
         }),
