@@ -10,6 +10,7 @@ import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -80,11 +81,11 @@ export interface MachineHandle {
    */
   claimedProcessIds?: Set<string>;
   /**
-   * The git tree ID of the working tree this machine has, from its last local
-   * `checkout()` or the snapshot it started from. A later `checkout()` uploads
-   * only what changed since.
+   * What CI knows about the machine beyond the sandbox itself, from the
+   * snapshot it started from or its own `checkout()`. It's written into the
+   * machine's snapshots.
    */
-  treeId?: string;
+  meta?: SnapshotMeta;
 }
 
 /**

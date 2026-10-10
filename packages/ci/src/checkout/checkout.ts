@@ -106,7 +106,7 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   });
 
   if ("treeId" in result) {
-    machine.treeId = result.treeId;
+    rememberTree(machine, result.treeId);
   }
 
   scope.cwd ??= target;
@@ -120,6 +120,14 @@ const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
   }
 
   return sandbox;
+};
+
+/**
+ * Record the working tree the machine now has, which a later `checkout()` or a
+ * job started from its snapshot uploads only the changes since.
+ */
+const rememberTree = (machine: MachineHandle, treeId: string | undefined) => {
+  machine.meta = { ...machine.meta, treeId };
 };
 
 /** Refuse an upload past the limit, saying what was too big. */
@@ -166,7 +174,7 @@ const transfer = async (
 
   const sandbox = await getSandbox(scope.run, machine);
 
-  machine.treeId = undefined;
+  rememberTree(machine, undefined);
 
   if (deleted.length > 0) {
     const removal = await sandbox.commands.run([
@@ -225,7 +233,7 @@ const uploadWorkingTree = async (
   target: string,
 ) => {
   const treeId = await workingTreeId(localPath);
-  const had = machine.treeId;
+  const had = machine.meta?.treeId;
   const base = { path: target, source: "local" as const, treeId };
   const none = { files: 0, removed: 0, bytes: 0 };
 

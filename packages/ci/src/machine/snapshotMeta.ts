@@ -23,16 +23,28 @@ export interface SnapshotMeta {
  */
 export const writeSnapshotMetaScript = `mkdir -p "$(dirname "$1")" && printf '%s' "$2" > "$1"`;
 
-/** The command that writes `meta` into the machine. */
-export const writeSnapshotMetaCommand = (meta: SnapshotMeta): string[] => {
-  return [
-    "/bin/sh",
-    "-c",
-    writeSnapshotMetaScript,
-    "sh",
-    snapshotMetaPath,
-    JSON.stringify(meta),
-  ];
+/** Prints the file, for a machine's setup to read back with `parseSnapshotMeta`. */
+export const readSnapshotMetaScript = `(cat ${snapshotMetaPath} 2>/dev/null || true)`;
+
+/** Write `meta` into the machine, unless it says nothing. */
+export const saveSnapshotMeta = async (
+  // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
+  sandbox: any,
+  stepId: string,
+  meta: SnapshotMeta,
+): Promise<void> => {
+  const json = JSON.stringify(meta);
+
+  if (json !== "{}") {
+    await sandbox.commands.run(stepId, [
+      "/bin/sh",
+      "-c",
+      writeSnapshotMetaScript,
+      "sh",
+      snapshotMetaPath,
+      json,
+    ]);
+  }
 };
 
 /**
