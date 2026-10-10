@@ -7,13 +7,12 @@
 
 import { NonRetriableError } from "inngest";
 import { CiUsageError } from "../errors.ts";
-import type { StepNote } from "../pipeline/metadata.ts";
 import { ciRun } from "../pipeline/metadata.ts";
-import { ciStep, traceName } from "../pipeline/names.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { FilesOptions, RepoContext } from "../types.ts";
-import { boundedName, errorMessage, parseRepo } from "../util.ts";
+import { once, parseRepo } from "../util.ts";
 import type { AuthContext, GitHubProvider, Octokit } from "./auth.ts";
 import { mapGitHubError } from "./rest.ts";
 
@@ -249,75 +248,35 @@ const readCommit = async (
   }
 };
 
-/** Run a resolving step in the run's GitHub span, memoized by the caller. */
-const resolveStep = <T>(
-  run: CiRunScope,
-  step: { id: string; intent: string },
-  work: (note: StepNote) => Promise<T>,
-): Promise<T> => {
-  return inGitHubSpan(run, () => {
-    return ciRun(
-      run,
-      {
-        step: ciStep(boundedName(step.id), traceName.resolveRef),
-        intent: step.intent,
-      },
-      async (note) => {
-        try {
-          return await work(note);
-        } catch (error) {
-          if (error instanceof CiUsageError) {
-            throw new NonRetriableError(errorMessage(error), { cause: error });
-          }
-
-          throw error;
-        }
-      },
-    );
-  });
-};
-
 /**
  * The default branch's name, from one step per repository per run. `repo` and
  * `ref: "<default branch>"` then share one commit step, keyed on the branch.
  */
 const defaultBranch = (run: CiRunScope, fullName: string): Promise<string> => {
-  const key = fullName.toLowerCase();
-  const known = run.defaultBranches.get(key);
+  return once(run.defaultBranches, fullName.toLowerCase(), () => {
+    return inGitHubSpan(run, () => {
+      return ciRun(run, steps.resolveDefaultBranch(fullName), async () => {
+        const { value } = await locate(
+          run,
+          fullName,
+          async (octokit, source) => {
+            const { data } = await octokit.rest.repos.get({
+              owner: source.owner,
+              repo: source.name,
+            });
 
-  if (known) {
-    return known;
-  }
+            return data.default_branch;
+          },
+        );
 
-  const pending = resolveStep(
-    run,
-    {
-      id: `github › default-branch:${key}`,
-      intent: `Find the default branch of \`${fullName}\``,
-    },
-    async (note) => {
-      const { value } = await locate(run, fullName, async (octokit, source) => {
-        const { data } = await octokit.rest.repos.get({
-          owner: source.owner,
-          repo: source.name,
-        });
+        if (!value) {
+          throw notFoundError(fullName, undefined);
+        }
 
-        return data.default_branch;
+        return value;
       });
-
-      if (!value) {
-        throw notFoundError(fullName, undefined);
-      }
-
-      note.outcome({ repo: fullName, branch: value });
-
-      return value;
-    },
-  );
-
-  run.defaultBranches.set(key, pending);
-
-  return pending;
+    });
+  });
 };
 
 /**
@@ -354,38 +313,28 @@ export const resolveSource = async (
 
   parseRepo(fullName);
 
+  // Checked here, outside the steps, so a missing provider is a usage error
+  // and not something a step retries.
+  providerOf(run);
+
   const ref = spec.ref ?? (await defaultBranch(run, fullName));
   const key = sourceKey(fullName, ref);
-  const known = run.sources.get(key);
 
-  if (known) {
-    return known;
-  }
+  return once(run.sources, key, () => {
+    return inGitHubSpan(run, () => {
+      return ciRun(run, steps.resolveRef(fullName, ref, key), async () => {
+        const { value, source } = await locate(
+          run,
+          fullName,
+          (octokit, found) => {
+            return readCommit(octokit, found, ref);
+          },
+        );
 
-  const pending = resolveStep(
-    run,
-    {
-      id: `github › ref:${key}`,
-      intent: `Resolve \`${ref}\` of \`${fullName}\` to a commit`,
-    },
-    async (note) => {
-      const { value, source } = await locate(
-        run,
-        fullName,
-        (octokit, found) => {
-          return readCommit(octokit, found, ref);
-        },
-      );
-
-      note.outcome({ repo: fullName, sha: value });
-
-      return { ...source, sha: value };
-    },
-  );
-
-  run.sources.set(key, pending);
-
-  return pending;
+        return { ...source, sha: value };
+      });
+    });
+  });
 };
 
 /**

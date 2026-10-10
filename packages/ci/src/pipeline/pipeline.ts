@@ -50,12 +50,12 @@ import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import {
   ciRun,
+  ciStepOptions,
   metadataStep,
   runEndMetadata,
   runStartMetadata,
-  withNotes,
 } from "./metadata.ts";
-import { ciStep, traceName } from "./names.ts";
+import { steps } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -564,22 +564,14 @@ const resolveConfiguredRepo = (
   const { owner, name } = parseRepo(fullName);
 
   return inGitHubSpan(run, () => {
-    return ciRun<RepoContext>(
+    return ciRun(
       run,
-      {
-        step: {
-          id: `github › repo:resolve`,
-          name: traceName.resolveRepository,
-        },
-        intent: `Find the head commit of \`${fullName}\`'s default branch`,
-      },
-      async (note): Promise<RepoContext> => {
+      steps.resolveRepository(fullName),
+      async (): Promise<RepoContext> => {
         const base: RepoContext = { owner, name, fullName, sha: "" };
         const provider = run.ci.github as GitHubProvider;
 
         if (provider.kind === "console") {
-          note.outcome({ resolved: false });
-
           return base;
         }
 
@@ -595,8 +587,6 @@ const resolveConfiguredRepo = (
           repo: name,
           branch,
         });
-
-        note.outcome({ resolved: true, branch, sha: head.commit.sha });
 
         return {
           ...base,
@@ -622,19 +612,14 @@ const resolvePullRequestHead = (
   run: CiRunScope,
   repo: RepoContext,
 ): Promise<RepoContext> => {
-  return ciRun<RepoContext>(
+  return ciRun(
     run,
-    {
-      step: { id: `github › pr:resolve`, name: "pr:resolve" },
-      intent: `Find the head and base of pull request #${repo.pullRequest?.number ?? "?"}`,
-    },
-    async (note): Promise<RepoContext> => {
+    steps.resolvePullRequest(repo.pullRequest?.number),
+    async (): Promise<RepoContext> => {
       const provider = run.ci.github as GitHubProvider;
       const number = repo.pullRequest?.number;
 
       if (provider.kind === "console" || !number) {
-        note.outcome({ resolved: false });
-
         return repo;
       }
 
@@ -648,15 +633,6 @@ const resolvePullRequestHead = (
         pull_number: number,
       });
 
-      const fork = (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName;
-
-      note.outcome({
-        resolved: true,
-        sha: pr.head.sha,
-        baseRef: pr.base.ref,
-        fork,
-      });
-
       return {
         ...repo,
         sha: pr.head.sha,
@@ -666,7 +642,7 @@ const resolvePullRequestHead = (
         pullRequest: {
           number,
           headRef: pr.head.ref,
-          fork,
+          fork: (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName,
         },
       };
     },
@@ -855,22 +831,14 @@ const checkCommentPermission = async (
     await inGitHubSpan(run, () => {
       return ciRun(
         run,
-        {
-          step: {
-            id: "github › comment:denied",
-            name: traceName.commentNotAllowed,
-          },
-          intent: `Tell ${login} they need \`${minPermission}\` permission`,
-        },
-        async (note) => {
+        steps.commentNotAllowed(login, minPermission),
+        async () => {
           const { stickyComment } = await import("../github/helpers.ts");
 
           await stickyComment(
             "permission",
             `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
           );
-
-          note.outcome({ denied: login, needed: minPermission });
 
           return { denied: login };
         },
@@ -929,24 +897,9 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(
-        ciStep("destroy-orphans", traceName.cleanUpMachines),
-        () => {
-          return withNotes(
-            { ci: {} },
-            { intent: "Destroy the sandboxes of a run that ended" },
-            async (note) => {
-              const result = runId
-                ? await destroyOrphans(client, runId)
-                : { destroyed: 0 };
-
-              note.outcome(result);
-
-              return result;
-            },
-          );
-        },
-      );
+      return step.run(ciStepOptions(steps.cleanUpEndedRun()), () => {
+        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+      });
     },
   );
 };

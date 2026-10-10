@@ -412,3 +412,25 @@ export const parseRepo = (
 
   return { owner, name };
 };
+
+/**
+ * The value kept under `key`, made by `make` the first time it's asked for.
+ * Kept values are promises, so every caller of a key awaits the same work.
+ */
+export const once = <T>(
+  kept: Map<string, T>,
+  key: string,
+  make: () => T,
+): T => {
+  const known = kept.get(key);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const made = make();
+
+  kept.set(key, made);
+
+  return made;
+};

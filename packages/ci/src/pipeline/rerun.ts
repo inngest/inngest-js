@@ -6,7 +6,8 @@
 
 import type { Inngest } from "inngest";
 import type { PipelineConfig } from "../types.ts";
-import { withNotes } from "./metadata.ts";
+import { ciStepOptions } from "./metadata.ts";
+import { steps } from "./names.ts";
 
 /**
  * Re-run a pipeline from a GitHub check's "Re-run" button.
@@ -71,98 +72,86 @@ export const rerunEventFor = async ({
   const delivery: string | undefined =
     event?.data?._github?.delivery ?? event?.id;
 
-  return step.run("resend-trigger", () => {
-    return withNotes(
-      { ci: {} },
-      {
-        intent: "Send the pipeline's trigger again for the re-requested check",
-      },
-      async (note) => {
-        const { octokitForRun } = await import("../github/rest.ts");
+  return step.run(ciStepOptions(steps.resendTrigger()), async () => {
+    const { octokitForRun } = await import("../github/rest.ts");
 
-        const [owner, repo] = String(repository.full_name).split("/") as [
-          string,
-          string,
-        ];
+    const [owner, repo] = String(repository.full_name).split("/") as [
+      string,
+      string,
+    ];
 
-        let pullRequest: unknown = payloadPullRequest;
-        let branchVerified = false;
+    let pullRequest: unknown = payloadPullRequest;
+    let branchVerified = false;
 
-        try {
-          const octokit = await octokitForRun();
+    try {
+      const octokit = await octokitForRun();
 
-          if (payloadPullRequest?.number) {
-            const { data } = await octokit.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: payloadPullRequest.number,
-            });
-
-            pullRequest = data?.number ? data : payloadPullRequest;
-          } else {
-            const { data } =
-              await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner,
-                repo,
-                commit_sha: sha,
-              });
-
-            pullRequest = data.find((pr) => {
-              return pr.state === "open" && pr.head.sha === sha;
-            });
-
-            // A branch name alone proves nothing: a fork's `main` is not ours. Only
-            // re-push a branch whose head is this very commit.
-            if (!pullRequest && headBranch) {
-              const { data: branch } = await octokit.rest.repos.getBranch({
-                owner,
-                repo,
-                branch: headBranch,
-              });
-
-              branchVerified = branch?.commit?.sha === sha;
-            }
-          }
-        } catch {
-          // Without credentials the payload's own pull request is all there is to
-          // go on.
-        }
-
-        if (!pullRequest && !branchVerified) {
-          note.outcome({ rerun: false });
-
-          return {
-            rerun: false,
-            reason: "no pull request, and the branch could not be verified",
-          };
-        }
-
-        await client.send({
-          ...(delivery ? { id: `ci-rerun-${delivery}` } : {}),
-          name: pullRequest ? "github/pull_request.synchronize" : "github/push",
-          data: {
-            ...(pullRequest
-              ? {
-                  action: "synchronize",
-                  pull_request: pullRequest,
-                  number: (pullRequest as { number: number }).number,
-                }
-              : { ref: `refs/heads/${headBranch}`, after: sha }),
-            repository,
-            _github: event?.data?._github,
-            _ci: {
-              ...(rerunOf ? { rerunOf } : {}),
-              ...(externalId?.includes(":")
-                ? { fromJob: externalId.split(":").slice(1).join(":") }
-                : {}),
-            },
-          },
+      if (payloadPullRequest?.number) {
+        const { data } = await octokit.rest.pulls.get({
+          owner,
+          repo,
+          pull_number: payloadPullRequest.number,
         });
 
-        note.outcome({ rerun: true, sha });
+        pullRequest = data?.number ? data : payloadPullRequest;
+      } else {
+        const { data } =
+          await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+            owner,
+            repo,
+            commit_sha: sha,
+          });
 
-        return { rerun: true, sha };
+        pullRequest = data.find((pr) => {
+          return pr.state === "open" && pr.head.sha === sha;
+        });
+
+        // A branch name alone proves nothing: a fork's `main` is not ours. Only
+        // re-push a branch whose head is this very commit.
+        if (!pullRequest && headBranch) {
+          const { data: branch } = await octokit.rest.repos.getBranch({
+            owner,
+            repo,
+            branch: headBranch,
+          });
+
+          branchVerified = branch?.commit?.sha === sha;
+        }
+      }
+    } catch {
+      // Without credentials the payload's own pull request is all there is to
+      // go on.
+    }
+
+    if (!pullRequest && !branchVerified) {
+      return {
+        rerun: false,
+        reason: "no pull request, and the branch could not be verified",
+      };
+    }
+
+    await client.send({
+      ...(delivery ? { id: `ci-rerun-${delivery}` } : {}),
+      name: pullRequest ? "github/pull_request.synchronize" : "github/push",
+      data: {
+        ...(pullRequest
+          ? {
+              action: "synchronize",
+              pull_request: pullRequest,
+              number: (pullRequest as { number: number }).number,
+            }
+          : { ref: `refs/heads/${headBranch}`, after: sha }),
+        repository,
+        _github: event?.data?._github,
+        _ci: {
+          ...(rerunOf ? { rerunOf } : {}),
+          ...(externalId?.includes(":")
+            ? { fromJob: externalId.split(":").slice(1).join(":") }
+            : {}),
+        },
       },
-    );
+    });
+
+    return { rerun: true, sha };
   });
 };
