@@ -23,11 +23,7 @@ import {
   runInScope,
   scopeSeparator,
 } from "../pipeline/scope.ts";
-import {
-  inSnapshotSpan,
-  inSpan,
-  snapshotSpanOption,
-} from "../pipeline/spans.ts";
+import { inSpan } from "../pipeline/spans.ts";
 import type { MachineConfig } from "../types.ts";
 import {
   boundedName,
@@ -501,13 +497,13 @@ export interface TakenSnapshot {
 /**
  * A snapshot step: its ID is the step's, its name reads as an action. Saving
  * a job's sandbox is one statement, so its row is the job's "Save sandbox"
- * span, which the SDK is told of where it can take it.
+ * span, which the SDK takes as the step's own so it opens no second group.
  */
 const snapshotStep = (jobPath: string, id: string) => {
   return {
     id,
     name: traceName.snapshotMachine,
-    ...snapshotSpanOption(spans.save(jobPath)),
+    "~span": spans.save(jobPath),
   };
 };
 
@@ -532,9 +528,7 @@ export const snapshotMachine = async (
 
   const handle = await scope.machine;
 
-  return inSnapshotSpan(spans.save(scope.path), () => {
-    return takeSnapshot(run, scope.path, handle, cache);
-  });
+  return takeSnapshot(run, scope.path, handle, cache);
 };
 
 const takeSnapshot = async (

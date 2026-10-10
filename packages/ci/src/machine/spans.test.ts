@@ -10,16 +10,118 @@
  * @module
  */
 
-import { step } from "inngest";
+import { version as sdkVersion, step } from "inngest";
 import { describe, expect, test } from "vitest";
 import { CommandFailedError } from "../errors.ts";
+import { consoleReporter } from "../github/auth.ts";
+import { createCi } from "../pipeline/createCi.ts";
 import { ciOrigin } from "../pipeline/names.ts";
+import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
+import type { CommandScript, FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import type { Ci } from "../testing/harness.ts";
-import { ciTest, drawTrace } from "../testing/harness.ts";
+import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { $ } from "./command.ts";
 import { sandbox } from "./sandbox.ts";
+
+type Ci = ReturnType<typeof createCi>;
+
+type RunResult = Awaited<ReturnType<typeof runFunction>>;
+
+const ciTest = (
+  options: {
+    /** The fake API to run on. Defaults to a fresh one. */
+    api?: FakeSandboxApi;
+    /** What the commands it runs do. */
+    scripts?: CommandScript[];
+  } = {},
+) => {
+  const api = options.api ?? createFakeSandboxApi();
+
+  api.script(options.scripts ?? []);
+
+  const ci = createCi(createCiTestClient(api), { github: consoleReporter() });
+
+  return {
+    api,
+    ci,
+    /** Run the pipeline whose handler `define` makes from `ci`. */
+    run: (define: (ci: Ci) => () => Promise<unknown>): Promise<RunResult> => {
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, define(ci));
+
+      return runFunction(pipeline, { event: prEvent });
+    },
+  };
+};
+
+interface TraceNode {
+  label: string;
+  children: Map<string, TraceNode>;
+}
+
+/**
+ * Draw a run's trace as an indented tree, the way the UI nests it: each span
+ * once, where its first step is, with its kind in brackets, and each step
+ * under its spans.
+ */
+const drawTrace = (
+  result: RunResult,
+  /** Suffix each row with who it says did it, as in `Create sandbox <- ci`. */
+  withOrigins = false,
+): string => {
+  const root: TraceNode = { label: "", children: new Map() };
+
+  const by = (origin: string | undefined) => {
+    if (!withOrigins || !origin) {
+      return "";
+    }
+
+    const names: Record<string, string> = {
+      [ciOrigin]: "ci",
+      [`inngest@${sdkVersion}`]: "inngest",
+    };
+
+    return ` <- ${names[origin] ?? origin}`;
+  };
+
+  for (const stepId of result.stepIds) {
+    let node = root;
+
+    for (const span of result.spans[stepId] ?? []) {
+      const key = `span:${span.id}`;
+      const label = span.kind ? `${span.name} [${span.kind}]` : span.name;
+
+      const child = node.children.get(key) ?? {
+        label: `${label}${by(span.origin)}`,
+        children: new Map(),
+      };
+
+      node.children.set(key, child);
+
+      node = child;
+    }
+
+    node.children.set(`step:${stepId}`, {
+      label: `${result.names[stepId] ?? stepId}${by(result.origins[stepId])}`,
+      children: new Map(),
+    });
+  }
+
+  const lines: string[] = [];
+
+  const draw = (node: TraceNode, depth: number) => {
+    for (const child of node.children.values()) {
+      lines.push(`${"  ".repeat(depth)}${child.label}`);
+
+      draw(child, depth + 1);
+    }
+  };
+
+  draw(root, 0);
+
+  return lines.join("\n");
+};
 
 /** Run a job with a captured, a managed, a retried and a background command. */
 const run = () => {
