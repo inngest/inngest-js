@@ -48,21 +48,6 @@ export const boundedName = (name: string, max = maxNameLength): string => {
 };
 
 /**
- * The prefix a name kept if `boundedName` cut it, or `undefined` if the name
- * doesn't have the shape of a cut one: the full length and a `-<8 hex>` suffix.
- */
-export const boundedPrefix = (
-  name: string,
-  max = maxNameLength,
-): string | undefined => {
-  if (name.length !== max || !/-[0-9a-f]{8}$/.test(name)) {
-    return undefined;
-  }
-
-  return name.slice(0, max - 9);
-};
-
-/**
  * Truncate a label for use in a step ID, keeping it readable.
  */
 export const truncateLabel = (label: string, max = 60): string => {

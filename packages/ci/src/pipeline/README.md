@@ -12,6 +12,6 @@ The client and the run engine.
 - `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, and the helpers that build and attach it.
 - `scope.ts`: the run and job scopes held in async context. Jobs only write to the run scope, except for `builds`, the promises of the builds `from` parents need.
 - `names.ts`: what each step and span CI writes is called in the trace, and the origin that marks CI's own work.
-- `spans.ts`: the one place CI touches the SDK's experimental trace-span API. It is feature-detected, so CI runs unchanged on an SDK without it.
+- `spans.ts`: the one place CI touches the SDK's experimental trace-span API.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.
