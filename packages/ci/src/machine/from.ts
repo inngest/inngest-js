@@ -25,6 +25,7 @@ import { adoptBuilt, invokeBuild, validateInput } from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
+  isInline,
   outsideJobs,
   rebuildSuffix,
   scopeSeparator,
@@ -121,6 +122,30 @@ export const parentOf = (
   }
 
   return { config: registered.config, input: ref.input, raw: ref.input };
+};
+
+/**
+ * Whether a job has to be built in this run: it was defined here, or its
+ * parent was, and either way the build function couldn't find it.
+ */
+export const buildsInRun = (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input, already validated. */
+  input: unknown,
+): boolean => {
+  if (isInline(config)) {
+    return true;
+  }
+
+  try {
+    const named = parentOf(run, config, input);
+
+    return named ? isInline(named.config) : false;
+  } catch {
+    // A `from` that names no job is reported where the job resolves it.
+    return false;
+  }
 };
 
 /**
@@ -261,7 +286,8 @@ export const parentBuildOf = async (
     return undefined;
   }
 
-  const given = run.build?.jobId === config.id ? run.build.base : undefined;
+  const given =
+    run.build?.jobId === config.id ? run.build.base : scope.inline?.base;
 
   return { parent, built: given ?? (await resolveParent(scope, parent)) };
 };
