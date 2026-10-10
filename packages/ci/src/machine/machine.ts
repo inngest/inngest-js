@@ -9,7 +9,8 @@ import type { Inngest } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { resolveTakenName, snapshotState } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
-import { ciStep, spans, traceName } from "../pipeline/names.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
   CiRunScope,
@@ -32,6 +33,7 @@ import {
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
+import { deleteSnapshots, listSandboxes } from "./admin.ts";
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -359,35 +361,22 @@ const discardFailedStart = async (
     ?.sandboxId;
 
   try {
-    await run.step.run(
-      {
-        id: joinId(stepId, "discard"),
-        name: traceName.discardMachine,
-      },
+    await ciRun(
+      run,
+      steps.discardMachine(stepId, name),
       async (): Promise<{ id?: string }> => {
         // Errors are swallowed inside the step so it never retries.
         let id = knownId;
 
         try {
-          let cursor: string | undefined;
+          if (!id) {
+            for await (const sandbox of listSandboxes(run.ci.client)) {
+              if (sandbox.name === name && sandbox.status !== "TERMINATED") {
+                id = sandbox.id;
 
-          while (!id) {
-            const page = await run.ci.client.sandboxes.list({
-              ...(cursor ? { cursor } : {}),
-              limit: 100,
-            });
-
-            id = page.items.find(
-              (sandbox: { name: string; status: string }) => {
-                return sandbox.name === name && sandbox.status !== "TERMINATED";
-              },
-            )?.id;
-
-            if (id || !page.page.hasMore) {
-              break;
+                break;
+              }
             }
-
-            cursor = page.page.cursor;
           }
 
           if (id) {
@@ -738,15 +727,9 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpMachines,
-    ),
-    async () => {
-      return destroyOrphans(run.ci.client, run.runId);
-    },
-  );
+  await ciRun(run, steps.cleanUpMachines(attempt), () => {
+    return destroyOrphans(run.ci.client, run.runId);
+  });
 };
 
 /**
@@ -771,41 +754,14 @@ export const deleteRunSnapshots = async (
 
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
-  await run.step.run(
-    ciStep(
-      `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      traceName.cleanUpSnapshots,
-    ),
-    async () => {
-      const deleted: string[] = [];
-      const failed: string[] = [];
-
-      for (const id of [...run.createdSnapshots]) {
-        try {
-          const snapshot = await run.ci.client.sandboxes.snapshots.get(id);
-
-          if (snapshot) {
-            await snapshot.delete();
-
-            deleted.push(id);
-          }
-        } catch (error) {
-          if (isSnapshotNotFound(error)) {
-            continue;
-          }
-
-          failed.push(id);
-
-          run.ci.logger?.warn(
-            { snapshotId: id, error },
-            "Couldn't delete a snapshot this run took; it will expire on its own",
-          );
-        }
-      }
-
-      return { deleted, failed };
-    },
-  );
+  await ciRun(run, steps.cleanUpSnapshots(attempt), () => {
+    return deleteSnapshots(run.ci.client, run.createdSnapshots, (id, error) => {
+      run.ci.logger?.warn(
+        { snapshotId: id, error },
+        "Couldn't delete a snapshot this run took; it will expire on its own",
+      );
+    });
+  });
 };
 
 /**
@@ -818,32 +774,22 @@ export const destroyOrphans = async (
   runId: string,
 ): Promise<{ destroyed: number }> => {
   const prefix = `ci-${runId}-`;
-  let cursor: string | undefined;
   let destroyed = 0;
 
-  do {
-    const page = await client.sandboxes.list({
-      ...(cursor ? { cursor } : {}),
-      limit: 100,
-    });
+  for await (const sandbox of listSandboxes(client)) {
+    if (sandbox.name.startsWith(prefix)) {
+      try {
+        await sandbox.destroy();
 
-    for (const sandbox of page.items) {
-      if (sandbox.name.startsWith(prefix)) {
-        try {
-          await sandbox.destroy();
-
-          destroyed++;
-        } catch (error) {
-          // Anything but "not found" fails the step so it retries.
-          if (!isSandboxNotFound(error)) {
-            throw error;
-          }
+        destroyed++;
+      } catch (error) {
+        // Anything but "not found" fails the step so it retries.
+        if (!isSandboxNotFound(error)) {
+          throw error;
         }
       }
     }
-
-    cursor = page.page.hasMore ? page.page.cursor : undefined;
-  } while (cursor);
+  }
 
   return { destroyed };
 };

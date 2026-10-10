@@ -18,7 +18,7 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { createCi } from "./createCi.ts";
-import { tagStep } from "./metadata.ts";
+import { tagRun } from "./metadata.ts";
 import { ciOrigin } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 
@@ -290,8 +290,11 @@ describe("step metadata", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    const tags = stepScoped(result.metadata).map((update) => {
-      return [update.step, update.values];
+    // Other steps carry an intent and outcome, but no tag.
+    const tags = stepScoped(result.metadata).flatMap((update) => {
+      const { kind, job } = update.values as { kind?: string; job?: string };
+
+      return kind ? [[update.step, { kind, ...(job ? { job } : {}) }]] : [];
     });
 
     expect(tags).toEqual([
@@ -342,9 +345,7 @@ describe("failing to tag", () => {
         throw new Error("nope");
       }),
       async () => {
-        await expect(
-          tagStep(run(warn), { kind: "job", job: "test" }, { a: 1 }),
-        ).resolves.toBeUndefined();
+        await expect(tagRun(run(warn), { a: 1 })).resolves.toBeUndefined();
       },
     );
 
@@ -361,30 +362,23 @@ describe("failing to tag", () => {
     delete (ctx.execution as { executingStep?: unknown }).executingStep;
 
     await runWithAsyncCtx(ctx, async () => {
-      await tagStep(run(vi.fn()), { kind: "job" }, { a: 1 });
+      await tagRun(run(vi.fn()), { a: 1 });
     });
 
     expect(addMetadata).not.toHaveBeenCalled();
   });
 
-  test("the run values and the step values go to the current step", async () => {
+  test("the run values go to the current step", async () => {
     const addMetadata = vi.fn(() => {
       return true;
     });
 
     await runWithAsyncCtx(asyncCtx(addMetadata), async () => {
-      await tagStep(run(vi.fn()), { kind: "job", job: "test" }, { a: 1 });
+      await tagRun(run(vi.fn()), { a: 1 });
     });
 
     expect(addMetadata.mock.calls).toEqual([
       ["hashed", "userland.inngest-ci", "run", "merge", { a: 1 }],
-      [
-        "hashed",
-        "userland.inngest-ci",
-        "step",
-        "merge",
-        { kind: "job", job: "test" },
-      ],
     ]);
   });
 });
