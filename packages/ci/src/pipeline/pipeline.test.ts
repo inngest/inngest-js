@@ -36,6 +36,7 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import type { Job } from "../types.ts";
+import type { Ci } from "./createCi.ts";
 import { createCi } from "./createCi.ts";
 import { runCombosKey } from "./matrix.ts";
 import { getRunScope } from "./scope.ts";
@@ -1615,90 +1616,59 @@ describe("from", () => {
     );
   });
 
-  test("a `from` function that leads back to the start fails the run once", async () => {
-    const { ci } = setup();
+  test.each([
+    {
+      name: "a `from` function that leads back to the start",
+      message: "`a` → `b` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
+        const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
 
-    // Each names the other, which only a function can do.
-    const a: Job = ci.job({ id: "a", from: () => b }, async () => {
-      await $`echo a`;
-    });
+        return a;
+      },
+    },
+    {
+      name: "a cycle only reachable through a parent's own parent",
+      message: "`c` → `a` → `b` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
+        const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
 
-    const b: Job = ci.job({ id: "b", from: () => a }, async () => {
-      await $`echo b`;
-    });
+        return ci.job({ id: "c", from: a }, async () => {});
+      },
+    },
+    {
+      name: "a job that names itself",
+      message: "`a` → `a` starts from itself",
+      define: (ci: Ci) => {
+        const a: Job = ci.job({ id: "a", from: () => a }, async () => {});
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return a();
-    });
+        return a;
+      },
+    },
+  ])(
+    "$name fails the run once, before any build",
+    async ({ define, message }) => {
+      const { ci } = setup();
+      const entry = define(ci);
 
-    const before = invokedRunCount();
-    const result = await runFunction(pipeline, { event: prEvent });
-    const builds = invokedRunCount() - before;
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return entry();
+      });
 
-    expect(result.type).toBe("function-rejected");
-    expect(result.retriable).toBe(false);
+      const before = invokedRunCount();
+      const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "`a` → `b` → `a` starts from itself",
-    );
+      expect(result.type).toBe("function-rejected");
+      expect(result.retriable).toBe(false);
 
-    // The cycle is found while working out the parents, before any build.
-    expect(builds).toBe(0);
-  });
+      expect(String((result.error as { message?: string })?.message)).toContain(
+        message,
+      );
 
-  test("a cycle only reachable through a parent's own parent fails once", async () => {
-    const { ci } = setup();
-
-    const a: Job = ci.job({ id: "a", from: () => b }, async () => {
-      await $`echo a`;
-    });
-
-    const b: Job = ci.job({ id: "b", from: () => a }, async () => {
-      await $`echo b`;
-    });
-
-    const c = ci.job({ id: "c", from: a }, async () => {
-      await $`echo c`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return c();
-    });
-
-    const before = invokedRunCount();
-    const result = await runFunction(pipeline, { event: prEvent });
-    const builds = invokedRunCount() - before;
-
-    expect(result.type).toBe("function-rejected");
-    expect(result.retriable).toBe(false);
-
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "`c` → `a` → `b` → `a` starts from itself",
-    );
-
-    expect(builds).toBe(0);
-  });
-
-  test("a job that names itself fails without any build", async () => {
-    const { ci } = setup();
-
-    const a: Job = ci.job({ id: "a", from: () => a }, async () => {});
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return a();
-    });
-
-    const before = invokedRunCount();
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(result.retriable).toBe(false);
-
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "`a` → `a` starts from itself",
-    );
-
-    expect(invokedRunCount() - before).toBe(0);
-  });
+      expect(invokedRunCount() - before).toBe(0);
+    },
+  );
 
   test("a `from` function picks the parent from the job's input", async () => {
     const { api, ci } = setup();

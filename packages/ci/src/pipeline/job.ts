@@ -25,7 +25,6 @@ import type { CheckReporter } from "../github/checks.ts";
 import {
   checkStaticFrom,
   cycleMessage,
-  identityOf,
   ownJob,
   parentBuildOf,
   startFrom,
@@ -448,11 +447,7 @@ const jobSteps = async ({
   // plans its first step at once.
   const config =
     declared.cache && declared.from !== undefined
-      ? await withoutUnreusableCache(run, {
-          config: declared,
-          input,
-          raw: given,
-        })
+      ? await withoutUnreusableCache(run, declared, input)
       : declared;
 
   const scope: CiJobScope = {
@@ -521,9 +516,7 @@ const jobSteps = async ({
           { id: config.id, path: scope.path },
           config.cache,
           input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
+          fromParent?.identity,
         )
       : undefined;
 
@@ -532,15 +525,7 @@ const jobSteps = async ({
   if (isBuild && !parentFailure) {
     verifyBuildTarget(
       run,
-      cacheAt ??
-        runTarget(
-          run,
-          config.id,
-          input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
-        ),
+      cacheAt ?? runTarget(run, config.id, input, fromParent?.identity),
     );
   }
 

@@ -53,11 +53,30 @@ export interface Parent {
   raw: unknown;
 }
 
-/** A job's parent, and the build that gave its snapshot. */
-export interface ParentBuild {
+/**
+ * What a job starts from: its parent, the build that gave the snapshot, and
+ * what the job's own key knows of both.
+ */
+export interface ResolvedBase {
   parent: Parent;
   built: CacheBuildResult;
+  identity: BaseIdentity;
 }
+
+/** A parent with the build that gave its snapshot, as a base to start from. */
+const resolvedBase = (
+  parent: Parent,
+  built: CacheBuildResult,
+): ResolvedBase => {
+  return {
+    parent,
+    built,
+    identity: {
+      jobId: parent.config.id,
+      ...(built.snapshotId ? { snapshotId: built.snapshotId } : {}),
+    },
+  };
+};
 
 const isJob = (value: unknown): value is AnyJob => {
   return (
@@ -83,13 +102,6 @@ export const ownJob = (job: object, jobs: JobRegistry): void => {
   jobOwners.set(job, jobs);
 };
 
-/** The error for a `from` that names something that isn't a job. */
-const malformedFrom = (config: Pick<JobConfig, "id">): CiUsageError => {
-  return new CiUsageError(
-    `The \`from\` of job "${config.id}" must name a job, or a job with input from \`job.with(input)\`.`,
-  );
-};
-
 /**
  * What a `from` value names, checked: a job or job ref defined on the client
  * whose registry is `jobs`.
@@ -113,7 +125,9 @@ const resolveRef = (
       : undefined;
 
   if (!ref) {
-    throw malformedFrom(config);
+    throw new CiUsageError(
+      `The \`from\` of job "${config.id}" must name a job, or a job with input from \`job.with(input)\`.`,
+    );
   }
 
   const registered = jobs.get(ref.job.id);
@@ -203,24 +217,6 @@ export const parentOf = (
   };
 };
 
-/**
- * Throw when starting from `jobId` would bring a job back to a parent it's
- * already starting from, so a cycle fails with its path instead of recursing.
- *
- * The chain holds job IDs, not inputs, so a job that starts from itself with
- * a different input counts as a cycle too. That's coarser than it needs to be,
- * and fine until someone needs a job to build on its own other inputs.
- *
- * @throws {CiUsageError} When `jobId` is already in `chain`.
- */
-const assertNoCycle = (chain: string[], jobId: string): void => {
-  if (!chain.includes(jobId)) {
-    return;
-  }
-
-  throw new CiUsageError(cycleMessage([...chain, jobId]));
-};
-
 /** What a cycle of `from`s says, given the jobs along it. */
 export const cycleMessage = (path: string[]): string => {
   const named = path
@@ -233,72 +229,46 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
- * A job's `from` parent, worked out with its input validated, and with the
- * cache it can actually use (see `withoutUnreusableCache`).
+ * The jobs above a job, nearest first: its `from` parent, that job's parent,
+ * and so on, each with its input validated. The one walk of `from`, so every
+ * question about the chain is asked of this list.
+ *
+ * A cycle is judged by job ID, not input, so a job that starts from itself with
+ * a different input counts as one. That's coarser than it needs to be, and fine
+ * until someone needs a job to build on its own other inputs.
+ *
+ * @throws {CiUsageError} When `from` names something that isn't a job of this
+ * client, or a job comes back on itself, naming the path.
  */
-const namedParent = async (
+const walkParents = async (
   run: CiRunScope,
   config: JobConfig,
   /** The job's own input, already validated. */
   input: unknown,
-): Promise<Parent | undefined> => {
-  const named = parentOf(run, config, input);
-
-  if (!named) {
-    return undefined;
-  }
-
-  const validated = await validateInput(named.config, named.input);
-
-  return {
-    config: await withoutUnreusableCache(run, {
-      config: named.config,
-      input: validated,
-      raw: named.raw,
-    }),
-    input: validated,
-    raw: named.raw,
-  };
-};
-
-/**
- * The first job above `job` in its chain of `from` parents that has no cache,
- * if there is one. A job without a cache is built fresh in every run, so every
- * cached job below it gets a new snapshot, and a new key, each run.
- *
- * Every parent here is a job, so each is either cached or not. The base
- * images of later work will be stable like a cached job and end this walk.
- *
- * A chain that comes back on itself stops the walk, so the walk itself ends.
- * Cycles aren't detected or reported anywhere else yet: a job that starts from
- * itself, directly or through its parents, is a usage error that isn't
- * checked.
- */
-const uncachedAncestorOf = async (
-  run: CiRunScope,
-  job: Parent,
-): Promise<string | undefined> => {
-  const seen = new Set([job.config.id]);
-  let current = job;
+): Promise<Parent[]> => {
+  const parents: Parent[] = [];
+  const path = [config.id];
+  let current: Pick<Parent, "config" | "input"> = { config, input };
 
   while (true) {
     const named = parentOf(run, current.config, current.input);
 
-    if (!named || seen.has(named.config.id)) {
-      return undefined;
+    if (!named) {
+      return parents;
     }
 
-    if (!named.config.cache) {
-      return named.config.id;
+    if (path.includes(named.config.id)) {
+      throw new CiUsageError(cycleMessage([...path, named.config.id]));
     }
 
-    seen.add(named.config.id);
+    path.push(named.config.id);
 
     current = {
       config: named.config,
       input: await validateInput(named.config, named.input),
-      raw: named.raw,
     };
+
+    parents.push({ ...current, raw: named.raw });
   }
 };
 
@@ -317,39 +287,73 @@ const uncachedAncestorOf = async (
  *
  * It says so once, in the run that asked for it.
  */
-export const withoutUnreusableCache = async (
+const reusableConfig = (
   run: CiRunScope,
-  job: Parent,
-): Promise<JobConfig> => {
-  if (!job.config.cache) {
-    return job.config;
-  }
+  config: JobConfig,
+  /** The jobs above it, nearest first, as `walkParents` found them. */
+  above: readonly Parent[],
+): JobConfig => {
+  // Every parent here is a job, so each is either cached or not. The base
+  // images of later work will be stable like a cached job and end this search.
+  const uncached = above.find((parent) => {
+    return !parent.config.cache;
+  });
 
-  const uncached = await uncachedAncestorOf(run, job);
-
-  if (!uncached) {
-    return job.config;
+  if (!config.cache || !uncached) {
+    return config;
   }
 
   // A build run's warnings go to the run that invoked it, which has said it.
   if (!run.build) {
-    warnUncachedBase(run, job.config.id, uncached);
+    warnUncachedBase(run, config.id, uncached.config.id);
   }
 
-  const { cache: _cache, ...uncachedConfig } = job.config;
+  const { cache: _cache, ...uncachedConfig } = config;
 
   return uncachedConfig;
 };
 
-/** What a job's key knows of the parent it starts from. */
-export const identityOf = (
-  jobId: string,
-  built: CacheBuildResult,
-): BaseIdentity => {
-  return {
-    jobId,
-    ...(built.snapshotId ? { snapshotId: built.snapshotId } : {}),
-  };
+/**
+ * The jobs above a job as they are built in this run, nearest first (see
+ * `reusableConfig`). Pure, so a handler replaying from the top gets the same
+ * answer without a step.
+ *
+ * @throws {CiUsageError} When `from` names something that isn't a job of this
+ * client, or the chain comes back on itself.
+ */
+export const ancestry = async (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input, already validated. */
+  input: unknown,
+): Promise<Parent[]> => {
+  const parents = await walkParents(run, config, input);
+
+  return parents.map((parent, index) => {
+    return {
+      ...parent,
+      config: reusableConfig(run, parent.config, parents.slice(index + 1)),
+    };
+  });
+};
+
+/** The job as it is built in this run (see `reusableConfig`). */
+export const withoutUnreusableCache = async (
+  run: CiRunScope,
+  config: JobConfig,
+  /** The job's own input, already validated. */
+  input: unknown,
+): Promise<JobConfig> => {
+  return reusableConfig(run, config, await walkParents(run, config, input));
+};
+
+/** A job's `from` parent, as `ancestry` found it. */
+const namedParent = async (
+  run: CiRunScope,
+  config: JobConfig,
+  input: unknown,
+): Promise<Parent | undefined> => {
+  return (await ancestry(run, config, input))[0];
 };
 
 /**
@@ -362,7 +366,7 @@ export const parentBuildOf = async (
   scope: CiJobScope,
   /** The job's own input, already validated. */
   input: unknown,
-): Promise<ParentBuild | undefined> => {
+): Promise<ResolvedBase | undefined> => {
   const { run, config } = scope;
   const parent = await namedParent(run, config, input);
 
@@ -370,18 +374,9 @@ export const parentBuildOf = async (
     return undefined;
   }
 
-  const chain = [config.id];
-
-  assertNoCycle(chain, parent.config.id);
-
   const given = run.build?.jobId === config.id ? run.build.base : undefined;
 
-  return {
-    parent,
-    built:
-      given ??
-      (await resolveParent(scope, parent, [...chain, parent.config.id])),
-  };
+  return resolvedBase(parent, given ?? (await resolveParent(scope, parent)));
 };
 
 /**
@@ -392,8 +387,6 @@ export const parentBuildOf = async (
 const resolveParent = (
   scope: CiJobScope,
   parent: Parent,
-  /** The jobs being started from, this job first and `parent` last. */
-  chain: string[],
 ): Promise<CacheBuildResult> => {
   const { run } = scope;
   const { config } = parent;
@@ -405,34 +398,25 @@ const resolveParent = (
   run.ci.hooks.jobFrom(scope, config.id);
   run.ci.hooks.activity(run, scope.jobPath, `waiting for ${config.id}…`);
 
-  return buildOf(run, parent, chain);
+  return buildOf(run, parent);
 };
 
 /**
  * What a job's parent itself starts from, built for this pipeline run once
  * however many jobs need it. It's a parent's parent, so no job of this run
  * starts from it directly: its key, lookup and build are steps of its own.
- *
- * The chain only guards against cycles. It never reaches a step ID.
  */
 const baseOf = async (
   run: CiRunScope,
   parent: Parent,
-  /** The jobs being started from, ending with `parent`. */
-  chain: string[],
-): Promise<ParentBuild | undefined> => {
+): Promise<ResolvedBase | undefined> => {
   const grandparent = await namedParent(run, parent.config, parent.input);
 
   if (!grandparent) {
     return undefined;
   }
 
-  assertNoCycle(chain, grandparent.config.id);
-
-  return {
-    parent: grandparent,
-    built: await buildOf(run, grandparent, [...chain, grandparent.config.id]),
-  };
+  return resolvedBase(grandparent, await buildOf(run, grandparent));
 };
 
 /**
@@ -455,8 +439,6 @@ const baseOf = async (
 const buildOf = (
   run: CiRunScope,
   parent: Parent,
-  /** The jobs being started from, ending with `parent`. */
-  chain: string[],
 ): Promise<CacheBuildResult> => {
   const { config, input, raw } = parent;
   const path = buildPathOf(config.id, input);
@@ -467,11 +449,7 @@ const buildOf = (
   }
 
   const built = outsideJobs(run, async () => {
-    const base = await baseOf(run, parent, chain);
-
-    const identity = base
-      ? identityOf(base.parent.config.id, base.built)
-      : undefined;
+    const base = await baseOf(run, parent);
 
     const target = config.cache
       ? await cacheTarget(
@@ -479,9 +457,9 @@ const buildOf = (
           { id: config.id, path },
           config.cache,
           input,
-          identity,
+          base?.identity,
         )
-      : runTarget(run, config.id, input, identity);
+      : runTarget(run, config.id, input, base?.identity);
 
     const result = await invokeBuild({
       run,
@@ -515,7 +493,7 @@ const buildOf = (
  */
 export const startFrom = async (
   scope: CiJobScope,
-  { parent, built }: ParentBuild,
+  { parent, built }: ResolvedBase,
 ): Promise<void> => {
   const { run } = scope;
   const { config, input, raw } = parent;
@@ -531,7 +509,7 @@ export const startFrom = async (
         : `starting ${config.id}`;
 
     scope.rebuildSnapshot = async (why) => {
-      const base = await baseOf(run, parent, [scope.config.id, config.id]);
+      const base = await baseOf(run, parent);
 
       const rebuilt = await requestRebuild({
         run,
@@ -547,7 +525,7 @@ export const startFrom = async (
     };
 
     scope.rebuildParent = () => {
-      return rerunOnThisMachine(scope, parent, [scope.config.id, config.id]);
+      return rerunOnThisMachine(scope, parent);
     };
   } else if (built.hadMachine || config.cache) {
     // A cached job is built in a run of its own, so without a snapshot its
@@ -560,7 +538,7 @@ export const startFrom = async (
 
     run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
 
-    await rerunOnThisMachine(scope, parent, [scope.config.id, config.id]);
+    await rerunOnThisMachine(scope, parent);
   }
 };
 
@@ -707,8 +685,6 @@ const reportBuilt = (
 const rerunOnThisMachine = async (
   scope: CiJobScope,
   parent: Parent,
-  /** The jobs already being started from, ending with `parent`. */
-  chain: string[],
 ): Promise<void> => {
   const { run } = scope;
   const registered = run.ci.jobs.get(parent.config.id);
@@ -720,20 +696,16 @@ const rerunOnThisMachine = async (
   const grandparent = await namedParent(run, parent.config, parent.input);
 
   if (grandparent) {
-    assertNoCycle(chain, grandparent.config.id);
-
-    const through = [...chain, grandparent.config.id];
-
     // Before the machine exists, it can still start from the grandparent's
     // snapshot. After, as when a snapshot wouldn't start, the grandparent has
     // to run here too.
     if (scope.machine) {
-      await rerunOnThisMachine(scope, grandparent, through);
+      await rerunOnThisMachine(scope, grandparent);
     } else {
-      await startFrom(scope, {
-        parent: grandparent,
-        built: await resolveParent(scope, grandparent, through),
-      });
+      await startFrom(
+        scope,
+        resolvedBase(grandparent, await resolveParent(scope, grandparent)),
+      );
     }
   }
 
