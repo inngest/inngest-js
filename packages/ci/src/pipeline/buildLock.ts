@@ -22,7 +22,9 @@
  * before it was saved (there is no lookback), and a look that misses means the
  * snapshot was taken after it, so after the wait was saved too, and its event
  * comes later still. The executor saves a `waitForEvent` before it enqueues the
- * other steps planned with it, which is what puts the wait before the look.
+ * other steps planned with it, which is what puts the wait before the look
+ * (the pipeline functions turn off optimized parallelism, so the look is not
+ * held until the wait ends).
  *
  * What is left to chance, a builder that died without a trace or an event that
  * was not sent, ends in the wait's timeout: the requester then checks whether
@@ -31,13 +33,13 @@
  * also noticed by the `ci/build` cleanup function, which releases its lock and
  * sends a `failed` `ci/build.done`.
  *
- * A wait that nobody ends keeps its run open, so a requester that found the
- * snapshot by its look sends the event its wait is for, with that snapshot.
+ * A requester that found the snapshot by its look leaves its wait unawaited and
+ * returns: the run completes and the executor drops the wait with it.
  *
  * @module
  */
 
-import { group, NonRetriableError } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { lookupBeforeBuild } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
@@ -162,7 +164,7 @@ export const requestBuild = async ({
 
   for (let round = 0; ; round++) {
     const label = round === 0 ? "" : ` (round ${round})`;
-    const { result, wake, woken } = await waitAndLook({
+    const { result, wake } = await waitAndLook({
       run,
       path,
       config,
@@ -177,8 +179,7 @@ export const requestBuild = async ({
       return result;
     }
 
-    // A build that ended while the look ran has already answered.
-    if (ask && !woken()) {
+    if (ask) {
       run.ci.hooks.activity(run, path, "asking for a build…");
 
       await run.step.sendEvent(
@@ -347,11 +348,12 @@ const announce = async (
 };
 
 /**
- * One round's start: save the wait for the lock's `ci/build.done`, look the
- * snapshot up, and say what the look found. The one place that holds the
+ * One round's start: save the wait for the lock's `ci/build.done`, then look
+ * the snapshot up, and say what the look found. The one place that holds the
  * wait-beside-look logic, so a change to how a round starts is a change here.
- * On a hit the result is returned (and announced, to end the wait); on a miss
- * `result` is undefined and the caller goes on with `wake`.
+ * On a hit the result is returned and the wait is left unawaited, for the run
+ * to complete over; on a miss `result` is undefined and the caller goes on with
+ * `wake`.
  */
 const waitAndLook = async ({
   run,
@@ -377,63 +379,31 @@ const waitAndLook = async ({
   result?: CacheBuildResult;
   /** The wait: the build's event, or null when it ran out. */
   wake: Promise<{ data?: unknown } | null>;
-  /** Whether the wait has already been answered. */
-  woken: () => boolean;
 }> => {
-  let answered = false;
-  let wake: Promise<{ data?: unknown } | null> | undefined;
+  // Planned first and not awaited, so it is in the same batch as the look or an
+  // earlier one, and the executor saves it before it runs the look.
+  const wake: Promise<{ data?: unknown } | null> = run.step.waitForEvent(
+    ciStep(
+      joinId(stepPath, `build:wait${label}`),
+      traceName.waitForBuild(path),
+    ),
+    {
+      event: buildDoneEvent,
+      if: `async.data.name == '${name}'`,
+      timeout: run.ci.buildWait,
+    },
+  );
 
-  // The wait is planned beside the look, in a race so the run goes on when the
-  // look is done instead of when the wait is: the executor saves the wait
-  // first, and a wait nobody has ended does not hold the look back.
-  const found = await group.parallel({ mode: "race" }, async () => {
-    wake = run.step
-      .waitForEvent(
-        ciStep(
-          joinId(stepPath, `build:wait${label}`),
-          traceName.waitForBuild(path),
-        ),
-        {
-          event: buildDoneEvent,
-          if: `async.data.name == '${name}'`,
-          timeout: run.ci.buildWait,
-        },
-      )
-      .then((event: { data?: unknown } | null) => {
-        answered = true;
-
-        return event;
-      });
-
-    return lookupBeforeBuild(
-      run,
-      { id: config.id, path, stepPath: `${stepPath}${label}` },
-      config.cache,
-      target,
-    );
-  });
-
-  if (!wake) {
-    throw new Error("The wait for a build was not planned.");
-  }
-
-  const woken = () => {
-    return answered;
-  };
+  const found = await lookupBeforeBuild(
+    run,
+    { id: config.id, path, stepPath: `${stepPath}${label}` },
+    config.cache,
+    target,
+  );
 
   if (!found) {
-    return { wake, woken };
+    return { wake };
   }
 
-  const result = reused(found);
-
-  // Its wait keeps this run open until something ends it, so say what it is
-  // for. It is also true, and others waiting are glad of it.
-  await announce(run, joinId(stepPath, `build:found${label}`), {
-    name,
-    status: "ready",
-    result,
-  });
-
-  return { result, wake, woken };
+  return { result: reused(found), wake };
 };

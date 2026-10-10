@@ -80,6 +80,10 @@ import {
  * step, so jobs run independently. It's deprecated in favour of
  * `group.parallel({ mode: "race" })`, but that stops steps running inline and
  * added a 15-20s gap between a job's steps on a real run.
+ *
+ * It also lets a run register a `waitForEvent` beside a `step.run` (the build
+ * lock's wait and look) without the executor holding the look until the wait
+ * ends.
  */
 export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
 

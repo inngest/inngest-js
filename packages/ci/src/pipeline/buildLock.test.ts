@@ -247,6 +247,7 @@ describe("runs that miss the same cached job together", () => {
     await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
 
     const before = sentOf(bus, buildRequestedEvent).length;
+    const doneBefore = sentOf(bus, buildDoneEvent).length;
     const second = await runFunction(pipeline, {
       event: prEvent,
       runId: "01SECOND",
@@ -255,6 +256,19 @@ describe("runs that miss the same cached job together", () => {
     expect(second.type).toBe("function-resolved");
     expect(installs(api)).toBe(1);
     expect(sentOf(bus, buildRequestedEvent)).toHaveLength(before);
+
+    // The wait is left behind, not answered by the run, and gone once it ends.
+    expect(sentOf(bus, buildDoneEvent)).toHaveLength(doneBefore);
+    expect(bus.waiting).toBe(0);
+
+    // The wait is planned in the batch of the look, ahead of it.
+    const batch = second.batches.find((ids) => {
+      return ids.some((id) => id.includes("build:wait"));
+    });
+
+    expect(batch?.findIndex((id) => id.includes("build:wait"))).toBeLessThan(
+      batch?.findIndex((id) => id.includes("lookup")) ?? -1,
+    );
   });
 });
 
@@ -293,7 +307,7 @@ describe("the order of the wait, the look and the request", () => {
     const api = createFakeSandboxApi();
     const { snapshot, done } = await learn(api);
     const { pipeline, bus } = setup(api);
-    let calls = 0;
+    let sentDone = false;
 
     const result = await runFunction(pipeline, {
       event: prEvent,
@@ -301,9 +315,8 @@ describe("the order of the wait, the look and the request", () => {
       // The wait is saved and the look misses, then a build that finished
       // meanwhile takes its snapshot and sends its event.
       beforeRequest: () => {
-        calls++;
-
-        if (calls === 3) {
+        if (!sentDone && bus.waiting > 0) {
+          sentDone = true;
           api.snapshots.set(snapshot.id, snapshot);
           bus.send({ name: buildDoneEvent, data: done.data });
         }

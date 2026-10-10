@@ -486,7 +486,7 @@ const driveFunction = async (
   // rest. Their outcomes are only recorded between requests, so a request
   // never sees state change underneath it.
   const inflight = new Map<string, Promise<void>>();
-  const waits = new Set<string>();
+  const drops = new Set<() => void>();
   const started = new Set<string>();
 
   const finished: Array<{
@@ -522,21 +522,13 @@ const driveFunction = async (
 
     const result = await request();
 
-    // A wait nothing has ended keeps its run open, even for a function that
-    // never awaited it: the executor finishes a run only once its steps have.
-    if (result.type === "function-resolved" && waits.size > 0) {
-      await untilSettled(bus, () => {
-        return Promise.race(
-          [...waits].map((id) => {
-            return inflight.get(id);
-          }),
-        );
-      });
-
-      continue;
-    }
-
     if (result.type === "function-resolved") {
+      // A wait nothing has ended does not hold the run open: the run completes
+      // and the executor drops the wait.
+      for (const drop of drops) {
+        drop();
+      }
+
       return {
         type: result.type,
         data: result.data,
@@ -641,17 +633,21 @@ const driveFunction = async (
 
         const wait = planned.opts as { timeout: string; if?: string };
 
-        waits.add(planned.id);
+        const pause = bus.pause(
+          String(planned.name),
+          wait.if,
+          durationMs(wait.timeout),
+        );
+
+        drops.add(pause.drop);
 
         inflight.set(
           planned.id,
-          bus
-            .pause(String(planned.name), wait.if, durationMs(wait.timeout))
-            .then((matched) => {
-              finished.push({ planned, outcome: { data: matched } });
-              inflight.delete(planned.id);
-              waits.delete(planned.id);
-            }),
+          pause.event.then((matched) => {
+            finished.push({ planned, outcome: { data: matched } });
+            inflight.delete(planned.id);
+            drops.delete(pause.drop);
+          }),
         );
 
         continue;

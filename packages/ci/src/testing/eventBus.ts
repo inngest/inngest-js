@@ -79,15 +79,20 @@ export class EventBus {
   private blocked = 0;
   private version = 0;
 
-  /** Save a pause, as the executor does when it handles a wait. */
+  /**
+   * Save a pause, as the executor does when it handles a wait. `drop` removes
+   * it unanswered, as the executor does when its run completes.
+   */
   pause(
     name: string,
     expression: string | undefined,
     timeoutMs: number,
-  ): Promise<BusEvent | null> {
+  ): { event: Promise<BusEvent | null>; drop: () => void } {
     this.version++;
 
-    return new Promise((resolve) => {
+    let saved: Pause | undefined;
+
+    const event = new Promise<BusEvent | null>((resolve) => {
       const pause: Pause = {
         name,
         expression,
@@ -101,8 +106,24 @@ export class EventBus {
         },
       };
 
+      saved = pause;
       this.pauses.add(pause);
     });
+
+    return {
+      event,
+      drop: () => {
+        if (saved) {
+          this.pauses.delete(saved);
+          this.version++;
+        }
+      },
+    };
+  }
+
+  /** How many pauses are saved and unanswered. */
+  get waiting(): number {
+    return this.pauses.size;
   }
 
   /** Send an event: it resumes the pauses that exist now, and no others. */
