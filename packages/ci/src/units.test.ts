@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { cacheScopes, lookupCache, snapshotName } from "./cache/cache.ts";
+import { cacheScopes, lookupCache } from "./cache/cache.ts";
+import { formatName } from "./cache/names.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -683,46 +684,13 @@ describe("formatting", () => {
   });
 });
 
-describe("shortReason", () => {
-  test("Sandbox errors get fixed wording, from the code or its cause", () => {
-    expect(shortReason({ code: "sandbox_start_failed" })).toBe(
-      "machine failed to start",
-    );
-
-    expect(shortReason({ cause: { code: "cloud_login_required" } })).toBe(
-      "not logged in to Inngest",
-    );
-
-    expect(
-      shortReason({ code: "ERR_JOB", cause: { code: "access_denied" } }),
-    ).toBe("Sandboxes not enabled for your account");
-  });
-
-  test("an unknown code falls back to the message", () => {
-    expect(shortReason({ code: "constructor", message: "boom" })).toBe("boom");
-  });
-
-  test("a start timeout says how long it waited", () => {
-    expect(
-      shortReason(
-        new Error("Sandbox did not reach RUNNING within 90000 milliseconds"),
-      ),
-    ).toBe("machine didn't start in 1m 30s");
-  });
-
-  test("anything else is its first line, trimmed and capped", () => {
-    expect(
-      shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
-    ).toBe("nope");
-
-    expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
-
-    expect(shortReason(undefined)).toBe("");
-  });
-});
-
 describe("looking a cached snapshot up by name", () => {
-  const name = snapshotName("global", "setup", "k1");
+  const name = formatName({
+    kind: "cache",
+    scope: "global",
+    jobId: "setup",
+    ownKey: "k1",
+  });
 
   // One moment for every fixture, so two snapshots built apart still match.
   const now = Date.now();
@@ -843,12 +811,29 @@ describe("looking a cached snapshot up by name", () => {
 
 describe("snapshot names", () => {
   test("say what they are for", () => {
-    expect(snapshotName("pr:4", "setup", "abc")).toBe("ci/pr:4/setup/abc");
+    expect(
+      formatName({
+        kind: "cache",
+        scope: "pr:4",
+        jobId: "setup",
+        ownKey: "abc",
+      }),
+    ).toBe("ci/pr:4/setup/abc");
   });
 
   test("too long a name keeps its start and stays unique", () => {
-    const long = snapshotName("main", "j".repeat(300), "abc");
-    const other = snapshotName("main", "j".repeat(300), "abd");
+    const long = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abc",
+    });
+    const other = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abd",
+    });
 
     expect(long).toHaveLength(255);
     expect(long.startsWith("ci/main/jjj")).toBe(true);

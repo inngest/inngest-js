@@ -6,6 +6,8 @@
 
 import type { Inngest } from "inngest";
 import type { PipelineConfig } from "../types.ts";
+import { ciStepOptions } from "./metadata.ts";
+import { steps } from "./names.ts";
 
 /**
  * Re-run a pipeline from a GitHub check's "Re-run" button.
@@ -70,7 +72,7 @@ export const rerunEventFor = async ({
   const delivery: string | undefined =
     event?.data?._github?.delivery ?? event?.id;
 
-  return step.run("resend-trigger", async () => {
+  return step.run(ciStepOptions(steps.resendTrigger()), async () => {
     const { octokitForRun } = await import("../github/rest.ts");
 
     const [owner, repo] = String(repository.full_name).split("/") as [

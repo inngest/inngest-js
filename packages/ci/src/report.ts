@@ -4,7 +4,8 @@
  * @module
  */
 
-import { traceName } from "./pipeline/names.ts";
+import { ciRun } from "./pipeline/metadata.ts";
+import { steps } from "./pipeline/names.ts";
 import {
   countApi,
   getJobScope,
@@ -44,7 +45,7 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:summary");
 
-    await run.step.run({ id, name: traceName.addSummary }, () => {
+    await ciRun(run, steps.addSummary(id), () => {
       return {
         length: markdown.length,
       };
@@ -95,7 +96,7 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:annotate");
 
-    await run.step.run({ id, name: traceName.addAnnotations }, () => {
+    await ciRun(run, steps.addAnnotations(id, valid.length), () => {
       return {
         count: valid.length,
       };

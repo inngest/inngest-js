@@ -6,11 +6,7 @@
 
 import { waitForHttp, waitForPort } from "../checkout/wait.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
-import {
-  countApi,
-  requireJobScope,
-  scopeSeparator,
-} from "../pipeline/scope.ts";
+import { countApi, joinId, requireJobScope } from "../pipeline/scope.ts";
 import type { Duration, ExtraMachine, MachineConfig } from "../types.ts";
 import { createCommandTag } from "./command.ts";
 import { ensureMachine } from "./machine.ts";
@@ -53,7 +49,7 @@ export const sandbox = async (
   const job = requireJobScope("sandbox");
 
   countApi("sandbox");
-  const path = `${job.jobPath}${scopeSeparator}${name}`;
+  const path = joinId(job.jobPath, name);
 
   const existing = job.extras?.get(name);
 
