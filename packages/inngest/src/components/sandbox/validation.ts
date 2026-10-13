@@ -2,6 +2,7 @@ import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 
 import { isTemporalDuration } from "../../helpers/temporal.ts";
+import { isSandboxImage, type SandboxImage } from "./image.ts";
 import {
   type SandboxCommand,
   type SandboxCommandOptions,
@@ -537,6 +538,9 @@ export const normalizeSandboxCreateOptions = (
           vcpu: z.number().int().positive().max(0xffffffff),
           memoryMb: z.number().int().positive().max(0xffffffff),
           image: sandboxImageSchema.optional(),
+          from: z
+            .custom<SandboxImage>(isSandboxImage, "must be made by `image`")
+            .optional(),
           environment: z.record(z.string()).optional(),
           secrets: z.array(sandboxSecretNameSchema).optional(),
           runningTimeout: z.unknown().optional(),
@@ -572,9 +576,15 @@ export const normalizeSandboxCreateOptions = (
     }
     validateSandboxEnvironment(environment);
   }
-  const { runningTimeout, ...create } = parsed;
+  const { runningTimeout, from, ...create } = { from: undefined, ...parsed };
+  if (from !== undefined && "image" in create && create.image !== undefined) {
+    throw new SandboxValidationError("use either `from` or `image`, not both");
+  }
   return {
     ...create,
+    ...(from !== undefined && {
+      image: parseWithSchema(sandboxImageSchema, from.ref, "sandbox image"),
+    }),
     runningTimeoutMs:
       runningTimeout === false
         ? false

@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxImage } from "./image.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -91,6 +92,12 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   image?: string;
 
   /**
+   * The image to start from: `image.inngest("base")` (the default) or
+   * `image.custom(ref)`. Cannot be combined with `image` or snapshotId.
+   */
+  from?: SandboxImage;
+
+  /**
    * Literal environment inherited by commands and managed processes. Values
    * are persisted as sandbox configuration. Use `secrets` for workspace secret
    * references. Guest defaults are retained, and operation-specific values
@@ -118,6 +125,7 @@ export interface SandboxCreateFromSnapshotOptions
   extends SandboxCreateBaseOptions {
   snapshotId: string;
   image?: never;
+  from?: never;
   vcpu?: never;
   memoryMb?: never;
   environment?: never;
