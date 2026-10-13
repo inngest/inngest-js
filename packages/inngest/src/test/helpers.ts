@@ -153,6 +153,7 @@ export const runFnWithStack = async (
       client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
+        runId: "run",
         attempt: opts?.attempt,
         maxAttempts: opts?.maxAttempts,
       }),
