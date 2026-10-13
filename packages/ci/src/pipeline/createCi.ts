@@ -34,6 +34,7 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { devServerRunUrl } from "../util.ts";
 import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
 import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
@@ -401,7 +402,7 @@ const defaultRunUrl = (client: Inngest.Any, isDev: () => boolean) => {
         process.env.INNGEST_BASE_URL ??
         "http://localhost:8288";
 
-      return `${base.replace(/\/$/, "")}/run?runID=${runId}`;
+      return devServerRunUrl(base, runId);
     }
 
     const env =
