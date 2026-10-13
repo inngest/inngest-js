@@ -11,7 +11,7 @@
  */
 
 import type { CheckConclusion, JobConfig } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { boundedName, formatDuration } from "../util.ts";
 import { version } from "../version.ts";
 import type { StepTag } from "./metadata.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
@@ -258,6 +258,22 @@ export const steps = {
       id: joinId("github", "pr:resolve"),
       name: "pr:resolve",
       unmarked: true,
+    };
+  },
+
+  resolveDefaultBranch: (fullName: string): StepSpec => {
+    return {
+      id: boundedName(
+        joinId("github", `default-branch:${fullName.toLowerCase()}`),
+      ),
+      name: "Resolve ref",
+    };
+  },
+
+  resolveRef: (key: string): StepSpec => {
+    return {
+      id: boundedName(joinId("github", `ref:${key}`)),
+      name: "Resolve ref",
     };
   },
 
