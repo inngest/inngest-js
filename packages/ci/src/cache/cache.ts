@@ -40,6 +40,7 @@ import {
   formatRelative,
   hash,
   isSnapshotNotFound,
+  parseRepo,
   stableStringify,
 } from "../util.ts";
 import { formatName } from "./names.ts";
@@ -897,6 +898,11 @@ export const files = (
   const list: (string | FilesOptions)[] = args;
   const last = list.at(-1);
   const options = typeof last === "object" ? last : undefined;
+
+  // Checked here, where the pipeline is defined, so a bad `repo` fails at boot.
+  if (options?.repo) {
+    parseRepo(options.repo);
+  }
 
   const patterns = list.filter((arg): arg is string => {
     return typeof arg === "string";

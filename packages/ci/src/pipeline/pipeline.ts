@@ -233,7 +233,6 @@ const newRunScope = ({
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
     sources: new Map(),
-    defaultBranches: new Map(),
     definedJobs: new Set(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),

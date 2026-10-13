@@ -126,7 +126,8 @@ const statusOf = (error: unknown): number | undefined => {
 
 /**
  * Return when an error means GitHub can't see the repository (a 403 that isn't
- * a rate limit, or a 404). Throw anything else: rate limits as retries, server
+ * a rate limit, a 404, or the 422 of a token request narrowed to a repository
+ * outside the installation). Throw anything else: rate limits as retries, server
  * errors as they are, and other client errors as non-retriable.
  */
 const throwUnlessMissing = (error: unknown): void => {
@@ -135,7 +136,7 @@ const throwUnlessMissing = (error: unknown): void => {
 
   if (
     mapped instanceof NonRetriableError &&
-    (status === 403 || status === 404)
+    (status === 403 || status === 404 || status === 422)
   ) {
     return;
   }
@@ -198,17 +199,17 @@ const locate = async <T>(
   }
 };
 
-/** The commit a ref points at, in a repository this client can read. */
+/** The commit a ref (default: the default branch) points at, in a repository this client can read. */
 const readCommit = async (
   octokit: Octokit,
   source: ResolvedSource,
-  ref: string,
+  ref: string | undefined,
 ): Promise<string> => {
   try {
     const { data } = await octokit.rest.repos.getCommit({
       owner: source.owner,
       repo: source.name,
-      ref,
+      ref: ref ?? "HEAD",
     });
 
     return data.sha;
@@ -236,44 +237,13 @@ const readCommit = async (
 };
 
 /**
- * The default branch's name, from one step per repository per run. `repo` and
- * `ref: "<default branch>"` then share one commit step, keyed on the branch.
- */
-const defaultBranch = (run: CiRunScope, fullName: string): Promise<string> => {
-  return once(run.defaultBranches, fullName.toLowerCase(), () => {
-    return inGitHubSpan(run, () => {
-      return ciRun(run, steps.resolveDefaultBranch(fullName), async () => {
-        const { value } = await locate(
-          run,
-          fullName,
-          async (octokit, source) => {
-            const { data } = await octokit.rest.repos.get({
-              owner: source.owner,
-              repo: source.name,
-            });
-
-            return data.default_branch;
-          },
-        );
-
-        if (!value) {
-          throw notFoundError(fullName, undefined);
-        }
-
-        return value;
-      });
-    });
-  });
-};
-
-/**
  * Resolve what a caller asked to read to a commit.
  *
  * The run's own repository and commit come straight from the run. Anything
  * else is looked up in memoized steps, in the run's GitHub span rather than
  * whichever job asked first, so every replay and every job sees the same
- * commit: one step finds a repository's default branch when no `ref` is given,
- * and one step per repository and branch finds the commit. Call it outside a
+ * commit: one step per repository and ref finds the commit, where no `ref` means
+ * the repository's default branch. Call it outside a
  * step: a step can't start another. Called again for what it already resolved,
  * it starts nothing, so a step can call it.
  */
@@ -305,8 +275,8 @@ export const resolveSource = async (
   // and not something a step retries.
   providerOf(run);
 
-  const ref = spec.ref ?? (await defaultBranch(run, fullName));
-  const key = sourceKey(fullName, ref);
+  const { ref } = spec;
+  const key = sourceKey(fullName, ref ?? "HEAD");
 
   return once(run.sources, key, () => {
     return inGitHubSpan(run, () => {

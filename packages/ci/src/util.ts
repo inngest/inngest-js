@@ -390,7 +390,7 @@ export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
-const ownerPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]*)$/;
+const ownerPattern = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 const namePattern = /^[A-Za-z0-9._-]+$/;
 

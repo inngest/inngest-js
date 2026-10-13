@@ -252,12 +252,6 @@ export interface CiRunScope {
    * run. It holds promises and nothing else.
    */
   sources: Map<string, Promise<ResolvedSource>>;
-  /**
-   * The default branch of each repository `checkout()` and `files()` have
-   * asked for without a `ref`, keyed by repository, so a repository's default
-   * branch is found by one step per run. It holds promises and nothing else.
-   */
-  defaultBranches: Map<string, Promise<string>>;
   /** The IDs of the jobs defined in this run, which must be unique. */
   definedJobs: Set<string>;
   /** How many direct calls of each job have started, keyed by job ID. */
