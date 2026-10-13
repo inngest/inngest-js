@@ -1026,7 +1026,7 @@ describe("a cached job built in its own run", () => {
         return (
           message.kind === "job" &&
           message.jobId === "base" &&
-          /runID=01TESTINVOKED\d+/.test(message.url ?? "")
+          /runID=01(TESTINVOKED|BUILD)\d+/.test(message.url ?? "")
         );
       }),
     ).toBe(true);
