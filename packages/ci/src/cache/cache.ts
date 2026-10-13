@@ -11,6 +11,7 @@
  */
 
 import { NonRetriableError } from "inngest";
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
@@ -18,7 +19,6 @@ import {
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
-import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ciRun, warnStep } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -34,8 +34,8 @@ import type {
   RepoContext,
 } from "../types.ts";
 import {
-  filterPaths,
   durationToMs,
+  filterPaths,
   formatRelative,
   hash,
   isSnapshotNotFound,

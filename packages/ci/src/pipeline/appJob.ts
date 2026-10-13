@@ -79,6 +79,7 @@ export const requestAppJob = async (
     // One request per job and input at a time, so a burst of apps asking for
     // the same job builds it once.
     cacheKey: stepId,
+    slot: stepId,
     resolve,
     rootRunId: rootRunIdOf(run),
     parent: buildParent(run, stepId),

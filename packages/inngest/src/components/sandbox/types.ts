@@ -1,7 +1,7 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
-import type { SandboxToolsOptions } from "./tools.ts";
 import type { SandboxImage } from "./image.ts";
+import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 

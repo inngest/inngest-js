@@ -413,6 +413,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
       config,
       target,
       data,
+      asParent,
       reused: (hit) => {
         return reusedBuild(config, target, hit);
       },

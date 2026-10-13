@@ -25,6 +25,7 @@ import {
   type SandboxWaitUntilRunningOptions,
 } from "./types.ts";
 
+export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
 export const defaultSandboxRunningTimeoutMs = 120 * 1_000;
 export const maxSandboxProcessTailBytes = 512 * 1_024;

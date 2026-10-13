@@ -101,6 +101,7 @@ export const requestBuild = async ({
   target,
   data,
   reused,
+  asParent,
 }: {
   run: CiRunScope;
   /** The job's path here, which is where the activity goes. */
@@ -113,6 +114,8 @@ export const requestBuild = async ({
   data: CacheBuildData;
   /** What a build gives back for a snapshot that is found. */
   reused: (cached: CachedSnapshot) => CacheBuildResult;
+  /** Whether the job is a `from` parent, which a miss on its lookup warns about. */
+  asParent?: boolean;
 }): Promise<CacheBuildResult> => {
   const name = lockMachineName(target.name);
 
@@ -173,6 +176,7 @@ export const requestBuild = async ({
       label,
       stepPath,
       reused,
+      asParent,
     });
 
     if (result) {
@@ -364,6 +368,7 @@ const waitAndLook = async ({
   label,
   stepPath,
   reused,
+  asParent,
 }: {
   run: CiRunScope;
   path: string;
@@ -375,6 +380,7 @@ const waitAndLook = async ({
   label: string;
   stepPath: string;
   reused: (cached: CachedSnapshot) => CacheBuildResult;
+  asParent?: boolean;
 }): Promise<{
   result?: CacheBuildResult;
   /** The wait: the build's event, or null when it ran out. */
@@ -396,7 +402,7 @@ const waitAndLook = async ({
 
   const found = await lookupBeforeBuild(
     run,
-    { id: config.id, path, stepPath: `${stepPath}${label}` },
+    { id: config.id, path, stepPath: `${stepPath}${label}`, asParent },
     config.cache,
     target,
   );

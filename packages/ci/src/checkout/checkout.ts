@@ -6,6 +6,7 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
   resolveSource,
@@ -13,7 +14,6 @@ import {
   targetsRunRepo,
   tokenForSource,
 } from "../github/source.ts";
-import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
@@ -143,7 +143,7 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
       return plan.fill(machine);
     });
 
-    if ("treeId" in result) {
+    if ("treeId" in result && typeof result.treeId === "string") {
       rememberTree(machine, result.treeId);
     }
 

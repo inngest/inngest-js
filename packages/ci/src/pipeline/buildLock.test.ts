@@ -148,6 +148,7 @@ const plantLock = (api: Api, lock: string, owner: string): string => {
     vcpu: 2,
     memoryMb: 2048,
     environment: { INNGEST_CI_LOCK_OWNER: owner },
+    files: new Map(),
   });
 
   return id;
