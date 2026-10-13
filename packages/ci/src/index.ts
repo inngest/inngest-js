@@ -101,6 +101,7 @@ export type {
   Duration,
   EventDataOf,
   ExtraMachine,
+  FilesOptions,
   FlowControlOptions,
   From,
   Job,

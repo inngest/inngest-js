@@ -51,6 +51,30 @@ const test = ci.job({ id: "test", from: base }, async () => {
 
 A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
 
+## Another repository or ref
+
+`checkout()` and `files()` take `repo` and `ref`. A ref is a branch, tag or commit, and it's resolved to a commit once per run.
+
+```ts
+await checkout({ repo: "acme/platform" });                // default branch
+await checkout({ repo: "acme/platform", ref: "v2.1.0" });
+await checkout({ ref: "main" });                          // this repository
+
+const image = ci.job(
+  {
+    id: "image",
+    cache: {
+      key: files("images/node-base/**", { repo: "acme/platform", ref: "main" }),
+    },
+  },
+  async () => {
+    await checkout({ repo: "acme/platform", ref: "main" });
+  },
+);
+```
+
+A run whose trigger has no repository, like a cron, needs `repo`. The GitHub App must have access to the repository. Locally, `checkout()` still uploads your working tree unless you name another repository or a `ref`.
+
 ## Install
 
 ```bash
