@@ -9,8 +9,9 @@
  * - Small payloads ride in the command itself. Large ones are uploaded to a
  *   file first, and the command reads that.
  * - The wrapper prints the JSON of the returned value behind a sentinel as
- *   the last thing on stdout, and `parseRunnerOutput` splits it back off, so
- *   anything the snippet prints stays in `stdout`.
+ *   the last thing on stdout once the process exits cleanly, and
+ *   `parseRunnerOutput` splits it back off, so anything the snippet prints
+ *   stays in `stdout`, even output scheduled after it returned.
  *
  * Everything here is pure: running the command and uploading the file is the
  * caller's job.
@@ -83,11 +84,16 @@ const arg = process.argv.at(-1);
 const payload = JSON.parse(arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8") : arg);
 
 const names = Object.keys(payload.input);
-const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}");
+const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}", { mode: "transform" });
 const main = new Function(source + "\nreturn __inngest_main;")();
 
+let frame = "";
+process.on("exit", (code) => {
+  if (code === 0) process.stdout.write(frame);
+});
+
 main(...Object.values(payload.input)).then((result) => {
-  process.stdout.write("\n${resultSentinel}" + (JSON.stringify(result) ?? "") + "\n");
+  frame = "\n${resultSentinel}" + (JSON.stringify(result) ?? "") + "\n";
 });
 `;
 
@@ -132,7 +138,11 @@ const describe = (value: unknown): string => {
   return value.constructor?.name ?? "object";
 };
 
-const assertJson = (value: unknown, path: string): void => {
+const assertJson = (
+  value: unknown,
+  path: string,
+  ancestors: unknown[] = [],
+): void => {
   if (
     value === null ||
     typeof value === "string" ||
@@ -142,9 +152,18 @@ const assertJson = (value: unknown, path: string): void => {
     return;
   }
 
+  if (ancestors.includes(value)) {
+    throw new SandboxValidationError(
+      `${path} must be a JSON value, got a circular reference`,
+    );
+  }
+
+  const parents = [...ancestors, value];
+
   if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      assertJson(item, `${path}[${index}]`);
+    // `Array.from` turns empty slots into `undefined`, which is rejected.
+    Array.from(value).forEach((item, index) => {
+      assertJson(item, `${path}[${index}]`, parents);
     });
 
     return;
@@ -154,7 +173,7 @@ const assertJson = (value: unknown, path: string): void => {
     typeof value === "object" ? Object.getPrototypeOf(value) : undefined;
   if (prototype === Object.prototype || prototype === null) {
     for (const [key, item] of Object.entries(value as object)) {
-      assertJson(item, `${path}.${key}`);
+      assertJson(item, `${path}.${key}`, parents);
     }
 
     return;
@@ -209,15 +228,16 @@ export const buildRunner = ({
 
 /**
  * Splits a runner's stdout into what the snippet printed and what it
- * returned. `result` is undefined when it returned nothing or never got that
- * far.
+ * returned. `result` is undefined when it returned nothing or the command
+ * failed, whatever it printed.
  */
 export const parseRunnerOutput = (
   stdout: string,
+  exitCode: number | null,
 ): { stdout: string; result?: unknown } => {
   const marker = `\n${resultSentinel}`;
   const index = stdout.lastIndexOf(marker);
-  if (index === -1) {
+  if (exitCode !== 0 || index === -1) {
     return { stdout };
   }
 
