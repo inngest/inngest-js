@@ -453,6 +453,7 @@ export const traceName = {
   createFreshMachine: "Create sandbox (fresh)",
   retryCreate: "Retry create",
   prepareWorkspace: "Prepare workspace",
+  saveSnapshotMeta: "Save snapshot metadata",
   saveMachine: "Save sandbox",
   snapshotMachine: "Snapshot sandbox",
 

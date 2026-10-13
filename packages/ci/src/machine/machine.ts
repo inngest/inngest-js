@@ -31,6 +31,12 @@ import { inSpan } from "../pipeline/spans.ts";
 import type { CacheConfig, MachineConfig } from "../types.ts";
 import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
 import { deleteSnapshots, listSandboxes } from "./admin.ts";
+import type { SnapshotMeta } from "./snapshotMeta.ts";
+import {
+  parseSnapshotMeta,
+  readSnapshotMetaScript,
+  saveSnapshotMeta,
+} from "./snapshotMeta.ts";
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -112,7 +118,8 @@ const machineName = (runId: string, path: string): string => {
 };
 
 /**
- * Run once on every machine before its first command.
+ * Run once on every machine before its first command. It prints the
+ * snapshot's metadata, which a machine started from a snapshot has.
  *
  * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
  * - Commands run in `/work` by default, and a sandbox won't start a process in
@@ -123,7 +130,7 @@ const machineName = (runId: string, path: string): string => {
  *   and `waitForHttp`/`waitForPort`. Bringing it up is a no-op once the
  *   platform does it itself.
  */
-export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
+export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true) && ${readSnapshotMetaScript}`;
 
 /**
  * The stages a machine is started in. Only the first is tried every time:
@@ -141,6 +148,13 @@ type Stage = keyof typeof stages;
 
 type Sandbox = MachineHandle["sandbox"];
 
+/** A machine that has started and been set up. */
+interface Started {
+  sandbox: Sandbox;
+  /** What the snapshot it started from says about itself, if it started from one. */
+  meta?: SnapshotMeta;
+}
+
 /**
  * Create this scope's machine, from the snapshot it starts from if it has one.
  *
@@ -153,19 +167,20 @@ export const startMachine = async (
   /** The first stage's step ID, which the other stages build on. */
   stepId: string,
 ): Promise<MachineHandle> => {
-  const sandbox = await startSandbox(scope, stepId);
+  const { sandbox, meta } = await startSandbox(scope, stepId);
 
   return {
     sandbox,
     name: machineName(scope.run.runId, scope.path),
     id: sandbox.id,
+    meta,
   };
 };
 
 const startSandbox = async (
   scope: CiJobScope,
   stepId: string,
-): Promise<Sandbox> => {
+): Promise<Started> => {
   const { run } = scope;
   const tools = run.sandboxTools;
 
@@ -191,7 +206,7 @@ const startSandbox = async (
   };
 
   /** Create a machine at a stage, from a snapshot if one is given, and set it up. */
-  const start = async (stage: Stage, snapshotId?: string): Promise<Sandbox> => {
+  const start = async (stage: Stage, snapshotId?: string): Promise<Started> => {
     const step = { id: idOf(stage), name: stages[stage] };
     const name = nameOf(stage);
 
@@ -200,12 +215,16 @@ const startSandbox = async (
       snapshotId ? { name, snapshotId } : { name, ...machineConfig },
     );
 
-    await sandbox.commands.run(
+    const setup = await sandbox.commands.run(
       { id: joinId(step.id, "setup"), name: traceName.prepareWorkspace },
       ["/bin/sh", "-c", machineSetupScript],
     );
 
-    return sandbox;
+    const meta = snapshotId
+      ? parseSnapshotMeta(setup?.stdout ?? "")
+      : undefined;
+
+    return { sandbox, meta };
   };
 
   /**
@@ -216,7 +235,7 @@ const startSandbox = async (
   const restore = async (
     stage: Stage,
     snapshotId: string,
-  ): Promise<{ started: Sandbox } | { failure: unknown }> => {
+  ): Promise<{ started: Started } | { failure: unknown }> => {
     try {
       return { started: await start(stage, snapshotId) };
     } catch (failure) {
@@ -230,7 +249,7 @@ const startSandbox = async (
     }
   };
 
-  const startFresh = (note: string): Promise<Sandbox> => {
+  const startFresh = (note: string): Promise<Started> => {
     scope.fromSnapshotId = undefined;
     scope.startNote = note;
     scope.restoreFallback = scope.rebuildParent;
@@ -532,6 +551,15 @@ const takeSnapshot = async (
   cache: SnapshotCache | undefined,
 ): Promise<TakenSnapshot | undefined> => {
   run.ci.hooks.activity(run, jobPath, "snapshotting machine…");
+
+  await saveSnapshotMeta(
+    handle.sandbox,
+    {
+      id: joinId(jobPath, "snapshot:meta"),
+      name: traceName.saveSnapshotMeta,
+    },
+    handle.meta ?? {},
+  );
 
   const stepId = joinId(jobPath, "snapshot");
 

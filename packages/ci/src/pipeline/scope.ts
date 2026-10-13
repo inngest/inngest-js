@@ -13,6 +13,7 @@ import type { NamePolicy } from "../cache/namePolicy.ts";
 import { policyFromFlags } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -122,6 +123,12 @@ export interface MachineHandle {
    * ambiguous start never adopts one of them.
    */
   claimedProcessIds?: Set<string>;
+  /**
+   * What CI knows about the machine beyond the sandbox itself, from the
+   * snapshot it started from or its own `checkout()`. It's written into the
+   * machine's snapshots.
+   */
+  meta?: SnapshotMeta;
 }
 
 /** What a build run is asked to build, from the data it was invoked with. */
