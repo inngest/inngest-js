@@ -187,6 +187,15 @@ export interface CacheConfig {
    * their own scope.
    */
   scope?: "branch" | "global";
+
+  /**
+   * How old a cached snapshot may be before it is rebuilt, like `"1d"`. A
+   * snapshot older than this, counted from when it was taken, is a miss: the
+   * job builds again and the new snapshot takes the name.
+   *
+   * Without it a snapshot is reused until its key changes or it expires.
+   */
+  maxAge?: Duration;
 }
 
 /**

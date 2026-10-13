@@ -51,6 +51,20 @@ const test = ci.job({ id: "test", from: base }, async () => {
 
 A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
 
+## Caching
+
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+
+```ts
+const base = ci.job(
+  { id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } },
+  async () => {
+    await checkout();
+    await $`pnpm install`;
+  },
+);
+```
+
 ## Install
 
 ```bash
