@@ -76,4 +76,12 @@ export {
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
+// Sandbox RPC callbacks (proof of concept)
+export type {
+  RunWithToolsCall,
+  RunWithToolsOptions,
+  RunWithToolsResult,
+  RunWithToolsStep,
+} from "./components/sandbox/rpc.ts";
+export { runWithTools } from "./components/sandbox/rpc.ts";
 export type { ExperimentRef } from "./types.ts";
