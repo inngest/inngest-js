@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot, resolveTakenName } from "./cache.ts";
+import { deleteSnapshot, resolveTakenName, usableFor } from "./cache.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -89,12 +89,16 @@ describe("deleteSnapshot", () => {
 
 describe("resolveTakenName", () => {
   /** A run whose only snapshot holds the name, recording what is deleted. */
-  const holding = (deleted: string[]): CiRunScope => {
+  const holding = (
+    deleted: string[],
+    /** When the holder was created, in place of now. */
+    createdAt = new Date().toISOString(),
+  ): CiRunScope => {
     const holder = {
       id: "main-snapshot",
       name: "ci/main/base/k",
       status: "READY",
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
 
     const snapshots = {
@@ -130,6 +134,7 @@ describe("resolveTakenName", () => {
       holding(deleted),
       "name-taken",
       "ci/main/base/k",
+      undefined,
       "main-snapshot",
     );
 
@@ -144,11 +149,71 @@ describe("resolveTakenName", () => {
       holding(deleted),
       "name-taken",
       "ci/main/base/k",
+      undefined,
       "main-snapshot",
       true,
     );
 
     expect(deleted).toEqual(["main-snapshot"]);
     expect(taken.cleared).toBe(true);
+  });
+
+  test("a holder that is too old is replaced without being known to be broken", async () => {
+    const deleted: string[] = [];
+
+    const taken = await resolveTakenName(
+      holding(deleted, "2020-01-01T00:00:00.000Z"),
+      "name-taken",
+      "ci/main/base/k",
+      { key: "k", maxAge: "1m" },
+    );
+
+    expect(deleted).toEqual(["main-snapshot"]);
+    expect(taken.cleared).toBe(true);
+  });
+});
+
+describe("usableFor", () => {
+  const ago = (ms: number): string => {
+    return new Date(Date.now() - ms).toISOString();
+  };
+
+  const soon = new Date(Date.now() + 60_000).toISOString();
+
+  test.each([
+    ["ready and fresh", undefined, undefined, {}, true],
+    ["still creating", undefined, undefined, { status: "CREATING" }, false],
+    ["the excluded one", undefined, "s1", {}, false],
+    ["about to expire", undefined, undefined, { expiresAt: soon }, false],
+    ["younger than maxAge", "1h", undefined, { createdAt: ago(60_000) }, true],
+    [
+      "older than maxAge",
+      "1h",
+      undefined,
+      { createdAt: ago(7_200_000) },
+      false,
+    ],
+    ["an unreadable createdAt", "1h", undefined, { createdAt: "?" }, true],
+    [
+      "old with no maxAge",
+      undefined,
+      undefined,
+      { createdAt: ago(1e10) },
+      true,
+    ],
+  ] as const)("%s", (_name, maxAge, exclude, overrides, expected) => {
+    const usable = usableFor(
+      maxAge ? { key: "k", maxAge } : undefined,
+      exclude,
+    );
+
+    expect(
+      usable({
+        id: "s1",
+        status: "READY",
+        createdAt: ago(0),
+        ...overrides,
+      }),
+    ).toBe(expected);
   });
 });

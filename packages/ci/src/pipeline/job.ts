@@ -37,7 +37,12 @@ import {
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  shortReason,
+} from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
@@ -95,6 +100,8 @@ export const defineJob = ({
       ? ({ ...given, [inlineKey]: true } as JobConfig)
       : given;
 
+  checkMaxAge(config);
+
   if (!run && jobs.has(config.id)) {
     throw new CiUsageError(
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
@@ -135,6 +142,29 @@ export const defineJob = ({
   ownJob(job, jobs);
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  try {
+    if (durationToMs(maxAge) <= 0) {
+      throw new Error("It must be longer than zero.");
+    }
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
@@ -916,6 +946,7 @@ const snapshotBuilt = async (
   const taken = await snapshotMachine(scope, {
     target,
     name,
+    cache: scope.config.cache,
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
 

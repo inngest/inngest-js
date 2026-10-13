@@ -35,6 +35,7 @@ import type {
 } from "../types.ts";
 import {
   filterPaths,
+  durationToMs,
   formatRelative,
   hash,
   isSnapshotNotFound,
@@ -414,6 +415,46 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
+/** The parts of a snapshot that decide whether a job may use it. */
+export interface SnapshotInfo {
+  id: string;
+  status: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/** Whether a job may use a snapshot. */
+export type Usable = (snapshot: SnapshotInfo) => boolean;
+
+/**
+ * What makes a snapshot usable: ready, not the one to avoid, not about to
+ * expire, and not older than the job's `cache.maxAge`. A new freshness rule is
+ * one more clause here. `defineJob` has already checked that `maxAge` parses.
+ */
+export const usableFor = (
+  cache: CacheConfig | undefined,
+  /** A snapshot that must not be used, though it may still hold the name. */
+  exclude?: string,
+): Usable => {
+  const maxAgeMs =
+    cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
+
+  return (snapshot) => {
+    const createdAt = Date.parse(snapshot.createdAt);
+    const tooOld =
+      maxAgeMs !== undefined &&
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt > maxAgeMs;
+
+    return (
+      snapshot.status === "READY" &&
+      snapshot.id !== exclude &&
+      !isExpiring(snapshot.expiresAt) &&
+      !tooOld
+    );
+  };
+};
+
 /** How long a lookup waits for a snapshot another build is still taking. */
 const readyWaitMs = 2 * 60 * 1000;
 const readyPollMs = 1000;
@@ -464,7 +505,8 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the build taking it, and not about to expire.
+ * ready after waiting for the build taking it, not about to expire, and not
+ * older than the job's max age.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -472,8 +514,7 @@ const waitUntilReady = async (
 export const findNamed = async (
   run: CiRunScope,
   name: string,
-  /** A snapshot that must not be used, though it may still hold the name. */
-  exclude?: string,
+  usable: Usable = usableFor(undefined),
 ): Promise<CachedSnapshot | undefined> => {
   try {
     const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
@@ -484,7 +525,8 @@ export const findNamed = async (
       return snapshot.name === name;
     });
 
-    if (!newest || newest.id === exclude) {
+    // Waiting is only worth it for a snapshot that would be usable once ready.
+    if (!newest || !usable({ ...newest, status: "READY" })) {
       return undefined;
     }
 
@@ -493,7 +535,7 @@ export const findNamed = async (
         ? await waitUntilReady(run, newest.id)
         : newest;
 
-    if (ready?.status !== "READY" || isExpiring(ready.expiresAt)) {
+    if (!ready || !usable(ready)) {
       return undefined;
     }
 
@@ -511,11 +553,13 @@ const findInScopes = async (
   ownKey: string,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
+  const usable = usableFor(cache, exclude);
+
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
       formatName({ kind: "cache", scope, jobId, ownKey }),
-      exclude,
+      usable,
     );
 
     if (found) {
@@ -594,7 +638,7 @@ const findCached = (
 ): Promise<CachedSnapshot | undefined> => {
   return cache
     ? findInScopes(run, jobId, cache, target.ownKey, exclude)
-    : findNamed(run, target.name, exclude);
+    : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
 /**
@@ -633,13 +677,16 @@ export const lookupBeforeBuild = async (
 
 /**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
- * step. If it can't be used, because it is about to expire or is the bad one
- * the build replaces, it is deleted so the build can take the name after all.
+ * step. If it can't be used, because it is about to expire, is older than the
+ * job's max age or is the bad one the build replaces, it is deleted so the
+ * build can take the name after all.
  */
 export const resolveTakenName = async (
   run: CiRunScope,
   stepId: string,
   name: string,
+  /** The job's `cache`, whose `maxAge` a holder may be past. */
+  cache?: CacheConfig,
   exclude?: string,
   /**
    * Whether `exclude` was decided to be broken, which is the only case where
@@ -652,7 +699,7 @@ export const resolveTakenName = async (
     run,
     steps.resolveCacheName(stepId),
     async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-      const winner = await findNamed(run, name, exclude);
+      const winner = await findNamed(run, name, usableFor(cache, exclude));
 
       if (winner) {
         return { winner, cleared: false };
@@ -665,9 +712,10 @@ export const resolveTakenName = async (
           items: SnapshotResource[];
         };
 
+        const usable = usableFor(cache);
+
         for (const holder of page.items) {
-          const unusable =
-            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
+          const unusable = (broken && holder.id === exclude) || !usable(holder);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;

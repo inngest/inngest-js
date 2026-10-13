@@ -105,6 +105,20 @@ ci.job({ id: "test", from: image.job("platform/node-base") }, async () => {
 
 The other app reads which repository and commit it was deployed from out of its host's variables (Vercel, Netlify, Render, Railway or GitHub Actions) or its git checkout. Both apps run `@inngest/ci` in the same Inngest environment.
 
+## Caching
+
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+
+```ts
+const base = ci.job(
+  { id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } },
+  async () => {
+    await checkout();
+    await $`pnpm install`;
+  },
+);
+```
+
 ## Install
 
 ```bash
