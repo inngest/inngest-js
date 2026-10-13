@@ -1,6 +1,6 @@
 /**
  * @module
- * Tests for the Python runner on a sandbox handle and on `step.sandbox`, with
+ * Tests for the Python and TypeScript runners on a sandbox handle and on `step.sandbox`, with
  * a fake sandbox API that answers every command with the output a test gives
  * it.
  */
@@ -9,6 +9,11 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
+
+const languages = [
+  { language: "python", title: "Python", binary: "python3" },
+  { language: "ts", title: "TypeScript", binary: "node" },
+] as const;
 
 const sentinel = "\n__INNGEST_RESULT__";
 
@@ -51,11 +56,11 @@ const runWith = async (
   return { ...run, calls, value };
 };
 
-describe("sandbox.python", () => {
+describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
   test.each(outputs)("returns $name", async ({ stdout, expected }) => {
     const { type, ran, value } = await runWith({ stdout }, (client, keep) => {
       return client.createFunction(
-        { id: "handle", triggers: [{ event: "runner/python" }] },
+        { id: "handle", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
           await using sandbox = await step.sandbox.create("box", {
             name: "box",
@@ -63,7 +68,7 @@ describe("sandbox.python", () => {
             memoryMb: 2048,
           });
 
-          keep(await sandbox.python("py", "return 1"));
+          keep(await sandbox[language]("py", "return 1"));
         },
       );
     });
@@ -73,10 +78,10 @@ describe("sandbox.python", () => {
     expect(value).toEqual(expected);
   });
 
-  test("passes the code and input to python3 as one payload", async () => {
+  test(`passes the code and input to ${binary} as one payload`, async () => {
     const { steps } = await runWith({}, (client) => {
       return client.createFunction(
-        { id: "payload", triggers: [{ event: "runner/python" }] },
+        { id: "payload", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
           const sandbox = await step.sandbox.create("box", {
             name: "box",
@@ -84,7 +89,7 @@ describe("sandbox.python", () => {
             memoryMb: 2048,
           });
 
-          await sandbox.python("py", "return n", { input: { n: 1 } });
+          await sandbox[language]("py", "return n", { input: { n: 1 } });
         },
       );
     });
@@ -93,7 +98,7 @@ describe("sandbox.python", () => {
       { input: [{ command: string[] }] },
     ];
 
-    expect(exec.input[0].command[0]).toBe("python3");
+    expect(exec.input[0].command[0]).toBe(binary);
     expect(exec.input[0].command.at(-1)).toBe(
       '{"code":"return n","input":{"n":1}}',
     );
@@ -105,7 +110,7 @@ describe("sandbox.python", () => {
       output: { exitCode: 1, stderr: "NameError: x" },
       code: "return x",
       input: undefined,
-      message: "Python exited with code 1:\nNameError: x",
+      message: `${title} exited with code 1:\nNameError: x`,
     },
     {
       name: "input that isn't JSON",
@@ -119,13 +124,13 @@ describe("sandbox.python", () => {
       output: {},
       code: "x".repeat(20_000),
       input: undefined,
-      message: "Python code and input must be under 16 KiB",
+      message: `${title} code and input must be under 16 KiB`,
     },
   ])("rejects $name", async ({ output, code, input, message }) => {
     let error: unknown;
     const { type } = await runWith(output, (client) => {
       return client.createFunction(
-        { id: "rejects", triggers: [{ event: "runner/python" }] },
+        { id: "rejects", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
           const sandbox = await step.sandbox.create("box", {
             name: "box",
@@ -134,7 +139,7 @@ describe("sandbox.python", () => {
           });
 
           try {
-            await sandbox.python("py", code, { input });
+            await sandbox[language]("py", code, { input });
           } catch (err) {
             error = err;
 
@@ -149,20 +154,20 @@ describe("sandbox.python", () => {
   });
 });
 
-describe("step.sandbox.python", () => {
+describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
   test.each(outputs)("returns $name", async ({ stdout, expected }) => {
     const { type, ran, steps, calls, value } = await runWith(
       { stdout },
       (client, keep) => {
         return client.createFunction(
-          { id: "one-shot", triggers: [{ event: "runner/python" }] },
+          { id: "one-shot", triggers: [{ event: "runner/code" }] },
           async ({ step }) => {
-            keep(await step.sandbox.python("py", "return 1"));
+            keep(await step.sandbox[language]("py", "return 1"));
           },
         );
       },
     );
-    const span = { id: "py", name: "Python py", kind: "python" };
+    const span = { id: "py", name: `${title} py`, kind: language };
 
     expect(type).toBe("function-resolved");
     expect(ran).toEqual(["py", "py:run", "py:destroy"]);
@@ -178,9 +183,9 @@ describe("step.sandbox.python", () => {
   test("creates the sandbox with the options it is given", async () => {
     const { steps } = await runWith({}, (client) => {
       return client.createFunction(
-        { id: "options", triggers: [{ event: "runner/python" }] },
+        { id: "options", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          await step.sandbox.python("py", "return 1", {
+          await step.sandbox[language]("py", "return 1", {
             vcpu: 1,
             environment: { A: "b" },
           });
@@ -201,9 +206,9 @@ describe("step.sandbox.python", () => {
       { exitCode: 1, stderr: "boom" },
       (client) => {
         return client.createFunction(
-          { id: "fails", triggers: [{ event: "runner/python" }] },
+          { id: "fails", triggers: [{ event: "runner/code" }] },
           async ({ step }) => {
-            await step.sandbox.python("py", "raise Exception()");
+            await step.sandbox[language]("py", "fail()");
           },
         );
       },

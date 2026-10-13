@@ -709,6 +709,7 @@ export const createDurableSandboxFacade = (
       },
     }),
     python: createSandboxRunner(() => facade.commands, "python"),
+    ts: createSandboxRunner(() => facade.commands, "ts"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {
