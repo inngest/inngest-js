@@ -13,6 +13,7 @@
  * here, on the host, before a step is created.
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { z } from "zod/v3";
 
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
@@ -26,17 +27,12 @@ export const maxToolRequestBytes = 256 * 1024;
  */
 export const maxToolReplyBytes = 1024 * 1024;
 
-const toolNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+// "then" would make the JavaScript `tools` object look like a promise.
+const toolNamePattern = /^(?!then$)[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
-/**
- * Names the sandbox-side `tools` object can't carry, because the JavaScript
- * stub treats them specially.
- */
-const reservedToolNames = new Set(["then", "constructor", "prototype"]);
-
-const textEncoder = new TextEncoder();
-
-export const toolKind = "inngest/sandbox.tool" as const;
+export const byteLength = (text: string): number => {
+  return new TextEncoder().encode(text).byteLength;
+};
 
 /**
  * What a tool receives besides its arguments.
@@ -54,8 +50,6 @@ export interface SandboxToolContext {
   idempotencyKey: string;
 }
 
-type MaybePromise<T> = T | Promise<T>;
-
 type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
   TInput extends StandardSchemaV1
     ? StandardSchemaV1.InferOutput<TInput>
@@ -70,8 +64,6 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
  * A tool declared with `tool()`.
  */
 export interface SandboxTool {
-  readonly kind: typeof toolKind;
-  readonly description?: string;
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -102,11 +94,6 @@ export interface SandboxToolOptions {
    * Tool calls allowed in one command before it is stopped. Default 100.
    */
   maxCalls?: number;
-
-  /**
-   * Tool calls run at once, up to 8, which is also the default.
-   */
-  concurrency?: number;
 }
 
 /**
@@ -126,12 +113,14 @@ export interface SandboxToolsOptions {
   toolOptions?: SandboxToolOptions;
 }
 
+export type SandboxToolsRequest = SandboxToolsOptions & {
+  tools: SandboxTools;
+};
+
 export interface ToolDefinition<
   TInput extends StandardSchemaV1 | undefined,
   TOutput extends StandardSchemaV1 | undefined,
 > {
-  description?: string;
-
   /**
    * Any Standard Schema. With it, sandbox code calls the tool with named
    * arguments (`tools.getCustomer(id="cus_1")`) and a bad call gets a
@@ -149,7 +138,7 @@ export interface ToolDefinition<
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
-      ) => MaybePromise<ToolResultOf<TOutput>>
+      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>
     : (...args: never[]) => unknown;
 }
 
@@ -179,108 +168,63 @@ export const tool = <
 >(
   definition: ToolDefinition<TInput, TOutput>,
 ): SandboxTool => {
-  return {
-    kind: toolKind,
-    ...(definition.description !== undefined && {
-      description: definition.description,
-    }),
-    ...(definition.input !== undefined && { input: definition.input }),
-    ...(definition.output !== undefined && { output: definition.output }),
-    run: definition.run as SandboxTool["run"],
-  };
+  return definition as SandboxTool;
 };
 
 const isTool = (entry: SandboxToolEntry): entry is SandboxTool => {
-  return typeof entry === "object" && entry !== null && entry.kind === toolKind;
+  return typeof entry === "object";
 };
 
 /**
- * Checks the tools you declared. Returns their names.
+ * Checks the names of the tools you declared.
  */
-export const validateTools = (tools: SandboxTools): string[] => {
-  const names = Object.keys(tools);
-
-  for (const name of names) {
-    if (!toolNamePattern.test(name) || reservedToolNames.has(name)) {
+export const validateTools = (tools: SandboxTools): void => {
+  for (const name of Object.keys(tools)) {
+    if (!toolNamePattern.test(name)) {
       throw new SandboxValidationError(
         `Invalid tool name "${name}": use letters, digits and underscores, starting with a letter, up to 64 characters`,
       );
     }
-
-    const entry = tools[name];
-    if (typeof entry !== "function" && !(entry && isTool(entry))) {
-      throw new SandboxValidationError(
-        `Tool "${name}" must be a function or the result of tool()`,
-      );
-    }
   }
-
-  return names;
 };
 
-export interface ToolRequest {
-  seq: number;
-  tool: string;
-  args: unknown[];
-  kwargs?: Record<string, unknown>;
-}
+const requestSchema = z.object({
+  id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  tool: z.string().max(128),
+  args: z.array(z.unknown()),
+  kwargs: z.record(z.unknown()).optional(),
+});
+
+export type ToolRequest = z.infer<typeof requestSchema>;
 
 /**
  * Parses one line of the request log. Returns `undefined` for anything that
  * isn't a request, which is skipped.
  */
 export const parseToolRequest = (line: string): ToolRequest | undefined => {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(line);
+    const parsed = requestSchema.safeParse(JSON.parse(line));
+
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return undefined;
-  }
-
-  const candidate = parsed as Record<string, unknown>;
-  const { id, tool: name, args, kwargs } = candidate;
-
-  if (
-    typeof id !== "number" ||
-    !Number.isSafeInteger(id) ||
-    id < 1 ||
-    typeof name !== "string" ||
-    name.length > 128 ||
-    !Array.isArray(args)
-  ) {
-    return undefined;
-  }
-
-  const kwargsAreValid =
-    kwargs === undefined ||
-    (typeof kwargs === "object" && kwargs !== null && !Array.isArray(kwargs));
-  if (!kwargsAreValid) {
-    return undefined;
-  }
-
-  return {
-    seq: id,
-    tool: name,
-    args,
-    ...(kwargs !== undefined && { kwargs: kwargs as Record<string, unknown> }),
-  };
 };
 
+/**
+ * Either an error to send back to the sandbox, or the call to run.
+ */
 export type ResolvedCall =
-  | { ok: true; name: string; entry: SandboxToolEntry; args: unknown[] }
-  | { ok: false; error: string };
+  | { error: string }
+  | { invoke: (ctx: SandboxToolContext) => Promise<unknown> };
 
 const issuesMessage = (issues: readonly StandardSchemaV1.Issue[]): string => {
   return issues
     .slice(0, 5)
     .map((issue) => {
       const path = issue.path
-        ?.map((segment) => {
-          return String(typeof segment === "object" ? segment.key : segment);
+        ?.map((part) => {
+          return String(typeof part === "object" ? part.key : part);
         })
         .join(".");
 
@@ -299,82 +243,63 @@ export const resolveToolCall = async (
   request: ToolRequest,
   line: string,
 ): Promise<ResolvedCall> => {
-  if (textEncoder.encode(line).byteLength > maxToolRequestBytes) {
-    return {
-      ok: false,
-      error: `Request is larger than ${maxToolRequestBytes} bytes`,
-    };
+  const { tool: name, args } = request;
+  const entry = Object.hasOwn(tools, name) ? tools[name] : undefined;
+  const kwargs = Object.keys(request.kwargs ?? {}).length
+    ? request.kwargs
+    : undefined;
+
+  if (byteLength(line) > maxToolRequestBytes) {
+    return { error: `Request is larger than ${maxToolRequestBytes} bytes` };
   }
 
-  if (!Object.hasOwn(tools, request.tool)) {
-    return {
-      ok: false,
-      error: `Unknown tool: ${request.tool.slice(0, 64)}`,
-    };
-  }
-
-  const entry = tools[request.tool];
   if (!entry) {
-    return { ok: false, error: `Unknown tool: ${request.tool.slice(0, 64)}` };
+    return { error: `Unknown tool: ${name.slice(0, 64)}` };
   }
 
-  if (!isTool(entry) || !entry.input) {
-    if (request.kwargs && Object.keys(request.kwargs).length > 0) {
+  // A plain function takes positional values and no context.
+  const definition: Pick<SandboxTool, "input" | "output" | "run"> = isTool(
+    entry,
+  )
+    ? entry
+    : { run: entry };
+  const run = definition.run as (...values: unknown[]) => unknown;
+  let values = args;
+
+  if (definition.input) {
+    if ((kwargs ? args.length + 1 : args.length) !== 1) {
+      return { error: `${name} takes one set of named arguments` };
+    }
+
+    const result = await definition.input["~standard"].validate(
+      kwargs ?? args[0],
+    );
+    if (result.issues) {
       return {
-        ok: false,
-        error: `${request.tool} takes positional arguments only`,
+        error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
       };
     }
 
-    return { ok: true, name: request.tool, entry, args: request.args };
+    values = [result.value];
+  } else if (kwargs) {
+    return { error: `${name} takes positional arguments only` };
   }
 
-  const named = request.kwargs ?? request.args[0];
-  const argumentCount = request.kwargs
-    ? request.args.length + 1
-    : request.args.length;
-  if (argumentCount !== 1) {
-    return {
-      ok: false,
-      error: `${request.tool} takes one set of named arguments`,
-    };
-  }
+  return {
+    invoke: async (ctx) => {
+      const value = await run(...values, ...(isTool(entry) ? [ctx] : []));
+      if (!isTool(entry) || !entry.output) {
+        return value;
+      }
 
-  const result = await entry.input["~standard"].validate(named);
-  if (result.issues) {
-    return {
-      ok: false,
-      error: `Invalid arguments for ${request.tool}: ${issuesMessage(result.issues)}`,
-    };
-  }
+      const result = await entry.output["~standard"].validate(value);
+      if (result.issues) {
+        throw new SandboxValidationError(
+          `${name} returned an invalid result: ${issuesMessage(result.issues)}`,
+        );
+      }
 
-  return { ok: true, name: request.tool, entry, args: [result.value] };
-};
-
-/**
- * Runs a resolved call. Throws when the tool throws, times out, or returns
- * something its `output` schema rejects.
- */
-export const invokeTool = async (
-  call: Extract<ResolvedCall, { ok: true }>,
-  ctx: SandboxToolContext,
-): Promise<unknown> => {
-  const entry = call.entry;
-  const run = (isTool(entry) ? entry.run : entry) as (
-    ...args: unknown[]
-  ) => unknown;
-  const value = await run(...call.args, ...(isTool(entry) ? [ctx] : []));
-
-  if (isTool(entry) && entry.output) {
-    const result = await entry.output["~standard"].validate(value);
-    if (result.issues) {
-      throw new SandboxValidationError(
-        `${call.name} returned an invalid result: ${issuesMessage(result.issues)}`,
-      );
-    }
-
-    return result.value;
-  }
-
-  return value;
+      return result.value;
+    },
+  };
 };

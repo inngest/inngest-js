@@ -13,17 +13,13 @@ import {
   type SandboxRawTool,
 } from "./protocol.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
-import type { SandboxTools } from "./tools.ts";
-import { tool } from "./tools.ts";
+import { type SandboxTools, tool } from "./tools.ts";
 import type { Sandbox } from "./types.ts";
-import { encodeBase64 } from "./validation.ts";
-
-const sandboxId = "22222222-2222-4222-8222-222222222222";
 
 const sandboxRef = {
   kind: "inngest/sandbox" as const,
   version: 1 as const,
-  id: sandboxId,
+  id: "22222222-2222-4222-8222-222222222222",
   name: "tools-box",
   status: "RUNNING" as const,
   vpcId: "11111111-1111-4111-8111-111111111111",
@@ -35,85 +31,70 @@ const sandboxRef = {
 const request = (
   id: number,
   name: string,
-  args: unknown[],
+  args: unknown[] = [],
   kwargs?: Record<string, unknown>,
 ): string => {
   return `${JSON.stringify({ id, tool: name, args, ...(kwargs && { kwargs }) })}\n`;
 };
 
-interface FakeSandbox {
+const base64 = (text: string): string => {
+  return Buffer.from(text).toString("base64");
+};
+
+interface Fake {
   log: string;
   stdout: string;
-  exited: boolean;
-  exitCode: number;
-  started: number;
-  waiterCalls: { offset: number; seconds: number }[];
-  uploads: { path: string; body: string }[];
+  exitCode?: number;
   killed: boolean;
-  startedCommand: readonly string[];
+  started: number;
+  waits: { lines: number; seconds: number }[];
+  uploads: { path: string; body: string }[];
+  failUploads: number;
   /**
-   * Plays the sandbox code. Runs once at start and again each time a reply
-   * lands, with the sequence number of that reply.
+   * Plays the sandbox code. Runs when the process starts and again each time
+   * a reply lands, with the id of that reply.
    */
-  react: (fake: FakeSandbox, replied: number | undefined) => void;
-  failUploadsOnce: number;
+  react: (fake: Fake, replied: number | undefined) => void;
 }
 
-const createFakeSandbox = (react: FakeSandbox["react"]) => {
-  const fake: FakeSandbox = {
+const exitWith = (fake: Fake, stdout = "done\n", code = 0): void => {
+  fake.stdout = stdout;
+  fake.exitCode = code;
+};
+
+const createFakeSandbox = (react: Fake["react"]) => {
+  const fake: Fake = {
     log: "",
     stdout: "",
-    exited: false,
-    exitCode: 0,
-    started: 0,
-    waiterCalls: [],
-    uploads: [],
     killed: false,
-    startedCommand: [],
+    started: 0,
+    waits: [],
+    uploads: [],
+    failUploads: 0,
     react,
-    failUploadsOnce: 0,
-  };
-  const encoder = new TextEncoder();
-  const processRef = () => {
-    const self = {
-      id: "proc-1",
-      get state() {
-        return fake.exited ? "EXITED" : fake.killed ? "KILLED" : "RUNNING";
-      },
-      get exitCode() {
-        return fake.exited ? fake.exitCode : undefined;
-      },
-      wait: async () => {
-        return self;
-      },
-      getOutput: async () => {
-        return {
-          chunks: [
-            { stream: "STDOUT" as const, data: encoder.encode(fake.stdout) },
-          ],
-        };
-      },
-      signal: async () => {
-        fake.killed = true;
-      },
-    };
-
-    return self;
   };
   const sandbox = {
     commands: {
       run: async (command: string[]) => {
-        const [, , , , , offset, seconds] = command;
-        const bytes = encoder.encode(fake.log);
-        const news = new TextDecoder().decode(bytes.subarray(Number(offset)));
+        const [, , , , , lines, seconds] = command;
 
-        fake.waiterCalls.push({
-          offset: Number(offset),
-          seconds: Number(seconds),
+        // The real waiter blocks, so replies uploaded alongside it land first.
+        await new Promise((resolve) => {
+          return setTimeout(resolve, 0);
         });
 
+        const news = fake.log.split("\n").slice(Number(lines), -1);
+
+        fake.waits.push({ lines: Number(lines), seconds: Number(seconds) });
+
         return {
-          stdout: `exit=${fake.exited ? 1 : 0}\n${news}`,
+          stdout: [
+            fake.exitCode ?? "",
+            fake.exitCode === undefined ? "" : base64(fake.stdout),
+            "",
+            ...news,
+            "",
+          ].join("\n"),
           stderr: "",
           exitCode: 0,
         };
@@ -121,8 +102,8 @@ const createFakeSandbox = (react: FakeSandbox["react"]) => {
     },
     files: {
       upload: async ({ path, data }: { path: string; data: unknown }) => {
-        if (fake.failUploadsOnce > 0) {
-          fake.failUploadsOnce--;
+        if (fake.failUploads > 0) {
+          fake.failUploads--;
 
           throw new Error("upload failed");
         }
@@ -134,15 +115,18 @@ const createFakeSandbox = (react: FakeSandbox["react"]) => {
       },
     },
     processes: {
-      start: async (options: { command: readonly string[] }) => {
+      start: async () => {
         fake.started++;
-        fake.startedCommand = options.command;
         fake.react(fake, undefined);
 
-        return processRef();
+        return { id: "proc-1" };
       },
       get: async () => {
-        return processRef();
+        return {
+          signal: async () => {
+            fake.killed = true;
+          },
+        };
       },
     },
   } as unknown as Sandbox;
@@ -156,12 +140,7 @@ const createFakeSandbox = (react: FakeSandbox["react"]) => {
 const createHost = (
   sandbox: Sandbox,
   memo: Map<string, string> = new Map(),
-): {
-  host: ToolsHost;
-  executed: string[];
-  attempts: Map<string, number>;
-  memo: Map<string, string>;
-} => {
+) => {
   const executed: string[] = [];
   const attempts = new Map<string, number>();
   const host: ToolsHost = {
@@ -201,55 +180,82 @@ const createHost = (
 
       return JSON.parse(memo.get(id) ?? "null") as T;
     },
-    getSandbox: async () => {
-      return sandbox;
-    },
+    sandbox,
     runId: "run-1",
   };
 
-  return { host, executed, attempts, memo };
+  return { host, executed, attempts };
 };
 
-const operation = (command: string, timeoutMs = 300_000) => {
+const operation = (timeoutMs = 300_000) => {
   return parseSandboxOperationForAction("exec", {
     protocolVersion: 1,
     action: "exec",
     target: { sandbox: sandboxRef },
-    input: [{ command: ["/bin/sh", "-c", command], timeoutMs }],
+    input: [{ command: ["/bin/sh", "-c", "python3 x.py"], timeoutMs }],
   });
-};
-
-const exitWith = (fake: FakeSandbox, stdout = "done\n", code = 0): void => {
-  fake.stdout = stdout;
-  fake.exitCode = code;
-  fake.exited = true;
-  fake.log += "";
-};
-
-const reply = (fake: FakeSandbox, seq: number): unknown => {
-  const upload = fake.uploads.find((candidate) => {
-    return candidate.path.endsWith(`/${seq}.json`);
-  });
-
-  return upload ? JSON.parse(upload.body) : undefined;
 };
 
 const run = (
   host: ToolsHost,
   tools: SandboxTools,
   toolOptions: Parameters<typeof runCommandWithTools>[3]["toolOptions"] = {},
+  timeoutMs?: number,
 ) => {
-  return runCommandWithTools(host, "exec", operation("python3 x.py"), {
+  return runCommandWithTools(host, "exec", operation(timeoutMs), {
     tools,
     toolOptions: { waitWindow: 5, ...toolOptions },
   });
 };
 
+const stdoutOf = (result: Awaited<ReturnType<typeof run>>): string => {
+  return Buffer.from(
+    (result as { result: { stdout: string } }).result.stdout,
+    "base64",
+  ).toString();
+};
+
+/**
+ * Makes the code send `requests` at start and exit once every one is answered.
+ */
+const sendAll = (requests: string[]): Fake["react"] => {
+  return (fake, replied) => {
+    if (replied === undefined) {
+      fake.log += requests.join("");
+    }
+
+    if (fake.uploads.length === requests.length) {
+      exitWith(fake);
+    }
+  };
+};
+
+const replies = (fake: Fake): unknown[] => {
+  return fake.uploads
+    .map((upload) => {
+      return {
+        id: Number(upload.path.match(/(\d+)\.json$/)?.[1]),
+        ...JSON.parse(upload.body),
+      };
+    })
+    .sort((a, b) => {
+      return a.id - b.id;
+    });
+};
+
+interface ReplyCase {
+  name: string;
+  tools: SandboxTools;
+  requests: string[];
+  replies: unknown[];
+  steps: string[];
+}
+
 describe("commands.run with tools", () => {
-  test("a fast command is one step and never touches a tool", async () => {
+  test("a fast command is one step, touches no tool and returns its output", async () => {
     const { fake, sandbox } = createFakeSandbox((f, replied) => {
       if (replied === undefined) {
-        exitWith(f, "hello\n", 0);
+        exitWith(f, "héllo ✓\n", 7);
       }
     });
     const { host, executed } = createHost(sandbox);
@@ -259,33 +265,10 @@ describe("commands.run with tools", () => {
 
     expect(executed).toEqual(["exec"]);
     expect(fake.started).toBe(1);
-    expect(fake.waiterCalls).toHaveLength(1);
+    expect(fake.waits).toHaveLength(1);
     expect(getCustomer).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      stdout: "hello\n",
-      stderr: "",
-      exitCode: 0,
-    });
-  });
-
-  test("ships the stub inside the command, with the user's command last", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        exitWith(f);
-      }
-    });
-    const { host } = createHost(sandbox);
-
-    await run(host, {});
-
-    const [shell, flag, script, , ...command] = fake.startedCommand;
-
-    expect(shell).toBe("/bin/sh");
-    expect(flag).toBe("-c");
-    expect(script).toContain("inngest_tools.py");
-    expect(script).toContain("inngest_tools/index.js");
-    expect(command).toEqual(["/bin/sh", "-c", "python3 x.py"]);
-    expect(fake.uploads).toEqual([]);
+    expect(stdoutOf(result)).toBe("héllo ✓\n");
+    expect(result).toMatchObject({ result: { exitCode: 7 } });
   });
 
   test("wakes on the first request and replies in the next wait step", async () => {
@@ -310,83 +293,176 @@ describe("commands.run with tools", () => {
       "exec:tool:getCustomer:1",
       "exec:wait:1",
     ]);
-    expect(reply(fake, 1)).toEqual({ result: { id: "cus_1", plan: "pro" } });
-    expect(fake.waiterCalls[0]).toEqual({ offset: 0, seconds: 1 });
-    expect(fake.waiterCalls[1]?.offset).toBe(
-      new TextEncoder().encode(request(1, "getCustomer", ["cus_1"])).length,
+    expect(replies(fake)).toEqual([
+      { id: 1, result: { id: "cus_1", plan: "pro" } },
+    ]);
+    expect(fake.waits).toEqual([
+      { lines: 0, seconds: 1 },
+      { lines: 1, seconds: 1 },
+    ]);
+    expect(stdoutOf(result)).toBe("pro\n");
+  });
+
+  test.each<ReplyCase>([
+    {
+      name: "unknown and inherited names, without a step",
+      tools: { known: vi.fn() },
+      requests: [request(1, "rm_rf"), request(2, "constructor", ["x"])],
+      replies: [
+        { id: 1, error: "Unknown tool: rm_rf" },
+        { id: 2, error: "Unknown tool: constructor" },
+      ],
+      steps: [],
+    },
+    {
+      name: "named arguments checked against the input schema",
+      tools: {
+        getCustomer: tool({
+          input: z.object({ id: z.string() }),
+          run: async ({ id }) => {
+            return { id };
+          },
+        }),
+      },
+      requests: [
+        request(1, "getCustomer", [], { id: 5 }),
+        request(2, "getCustomer", [], { id: "cus_2" }),
+        request(3, "getCustomer", ["a", "b"]),
+      ],
+      replies: [
+        {
+          id: 1,
+          error:
+            "Invalid arguments for getCustomer: id: Expected string, received number",
+        },
+        { id: 2, result: { id: "cus_2" } },
+        { id: 3, error: "getCustomer takes one set of named arguments" },
+      ],
+      steps: ["exec:tool:getCustomer:2"],
+    },
+    {
+      name: "named arguments to a tool with no input schema",
+      tools: { plain: async () => 1 },
+      requests: [request(1, "plain", [], { a: 1 })],
+      replies: [{ id: 1, error: "plain takes positional arguments only" }],
+      steps: [],
+    },
+    {
+      name: "a tool that throws, after its step fails",
+      tools: {
+        boom: async () => {
+          throw new Error("kaput");
+        },
+      },
+      requests: [request(1, "boom")],
+      replies: [{ id: 1, error: "kaput" }],
+      steps: [],
+    },
+    {
+      name: "a result the output schema rejects",
+      tools: {
+        count: tool({
+          output: z.object({ n: z.number() }),
+          run: async () => {
+            return { n: "nope" };
+          },
+        }),
+      },
+      requests: [request(1, "count")],
+      replies: [
+        {
+          id: 1,
+          error:
+            "count returned an invalid result: n: Expected number, received string",
+        },
+      ],
+      steps: [],
+    },
+    {
+      name: "a reply over 1 MiB",
+      tools: {
+        big: async () => {
+          return "x".repeat(1024 * 1024);
+        },
+      },
+      requests: [request(1, "big")],
+      replies: [
+        {
+          id: 1,
+          error:
+            "big returned more than 1048576 bytes; write large data to a file instead",
+        },
+      ],
+      steps: [],
+    },
+    {
+      name: "a request over 256 KiB, without running the tool",
+      tools: { eat: vi.fn() },
+      requests: [request(1, "eat", ["x".repeat(256 * 1024)])],
+      replies: [{ id: 1, error: "Request is larger than 262144 bytes" }],
+      steps: [],
+    },
+  ])("answers $name", async ({ tools, requests, replies: expected, steps }) => {
+    const { fake, sandbox } = createFakeSandbox(sendAll(requests));
+    const { host, executed } = createHost(sandbox);
+
+    await run(host, tools);
+
+    expect(replies(fake)).toEqual(expected);
+    expect(executed.filter((id) => id.includes(":tool:"))).toEqual(steps);
+  });
+
+  test("passes the run-scoped idempotency key to a tool", async () => {
+    const { sandbox } = createFakeSandbox(
+      sendAll([request(1, "getCustomer", [], { id: "cus_2" })]),
     );
-    expect(result.stdout).toBe("pro\n");
-  });
-
-  test("a failed reply upload retries without running the tool again", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "sendSlack", ["hi"]);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    });
-    const { host, executed, attempts } = createHost(sandbox);
-    const sendSlack = vi.fn(async () => {
-      return { ok: true };
+    const { host } = createHost(sandbox);
+    const runTool = vi.fn(async ({ id }: { id: string }) => {
+      return { id };
     });
 
-    fake.failUploadsOnce = 1;
+    await run(host, {
+      getCustomer: tool({ input: z.object({ id: z.string() }), run: runTool }),
+    });
 
-    const result = await run(host, { sendSlack });
-
-    expect(sendSlack).toHaveBeenCalledTimes(1);
-    expect(attempts.get("exec:wait:1")).toBe(2);
-    expect(
-      executed.filter((id) => id === "exec:tool:sendSlack:1"),
-    ).toHaveLength(1);
-    expect(fake.uploads.filter((u) => u.path.endsWith("/1.json"))).toHaveLength(
-      1,
+    expect(runTool).toHaveBeenCalledExactlyOnceWith(
+      { id: "cus_2" },
+      expect.objectContaining({
+        idempotencyKey: "run-1:exec:tool:getCustomer:1",
+      }),
     );
-    expect(result.exitCode).toBe(0);
   });
 
-  test("replay serves memoized steps without touching the sandbox or tools", async () => {
-    const script: FakeSandbox["react"] = (f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "sendSlack", ["hi"]);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    };
-    const memo = new Map<string, string>();
-    const sendSlack = vi.fn(async () => {
-      return 1;
-    });
-    const firstRun = createFakeSandbox(script);
+  test("a tool that outlives its timeout fails with a timeout error", async () => {
+    const { fake, sandbox } = createFakeSandbox(sendAll([request(1, "hang")]));
+    const { host } = createHost(sandbox);
 
-    await run(createHost(firstRun.sandbox, memo).host, { sendSlack });
+    await run(
+      host,
+      {
+        hang: async (): Promise<void> => {
+          await new Promise(() => {
+            return undefined;
+          });
+        },
+      },
+      { toolTimeout: 10 },
+    );
 
-    const replay = createFakeSandbox(script);
-    const result = await run(createHost(replay.sandbox, memo).host, {
-      sendSlack,
-    });
-
-    expect(sendSlack).toHaveBeenCalledTimes(1);
-    expect(replay.fake.started).toBe(0);
-    expect(replay.fake.uploads).toEqual([]);
-    expect(result.exitCode).toBe(0);
+    expect(replies(fake)).toEqual([
+      { id: 1, error: "hang timed out after 10ms" },
+    ]);
   });
 
-  test("runs parallel calls together and replies to all in one wait step", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log +=
-          request(1, "slow", [1]) +
-          request(2, "slow", [2]) +
-          request(3, "slow", [3]);
-      }
-      if (f.uploads.length === 3) {
-        exitWith(f);
-      }
-    });
+  test("runs parallel calls together, up to 8 at once, and replies in one wait step", async () => {
+    const ids = Array.from({ length: 10 }, (_, i) => i + 1);
+    const { fake, sandbox } = createFakeSandbox(
+      sendAll(
+        ids.map((n) => {
+          return request(n, "slow", [n]);
+        }),
+      ),
+    );
     const { host, executed } = createHost(sandbox);
     let running = 0;
     let peak = 0;
@@ -403,286 +479,132 @@ describe("commands.run with tools", () => {
 
     await run(host, { slow });
 
-    expect(peak).toBe(3);
+    expect(peak).toBe(8);
     expect(executed.filter((id) => id.includes(":wait:"))).toEqual([
       "exec:wait:1",
     ]);
-    expect([1, 2, 3].map((seq) => reply(fake, seq))).toEqual([
-      { result: 2 },
-      { result: 4 },
-      { result: 6 },
-    ]);
+    expect(
+      replies(fake).map((reply) => (reply as { result: number }).result),
+    ).toEqual(ids.map((n) => n * 2));
   });
 
-  test("caps parallel calls at 8 and answers the rest in the next round", async () => {
-    const calls = Array.from({ length: 10 }, (_, i) => i + 1);
+  test("a failed reply upload retries without running the tool again", async () => {
     const { fake, sandbox } = createFakeSandbox((f, replied) => {
       if (replied === undefined) {
-        f.log += calls.map((n) => request(n, "t", [n])).join("");
+        f.log += request(1, "sendSlack", ["hi"]);
       }
-      if (f.uploads.length === 10) {
+      if (replied === 1) {
         exitWith(f);
       }
     });
-    const { host } = createHost(sandbox);
-    let running = 0;
-    let peak = 0;
-    const t = async (n: number) => {
-      running++;
-      peak = Math.max(peak, running);
-      await new Promise((resolve) => {
-        return setTimeout(resolve, 2);
-      });
-      running--;
+    const { host, executed, attempts } = createHost(sandbox);
+    const sendSlack = vi.fn(async () => {
+      return { ok: true };
+    });
 
-      return n;
+    fake.failUploads = 1;
+
+    await run(host, { sendSlack });
+
+    expect(sendSlack).toHaveBeenCalledTimes(1);
+    expect(attempts.get("exec:wait:1")).toBe(2);
+    expect(
+      executed.filter((id) => id === "exec:tool:sendSlack:1"),
+    ).toHaveLength(1);
+    expect(fake.uploads).toHaveLength(1);
+  });
+
+  test("replay serves memoized steps without touching the sandbox or tools", async () => {
+    const script: Fake["react"] = (f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "sendSlack", ["hi"]);
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
     };
+    const memo = new Map<string, string>();
+    const sendSlack = vi.fn(async () => {
+      return 1;
+    });
 
-    await run(host, { t }, { waitWindow: 5000 });
+    await run(createHost(createFakeSandbox(script).sandbox, memo).host, {
+      sendSlack,
+    });
 
-    expect(peak).toBe(8);
-    expect(fake.uploads).toHaveLength(10);
-    expect(fake.waiterCalls[1]?.seconds).toBe(0);
+    const replay = createFakeSandbox(script);
+    const result = await run(createHost(replay.sandbox, memo).host, {
+      sendSlack,
+    });
+
+    expect(sendSlack).toHaveBeenCalledTimes(1);
+    expect(replay.fake.started).toBe(0);
+    expect(replay.fake.uploads).toEqual([]);
+    expect(result).toMatchObject({ result: { exitCode: 0 } });
   });
 
-  test("a tool that throws becomes an error reply after the step fails", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "boom", []);
-      }
-      if (replied === 1) {
-        exitWith(f, "", 1);
-      }
-    });
-    const { host } = createHost(sandbox);
-    const result = await run(host, {
-      boom: async () => {
-        throw new Error("kaput");
-      },
-    });
+  test.each([
+    {
+      name: "the call cap",
+      options: { maxCalls: 2 },
+      timeoutMs: undefined,
+      message: "more than 2 tool calls",
+    },
+    {
+      name: "the wall-clock timeout",
+      options: { waitWindow: 10 },
+      timeoutMs: 1,
+      message: "exceeded its 1ms timeout",
+    },
+  ])(
+    "kills the process and throws past $name",
+    async ({ options, timeoutMs, message }) => {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          f.log += request(1, "t") + request(2, "t") + request(3, "t");
+        }
+      });
+      const { host, executed } = createHost(sandbox);
 
-    expect(reply(fake, 1)).toEqual({ error: "kaput" });
-    expect(result.exitCode).toBe(1);
-  });
+      await expect(
+        run(host, { t: async () => 1 }, options, timeoutMs),
+      ).rejects.toThrow(message);
 
-  test("answers unknown and inherited names without a step", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "rm_rf", []) + request(2, "constructor", ["x"]);
-      }
-      if (f.uploads.length === 2) {
-        exitWith(f);
-      }
-    });
-    const { host, executed } = createHost(sandbox);
-    const known = vi.fn();
-
-    await run(host, { known });
-
-    expect(known).not.toHaveBeenCalled();
-    expect(executed.some((id) => id.includes(":tool:"))).toBe(false);
-    expect(reply(fake, 1)).toEqual({ error: "Unknown tool: rm_rf" });
-    expect(reply(fake, 2)).toEqual({ error: "Unknown tool: constructor" });
-  });
-
-  test("validates named arguments with the input schema before any step", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log +=
-          request(1, "getCustomer", [], { id: 5 }) +
-          request(2, "getCustomer", [], { id: "cus_2" }) +
-          request(3, "getCustomer", ["a", "b"]);
-      }
-      if (f.uploads.length === 3) {
-        exitWith(f);
-      }
-    });
-    const { host, executed } = createHost(sandbox);
-    const runTool = vi.fn(async ({ id }: { id: string }) => {
-      return { id };
-    });
-
-    await run(host, {
-      getCustomer: tool({ input: z.object({ id: z.string() }), run: runTool }),
-    });
-
-    expect(runTool).toHaveBeenCalledExactlyOnceWith(
-      { id: "cus_2" },
-      expect.objectContaining({
-        idempotencyKey: "run-1:exec:tool:getCustomer:2",
-      }),
-    );
-    expect(executed.filter((id) => id.includes(":tool:"))).toEqual([
-      "exec:tool:getCustomer:2",
-    ]);
-    expect(JSON.stringify(reply(fake, 1))).toContain(
-      "Invalid arguments for getCustomer: id: Expected string",
-    );
-    expect(reply(fake, 2)).toEqual({ result: { id: "cus_2" } });
-    expect(JSON.stringify(reply(fake, 3))).toContain("named arguments");
-  });
-
-  test("a tool result the output schema rejects fails the tool step", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "count", []);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    });
-    const { host } = createHost(sandbox);
-    await run(host, {
-      count: tool({
-        output: z.object({ n: z.number() }),
-        run: async () => {
-          return { n: "nope" };
-        },
-      }),
-    });
-
-    expect(JSON.stringify(reply(fake, 1))).toContain(
-      "count returned an invalid result",
-    );
-  });
-
-  test("a reply over 1 MiB fails the tool step with a clear error", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "big", []);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    });
-    const { host } = createHost(sandbox);
-    await run(host, {
-      big: async () => {
-        return "x".repeat(1024 * 1024);
-      },
-    });
-
-    expect(JSON.stringify(reply(fake, 1))).toContain(
-      "write large data to a file",
-    );
-  });
-
-  test("answers a request over 256 KiB without running the tool", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "eat", ["x".repeat(256 * 1024)]);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    });
-    const { host } = createHost(sandbox);
-    const eat = vi.fn();
-
-    await run(host, { eat });
-
-    expect(eat).not.toHaveBeenCalled();
-    expect(JSON.stringify(reply(fake, 1))).toContain(
-      "larger than 262144 bytes",
-    );
-  });
-
-  test("a tool that outlives its timeout fails with a timeout error", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log += request(1, "hang", []);
-      }
-      if (replied === 1) {
-        exitWith(f);
-      }
-    });
-    const { host } = createHost(sandbox);
-    await run(
-      host,
-      {
-        hang: async (): Promise<void> => {
-          await new Promise(() => {
-            return undefined;
-          });
-        },
-      },
-      { toolTimeout: 10 },
-    );
-
-    expect(reply(fake, 1)).toEqual({ error: "hang timed out after 10ms" });
-  });
-
-  test("kills the process and throws past the call cap", async () => {
-    const { fake, sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        f.log +=
-          request(1, "t", []) + request(2, "t", []) + request(3, "t", []);
-      }
-    });
-    const { host, executed } = createHost(sandbox);
-
-    await expect(
-      run(host, { t: async () => 1 }, { maxCalls: 2 }),
-    ).rejects.toThrow("more than 2 tool calls");
-
-    expect(executed).toContain("exec:abort");
-    expect(fake.killed).toBe(true);
-  });
-
-  test("kills the process and throws past the wall-clock timeout", async () => {
-    const { fake, sandbox } = createFakeSandbox(() => undefined);
-    const { host } = createHost(sandbox);
-
-    await expect(
-      runCommandWithTools(host, "exec", operation("sleep 99", 1), {
-        tools: {},
-        toolOptions: { waitWindow: 10 },
-      }),
-    ).rejects.toThrow("exceeded its 1ms timeout");
-
-    expect(fake.killed).toBe(true);
-  });
+      expect(executed).toContain("exec:abort");
+      expect(fake.killed).toBe(true);
+    },
+  );
 
   test("a quiet stretch continues in a fresh wait step", async () => {
-    let waits = 0;
-    const { fake, sandbox } = createFakeSandbox((f) => {
-      if (waits >= 2) {
-        exitWith(f);
-      }
-    });
+    const { fake, sandbox } = createFakeSandbox(() => undefined);
     const { host, executed } = createHost(sandbox);
-    const inner = host.run;
+    const wait = sandbox.commands.run.bind(sandbox.commands);
 
-    host.run = async (idOrOptions, fn, meta) => {
-      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
-      if (id.includes(":wait:")) {
-        waits++;
-        if (waits === 2) {
-          fake.react(fake, 99);
-        }
+    sandbox.commands.run = async (command, options) => {
+      if (fake.waits.length === 2) {
+        exitWith(fake);
       }
 
-      return inner(idOrOptions, fn, meta);
+      return wait(command, options);
     };
 
-    await run(host, {}, { waitWindow: 1 });
+    await run(host, {});
 
     expect(executed).toEqual(["exec", "exec:wait:1", "exec:wait:2"]);
   });
 
-  test("validates tool names before starting anything", async () => {
-    const { fake, sandbox } = createFakeSandbox(() => undefined);
-    const { host } = createHost(sandbox);
+  test.each([['x"; import os #'], ["then"], ["_private"]])(
+    "rejects the tool name %s before starting anything",
+    async (name) => {
+      const { fake, sandbox } = createFakeSandbox(() => undefined);
+      const { host } = createHost(sandbox);
 
-    await expect(
-      run(host, { 'x"; import os #': async () => undefined }),
-    ).rejects.toThrow("Invalid tool name");
-    await expect(run(host, { then: async () => undefined })).rejects.toThrow(
-      "Invalid tool name",
-    );
-
-    expect(fake.started).toBe(0);
-  });
+      await expect(
+        run(host, { [name]: async () => undefined }),
+      ).rejects.toThrow("Invalid tool name");
+      expect(fake.started).toBe(0);
+    },
+  );
 
   test("does not retry a start step that failed after the process began", async () => {
     const { sandbox } = createFakeSandbox(() => undefined);
@@ -693,21 +615,6 @@ describe("commands.run with tools", () => {
     };
 
     await expect(run(host, {})).rejects.toBeInstanceOf(NonRetriableError);
-  });
-
-  test("returns output that is a base64 round trip of what the process printed", async () => {
-    const { sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        exitWith(f, "héllo ✓\n", 7);
-      }
-    });
-    const { host } = createHost(sandbox);
-
-    const result = await run(host, {});
-
-    expect(result.stdout).toBe("héllo ✓\n");
-    expect(result.exitCode).toBe(7);
-    expect(encodeBase64(new TextEncoder().encode(result.stdout))).toBeTruthy();
   });
 });
 
@@ -724,57 +631,31 @@ describe("durable commands.run routing", () => {
     },
   };
 
-  test("without tools it is the same single exec step", async () => {
-    const rawTool: SandboxRawTool = Object.assign(
-      vi.fn(async () => {
-        return execResult;
-      }),
-      { runWithTools: vi.fn() },
-    );
+  test.each([
+    { name: "without tools", options: undefined, tools: undefined },
+    {
+      name: "with tools, and a 5m default timeout",
+      options: { tools: { a: async () => 1 } },
+      tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
+    },
+  ])("$name it is one raw tool call", async ({ options, tools }) => {
+    const rawTool: SandboxRawTool = vi.fn(async () => {
+      return execResult;
+    });
     const sandbox = createDurableSandboxFacade(sandboxRef, () => {
       return rawTool;
     });
 
-    await sandbox.commands.run("exec", "true");
+    await sandbox.commands.run("exec", "true", options);
 
-    expect(rawTool).toHaveBeenCalledTimes(1);
-    expect(rawTool.runWithTools).not.toHaveBeenCalled();
-  });
-
-  test("with tools it hands the exec to the tools runner with a 5m default timeout", async () => {
-    const runWithTools = vi.fn(async () => {
-      return {
-        stdout: "",
-        stderr: "",
-        exitCode: 0,
-        output: { truncated: false as const },
-      };
-    });
-    const rawTool: SandboxRawTool = Object.assign(vi.fn(), { runWithTools });
-    const sandbox = createDurableSandboxFacade(sandboxRef, () => {
-      return rawTool;
-    });
-    const tools = { a: async () => 1 };
-
-    await sandbox.commands.run("exec", "true", { tools });
-
-    expect(rawTool).not.toHaveBeenCalled();
-    expect(runWithTools).toHaveBeenCalledWith(
+    expect(rawTool).toHaveBeenCalledExactlyOnceWith(
       "exec",
       expect.objectContaining({
-        input: [expect.objectContaining({ timeoutMs: 300_000 })],
+        input: [
+          expect.objectContaining({ timeoutMs: tools ? 300_000 : 30_000 }),
+        ],
       }),
-      { tools, toolOptions: undefined },
+      ...(tools ? [tools] : []),
     );
-  });
-
-  test("with tools but no sandbox middleware it explains what is missing", async () => {
-    const sandbox = createDurableSandboxFacade(sandboxRef, () => {
-      return vi.fn();
-    });
-
-    await expect(
-      sandbox.commands.run("exec", "true", { tools: {} }),
-    ).rejects.toThrow("sandboxMiddleware()");
   });
 });

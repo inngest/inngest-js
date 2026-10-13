@@ -26,6 +26,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import type { SandboxToolsRequest } from "./tools.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -50,8 +51,8 @@ import {
   decodeBase64,
   decodeOutputChunk,
   decodeUtf8,
-  defaultToolsCommandTimeoutMs,
   encodeBase64,
+  maxSandboxProcessTimeoutMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
@@ -70,7 +71,7 @@ import {
   sandboxSnapshotRefSchema,
 } from "./validation.ts";
 
-export const fitDurableSandboxExecOutput = (
+const fitDurableSandboxExecOutput = (
   stdout: Uint8Array,
   stderr: Uint8Array,
 ): {
@@ -432,12 +433,15 @@ const callRawTool = async <A extends SandboxAction>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
+  tools?: SandboxToolsRequest,
 ): Promise<SandboxResultForAction<A>> => {
   try {
     const rawTool = await rawToolResolver();
     return validateSandboxResult(
       operation,
-      await rawTool(idOrOptions, operation),
+      await (tools
+        ? rawTool(idOrOptions, operation, tools)
+        : rawTool(idOrOptions, operation)),
     );
   } catch (error) {
     if (error instanceof SandboxValidationError) {
@@ -679,7 +683,7 @@ export const createDurableSandboxFacade = (
         const normalized = normalizeSandboxCommandOptions(command, {
           ...commandOptions,
           ...(tools && {
-            timeout: commandOptions.timeout ?? defaultToolsCommandTimeoutMs,
+            timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
           }),
         });
         const { timeout: _timeout, ...input } = normalized;
@@ -689,22 +693,11 @@ export const createDurableSandboxFacade = (
           target: sandboxTarget(ref),
           input: [input],
         });
-        if (tools) {
-          const rawTool = await rawToolResolver();
-          if (!rawTool.runWithTools) {
-            throw new SandboxValidationError(
-              "Tools need the sandbox middleware: add sandboxMiddleware() to your client",
-            );
-          }
-          return rawTool.runWithTools(idOrOptions, operation, {
-            tools,
-            toolOptions,
-          });
-        }
         const result = await callRawTool(
           rawToolResolver,
           idOrOptions,
           operation,
+          tools && { tools, toolOptions },
         );
         return {
           stdout: decodeUtf8(
