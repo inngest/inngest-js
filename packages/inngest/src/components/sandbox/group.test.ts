@@ -84,29 +84,39 @@ describe("group.sandbox", () => {
     {
       name: "an unknown error with retries remaining",
       attempt: 0,
+      maxAttempts: 5 as number | undefined,
+      fail: () => Promise.reject(new Error("boom")),
+      destroys: 0,
+    },
+    {
+      name: "an unknown error with no attempt limit",
+      attempt: 0,
+      maxAttempts: undefined,
       fail: () => Promise.reject(new Error("boom")),
       destroys: 0,
     },
     {
       name: "an unknown error on the last attempt",
       attempt: 4,
+      maxAttempts: 5,
       fail: () => Promise.reject(new Error("boom")),
       destroys: 1,
     },
     {
       name: "a non-retriable error",
       attempt: 0,
+      maxAttempts: 5,
       fail: () => Promise.reject(new NonRetriableError("boom")),
       destroys: 1,
     },
   ])(
     "on $name, destroys $destroys time",
-    async ({ attempt, fail, destroys }) => {
+    async ({ attempt, maxAttempts, fail, destroys }) => {
       const { client, calls } = createScopeClient();
 
       const { type } = await runToEnd(buildFailing(client, fail), {
         attempt,
-        maxAttempts: 5,
+        maxAttempts,
       });
 
       expect(type).toBe("function-rejected");

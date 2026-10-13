@@ -6,6 +6,6 @@ Experimental: `group.sandbox()` runs a callback with a fresh sandbox and destroy
 
 ```ts
 await group.sandbox("build", async (sb) => {
-  await sb.commands.run("npm test");
+  await sb.commands.run("test", "npm test");
 });
 ```
