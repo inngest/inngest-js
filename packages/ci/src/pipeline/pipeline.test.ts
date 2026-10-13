@@ -2341,7 +2341,11 @@ describe("cache", () => {
         runId: "01RUNA",
       });
 
-      expect(cached.data).toEqual([]);
+      // `setup` and `build` have a cache and no snapshot yet, so both are built just in time.
+      expect(cached.data).toEqual([
+        "built just in time: `setup` (add `cache.refresh` to build it ahead of time)",
+        "built just in time: `build` (add `cache.refresh` to build it ahead of time)",
+      ]);
     });
 
     test("is cached and reused once the job above it has a cache", async () => {
@@ -2488,7 +2492,9 @@ describe("cache", () => {
     );
 
     expect(result.type).toBe("function-resolved");
-    expect(result.data).toEqual([]);
+    expect(result.data).toEqual([
+      "built just in time: `base` (add `cache.refresh` to build it ahead of time)",
+    ]);
 
     const [winner, ...others] = [...api.snapshots.values()];
 
@@ -3091,7 +3097,10 @@ describe("cache", () => {
 
     for (const run of runs) {
       expect(run.type).toBe("function-resolved");
-      expect(run.data).toEqual([expect.stringContaining("not cached")]);
+      expect(run.data).toEqual([
+        expect.stringContaining("built just in time"),
+        expect.stringContaining("not cached"),
+      ]);
     }
 
     expect(ran(api, "pnpm install")).toBe(2);

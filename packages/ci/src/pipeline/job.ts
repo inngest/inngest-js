@@ -161,6 +161,7 @@ export const invokeBuild = async ({
   check,
   base,
   lookup = true,
+  asParent = false,
 }: {
   run: CiRunScope;
   /** The job's path here, which is where the build's activity goes. */
@@ -185,6 +186,8 @@ export const invokeBuild = async ({
   base?: CacheBuildResult;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
+  /** Whether the job is a `from` parent, which a miss on its lookup warns about. */
+  asParent?: boolean;
 }): Promise<CacheBuildResult> => {
   const origin = matrixOriginOf(config);
   const parent = run.build?.parent;
@@ -219,7 +222,7 @@ export const invokeBuild = async ({
   if (lookup) {
     const hit = await lookupBeforeBuild(
       run,
-      { id: config.id, path, stepPath },
+      { id: config.id, path, stepPath, asParent },
       config.cache,
       target,
       exclude,

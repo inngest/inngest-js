@@ -17,7 +17,7 @@ import {
   deleteSnapshot,
   describeCached,
   runTarget,
-  warnUncachedBase,
+  uncachedBaseNote,
 } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
@@ -29,6 +29,7 @@ import {
   outsideJobs,
   rebuildSuffix,
 } from "../pipeline/scope.ts";
+import { warnOnce } from "../pipeline/warnings.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -224,7 +225,7 @@ export const withoutUnreusableCache = async (
 
   // A build run's warnings go to the run that invoked it, which has said it.
   if (!run.build) {
-    warnUncachedBase(run, job.config.id, uncached);
+    warnOnce(run, uncachedBaseNote(job.config.id, uncached).line);
   }
 
   const { cache: _cache, ...uncachedConfig } = job.config;
@@ -358,6 +359,7 @@ const buildOf = (
       config,
       input: raw,
       target,
+      asParent: true,
       ...(base ? { base: base.built } : {}),
     });
 
