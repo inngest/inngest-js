@@ -261,15 +261,6 @@ export const steps = {
     };
   },
 
-  resolveDefaultBranch: (fullName: string): StepSpec => {
-    return {
-      id: boundedName(
-        joinId("github", `default-branch:${fullName.toLowerCase()}`),
-      ),
-      name: "Resolve ref",
-    };
-  },
-
   resolveRef: (key: string): StepSpec => {
     return {
       id: boundedName(joinId("github", `ref:${key}`)),

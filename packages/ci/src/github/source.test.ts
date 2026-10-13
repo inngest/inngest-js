@@ -57,19 +57,28 @@ const setup = (
   return { api, gh, ci };
 };
 
-/** Make `acme/platform`'s `main` branch resolve to a commit. */
+/** Make `acme/platform`'s default branch and `main` and `v2` resolve to commits. */
 const platform = (gh: FakeGitHub, sha = "cafe1234") => {
-  gh.route("GET /repos/acme/platform", { default_branch: "main" });
+  gh.route("GET /repos/acme/platform/commits/HEAD", { sha });
 
   gh.route("GET /repos/acme/platform/commits/main", { sha });
 
   gh.route("GET /repos/acme/platform/commits/v2", { sha: "beef5678" });
 };
 
+/** Make a repository look missing to whoever asks, as GitHub does for no access. */
+const hidden = (gh: FakeGitHub, fullName: string) => {
+  gh.route(`GET /repos/${fullName}`, { message: "Not Found" }, 404);
+
+  gh.route(
+    `GET /repos/${fullName}/commits/HEAD`,
+    { message: "Not Found" },
+    404,
+  );
+};
+
 /** Make `ref` of the run's own repository resolve to a commit. */
 const ownRepo = (gh: FakeGitHub, ref: string, sha: string) => {
-  gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
-
   gh.route(`GET /repos/inngest/inngest-js/commits/${ref}`, { sha });
 };
 
@@ -162,8 +171,7 @@ describe("checkout() of another repository", () => {
     const result = await checkingOut(ci, { build: { repo: "acme/platform" } });
 
     expect(result.type).toBe("function-resolved");
-    expect(result.stepIds).toContain("github › default-branch:acme/platform");
-    expect(result.stepIds).toContain("github › ref:acme/platform@main");
+    expect(result.stepIds).toContain("github › ref:acme/platform@HEAD");
     expect(result.stepIds).toContain("build › checkout");
 
     expect(cloneScripts(api)).toHaveLength(1);
@@ -209,21 +217,21 @@ describe("checkout() of another repository", () => {
     expect(cloneScripts(api)).toHaveLength(2);
   });
 
-  test("repo alone and repo with the default branch share one resolve step", async () => {
+  test("repo alone resolves the default branch once per run", async () => {
     const { gh, ci } = setup();
 
     platform(gh);
 
     const result = await checkingOut(ci, {
       first: { repo: "acme/platform" },
-      second: { repo: "acme/platform", ref: "main", path: "/other" },
+      second: { repo: "acme/platform", path: "/other" },
     });
 
     expect(result.type).toBe("function-resolved");
     expect(refSteps(result.stepIds)).toEqual([
-      "github › ref:acme/platform@main",
+      "github › ref:acme/platform@HEAD",
     ]);
-    expect(requestsTo(gh, "/repos/acme/platform/commits/main")).toHaveLength(1);
+    expect(requestsTo(gh, "/repos/acme/platform/commits/HEAD")).toHaveLength(1);
     expect(result.steps["first › checkout"]).toMatchObject({ sha: "cafe1234" });
     expect(result.steps["second › checkout"]).toMatchObject({
       sha: "cafe1234",
@@ -336,6 +344,7 @@ describe("what a failed lookup says", () => {
     {
       name: "no default branch says so, not undefined",
       routes: (gh) => {
+        gh.route("GET /repos/acme/platform/commits/HEAD", {}, 404);
         gh.route("GET /repos/acme/platform", {});
       },
       contains: ["the default branch"],
@@ -347,7 +356,7 @@ describe("what a failed lookup says", () => {
         platform(gh);
 
         gh.route(
-          "GET /repos/acme/platform/commits/main",
+          "GET /repos/acme/platform/commits/HEAD",
           { message: "Git Repository is empty." },
           409,
         );
@@ -357,7 +366,7 @@ describe("what a failed lookup says", () => {
     {
       name: "the token provider says the token, not the GitHub App",
       routes: (gh) => {
-        gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+        hidden(gh, "acme/platform");
       },
       contains: ["The token can't access"],
       excludes: ["GitHub App"],
@@ -517,7 +526,7 @@ describe("the GitHub App's installation", () => {
 
     onlyInstallation99(gh, "/repos/acme/platform", { default_branch: "main" });
 
-    onlyInstallation99(gh, "/repos/acme/platform/commits/main", {
+    onlyInstallation99(gh, "/repos/acme/platform/commits/HEAD", {
       sha: "cafe1234",
     });
 
@@ -531,7 +540,7 @@ describe("the GitHub App's installation", () => {
     expect(paths).toContain("GET /repos/acme/platform/installation");
     expect(paths).toContain("POST /app/installations/99/access_tokens");
 
-    expect(result.steps["github › ref:acme/platform@main"]).toMatchObject({
+    expect(result.steps["github › ref:acme/platform@HEAD"]).toMatchObject({
       installationId: 99,
       sha: "cafe1234",
     });
@@ -568,7 +577,7 @@ describe("the GitHub App's installation", () => {
 
     tokenRoutes(gh);
 
-    gh.route("GET /repos/acme/secret", { message: "Not Found" }, 404);
+    hidden(gh, "acme/secret");
 
     gh.route(
       "GET /repos/acme/secret/installation",
@@ -594,7 +603,10 @@ describe("the GitHub App's installation", () => {
 
     tokenRoutes(gh);
 
-    gh.handle("GET /repos/acme/platform", rateLimited({ "retry-after": "1" }));
+    gh.handle(
+      "GET /repos/acme/platform/commits/HEAD",
+      rateLimited({ "retry-after": "1" }),
+    );
 
     const result = await checkoutRepo(ci);
 
@@ -604,7 +616,7 @@ describe("the GitHub App's installation", () => {
 
     expect(
       requestsOf(gh).filter((path) => {
-        return path === "GET /repos/acme/platform";
+        return path === "GET /repos/acme/platform/commits/HEAD";
       }).length,
     ).toBeGreaterThan(1);
   });
@@ -614,7 +626,7 @@ describe("the GitHub App's installation", () => {
 
     tokenRoutes(gh);
 
-    gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+    hidden(gh, "acme/platform");
 
     gh.handle("GET /repos/acme/platform/installation", rateLimited({}));
 
@@ -630,7 +642,7 @@ describe("the GitHub App's installation", () => {
 
     tokenRoutes(gh);
 
-    gh.route("GET /repos/acme/platform", { message: "Not Found" }, 404);
+    hidden(gh, "acme/platform");
 
     gh.route(
       "GET /repos/acme/platform/installation",
@@ -714,7 +726,7 @@ describe("files() of another repository or ref", () => {
   test("defaults the ref to the repository's default branch", async () => {
     const { paths } = await cachedNames("blob1");
 
-    expect(paths).toContain("/repos/acme/platform/commits/main");
+    expect(paths).toContain("/repos/acme/platform/commits/HEAD");
   });
 
   test("a truncated tree throws instead of hashing part of the files", async () => {
