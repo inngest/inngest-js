@@ -371,7 +371,6 @@ describe("what a failed lookup says", () => {
       "acme/..",
       "acme/.",
       "acme/pla\ttform",
-      "ac_me/platform",
     ].map((repo) => {
       return {
         name: `the repo ${JSON.stringify(repo)} is rejected`,
@@ -747,6 +746,12 @@ describe("files() of another repository or ref", () => {
       }).toThrow(CiUsageError);
     },
   );
+
+  test("accepts an Enterprise Managed User owner", () => {
+    expect(() => {
+      return files("a", { repo: "octo_cat/platform" });
+    }).not.toThrow();
+  });
 
   test("keeps the part's own options", () => {
     expect(files("a", "b", { repo: "acme/platform", ref: "main" })).toEqual({
