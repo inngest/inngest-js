@@ -28,7 +28,9 @@ export const sandboxRef = {
  * A client whose sandbox API returns `sandboxRef` for a `get`, answers other
  * paths with `route`, and 404s the rest.
  */
-export const createClient = (route: (path: string) => Response | undefined) => {
+export const createClient = (
+  route: (path: string, method: string) => Response | undefined,
+) => {
   const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
 
   return new Inngest({
@@ -48,7 +50,7 @@ export const createClient = (route: (path: string) => Response | undefined) => {
       }
 
       return (
-        route(pathname) ??
+        route(pathname, init?.method ?? "GET") ??
         Response.json(
           { errors: [{ code: "missing", message: "missing" }] },
           { status: 404 },

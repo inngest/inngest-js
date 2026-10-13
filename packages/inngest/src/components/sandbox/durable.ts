@@ -255,10 +255,21 @@ export const executeSandboxOperation = async (
       };
     }
     case "destroy": {
-      const result = await sandboxForOperation(
-        client,
-        operation.target.sandbox,
-      ).destroy();
+      // A destroy that already happened, such as one retried after a lost
+      // response, has the outcome the caller wanted.
+      const result = await sandboxForOperation(client, operation.target.sandbox)
+        .destroy()
+        .catch((error: unknown): SandboxDestroyResult => {
+          if (
+            error instanceof SandboxError &&
+            error.code === "sandbox_not_found"
+          ) {
+            return { status: "TERMINATED", sandbox: null };
+          }
+
+          throw error;
+        });
+
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
