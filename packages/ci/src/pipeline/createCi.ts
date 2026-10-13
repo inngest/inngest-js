@@ -55,6 +55,13 @@ export interface CiOptions {
   github?: GitHubProvider;
   /** Default machine for jobs. */
   machine?: MachineConfig;
+  /**
+   * How long a run waits for a build it asked for, such as `"15m"`, before it
+   * checks that the build is still going. A build that is, however long it
+   * takes, is waited for again, so this only bounds how long a build that was
+   * lost goes unnoticed. Defaults to `"15m"`.
+   */
+  buildWait?: string;
   /** Builds the link shown on checks. */
   runUrl?: (ctx: { runId: string; functionId: string }) => string;
 }
@@ -243,6 +250,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return buildFunction;
     },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
+    buildWait: options.buildWait ?? "15m",
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
       client as unknown as { logger?: { warn: (...args: unknown[]) => void } }

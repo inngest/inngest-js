@@ -2,14 +2,16 @@
  * Building a job's snapshot in a run of its own: what a pipeline hands the
  * build, the one generated function that does it, and what it hands back.
  *
- * A pipeline invokes this function for a cached job, and for any job another
- * job starts `from`, instead of running the job inline. One function builds
- * every job: the invoke's data says which. It looks the snapshot up again when
- * it starts, so a run that queued behind another build of the same name often
- * finds the snapshot. Within a pipeline run each base is built once. Across
- * concurrent runs it is best-effort: runs that miss at the same time may build
- * redundantly, at most one snapshot keeps the name and the others adopt it, so
- * every run gets a correct snapshot.
+ * A pipeline asks for a build of a cached job, and of any job another job
+ * starts `from`, instead of running the job inline. One function builds every
+ * job: the data says which. A job that starts fresh is asked for by event, so
+ * concurrent runs that miss the same entry build it once (see buildLock.ts);
+ * the rest are invoked. It looks the snapshot up again when it starts, so a
+ * request that arrives just after a build finished does not build again. Within
+ * a pipeline run each base is built once. Across concurrent runs a job that
+ * starts `from` another is best-effort: runs that miss at the same time may
+ * build redundantly, at most one snapshot keeps the name and the others adopt
+ * it, so every run gets a correct snapshot.
  *
  * @module
  */
@@ -26,6 +28,7 @@ import type {
   MatrixAxes,
   RepoContext,
 } from "../types.ts";
+import { buildRequestedEvent } from "./buildLock.ts";
 import type { RegisteredJob } from "./job.ts";
 import { builtResult, runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
@@ -79,6 +82,19 @@ export interface CacheBuildData extends Record<string, unknown> {
    * it. The invoking run starts its jobs from it and deletes it at its end.
    */
   unnamed?: boolean;
+  /**
+   * Set on a request for a build that others may be waiting on, which answers
+   * with `ci/build.done`. A build that is invoked is the invoker's alone.
+   */
+  locked?: boolean;
+  /** The ID of the app whose build function takes a request. */
+  app?: string;
+  /**
+   * The key of the singleton that skips a request while a build of the same
+   * thing runs. A request names its lock, and an invoke its own step, which no
+   * other invoke shares.
+   */
+  slot: string;
   /**
    * What the job starts from, as the invoking run found it. The job's name was
    * worked out from this snapshot, so the build starts from it rather than
@@ -165,10 +181,18 @@ export const cacheBuildFunction = ({
     {
       id,
       name: "build",
-      // Platform concurrency limits steps, not runs, so this doesn't stop
-      // runs that miss together from each building: it only keeps one step per
-      // name at a time. A build that finds the name taken adopts the winner.
-      concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
+      // Every app in the environment would hear a request, so it names the app
+      // whose build function is meant to take it.
+      triggers: [
+        {
+          event: buildRequestedEvent,
+          if: `event.data.app == "${client.id}"`,
+        },
+      ],
+      // While a build of a lock runs, requests for it are skipped before they
+      // start a run or touch a machine. The lock's machine name keeps two
+      // builds apart where this cannot: other apps, and the edges of a run.
+      singleton: { key: "event.data.slot", mode: "skip" },
       ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
