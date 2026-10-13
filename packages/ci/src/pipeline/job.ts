@@ -105,7 +105,7 @@ export const defineJob = ({
 /**
  * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
  * zero age would make every snapshot too old, so concurrent builds would
- * delete each other's.
+ * delete each other's snapshots.
  */
 const checkMaxAge = (config: JobConfig): void => {
   const maxAge = config.cache?.maxAge;
