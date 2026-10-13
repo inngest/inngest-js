@@ -18,6 +18,7 @@ import { consoleReporter } from "./github/auth.ts";
 import { $ } from "./machine/command.ts";
 import { createCi } from "./pipeline/createCi.ts";
 import { createCiTestClient } from "./testing/client.ts";
+import { prEvent } from "./testing/events.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import { runFunction } from "./testing/runFunction.ts";
 
@@ -60,20 +61,10 @@ const makeRepo = ({ withBase }: { withBase: boolean }): string => {
   return dir;
 };
 
-const prEvent = {
-  name: "github/pull_request.opened",
+const localPrEvent = {
+  ...prEvent,
   data: {
-    action: "opened",
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
+    ...prEvent.data,
     // A local fixture, as `pnpm ci:send` builds: `changed()` and `checkout()`
     // use the working tree rather than GitHub.
     local: { path: makeRepo({ withBase: true }), baseRef: "main" },
@@ -192,9 +183,9 @@ describe("the example's pr pipeline", () => {
     const { pipeline, seen } = buildPipeline();
 
     const event = {
-      ...prEvent,
+      ...localPrEvent,
       data: {
-        ...prEvent.data,
+        ...localPrEvent.data,
         local: { path: makeRepo({ withBase: false }), baseRef: "main" },
       },
     };
@@ -209,7 +200,7 @@ describe("the example's pr pipeline", () => {
     const { api, reporter, pipeline, seen, deploys } = buildPipeline();
 
     const result = await runFunction(pipeline, {
-      event: prEvent,
+      event: localPrEvent,
       maxRequests: 400,
     });
 
@@ -292,7 +283,7 @@ describe("the example's pr pipeline", () => {
     ]);
 
     const result = await runFunction(pipeline, {
-      event: prEvent,
+      event: localPrEvent,
       maxRequests: 400,
     });
 
