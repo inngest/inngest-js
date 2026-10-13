@@ -438,6 +438,59 @@ describe("step.sandbox", () => {
   });
 
   test.each([
+    {
+      name: "create runningTimeoutMs",
+      run: (tools: ReturnType<typeof createSandboxTools>) => {
+        return tools.create("create", {
+          ...createOptions,
+          runningTimeout: "1h",
+        });
+      },
+      action: "create",
+      expectedInput: { ...createOptions, runningTimeoutMs: 3_600_000 },
+    },
+    {
+      name: "exec timeoutMs",
+      run: (tools: ReturnType<typeof createSandboxTools>) => {
+        return tools.create("create", createOptions).then((sandbox) => {
+          return sandbox.commands.run("exec", "true", { timeout: "1h" });
+        });
+      },
+      action: "exec",
+      expectedInput: { timeoutMs: 3_600_000 },
+    },
+    {
+      name: "waitUntilRunning timeoutMs",
+      run: (tools: ReturnType<typeof createSandboxTools>) => {
+        return tools.create("create", createOptions).then((sandbox) => {
+          return sandbox.waitUntilRunning("wait-running", { timeout: "1h" });
+        });
+      },
+      action: "waitUntilRunning",
+      expectedInput: { timeoutMs: 3_600_000 },
+    },
+  ])(
+    "accepts timeouts longer than 5 minutes (no client-side cap): $name",
+    async ({ run, action, expectedInput }) => {
+      const operations: SandboxOperationV1[] = [];
+      const rawTool: SandboxRawTool = vi.fn(async (_id, operation) => {
+        operations.push(operation);
+        return resultForOperation(operation);
+      });
+
+      await run(createSandboxTools(() => rawTool));
+
+      const operation = operations.find((candidate) => {
+        return candidate.action === action;
+      });
+      expect(operation).toMatchObject({ input: [expectedInput] });
+      expect(parseSandboxOperation(operation)).toMatchObject({
+        input: [expectedInput],
+      });
+    },
+  );
+
+  test.each([
     "OPENAI_API_KEY",
     "openai-production",
     "Mixed Case / token",

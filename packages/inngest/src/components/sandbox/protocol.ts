@@ -46,6 +46,9 @@ const snapshotTargetSchema = z
   .object({ snapshot: sandboxSnapshotRefSchema })
   .strict();
 
+// The one place to cap a duration if the API ever asks the SDK to.
+const durationMsSchema = z.number().int().positive();
+
 const createInputSchema = z
   .union([
     z
@@ -56,7 +59,7 @@ const createInputSchema = z
         environment: z.record(z.string()).optional(),
         secrets: z.array(sandboxSecretNameSchema).optional(),
         runningTimeoutMs: z
-          .union([z.number().int().positive().max(300_000), z.literal(false)])
+          .union([durationMsSchema, z.literal(false)])
           .optional(),
       })
       .strict(),
@@ -65,7 +68,7 @@ const createInputSchema = z
         name: sandboxNameSchema,
         snapshotId: canonicalUuidSchema,
         runningTimeoutMs: z
-          .union([z.number().int().positive().max(300_000), z.literal(false)])
+          .union([durationMsSchema, z.literal(false)])
           .optional(),
       })
       .strict(),
@@ -131,7 +134,7 @@ const processSpecInputSchema = z
 const execInputSchema = z
   .object({
     ...processSpecShape,
-    timeoutMs: z.number().int().positive().max(300_000),
+    timeoutMs: durationMsSchema,
   })
   .strict()
   .superRefine(validateProcessSpec);
@@ -141,9 +144,7 @@ const signalInputSchema = z
     includeChildren: z.boolean(),
   })
   .strict();
-const waitInputSchema = z
-  .object({ timeoutMs: z.number().int().positive().max(300_000) })
-  .strict();
+const waitInputSchema = z.object({ timeoutMs: durationMsSchema }).strict();
 const lifecycleInputSchema = waitInputSchema;
 const outputInputSchema = z
   .object({
