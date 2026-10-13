@@ -539,6 +539,30 @@ describe("the GitHub App's installation", () => {
     expect(JSON.stringify(result.steps)).not.toContain(secret);
   });
 
+  test("is found from the repository when the narrowed token is refused", async () => {
+    const { api, gh, ci } = setup(app);
+
+    platform(gh);
+    tokenRoutes(gh);
+
+    gh.route(
+      "POST /app/installations/1/access_tokens",
+      { message: "Validation Failed" },
+      422,
+    );
+
+    gh.route("GET /repos/acme/platform/installation", { id: 99 });
+
+    const result = await checkoutRepo(ci);
+
+    expect(result.type).toBe("function-resolved");
+    expect(cloneScripts(api)[0]).toContain("checkout 'cafe1234'");
+
+    expect(requestsOf(gh)).toContain(
+      "POST /app/installations/99/access_tokens",
+    );
+  });
+
   test("an app that can't access the repository says so", async () => {
     const { api, gh, ci } = setup(app);
 

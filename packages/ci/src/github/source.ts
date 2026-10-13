@@ -126,7 +126,8 @@ const statusOf = (error: unknown): number | undefined => {
 
 /**
  * Return when an error means GitHub can't see the repository (a 403 that isn't
- * a rate limit, or a 404). Throw anything else: rate limits as retries, server
+ * a rate limit, a 404, or the 422 of a token request narrowed to a repository
+ * outside the installation). Throw anything else: rate limits as retries, server
  * errors as they are, and other client errors as non-retriable.
  */
 const throwUnlessMissing = (error: unknown): void => {
@@ -135,7 +136,7 @@ const throwUnlessMissing = (error: unknown): void => {
 
   if (
     mapped instanceof NonRetriableError &&
-    (status === 403 || status === 404)
+    (status === 403 || status === 404 || status === 422)
   ) {
     return;
   }
