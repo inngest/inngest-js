@@ -8,7 +8,9 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
-import type { CachedSnapshot } from "../cache/cache.ts";
+import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import type { NamePolicy } from "../cache/namePolicy.ts";
+import { policyFromFlags } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type {
   CheckAnnotation,
@@ -58,6 +60,39 @@ export const matrixOriginOf = (
 };
 
 /**
+ * Where a job config remembers it was defined while a run was active, so it
+ * exists only in the memory of the worker running that pipeline. A matrix sets
+ * it on its combinations itself, since they are always defined in a run.
+ */
+export const inlineKey = Symbol("inngest/ci.inline");
+
+/** Whether the job was defined inside a pipeline run. */
+export const isInline = (config: JobConfig): boolean => {
+  return (config as unknown as { [inlineKey]?: boolean })[inlineKey] === true;
+};
+
+/**
+ * What a job is asked to build, whether by the build function's run or by the
+ * run that defined it: where its snapshot goes, how the name is treated, what
+ * it starts from, and where it leaves what it ended with.
+ */
+export interface BuildRequest {
+  /** The key and snapshot name to build under. */
+  target: CacheTarget;
+  /** What to do about the name, which a rebuild of a bad snapshot changes. */
+  name: NamePolicy;
+  /** What the job starts from, as a build is handed it. */
+  base?: CacheBuildResult;
+  /** What the job leaves for whoever asked: the job sets it, they read it. */
+  sink: {
+    /** What the job ended with. */
+    outcome?: BuildOutcome;
+    /** The job's line in the summary, for the asker to report. */
+    summary?: JobSummary;
+  };
+}
+
+/**
  * A machine held by a job or an extra machine scope. It's a promise so
  * concurrent first commands share one creation.
  */
@@ -74,10 +109,17 @@ export interface MachineHandle {
   claimedProcessIds?: Set<string>;
 }
 
-/**
- * What a build run's job ended with, which the run hands back to the run that
- * invoked it. A build run has one job, so nothing else writes it.
- */
+/** What a build run is asked to build, from the data it was invoked with. */
+export const requestOf = (data: CacheBuildData): BuildRequest => {
+  return {
+    target: { ownKey: data.ownKey, name: data.cacheKey },
+    name: policyFromFlags(data),
+    ...(data.base ? { base: data.base } : {}),
+    sink: {},
+  };
+};
+
+/** What a built job ended with, which the asker takes as its own. */
 export interface BuildOutcome {
   /** The job's snapshot, if it had a machine and snapshots could be taken. */
   snapshotId?: string;
@@ -180,6 +222,8 @@ export interface CiRunScope {
    * else, and no job reads another job's state through it.
    */
   builds: Map<string, Promise<CacheBuildResult>>;
+  /** The IDs of the jobs defined in this run, which must be unique. */
+  definedJobs: Set<string>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
@@ -194,8 +238,8 @@ export interface CiRunScope {
    * invoked it. It has no checks of its own and reports to that run.
    */
   build?: CacheBuildData;
-  /** What the build's job ended with, which the build hands back. */
-  outcome?: BuildOutcome;
+  /** What a build run is asked to build, from `build`. */
+  request?: BuildRequest;
   /** What the build's job reported, which the build hands back. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */
@@ -252,6 +296,8 @@ export interface CiJobScope {
   jobPath: string;
   config: JobConfig;
   machine?: Promise<MachineHandle>;
+  /** Set when the job builds a snapshot for someone who asked for it. */
+  request?: BuildRequest;
   fromSnapshotId?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
@@ -260,14 +306,11 @@ export interface CiJobScope {
    * whatever the number of children that need it, and gives the new one. Set
    * by `startFrom`.
    *
-   * With `broken`, the snapshot failed to start twice, so it is deleted first
-   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
-   * alone, as when another build is still taking the snapshot.
+   * The name policy says how the rebuild treats the name: a snapshot that
+   * failed to start twice is deleted first (once, whichever child asks), and a
+   * snapshot another build is still taking leaves the name alone.
    */
-  rebuildSnapshot?: (why: {
-    broken: boolean;
-    unnamed: boolean;
-  }) => Promise<string | undefined>;
+  rebuildSnapshot?: (name: NamePolicy) => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.
@@ -556,9 +599,11 @@ export const inJobSpan = <R>(
   run: CiRunScope,
   jobPath: string,
   fn: () => R,
+  /** What the span is called, when it isn't the job's name. */
+  name?: string,
 ): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
-    return inSpan(spans.job(run, jobPath), fn);
+    return inSpan(spans.job(run, jobPath, name), fn);
   });
 };
 

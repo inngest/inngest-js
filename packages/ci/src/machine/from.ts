@@ -19,6 +19,8 @@ import {
   runTarget,
   warnUncachedBase,
 } from "../cache/cache.ts";
+import type { NamePolicy } from "../cache/namePolicy.ts";
+import { deletesHolder } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
@@ -31,6 +33,7 @@ import {
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
+  isInline,
   joinId,
   outsideJobs,
   rebuildSuffix,
@@ -229,6 +232,18 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
+ * Whether a job has to be built in this run: it was defined here, or its
+ * parent was, and either way the build function couldn't find it.
+ */
+export const buildsInRun = (
+  config: JobConfig,
+  /** The job's `from` parent, if it has one. */
+  parent: Parent | undefined,
+): boolean => {
+  return isInline(config) || (parent ? isInline(parent.config) : false);
+};
+
+/**
  * The jobs above a job, nearest first: its `from` parent, that job's parent,
  * and so on, each with its input validated. The one walk of `from`, so every
  * question about the chain is asked of this list.
@@ -374,9 +389,10 @@ export const parentBuildOf = async (
     return undefined;
   }
 
-  const given = run.build?.jobId === config.id ? run.build.base : undefined;
-
-  return resolvedBase(parent, given ?? (await resolveParent(scope, parent)));
+  return resolvedBase(
+    parent,
+    scope.request?.base ?? (await resolveParent(scope, parent)),
+  );
 };
 
 /**
@@ -508,7 +524,7 @@ export const startFrom = async (
         ? `starting ${config.id} · ${describeCached(built.cached.createdAt)}`
         : `starting ${config.id}`;
 
-    scope.rebuildSnapshot = async (why) => {
+    scope.rebuildSnapshot = async (name) => {
       const base = await baseOf(run, parent);
 
       const rebuilt = await requestRebuild({
@@ -517,7 +533,7 @@ export const startFrom = async (
         input,
         raw,
         target: built.target,
-        replacing: { snapshotId, ...why },
+        name,
         ...(base ? { base: base.built } : {}),
       });
 
@@ -566,7 +582,7 @@ const requestRebuild = ({
   raw,
   target,
   base,
-  replacing,
+  name,
 }: {
   run: CiRunScope;
   config: JobConfig;
@@ -577,8 +593,8 @@ const requestRebuild = ({
   target: CacheTarget;
   /** What the parent starts from, which its build must start from too. */
   base?: CacheBuildResult;
-  /** The snapshot that wouldn't start, which the build replaces. */
-  replacing: { snapshotId: string; broken: boolean; unnamed: boolean };
+  /** How the build treats the name, with the snapshot it replaces. */
+  name: NamePolicy;
 }): Promise<CacheBuildResult> => {
   const path = `${buildPathOf(config.id, input)}${rebuildSuffix}`;
   const existing = run.builds.get(path);
@@ -588,20 +604,20 @@ const requestRebuild = ({
   }
 
   const built = outsideJobs(run, async () => {
-    let unnamed = replacing.unnamed;
+    let policy = name;
 
     // Here, not in each child, so a snapshot that every child found broken is
     // deleted once. One that can't be deleted still holds its name, so what
     // replaces it can't have one.
-    if (replacing.broken) {
+    if (name.kind === "replace" && deletesHolder(name)) {
       const gone = await deleteSnapshot(
         run,
         joinId(path, "cache:delete"),
-        replacing.snapshotId,
+        name.exclude,
       );
 
       if (!gone) {
-        unnamed = true;
+        policy = { kind: "unnamed", exclude: name.exclude };
 
         run.warnings.push(
           `not cached: the broken snapshot of \`${config.id}\` couldn't be deleted, so it was rebuilt without a name and later runs build it again`,
@@ -620,9 +636,7 @@ const requestRebuild = ({
       target,
       lookup: false,
       ...(base ? { base } : {}),
-      exclude: replacing.snapshotId,
-      broken: replacing.broken,
-      unnamed,
+      name: policy,
     });
 
     adoptBuilt(run, result);

@@ -44,8 +44,8 @@ const ciSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
  */
 export const spans = {
   /** A job, which holds everything it does. */
-  job: (run: CiRunScope, path: string): SpanInfo => {
-    return userSpan("job", path, traceName.job(run, path));
+  job: (run: CiRunScope, path: string, name?: string): SpanInfo => {
+    return userSpan("job", path, name ?? traceName.job(run, path));
   },
 
   /** The run's one span for reporting to GitHub. */
@@ -390,6 +390,10 @@ export const traceName = {
 
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
+  },
+
+  buildInline: (jobId: string): string => {
+    return `Build ${jobId} inline`;
   },
 
   canUser: (login: string, permission: string): string => {
