@@ -191,6 +191,10 @@ export const steps = {
     };
   },
 
+  findBaseImage: (name: string): StepSpec => {
+    return { id: `image ${name}`, name: `Find base image ${name}` };
+  },
+
   lookUpCache: (id: string, jobPath: string): StepSpec => {
     return { id, name: "Look up cache", tag: cacheTag(jobPath) };
   },
