@@ -41,6 +41,11 @@ const methodForAction: Partial<Record<SandboxOperationV1["action"], string>> = {
  */
 export type SandboxTraceMetadata = {
   version: 1;
+  /**
+   * "wait" on the steps that only wait for a command's tool calls, which the
+   * trace folds into the command's own row.
+   */
+  kind?: "wait";
   action: SandboxOperationV1["action"];
   /**
    * The facade method the user called, like "commands.run" or "snapshot".

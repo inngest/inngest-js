@@ -27,6 +27,11 @@ import {
 
 export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
+/**
+ * A command with tools is bounded by wall clock for the whole run, tool time
+ * included.
+ */
+export const defaultToolsCommandTimeoutMs = 5 * 60 * 1_000;
 export const maxSandboxRunningTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxRunningTimeoutMs = 120 * 1_000;
 export const maxSandboxSnapshotWaitTimeoutMs = 5 * 60 * 1_000;

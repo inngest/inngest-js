@@ -1,8 +1,10 @@
 import { z } from "zod/v3";
 
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxToolOptions, SandboxTools } from "./tools.ts";
 import {
   type SandboxAction,
+  type SandboxCommandResult,
   SandboxError,
   type SandboxErrorDetail,
   type SandboxErrorOptions,
@@ -633,10 +635,24 @@ export type SandboxOperationResultV1 = z.infer<
   typeof sandboxOperationResultSchema
 >;
 export type DurableSandboxAction = SandboxOperationV1["action"];
-export type SandboxRawTool = (
+export type SandboxToolsRequest = {
+  tools: SandboxTools;
+  toolOptions?: SandboxToolOptions;
+};
+export type SandboxRawTool = ((
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationV1,
-) => Promise<unknown>;
+) => Promise<unknown>) & {
+  /**
+   * Runs a `commands.run` whose code can call tools. Only the sandbox
+   * middleware provides it, since it needs `step.run`.
+   */
+  runWithTools?: (
+    idOrOptions: StepOptionsOrId,
+    operation: SandboxOperationForAction<"exec">,
+    request: SandboxToolsRequest,
+  ) => Promise<SandboxCommandResult>;
+};
 export type SandboxRawToolResolver = () =>
   | SandboxRawTool
   | Promise<SandboxRawTool>;

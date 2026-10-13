@@ -50,6 +50,7 @@ import {
   decodeBase64,
   decodeOutputChunk,
   decodeUtf8,
+  defaultToolsCommandTimeoutMs,
   encodeBase64,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
@@ -661,7 +662,13 @@ export const createDurableSandboxFacade = (
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
       run: async (idOrOptions, command, options) => {
-        const normalized = normalizeSandboxCommandOptions(command, options);
+        const { tools, toolOptions, ...commandOptions } = options ?? {};
+        const normalized = normalizeSandboxCommandOptions(command, {
+          ...commandOptions,
+          ...(tools && {
+            timeout: commandOptions.timeout ?? defaultToolsCommandTimeoutMs,
+          }),
+        });
         const { timeout: _timeout, ...input } = normalized;
         const operation = parseSandboxOperationForAction("exec", {
           protocolVersion: sandboxProtocolVersion,
@@ -669,6 +676,18 @@ export const createDurableSandboxFacade = (
           target: sandboxTarget(ref),
           input: [input],
         });
+        if (tools) {
+          const rawTool = await rawToolResolver();
+          if (!rawTool.runWithTools) {
+            throw new SandboxValidationError(
+              "Tools need the sandbox middleware: add sandboxMiddleware() to your client",
+            );
+          }
+          return rawTool.runWithTools(idOrOptions, operation, {
+            tools,
+            toolOptions,
+          });
+        }
         const result = await callRawTool(
           rawToolResolver,
           idOrOptions,

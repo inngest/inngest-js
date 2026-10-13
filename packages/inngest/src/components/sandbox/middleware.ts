@@ -1,3 +1,4 @@
+import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
@@ -6,9 +7,13 @@ import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import {
   getSandboxError,
   parseSandboxOperation,
+  type SandboxOperationForAction,
   type SandboxOperationResultV1,
+  type SandboxOperationV1,
   type SandboxRawTool,
+  type SandboxToolsRequest,
 } from "./protocol.ts";
+import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import {
   type SandboxTraceMetadata,
   sandboxMetadataKind,
@@ -131,12 +136,55 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxStepExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
-      arg.ctx.step.run(
-        idOrOptions,
-        (input) => executeAsStep(this.client, input),
-        operation,
-      );
+    const { step, runId } = arg.ctx;
+    const host: ToolsHost = {
+      run: async <T>(
+        idOrOptions: StepOptionsOrId,
+        fn: () => Promise<T>,
+        meta?: SandboxTraceMetadata,
+      ) => {
+        return (await step.run(idOrOptions, async () => {
+          try {
+            const result = await fn();
+            if (meta) {
+              addSandboxMetadata(() => {
+                return meta;
+              });
+            }
+
+            return result;
+          } catch (error) {
+            throw toStepError(error);
+          }
+        })) as T;
+      },
+      getSandbox: async (sandboxId) => {
+        const sandbox = await this.client.sandboxes.get(sandboxId);
+        if (!sandbox) {
+          throw new Error(`Sandbox ${sandboxId} not found`);
+        }
+
+        return sandbox;
+      },
+      runId,
+    };
+    const rawTool: SandboxRawTool = Object.assign(
+      (idOrOptions: StepOptionsOrId, operation: SandboxOperationV1) =>
+        step.run(
+          idOrOptions,
+          (input) => executeAsStep(this.client, input),
+          operation,
+        ),
+      {
+        runWithTools: (
+          idOrOptions: StepOptionsOrId,
+          operation: SandboxOperationForAction<"exec">,
+          request: SandboxToolsRequest,
+        ) => {
+          return runCommandWithTools(host, idOrOptions, operation, request);
+        },
+      },
+    );
 
     return {
       ...arg,
