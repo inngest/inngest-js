@@ -1653,7 +1653,7 @@ describe("from", () => {
       createCi(createCiTestClient(createFakeSandboxApi()), {
         buildWait: "soon",
       });
-    }).toThrow('Could not parse duration "soon"');
+    }).toThrow(CiUsageError);
   });
 
   test("a `from` function that returns a non-job fails the run for good", async () => {
