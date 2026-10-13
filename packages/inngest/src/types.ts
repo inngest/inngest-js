@@ -16,7 +16,10 @@ import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
-import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type {
+  createGroupTools,
+  GroupTools,
+} from "./components/InngestGroupTools.ts";
 import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
@@ -1066,6 +1069,13 @@ type ApplyAllMiddlewareCtxKeyExtensions<
 export type ApplyAllMiddlewareStepExtensions<
   TMw extends Middleware.Class[] | undefined,
 > = ApplyAllMiddlewareCtxKeyExtensions<TMw, "step", Middleware.StepTools>;
+
+/**
+ * Apply all middleware group extensions, like `ApplyAllMiddlewareStepExtensions`.
+ */
+export type ApplyAllMiddlewareGroupExtensions<
+  TMw extends Middleware.Class[] | undefined,
+> = ApplyAllMiddlewareCtxKeyExtensions<TMw, "group", GroupTools>;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
