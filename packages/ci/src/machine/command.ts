@@ -13,7 +13,8 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
-import { ciStep, spans, traceName } from "../pipeline/names.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   countApi,
@@ -601,12 +602,9 @@ const recordFailure = async (
   exitCode: number,
 ): Promise<void> => {
   try {
-    await scope.run.step.run(
-      subStep(stepId, "exit", traceName.exited(exitCode)),
-      () => {
-        throw new NonRetriableError(`exit ${exitCode}`);
-      },
-    );
+    await ciRun(scope.run, steps.recordCommandFailure(stepId, exitCode), () => {
+      throw new NonRetriableError(`exit ${exitCode}`);
+    });
   } catch (error) {
     if (!(error instanceof StepError)) {
       throw error;

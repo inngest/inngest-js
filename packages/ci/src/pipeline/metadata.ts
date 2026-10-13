@@ -11,7 +11,7 @@
 import { getAsyncCtx } from "inngest/experimental";
 import type { CheckConclusion } from "../types.ts";
 import { version } from "../version.ts";
-import { ciStep, traceName } from "./names.ts";
+import { type StepSpec, stepOptions, steps } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 import { apiNames } from "./scope.ts";
 
@@ -142,6 +142,25 @@ export const tagStep = async (
 };
 
 /**
+ * Run `fn` as one of CI's own steps, from the `steps` catalog. The step is
+ * tagged with what its spec says it is for, and with `runValues` on the run.
+ */
+export const ciRun = <T>(
+  run: CiRunScope,
+  spec: StepSpec,
+  fn: () => T | Promise<T>,
+  runValues?: () => Record<string, unknown>,
+): Promise<T> => {
+  return run.step.run(stepOptions(spec), async () => {
+    if (spec.tag || runValues) {
+      await tagStep(run, spec.tag, runValues?.());
+    }
+
+    return fn();
+  }) as Promise<T>;
+};
+
+/**
  * A step of its own that only carries run metadata and returns the time, for
  * a pipeline whose check is off and so has no step to ride on.
  */
@@ -150,9 +169,12 @@ export const metadataStep = (
   id: string,
   runValues: () => Record<string, unknown>,
 ): Promise<number> => {
-  return run.step.run(ciStep(id, traceName.recordRunDetails), async () => {
-    await tagStep(run, undefined, runValues());
-
-    return Date.now();
-  });
+  return ciRun(
+    run,
+    steps.recordRunDetails(id),
+    () => {
+      return Date.now();
+    },
+    runValues,
+  );
 };

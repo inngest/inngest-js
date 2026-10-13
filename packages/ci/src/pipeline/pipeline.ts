@@ -48,8 +48,13 @@ import { formatDuration } from "../util.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
-import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
-import { ciStep, traceName } from "./names.ts";
+import {
+  ciRun,
+  metadataStep,
+  runEndMetadata,
+  runStartMetadata,
+} from "./metadata.ts";
+import { stepOptions, steps } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -569,8 +574,9 @@ const resolveConfiguredRepo = (
   const { owner, name } = parseRepo(fullName);
 
   return inGitHubSpan(run, () => {
-    return run.step.run(
-      { id: `github › repo:resolve`, name: traceName.resolveRepository },
+    return ciRun(
+      run,
+      steps.resolveRepository(),
       async (): Promise<RepoContext> => {
         const base: RepoContext = { owner, name, fullName, sha: "" };
         const provider = run.ci.github as GitHubProvider;
@@ -601,7 +607,7 @@ const resolveConfiguredRepo = (
             (run.event as { name?: string } | undefined)?.name ?? "manual",
         };
       },
-    ) as Promise<RepoContext>;
+    );
   });
 };
 
@@ -616,8 +622,9 @@ const resolvePullRequestHead = (
   run: CiRunScope,
   repo: RepoContext,
 ): Promise<RepoContext> => {
-  return run.step.run(
-    { id: `github › pr:resolve`, name: "pr:resolve" },
+  return ciRun(
+    run,
+    steps.resolvePullRequest(),
     async (): Promise<RepoContext> => {
       const provider = run.ci.github as GitHubProvider;
       const number = repo.pullRequest?.number;
@@ -649,7 +656,7 @@ const resolvePullRequestHead = (
         },
       };
     },
-  ) as Promise<RepoContext>;
+  );
 };
 
 /** Errors that replaying the run would only reproduce. */
@@ -832,19 +839,16 @@ const checkCommentPermission = async (
 
   if (!allowed) {
     await inGitHubSpan(run, () => {
-      return run.step.run(
-        { id: "github › comment:denied", name: traceName.commentNotAllowed },
-        async () => {
-          const { stickyComment } = await import("../github/helpers.ts");
+      return ciRun(run, steps.commentNotAllowed(), async () => {
+        const { stickyComment } = await import("../github/helpers.ts");
 
-          await stickyComment(
-            "permission",
-            `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
-          );
+        await stickyComment(
+          "permission",
+          `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
+        );
 
-          return { denied: login };
-        },
-      );
+        return { denied: login };
+      });
     });
   }
 
@@ -899,12 +903,9 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(
-        ciStep("destroy-orphans", traceName.cleanUpMachines),
-        async () => {
-          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-        },
-      );
+      return step.run(stepOptions(steps.cleanUpEndedRun()), () => {
+        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+      });
     },
   );
 };

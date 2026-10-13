@@ -7,6 +7,7 @@
 
 import { getAsyncCtx } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
+import { stepOptions, steps } from "./names.ts";
 import { getJobScope, getRunScope, nextStepId } from "./scope.ts";
 
 export type DurableBehaviour = "step" | "direct";
@@ -179,7 +180,10 @@ const call = async (
   const step = getRunScope()?.step ?? execution.ctx.step;
 
   // Named by the method called, without the job path or count in its ID.
-  return step.run({ id, name: overrides.name ?? label }, invoke);
+  return step.run(
+    stepOptions(steps.githubCall(id, label, overrides.name)),
+    invoke,
+  );
 };
 
 const invokeOnClient = async (

@@ -13,6 +13,7 @@
 import type { CheckConclusion, JobConfig } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import { version } from "../version.ts";
+import type { StepTag } from "./metadata.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
 import type { SpanInfo, SpanKind } from "./spans.ts";
 import { originOption } from "./spans.ts";
@@ -93,6 +94,21 @@ export const spans = {
   },
 };
 
+/** What one of CI's own steps is: its ID, name, and what it's marked with. */
+export interface StepSpec {
+  /** The step's ID, which replays depend on. */
+  id: string;
+  /** What the step is called in the trace. */
+  name: string;
+  /** What the step is for, when it belongs to a job, a check or the cache. */
+  tag?: StepTag;
+  /**
+   * Set for a step that CI's origin shouldn't mark: something you called, or a
+   * step inside a span that already carries it.
+   */
+  unmarked?: true;
+}
+
 /**
  * A step CI runs for you where no span of CI's marks it, such as a command's
  * `Start process` inside the command's span, which is yours.
@@ -101,11 +117,245 @@ export const ciStep = (id: string, name: string) => {
   return { id, name, ...originOption(ciOrigin) };
 };
 
+/** The step options for a spec, marked as CI's work unless it says not. */
+export const stepOptions = (spec: StepSpec) => {
+  return spec.unmarked
+    ? { id: spec.id, name: spec.name }
+    : ciStep(spec.id, spec.name);
+};
+
 /** How a finished check reads, as in `Report test: passed`. */
 const outcomes: Partial<Record<CheckConclusion, string>> = {
   success: "passed",
   failure: "failed",
   timed_out: "timed out",
+};
+
+/** A check update's name, as in `Report test: started`. */
+const report = (subject: string, status: string): string => {
+  return `Report ${subject}: ${status}`;
+};
+
+/** A retry's name, as in `retrying (attempt 2 of 3)`. */
+const retrying = (attempt: number, of: number): string => {
+  return `retrying (attempt ${attempt} of ${of})`;
+};
+
+const cacheTag = (job: string): StepTag => {
+  return { kind: "cache", job };
+};
+
+const checkTag = (job?: string): StepTag => {
+  return job === undefined ? { kind: "check" } : { kind: "check", job };
+};
+
+/** The ID of a step of a cleanup, which a retried cleanup repeats. */
+const cleanupId = (what: string, attempt: number): string => {
+  return joinId(
+    "pipeline",
+    `${what}${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+  );
+};
+
+/** The rest of a spec, once its ID and name are known. */
+type StepExtras = Omit<StepSpec, "id" | "name">;
+
+/** A step with a fixed name, whose ID the caller makes. */
+const named = (name: string, extras: StepExtras = {}) => {
+  return (id: string): StepSpec => {
+    return { id, name, ...extras };
+  };
+};
+
+/** A step with a fixed ID and name. */
+const fixed = (id: string, name: string, extras: StepExtras = {}) => {
+  return (): StepSpec => {
+    return { id, name, ...extras };
+  };
+};
+
+/**
+ * Every step CI runs for you: its ID, name and tag, in one place. Adding a
+ * step or renaming one is an edit to its entry here, and the step itself is
+ * `ciRun(run, steps.x(...), fn)`. Steps that CI's origin shouldn't mark are
+ * `unmarked`.
+ */
+export const steps = {
+  // The cache.
+  cacheKey: (jobPath: string): StepSpec => {
+    return {
+      id: joinId(jobPath, "cache:key"),
+      name: "Check cache",
+      tag: cacheTag(jobPath),
+    };
+  },
+
+  lookUpCache: (id: string, jobPath: string): StepSpec => {
+    return { id, name: "Look up cache", tag: cacheTag(jobPath) };
+  },
+
+  resolveCacheName: named("Resolve cache name"),
+  checkSnapshotState: named("Check snapshot state"),
+  deleteBadSnapshot: named("Delete bad snapshot"),
+
+  // Sandboxes.
+  discardMachine: (stepId: string): StepSpec => {
+    return {
+      id: joinId(stepId, "discard"),
+      name: "Discard sandbox",
+      unmarked: true,
+    };
+  },
+
+  recordCommandFailure: (stepId: string, exitCode: number): StepSpec => {
+    return {
+      id: joinId(stepId, "exit"),
+      name: `Exited with code ${exitCode}`,
+    };
+  },
+
+  cleanUpMachines: (attempt: number): StepSpec => {
+    return { id: cleanupId("cleanup", attempt), name: "Clean up sandboxes" };
+  },
+
+  cleanUpEndedRun: fixed("destroy-orphans", "Clean up sandboxes"),
+
+  cleanUpSnapshots: (attempt: number): StepSpec => {
+    return {
+      id: cleanupId("cleanup:snapshots", attempt),
+      name: "Clean up snapshots",
+    };
+  },
+
+  // Checking out.
+  uploadWorkingTree: named("Upload working tree", { unmarked: true }),
+  cloneRepository: named("Clone repository", { unmarked: true }),
+  findChangedFiles: fixed("changed", "Find changed files", { unmarked: true }),
+
+  // What you called on a run.
+  githubHelper: (id: string, helper: string, name = `github.${helper}`) => {
+    return { id, name, unmarked: true } satisfies StepSpec;
+  },
+
+  githubCall: (id: string, label: string, name = label) => {
+    return { id, name, unmarked: true } satisfies StepSpec;
+  },
+
+  addSummary: named("Add summary", { unmarked: true }),
+  addAnnotations: named("Add annotations", { unmarked: true }),
+
+  // Reading from GitHub.
+  resolveRepository: (): StepSpec => {
+    return {
+      id: joinId("github", "repo:resolve"),
+      name: "Resolve repository",
+      unmarked: true,
+    };
+  },
+
+  resolvePullRequest: (): StepSpec => {
+    return {
+      id: joinId("github", "pr:resolve"),
+      name: "pr:resolve",
+      unmarked: true,
+    };
+  },
+
+  commentNotAllowed: (): StepSpec => {
+    return {
+      id: joinId("github", "comment:denied"),
+      name: "Comment: not allowed",
+      unmarked: true,
+    };
+  },
+
+  // Checks.
+  startCheck: (check: string, job?: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? check}:start`),
+      name:
+        job === undefined ? `Create check: ${check}` : report(job, "started"),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
+  completeCheck: (
+    check: string,
+    job?: { path: string; conclusion: CheckConclusion },
+  ): StepSpec => {
+    return {
+      id: joinId("github", `check:${job?.path ?? check}:complete`),
+      name: job
+        ? report(job.path, outcomes[job.conclusion] ?? job.conclusion)
+        : `Complete check: ${check}`,
+      tag: checkTag(job?.path),
+      unmarked: true,
+    };
+  },
+
+  completeJobChecks: (): StepSpec => {
+    return {
+      id: joinId("github", "check:jobs:complete"),
+      name: report("jobs", "ended with the run"),
+      tag: checkTag(),
+      unmarked: true,
+    };
+  },
+
+  retryCheck: (
+    check: string,
+    attempt: number,
+    of: number,
+    job?: string,
+  ): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? "pipeline"}:retry:${attempt}`),
+      name: report(job ?? check, retrying(attempt + 2, of)),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
+  retryJobChecks: (attempt: number, of: number): StepSpec => {
+    return {
+      id: joinId("github", `check:jobs:retry:${attempt}`),
+      name: report("jobs", retrying(attempt + 2, of)),
+      tag: checkTag(),
+      unmarked: true,
+    };
+  },
+
+  failedAttempt: (job: string, attempt: number, of: number): StepSpec => {
+    return {
+      id: joinId("github", `check:${job}:attempt:${attempt}`),
+      name: report(job, retrying(attempt + 1, of)),
+      unmarked: true,
+    };
+  },
+
+  buildingCheck: (job: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job}:building`),
+      name: report(job, "building"),
+      unmarked: true,
+    };
+  },
+
+  // Times and run details, for steps that carry nothing else.
+  recordTime: (
+    id: string,
+    job: string,
+    edge: "started" | "ended",
+  ): StepSpec => {
+    return {
+      id,
+      name: edge === "started" ? "Record start time" : "Record end time",
+      tag: { kind: "job", job },
+    };
+  },
+
+  recordRunDetails: named("Record run details"),
 };
 
 export const traceName = {
@@ -144,38 +394,8 @@ export const traceName = {
     return `Wait ${formatDuration(ms)}`;
   },
 
-  exited: (exitCode: number): string => {
-    return `Exited with code ${exitCode}`;
-  },
-
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
-  },
-
-  createCheck: (check: string): string => {
-    return `Create check: ${check}`;
-  },
-
-  completeCheck: (check: string): string => {
-    return `Complete check: ${check}`;
-  },
-
-  /** A check update, as in `Report test: started`. */
-  report: (subject: string, status: string): string => {
-    return `Report ${subject}: ${status}`;
-  },
-
-  retrying: (attempt: number, of: number): string => {
-    return `retrying (attempt ${attempt} of ${of})`;
-  },
-
-  outcome: (conclusion: CheckConclusion): string => {
-    return outcomes[conclusion] ?? conclusion;
-  },
-
-  /** A `github.*` helper you called, by its method name. */
-  githubHelper: (helper: string): string => {
-    return `github.${helper}`;
   },
 
   canUser: (login: string, permission: string): string => {
@@ -191,19 +411,14 @@ export const traceName = {
   },
 
   github: "GitHub",
-  resolveRepository: "Resolve repository",
-  commentNotAllowed: "Comment: not allowed",
 
   createMachine: "Create sandbox",
   restartMachine: "Restart sandbox",
   createFreshMachine: "Create sandbox (fresh)",
   retryCreate: "Retry create",
-  discardMachine: "Discard sandbox",
   prepareWorkspace: "Prepare workspace",
   saveMachine: "Save sandbox",
   snapshotMachine: "Snapshot sandbox",
-  cleanUpMachines: "Clean up sandboxes",
-  cleanUpSnapshots: "Clean up snapshots",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
@@ -213,20 +428,4 @@ export const traceName = {
   stopProcess: "Stop process",
   stopAfterTimeout: "Stop after timeout",
   findStartedProcess: "Find started process",
-
-  checkCache: "Check cache",
-  lookUpCache: "Look up cache",
-  resolveCacheName: "Resolve cache name",
-  deleteBadSnapshot: "Delete bad snapshot",
-  checkSnapshotState: "Check snapshot state",
-
-  cloneRepository: "Clone repository",
-  uploadWorkingTree: "Upload working tree",
-  findChangedFiles: "Find changed files",
-
-  recordStartTime: "Record start time",
-  recordEndTime: "Record end time",
-  recordRunDetails: "Record run details",
-  addSummary: "Add summary",
-  addAnnotations: "Add annotations",
 };
