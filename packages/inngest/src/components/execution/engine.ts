@@ -1315,6 +1315,8 @@ class InngestExecutionEngine
         // The handler returning is the end of the run. Steps it never awaited
         // and that were never run (a floating `waitForEvent`, `sleep` or
         // `step.run`, or the losers of a race) are not scheduled. Buffered lazy
+        // ops (e.g. `defer` calls) are the exception: they are drained and sent
+        // alongside `RunComplete` below.
 
         // Function is truly done. Close the stream with a terminal
         // succeeded event.
