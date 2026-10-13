@@ -1,5 +1,10 @@
 ---
-"inngest": patch
+"inngest": minor
 ---
 
-Add `image.inngest(name)` and `image.custom(ref)`, passed as `from` to `inngest.sandboxes.create()` and `step.sandbox.create()` to choose the image a Sandbox starts from. `from` cannot be combined with `image` or a snapshot.
+Choose the image a sandbox starts from with `image.inngest()` or `image.custom()`.
+
+```ts
+await step.sandbox.create("build", { from: image.inngest("node") });
+await step.sandbox.create("custom", { from: image.custom("registry.example.com/app:1.2") });
+```
