@@ -190,8 +190,16 @@ export const steps = {
     };
   },
 
-  findBaseImage: (name: string): StepSpec => {
-    return { id: `image ${name}`, name: `Find base image ${name}` };
+  findBaseImage: (id: string, name: string): StepSpec => {
+    return { id, name: `Find base image ${name}` };
+  },
+
+  buildAppJob: (id: string, name: string): StepSpec => {
+    return { id, name: `Build ${name} in its app` };
+  },
+
+  findDeployedRepo: (): StepSpec => {
+    return { id: joinId("deploy", "repo"), name: "Find deployed repository" };
   },
 
   lookUpCache: (id: string, jobPath: string): StepSpec => {

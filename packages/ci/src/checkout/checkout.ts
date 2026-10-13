@@ -13,6 +13,7 @@ import {
   targetsRunRepo,
   tokenForSource,
 } from "../github/source.ts";
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
@@ -116,6 +117,10 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const { run } = scope;
   const target = opts.path ?? defaultCwd;
   const id = joinId(scope.path, "checkout");
+
+  if (!opts.repo) {
+    requireDeployedRepo(run, "`checkout()`");
+  }
 
   for (const source of checkoutSources) {
     const plan = await source(run, opts, target, id);

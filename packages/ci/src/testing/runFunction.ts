@@ -201,12 +201,24 @@ const runInvoked = async (
     createdFunctions.get((caller as any).client) ??
     [];
 
-  const target = functions.find((fn) => {
+  // An invoke names the app and the function, so with several apps' functions
+  // to choose from, the app has to match too.
+  const named = (fn: InngestFunction.Any, app: string): boolean => {
     // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
     const internals = fn as any;
 
-    return call.function_id.endsWith(`-${internals.opts.id}`);
-  });
+    return call.function_id === `${app}-${internals.opts.id}`;
+  };
+
+  const target =
+    functions.find((fn) => {
+      // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+      return named(fn, (fn as any).client?.id);
+    }) ??
+    functions.find((fn) => {
+      // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+      return call.function_id.endsWith(`-${(fn as any).opts.id}`);
+    });
 
   if (!target) {
     throw new Error(`No function to invoke for ${call.function_id}`);

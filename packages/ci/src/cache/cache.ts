@@ -18,6 +18,7 @@ import {
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -166,6 +167,7 @@ const resolveFilesPart = async (
   }
 
   const repo = run.repo;
+  requireDeployedRepo(run, "`files()`");
 
   if (!repo) {
     return `files:${part.patterns.join(",")}`;
