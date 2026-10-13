@@ -114,8 +114,14 @@ export const waitForSync = async (opts: {
 
   while (!(synced && manifest)) {
     if (opts.app.hasExited()) {
+      const tail = await logTail(opts.app.logPath);
+
+      // A mistake in the pipelines, caught when the app booted: say what it is.
+      const usage = tail.match(/CiUsageError: (.+)/)?.[1];
+
       throw new SetupError("The app exited before it was ready.", {
-        logTail: await logTail(opts.app.logPath),
+        ...(usage ? { fix: usage } : {}),
+        logTail: tail,
         reconfigurable: true,
       });
     }
