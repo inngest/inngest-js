@@ -2,6 +2,10 @@
 "inngest": patch
 ---
 
-Fix a returning handler not always ending the run. When the handler returns during a discovery request, the run now completes: unawaited steps that are still unreported at that point (e.g. a floating `step.waitForEvent()`, `step.sleep()` or `step.run()`, or the losers of a race) are not scheduled, instead of being reported in place of the completion and keeping the run open until they resolve. A targeted step request now runs the requested step and returns its result even if the handler returns first, rather than completing the run with that step left queued.
+A run now completes when your function returns, even with steps you didn't await still pending, instead of staying open until they resolve. In a `group.parallel({ mode: "race" })`, losers still running when the function returns are cancelled when the run ends.
 
-For default (optimized parallelism) users the one visible change is in `group.parallel({ mode: "race" })`: losers still running when the handler returns are cancelled when the run ends, rather than the run staying open until they finish.
+```ts
+step.waitForEvent("unused", { event: "app/done", timeout: "7d" });
+
+return "done";
+```
