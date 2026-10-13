@@ -10,6 +10,7 @@
  * @module
  */
 
+import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -129,6 +130,8 @@ const resolveFilesPart = async (
 
     return hashLocalFiles(repo.local.path, part.patterns);
   }
+
+  requireDeployedRepo(run, "`files()`");
 
   if (!repo) {
     return `files:${part.patterns.join(",")}`;

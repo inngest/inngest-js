@@ -155,7 +155,7 @@ describe("a job on an image", () => {
     expect(result.type).toBe("function-resolved");
 
     expect(
-      result.stepIds.filter((id) => id === "image agent-deps"),
+      result.stepIds.filter((id) => id === "image snapshot:agent-deps"),
     ).toHaveLength(1);
     expect(api.snapshotStarts).toHaveLength(2);
   });
@@ -325,7 +325,7 @@ describe("a cached job on an image", () => {
     expect(result.type).toBe("function-resolved");
     expect(api.snapshotStarts).toEqual([id]);
     expect(
-      result.stepIds.filter((stepId) => stepId === "image x"),
+      result.stepIds.filter((stepId) => stepId === "image snapshot:x"),
     ).toHaveLength(1);
   });
 
