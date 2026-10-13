@@ -455,7 +455,7 @@ describe("github helpers", () => {
       {
         event: prEvent,
         resolveWait: (step) => {
-          return step.displayName?.includes("waitForChecks")
+          return step.displayName === "Wait for check: vercel"
             ? {
                 name: "github/check_run.completed",
                 data: { check_run: { name: "vercel", conclusion: "failure" } },

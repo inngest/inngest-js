@@ -30,13 +30,13 @@ export const readSnapshotMetaScript = `(cat ${snapshotMetaPath} 2>/dev/null || t
 export const saveSnapshotMeta = async (
   // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
   sandbox: any,
-  stepId: string,
+  step: { id: string; name: string },
   meta: SnapshotMeta,
 ): Promise<void> => {
   const json = JSON.stringify(meta);
 
   if (json !== "{}") {
-    await sandbox.commands.run(stepId, [
+    await sandbox.commands.run(step, [
       "/bin/sh",
       "-c",
       writeSnapshotMetaScript,

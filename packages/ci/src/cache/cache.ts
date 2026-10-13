@@ -10,14 +10,11 @@
  * @module
  */
 
-import { tagStep } from "../pipeline/metadata.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import type { StepSpec } from "../pipeline/names.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import {
-  countApi,
-  localRepo,
-  rootRunIdOf,
-  scopeSeparator,
-} from "../pipeline/scope.ts";
+import { countApi, joinId, localRepo, rootRunIdOf } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -26,12 +23,12 @@ import type {
   RepoContext,
 } from "../types.ts";
 import {
-  boundedName,
   formatRelative,
   hash,
   isSnapshotNotFound,
   stableStringify,
 } from "../util.ts";
+import { formatName } from "./names.ts";
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -84,19 +81,6 @@ const sharedScopes = (
   const branch = repo.ref?.replace(/^refs\/heads\//, "") ?? base;
 
   return { read: [branch], write: branch };
-};
-
-/**
- * The name a job's cached snapshot has in a scope: `ci/<scope>/<job>/<key>`.
- * A name too long for a snapshot keeps its start and gains a hash of the
- * whole, so it stays unique.
- */
-export const snapshotName = (
-  scope: string,
-  jobId: string,
-  ownKey: string,
-): string => {
-  return boundedName(`ci/${scope}/${jobId}/${ownKey}`);
 };
 
 /**
@@ -262,7 +246,7 @@ export interface CachedSnapshot {
 export interface CacheTarget {
   /** The job's resolved key. */
   ownKey: string;
-  /** The name the snapshot is given, in the scope the job writes. */
+  /** The name a build gives the snapshot, in the scope the job writes. */
   name: string;
 }
 
@@ -288,21 +272,18 @@ export const cacheTarget = async (
 
   countApi("cache");
 
-  const ownKey = (await run.step.run(
-    {
-      id: `${job.path}${scopeSeparator}cache:key`,
-      name: "cache:key",
-    },
-    async () => {
-      await tagStep(run, { kind: "cache", job: job.path });
-
-      return jobCacheKey(run, cache, input, base);
-    },
-  )) as string;
+  const ownKey = await ciRun(run, steps.cacheKey(job.path), () => {
+    return jobCacheKey(run, cache, input, base);
+  });
 
   return {
     ownKey,
-    name: snapshotName(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    name: formatName({
+      kind: "cache",
+      scope: cacheScopes(run.repo, cache.scope).write,
+      jobId,
+      ownKey,
+    }),
   };
 };
 
@@ -323,7 +304,12 @@ export const runTarget = (
 
   return {
     ownKey,
-    name: snapshotName(`run:${rootRunIdOf(run)}`, jobId, ownKey),
+    name: formatName({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId,
+      ownKey,
+    }),
   };
 };
 
@@ -344,7 +330,7 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
-/** How long a lookup waits for a snapshot another run is still taking. */
+/** How long a lookup waits for a snapshot another build is still taking. */
 const readyWaitMs = 2 * 60 * 1000;
 const readyPollMs = 1000;
 
@@ -394,7 +380,7 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the run taking it, and not about to expire.
+ * ready after waiting for the build taking it, and not about to expire.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -444,7 +430,7 @@ const findInScopes = async (
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
-      snapshotName(scope, jobId, ownKey),
+      formatName({ kind: "cache", scope, jobId, ownKey }),
       exclude,
     );
 
@@ -468,27 +454,28 @@ export const lookupCache = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const { run } = scope;
+  return lookUp(
+    scope.run,
+    steps.lookUpCache(joinId(scope.path, "cache:lookup"), scope.path),
+    scope.config.id,
+    cache,
+    target,
+    exclude,
+  );
+};
 
-  const found = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:lookup`,
-      name: "cache:lookup",
-    },
-    async () => {
-      await tagStep(run, { kind: "cache", job: scope.path });
-
-      const hit = await findCached(
-        run,
-        scope.config.id,
-        cache,
-        target,
-        exclude,
-      );
-
-      return hit ?? null;
-    },
-  )) as CachedSnapshot | null;
+/** A lookup as a memoized step: a hit is returned, a miss is `null` in the step. */
+const lookUp = async (
+  run: CiRunScope,
+  spec: StepSpec,
+  jobId: string,
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  const found = await ciRun(run, spec, async () => {
+    return (await findCached(run, jobId, cache, target, exclude)) ?? null;
+  });
 
   return found ?? undefined;
 };
@@ -527,21 +514,14 @@ export const lookupBeforeBuild = async (
   /** A snapshot found to be bad, which a rebuild must not find again. */
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
-  const found = (await run.step.run(
-    {
-      id: `${job.stepPath}${scopeSeparator}lookup`,
-      name: "cache:lookup",
-    },
-    async () => {
-      await tagStep(run, { kind: "cache", job: job.path });
-
-      const hit = await findCached(run, job.id, cache, target, exclude);
-
-      return hit ?? null;
-    },
-  )) as CachedSnapshot | null;
-
-  return found ?? undefined;
+  return lookUp(
+    run,
+    steps.lookUpCache(joinId(job.stepPath, "lookup"), job.path),
+    job.id,
+    cache,
+    target,
+    exclude,
+  );
 };
 
 /**
@@ -561,9 +541,10 @@ export const resolveTakenName = async (
    */
   broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-  return (await run.step.run(
-    { id: stepId, name: "cache:name-taken" },
-    async () => {
+  return ciRun(
+    run,
+    steps.resolveCacheName(stepId),
+    async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
       const winner = await findNamed(run, name, exclude);
 
       if (winner) {
@@ -597,7 +578,7 @@ export const resolveTakenName = async (
 
       return { cleared };
     },
-  )) as { winner?: CachedSnapshot; cleared: boolean };
+  );
 };
 
 /**
@@ -611,9 +592,10 @@ export const snapshotState = async (
   stepId: string,
   snapshotId: string,
 ): Promise<"gone" | "creating" | "ready"> => {
-  return (await run.step.run(
-    { id: stepId, name: "cache:snapshot-state" },
-    async () => {
+  return ciRun(
+    run,
+    steps.checkSnapshotState(stepId),
+    async (): Promise<"gone" | "creating" | "ready"> => {
       try {
         const snapshot = (await snapshotsClient(run).get(snapshotId)) as
           | SnapshotResource
@@ -629,7 +611,7 @@ export const snapshotState = async (
         return "ready";
       }
     },
-  )) as "gone" | "creating" | "ready";
+  );
 };
 
 /**
@@ -643,8 +625,9 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<boolean> => {
   try {
-    const result = (await run.step.run(
-      { id: stepId, name: "cache:delete" },
+    const result = await ciRun(
+      run,
+      steps.deleteBadSnapshot(stepId),
       async () => {
         try {
           const snapshot = await snapshotsClient(run).get(snapshotId);
@@ -657,7 +640,7 @@ export const deleteSnapshot = async (
           return { deleted: false, gone: isSnapshotNotFound(error) };
         }
       },
-    )) as { deleted: boolean; gone: boolean };
+    );
 
     // Outside the step, which a replay doesn't run: the set is rebuilt on
     // every replay, so a snapshot gone now must leave it on each of them.

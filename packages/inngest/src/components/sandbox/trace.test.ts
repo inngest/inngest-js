@@ -297,13 +297,55 @@ describe("step.sandbox trace metadata", () => {
 
     for (const step of [snapshot, wait]) {
       expect(step?.opts?.span).toStrictEqual([
-        { id: "snap", name: "Snapshot" },
+        { id: "snap", name: "Snapshot", kind: "snapshot" },
       ]);
       expect(step?.opts?.origin).toBe(`inngest@${version}`);
     }
 
     expect(snapshot?.displayName).toBe("Create snapshot");
     expect(wait?.displayName).toBe("Wait for snapshot");
+  });
+
+  describe("snapshot span", () => {
+    const snapshotRoutes = (path: string) => {
+      if (path === `/v2/sandboxes/${sandboxId}/snapshots`) {
+        return Response.json(
+          { data: { ...snapshotResource, status: "CREATING" } },
+          { status: 202 },
+        );
+      }
+
+      if (path === `/v2/snapshots/${snapshotId}`) {
+        return Response.json({ data: snapshotResource });
+      }
+
+      return undefined;
+    };
+
+    test("uses the caller's span instead of opening a second group", async () => {
+      const client = createClient(snapshotRoutes);
+      const span = { id: "save", name: "Save", kind: "snapshot" };
+
+      const fn = client.createFunction(
+        { id: "sandbox-caller-span", triggers: [{ event: "sandbox/trace" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.get("get-box", sandboxId);
+
+          if (!sandbox) {
+            throw new Error("Expected sandbox");
+          }
+
+          return (await sandbox.snapshot({ id: "snap", "~span": span })).id;
+        },
+      );
+
+      const [, create, wait] = await runSteps(fn, 3);
+
+      for (const step of [create, wait]) {
+        expect(step?.opts?.span).toStrictEqual([span]);
+        expect(step?.opts?.origin).toBe(`inngest@${version}`);
+      }
+    });
   });
 
   test("emits one full entry per step attempt", async () => {

@@ -6,6 +6,8 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { countApi, getRunScope, localRepo } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
@@ -90,9 +92,10 @@ export const changedFiles = async (): Promise<string[] | null> => {
 };
 
 const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
-  const files = (await run.step.run(
-    { id: "changed", name: "changed" },
-    async () => {
+  const files = await ciRun(
+    run,
+    steps.findChangedFiles(),
+    async (): Promise<string[] | { unknown: true; reason: string }> => {
       try {
         return await listChangedFiles(run);
       } catch (error) {
@@ -105,7 +108,7 @@ const readChangedFiles = async (run: CiRunScope): Promise<string[] | null> => {
         return { unknown: true as const, reason: error.message };
       }
     },
-  )) as string[] | { unknown: true; reason: string };
+  );
 
   if (!Array.isArray(files)) {
     run.warnings.push(

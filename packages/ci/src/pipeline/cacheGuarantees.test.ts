@@ -471,6 +471,18 @@ describe("jobs that start from one parent", () => {
 
     expect(buildSteps(result.stepIds)).toEqual(["install (from) › build"]);
     expect(count(api, "pnpm install")).toBe(1);
+
+    for (const job of ["a", "b"]) {
+      const inJob = result.stepIds.filter((stepId) => {
+        return result.spans[stepId]?.[0]?.id === job;
+      });
+
+      expect(inJob[0]).toBe(`${job} › machine`);
+      expect(result.spans[`${job} › machine`]?.[0]?.name).toBe(job);
+    }
+
+    // Many jobs share the build, so it sits in none of them.
+    expect(result.spans["install (from) › build"] ?? []).toEqual([]);
   });
 
   test("a warm hit invokes no build, and the parent is still looked up once", async () => {
