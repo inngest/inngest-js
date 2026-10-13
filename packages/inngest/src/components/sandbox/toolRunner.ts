@@ -40,7 +40,11 @@ import {
 } from "./tools.ts";
 import { type SandboxTraceMetadata, sandboxTraceMetadata } from "./trace.ts";
 import { type Sandbox, SandboxValidationError } from "./types.ts";
-import { decodeBase64, normalizeDurationMs } from "./validation.ts";
+import {
+  decodeBase64,
+  maxSandboxProcessTimeoutMs,
+  normalizeDurationMs,
+} from "./validation.ts";
 
 const maxConcurrentCalls = 8;
 
@@ -121,10 +125,12 @@ const followCommand = async (
   const { id } = getStepOptions(idOrOptions);
   const waitWindowMs = normalizeDurationMs(
     toolOptions.waitWindow ?? 20_000,
+    120_000,
     "toolOptions.waitWindow",
   );
   const toolTimeoutMs = normalizeDurationMs(
     toolOptions.toolTimeout ?? 30_000,
+    maxSandboxProcessTimeoutMs,
     "toolOptions.toolTimeout",
   );
   const maxCalls = toolOptions.maxCalls ?? 100;
