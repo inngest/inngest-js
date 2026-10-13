@@ -15,7 +15,6 @@ import {
 } from "../github/source.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
-import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
 import {
@@ -117,17 +116,14 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const target = opts.path ?? defaultCwd;
   const id = joinId(scope.path, "checkout");
 
-  for (const source of checkoutSources) {
-    const plan = await source(run, opts, target, id);
+  const local = localRepo(run);
 
-    if (!plan) {
-      continue;
-    }
-
+  // Another repository, or an explicit ref, is cloned even over a local run.
+  if (local && targetsRunRepo(run, opts)) {
     const machine = await ensureMachine(scope);
 
-    await ciRun(run, plan.spec, () => {
-      return plan.fill(machine);
+    await ciRun(run, steps.uploadWorkingTree(id), () => {
+      return uploadWorkingTree(run, machine, local.path, target);
     });
 
     scope.cwd ??= target;
@@ -135,66 +131,22 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     return;
   }
 
-  throw new CiUsageError(
-    '`checkout()` needs a repository. This run\'s trigger doesn\'t have one, so pass `checkout({ repo: "owner/name" })` or set `repo: "owner/name"` on the pipeline.',
-  );
-};
-
-/** The checkout step, and how it fills the job's machine. */
-interface CheckoutPlan {
-  spec: StepSpec;
-  fill: (machine: MachineHandle) => Promise<unknown>;
-}
-
-/**
- * A place `checkout()` can get files from. It returns the plan for a checkout
- * it serves and `undefined` for one it doesn't. It runs outside the step, so
- * it's where anything a step can't do for itself, like resolving a ref, goes.
- *
- * A new source, such as a tarball URL, is one more entry in `checkoutSources`.
- */
-type CheckoutSource = (
-  run: CiRunScope,
-  opts: CheckoutOptions,
-  target: string,
-  id: string,
-) => Promise<CheckoutPlan | undefined>;
-
-/** The working tree, for the run's own repository when it's run locally. */
-const localTree: CheckoutSource = async (run, opts, target, id) => {
-  const local = localRepo(run);
-
-  // Another repository, or an explicit ref, is cloned even over a local run.
-  if (!local || !targetsRunRepo(run, opts)) {
-    return undefined;
-  }
-
-  return {
-    spec: steps.uploadWorkingTree(id),
-    fill: (machine) => {
-      return uploadWorkingTree(run, machine, local.path, target);
-    },
-  };
-};
-
-/** A clone from GitHub, of the run's repository or another. */
-const githubClone: CheckoutSource = async (run, opts, target, id) => {
   if (!opts.repo && !run.repo) {
-    return undefined;
+    throw new CiUsageError(
+      '`checkout()` needs a repository. This run\'s trigger doesn\'t have one, so pass `checkout({ repo: "owner/name" })` or set `repo: "owner/name"` on the pipeline.',
+    );
   }
 
+  // Resolved outside the step, since a step can't start another.
   const source = await resolveSource(run, opts);
+  const machine = await ensureMachine(scope);
 
-  return {
-    spec: steps.cloneRepository(id),
-    fill: (machine) => {
-      return cloneFromGithub(run, machine, source, opts, target);
-    },
-  };
+  await ciRun(run, steps.cloneRepository(id), () => {
+    return cloneFromGithub(run, machine, source, opts, target);
+  });
+
+  scope.cwd ??= target;
 };
-
-/** In order: the first that serves a checkout does. */
-const checkoutSources: CheckoutSource[] = [localTree, githubClone];
 
 const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
   const sandbox = await run.ci.client.sandboxes.get(machine.id);
