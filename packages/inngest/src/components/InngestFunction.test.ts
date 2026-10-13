@@ -33,6 +33,7 @@ import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
+  type Context,
   type FailureEventPayload,
   type OutgoingOp,
   StepMode,
@@ -912,26 +913,24 @@ describe("runFn", () => {
             disableImmediateExecution: true,
           },
 
-          "request following 'B wins' re-reports missing 'A' step": {
+          // The function returned while the losing 'A' was never reported. That
+          // return ends the run, so 'A' is not scheduled.
+          "request following 'B wins' completes without scheduling 'A'": {
             stack: {
               [B]: { id: B, data: "B" },
               [BWins]: { id: BWins, data: "B wins" },
             },
             stackOrder: [B, BWins],
             expectedReturn: {
-              type: "steps-found",
-              steps: [
-                expect.objectContaining({
-                  id: A,
-                  name: "A",
-                  op: StepOpCode.StepPlanned,
-                  displayName: "A",
-                }),
-              ],
+              type: "function-resolved",
+              data: null,
             },
             disableImmediateExecution: true,
           },
 
+          // A plain `Promise.race` under the default: the executor only calls
+          // back once every branch has finished, so nothing is left pending
+          // and the run completes as before.
           "request following A completion resolves": {
             stack: {
               [A]: { id: A, data: "A" },
@@ -963,6 +962,159 @@ describe("runFn", () => {
               ],
             },
             disableImmediateExecution: true,
+          },
+        }),
+      },
+    );
+
+    // A handler returning during discovery is the end of the run, whatever it
+    // left unawaited.
+    const unawaitedCases: {
+      name: string;
+      start: (step: Context.Any["step"]) => void;
+    }[] = [
+      {
+        name: "waitForEvent",
+        start: (step) => {
+          void step.waitForEvent("floating", { event: "never", timeout: "1h" });
+        },
+      },
+      {
+        name: "sleep",
+        start: (step) => {
+          void step.sleep("floating", "1h");
+        },
+      },
+      {
+        name: "run",
+        start: (step) => {
+          void step.run("floating", () => {
+            return "floating";
+          });
+        },
+      },
+    ];
+
+    for (const c of unawaitedCases) {
+      testFn(
+        `unawaited ${c.name} when the handler returns`,
+        () => {
+          const A = vi.fn(() => "A");
+
+          const fn = inngest.createFunction(
+            { id: "name", triggers: [{ event: "foo" }] },
+            async ({ step }) => {
+              await step.run("A", A);
+              c.start(step);
+
+              return "done";
+            },
+          );
+
+          return { fn, steps: { A } };
+        },
+        {
+          hashes: { A: "A" },
+          tests: ({ A }) => ({
+            "completes without scheduling the step": {
+              stack: { [A]: { id: A, data: "A" } },
+              expectedReturn: {
+                type: "function-resolved",
+                data: "done",
+              },
+            },
+          }),
+        },
+      );
+    }
+
+    testFn(
+      "handler returns before the requested step runs",
+      () => {
+        const A = vi.fn(() => "A");
+        const bg = vi.fn(() => "bg");
+
+        const fn = inngest.createFunction(
+          { id: "name", triggers: [{ event: "foo" }] },
+          async ({ step }) => {
+            await step.run("A", A);
+            void step.run("bg", bg);
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { A, bg } };
+      },
+      {
+        hashes: { A: "A", bg: "bg" },
+        tests: ({ A, bg }) => ({
+          "a targeted request runs the step and never completes the run": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: bg,
+            expectedReturn: {
+              type: "step-ran",
+              step: expect.objectContaining({
+                id: bg,
+                name: "bg",
+                op: StepOpCode.StepRun,
+                data: "bg",
+              }),
+            },
+            expectedStepsRun: ["bg"],
+          },
+
+          "a targeted request for a step that doesn't exist is not found": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: "missing",
+            expectedReturn: {
+              type: "step-not-found",
+              step: expect.objectContaining({
+                id: "missing",
+                op: StepOpCode.StepNotFound,
+              }),
+              foundSteps: expect.any(Array),
+              totalFoundSteps: expect.any(Number),
+            },
+          },
+        }),
+      },
+    );
+
+    // With the default optimized parallelism, `group.parallel` race mode calls
+    // back as soon as the first branch finishes, so the losers are still
+    // pending when the handler returns.
+    testFn(
+      "group.parallel race when the handler returns with losers pending",
+      () => {
+        const fast = vi.fn(() => "fast");
+        const slow = vi.fn(() => "slow");
+
+        const fn = inngest.createFunction(
+          { id: "name", triggers: [{ event: "foo" }] },
+          async ({ step, group }) => {
+            await group.parallel({ mode: "race" }, async () => {
+              return Promise.race([
+                step.run("fast", fast),
+                step.run("slow", slow),
+              ]);
+            });
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { fast, slow } };
+      },
+      {
+        hashes: { fast: "fast", slow: "slow" },
+        tests: ({ fast }) => ({
+          "completes without scheduling the losers": {
+            stack: { [fast]: { id: fast, data: "fast" } },
+            expectedReturn: {
+              type: "function-resolved",
+              data: "done",
+            },
           },
         }),
       },
