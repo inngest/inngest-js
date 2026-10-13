@@ -24,6 +24,13 @@ export const sandboxRef = {
   startedAt: now,
 };
 
+const { kind: _kind, version: _version, ...resource } = sandboxRef;
+
+/**
+ * The sandbox as the REST API returns it.
+ */
+export const sandboxResource = resource;
+
 /**
  * A client whose sandbox API returns `sandboxRef` for a `get`, answers other
  * paths with `route`, and 404s the rest.
@@ -31,8 +38,6 @@ export const sandboxRef = {
 export const createClient = (
   route: (path: string, method: string) => Response | undefined,
 ) => {
-  const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-
   return new Inngest({
     id: testClientId,
     signingKey: "signkey-test",
