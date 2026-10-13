@@ -30,11 +30,14 @@ export const slug = (input: string): string => {
     .replace(/^-+|-+$/g, "");
 };
 
+/** The longest name a sandbox or snapshot may have. */
+export const maxNameLength = 255;
+
 /**
  * Sandbox names are limited to 255 characters, so long ones keep a readable
  * prefix and gain a hash suffix to stay unique.
  */
-export const boundedName = (name: string, max = 255): string => {
+export const boundedName = (name: string, max = maxNameLength): string => {
   if (name.length <= max) {
     return name;
   }

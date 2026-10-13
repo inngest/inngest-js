@@ -73,3 +73,36 @@ export const deleteSnapshots = async (
 
   return { deleted, failed };
 };
+
+/** A snapshot as listing it shows it. */
+export interface ListedSnapshot {
+  id: string;
+  name?: string;
+  status?: string;
+}
+
+/**
+ * Every snapshot `match` accepts. The list can't filter by name, so every page
+ * is read.
+ */
+export const findSnapshots = async (
+  client: Inngest.Any,
+  match: (snapshot: ListedSnapshot) => boolean,
+): Promise<ListedSnapshot[]> => {
+  const found: ListedSnapshot[] = [];
+
+  const snapshots = pages((cursor) => {
+    return client.sandboxes.snapshots.list({
+      ...(cursor ? { cursor } : {}),
+      limit: 250,
+    });
+  });
+
+  for await (const { id, name, status } of snapshots) {
+    if (match({ id, name, status })) {
+      found.push({ id, name, status });
+    }
+  }
+
+  return found;
+};

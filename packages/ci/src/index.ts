@@ -82,6 +82,7 @@ export { sandbox } from "./machine/sandbox.ts";
 // Client and pipelines
 export type { Ci, CiOptions } from "./pipeline/createCi.ts";
 export { createCi } from "./pipeline/createCi.ts";
+export { invalidateEvent } from "./pipeline/invalidate.ts";
 // Reporting
 export { report } from "./report.ts";
 
