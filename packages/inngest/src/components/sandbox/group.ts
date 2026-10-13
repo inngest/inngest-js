@@ -47,41 +47,66 @@ const isFinal = (error: unknown): boolean => {
 };
 
 /**
+ * The options of a sandbox created from just an ID. Each run's sandboxes need
+ * names that no other run shares.
+ */
+export const sandboxDefaults = (id: string) => {
+  return {
+    id,
+    name: `${getAsyncCtxSync()?.execution?.ctx.runId}-${id}`,
+    vcpu: 2,
+    memoryMb: 2048,
+  };
+};
+
+/**
+ * Run `callback` with a new sandbox inside a span of the given kind, and
+ * destroy the sandbox when it ends.
+ */
+export const withSandbox = <T>(
+  tools: DurableSandboxTools,
+  span: { kind: string; title: string },
+  idOrOptions: GroupSandboxOptionsOrId,
+  callback: (sandbox: DurableSandbox) => Promise<T>,
+): Promise<T> => {
+  const { id, ...options } =
+    typeof idOrOptions === "string"
+      ? sandboxDefaults(idOrOptions)
+      : idOrOptions;
+
+  return withSpan(
+    { id, name: `${span.title} ${id}`, kind: span.kind },
+    async () => {
+      const sandbox = await tools.create(id, options);
+      let failure: { error: unknown } | undefined;
+
+      try {
+        return await callback(sandbox);
+      } catch (error) {
+        failure = { error };
+
+        throw error;
+      } finally {
+        if (!failure || isFinal(failure.error)) {
+          await sandbox[Symbol.asyncDispose]();
+        }
+      }
+    },
+  );
+};
+
+/**
  * Build `group.sandbox()` on top of `step.sandbox.create()`.
  */
 export const createGroupSandbox = (
   tools: DurableSandboxTools,
 ): GroupSandbox => {
   return (idOrOptions, callback) => {
-    const { id, ...options } =
-      typeof idOrOptions === "string"
-        ? {
-            id: idOrOptions,
-            // A run's sandboxes need names that no other run shares
-            name: `${getAsyncCtxSync()?.execution?.ctx.runId}-${idOrOptions}`,
-            vcpu: 2,
-            memoryMb: 2048,
-          }
-        : idOrOptions;
-
-    return withSpan(
-      { id, name: `Sandbox ${id}`, kind: "sandbox" },
-      async () => {
-        const sandbox = await tools.create(id, options);
-        let failure: { error: unknown } | undefined;
-
-        try {
-          return await callback(sandbox);
-        } catch (error) {
-          failure = { error };
-
-          throw error;
-        } finally {
-          if (!failure || isFinal(failure.error)) {
-            await sandbox[Symbol.asyncDispose]();
-          }
-        }
-      },
+    return withSandbox(
+      tools,
+      { kind: "sandbox", title: "Sandbox" },
+      idOrOptions,
+      callback,
     );
   };
 };
