@@ -35,14 +35,16 @@ import {
   startFrom,
   withoutUnreusableCache,
 } from "../machine/from.ts";
-import { snapshotMachine } from "../machine/machine.ts";
+import { lockMachineName, snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, Duration, JobConfig } from "../types.ts";
 import {
   durationToMs,
   errorMessage,
   formatDuration,
+  isSandboxNameTaken,
   shortReason,
 } from "../util.ts";
+import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
@@ -386,6 +388,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
 
   const data: CacheBuildData = {
     jobId: config.id,
+    slot: `${run.runId}:${joinId(stepPath, "build")}`,
     ...(origin ? { matrix: origin } : {}),
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
@@ -399,9 +402,25 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     parent: buildParent(run, path, check),
   };
 
-  // A snapshot that is already there needs no build run, and no wait behind
-  // the builds that are queued for its name. A caller that has just looked it
-  // up itself has no use for a second lookup.
+  // A job that starts fresh is built once for every run that needs it: this
+  // one listens for the build, looks for the snapshot, and asks for a build if
+  // there is none. See buildLock.ts.
+  if (takesBuildLock(config, name)) {
+    return requestBuild({
+      run,
+      path,
+      stepPath,
+      config,
+      target,
+      data,
+      reused: (hit) => {
+        return reusedBuild(config, target, hit);
+      },
+    });
+  }
+
+  // A snapshot that is already there needs no build run. A caller that has
+  // just looked it up itself has no use for a second lookup.
   if (lookup) {
     const hit = await lookupBeforeBuild(
       run,
@@ -714,6 +733,13 @@ const jobSteps = async ({
   const builtAs = request?.target ?? (inRun ? cacheAt : undefined);
   const name = request?.name ?? takeName;
 
+  // A build that others wait on answers for the lock on its cache entry: it
+  // claims it with the machine its first command creates, and tells them how
+  // it ended when its run does.
+  if (isBuild && run.build?.locked && takesBuildLock(config, name)) {
+    run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
+  }
+
   const hit = builtAs
     ? await lookupCache(scope, config.cache, builtAs, excludedBy(name))
     : undefined;
@@ -779,16 +805,36 @@ const jobSteps = async ({
         warnBuiltInRun(run, config.id);
       }
 
-      await runJobBody(scope, async () => {
-        if (fromParent) {
-          await startFrom(scope, fromParent);
+      try {
+        await runJobBody(scope, async () => {
+          if (fromParent) {
+            await startFrom(scope, fromParent);
+          }
+
+          return handler(input);
+        });
+
+        if (builtAs) {
+          await snapshotBuilt(scope, builtAs, name);
+          await confirmBuilt(scope, builtAs);
+        }
+      } catch (error) {
+        // Another build holds the lock, and whoever holds it tells everyone
+        // how it ended, so this one ends without a word.
+        if (!run.buildLock || !isSandboxNameTaken(error)) {
+          throw error;
         }
 
-        return handler(input);
-      });
+        run.buildLock = undefined;
+        scope.machine = undefined;
 
-      if (builtAs) {
-        await snapshotBuilt(scope, builtAs, name);
+        run.ci.hooks.activity(
+          run,
+          scope.jobPath,
+          "another run is building this…",
+        );
+
+        setOutcome(scope, { reused: false, hadMachine: false });
       }
     }
 
