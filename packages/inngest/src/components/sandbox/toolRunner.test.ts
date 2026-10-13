@@ -331,7 +331,7 @@ describe("commands.run with tools", () => {
     {
       name: "named arguments checked against the input schema",
       tools: {
-        getCustomer: tool({
+        getCustomer: tool.step({
           input: z.object({ id: z.string() }),
           run: async ({ id }) => {
             return { id };
@@ -375,7 +375,7 @@ describe("commands.run with tools", () => {
     {
       name: "a result the output schema rejects",
       tools: {
-        count: tool({
+        count: tool.step({
           output: z.object({ n: z.number() }),
           run: async () => {
             return { n: "nope" };
@@ -436,7 +436,10 @@ describe("commands.run with tools", () => {
     });
 
     await run(host, {
-      getCustomer: tool({ input: z.object({ id: z.string() }), run: runTool }),
+      getCustomer: tool.step({
+        input: z.object({ id: z.string() }),
+        run: runTool,
+      }),
     });
 
     expect(runTool).toHaveBeenCalledExactlyOnceWith(
