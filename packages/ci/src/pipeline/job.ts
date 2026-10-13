@@ -36,7 +36,7 @@ import {
   withoutUnreusableCache,
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
-import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
+import type { AnyJob, CheckConclusion, Duration, JobConfig } from "../types.ts";
 import {
   durationToMs,
   errorMessage,
@@ -100,7 +100,7 @@ export const defineJob = ({
       ? ({ ...given, [inlineKey]: true } as JobConfig)
       : given;
 
-  checkMaxAge(config);
+  checkDurations(config);
 
   if (!run && jobs.has(config.id)) {
     throw new CiUsageError(
@@ -145,25 +145,30 @@ export const defineJob = ({
 };
 
 /**
- * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
- * zero age would make every snapshot too old, so concurrent builds would
- * delete each other's.
+ * Fail a malformed or non-positive duration when the job is defined. A zero
+ * `cache.maxAge` would make every snapshot too old, so concurrent builds would
+ * delete each other's. A new duration option is one more row here.
  */
-const checkMaxAge = (config: JobConfig): void => {
-  const maxAge = config.cache?.maxAge;
+const checkDurations = (config: JobConfig): void => {
+  const fields: [string, Duration | undefined][] = [
+    ["cache.maxAge", config.cache?.maxAge],
+    // `0` means don't keep, so it has no duration to check.
+    [
+      "keepOnFailure",
+      config.keepOnFailure === 0 ? undefined : config.keepOnFailure,
+    ],
+  ];
 
-  if (maxAge === undefined) {
-    return;
-  }
-
-  try {
-    if (durationToMs(maxAge) <= 0) {
-      throw new Error("It must be longer than zero.");
+  for (const [field, value] of fields) {
+    if (value === undefined) {
+      continue;
     }
-  } catch (error) {
-    throw new CiUsageError(
-      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
-    );
+
+    try {
+      durationToMs(value, field);
+    } catch (error) {
+      throw new CiUsageError(`Job "${config.id}": ${errorMessage(error)}`);
+    }
   }
 };
 

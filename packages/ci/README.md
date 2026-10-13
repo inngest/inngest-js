@@ -109,7 +109,7 @@ The other app reads which repository and commit it was deployed from out of its 
 
 ## Caching
 
-A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name. Every duration in `@inngest/ci` (`maxAge`, `.timeout()`, `waitForPort`, `waitForHttp`, `github.waitForChecks`) takes milliseconds, an `ms` string like `"30s"` or `"1h30m"`, or a `Temporal.Duration`. A bare number in a string (`"10"`) means milliseconds.
 
 ```ts
 const base = ci.job(
