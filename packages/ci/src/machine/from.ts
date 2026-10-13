@@ -24,7 +24,7 @@ import {
   describeCached,
   findNamed,
   runTarget,
-  warnUncachedBase,
+  uncachedBaseNote,
 } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
 import { deletesHolder } from "../cache/namePolicy.ts";
@@ -50,6 +50,7 @@ import {
   outsideJobs,
   rebuildSuffix,
 } from "../pipeline/scope.ts";
+import { warnOnce } from "../pipeline/warnings.ts";
 import type { AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
@@ -357,7 +358,7 @@ const reusableConfig = (
 
   // A build run's warnings go to the run that invoked it, which has said it.
   if (!run.build) {
-    warnUncachedBase(run, config.id, uncached.config.id);
+    warnOnce(run, uncachedBaseNote(config.id, uncached.config.id).line);
   }
 
   const { cache: _cache, ...uncachedConfig } = config;
@@ -547,6 +548,7 @@ export const buildOf = (
       config,
       input: raw,
       target,
+      asParent: true,
       ...(base ? { base: base.built } : {}),
     });
 

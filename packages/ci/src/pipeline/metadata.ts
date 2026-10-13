@@ -142,6 +142,38 @@ export const tagStep = async (
 };
 
 /**
+ * Put a warning on the row of the step whose callback is running, as
+ * `inngest.warnings` metadata, the same way `tagStep` queues its metadata.
+ * `key` names the warning, so saying it again replaces it rather than adding
+ * another. It must never fail the step, so anything that goes wrong is a
+ * warning.
+ */
+export const warnStep = async (
+  run: CiRunScope,
+  key: string,
+  message: string,
+): Promise<void> => {
+  try {
+    const execution = (await getAsyncCtx())?.execution;
+    const stepId = execution?.executingStep?.id;
+
+    if (!execution || !stepId) {
+      return;
+    }
+
+    execution.instance.addMetadata(
+      stepId,
+      "inngest.warnings",
+      "step",
+      "merge",
+      { [key]: message },
+    );
+  } catch (error) {
+    run.ci.logger?.warn({ error }, "Couldn't attach inngest.warnings metadata");
+  }
+};
+
+/**
  * Run `fn` as one of CI's own steps, from the `steps` catalog. The step is
  * tagged with what its spec says it is for, and with `runValues` on the run.
  */

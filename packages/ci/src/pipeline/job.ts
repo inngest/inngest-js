@@ -253,6 +253,8 @@ interface BuildArgs {
   base?: CacheBuildResult;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
+  /** Whether the job is a `from` parent, which a miss on its lookup warns about. */
+  asParent?: boolean;
 }
 
 /** What a build is asked for, from the arguments of the call. */
@@ -331,6 +333,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     input,
     check,
     lookup = true,
+    asParent = false,
   } = args;
   const { target, name, base } = requestFrom(args);
   const origin = matrixOriginOf(config);
@@ -367,7 +370,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
   if (lookup) {
     const hit = await lookupBeforeBuild(
       run,
-      { id: config.id, path, stepPath },
+      { id: config.id, path, stepPath, asParent },
       config.cache,
       target,
       excludedBy(name),
