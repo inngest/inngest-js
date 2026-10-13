@@ -11,6 +11,7 @@
  */
 
 import { NonRetriableError } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import { requireDeployedRepo } from "../github/deployRepo.ts";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -42,6 +43,24 @@ import {
   stableStringify,
 } from "../util.ts";
 import { formatName } from "./names.ts";
+
+/**
+ * Check a static `cache` when the job or matrix is defined, so a mistake fails
+ * when the app boots rather than mid-pipeline.
+ *
+ * @throws {CiUsageError} When the key is empty or the scope isn't known.
+ */
+export const checkCache = (id: string, cache?: CacheConfig): void => {
+  if (cache?.key === "" || (Array.isArray(cache?.key) && !cache.key.length)) {
+    throw new CiUsageError(`The \`cache.key\` of "${id}" can't be empty.`);
+  }
+
+  if (cache?.scope && !["branch", "global"].includes(cache.scope)) {
+    throw new CiUsageError(
+      `The \`cache.scope\` of "${id}" must be "branch" or "global", but got "${cache.scope}".`,
+    );
+  }
+};
 
 /**
  * Where a job reads and writes its cached snapshots.

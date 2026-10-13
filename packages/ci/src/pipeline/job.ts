@@ -11,6 +11,7 @@ import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
+  checkCache,
   describeCached,
   lookupBeforeBuild,
   lookupCache,
@@ -124,6 +125,8 @@ export const defineJob = ({
   }
 
   checkStaticFrom(jobs, config);
+
+  checkCache(config.id, config.cache);
 
   jobs.set(config.id, { id: config.id, config, handler });
 

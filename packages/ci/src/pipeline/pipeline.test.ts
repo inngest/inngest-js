@@ -1598,6 +1598,60 @@ describe("from", () => {
     }).toThrow("must name a job");
   });
 
+  test.each([
+    {
+      name: "an empty matrix axis",
+      define: (ci: Ci) => {
+        ci.matrix({ id: "m", axes: { node: [] } }, async () => {});
+      },
+      message: 'The `node` axis of matrix "m" has no values',
+    },
+    {
+      name: "an empty string cache key",
+      define: (ci: Ci) => {
+        ci.job({ id: "j", cache: { key: "" } }, async () => {});
+      },
+      message: 'The `cache.key` of "j" can\'t be empty',
+    },
+    {
+      name: "an empty list cache key",
+      define: (ci: Ci) => {
+        ci.job({ id: "j", cache: { key: [] } }, async () => {});
+      },
+      message: 'The `cache.key` of "j" can\'t be empty',
+    },
+    {
+      name: "an unknown cache scope",
+      define: (ci: Ci) => {
+        ci.job(
+          { id: "j", cache: { scope: "pr" as unknown as "branch" } },
+          async () => {},
+        );
+      },
+      message: 'The `cache.scope` of "j" must be "branch" or "global"',
+    },
+    {
+      name: "an unknown cache scope on a matrix",
+      define: (ci: Ci) => {
+        ci.matrix(
+          {
+            id: "m",
+            axes: { node: ["20"] },
+            cache: { scope: "pr" as unknown as "branch" },
+          },
+          async () => {},
+        );
+      },
+      message: 'The `cache.scope` of "m" must be',
+    },
+  ])("$name throws when it's defined", ({ define, message }) => {
+    const { ci } = setup();
+
+    expect(() => {
+      define(ci);
+    }).toThrow(message);
+  });
+
   test("a `from` function that returns a non-job fails the run for good", async () => {
     const { ci } = setup();
 
@@ -1623,7 +1677,8 @@ describe("from", () => {
   test.each([
     {
       name: "a `from` function that leads back to the start",
-      message: "`a` → `b` → `a` starts from itself",
+      message:
+        "`a` → `b` → `a` starts from itself. A job can't start from itself; remove one of these `from`s.",
       define: (ci: Ci) => {
         const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
         const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
