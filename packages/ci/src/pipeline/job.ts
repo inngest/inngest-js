@@ -428,7 +428,7 @@ export const validateInput = async (
 const jobBody = (
   args: RunJobArgs & { run: CiRunScope; path: string; number: number },
 ): Promise<void> => {
-  return inJobSpan(args.run, args.path, () => {
+  return inJobSpan(args.run, args.config, args.path, () => {
     return jobSteps(args);
   });
 };
