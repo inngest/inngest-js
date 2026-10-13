@@ -270,10 +270,21 @@ export const executeSandboxOperation = async (
       return execOperationResult(result);
     }
     case "destroy": {
-      const result = await sandboxForOperation(
-        client,
-        operation.target.sandbox,
-      ).destroy();
+      // A destroy that already happened, such as one retried after a lost
+      // response, has the outcome the caller wanted.
+      const result = await sandboxForOperation(client, operation.target.sandbox)
+        .destroy()
+        .catch((error: unknown): SandboxDestroyResult => {
+          if (
+            error instanceof SandboxError &&
+            error.code === "sandbox_not_found"
+          ) {
+            return { status: "TERMINATED", sandbox: null };
+          }
+
+          throw error;
+        });
+
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -840,6 +851,11 @@ export const createDurableSandboxFacade = (
   return Object.freeze(facade);
 };
 
+// Node before 20.5 lacks the symbol that `await using` looks up.
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
+  "Symbol.asyncDispose",
+);
+
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
 ): DurableSandboxTools => ({
@@ -850,7 +866,15 @@ export const createSandboxTools = (
       input: [normalizeSandboxCreateOptions(options)],
     });
     const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const { id } = getStepOptions(idOrOptions);
+
+    return Object.freeze({
+      ...sandbox,
+      [Symbol.asyncDispose]: async () => {
+        await sandbox.destroy(`${id}:destroy`);
+      },
+    });
   },
   list: async (idOrOptions, options) => {
     const operation = parseSandboxOperationForAction("list", {

@@ -661,10 +661,16 @@ export interface DurableSandboxProcess {
 }
 
 export interface DurableSandboxTools {
+  /**
+   * Create a sandbox. With `await using`, the sandbox is destroyed when the
+   * scope ends, in a memoized `<id>:destroy` step.
+   *
+   * Disposing can't see why the scope ended, so it also destroys before a retry.
+   */
   create(
     idOrOptions: StepOptionsOrId,
     options: SandboxCreateOptions,
-  ): Promise<DurableSandbox>;
+  ): Promise<DurableSandbox & AsyncDisposable>;
   list(
     idOrOptions: StepOptionsOrId,
     options?: SandboxListOptions,
