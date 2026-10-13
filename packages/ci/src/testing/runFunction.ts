@@ -41,10 +41,18 @@ interface Step {
   data?: unknown;
   error?: unknown;
   metadata?: MetadataUpdate[];
-  opts?: unknown;
+  opts?: { span?: StepSpanPath; origin?: string };
   /** The step's ID before hashing. */
   userland?: { id: string };
 }
+
+/** The spans a step is grouped under, outermost first. */
+type StepSpanPath = Array<{
+  id: string;
+  name: string;
+  kind?: string;
+  origin?: string;
+}>;
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
 interface ExecutionResult {
@@ -73,6 +81,10 @@ export interface RunResult {
   names: Record<string, string>;
   /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
+  /** The span path of each step in a span, keyed by step ID. */
+  spans: Record<string, StepSpanPath>;
+  /** The origin of each step that has one, keyed by step ID. */
+  origins: Record<string, string>;
   /**
    * What each `step.run` step was planned with, keyed by step ID: the options
    * the SDK sent the executor, such as a sandbox call's input.
@@ -288,6 +300,8 @@ export const runFunction = async (
   const batches: string[][] = [];
   const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const spans: RunResult["spans"] = {};
+  const origins: RunResult["origins"] = {};
   const inputs: Record<string, unknown> = {};
   const metadata: RunResult["metadata"] = [];
 
@@ -324,6 +338,17 @@ export const runFunction = async (
     names[id] = step.displayName ?? step.name ?? id;
 
     steps[id] = step.data;
+
+    // The SDK stamps a step's spans and origin on it.
+    const { span, origin } = step.opts ?? {};
+
+    if (span) {
+      spans[id] = span;
+    }
+
+    if (origin) {
+      origins[id] = origin;
+    }
   };
 
   // The executor retries a step that failed retriably, and only writes the
@@ -382,6 +407,7 @@ export const runFunction = async (
         ...(planned.displayName === undefined
           ? {}
           : { displayName: planned.displayName }),
+        opts: planned.opts,
         ...(outcome?.error === undefined
           ? { data: outcome?.data ?? null }
           : { error: outcome.error }),
@@ -404,6 +430,8 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        spans,
+        origins,
         inputs,
         metadata,
       };
@@ -424,6 +452,8 @@ export const runFunction = async (
         batches,
         names,
         steps,
+        spans,
+        origins,
         inputs,
         metadata,
       };
@@ -490,6 +520,7 @@ export const runFunction = async (
             ? {}
             : { displayName: planned.displayName }),
           data: opts.resolveWait ? opts.resolveWait(planned) : null,
+          opts: planned.opts,
         });
 
         continue;
