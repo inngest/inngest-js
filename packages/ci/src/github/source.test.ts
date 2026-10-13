@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { files } from "../cache/cache.ts";
 import { checkout } from "../checkout/checkout.ts";
+import { CiUsageError } from "../errors.ts";
 import { $ } from "../machine/command.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
@@ -737,6 +738,15 @@ describe("files() of another repository or ref", () => {
     expect(message).toContain("too large to hash");
     expect(message).toContain("narrower patterns");
   });
+
+  test.each(["acme", "acme/platform/extra", "acme/..", "ac me/platform"])(
+    "rejects the repo %j when the part is defined",
+    (repo) => {
+      expect(() => {
+        return files("a", { repo });
+      }).toThrow(CiUsageError);
+    },
+  );
 
   test("keeps the part's own options", () => {
     expect(files("a", "b", { repo: "acme/platform", ref: "main" })).toEqual({
