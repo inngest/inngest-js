@@ -5,7 +5,8 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod/v3";
-
+import type { StepOptions } from "../../types.ts";
+import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
 import {
@@ -143,12 +144,16 @@ const createHost = (
 ) => {
   const executed: string[] = [];
   const attempts = new Map<string, number>();
+  const spans = new Map<string, unknown[]>();
   const host: ToolsHost = {
-    run: async <T>(
-      idOrOptions: string | { id: string },
-      fn: () => Promise<T>,
-    ) => {
+    run: async <T>(idOrOptions: string | StepOptions, fn: () => Promise<T>) => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const own =
+        typeof idOrOptions === "string" ? undefined : idOrOptions["~span"];
+      spans.set(id, [
+        ...(getAsyncCtxSync()?.execution?.span ?? []),
+        ...(own ? [own] : []),
+      ]);
       const hit = memo.get(id);
       if (hit !== undefined) {
         return JSON.parse(hit) as T;
@@ -184,15 +189,18 @@ const createHost = (
     runId: "run-1",
   };
 
-  return { host, executed, attempts };
+  return { host, executed, attempts, spans };
 };
 
-const operation = (timeoutMs = 300_000) => {
+const operation = (
+  timeoutMs = 300_000,
+  command = ["/bin/sh", "-c", "python3 x.py"],
+) => {
   return parseSandboxOperationForAction("exec", {
     protocolVersion: 1,
     action: "exec",
     target: { sandbox: sandboxRef },
-    input: [{ command: ["/bin/sh", "-c", "python3 x.py"], timeoutMs }],
+    input: [{ command, timeoutMs }],
   });
 };
 
@@ -618,6 +626,61 @@ describe("commands.run with tools", () => {
   });
 });
 
+describe("commands.run with tools trace group", () => {
+  const inExecution = <T>(fn: () => T): T => {
+    return runWithAsyncCtx({ app: {} as never, execution: {} as never }, fn);
+  };
+
+  test.each([
+    { command: ["/bin/sh", "-c", "python3 x.py"], kind: "python" },
+    { command: ["/usr/bin/python3.12", "x.py"], kind: "python" },
+    { command: ["/bin/sh", "-c", "node a.js"], kind: "ts" },
+    { command: ["bun", "run", "x.ts"], kind: "ts" },
+    { command: ["/bin/sh", "-c", "ls -la"], kind: "sh" },
+    { command: ["bash", "x.sh"], kind: "sh" },
+  ])("$command runs in a $kind group", async ({ command, kind }) => {
+    const { sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        exitWith(f);
+      }
+    });
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return runCommandWithTools(
+        host,
+        { id: "exec", name: "Analyse" },
+        operation(300_000, command),
+        {
+          tools: {},
+          toolOptions: { waitWindow: 5 },
+        },
+      );
+    });
+
+    expect(spans.get("exec")).toEqual([{ id: "exec", name: "Analyse", kind }]);
+  });
+
+  test("tool calls are tool rows in the group, and waits stay in the group", async () => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return run(host, { getCustomer: async () => ({ id: "cus_1" }) });
+    });
+
+    const group = { id: "exec", name: "exec", kind: "python" };
+    expect(Object.fromEntries(spans)).toEqual({
+      exec: [group],
+      "exec:tool:getCustomer:1": [
+        group,
+        { id: "exec:tool:getCustomer:1", name: "getCustomer", kind: "tool" },
+      ],
+      "exec:wait:1": [group],
+    });
+  });
+});
+
 describe("durable commands.run routing", () => {
   const execResult = {
     protocolVersion: 1,
@@ -639,14 +702,21 @@ describe("durable commands.run routing", () => {
       tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
     },
   ])("$name it is one raw tool call", async ({ options, tools }) => {
+    let span: unknown;
     const rawTool: SandboxRawTool = vi.fn(async () => {
+      span = getAsyncCtxSync()?.execution?.span;
+
       return execResult;
     });
     const sandbox = createDurableSandboxFacade(sandboxRef, () => {
       return rawTool;
     });
 
-    await sandbox.commands.run("exec", "true", options);
+    await runWithAsyncCtx({ app: {} as never, execution: {} as never }, () => {
+      return sandbox.commands.run("exec", "true", options);
+    });
+
+    expect(span).toBeUndefined();
 
     expect(rawTool).toHaveBeenCalledExactlyOnceWith(
       "exec",

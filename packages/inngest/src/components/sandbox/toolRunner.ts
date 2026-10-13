@@ -21,7 +21,7 @@
  */
 
 import type { StepOptions, StepOptionsOrId } from "../../types.ts";
-import { getStepOptions } from "../InngestStepTools.ts";
+import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult, sdkOrigin } from "./durable.ts";
 import type {
@@ -114,7 +114,7 @@ const errorMessage = (error: unknown): string => {
  * Runs `operation` (a `commands.run` call) with `request.tools` available to
  * the code it runs.
  */
-export const runCommandWithTools = async (
+const followCommand = async (
   host: ToolsHost,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<"exec">,
@@ -217,7 +217,11 @@ export const runCommandWithTools = async (
 
     try {
       const body = await host.run(
-        { id: stepId, name: `tool ${call.tool}` },
+        {
+          id: stepId,
+          name: `tool ${call.tool}`,
+          "~span": { id: stepId, name: call.tool, kind: "tool" },
+        },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
           const timedOut = new Promise<never>((_, reject) => {
@@ -341,4 +345,47 @@ export const runCommandWithTools = async (
       { ...meta, kind: "wait" },
     );
   }
+};
+
+const pythonProgram = /^python[\d.]*$/;
+
+const tsPrograms = new Set(["node", "tsx", "bun", "deno"]);
+
+/**
+ * What the command runs, for the trace: `python`, `ts` (node, tsx, bun and
+ * deno) or `sh` for anything else. A string command arrives as `sh -c <script>`,
+ * so the script's first word is the program.
+ */
+export const commandKind = ([program = "", ...rest]: string[]): string => {
+  const [word = ""] = (rest[0] === "-c" ? (rest[1] ?? "") : program)
+    .trim()
+    .split(/\s+/);
+  const name = word.split("/").pop() ?? "";
+
+  if (pythonProgram.test(name)) {
+    return "python";
+  }
+
+  return tsPrograms.has(name) ? "ts" : "sh";
+};
+
+/**
+ * Runs `operation` (a `commands.run` call) with `request.tools` available to
+ * the code it runs. All its steps share one trace group, kinded by what the
+ * command runs, and each tool call is a `tool` row inside it.
+ */
+export const runCommandWithTools = (
+  host: ToolsHost,
+  idOrOptions: StepOptionsOrId,
+  operation: SandboxOperationForAction<"exec">,
+  request: SandboxToolsRequest,
+): Promise<SandboxOperationResultV1> => {
+  const { id, name } = getStepOptions(idOrOptions);
+
+  return withSpan(
+    { id, name, kind: commandKind(operation.input[0].command) },
+    () => {
+      return followCommand(host, idOrOptions, operation, request);
+    },
+  );
 };
