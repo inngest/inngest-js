@@ -6,6 +6,8 @@
  */
 
 import { NonRetriableError } from "inngest";
+import { checkCache } from "../cache/cache.ts";
+import { CiUsageError } from "../errors.ts";
 import { checkStaticFrom } from "../machine/from.ts";
 import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
@@ -67,6 +69,18 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
   const inline = Boolean(getRunScope());
 
   checkStaticFrom(jobs, config);
+
+  for (const [axis, values] of Object.entries(config.axes)) {
+    if (values.length === 0) {
+      throw new CiUsageError(
+        `The \`${axis}\` axis of matrix "${config.id}" has no values.`,
+      );
+    }
+  }
+
+  if (typeof config.cache !== "function") {
+    checkCache(config.id, config.cache);
+  }
 
   const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");

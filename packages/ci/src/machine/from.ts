@@ -263,7 +263,7 @@ export const cycleMessage = (path: string[]): string => {
     })
     .join(" → ");
 
-  return `${named} starts from itself.`;
+  return `${named} starts from itself. A job can't start from itself; remove one of these \`from\`s.`;
 };
 
 /**
