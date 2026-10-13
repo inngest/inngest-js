@@ -549,6 +549,7 @@ const jobBody = (
 ): Promise<void> => {
   return inJobSpan(
     args.run,
+    args.config,
     args.path,
     () => {
       return jobSteps(args);
