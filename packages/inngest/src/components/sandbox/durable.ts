@@ -816,6 +816,11 @@ export const createDurableSandboxFacade = (
   return Object.freeze(facade);
 };
 
+// Node before 20.5 lacks the symbol that `await using` looks up.
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
+  "Symbol.asyncDispose",
+);
+
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
 ): DurableSandboxTools => ({
@@ -826,7 +831,15 @@ export const createSandboxTools = (
       input: [normalizeSandboxCreateOptions(options)],
     });
     const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const { id } = getStepOptions(idOrOptions);
+
+    return Object.freeze({
+      ...sandbox,
+      [Symbol.asyncDispose]: async () => {
+        await sandbox.destroy(`${id}:destroy`);
+      },
+    });
   },
   list: async (idOrOptions, options) => {
     const operation = parseSandboxOperationForAction("list", {
