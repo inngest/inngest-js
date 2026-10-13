@@ -447,3 +447,11 @@ export const formatBytes = (bytes: number): string => {
 
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
+
+/** Where the Dev Server's UI shows a run. */
+export const devServerRunUrl = (
+  devServerUrl: string,
+  runId: string,
+): string => {
+  return `${devServerUrl.replace(/\/$/, "")}/run?runID=${runId}`;
+};
