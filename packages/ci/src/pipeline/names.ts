@@ -43,8 +43,8 @@ const ciSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
  */
 export const spans = {
   /** A job, which holds everything it does. */
-  job: (config: JobConfig, path: string): SpanInfo => {
-    return userSpan("job", path, traceName.job(config, path));
+  job: (config: JobConfig, path: string, name?: string): SpanInfo => {
+    return userSpan("job", path, name ?? traceName.job(config, path));
   },
 
   /** The run's one span for reporting to GitHub. */
@@ -188,6 +188,10 @@ export const steps = {
       name: "Check cache",
       tag: cacheTag(jobPath),
     };
+  },
+
+  findBaseImage: (name: string): StepSpec => {
+    return { id: `image ${name}`, name: `Find base image ${name}` };
   },
 
   lookUpCache: (id: string, jobPath: string): StepSpec => {
@@ -412,6 +416,10 @@ export const traceName = {
 
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
+  },
+
+  buildInline: (jobId: string): string => {
+    return `Build ${jobId} inline`;
   },
 
   canUser: (login: string, permission: string): string => {
