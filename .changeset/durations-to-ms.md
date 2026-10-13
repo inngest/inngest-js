@@ -2,4 +2,8 @@
 "inngest": minor
 ---
 
-Export `durationToMs()` and the `DurationInput` type from `inngest`: one helper that turns a number of milliseconds, an `ms` string (including compound forms like `"1h30m"`) or a `Temporal.Duration` into milliseconds. Sandbox durations (`runningTimeout`, `timeout`) use it, so they now also accept compound strings. The SDK no longer caps Sandbox durations at 5 minutes client-side; values are passed to the Sandbox API, which decides what is too long and rejects it with its own error.
+Sandbox durations (`runningTimeout`, `timeout`) now accept compound strings like `"1h30m"` and `Temporal.Duration` values, and are no longer capped at 5 minutes by the SDK. The new `durationToMs()` export turns any of these into milliseconds.
+
+```ts
+await step.sandbox.create("build", { runningTimeout: "1h30m" });
+```
