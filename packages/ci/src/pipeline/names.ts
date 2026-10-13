@@ -228,6 +228,10 @@ export const steps = {
     };
   },
 
+  // Invalidating a job's cache.
+  listCachedSnapshots: fixed("list-snapshots", "List cached snapshots"),
+  deleteCachedSnapshots: fixed("delete-snapshots", "Delete cached snapshots"),
+
   // Checking out.
   uploadWorkingTree: named("Upload working tree", { unmarked: true }),
   cloneRepository: named("Clone repository", { unmarked: true }),
