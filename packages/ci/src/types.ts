@@ -7,8 +7,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { InngestFunction } from "inngest";
-import type { DurationInput } from "inngest/experimental";
+import type { DurationInput, InngestFunction } from "inngest";
 
 /**
  * A length of time: a number of milliseconds, an `ms` string like `"10m"`,

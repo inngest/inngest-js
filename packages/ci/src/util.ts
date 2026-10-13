@@ -8,7 +8,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import { durationToMs as sdkDurationToMs } from "inngest/experimental";
+import { durationToMs as sdkDurationToMs } from "inngest";
 import { CiUsageError } from "./errors.ts";
 import type { Duration } from "./types.ts";
 
