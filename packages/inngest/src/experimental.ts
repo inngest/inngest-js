@@ -89,4 +89,12 @@ export type {
   ToolDefinition,
 } from "./components/sandbox/tools.ts";
 export { tool } from "./components/sandbox/tools.ts";
+// Sandbox RPC callbacks (proof of concept)
+export type {
+  RunWithToolsCall,
+  RunWithToolsOptions,
+  RunWithToolsResult,
+  RunWithToolsStep,
+} from "./components/sandbox/rpc.ts";
+export { runWithTools } from "./components/sandbox/rpc.ts";
 export type { ExperimentRef } from "./types.ts";
