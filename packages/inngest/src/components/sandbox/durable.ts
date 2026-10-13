@@ -26,6 +26,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import type { SandboxToolsRequest } from "./tools.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -51,6 +52,7 @@ import {
   decodeOutputChunk,
   decodeUtf8,
   encodeBase64,
+  maxSandboxProcessTimeoutMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
@@ -179,6 +181,30 @@ const snapshotRefForWire = (snapshot: SandboxSnapshotRef) => ({
 });
 
 /**
+ * The wire result of an `exec` operation, with its output fitted to the
+ * durable step's size budget.
+ */
+export const execOperationResult = (result: {
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  exitCode: number;
+}): SandboxOperationResultV1 => {
+  const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+
+  return {
+    protocolVersion: sandboxProtocolVersion,
+    action: "exec",
+    result: {
+      stdout: encodeBase64(output.stdout),
+      stderr: encodeBase64(output.stderr),
+      encoding: "base64",
+      exitCode: result.exitCode,
+      output: output.output,
+    },
+  };
+};
+
+/**
  * Execute a durable sandbox operation through the public REST client and
  * reduce its result to JSON-safe data suitable for normal step memoization.
  */
@@ -241,18 +267,7 @@ export const executeSandboxOperation = async (
         ...options,
         timeout: timeoutMs,
       });
-      const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
-      return {
-        protocolVersion: sandboxProtocolVersion,
-        action: operation.action,
-        result: {
-          stdout: encodeBase64(output.stdout),
-          stderr: encodeBase64(output.stderr),
-          encoding: "base64",
-          exitCode: result.exitCode,
-          output: output.output,
-        },
-      };
+      return execOperationResult(result);
     }
     case "destroy": {
       const result = await sandboxForOperation(
@@ -418,12 +433,15 @@ const callRawTool = async <A extends SandboxAction>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
+  tools?: SandboxToolsRequest,
 ): Promise<SandboxResultForAction<A>> => {
   try {
     const rawTool = await rawToolResolver();
     return validateSandboxResult(
       operation,
-      await rawTool(idOrOptions, operation),
+      await (tools
+        ? rawTool(idOrOptions, operation, tools)
+        : rawTool(idOrOptions, operation)),
     );
   } catch (error) {
     if (error instanceof SandboxValidationError) {
@@ -461,7 +479,7 @@ const callRawTool = async <A extends SandboxAction>(
  * Marks the steps the SDK runs on the user's behalf, such as the create and
  * wait inside `snapshot()`. See `StepOptions["~origin"]`.
  */
-const sdkOrigin = `inngest@${version}`;
+export const sdkOrigin = `inngest@${version}`;
 
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
@@ -671,7 +689,13 @@ export const createDurableSandboxFacade = (
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
       run: async (idOrOptions, command, options) => {
-        const normalized = normalizeSandboxCommandOptions(command, options);
+        const { tools, toolOptions, ...commandOptions } = options ?? {};
+        const normalized = normalizeSandboxCommandOptions(command, {
+          ...commandOptions,
+          ...(tools && {
+            timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+          }),
+        });
         const { timeout: _timeout, ...input } = normalized;
         const operation = parseSandboxOperationForAction("exec", {
           protocolVersion: sandboxProtocolVersion,
@@ -683,6 +707,7 @@ export const createDurableSandboxFacade = (
           rawToolResolver,
           idOrOptions,
           operation,
+          tools && { tools, toolOptions },
         );
         return {
           stdout: decodeUtf8(
