@@ -10,6 +10,7 @@ import {
   type SandboxOperationResultV1,
   type SandboxRawTool,
 } from "./protocol.ts";
+import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
 import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
 import {
   type DurableSandboxTools,
@@ -19,7 +20,7 @@ import {
 } from "./types.ts";
 
 type SandboxStepExtension = {
-  sandbox: DurableSandboxTools;
+  sandbox: DurableSandboxTools & { python: OneShotRunner };
 };
 
 type SandboxGroupExtension = {
@@ -144,7 +145,13 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
       ...arg,
       ctx: {
         ...arg.ctx,
-        step: { ...arg.ctx.step, sandbox },
+        step: {
+          ...arg.ctx.step,
+          sandbox: {
+            ...sandbox,
+            python: createOneShotRunner(sandbox, "python"),
+          },
+        },
         group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };

@@ -30,6 +30,12 @@ export {
   validateSandboxResult,
 } from "./sandbox/protocol.ts";
 export type {
+  OneShotRunner,
+  OneShotRunnerOptions,
+  RunnerOptions,
+  SandboxRunner,
+} from "./sandbox/runners.ts";
+export type {
   DurableSandbox,
   DurableSandboxProcess,
   DurableSandboxSnapshot,
