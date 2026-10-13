@@ -144,6 +144,8 @@ export const runFnWithStack = async (
     event?: EventPayload;
     stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
     disableImmediateExecution?: boolean;
+    attempt?: number;
+    maxAttempts?: number;
   },
 ) => {
   const execution = fn["createExecution"]({
@@ -151,6 +153,8 @@ export const runFnWithStack = async (
       client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
+        attempt: opts?.attempt,
+        maxAttempts: opts?.maxAttempts,
       }),
       runId: "run",
       stepState,
