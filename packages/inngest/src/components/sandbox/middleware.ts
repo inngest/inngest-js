@@ -5,6 +5,7 @@ import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
+import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
   getSandboxError,
   parseSandboxOperation,
@@ -26,6 +27,10 @@ import {
 
 type SandboxStepExtension = {
   sandbox: DurableSandboxTools;
+};
+
+type SandboxGroupExtension = {
+  sandbox: GroupSandbox;
 };
 
 /**
@@ -132,6 +137,8 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     ctx: Middleware.TransformFunctionInputArgs["ctx"] & {
       step: Middleware.TransformFunctionInputArgs["ctx"]["step"] &
         SandboxStepExtension;
+      group: Middleware.TransformFunctionInputArgs["ctx"]["group"] &
+        SandboxGroupExtension;
     };
   } {
     const { step, runId } = arg.ctx;
@@ -178,14 +185,14 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
       );
     };
 
+    const sandbox = createSandboxTools(() => rawTool);
+
     return {
       ...arg,
       ctx: {
         ...arg.ctx,
-        step: {
-          ...arg.ctx.step,
-          sandbox: createSandboxTools(() => rawTool),
-        },
+        step: { ...arg.ctx.step, sandbox },
+        group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };
   }
