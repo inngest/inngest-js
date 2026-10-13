@@ -636,6 +636,7 @@ describe("commands.run with tools trace group", () => {
     { command: ["/usr/bin/python3.12", "x.py"], kind: "python" },
     { command: ["/bin/sh", "-c", "node a.js"], kind: "ts" },
     { command: ["bun", "run", "x.ts"], kind: "ts" },
+    { command: ["/usr/bin/python3", "-c", "import os"], kind: "python" },
     { command: ["/bin/sh", "-c", "ls -la"], kind: "sh" },
     { command: ["bash", "x.sh"], kind: "sh" },
   ])("$command runs in a $kind group", async ({ command, kind }) => {

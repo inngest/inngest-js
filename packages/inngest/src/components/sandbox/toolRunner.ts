@@ -351,16 +351,23 @@ const pythonProgram = /^python[\d.]*$/;
 
 const tsPrograms = new Set(["node", "tsx", "bun", "deno"]);
 
+const shellPrograms = new Set(["sh", "bash", "zsh", "dash"]);
+
+const basename = (path: string): string => {
+  return path.split("/").pop() ?? "";
+};
+
 /**
  * What the command runs, for the trace: `python`, `ts` (node, tsx, bun and
  * deno) or `sh` for anything else. A string command arrives as `sh -c <script>`,
  * so the script's first word is the program.
  */
 export const commandKind = ([program = "", ...rest]: string[]): string => {
-  const [word = ""] = (rest[0] === "-c" ? (rest[1] ?? "") : program)
-    .trim()
-    .split(/\s+/);
-  const name = word.split("/").pop() ?? "";
+  const [word = ""] =
+    shellPrograms.has(basename(program)) && rest[0] === "-c"
+      ? (rest[1] ?? "").trim().split(/\s+/)
+      : [program];
+  const name = basename(word);
 
   if (pythonProgram.test(name)) {
     return "python";
