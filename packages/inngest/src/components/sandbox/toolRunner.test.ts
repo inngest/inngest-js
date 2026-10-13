@@ -145,9 +145,15 @@ const createHost = (
   const executed: string[] = [];
   const attempts = new Map<string, number>();
   const spans = new Map<string, unknown[]>();
+  const names = new Map<string, string | undefined>();
   const host: ToolsHost = {
     run: async <T>(idOrOptions: string | StepOptions, fn: () => Promise<T>) => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      names.set(
+        id,
+        typeof idOrOptions === "string" ? undefined : idOrOptions.name,
+      );
+
       const own =
         typeof idOrOptions === "string" ? undefined : idOrOptions["~span"];
       spans.set(id, [
@@ -189,7 +195,7 @@ const createHost = (
     runId: "run-1",
   };
 
-  return { host, executed, attempts, spans };
+  return { host, executed, attempts, spans, names };
 };
 
 const operation = (
@@ -632,20 +638,40 @@ describe("commands.run with tools trace group", () => {
   };
 
   test.each([
-    { command: ["/bin/sh", "-c", "python3 x.py"], kind: "python" },
-    { command: ["/usr/bin/python3.12", "x.py"], kind: "python" },
-    { command: ["/bin/sh", "-c", "node a.js"], kind: "ts" },
-    { command: ["bun", "run", "x.ts"], kind: "ts" },
-    { command: ["/usr/bin/python3", "-c", "import os"], kind: "python" },
-    { command: ["/bin/sh", "-c", "ls -la"], kind: "sh" },
-    { command: ["bash", "x.sh"], kind: "sh" },
-  ])("$command runs in a $kind group", async ({ command, kind }) => {
-    const { sandbox } = createFakeSandbox((f, replied) => {
-      if (replied === undefined) {
-        exitWith(f);
-      }
-    });
-    const { host, spans } = createHost(sandbox);
+    {
+      command: ["/bin/sh", "-c", "python3 x.py"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/usr/bin/python3.12", "x.py"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/bin/sh", "-c", "node a.js"],
+      kind: "ts",
+      wait: "TypeScript running…",
+    },
+    {
+      command: ["bun", "run", "x.ts"],
+      kind: "ts",
+      wait: "TypeScript running…",
+    },
+    {
+      command: ["/usr/bin/python3", "-c", "import os"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/bin/sh", "-c", "ls -la"],
+      kind: "sh",
+      wait: "Shell running…",
+    },
+    { command: ["bash", "x.sh"], kind: "sh", wait: "Shell running…" },
+  ])("$command runs in a $kind group", async ({ command, kind, wait }) => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans, names } = createHost(sandbox);
 
     await inExecution(() => {
       return runCommandWithTools(
@@ -653,13 +679,14 @@ describe("commands.run with tools trace group", () => {
         { id: "exec", name: "Analyse" },
         operation(300_000, command),
         {
-          tools: {},
+          tools: { getCustomer: async () => ({ id: "cus_1" }) },
           toolOptions: { waitWindow: 5 },
         },
       );
     });
 
     expect(spans.get("exec")).toEqual([{ id: "exec", name: "Analyse", kind }]);
+    expect(names.get("exec:wait:1")).toBe(wait);
   });
 
   test("tool calls are tool rows in the group, and waits stay in the group", async () => {

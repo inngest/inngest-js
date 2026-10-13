@@ -338,7 +338,7 @@ const followCommand = async (
 
     const { lines } = state;
     state = await host.run(
-      sdkStep(`${id}:wait:${++waits}`, "Wait for tool calls"),
+      sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {
         return follow(started.dir, lines, replies);
       },
@@ -357,12 +357,21 @@ const basename = (path: string): string => {
   return path.split("/").pop() ?? "";
 };
 
+const runningNames = {
+  python: "Python running…",
+  ts: "TypeScript running…",
+  sh: "Shell running…",
+};
+
 /**
  * What the command runs, for the trace: `python`, `ts` (node, tsx, bun and
  * deno) or `sh` for anything else. A string command arrives as `sh -c <script>`,
  * so the script's first word is the program.
  */
-export const commandKind = ([program = "", ...rest]: string[]): string => {
+export const commandKind = ([
+  program = "",
+  ...rest
+]: string[]): keyof typeof runningNames => {
   const [word = ""] =
     shellPrograms.has(basename(program)) && rest[0] === "-c"
       ? (rest[1] ?? "").trim().split(/\s+/)
