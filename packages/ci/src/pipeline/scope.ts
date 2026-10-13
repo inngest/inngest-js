@@ -597,13 +597,14 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
  */
 export const inJobSpan = <R>(
   run: CiRunScope,
+  config: JobConfig,
   jobPath: string,
   fn: () => R,
   /** What the span is called, when it isn't the job's name. */
   name?: string,
 ): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
-    return inSpan(spans.job(run, jobPath, name), fn);
+    return inSpan(spans.job(config, jobPath, name), fn);
   });
 };
 
