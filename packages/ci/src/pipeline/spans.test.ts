@@ -8,7 +8,8 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { snapshotMachine } from "../machine/machine.ts";
-import { ciOrigin } from "./names.ts";
+import type { JobConfig } from "../types.ts";
+import { ciOrigin, traceName } from "./names.ts";
 import type { CiJobScope } from "./scope.ts";
 import { originOption } from "./spans.ts";
 
@@ -53,5 +54,18 @@ describe("a snapshot's span", () => {
         },
       }),
     ]);
+  });
+});
+
+describe("a job's span name", () => {
+  const named = { id: "build", name: "Build it" } as JobConfig;
+
+  test("is the job's name, and its id when it has none", () => {
+    expect(traceName.job(named, "build")).toBe("Build it");
+    expect(traceName.job({ id: "build" } as JobConfig, "build")).toBe("build");
+  });
+
+  test("keeps the name on a later direct call, with its number", () => {
+    expect(traceName.job(named, "build (2)")).toBe("Build it (2)");
   });
 });
