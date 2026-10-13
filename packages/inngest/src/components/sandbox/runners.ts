@@ -1,8 +1,8 @@
 /**
  * @module
- * `sandbox.python()` and `step.sandbox.python()`: run a snippet in a sandbox
- * and get its `return` value back. The snippet's command comes from
- * `runnerScripts.ts`; this file runs it and unpacks the result.
+ * `sandbox.python()`, `sandbox.ts()` and their `step.sandbox` forms: run a
+ * snippet in a sandbox and get its `return` value back. The snippet's command
+ * comes from `runnerScripts.ts`; this file runs it and unpacks the result.
  */
 
 import type { StepOptionsOrId } from "../../types.ts";
