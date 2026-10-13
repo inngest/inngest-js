@@ -69,7 +69,7 @@ import {
   sandboxSnapshotRefSchema,
 } from "./validation.ts";
 
-const fitDurableSandboxExecOutput = (
+export const fitDurableSandboxExecOutput = (
   stdout: Uint8Array,
   stderr: Uint8Array,
 ): {
@@ -461,7 +461,7 @@ const callRawTool = async <A extends SandboxAction>(
  * Marks the steps the SDK runs on the user's behalf, such as the create and
  * wait inside `snapshot()`. See `StepOptions["~origin"]`.
  */
-const sdkOrigin = `inngest@${version}`;
+export const sdkOrigin = `inngest@${version}`;
 
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({

@@ -9,7 +9,11 @@ import {
   type SandboxOperationResultV1,
   type SandboxRawTool,
 } from "./protocol.ts";
-import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
+import {
+  type SandboxTraceMetadata,
+  sandboxMetadataKind,
+  sandboxTraceMetadata,
+} from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -25,10 +29,7 @@ type SandboxStepExtension = {
  * Attach `inngest.sandbox` metadata to the step that's executing, describing
  * the sandbox action for the trace. Tracing must never fail the step.
  */
-const describeStep = (
-  operation: unknown,
-  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
-): void => {
+const addSandboxMetadata = (metadata: () => SandboxTraceMetadata): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
     const stepId = execution?.executingStep?.id;
@@ -41,16 +42,61 @@ const describeStep = (
       sandboxMetadataKind,
       "step",
       "merge",
-      sandboxTraceMetadata(
-        parseSandboxOperation(operation),
-        "result" in outcome
-          ? outcome
-          : { error: getSandboxError(outcome.error) },
-      ),
+      metadata(),
     );
   } catch {
     // An operation that fails validation has nothing to describe.
   }
+};
+
+const describeStep = (
+  operation: unknown,
+  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
+): void => {
+  addSandboxMetadata(() => {
+    return sandboxTraceMetadata(
+      parseSandboxOperation(operation),
+      "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
+    );
+  });
+};
+
+/**
+ * What a failed sandbox step throws: retryable errors retry, the rest do not.
+ */
+const toStepError = (error: unknown): unknown => {
+  if (error instanceof SandboxError) {
+    const cause = {
+      protocolVersion: error.protocolVersion,
+      action: error.action,
+      code: error.code,
+      message: error.message,
+      ...(error.status !== undefined && { status: error.status }),
+      ...(error.sandboxId !== undefined && { sandboxId: error.sandboxId }),
+      ...(error.processId !== undefined && { processId: error.processId }),
+      ...(error.snapshotId !== undefined && { snapshotId: error.snapshotId }),
+      ambiguous: error.ambiguous,
+      retryable: error.retryable,
+      ...(error.requestId !== undefined && { requestId: error.requestId }),
+      details: [...error.details],
+    };
+    if (error.retryable) {
+      const retryableError = new Error(error.message, { cause });
+      retryableError.name = error.name;
+      return retryableError;
+    }
+    return new NonRetriableError(error.message, { cause });
+  }
+  if (error instanceof SandboxValidationError) {
+    return new NonRetriableError(error.message, {
+      cause: {
+        protocolVersion: sandboxProtocolVersion,
+        type: "sandbox_validation_error" as const,
+        message: error.message,
+      },
+    });
+  }
+  return error;
 };
 
 const executeAsStep = async (
@@ -63,46 +109,7 @@ const executeAsStep = async (
     return result;
   } catch (error) {
     describeStep(operation, { error });
-    if (error instanceof SandboxError) {
-      const cause = {
-        protocolVersion: error.protocolVersion,
-        action: error.action,
-        code: error.code,
-        message: error.message,
-        ...(error.status !== undefined && { status: error.status }),
-        ...(error.sandboxId !== undefined && {
-          sandboxId: error.sandboxId,
-        }),
-        ...(error.processId !== undefined && {
-          processId: error.processId,
-        }),
-        ...(error.snapshotId !== undefined && {
-          snapshotId: error.snapshotId,
-        }),
-        ambiguous: error.ambiguous,
-        retryable: error.retryable,
-        ...(error.requestId !== undefined && {
-          requestId: error.requestId,
-        }),
-        details: [...error.details],
-      };
-      if (error.retryable) {
-        const retryableError = new Error(error.message, { cause });
-        retryableError.name = error.name;
-        throw retryableError;
-      }
-      throw new NonRetriableError(error.message, { cause });
-    }
-    if (error instanceof SandboxValidationError) {
-      throw new NonRetriableError(error.message, {
-        cause: {
-          protocolVersion: sandboxProtocolVersion,
-          type: "sandbox_validation_error" as const,
-          message: error.message,
-        },
-      });
-    }
-    throw error;
+    throw toStepError(error);
   }
 };
 
