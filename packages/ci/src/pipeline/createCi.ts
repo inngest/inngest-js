@@ -260,7 +260,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // The provider answers `github.rest` and `github.token()` whatever mode
   // we're in; only where checks *go* changes in dev.
   // Fail now rather than when a build first waits.
-  durationToMs(options.buildWait ?? "15m");
+  durationToMs(options.buildWait ?? "15m", "buildWait");
 
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
