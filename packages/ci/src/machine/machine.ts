@@ -48,7 +48,7 @@ import { deleteSnapshots, listSandboxes } from "./admin.ts";
 export const ensureMachine = async (
   scope: CiJobScope,
 ): Promise<MachineHandle> => {
-  scope.machine ??= inJobSpan(scope.run, scope.jobPath, () => {
+  scope.machine ??= inJobSpan(scope.run, scope.config, scope.jobPath, () => {
     return inMachineSpan(scope, () => {
       const stepId = joinId(scope.path, "machine");
 

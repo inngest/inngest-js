@@ -10,11 +10,10 @@
  * @module
  */
 
-import type { CheckConclusion } from "../types.ts";
+import type { CheckConclusion, JobConfig } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import { version } from "../version.ts";
 import type { StepTag } from "./metadata.ts";
-import type { CiRunScope } from "./scope.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
 import type { SpanInfo, SpanKind } from "./spans.ts";
 import { originOption } from "./spans.ts";
@@ -44,8 +43,8 @@ const ciSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
  */
 export const spans = {
   /** A job, which holds everything it does. */
-  job: (run: CiRunScope, path: string, name?: string): SpanInfo => {
-    return userSpan("job", path, name ?? traceName.job(run, path));
+  job: (config: JobConfig, path: string, name?: string): SpanInfo => {
+    return userSpan("job", path, name ?? traceName.job(config, path));
   },
 
   /** The run's one span for reporting to GitHub. */
@@ -361,9 +360,16 @@ export const steps = {
 };
 
 export const traceName = {
-  /** A job's span: its `name`, or its path when it has none. */
-  job: (run: CiRunScope, path: string): string => {
-    return run.ci.jobs.get(path)?.config.name ?? path;
+  /**
+   * A job's span: its `name`, or its path when it has none. A later direct
+   * call, whose path is `${id} (n)`, keeps its `(n)` after the name.
+   */
+  job: (config: JobConfig, path: string): string => {
+    if (!config.name) {
+      return path;
+    }
+
+    return `${config.name}${path.slice(config.id.length)}`;
   },
 
   /** The span a job's sandbox starts in. */
