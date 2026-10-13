@@ -4,8 +4,10 @@
  * client whose sandbox REST API is served by a callback.
  */
 
-import { testClientId } from "../../test/helpers.ts";
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { sandboxMiddleware } from "./middleware.ts";
 
 export const sandboxId = "22222222-2222-4222-8222-222222222222";
@@ -64,4 +66,64 @@ export const createClient = (
     },
     middleware: [sandboxMiddleware()],
   });
+};
+
+/**
+ * A client whose sandbox API creates, execs in and destroys sandboxes, with
+ * the number of destroys it has served.
+ */
+export const createScopeClient = (
+  destroy: () => Response = () => new Response(null, { status: 204 }),
+) => {
+  const calls = { destroys: 0 };
+
+  const client = createClient((path, method) => {
+    if (path === "/v2/sandboxes" && method === "POST") {
+      return Response.json({ data: sandboxResource }, { status: 201 });
+    }
+
+    if (path.endsWith("/exec")) {
+      return Response.json({
+        data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
+      });
+    }
+
+    if (path === `/v2/sandboxes/${sandboxId}` && method === "DELETE") {
+      calls.destroys++;
+
+      return destroy();
+    }
+
+    return undefined;
+  });
+
+  return { client, calls };
+};
+
+/**
+ * Run `fn` request by request until it finishes, memoizing each step, and
+ * return how it finished and the steps that ran.
+ */
+export const runToEnd = async (
+  fn: InngestFunction.Any,
+  opts?: { attempt?: number; maxAttempts?: number },
+) => {
+  const ran: string[] = [];
+  const steps: OutgoingOp[] = [];
+  let stepState: Parameters<typeof runFnWithStack>[1] = {};
+
+  for (let request = 0; request < 20; request++) {
+    const result = await runFnWithStack(fn, stepState, opts);
+
+    if (result.type !== "step-ran") {
+      return { type: result.type, ran, steps };
+    }
+
+    const { id, data, error } = result.step;
+    steps.push(result.step);
+    ran.push(result.step.userland?.id ?? id);
+    stepState = { ...stepState, [id]: { id, data, error } };
+  }
+
+  throw new Error("The function did not finish");
 };

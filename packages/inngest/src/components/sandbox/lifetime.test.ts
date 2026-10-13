@@ -5,8 +5,12 @@
  */
 
 import { runFnWithStack, runSteps } from "../../test/helpers.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
-import { createClient, sandboxId, sandboxResource } from "./test-helpers.ts";
+import {
+  createClient,
+  createScopeClient,
+  runToEnd,
+  sandboxId,
+} from "./test-helpers.ts";
 
 const createOptions = { name: "box", vcpu: 2, memoryMb: 2048 };
 
@@ -50,61 +54,6 @@ describe("sandbox destroy", () => {
     });
   });
 });
-
-/**
- * A client whose sandbox API creates, execs in and destroys sandboxes, with
- * the number of destroys it has served.
- */
-const createScopeClient = (
-  destroy: () => Response = () => new Response(null, { status: 204 }),
-) => {
-  const calls = { destroys: 0 };
-
-  const client = createClient((path, method) => {
-    if (path === "/v2/sandboxes" && method === "POST") {
-      return Response.json({ data: sandboxResource }, { status: 201 });
-    }
-
-    if (path.endsWith("/exec")) {
-      return Response.json({
-        data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
-      });
-    }
-
-    if (path === `/v2/sandboxes/${sandboxId}` && method === "DELETE") {
-      calls.destroys++;
-
-      return destroy();
-    }
-
-    return undefined;
-  });
-
-  return { client, calls };
-};
-
-/**
- * Run `fn` request by request until it finishes, memoizing each step, and
- * return how it finished and the IDs of the steps that ran.
- */
-const runToEnd = async (fn: InngestFunction.Any) => {
-  const ran: string[] = [];
-  let stepState: Parameters<typeof runFnWithStack>[1] = {};
-
-  for (let request = 0; request < 20; request++) {
-    const result = await runFnWithStack(fn, stepState);
-
-    if (result.type !== "step-ran") {
-      return { type: result.type, ran };
-    }
-
-    const { id, data, error } = result.step;
-    ran.push(result.step.userland?.id ?? id);
-    stepState = { ...stepState, [id]: { id, data, error } };
-  }
-
-  throw new Error("The function did not finish");
-};
 
 describe("await using a sandbox", () => {
   type Client = ReturnType<typeof createScopeClient>["client"];
@@ -190,7 +139,7 @@ describe("await using a sandbox", () => {
       },
     );
 
-    expect(await runToEnd(fn)).toEqual({
+    expect(await runToEnd(fn)).toMatchObject({
       type: "function-resolved",
       ran: ["box", "box:destroy"],
     });
@@ -206,7 +155,7 @@ describe("await using a sandbox", () => {
       },
     );
 
-    expect(await runToEnd(fn)).toEqual({
+    expect(await runToEnd(fn)).toMatchObject({
       type: "function-rejected",
       ran: ["box", "box:destroy"],
     });
