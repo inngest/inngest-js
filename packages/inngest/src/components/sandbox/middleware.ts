@@ -172,7 +172,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     };
   } {
     const { step, runId } = arg.ctx;
-    const rawTool: SandboxRawTool = (idOrOptions, operation, tools) => {
+    const rawTool: SandboxRawTool = (idOrOptions, operation, tools, finish) => {
       if (tools && operation.action === "exec") {
         return runCommandWithTools(
           {
@@ -210,7 +210,11 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 
       return step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
+        async (input) => {
+          const result = await executeAsStep(this.client, input);
+
+          return finish ? finish(result) : result;
+        },
         operation,
       );
     };

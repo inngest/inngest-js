@@ -5,7 +5,7 @@
  * tested by what they do rather than by their text.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +14,9 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildRunner,
-  parseRunnerOutput,
+  parseRunnerResult,
   type RunnerLanguage,
   type RunnerPlan,
-  resultSentinel,
 } from "./runnerScripts.ts";
 
 const canRun: Record<RunnerLanguage, boolean> = {
@@ -26,8 +25,9 @@ const canRun: Record<RunnerLanguage, boolean> = {
 };
 
 const dir = mkdtempSync(join(tmpdir(), "runner-scripts-"));
+let count = 0;
 
-const execute = (plan: RunnerPlan) => {
+const execute = (plan: RunnerPlan, resultPath: string) => {
   if (plan.upload) {
     writeFileSync(plan.upload.path, plan.upload.content);
   }
@@ -37,7 +37,15 @@ const execute = (plan: RunnerPlan) => {
     encoding: "utf8",
   });
 
-  return { exitCode: status, stdout, stderr };
+  return {
+    exitCode: status,
+    stdout,
+    stderr,
+    result: existsSync(resultPath)
+      ? parseRunnerResult(readFileSync(resultPath, "utf8"))
+      : undefined,
+    wroteResult: existsSync(resultPath),
+  };
 };
 
 const run = (
@@ -45,15 +53,16 @@ const run = (
   code: string,
   input?: Record<string, unknown>,
 ) => {
+  const resultPath = join(dir, `result-${count++}.json`);
   const plan = buildRunner({
     language,
     code,
     input,
     payloadPath: join(dir, "payload.json"),
+    resultPath,
   });
-  const { exitCode, stdout, stderr } = execute(plan);
 
-  return { exitCode, stderr, ...parseRunnerOutput(stdout, exitCode) };
+  return execute(plan, resultPath);
 };
 
 const languages: RunnerLanguage[] = ["typescript", "python"];
@@ -136,15 +145,6 @@ describe.each(languages)("%s runner", (language) => {
       result: 1,
       stdout: "later\n",
     },
-    {
-      name: "a printed copy of the sentinel is ignored",
-      code: pick(
-        `console.log('${resultSentinel}{"fake":1}'); return { real: 1 }`,
-        `print('${resultSentinel}{"fake":1}'); return { "real": 1 }`,
-      ),
-      result: { real: 1 },
-      stdout: `${resultSentinel}{"fake":1}\n`,
-    },
   ];
 
   test.skipIf(!runnable).each(values)(
@@ -185,19 +185,30 @@ describe.each(languages)("%s runner", (language) => {
     expect(output.exitCode).not.toBe(0);
     expect(output.stderr).toContain(c.stderr);
     expect(output.result).toBeUndefined();
-    expect(output.stdout).not.toContain(resultSentinel);
+    expect(output.wroteResult).toBe(false);
+  });
+
+  test.skipIf(!runnable)("a large result doesn't touch stdout", () => {
+    const output = run(
+      language,
+      pick("return 'x'.repeat(3_000_000)", "return 'x' * 3000000"),
+    );
+
+    expect(output.result).toHaveLength(3_000_000);
+    expect(output.stdout).toBe("");
   });
 
   test.skipIf(!runnable)("a large payload is read from its file", () => {
     const text = "x".repeat(100_000);
+    const resultPath = join(dir, "large-result.json");
     const plan = buildRunner({
       language,
       code: pick("return text.length", "return len(text)"),
       input: { text },
       payloadPath: join(dir, "large.json"),
+      resultPath,
     });
-    const { stdout, exitCode } = execute(plan);
-    const output = parseRunnerOutput(stdout, exitCode);
+    const output = execute(plan, resultPath);
 
     expect(plan.upload).toBeDefined();
     expect(output.result).toBe(100_000);
@@ -213,11 +224,16 @@ test.skipIf(!canRun.typescript)("types are stripped from TypeScript", () => {
 });
 
 test.skipIf(!canRun.typescript)(
-  "TypeScript that needs transforming runs",
+  "TypeScript that can't be stripped is explained",
   () => {
-    const output = run("typescript", "enum Dir { Up, Down } return Dir.Down");
+    const output = run("typescript", "enum Color { Red } return Color.Red");
 
-    expect(output.result).toBe(1);
+    expect(output.exitCode).not.toBe(0);
+    expect(output.stderr).toContain(
+      "Enums, namespaces and parameter properties need full TypeScript compilation",
+    );
+    expect(output.stderr).toContain("enum is not supported");
+    expect(output.wroteResult).toBe(false);
   },
 );
 
@@ -228,11 +244,13 @@ describe("buildRunner", () => {
       code: "return a",
       input: { a: 1 },
       payloadPath: "/tmp/p.json",
+      resultPath: "/tmp/r.json",
     });
 
     expect(plan.upload).toBeUndefined();
     expect(plan.command.slice(0, 2)).toEqual(["python3", "-c"]);
-    expect(JSON.parse(plan.command.at(-1) as string)).toEqual({
+    expect(plan.command.at(-1)).toBe("/tmp/r.json");
+    expect(JSON.parse(plan.command.at(-2) as string)).toEqual({
       code: "return a",
       input: { a: 1 },
     });
@@ -244,9 +262,10 @@ describe("buildRunner", () => {
       code: "return text",
       input: { text: "x".repeat(20_000) },
       payloadPath: "/tmp/p.json",
+      resultPath: "/tmp/r.json",
     });
 
-    expect(plan.command.at(-1)).toBe("@/tmp/p.json");
+    expect(plan.command.at(-2)).toBe("@/tmp/p.json");
     expect(plan.upload?.path).toBe("/tmp/p.json");
     expect(JSON.parse(plan.upload?.content as string).code).toBe("return text");
   });
@@ -348,59 +367,23 @@ describe("buildRunner", () => {
 
   test.each(rejected)("rejects $name", ({ language, input, message }) => {
     expect(() => {
-      return buildRunner({ language, code: "", input, payloadPath: "/p" });
+      return buildRunner({
+        language,
+        code: "",
+        input,
+        payloadPath: "/p",
+        resultPath: "/r",
+      });
     }).toThrow(message);
   });
 });
 
-describe("parseRunnerOutput", () => {
-  const sentinel = `\n${resultSentinel}`;
-
-  const cases: {
-    name: string;
-    stdout: string;
-    exitCode?: number;
-    expected: unknown;
-  }[] = [
-    {
-      name: "no sentinel",
-      stdout: "crashed\n",
-      expected: { stdout: "crashed\n" },
-    },
-    {
-      name: "a result",
-      stdout: `out\n${sentinel}{"a":1}\n`,
-      expected: { stdout: "out\n", result: { a: 1 } },
-    },
-    {
-      name: "a result after output with no trailing newline",
-      stdout: `out${sentinel}[1]\n`,
-      expected: { stdout: "out", result: [1] },
-    },
-    {
-      name: "an empty result",
-      stdout: `${sentinel}\n`,
-      expected: { stdout: "", result: undefined },
-    },
-    {
-      name: "a falsy result",
-      stdout: `${sentinel}0\n`,
-      expected: { stdout: "", result: 0 },
-    },
-    {
-      name: "a failed command has no result",
-      stdout: `out${sentinel}1\n`,
-      exitCode: 1,
-      expected: { stdout: `out${sentinel}1\n` },
-    },
-    {
-      name: "the last sentinel wins",
-      stdout: `${sentinel}1\nmore${sentinel}2\n`,
-      expected: { stdout: `${sentinel}1\nmore`, result: 2 },
-    },
-  ];
-
-  test.each(cases)("$name", ({ stdout, exitCode = 0, expected }) => {
-    expect(parseRunnerOutput(stdout, exitCode)).toEqual(expected);
+describe("parseRunnerResult", () => {
+  test.each([
+    { name: "a value", text: '{"a":1}', expected: { a: 1 } },
+    { name: "a falsy value", text: "0", expected: 0 },
+    { name: "an empty file", text: "", expected: undefined },
+  ])("reads $name", ({ text, expected }) => {
+    expect(parseRunnerResult(text)).toEqual(expected);
   });
 });

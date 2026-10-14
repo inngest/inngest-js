@@ -1,5 +1,4 @@
 import type { StepOptionsOrId } from "../../types.ts";
-import { version } from "../../version.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
@@ -13,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -28,6 +28,7 @@ import {
 } from "./protocol.ts";
 import { createSandboxRunner } from "./runners.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
+import { sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -273,6 +274,35 @@ export const executeSandboxOperation = async (
       });
       return execOperationResult(result);
     }
+    case "file.upload": {
+      const { path, data } = operation.input[0];
+      await sandboxForOperation(client, operation.target.sandbox).files.upload({
+        path,
+        data: new Uint8Array(decodeBase64(data, "sandbox file data")),
+      });
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        result: null,
+      };
+    }
+    case "file.download": {
+      const response = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      ).files.download(operation.input[0]);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > maxDurableSandboxExecOutputBytes) {
+        throw new SandboxValidationError(
+          `${operation.input[0].path} is ${bytes.byteLength} bytes, over the ${maxDurableSandboxExecOutputBytes} bytes a step can return`,
+        );
+      }
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        result: { data: encodeBase64(bytes) },
+      };
+    }
     case "destroy": {
       // A destroy that already happened, such as one retried after a lost
       // response, has the outcome the caller wanted.
@@ -444,20 +474,34 @@ export const executeSandboxOperation = async (
   }
 };
 
-const callRawTool = async <A extends SandboxAction>(
+/**
+ * Run an operation as a step. With `finish`, the step also does that work and
+ * its output is what `finish` returns, so a replay returns it unchanged.
+ */
+const callRawTool = async <
+  A extends SandboxAction,
+  T = SandboxResultForAction<A>,
+>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
   tools?: SandboxToolsRequest,
-): Promise<SandboxResultForAction<A>> => {
+  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
+): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
+    if (finish) {
+      return (await rawTool(idOrOptions, operation, tools, (result) => {
+        return finish(validateSandboxResult(operation, result));
+      })) as T;
+    }
+
     return validateSandboxResult(
       operation,
       await (tools
         ? rawTool(idOrOptions, operation, tools)
         : rawTool(idOrOptions, operation)),
-    );
+    ) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
       throw error;
@@ -490,13 +534,29 @@ const callRawTool = async <A extends SandboxAction>(
   }
 };
 
-/**
- * Marks the steps the SDK runs on the user's behalf, such as the create and
- * wait inside `snapshot()`. See `StepOptions["~origin"]`.
- */
-export const sdkOrigin = `inngest@${version}`;
+type FileParser = (
+  idOrOptions: StepOptionsOrId,
+  path: string,
+  parse: (bytes: Uint8Array) => unknown,
+) => Promise<unknown>;
+const fileParsers = new WeakMap<DurableSandbox, FileParser>();
+const fileParserOf = (sandbox: DurableSandbox): FileParser => {
+  const parser = fileParsers.get(sandbox);
+  if (!parser) {
+    throw new Error("Cannot parse a file of a sandbox the SDK did not create");
+  }
 
+  return parser;
+};
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
+const downloadOperation = (ref: SandboxRef, path: string) => {
+  return parseSandboxOperationForAction("file.download", {
+    protocolVersion: sandboxProtocolVersion,
+    action: "file.download",
+    target: sandboxTarget(ref),
+    input: [{ path }],
+  });
+};
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
   sandbox,
   process,
@@ -736,8 +796,36 @@ export const createDurableSandboxFacade = (
         };
       },
     }),
-    python: createSandboxRunner(() => facade.commands, "python"),
-    typescript: createSandboxRunner(() => facade.commands, "typescript"),
+    files: Object.freeze({
+      write: async (idOrOptions, { path, data }) => {
+        const operation = parseSandboxOperationForAction("file.upload", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "file.upload",
+          target: sandboxTarget(ref),
+          input: [
+            {
+              path,
+              data: encodeBase64(
+                typeof data === "string"
+                  ? new TextEncoder().encode(data)
+                  : data,
+              ),
+            },
+          ],
+        });
+        await callRawTool(rawToolResolver, idOrOptions, operation);
+      },
+      read: async (idOrOptions, path) => {
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          downloadOperation(ref, path),
+        );
+        return decodeBase64(result.result.data, "sandbox file data");
+      },
+    }),
+    python: createSandboxRunner(() => facade, "python"),
+    typescript: createSandboxRunner(() => facade, "typescript"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {
@@ -854,7 +942,33 @@ export const createDurableSandboxFacade = (
       return result.result;
     },
   };
+  fileParsers.set(facade, (idOrOptions, path, parse) => {
+    return callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      downloadOperation(ref, path),
+      undefined,
+      (result) => {
+        return parse(decodeBase64(result.result.data, "sandbox file data"));
+      },
+    );
+  });
+
   return Object.freeze(facade);
+};
+
+/**
+ * Read a file in the sandbox and parse it inside the same step, so the step's
+ * output is what `parse` returns instead of the file. Internal: the public
+ * `files.read` always returns the bytes.
+ */
+export const readParsedFile = <T>(
+  sandbox: DurableSandbox,
+  idOrOptions: StepOptionsOrId,
+  path: string,
+  parse: (bytes: Uint8Array) => T | Promise<T>,
+): Promise<T> => {
+  return fileParserOf(sandbox)(idOrOptions, path, parse) as Promise<T>;
 };
 
 // Node before 20.5 lacks the symbol that `await using` looks up.
@@ -875,20 +989,15 @@ export const createSandboxTools = (
     const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
     const { id } = getStepOptions(idOrOptions);
 
-    return Object.freeze({
+    const disposable = Object.freeze({
       ...sandbox,
       [Symbol.asyncDispose]: async () => {
-        try {
-          await sandbox.destroy(`${id}:destroy`);
-        } catch (error) {
-          // A destroy that failed for good is on the trace as a warning. It
-          // must not change the outcome of the run.
-          if (!(error instanceof StepError)) {
-            throw error;
-          }
-        }
+        await destroyQuietly(sandbox, `${id}:destroy`);
       },
     });
+    fileParsers.set(disposable, fileParserOf(sandbox));
+
+    return disposable;
   },
   list: async (idOrOptions, options) => {
     const operation = parseSandboxOperationForAction("list", {

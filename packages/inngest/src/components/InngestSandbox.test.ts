@@ -133,6 +133,14 @@ const resultForOperation = (
           output: { truncated: false },
         },
       };
+    case "file.upload":
+      return { protocolVersion: 1, action: "file.upload", result: null };
+    case "file.download":
+      return {
+        protocolVersion: 1,
+        action: "file.download",
+        result: { data: "" },
+      };
     case "destroy":
       return {
         protocolVersion: 1,
