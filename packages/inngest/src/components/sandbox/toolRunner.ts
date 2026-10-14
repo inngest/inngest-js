@@ -226,7 +226,12 @@ const followCommand = async (
           id: stepId,
           name: call.tool,
           "~origin": sdkOrigin,
-          "~span": { id: stepId, name: call.tool, kind: "tool" },
+          "~span": {
+            id: stepId,
+            name: call.tool,
+            kind: "tool",
+            origin: sdkOrigin,
+          },
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
