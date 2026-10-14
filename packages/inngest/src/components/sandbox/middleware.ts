@@ -32,6 +32,7 @@ type SandboxStepExtension = {
   sandbox: DurableSandboxTools & {
     python: OneShotRunner;
     typescript: OneShotRunner;
+    ruby: OneShotRunner;
   };
 };
 
@@ -231,6 +232,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
             ...sandbox,
             python: createOneShotRunner(sandbox, "python"),
             typescript: createOneShotRunner(sandbox, "typescript"),
+            ruby: createOneShotRunner(sandbox, "ruby"),
           },
         },
         group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },

@@ -1,7 +1,7 @@
 /**
  * @module
- * Runs the generated commands for real with the local `node` and `python3`
- * (the Python cases are skipped when there is none), so the wrappers are
+ * Runs the generated commands for real with the local `node`, `python3`
+ * and `ruby` (the cases of a language are skipped when there is none), so the wrappers are
  * tested by what they do rather than by their text.
  */
 import { spawnSync } from "node:child_process";
@@ -28,6 +28,7 @@ import {
 const canRun: Record<RunnerLanguage, boolean> = {
   typescript: "stripTypeScriptTypes" in nodeModule,
   python: spawnSync("python3", ["--version"]).status === 0,
+  ruby: spawnSync("ruby", ["--version"]).status === 0,
 };
 
 const dir = mkdtempSync(join(tmpdir(), "runner-scripts-"));
@@ -76,12 +77,12 @@ const run = (
   return execute(plan, resultPath);
 };
 
-const languages: RunnerLanguage[] = ["typescript", "python"];
+const languages: RunnerLanguage[] = ["typescript", "python", "ruby"];
 
 describe.each(languages)("%s runner", (language) => {
   const runnable = canRun[language];
-  const pick = (ts: string, python: string) => {
-    return language === "typescript" ? ts : python;
+  const pick = (ts: string, python: string, ruby: string) => {
+    return { typescript: ts, python, ruby }[language];
   };
 
   const values: {
@@ -93,7 +94,7 @@ describe.each(languages)("%s runner", (language) => {
   }[] = [
     {
       name: "input keys are globals",
-      code: pick("return a + b", "return a + b"),
+      code: pick("return a + b", "return a + b", "return a + b"),
       input: { a: 1, b: 2 },
       result: 3,
     },
@@ -113,7 +114,7 @@ describe.each(languages)("%s runner", (language) => {
     },
     {
       name: "a snippet with no return has no result",
-      code: pick("const x = 1", "x = 1"),
+      code: pick("const x = 1", "x = 1", "nil"),
       result: undefined,
     },
     {
@@ -126,6 +127,7 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "await Promise.resolve(); return 5",
         "import asyncio\nawait asyncio.sleep(0)\nreturn 5",
+        "sleep 0\nreturn 5",
       ),
       result: 5,
     },
@@ -134,6 +136,7 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "if (n > 1) return 'big'; return 'small'",
         "if n > 1:\n    return 'big'\nreturn 'small'",
+        "return 'big' if n > 1\nreturn 'small'",
       ),
       input: { n: 2 },
       result: "big",
@@ -143,6 +146,7 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "process.stdout.write('hi'); return 1",
         "print('hi', end=''); return 1",
+        "print 'hi'; return 1",
       ),
       result: 1,
       stdout: "hi",
@@ -152,6 +156,7 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "setTimeout(() => console.log('later'), 10); return 1",
         "print('later'); return 1",
+        "puts 'later'; return 1",
       ),
       result: 1,
       stdout: "later\n",
@@ -175,18 +180,19 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "console.log('before'); throw new Error('boom')",
         "print('before'); raise ValueError('boom')",
+        "puts 'before'; raise 'boom'",
       ),
       stderr: "boom",
     },
     {
       name: "a return value that isn't JSON",
-      code: pick("return 10n", "return {1, 2}"),
-      stderr: pick("BigInt", "not JSON serializable"),
+      code: pick("return 10n", "return {1, 2}", "return Float::NAN"),
+      stderr: pick("BigInt", "not JSON serializable", "NaN"),
     },
     {
       name: "a syntax error",
-      code: pick("return (", "return ("),
-      stderr: pick("SyntaxError", "SyntaxError"),
+      code: pick("return (", "return (", "return ("),
+      stderr: "SyntaxError",
     },
   ];
 
@@ -202,7 +208,11 @@ describe.each(languages)("%s runner", (language) => {
   test.skipIf(!runnable)("a large result doesn't touch stdout", () => {
     const output = run(
       language,
-      pick("return 'x'.repeat(3_000_000)", "return 'x' * 3000000"),
+      pick(
+        "return 'x'.repeat(3_000_000)",
+        "return 'x' * 3000000",
+        "return 'x' * 3_000_000",
+      ),
     );
 
     expect(output.result).toHaveLength(3_000_000);
@@ -214,7 +224,11 @@ describe.each(languages)("%s runner", (language) => {
     const resultPath = join(dir, "large-result.json");
     const plan = buildRunner({
       language,
-      code: pick("return text.length", "return len(text)"),
+      code: pick(
+        "return text.length",
+        "return len(text)",
+        "return text.length",
+      ),
       input: { text },
       payloadPath: join(dir, "large.json"),
       resultPath,
@@ -349,6 +363,18 @@ describe("buildRunner", () => {
       language: "python",
       input: { None: 1 },
       message: "input.None can't be a python global",
+    },
+    {
+      name: "a Ruby reserved word",
+      language: "ruby",
+      input: { end: 1 },
+      message: "input.end can't be a ruby global",
+    },
+    {
+      name: "a Ruby constant name",
+      language: "ruby",
+      input: { Total: 1 },
+      message: "input.Total can't be a ruby global",
     },
     {
       name: "a name the runtime depends on",

@@ -605,6 +605,7 @@ export interface DurableSandbox {
   };
   readonly python: SandboxRunner;
   readonly typescript: SandboxRunner;
+  readonly ruby: SandboxRunner;
   readonly processes: {
     start(
       idOrOptions: StepOptionsOrId,
