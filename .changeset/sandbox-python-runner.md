@@ -1,0 +1,16 @@
+---
+"inngest": patch
+---
+
+Experimental: you can now run Python in a sandbox with `step.sandbox.python`, available with `sandboxMiddleware()`. It creates a sandbox, runs your code, and destroys it, and a top-level `return` gives the result back. Pass data in with `input`: each key becomes a variable. A non-zero exit fails the step with the error output.
+
+```ts
+const stats = await step.sandbox.python(
+  "stats",
+  `import statistics
+return {"mean": statistics.mean(values)}`,
+  { input: { values: [1, 2, 3, 4] } },
+);
+```
+
+A sandbox you created has the same `sandbox.python(id, code, options)`.

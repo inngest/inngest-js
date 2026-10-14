@@ -70,10 +70,12 @@ export const createClient = (
 
 /**
  * A client whose sandbox API creates, execs in and destroys sandboxes, with
- * the number of destroys it has served.
+ * the number of destroys it has served. Every command prints `stdout` and
+ * exits with `exitCode`.
  */
 export const createScopeClient = (
   destroy: () => Response = () => new Response(null, { status: 204 }),
+  { stdout = "", stderr = "", exitCode = 0 } = {},
 ) => {
   const calls = { destroys: 0 };
 
@@ -84,7 +86,12 @@ export const createScopeClient = (
 
     if (path.endsWith("/exec")) {
       return Response.json({
-        data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
+        data: {
+          stdout: btoa(stdout),
+          stderr: btoa(stderr),
+          encoding: "base64",
+          exitCode,
+        },
       });
     }
 

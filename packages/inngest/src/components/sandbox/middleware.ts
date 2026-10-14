@@ -20,6 +20,7 @@ import {
   sandboxMetadataKind,
   sandboxTraceMetadata,
 } from "./trace.ts";
+import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -28,7 +29,7 @@ import {
 } from "./types.ts";
 
 type SandboxStepExtension = {
-  sandbox: DurableSandboxTools;
+  sandbox: DurableSandboxTools & { python: OneShotRunner };
 };
 
 type SandboxGroupExtension = {
@@ -213,13 +214,17 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 
     const sandbox = createSandboxTools(() => rawTool);
 
-    const sandbox = createSandboxTools(() => rawTool);
-
     return {
       ...arg,
       ctx: {
         ...arg.ctx,
-        step: { ...arg.ctx.step, sandbox },
+        step: {
+          ...arg.ctx.step,
+          sandbox: {
+            ...sandbox,
+            python: createOneShotRunner(sandbox, "python"),
+          },
+        },
         group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };

@@ -27,6 +27,7 @@ import {
   validateSandboxResult,
 } from "./protocol.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
+import { createSandboxRunner } from "./runners.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -735,6 +736,7 @@ export const createDurableSandboxFacade = (
         };
       },
     }),
+    python: createSandboxRunner(() => facade.commands, "python"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {
