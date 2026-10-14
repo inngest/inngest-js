@@ -1,7 +1,7 @@
 import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
-import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
