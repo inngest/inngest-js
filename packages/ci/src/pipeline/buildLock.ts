@@ -14,8 +14,8 @@
  * listening on that lock, whichever run's request it was that started the
  * build.
  *
- * Why no wake-up is missed. The requester saves its wait before its second
- * look, and looks before it sends its request. The builder takes its snapshot, which is
+ * Why no wake-up is missed. The requester saves its wait before it looks, and
+ * looks before it sends its request. The builder takes its snapshot, which is
  * findable by name once taken (it checks), before it sends `ci/build.done`. So
  * a build that finishes after the wait was saved reaches the wait, and one that
  * finished before it is found by the look. A wait only misses events from
@@ -33,9 +33,8 @@
  * also noticed by the `ci/build` cleanup function, which releases its lock and
  * sends a `failed` `ci/build.done`.
  *
- * A requester that finds the snapshot by its first look has no wait to leave
- * open, which the trace would show pending until it ran out: the wait is only
- * saved after a miss, and a second look follows it to close the gap.
+ * A requester that found the snapshot by its look leaves its wait unawaited and
+ * returns: the run completes and the executor drops the wait with it.
  *
  * @module
  */
@@ -353,14 +352,12 @@ const announce = async (
 };
 
 /**
- * One round's start: look the snapshot up, and on a miss save the wait for the
- * lock's `ci/build.done` and look again. The one place that holds the
+ * One round's start: save the wait for the lock's `ci/build.done`, then look
+ * the snapshot up, and say what the look found. The one place that holds the
  * wait-beside-look logic, so a change to how a round starts is a change here.
- * A hit on the first look never plans a wait, which the trace would show
- * pending until it ran out. The second look is what the wait is for: the
- * wait is saved before it, so a build that finishes after the first look is
- * either found by it or sends an event the wait gets. On a hit `result` is
- * returned; on a miss it is undefined and the caller goes on with `wake`.
+ * On a hit the result is returned and the wait is left unawaited, for the run
+ * to complete over; on a miss `result` is undefined and the caller goes on with
+ * `wake`.
  */
 const waitAndLook = async ({
   run,
@@ -384,36 +381,13 @@ const waitAndLook = async ({
   stepPath: string;
   reused: (cached: CachedSnapshot) => CacheBuildResult;
   asParent?: boolean;
-}): Promise<
-  | { result: CacheBuildResult; wake?: undefined }
-  | {
-      result?: undefined;
-      /** The wait: the build's event, or null when it ran out. */
-      wake: Promise<{ data?: unknown } | null>;
-    }
-> => {
-  const look = (suffix: string, warn?: boolean) => {
-    return lookupBeforeBuild(
-      run,
-      {
-        id: config.id,
-        path,
-        stepPath: `${stepPath}${label}${suffix}`,
-        asParent: warn,
-      },
-      config.cache,
-      target,
-    );
-  };
-
-  const first = await look("", asParent);
-
-  if (first) {
-    return { result: reused(first) };
-  }
-
-  // Planned first and not awaited, so the executor saves it before it runs the
-  // second look.
+}): Promise<{
+  result?: CacheBuildResult;
+  /** The wait: the build's event, or null when it ran out. */
+  wake: Promise<{ data?: unknown } | null>;
+}> => {
+  // Planned first and not awaited, so it is in the same batch as the look or an
+  // earlier one, and the executor saves it before it runs the look.
   const wake: Promise<{ data?: unknown } | null> = run.step.waitForEvent(
     ciStep(
       joinId(stepPath, `build:wait${label}`),
@@ -426,11 +400,16 @@ const waitAndLook = async ({
     },
   );
 
-  const found = await look(" (after wait)");
+  const found = await lookupBeforeBuild(
+    run,
+    { id: config.id, path, stepPath: `${stepPath}${label}`, asParent },
+    config.cache,
+    target,
+  );
 
   if (!found) {
     return { wake };
   }
 
-  return { result: reused(found) };
+  return { result: reused(found), wake };
 };

@@ -299,7 +299,6 @@ describe("step metadata", () => {
       ["built › cache:key", { kind: "cache", job: "built" }],
       ["github › check:built:start", { kind: "check", job: "built" }],
       ["built › lookup", { kind: "cache", job: "built" }],
-      ["built (after wait) › lookup", { kind: "cache", job: "built" }],
       ["github › check:built:complete", { kind: "check", job: "built" }],
       ["start:plain", { kind: "job", job: "plain" }],
       ["end:plain", { kind: "job", job: "plain" }],

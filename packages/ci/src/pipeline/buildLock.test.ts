@@ -258,10 +258,18 @@ describe("runs that miss the same cached job together", () => {
     expect(installs(api)).toBe(1);
     expect(sentOf(bus, buildRequestedEvent)).toHaveLength(before);
 
-    // No wait is ever planned, so none is left open to show as pending.
+    // The wait is left behind, not answered by the run, and gone once it ends.
     expect(sentOf(bus, buildDoneEvent)).toHaveLength(doneBefore);
-    expect(second.batches.flat().join("\n")).not.toContain("build:wait");
     expect(bus.waiting).toBe(0);
+
+    // The wait is planned in the batch of the look, ahead of it.
+    const batch = second.batches.find((ids) => {
+      return ids.some((id) => id.includes("build:wait"));
+    });
+
+    expect(batch?.findIndex((id) => id.includes("build:wait"))).toBeLessThan(
+      batch?.findIndex((id) => id.includes("lookup")) ?? -1,
+    );
   });
 });
 
