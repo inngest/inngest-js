@@ -273,6 +273,35 @@ export const executeSandboxOperation = async (
       });
       return execOperationResult(result);
     }
+    case "file.upload": {
+      const { path, data } = operation.input[0];
+      await sandboxForOperation(client, operation.target.sandbox).files.upload({
+        path,
+        data: new Uint8Array(decodeBase64(data, "sandbox file data")),
+      });
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        result: null,
+      };
+    }
+    case "file.download": {
+      const response = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      ).files.download(operation.input[0]);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > maxDurableSandboxExecOutputBytes) {
+        throw new SandboxValidationError(
+          `${operation.input[0].path} is ${bytes.byteLength} bytes, over the ${maxDurableSandboxExecOutputBytes} bytes a step can return`,
+        );
+      }
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        result: { data: encodeBase64(bytes) },
+      };
+    }
     case "destroy": {
       // A destroy that already happened, such as one retried after a lost
       // response, has the outcome the caller wanted.
@@ -736,8 +765,42 @@ export const createDurableSandboxFacade = (
         };
       },
     }),
-    python: createSandboxRunner(() => facade.commands, "python"),
-    typescript: createSandboxRunner(() => facade.commands, "typescript"),
+    files: Object.freeze({
+      write: async (idOrOptions, { path, data }) => {
+        const operation = parseSandboxOperationForAction("file.upload", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "file.upload",
+          target: sandboxTarget(ref),
+          input: [
+            {
+              path,
+              data: encodeBase64(
+                typeof data === "string"
+                  ? new TextEncoder().encode(data)
+                  : data,
+              ),
+            },
+          ],
+        });
+        await callRawTool(rawToolResolver, idOrOptions, operation);
+      },
+      read: async (idOrOptions, path) => {
+        const operation = parseSandboxOperationForAction("file.download", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "file.download",
+          target: sandboxTarget(ref),
+          input: [{ path }],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return decodeBase64(result.result.data, "sandbox file data");
+      },
+    }),
+    python: createSandboxRunner(() => facade, "python"),
+    typescript: createSandboxRunner(() => facade, "typescript"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {

@@ -137,6 +137,8 @@ const execInputSchema = z
   })
   .strict()
   .superRefine(validateProcessSpec);
+const fileInputSchema = z.object({ path: z.string().min(1) }).strict();
+const fileWriteInputSchema = fileInputSchema.extend({ data: z.string() });
 const signalInputSchema = z
   .object({
     signal: z.number().int().min(1).max(64),
@@ -199,6 +201,22 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       action: z.literal("exec"),
       target: sandboxTargetSchema,
       input: z.tuple([execInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.upload"),
+      target: sandboxTargetSchema,
+      input: z.tuple([fileWriteInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.download"),
+      target: sandboxTargetSchema,
+      input: z.tuple([fileInputSchema]),
     })
     .strict(),
   z
@@ -474,6 +492,20 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("file.upload"),
+      result: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.download"),
+      result: z.object({ data: z.string() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("destroy"),
       result: wireDestroyResultSchema,
     })
@@ -593,6 +625,8 @@ const sandboxErrorPayloadSchema = z
       "get",
       "waitUntilRunning",
       "exec",
+      "file.upload",
+      "file.download",
       "destroy",
       "pause",
       "resume",
