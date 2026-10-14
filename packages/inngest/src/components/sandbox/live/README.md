@@ -9,7 +9,12 @@ pnpm -C packages/inngest test:sandbox-live            # every case
 pnpm -C packages/inngest test:sandbox-live --list     # case names, nothing started
 pnpm -C packages/inngest test:sandbox-live --dry      # Dev Server + app + run, no sandboxes
 pnpm -C packages/inngest test:sandbox-live --only "typescript.types"
+pnpm -C packages/inngest test:sandbox-live --only "oneshot.python" --keep
 ```
+
+`--keep` leaves the Dev Server and app running after the cases so you can open
+the run's trace. It prints the run's Dev Server UI URL and the
+`devstack stop <stack>` command that cleans up.
 
 Needs an `inngest login` session (the Dev Server proxies sandbox calls to
 Cloud with it) and a devstack `origin/main` Dev Server build, which the driver
