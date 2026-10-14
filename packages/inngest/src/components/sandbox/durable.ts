@@ -513,7 +513,29 @@ const callRawTool = async <
   }
 };
 
+type FileParser = (
+  idOrOptions: StepOptionsOrId,
+  path: string,
+  parse: (bytes: Uint8Array) => unknown,
+) => Promise<unknown>;
+const fileParsers = new WeakMap<DurableSandbox, FileParser>();
+const fileParserOf = (sandbox: DurableSandbox): FileParser => {
+  const parser = fileParsers.get(sandbox);
+  if (!parser) {
+    throw new Error("Cannot parse a file of a sandbox the SDK did not create");
+  }
+
+  return parser;
+};
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
+const downloadOperation = (ref: SandboxRef, path: string) => {
+  return parseSandboxOperationForAction("file.download", {
+    protocolVersion: sandboxProtocolVersion,
+    action: "file.download",
+    target: sandboxTarget(ref),
+    input: [{ path }],
+  });
+};
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
   sandbox,
   process,
@@ -765,23 +787,14 @@ export const createDurableSandboxFacade = (
         });
         await callRawTool(rawToolResolver, idOrOptions, operation);
       },
-      read: (async (idOrOptions, path, parse) => {
-        const operation = parseSandboxOperationForAction("file.download", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "file.download",
-          target: sandboxTarget(ref),
-          input: [{ path }],
-        });
-        const bytes = (result: SandboxResultForAction<"file.download">) => {
-          return decodeBase64(result.result.data, "sandbox file data");
-        };
-
-        return parse
-          ? callRawTool(rawToolResolver, idOrOptions, operation, (result) => {
-              return parse(bytes(result));
-            })
-          : bytes(await callRawTool(rawToolResolver, idOrOptions, operation));
-      }) as DurableSandbox["files"]["read"],
+      read: async (idOrOptions, path) => {
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          downloadOperation(ref, path),
+        );
+        return decodeBase64(result.result.data, "sandbox file data");
+      },
     }),
     python: createSandboxRunner(() => facade, "python"),
     typescript: createSandboxRunner(() => facade, "typescript"),
@@ -901,7 +914,32 @@ export const createDurableSandboxFacade = (
       return result.result;
     },
   };
+  fileParsers.set(facade, (idOrOptions, path, parse) => {
+    return callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      downloadOperation(ref, path),
+      (result) => {
+        return parse(decodeBase64(result.result.data, "sandbox file data"));
+      },
+    );
+  });
+
   return Object.freeze(facade);
+};
+
+/**
+ * Read a file in the sandbox and parse it inside the same step, so the step's
+ * output is what `parse` returns instead of the file. Internal: the public
+ * `files.read` always returns the bytes.
+ */
+export const readParsedFile = <T>(
+  sandbox: DurableSandbox,
+  idOrOptions: StepOptionsOrId,
+  path: string,
+  parse: (bytes: Uint8Array) => T | Promise<T>,
+): Promise<T> => {
+  return fileParserOf(sandbox)(idOrOptions, path, parse) as Promise<T>;
 };
 
 // Node before 20.5 lacks the symbol that `await using` looks up.
@@ -922,12 +960,15 @@ export const createSandboxTools = (
     const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
     const { id } = getStepOptions(idOrOptions);
 
-    return Object.freeze({
+    const disposable = Object.freeze({
       ...sandbox,
       [Symbol.asyncDispose]: async () => {
         await destroyQuietly(sandbox, `${id}:destroy`);
       },
     });
+    fileParsers.set(disposable, fileParserOf(sandbox));
+
+    return disposable;
   },
   list: async (idOrOptions, options) => {
     const operation = parseSandboxOperationForAction("list", {
