@@ -213,6 +213,8 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 
     const sandbox = createSandboxTools(() => rawTool);
 
+    const sandbox = createSandboxTools(() => rawTool);
+
     return {
       ...arg,
       ctx: {
