@@ -1,5 +1,39 @@
 # inngest
 
+## 4.24.0
+
+### Minor Changes
+
+- [#1777](https://github.com/inngest/inngest-js/pull/1777) [`700c58d9`](https://github.com/inngest/inngest-js/commit/700c58d96ac50342648d51224715c72dacfb2696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox durations now accept compound strings like `"4m30s"`.
+
+  ```ts
+  await step.sandbox.create("build", {
+    name: "build",
+    vcpu: 2,
+    memoryMb: 2048,
+    runningTimeout: "4m30s",
+  });
+  ```
+
+- [#1773](https://github.com/inngest/inngest-js/pull/1773) [`eee1c61e`](https://github.com/inngest/inngest-js/commit/eee1c61e8e69e93ade5d7024553ac2861adf357d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandboxes can now be scoped with `await using`; they're destroyed when the block exits.
+
+  ```ts
+  await using sb = await step.sandbox.create("build");
+  await sb.commands.run("npm test");
+  ```
+
+- [#1774](https://github.com/inngest/inngest-js/pull/1774) [`4d8cac24`](https://github.com/inngest/inngest-js/commit/4d8cac244705dcb34df4babf746fe3f115ba30e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: `group.sandbox()` runs a callback with a fresh sandbox and destroys it afterwards. The sandbox's whole lifetime shows as one group in the trace, and a retried failure keeps the sandbox for the next attempt.
+
+  ```ts
+  await group.sandbox("build", async (sb) => {
+    await sb.commands.run("test", "npm test");
+  });
+  ```
+
+### Patch Changes
+
+- [#1770](https://github.com/inngest/inngest-js/pull/1770) [`714d46a7`](https://github.com/inngest/inngest-js/commit/714d46a70f57864bc48ab62be511d21c9c8a65b0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Mark the span around a sandbox snapshot's create and wait steps as `kind: "snapshot"`, and let a caller's `"~span"` option replace it, so a snapshot is one statement in a trace. The group has no origin because the statement is the user's; the create and wait steps inside it carry an `inngest@<version>` origin. Step IDs are unchanged.
+
 ## 4.23.0
 
 ### Minor Changes
