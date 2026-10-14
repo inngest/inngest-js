@@ -4,6 +4,11 @@ export {
   createSandboxTools,
   executeSandboxOperation,
 } from "./sandbox/durable.ts";
+export type {
+  GroupSandbox,
+  GroupSandboxOptions,
+  GroupSandboxOptionsOrId,
+} from "./sandbox/group.ts";
 export {
   SandboxMiddleware,
   sandboxMiddleware,
