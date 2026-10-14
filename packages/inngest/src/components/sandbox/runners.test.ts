@@ -7,10 +7,11 @@
 
 import { z } from "zod";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
+import type { SandboxRawTool } from "./protocol.ts";
 import { createSandboxRunner, type OneShotRunner } from "./runners.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
 import { sdkOrigin } from "./trace.ts";
-import type { DurableSandbox } from "./types.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
@@ -148,13 +149,45 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
 
 describe.each(languages)("sandbox.$language with tools", ({ language }) => {
   test("hands them to the command", async () => {
-    const run = vi.fn(async () => {
-      return { stdout: "", stderr: "", exitCode: 0 };
-    });
-    const sandbox = {
-      commands: { run },
-      files: { read: vi.fn(async () => "") },
-    } as unknown as DurableSandbox;
+    const exec = {
+      protocolVersion: 1,
+      action: "exec",
+      result: {
+        stdout: "",
+        stderr: "",
+        encoding: "base64",
+        exitCode: 0,
+        output: { truncated: false },
+      },
+    };
+    const download = {
+      protocolVersion: 1,
+      action: "file.download",
+      result: { data: "" },
+    };
+    const rawTool: SandboxRawTool = vi.fn(
+      async (_id, operation, _tools, finish) => {
+        const result = operation.action === "exec" ? exec : download;
+
+        return finish ? finish(result) : result;
+      },
+    );
+    const sandbox = createDurableSandboxFacade(
+      {
+        kind: "inngest/sandbox",
+        version: 1,
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "box",
+        status: "RUNNING",
+        vpcId: "11111111-1111-4111-8111-111111111111",
+        imageRef: "default",
+        resources: { vcpu: 2, memoryMb: 2048 },
+        createdAt: "2026-07-28T00:00:00Z",
+      },
+      () => {
+        return rawTool;
+      },
+    );
     const tools = { a: async () => 1 };
 
     await createSandboxRunner(() => sandbox, language)("py", "return 1", {
@@ -162,10 +195,12 @@ describe.each(languages)("sandbox.$language with tools", ({ language }) => {
       toolOptions: { maxCalls: 3 },
     });
 
-    expect(run).toHaveBeenCalledWith(
+    expect(rawTool).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({ id: "py", name: "Running code" }),
-      expect.any(Array),
+      expect.objectContaining({ action: "exec" }),
       { tools, toolOptions: { maxCalls: 3 } },
+      undefined,
     );
   });
 });
