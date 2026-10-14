@@ -16,6 +16,7 @@ import {
 } from "./protocol.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
+import { sdkOrigin } from "./trace.ts";
 import type { Sandbox } from "./types.ts";
 
 const sandboxRef = {
@@ -706,7 +707,12 @@ describe("commands.run with tools trace group", () => {
       exec: [group],
       "exec:tool:getCustomer:1": [
         group,
-        { id: "exec:tool:getCustomer:1", name: "getCustomer", kind: "tool" },
+        {
+          id: "exec:tool:getCustomer:1",
+          name: "getCustomer",
+          kind: "tool",
+          origin: sdkOrigin,
+        },
       ],
       "exec:wait:1": [group],
     });
@@ -734,7 +740,12 @@ describe("commands.run with tools trace group", () => {
     expect(spans.get("exec:wait:1")).toEqual([group]);
     expect(spans.get("exec:tool:getCustomer:1")).toEqual([
       group,
-      { id: "exec:tool:getCustomer:1", name: "getCustomer", kind: "tool" },
+      {
+        id: "exec:tool:getCustomer:1",
+        name: "getCustomer",
+        kind: "tool",
+        origin: sdkOrigin,
+      },
     ]);
   });
 });
