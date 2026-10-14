@@ -28,6 +28,16 @@ import {
   SandboxValidationError,
   sandboxMiddleware,
 } from "./InngestSandbox.ts";
+import {
+  maxSandboxProcessTimeoutMs,
+  maxSandboxRunningTimeoutMs,
+  maxSandboxSnapshotWaitTimeoutMs,
+  normalizeSandboxCommandOptions,
+  normalizeSandboxCreateOptions,
+  normalizeSandboxProcessWaitOptions,
+  normalizeSandboxSnapshotWaitOptions,
+  normalizeSandboxWaitUntilRunningOptions,
+} from "./sandbox/validation.ts";
 
 const vpcId = "11111111-1111-4111-8111-111111111111";
 const sandboxId = "22222222-2222-4222-8222-222222222222";
@@ -435,6 +445,53 @@ describe("step.sandbox", () => {
         input: [{ ...createOptions, runningTimeoutMs: false }],
       },
     ]);
+  });
+
+  test.each([
+    {
+      name: "create runningTimeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxCreateOptions({
+          ...createOptions,
+          runningTimeout: timeout,
+        });
+      },
+      maxMs: maxSandboxRunningTimeoutMs,
+    },
+    {
+      name: "waitUntilRunning timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxWaitUntilRunningOptions({ timeout });
+      },
+      maxMs: maxSandboxRunningTimeoutMs,
+    },
+    {
+      name: "snapshot wait timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxSnapshotWaitOptions({ timeout });
+      },
+      maxMs: maxSandboxSnapshotWaitTimeoutMs,
+    },
+    {
+      name: "command timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxCommandOptions("true", { timeout });
+      },
+      maxMs: maxSandboxProcessTimeoutMs,
+    },
+    {
+      name: "process wait timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxProcessWaitOptions({ timeout });
+      },
+      maxMs: maxSandboxProcessTimeoutMs,
+    },
+  ])("caps $name at the SDK maximum", ({ normalize, maxMs }) => {
+    expect(() => normalize("5m")).not.toThrow();
+    expect(() => normalize("4m 59s")).not.toThrow();
+    expect(() => normalize(`${maxMs + 1}ms`)).toThrow(
+      `must not exceed ${maxMs} milliseconds`,
+    );
   });
 
   test.each([
