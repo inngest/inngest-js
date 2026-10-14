@@ -67,7 +67,7 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "inngest": "^4.23.2"
+    "inngest": "^4.24.0"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.3.1",
