@@ -7,9 +7,10 @@
 
 import { z } from "zod";
 import type { InngestFunction } from "../InngestFunction.ts";
-import type { OneShotRunner } from "./runners.ts";
+import { createSandboxRunner, type OneShotRunner } from "./runners.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
 import { sdkOrigin } from "./trace.ts";
+import type { DurableSandbox } from "./types.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
@@ -142,6 +143,30 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
 
     expect(type).toBe("function-rejected");
     expect((error as Error).message).toBe(message);
+  });
+});
+
+describe.each(languages)("sandbox.$language with tools", ({ language }) => {
+  test("hands them to the command", async () => {
+    const run = vi.fn(async () => {
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const sandbox = {
+      commands: { run },
+      files: { read: vi.fn(async () => "") },
+    } as unknown as DurableSandbox;
+    const tools = { a: async () => 1 };
+
+    await createSandboxRunner(() => sandbox, language)("py", "return 1", {
+      tools,
+      toolOptions: { maxCalls: 3 },
+    });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "py", name: "Running code" }),
+      expect.any(Array),
+      { tools, toolOptions: { maxCalls: 3 } },
+    );
   });
 });
 
@@ -329,6 +354,23 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
     expect(type).toBe("function-rejected");
     expect(ran).toEqual([]);
     expect(calls.destroys).toBe(0);
+  });
+
+  test("rejects an input named tools when it has tools, before creating the sandbox", async () => {
+    const { type, ran } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "tools-input", triggers: [{ event: "runner/code" }] },
+        async ({ step }) => {
+          await step.sandbox[language]("py", "return 1", {
+            input: { tools: 1 },
+            tools: { a: async () => 1 },
+          });
+        },
+      );
+    });
+
+    expect(type).toBe("function-rejected");
+    expect(ran).toEqual([]);
   });
 
   test("destroys the sandbox when the code fails", async () => {

@@ -62,7 +62,7 @@ export interface RunnerPlan {
  */
 const maxInlinePayloadBytes = 16 * 1024;
 
-const pythonWrapper = String.raw`import ast, asyncio, json, sys
+const pythonWrapper = String.raw`import ast, asyncio, json, os, sys
 
 arg, result_path = sys.argv[1], sys.argv[2]
 payload = json.load(open(arg[1:])) if arg.startswith("@") else json.loads(arg)
@@ -72,6 +72,9 @@ body = ast.parse(payload["code"], "<code>").body
 wrapped.body[0].body = body or wrapped.body[0].body
 
 scope = dict(payload["input"])
+if "INNGEST_TOOLS_DIR" in os.environ:
+    from inngest_tools import tools
+    scope["tools"] = tools
 exec(compile(wrapped, "<code>", "exec"), scope)
 
 result = asyncio.run(scope["__inngest_main"]())
@@ -85,7 +88,10 @@ const { stripTypeScriptTypes } = require("node:module");
 const [arg, resultPath] = process.argv.slice(-2);
 const payload = JSON.parse(arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8") : arg);
 
-const names = Object.keys(payload.input);
+const input = { ...payload.input };
+if (process.env.INNGEST_TOOLS_DIR) input.tools = require("inngest_tools").tools;
+
+const names = Object.keys(input);
 let source;
 try {
   source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}");
@@ -101,7 +107,7 @@ process.on("exit", (code) => {
   if (code === 0) fs.writeFileSync(resultPath, text);
 });
 
-main(...Object.values(payload.input)).then((result) => {
+main(...Object.values(input)).then((result) => {
   text = JSON.stringify(result) ?? "";
 });
 `;

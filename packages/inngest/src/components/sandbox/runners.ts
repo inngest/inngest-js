@@ -18,17 +18,22 @@ import {
   type RunnerLanguage,
   type RunnerPlan,
 } from "./runnerScripts.ts";
+import type { SandboxToolsOptions } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
-import type {
-  DurableSandbox,
-  DurableSandboxTools,
-  SandboxCommandOptions,
-  SandboxCreateFreshOptions,
+import {
+  type DurableSandbox,
+  type DurableSandboxTools,
+  type SandboxCommandOptions,
+  type SandboxCreateFreshOptions,
+  SandboxValidationError,
 } from "./types.ts";
 
-export interface RunnerOptions extends SandboxCommandOptions {
+export interface RunnerOptions
+  extends SandboxCommandOptions,
+    SandboxToolsOptions {
   /**
    * JSON values, each available to the snippet as a global of the same name.
+   * With `tools`, `tools` is taken.
    */
   input?: Record<string, unknown>;
 
@@ -93,7 +98,14 @@ const buildPlan = (
   id: string,
   code: string,
   input: RunnerOptions["input"],
+  tools: RunnerOptions["tools"],
 ): LocatedPlan => {
+  if (tools && input && "tools" in input) {
+    throw new SandboxValidationError(
+      "input can't be named tools when the runner is given tools",
+    );
+  }
+
   const base = `/tmp/inngest-${encodeURIComponent(id)}`;
 
   const resultPath = `${base}.result.json`;
@@ -203,7 +215,7 @@ export const createSandboxRunner = (
     { input, ...options }: RunnerOptions = {},
   ) => {
     const { id, name } = getStepOptions(idOrOptions);
-    const plan = buildPlan(language, id, code, input);
+    const plan = buildPlan(language, id, code, input, options.tools);
 
     return withSpan({ id, name: name ?? id, kind: language }, () => {
       return runPlan(sandbox(), language, idOrOptions, plan, options);
@@ -216,7 +228,7 @@ export const createSandboxRunner = (
  * destroy steps.
  */
 export const createOneShotRunner = (
-  tools: DurableSandboxTools,
+  sandboxTools: DurableSandboxTools,
   language: RunnerLanguage,
 ): OneShotRunner => {
   return (async (
@@ -224,11 +236,12 @@ export const createOneShotRunner = (
     code: string,
     options: OneShotRunnerOptions = {},
   ) => {
-    const { input, cwd, timeout, schema, ...create } = options;
-    const plan = buildPlan(language, id, code, input);
+    const { input, cwd, timeout, schema, tools, toolOptions, ...create } =
+      options;
+    const plan = buildPlan(language, id, code, input, tools);
 
     return withSandbox(
-      tools,
+      sandboxTools,
       { kind: language },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
@@ -236,6 +249,8 @@ export const createOneShotRunner = (
           cwd,
           timeout,
           schema,
+          tools,
+          toolOptions,
         });
       },
       {
