@@ -162,3 +162,114 @@ describe("await using a sandbox", () => {
     expect(calls.destroys).toBe(1);
   });
 });
+
+describe("await using a sandbox that can't be destroyed", () => {
+  const forbidden = () => {
+    return Response.json(
+      { errors: [{ code: "forbidden", message: "no access" }] },
+      { status: 403 },
+    );
+  };
+
+  const unavailable = () => {
+    return Response.json(
+      { errors: [{ code: "unavailable", message: "try later" }] },
+      { status: 503 },
+    );
+  };
+
+  test.each([
+    {
+      name: "the scope succeeds",
+      body: async () => {},
+      type: "function-resolved",
+    },
+    {
+      name: "the scope throws a retryable error",
+      body: async () => {
+        throw new Error("boom");
+      },
+      type: "function-rejected",
+    },
+  ])(
+    "swallows a permanent destroy failure when $name",
+    async ({ body, type }) => {
+      const { client, calls } = createScopeClient(forbidden);
+      const fn = client.createFunction(
+        { id: "sandbox-undestroyable", triggers: [{ event: "sandbox/using" }] },
+        async ({ step }) => {
+          await using _sandbox = await step.sandbox.create(
+            "box",
+            createOptions,
+          );
+          await body();
+        },
+      );
+
+      const first = await runFnWithStack(fn, {});
+      assert(first.type === "step-ran");
+      const box = { id: first.step.id, data: first.step.data };
+
+      const destroy = await runFnWithStack(fn, { [box.id]: box });
+      assert(destroy.type === "step-ran");
+      expect(destroy.step.metadata).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "inngest.warnings",
+            values: {
+              "sdk.sandbox.destroy": expect.stringContaining(
+                `Sandbox ${sandboxId} couldn't be destroyed: `,
+              ),
+            },
+          }),
+        ]),
+      );
+
+      const failed = {
+        id: destroy.step.id,
+        error: destroy.step.error,
+      };
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await runFnWithStack(fn, {
+          [box.id]: box,
+          [failed.id]: failed,
+        });
+
+        expect(result.type).toBe(type);
+        if (result.type === "function-rejected") {
+          expect(result.error).toMatchObject({ message: "boom" });
+        }
+      }
+
+      expect(calls.destroys).toBe(1);
+    },
+  );
+
+  test("retries a transient destroy failure within the step", async () => {
+    let failures = 1;
+    const { client, calls } = createScopeClient(() => {
+      return failures-- > 0
+        ? unavailable()
+        : new Response(null, { status: 204 });
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-transient", triggers: [{ event: "sandbox/using" }] },
+      async ({ step }) => {
+        await using _sandbox = await step.sandbox.create("box", createOptions);
+      },
+    );
+
+    const [box] = await runSteps(fn, 1);
+    const stepState = { [box!.id]: { id: box!.id, data: box!.data } };
+
+    const retried = await runFnWithStack(fn, stepState);
+    assert(retried.type === "step-ran");
+    expect(retried.step.op).toBe("StepError");
+
+    const destroyed = await runFnWithStack(fn, stepState);
+    assert(destroyed.type === "step-ran");
+    expect(destroyed.step.error).toBeUndefined();
+    expect(calls.destroys).toBe(2);
+  });
+});

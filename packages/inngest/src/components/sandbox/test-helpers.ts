@@ -129,7 +129,7 @@ export const runToEnd = async (
     const { id, data, error } = result.step;
     steps.push(result.step);
     ran.push(result.step.userland?.id ?? id);
-    stepState = { ...stepState, [id]: { id, data, error } };
+    stepState = { ...stepState, [id]: error ? { id, error } : { id, data } };
   }
 
   throw new Error("The function did not finish");

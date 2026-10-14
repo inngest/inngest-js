@@ -850,7 +850,15 @@ export const createSandboxTools = (
     return Object.freeze({
       ...sandbox,
       [Symbol.asyncDispose]: async () => {
-        await sandbox.destroy(`${id}:destroy`);
+        try {
+          await sandbox.destroy(`${id}:destroy`);
+        } catch (error) {
+          // A destroy that failed for good is on the trace as a warning. It
+          // must not change the outcome of the run.
+          if (!(error instanceof StepError)) {
+            throw error;
+          }
+        }
       },
     });
   },
