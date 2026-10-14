@@ -456,17 +456,28 @@ export const executeSandboxOperation = async (
   }
 };
 
-const callRawTool = async <A extends SandboxAction>(
+/**
+ * Run an operation as a step. With `finish`, the step also does that work and
+ * its output is what `finish` returns, so a replay returns it unchanged.
+ */
+const callRawTool = async <
+  A extends SandboxAction,
+  T = SandboxResultForAction<A>,
+>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
-): Promise<SandboxResultForAction<A>> => {
+  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
+): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
-    return validateSandboxResult(
+    const output = await rawTool(
+      idOrOptions,
       operation,
-      await rawTool(idOrOptions, operation),
+      finish && ((result) => finish(validateSandboxResult(operation, result))),
     );
+
+    return (finish ? output : validateSandboxResult(operation, output)) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
       throw error;
@@ -751,20 +762,23 @@ export const createDurableSandboxFacade = (
         });
         await callRawTool(rawToolResolver, idOrOptions, operation);
       },
-      read: async (idOrOptions, path) => {
+      read: (async (idOrOptions, path, parse) => {
         const operation = parseSandboxOperationForAction("file.download", {
           protocolVersion: sandboxProtocolVersion,
           action: "file.download",
           target: sandboxTarget(ref),
           input: [{ path }],
         });
-        const result = await callRawTool(
-          rawToolResolver,
-          idOrOptions,
-          operation,
-        );
-        return decodeBase64(result.result.data, "sandbox file data");
-      },
+        const bytes = (result: SandboxResultForAction<"file.download">) => {
+          return decodeBase64(result.result.data, "sandbox file data");
+        };
+
+        return parse
+          ? callRawTool(rawToolResolver, idOrOptions, operation, (result) => {
+              return parse(bytes(result));
+            })
+          : bytes(await callRawTool(rawToolResolver, idOrOptions, operation));
+      }) as DurableSandbox["files"]["read"],
     }),
     python: createSandboxRunner(() => facade, "python"),
     processes: Object.freeze({

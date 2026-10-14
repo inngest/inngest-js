@@ -575,6 +575,15 @@ export interface DurableSandbox {
       options: { path: string; data: string | Uint8Array },
     ): Promise<void>;
     read(idOrOptions: StepOptionsOrId, path: string): Promise<Uint8Array>;
+    /**
+     * Read a file and turn its bytes into the step's output, so the output
+     * is `parse`'s JSON-safe return value and not the file.
+     */
+    read<T>(
+      idOrOptions: StepOptionsOrId,
+      path: string,
+      parse: (bytes: Uint8Array) => T | Promise<T>,
+    ): Promise<T>;
   };
   readonly python: SandboxRunner;
   readonly processes: {

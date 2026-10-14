@@ -667,9 +667,14 @@ export type SandboxOperationResultV1 = z.infer<
   typeof sandboxOperationResultSchema
 >;
 export type DurableSandboxAction = SandboxOperationV1["action"];
+/**
+ * Runs an operation as a step. `finish` runs inside the step, and what it
+ * returns is the step's output instead of the operation's result.
+ */
 export type SandboxRawTool = (
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationV1,
+  finish?: (result: unknown) => unknown,
 ) => Promise<unknown>;
 export type SandboxRawToolResolver = () =>
   | SandboxRawTool

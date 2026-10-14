@@ -151,10 +151,14 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxGroupExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
+    const rawTool: SandboxRawTool = (idOrOptions, operation, finish) =>
       arg.ctx.step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
+        async (input) => {
+          const result = await executeAsStep(this.client, input);
+
+          return finish ? finish(result) : result;
+        },
         operation,
       );
 
