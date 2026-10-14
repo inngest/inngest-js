@@ -21,7 +21,7 @@ import {
 } from "./runnerScripts.ts";
 
 const canRun: Record<RunnerLanguage, boolean> = {
-  ts: "stripTypeScriptTypes" in nodeModule,
+  typescript: "stripTypeScriptTypes" in nodeModule,
   python: spawnSync("python3", ["--version"]).status === 0,
 };
 
@@ -56,12 +56,12 @@ const run = (
   return { exitCode, stderr, ...parseRunnerOutput(stdout, exitCode) };
 };
 
-const languages: RunnerLanguage[] = ["ts", "python"];
+const languages: RunnerLanguage[] = ["typescript", "python"];
 
 describe.each(languages)("%s runner", (language) => {
   const runnable = canRun[language];
   const pick = (ts: string, python: string) => {
-    return language === "ts" ? ts : python;
+    return language === "typescript" ? ts : python;
   };
 
   const values: {
@@ -204,17 +204,22 @@ describe.each(languages)("%s runner", (language) => {
   });
 });
 
-test.skipIf(!canRun.ts)("types are stripped from TypeScript", () => {
-  const output = run("ts", "const n: number = a; return n * 2", { a: 4 });
+test.skipIf(!canRun.typescript)("types are stripped from TypeScript", () => {
+  const output = run("typescript", "const n: number = a; return n * 2", {
+    a: 4,
+  });
 
   expect(output.result).toBe(8);
 });
 
-test.skipIf(!canRun.ts)("TypeScript that needs transforming runs", () => {
-  const output = run("ts", "enum Dir { Up, Down } return Dir.Down");
+test.skipIf(!canRun.typescript)(
+  "TypeScript that needs transforming runs",
+  () => {
+    const output = run("typescript", "enum Dir { Up, Down } return Dir.Down");
 
-  expect(output.result).toBe(1);
-});
+    expect(output.result).toBe(1);
+  },
+);
 
 describe("buildRunner", () => {
   test("a small payload rides in the command", () => {
@@ -235,7 +240,7 @@ describe("buildRunner", () => {
 
   test("a large payload is uploaded and the command reads the file", () => {
     const plan = buildRunner({
-      language: "ts",
+      language: "typescript",
       code: "return text",
       input: { text: "x".repeat(20_000) },
       payloadPath: "/tmp/p.json",
@@ -257,15 +262,15 @@ describe("buildRunner", () => {
   }[] = [
     {
       name: "a name that isn't an identifier",
-      language: "ts",
+      language: "typescript",
       input: { "my-key": 1 },
-      message: "input.my-key can't be a ts global",
+      message: "input.my-key can't be a typescript global",
     },
     {
       name: "a TypeScript reserved word",
-      language: "ts",
+      language: "typescript",
       input: { class: 1 },
-      message: "input.class can't be a ts global",
+      message: "input.class can't be a typescript global",
     },
     {
       name: "a Python reserved word",
@@ -281,19 +286,19 @@ describe("buildRunner", () => {
     },
     {
       name: "a built-in the snippet would lose",
-      language: "ts",
+      language: "typescript",
       input: { process: 1 },
-      message: "input.process can't be a ts global",
+      message: "input.process can't be a typescript global",
     },
     {
       name: "undefined",
-      language: "ts",
+      language: "typescript",
       input: { a: undefined },
       message: "input.a must be a JSON value, got undefined",
     },
     {
       name: "a function",
-      language: "ts",
+      language: "typescript",
       input: { a: () => 1 },
       message: "input.a must be a JSON value, got function",
     },
@@ -311,19 +316,19 @@ describe("buildRunner", () => {
     },
     {
       name: "a Date",
-      language: "ts",
+      language: "typescript",
       input: { when: new Date() },
       message: "input.when must be a JSON value, got Date",
     },
     {
       name: "a Map nested in an array",
-      language: "ts",
+      language: "typescript",
       input: { list: [new Map()] },
       message: "input.list[0] must be a JSON value, got Map",
     },
     {
       name: "an empty array slot",
-      language: "ts",
+      language: "typescript",
       input: { list: Object.assign(new Array(3), { 0: 1, 2: 3 }) },
       message: "input.list[1] must be a JSON value, got undefined",
     },

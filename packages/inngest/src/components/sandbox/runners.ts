@@ -56,7 +56,7 @@ export type OneShotRunner = <T = unknown>(
 
 const titles: Record<RunnerLanguage, string> = {
   python: "Python",
-  ts: "TypeScript",
+  typescript: "TypeScript",
 };
 
 /**
