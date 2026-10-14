@@ -36,6 +36,11 @@ export interface LiveCase {
   measure?: "length";
 }
 
+/**
+ * Ruby has no tools yet, so it has its own cases below.
+ */
+type ToolsLanguage = Exclude<RunnerLanguage, "ruby">;
+
 const kib = 1024;
 const mib = 1024 * kib;
 
@@ -78,7 +83,7 @@ const tryTool = (call: string, language: RunnerLanguage): string => {
  * The same snippets in each language, so that both are held to one table.
  */
 const snippets: Record<
-  RunnerLanguage,
+  ToolsLanguage,
   {
     small: string;
     await: string;
@@ -175,7 +180,7 @@ const typescriptOnly: LiveCase[] = [
   },
 ];
 
-const forLanguage = (language: RunnerLanguage): LiveCase[] => {
+const forLanguage = (language: ToolsLanguage): LiveCase[] => {
   const code = snippets[language];
   const handle = { form: "handle", language } as const;
   const oneshot = { form: "oneshot", language } as const;
@@ -334,9 +339,46 @@ const forLanguage = (language: RunnerLanguage): LiveCase[] => {
   ];
 };
 
+const ruby = { language: "ruby" } as const;
+
+const rubyCases: LiveCase[] = [
+  {
+    ...ruby,
+    form: "oneshot",
+    name: "small input",
+    code: "return { sum: a + b }",
+    input: { a: 1, b: 2 },
+    expect: { sum: 3 },
+  },
+  {
+    ...ruby,
+    form: "handle",
+    name: "schema.output passes",
+    code: "return { total: 3 }",
+    schema: total,
+    expect: { total: 3 },
+  },
+  {
+    ...ruby,
+    form: "handle",
+    name: "input over 16 KiB",
+    code: "return blob.length",
+    input: { blob: "x".repeat(20 * kib) },
+    expect: 20 * kib,
+  },
+  {
+    ...ruby,
+    form: "handle",
+    name: "code throws",
+    code: "raise 'boom'",
+    expect: /exited with code 1[\s\S]*boom/,
+  },
+];
+
 export const cases: LiveCase[] = [
   ...forLanguage("python"),
   ...forLanguage("typescript"),
+  ...rubyCases,
   ...typescriptOnly,
 ];
 
