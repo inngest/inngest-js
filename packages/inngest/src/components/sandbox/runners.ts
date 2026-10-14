@@ -96,7 +96,7 @@ const runCode = async (
     );
   }
 
-  return parseRunnerOutput(stdout).result;
+  return parseRunnerOutput(stdout, exitCode).result;
 };
 
 /**
