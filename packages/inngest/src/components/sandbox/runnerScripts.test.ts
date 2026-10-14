@@ -223,10 +223,10 @@ test.skipIf(!canRun.typescript)("types are stripped from TypeScript", () => {
   expect(output.result).toBe(8);
 });
 
-test.skipIf(!canRun.ts)(
+test.skipIf(!canRun.typescript)(
   "TypeScript that can't be stripped is explained",
   () => {
-    const output = run("ts", "enum Color { Red } return Color.Red");
+    const output = run("typescript", "enum Color { Red } return Color.Red");
 
     expect(output.exitCode).not.toBe(0);
     expect(output.stderr).toContain(
