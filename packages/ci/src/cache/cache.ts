@@ -218,7 +218,7 @@ const hashTree = (
   // ignores the rest never changes when they do.
   if (listing.truncated) {
     throw new NonRetriableError(
-      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Use narrower patterns, or a string key.`,
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Key the job on a string instead.`,
     );
   }
 
