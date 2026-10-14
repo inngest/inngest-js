@@ -816,7 +816,7 @@ export const files = (
   const options = typeof last === "object" ? last : undefined;
 
   // Checked here, where the pipeline is defined, so a bad `repo` fails at boot.
-  if (options?.repo) {
+  if (options?.repo !== undefined) {
     parseRepo(options.repo);
   }
 
@@ -828,7 +828,7 @@ export const files = (
     kind: "inngest/ci.cacheKeyPart",
     type: "files",
     patterns,
-    ...(options?.repo ? { repo: options.repo } : {}),
-    ...(options?.ref ? { ref: options.ref } : {}),
+    ...(options?.repo === undefined ? {} : { repo: options.repo }),
+    ...(options?.ref === undefined ? {} : { ref: options.ref }),
   };
 };

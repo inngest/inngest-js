@@ -25,6 +25,7 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { GitHubProvider } from "./auth.ts";
 import { githubApp, githubToken } from "./auth.ts";
+import { settledSources } from "./source.ts";
 
 type FakeGitHub = ReturnType<typeof createFakeGitHub>;
 
@@ -683,6 +684,7 @@ describe("files() of another repository or ref", () => {
   });
 
   test.each([
+    ["", false],
     ["acme", false],
     ["acme/platform/extra", false],
     ["acme/..", false],
@@ -792,5 +794,26 @@ describe("a local run", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain(`checkout '${sha}'`);
+  });
+});
+
+describe("the sources handed to a build run", () => {
+  test("keeps what resolved and leaves out what failed", async () => {
+    const source = {
+      owner: "acme",
+      name: "platform",
+      fullName: "acme/platform",
+      sha: "abc",
+    };
+    const failed = Promise.reject(new Error("no access"));
+
+    const settled = await settledSources({
+      sources: new Map([
+        ["acme/platform@main", Promise.resolve(source)],
+        ["acme/other@HEAD", failed],
+      ]),
+    } as unknown as Parameters<typeof settledSources>[0]);
+
+    expect(settled).toEqual({ "acme/platform@main": source });
   });
 });
