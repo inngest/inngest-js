@@ -18,6 +18,7 @@ import {
   type RunnerLanguage,
   type RunnerPlan,
 } from "./runnerScripts.ts";
+import { sdkOrigin } from "./trace.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -134,7 +135,10 @@ const validate = async (
 
 /**
  * Upload the payload if it has to be a file, run the command, and read the
- * result back from the file the wrapper wrote.
+ * result back from the file the wrapper wrote. Reading it also parses and
+ * validates it, so the step's output is the result itself. The user never
+ * wrote these steps, so they are named for what they do and marked as the
+ * SDK's own.
  */
 const runPlan = async (
   sandbox: DurableSandbox,
@@ -144,23 +148,24 @@ const runPlan = async (
   { schema, ...commandOptions }: Omit<RunnerOptions, "input">,
 ): Promise<unknown> => {
   const options = getStepOptions(idOrOptions);
-  const sibling = (name: string) => {
+  const generated = (name: string, suffix?: string) => {
     return {
       ...options,
-      id: `${options.id}:${name}`,
-      name: `${titles[language]} ${name}`,
+      id: suffix ? `${options.id}:${suffix}` : options.id,
+      name,
+      "~origin": sdkOrigin,
     };
   };
 
   if (plan.upload) {
-    await sandbox.files.write(sibling("payload"), {
+    await sandbox.files.write(generated("Uploading code", "payload"), {
       path: plan.upload.path,
       data: plan.upload.content,
     });
   }
 
   const { stderr, exitCode, stdout } = await sandbox.commands.run(
-    idOrOptions,
+    generated("Running code"),
     plan.command,
     commandOptions,
   );
@@ -171,10 +176,17 @@ const runPlan = async (
     );
   }
 
-  const file = await sandbox.files.read(sibling("result"), plan.resultPath);
-  const result = parseRunnerResult(new TextDecoder().decode(file));
+  return sandbox.files.read(
+    generated("Gathering result", "result"),
+    plan.resultPath,
+    (file) => {
+      const result = parseRunnerResult(new TextDecoder().decode(file));
 
-  return schema?.output ? validate(language, schema.output, result) : result;
+      return schema?.output
+        ? validate(language, schema.output, result)
+        : result;
+    },
+  );
 };
 
 /**
@@ -193,12 +205,9 @@ export const createSandboxRunner = (
     const { id, name } = getStepOptions(idOrOptions);
     const plan = buildPlan(language, id, code, input);
 
-    return withSpan(
-      { id, name: name ?? `${titles[language]} ${id}`, kind: language },
-      () => {
-        return runPlan(sandbox(), language, idOrOptions, plan, options);
-      },
-    );
+    return withSpan({ id, name: name ?? id, kind: language }, () => {
+      return runPlan(sandbox(), language, idOrOptions, plan, options);
+    });
   }) as SandboxRunner;
 };
 
@@ -220,16 +229,18 @@ export const createOneShotRunner = (
 
     return withSandbox(
       tools,
-      { kind: language, title: titles[language] },
+      { kind: language },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
-        return runPlan(
-          sandbox,
-          language,
-          { id: `${id}:run`, name: `Run ${titles[language]}` },
-          plan,
-          { cwd, timeout, schema },
-        );
+        return runPlan(sandbox, language, `${id}:run`, plan, {
+          cwd,
+          timeout,
+          schema,
+        });
+      },
+      {
+        create: { name: "Creating sandbox", "~origin": sdkOrigin },
+        destroy: { name: "Destroying sandbox", "~origin": sdkOrigin },
       },
     );
   }) as OneShotRunner;
