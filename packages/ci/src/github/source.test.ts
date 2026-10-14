@@ -25,6 +25,7 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { GitHubProvider } from "./auth.ts";
 import { githubApp, githubToken } from "./auth.ts";
+import { settledSources } from "./source.ts";
 
 type FakeGitHub = ReturnType<typeof createFakeGitHub>;
 
@@ -679,10 +680,11 @@ describe("files() of another repository or ref", () => {
     const message = JSON.stringify(result.error);
 
     expect(message).toContain("too large to hash");
-    expect(message).toContain("narrower patterns");
+    expect(message).toContain("Key the job on a string");
   });
 
   test.each([
+    ["", false],
     ["acme", false],
     ["acme/platform/extra", false],
     ["acme/..", false],
@@ -792,5 +794,66 @@ describe("a local run", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(cloneScripts(api)[0]).toContain(`checkout '${sha}'`);
+  });
+});
+
+describe("the sources handed to a build run", () => {
+  test("keeps what resolved and leaves out what failed", async () => {
+    const source = {
+      owner: "acme",
+      name: "platform",
+      fullName: "acme/platform",
+      sha: "abc",
+    };
+    const failed = Promise.reject(new Error("no access"));
+
+    const settled = await settledSources({
+      sources: new Map([
+        ["acme/platform@main", Promise.resolve(source)],
+        ["acme/other@HEAD", failed],
+      ]),
+    } as unknown as Parameters<typeof settledSources>[0]);
+
+    expect(settled).toEqual({ "acme/platform@main": source });
+  });
+
+  test("a build reads the commit the invoker keyed on after the branch moves", async () => {
+    const { gh, ci } = setup();
+
+    let lookups = 0;
+
+    gh.handle("GET /repos/acme/platform/commits/main", () => {
+      lookups++;
+
+      return { body: { sha: lookups === 1 ? "cafe1234" : "beef5678" } };
+    });
+
+    gh.route("GET /repos/acme/platform/git/trees/cafe1234", {
+      tree: [{ type: "blob", path: "a", sha: "old" }],
+    });
+
+    gh.route("GET /repos/acme/platform/git/trees/beef5678", {
+      tree: [{ type: "blob", path: "a", sha: "new" }],
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        const image = ci.job(
+          {
+            id: "image",
+            cache: { key: files("a", { repo: "acme/platform", ref: "main" }) },
+          },
+          async () => {
+            await $`build image`;
+          },
+        );
+
+        return image();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(lookups).toBe(1);
   });
 });

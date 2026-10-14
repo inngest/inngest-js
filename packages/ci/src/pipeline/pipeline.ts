@@ -232,7 +232,11 @@ const newRunScope = ({
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
-    sources: new Map(),
+    sources: new Map(
+      Object.entries(build?.sources ?? {}).map(([key, source]) => {
+        return [key, Promise.resolve(source)];
+      }),
+    ),
     definedJobs: new Set(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),

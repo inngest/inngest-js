@@ -237,6 +237,29 @@ const readCommit = async (
 };
 
 /**
+ * The sources this run has resolved, which a build run is handed so it reads
+ * the commits the invoker keyed on even if a branch has moved since. One that
+ * failed or is still resolving is left out: the build resolves it itself.
+ */
+export const settledSources = async (
+  run: CiRunScope,
+): Promise<Record<string, ResolvedSource>> => {
+  const settled: Record<string, ResolvedSource> = {};
+
+  await Promise.all(
+    [...run.sources].map(async ([key, source]) => {
+      try {
+        settled[key] = await source;
+      } catch {
+        // Left for the build to resolve.
+      }
+    }),
+  );
+
+  return settled;
+};
+
+/**
  * Resolve what a caller asked to read to a commit.
  *
  * The run's own repository and commit come straight from the run. Anything

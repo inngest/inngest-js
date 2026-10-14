@@ -241,7 +241,7 @@ const hashTree = (
   // ignores the rest never changes when they do.
   if (listing.truncated) {
     throw new NonRetriableError(
-      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Use narrower patterns, or a string key.`,
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Key the job on a string instead.`,
     );
   }
 
@@ -900,7 +900,7 @@ export const files = (
   const options = typeof last === "object" ? last : undefined;
 
   // Checked here, where the pipeline is defined, so a bad `repo` fails at boot.
-  if (options?.repo) {
+  if (options?.repo !== undefined) {
     parseRepo(options.repo);
   }
 
@@ -912,7 +912,7 @@ export const files = (
     kind: "inngest/ci.cacheKeyPart",
     type: "files",
     patterns,
-    ...(options?.repo ? { repo: options.repo } : {}),
-    ...(options?.ref ? { ref: options.ref } : {}),
+    ...(options?.repo === undefined ? {} : { repo: options.repo }),
+    ...(options?.ref === undefined ? {} : { ref: options.ref }),
   };
 };

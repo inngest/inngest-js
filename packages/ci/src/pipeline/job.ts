@@ -26,6 +26,7 @@ import {
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
 import type { BaseImage } from "../image.ts";
+import { settledSources } from "../github/source.ts";
 import {
   ancestry,
   buildsInRun,
@@ -400,6 +401,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...policyToFlags(name),
     ...(base ? { base } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
     rootRunId: rootRunIdOf(run),
     parent: buildParent(run, path, check),
