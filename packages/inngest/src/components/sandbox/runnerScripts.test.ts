@@ -221,6 +221,20 @@ test.skipIf(!canRun.ts)("types are stripped from TypeScript", () => {
   expect(output.result).toBe(8);
 });
 
+test.skipIf(!canRun.ts)(
+  "TypeScript that can't be stripped is explained",
+  () => {
+    const output = run("ts", "enum Color { Red } return Color.Red");
+
+    expect(output.exitCode).not.toBe(0);
+    expect(output.stderr).toContain(
+      "Enums, namespaces and parameter properties need full TypeScript compilation",
+    );
+    expect(output.stderr).toContain("enum is not supported");
+    expect(output.wroteResult).toBe(false);
+  },
+);
+
 describe("buildRunner", () => {
   test("a small payload rides in the command", () => {
     const plan = buildRunner({

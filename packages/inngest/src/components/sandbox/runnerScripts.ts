@@ -86,7 +86,14 @@ const [arg, resultPath] = process.argv.slice(-2);
 const payload = JSON.parse(arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8") : arg);
 
 const names = Object.keys(payload.input);
-const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}");
+let source;
+try {
+  source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}");
+} catch (error) {
+  if (error.code !== "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") throw error;
+  console.error("TypeScript snippets support type-only syntax. Enums, namespaces and parameter properties need full TypeScript compilation, so use a const object (or plain functions) instead.\n" + error.message);
+  process.exit(1);
+}
 const main = new Function(source + "\nreturn __inngest_main;")();
 
 let text = "";
