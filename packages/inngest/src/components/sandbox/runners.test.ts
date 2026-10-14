@@ -1,6 +1,6 @@
 /**
  * @module
- * Tests for the Python and TypeScript runners on a sandbox handle and on
+ * Tests for the Python, TypeScript and Ruby runners on a sandbox handle and on
  * `step.sandbox`, with a fake sandbox API that answers every command with the
  * output a test gives it.
  */
@@ -16,6 +16,7 @@ type Client = ReturnType<typeof createScopeClient>["client"];
 const languages = [
   { language: "python", title: "Python", binary: "python3" },
   { language: "typescript", title: "TypeScript", binary: "node" },
+  { language: "ruby", title: "Ruby", binary: "ruby" },
 ] as const;
 
 const outputs = [

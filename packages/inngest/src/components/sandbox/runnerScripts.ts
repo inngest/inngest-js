@@ -1,7 +1,7 @@
 /**
  * @module
- * Builds the commands that run a snippet of TypeScript or Python in a sandbox
- * with `input` as globals and a top-level `return` as the result.
+ * Builds the commands that run a snippet of TypeScript, Python or Ruby in a
+ * sandbox with `input` as globals and a top-level `return` as the result.
  *
  * The wrapper is a fixed script and the snippet travels as data (a JSON
  * payload), so nothing a caller passes is ever spliced into source text:
@@ -17,7 +17,7 @@
  */
 import { SandboxValidationError } from "./types.ts";
 
-export type RunnerLanguage = "typescript" | "python";
+export type RunnerLanguage = "typescript" | "python" | "ruby";
 
 export interface Runner {
   language: RunnerLanguage;
@@ -29,8 +29,8 @@ export interface Runner {
   code: string;
 
   /**
-   * JSON values, each declared as a global (a parameter in TypeScript) before
-   * `code` runs.
+   * JSON values, each declared as a global (a parameter in TypeScript, a local
+   * in Ruby) before `code` runs.
    */
   input?: Record<string, unknown>;
 
@@ -106,6 +106,22 @@ main(...Object.values(payload.input)).then((result) => {
 });
 `;
 
+const rubyWrapper = String.raw`require "json"
+
+def __inngest_scope
+  binding
+end
+
+arg, result_path = ARGV
+payload = JSON.parse(arg.start_with?("@") ? File.read(arg[1..]) : arg)
+
+scope = __inngest_scope
+payload["input"].each { |name, value| scope.local_variable_set(name, value) }
+
+result = eval("lambda do\n" + payload["code"] + "\nend", scope, "<code>", 0).call
+File.write(result_path, result.nil? ? "" : JSON.generate(result))
+`;
+
 const commands: Record<
   RunnerLanguage,
   (payload: string, resultPath: string) => string[]
@@ -123,9 +139,16 @@ const commands: Record<
   python: (payload, resultPath) => {
     return ["python3", "-c", pythonWrapper, payload, resultPath];
   },
+  ruby: (payload, resultPath) => {
+    return ["ruby", "-e", rubyWrapper, payload, resultPath];
+  },
 };
 
-const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const identifierPatterns: Record<RunnerLanguage, RegExp> = {
+  typescript: /^[A-Za-z_][A-Za-z0-9_]*$/,
+  python: /^[A-Za-z_][A-Za-z0-9_]*$/,
+  ruby: /^[a-z_][A-Za-z0-9_]*$/,
+};
 
 const reservedNames: Record<RunnerLanguage, ReadonlySet<string>> = {
   typescript: new Set(
@@ -140,6 +163,12 @@ const reservedNames: Record<RunnerLanguage, ReadonlySet<string>> = {
     `False None True and as assert async await break class continue def del
     elif else except finally for from global if import in is lambda nonlocal
     not or pass raise return try while with yield print open`.split(/\s+/),
+  ),
+  ruby: new Set(
+    `alias and begin break case class def do else elsif end
+    ensure false for if in module next nil not or redo rescue retry return
+    self super then true undef unless until when while yield binding
+    puts print p require`.split(/\s+/),
   ),
 };
 
@@ -203,7 +232,7 @@ const assertInput = (
 ): void => {
   for (const [name, value] of Object.entries(input)) {
     if (
-      !identifierPattern.test(name) ||
+      !identifierPatterns[language].test(name) ||
       name.startsWith("__") ||
       reservedNames[language].has(name)
     ) {
