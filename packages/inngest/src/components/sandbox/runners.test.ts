@@ -200,7 +200,6 @@ describe.each(languages)("sandbox.$language with tools", ({ language }) => {
       expect.objectContaining({ id: "py", name: "Running code" }),
       expect.objectContaining({ action: "exec" }),
       { tools, toolOptions: { maxCalls: 3 } },
-      undefined,
     );
   });
 });
