@@ -5,29 +5,17 @@
  * it.
  */
 
+import { z } from "zod";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type { OneShotRunner } from "./runners.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
-const sentinel = "\n__INNGEST_RESULT__";
-
 const outputs = [
-  {
-    name: "a value",
-    stdout: `${sentinel}{"mean":2.5}\n`,
-    expected: { mean: 2.5 },
-  },
-  {
-    name: "a value after prints",
-    stdout: `hello\n${sentinel}[1,2]\n`,
-    expected: [1, 2],
-  },
-  {
-    name: "nothing when it doesn't return",
-    stdout: "hi\n",
-    expected: undefined,
-  },
+  { name: "a value", file: '{"mean":2.5}', expected: { mean: 2.5 } },
+  { name: "a falsy value", file: "0", expected: 0 },
+  { name: "nothing when it doesn't return", file: "", expected: undefined },
 ];
 
 /**
@@ -52,8 +40,8 @@ const runWith = async (
 };
 
 describe("sandbox.python", () => {
-  test.each(outputs)("returns $name", async ({ stdout, expected }) => {
-    const { type, ran, value } = await runWith({ stdout }, (client, keep) => {
+  test.each(outputs)("returns $name", async ({ file, expected }) => {
+    const { type, ran, value } = await runWith({ file }, (client, keep) => {
       return client.createFunction(
         { id: "handle", triggers: [{ event: "runner/python" }] },
         async ({ step }) => {
@@ -69,7 +57,7 @@ describe("sandbox.python", () => {
     });
 
     expect(type).toBe("function-resolved");
-    expect(ran).toEqual(["box", "py", "box:destroy"]);
+    expect(ran).toEqual(["box", "py", "py:result", "box:destroy"]);
     expect(value).toEqual(expected);
   });
 
@@ -94,9 +82,10 @@ describe("sandbox.python", () => {
     ];
 
     expect(exec.input[0].command[0]).toBe("python3");
-    expect(exec.input[0].command.at(-1)).toBe(
+    expect(exec.input[0].command.at(-2)).toBe(
       '{"code":"return n","input":{"n":1}}',
     );
+    expect(exec.input[0].command.at(-1)).toBe("/tmp/inngest-py.result.json");
   });
 
   test.each([
@@ -115,18 +104,12 @@ describe("sandbox.python", () => {
       message: "input.d must be a JSON value, got Date",
     },
     {
-      name: "a payload too big for the command",
-      output: {},
-      code: "x".repeat(20_000),
-      input: undefined,
-      message: "Python code and input must be under 16 KiB",
-    },
-    {
-      name: "a result too big to capture",
-      output: { stdout: "x".repeat(3_000_000) },
+      name: "a result too big for a step to return",
+      output: { file: "x".repeat(3_000_000) },
       code: "return 'x' * 3000000",
       input: undefined,
-      message: "Python result was too large to capture",
+      message:
+        "/tmp/inngest-py.result.json is 3000000 bytes, over the 2097152 bytes a step can return",
     },
   ])("rejects $name", async ({ output, code, input, message }) => {
     let error: unknown;
@@ -156,10 +139,106 @@ describe("sandbox.python", () => {
   });
 });
 
+describe("sandbox.python with a large payload", () => {
+  test("uploads it and runs the file", async () => {
+    const { ran, steps, calls } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "large", triggers: [{ event: "runner/python" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.create("box", {
+            name: "box",
+            vcpu: 2,
+            memoryMb: 2048,
+          });
+
+          await sandbox.python("py", "x".repeat(20_000));
+        },
+      );
+    });
+    const [exec] = steps[2]?.opts?.input as [
+      { input: [{ command: string[] }] },
+    ];
+
+    expect(ran).toEqual(["box", "py:payload", "py", "py:result"]);
+    expect(calls.uploads).toHaveLength(1);
+    expect(calls.uploads[0]?.path).toBe("/tmp/inngest-py.json");
+    expect(JSON.parse(calls.uploads[0]?.body ?? "").code).toHaveLength(20_000);
+    expect(exec.input[0].command.at(-2)).toBe("@/tmp/inngest-py.json");
+  });
+});
+
+describe("schema.output", () => {
+  const schema = { output: z.object({ n: z.number() }) };
+
+  const run = (file: string) => {
+    return runWith({ file }, (client, keep) => {
+      return client.createFunction(
+        { id: "schema", triggers: [{ event: "runner/python" }] },
+        async ({ step }) => {
+          keep(await step.sandbox.python("py", "return 1", { schema }));
+        },
+      );
+    });
+  };
+
+  test("types the result by the schema", () => {
+    const runner = null as unknown as OneShotRunner;
+
+    expectTypeOf(() =>
+      runner("py", "return 1", { schema }),
+    ).returns.resolves.toEqualTypeOf<{ n: number }>();
+    expectTypeOf(() =>
+      runner<number>("py", "return 1"),
+    ).returns.resolves.toEqualTypeOf<number>();
+  });
+
+  test("returns the validated result", async () => {
+    const { type, value } = await run('{"n":1}');
+
+    expect(type).toBe("function-resolved");
+    expect(value).toEqual({ n: 1 });
+  });
+
+  test("fails the step with the issues, without retrying", async () => {
+    const { type, ran } = await run('{"n":"one"}');
+
+    expect(type).toBe("function-rejected");
+    expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
+  });
+
+  test("names every issue in the error", async () => {
+    let error: unknown;
+    await runWith({ file: '{"n":"one"}' }, (client) => {
+      return client.createFunction(
+        { id: "issues", triggers: [{ event: "runner/python" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.create("box", {
+            name: "box",
+            vcpu: 2,
+            memoryMb: 2048,
+          });
+
+          try {
+            await sandbox.python("py", "return 1", { schema });
+          } catch (err) {
+            error = err;
+
+            throw err;
+          }
+        },
+      );
+    });
+
+    expect((error as Error).message).toBe(
+      "Python result didn't match schema.output:\nn: Expected number, received string",
+    );
+  });
+});
+
 describe("step.sandbox.python", () => {
-  test.each(outputs)("returns $name", async ({ stdout, expected }) => {
+  test.each(outputs)("returns $name", async ({ file, expected }) => {
     const { type, ran, steps, calls, value } = await runWith(
-      { stdout },
+      { file },
       (client, keep) => {
         return client.createFunction(
           { id: "one-shot", triggers: [{ event: "runner/python" }] },
@@ -172,8 +251,9 @@ describe("step.sandbox.python", () => {
     const span = { id: "py", name: "Python py", kind: "python" };
 
     expect(type).toBe("function-resolved");
-    expect(ran).toEqual(["py", "py:run", "py:destroy"]);
+    expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
     expect(steps.map((step) => step.opts?.span)).toEqual([
+      [span],
       [span],
       [span],
       [span],

@@ -771,7 +771,7 @@ export const createDurableSandboxFacade = (
         return decodeBase64(result.result.data, "sandbox file data");
       },
     }),
-    python: createSandboxRunner(() => facade.commands, "python"),
+    python: createSandboxRunner(() => facade, "python"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {
