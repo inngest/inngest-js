@@ -5,7 +5,7 @@
  * that runs every case, prints a pass/fail table, stops what it started and
  * exits non-zero if anything failed. See `README.md` in this folder.
  *
- *   pnpm -C packages/inngest test:sandbox-live [--list] [--dry] [--only TEXT]
+ *   pnpm -C packages/inngest test:sandbox-live [--list] [--dry] [--only TEXT] [--keep]
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -20,6 +20,7 @@ const { values: flags } = parseArgs({
     list: { type: "boolean", default: false },
     dry: { type: "boolean", default: false },
     only: { type: "string", default: "" },
+    keep: { type: "boolean", default: false },
   },
 });
 
@@ -120,6 +121,11 @@ const execute = async (): Promise<Verdict[]> => {
     "15m",
   ]);
   const runId = / run (\w{26}) /.exec(sent.out)?.[1];
+  if (flags.keep) {
+    console.log(`Dev Server UI: ${url}/runs/${runId}`);
+    console.log(`Clean up with: ${devstack} stop ${stack}`);
+  }
+
   const response = await fetch(`${url}/v0/gql`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -159,7 +165,9 @@ const main = async (): Promise<number> => {
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
   } finally {
-    await run(["stop", stack]);
+    if (!flags.keep) {
+      await run(["stop", stack]);
+    }
   }
 
   const width = Math.max(0, ...verdicts.map((v) => v.name.length));
