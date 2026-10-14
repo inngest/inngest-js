@@ -1,5 +1,4 @@
 import type { StepOptionsOrId } from "../../types.ts";
-import { version } from "../../version.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
@@ -27,6 +26,7 @@ import {
   validateSandboxResult,
 } from "./protocol.ts";
 import { createSandboxRunner } from "./runners.ts";
+import { sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -497,12 +497,6 @@ const callRawTool = async <A extends SandboxAction>(
     throw error;
   }
 };
-
-/**
- * Marks the steps the SDK runs on the user's behalf, such as the create and
- * wait inside `snapshot()`. See `StepOptions["~origin"]`.
- */
-const sdkOrigin = `inngest@${version}`;
 
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
