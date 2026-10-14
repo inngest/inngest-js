@@ -5,6 +5,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import {
   getSandboxError,
+  operationSandboxId,
   parseSandboxOperation,
   type SandboxOperationResultV1,
   type SandboxRawTool,
@@ -36,18 +37,36 @@ const describeStep = (
       return;
     }
 
+    const parsed = parseSandboxOperation(operation);
+
     execution.instance.addMetadata(
       stepId,
       sandboxMetadataKind,
       "step",
       "merge",
       sandboxTraceMetadata(
-        parseSandboxOperation(operation),
+        parsed,
         "result" in outcome
           ? outcome
           : { error: getSandboxError(outcome.error) },
       ),
     );
+
+    if ("error" in outcome && parsed.action === "destroy") {
+      execution.instance.addMetadata(
+        stepId,
+        "inngest.warnings",
+        "step",
+        "set",
+        {
+          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : String(outcome.error)
+          }`,
+        },
+      );
+    }
   } catch {
     // An operation that fails validation has nothing to describe.
   }
