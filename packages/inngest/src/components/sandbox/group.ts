@@ -4,6 +4,7 @@
  * as one `sandbox` group in the trace.
  */
 
+import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -44,6 +45,23 @@ const isFinal = (error: unknown): boolean => {
     error instanceof NonRetriableError ||
     !retriesRemain()
   );
+};
+
+/**
+ * Destroy a sandbox in a step. A destroy that failed for good is on the trace
+ * as a warning, and must not change the outcome of the run.
+ */
+export const destroyQuietly = async (
+  sandbox: DurableSandbox,
+  idOrOptions: StepOptionsOrId,
+): Promise<void> => {
+  try {
+    await sandbox.destroy(idOrOptions);
+  } catch (error) {
+    if (!(error instanceof StepError)) {
+      throw error;
+    }
+  }
 };
 
 /**

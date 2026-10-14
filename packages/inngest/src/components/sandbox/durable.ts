@@ -12,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -906,15 +907,7 @@ export const createSandboxTools = (
     return Object.freeze({
       ...sandbox,
       [Symbol.asyncDispose]: async () => {
-        try {
-          await sandbox.destroy(`${id}:destroy`);
-        } catch (error) {
-          // A destroy that failed for good is on the trace as a warning. It
-          // must not change the outcome of the run.
-          if (!(error instanceof StepError)) {
-            throw error;
-          }
-        }
+        await destroyQuietly(sandbox, `${id}:destroy`);
       },
     });
   },
