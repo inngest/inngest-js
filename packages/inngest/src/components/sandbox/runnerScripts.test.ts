@@ -53,7 +53,7 @@ const run = (
   });
   const { exitCode, stdout, stderr } = execute(plan);
 
-  return { exitCode, stderr, ...parseRunnerOutput(stdout) };
+  return { exitCode, stderr, ...parseRunnerOutput(stdout, exitCode) };
 };
 
 const languages: RunnerLanguage[] = ["ts", "python"];
@@ -128,6 +128,15 @@ describe.each(languages)("%s runner", (language) => {
       stdout: "hi",
     },
     {
+      name: "output printed after the snippet returned stays in stdout",
+      code: pick(
+        "setTimeout(() => console.log('later'), 10); return 1",
+        "print('later'); return 1",
+      ),
+      result: 1,
+      stdout: "later\n",
+    },
+    {
       name: "a printed copy of the sentinel is ignored",
       code: pick(
         `console.log('${resultSentinel}{"fake":1}'); return { real: 1 }`,
@@ -187,7 +196,8 @@ describe.each(languages)("%s runner", (language) => {
       input: { text },
       payloadPath: join(dir, "large.json"),
     });
-    const output = parseRunnerOutput(execute(plan).stdout);
+    const { stdout, exitCode } = execute(plan);
+    const output = parseRunnerOutput(stdout, exitCode);
 
     expect(plan.upload).toBeDefined();
     expect(output.result).toBe(100_000);
@@ -198,6 +208,12 @@ test.skipIf(!canRun.ts)("types are stripped from TypeScript", () => {
   const output = run("ts", "const n: number = a; return n * 2", { a: 4 });
 
   expect(output.result).toBe(8);
+});
+
+test.skipIf(!canRun.ts)("TypeScript that needs transforming runs", () => {
+  const output = run("ts", "enum Dir { Up, Down } return Dir.Down");
+
+  expect(output.result).toBe(1);
 });
 
 describe("buildRunner", () => {
@@ -229,6 +245,9 @@ describe("buildRunner", () => {
     expect(plan.upload?.path).toBe("/tmp/p.json");
     expect(JSON.parse(plan.upload?.content as string).code).toBe("return text");
   });
+
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
 
   const rejected: {
     name: string;
@@ -303,6 +322,18 @@ describe("buildRunner", () => {
       message: "input.list[0] must be a JSON value, got Map",
     },
     {
+      name: "an empty array slot",
+      language: "ts",
+      input: { list: Object.assign(new Array(3), { 0: 1, 2: 3 }) },
+      message: "input.list[1] must be a JSON value, got undefined",
+    },
+    {
+      name: "a circular reference",
+      language: "python",
+      input: { a: circular },
+      message: "input.a.self must be a JSON value, got a circular reference",
+    },
+    {
       name: "a Set nested in an object",
       language: "python",
       input: { a: { b: new Set() } },
@@ -320,7 +351,12 @@ describe("buildRunner", () => {
 describe("parseRunnerOutput", () => {
   const sentinel = `\n${resultSentinel}`;
 
-  const cases: { name: string; stdout: string; expected: unknown }[] = [
+  const cases: {
+    name: string;
+    stdout: string;
+    exitCode?: number;
+    expected: unknown;
+  }[] = [
     {
       name: "no sentinel",
       stdout: "crashed\n",
@@ -347,13 +383,19 @@ describe("parseRunnerOutput", () => {
       expected: { stdout: "", result: 0 },
     },
     {
+      name: "a failed command has no result",
+      stdout: `out${sentinel}1\n`,
+      exitCode: 1,
+      expected: { stdout: `out${sentinel}1\n` },
+    },
+    {
       name: "the last sentinel wins",
       stdout: `${sentinel}1\nmore${sentinel}2\n`,
       expected: { stdout: `${sentinel}1\nmore`, result: 2 },
     },
   ];
 
-  test.each(cases)("$name", ({ stdout, expected }) => {
-    expect(parseRunnerOutput(stdout)).toEqual(expected);
+  test.each(cases)("$name", ({ stdout, exitCode = 0, expected }) => {
+    expect(parseRunnerOutput(stdout, exitCode)).toEqual(expected);
   });
 });
