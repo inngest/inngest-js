@@ -51,4 +51,14 @@ export default defineConfig({
   unbundle: true, // let bundlers handle bundling
   copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
   skipNodeModulesBundle: true,
+  outputOptions: {
+    banner: (chunk) => {
+      // The public `AsyncDisposable` return type needs this lib in consumers
+      if (/^components\/sandbox\/types\.d\.c?ts$/.test(chunk.fileName)) {
+        return '/// <reference lib="esnext.disposable" />';
+      }
+
+      return "";
+    },
+  },
 });
