@@ -467,7 +467,7 @@ describe("jobs that start from one parent", () => {
     });
   };
 
-  test("the parent is looked up once, and one build serves both", async () => {
+  test("the parent is looked up before and after its wait, and one build serves both", async () => {
     const api = createFakeSandboxApi();
 
     const result = await runFunction(siblings(api), {
@@ -477,7 +477,10 @@ describe("jobs that start from one parent", () => {
 
     expect(result.type).toBe("function-resolved");
 
-    expect(lookups(result.stepIds)).toEqual(["install (from) › lookup"]);
+    expect(lookups(result.stepIds)).toEqual([
+      "install (from) › lookup",
+      "install (from) (after wait) › lookup",
+    ]);
 
     expect(buildSteps(result.stepIds)).toEqual(["install (from) › build"]);
     expect(count(api, "pnpm install")).toBe(1);
