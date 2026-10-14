@@ -1,5 +1,4 @@
 import type { StepOptionsOrId } from "../../types.ts";
-import { version } from "../../version.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
@@ -13,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -28,6 +28,7 @@ import {
 } from "./protocol.ts";
 import { createSandboxRunner } from "./runners.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
+import { sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -473,20 +474,34 @@ export const executeSandboxOperation = async (
   }
 };
 
-const callRawTool = async <A extends SandboxAction>(
+/**
+ * Run an operation as a step. With `finish`, the step also does that work and
+ * its output is what `finish` returns, so a replay returns it unchanged.
+ */
+const callRawTool = async <
+  A extends SandboxAction,
+  T = SandboxResultForAction<A>,
+>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
   tools?: SandboxToolsRequest,
-): Promise<SandboxResultForAction<A>> => {
+  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
+): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
+    if (finish) {
+      return (await rawTool(idOrOptions, operation, undefined, (result) => {
+        return finish(validateSandboxResult(operation, result));
+      })) as T;
+    }
+
     return validateSandboxResult(
       operation,
       await (tools
         ? rawTool(idOrOptions, operation, tools)
         : rawTool(idOrOptions, operation)),
-    );
+    ) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
       throw error;
@@ -518,12 +533,6 @@ const callRawTool = async <A extends SandboxAction>(
     throw error;
   }
 };
-
-/**
- * Marks the steps the SDK runs on the user's behalf, such as the create and
- * wait inside `snapshot()`. See `StepOptions["~origin"]`.
- */
-export const sdkOrigin = `inngest@${version}`;
 
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
@@ -784,20 +793,29 @@ export const createDurableSandboxFacade = (
         });
         await callRawTool(rawToolResolver, idOrOptions, operation);
       },
-      read: async (idOrOptions, path) => {
+      read: (async (idOrOptions, path, parse) => {
         const operation = parseSandboxOperationForAction("file.download", {
           protocolVersion: sandboxProtocolVersion,
           action: "file.download",
           target: sandboxTarget(ref),
           input: [{ path }],
         });
-        const result = await callRawTool(
-          rawToolResolver,
-          idOrOptions,
-          operation,
-        );
-        return decodeBase64(result.result.data, "sandbox file data");
-      },
+        const bytes = (result: SandboxResultForAction<"file.download">) => {
+          return decodeBase64(result.result.data, "sandbox file data");
+        };
+
+        return parse
+          ? callRawTool(
+              rawToolResolver,
+              idOrOptions,
+              operation,
+              undefined,
+              (result) => {
+                return parse(bytes(result));
+              },
+            )
+          : bytes(await callRawTool(rawToolResolver, idOrOptions, operation));
+      }) as DurableSandbox["files"]["read"],
     }),
     python: createSandboxRunner(() => facade, "python"),
     typescript: createSandboxRunner(() => facade, "typescript"),
@@ -941,15 +959,7 @@ export const createSandboxTools = (
     return Object.freeze({
       ...sandbox,
       [Symbol.asyncDispose]: async () => {
-        try {
-          await sandbox.destroy(`${id}:destroy`);
-        } catch (error) {
-          // A destroy that failed for good is on the trace as a warning. It
-          // must not change the outcome of the run.
-          if (!(error instanceof StepError)) {
-            throw error;
-          }
-        }
+        await destroyQuietly(sandbox, `${id}:destroy`);
       },
     });
   },

@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { InngestFunction } from "../InngestFunction.ts";
 import type { OneShotRunner } from "./runners.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
+import { sdkOrigin } from "./trace.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
@@ -20,7 +21,7 @@ const languages = [
 const outputs = [
   { name: "a value", file: '{"mean":2.5}', expected: { mean: 2.5 } },
   { name: "a falsy value", file: "0", expected: 0 },
-  { name: "nothing when it doesn't return", file: "", expected: undefined },
+  { name: "null when it doesn't return", file: "", expected: null },
 ];
 
 /**
@@ -168,6 +169,11 @@ describe.each(languages)(
 
       expect(ran).toEqual(["box", "py:payload", "py", "py:result"]);
       expect(calls.uploads).toHaveLength(1);
+      expect(steps.slice(1).map((step) => step.displayName)).toEqual([
+        "Uploading code",
+        "Running code",
+        "Gathering result",
+      ]);
       expect(calls.uploads[0]?.path).toBe("/tmp/inngest-py.json");
       expect(JSON.parse(calls.uploads[0]?.body ?? "").code).toHaveLength(
         20_000,
@@ -210,10 +216,15 @@ describe.each(languages)("$language schema.output", ({ language, title }) => {
   });
 
   test("fails the step with the issues, without retrying", async () => {
-    const { type, ran } = await run('{"n":"one"}');
+    const { type, ran, steps } = await run('{"n":"one"}');
+    const gathering = steps[2];
+    const error = gathering?.error as Error;
 
     expect(type).toBe("function-rejected");
     expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
+    expect(gathering?.displayName).toBe("Gathering result");
+    expect(error.message).toContain("n: Expected number");
+    expect(error.name).toBe("NonRetriableError");
   });
 
   test("names every issue in the error", async () => {
@@ -245,7 +256,7 @@ describe.each(languages)("$language schema.output", ({ language, title }) => {
   });
 });
 
-describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
+describe.each(languages)("step.sandbox.$language", ({ language }) => {
   test.each(outputs)("returns $name", async ({ file, expected }) => {
     const { type, ran, steps, calls, value } = await runWith(
       { file },
@@ -258,7 +269,7 @@ describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
         );
       },
     );
-    const span = { id: "py", name: `${title} py`, kind: language };
+    const span = { id: "py", name: "py", kind: language };
 
     expect(type).toBe("function-resolved");
     expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
@@ -268,6 +279,16 @@ describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
       [span],
       [span],
     ]);
+    expect(steps.map((step) => step.displayName)).toEqual([
+      "Creating sandbox",
+      "Running code",
+      "Gathering result",
+      "Destroying sandbox",
+    ]);
+    expect(steps.map((step) => step.opts?.origin)).toEqual(
+      steps.map(() => sdkOrigin),
+    );
+    expect(steps[2]?.data).toEqual(expected);
     expect(calls.destroys).toBe(1);
     expect(value).toEqual(expected);
   });

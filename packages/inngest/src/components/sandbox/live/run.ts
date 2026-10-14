@@ -122,7 +122,7 @@ const execute = async (): Promise<Verdict[]> => {
   ]);
   const runId = / run (\w{26}) /.exec(sent.out)?.[1];
   if (flags.keep) {
-    console.log(`Dev Server UI: ${url}/runs/${runId}`);
+    console.log(`Dev Server UI: ${url}/run?runID=${runId}`);
     console.log(`Clean up with: ${devstack} stop ${stack}`);
   }
 
