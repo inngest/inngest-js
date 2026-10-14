@@ -12,7 +12,7 @@ type Client = ReturnType<typeof createScopeClient>["client"];
 
 const languages = [
   { language: "python", title: "Python", binary: "python3" },
-  { language: "ts", title: "TypeScript", binary: "node" },
+  { language: "typescript", title: "TypeScript", binary: "node" },
 ] as const;
 
 const sentinel = "\n__INNGEST_RESULT__";
