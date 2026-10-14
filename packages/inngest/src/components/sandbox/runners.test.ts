@@ -131,7 +131,7 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
       output: { stdout: "x".repeat(3_000_000) },
       code: "return 'x' * 3000000",
       input: undefined,
-      message: "Python result was too large to capture",
+      message: `${title} result was too large to capture`,
     },
   ])("rejects $name", async ({ output, code, input, message }) => {
     let error: unknown;
@@ -211,9 +211,9 @@ describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
   test("rejects invalid input before creating the sandbox", async () => {
     const { type, ran, calls } = await runWith({}, (client) => {
       return client.createFunction(
-        { id: "invalid", triggers: [{ event: "runner/python" }] },
+        { id: "invalid", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          await step.sandbox.python("py", "return d", {
+          await step.sandbox[language]("py", "return d", {
             input: { d: new Date() },
           });
         },
