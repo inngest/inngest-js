@@ -566,7 +566,7 @@ export interface DurableSandbox {
     ): Promise<SandboxCommandResult>;
   };
   readonly python: SandboxRunner;
-  readonly ts: SandboxRunner;
+  readonly typescript: SandboxRunner;
   readonly processes: {
     start(
       idOrOptions: StepOptionsOrId,

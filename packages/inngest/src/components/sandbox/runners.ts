@@ -1,6 +1,6 @@
 /**
  * @module
- * `sandbox.python()`, `sandbox.ts()` and their `step.sandbox` forms: run a
+ * `sandbox.python()`, `sandbox.typescript()` and their `step.sandbox` forms: run a
  * snippet in a sandbox and get its `return` value back. The snippet's command
  * comes from `runnerScripts.ts`; this file runs it and unpacks the result.
  */
