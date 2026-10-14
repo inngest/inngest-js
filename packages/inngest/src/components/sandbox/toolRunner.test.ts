@@ -7,6 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod/v3";
 import type { StepOptions } from "../../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
+import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
 import {
@@ -15,6 +16,7 @@ import {
 } from "./protocol.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
+import { sdkOrigin } from "./trace.ts";
 import type { Sandbox } from "./types.ts";
 
 const sandboxRef = {
@@ -653,12 +655,12 @@ describe("commands.run with tools trace group", () => {
     },
     {
       command: ["/bin/sh", "-c", "node a.js"],
-      kind: "ts",
+      kind: "typescript",
       wait: "TypeScript running…",
     },
     {
       command: ["bun", "run", "x.ts"],
-      kind: "ts",
+      kind: "typescript",
       wait: "TypeScript running…",
     },
     {
@@ -669,9 +671,9 @@ describe("commands.run with tools trace group", () => {
     {
       command: ["/bin/sh", "-c", "ls -la"],
       kind: "sh",
-      wait: "Shell running…",
+      wait: "Waiting for tool calls",
     },
-    { command: ["bash", "x.sh"], kind: "sh", wait: "Shell running…" },
+    { command: ["bash", "x.sh"], kind: "sh", wait: "Waiting for tool calls" },
   ])("$command runs in a $kind group", async ({ command, kind, wait }) => {
     const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
     const { host, spans, names } = createHost(sandbox);
@@ -705,10 +707,46 @@ describe("commands.run with tools trace group", () => {
       exec: [group],
       "exec:tool:getCustomer:1": [
         group,
-        { id: "exec:tool:getCustomer:1", name: "getCustomer", kind: "tool" },
+        {
+          id: "exec:tool:getCustomer:1",
+          name: "getCustomer",
+          kind: "tool",
+          origin: sdkOrigin,
+        },
       ],
       "exec:wait:1": [group],
     });
+  });
+
+  test("a runner's group of the same kind holds the steps, without another", async () => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return withSpan({ id: "runner", kind: "python" }, () => {
+        return runCommandWithTools(
+          host,
+          "exec",
+          operation(300_000, ["python3", "-c", "x"]),
+          {
+            tools: { getCustomer: async () => ({ id: "cus_1" }) },
+            toolOptions: { waitWindow: 5 },
+          },
+        );
+      });
+    });
+
+    const group = { id: "runner", name: "runner", kind: "python" };
+    expect(spans.get("exec:wait:1")).toEqual([group]);
+    expect(spans.get("exec:tool:getCustomer:1")).toEqual([
+      group,
+      {
+        id: "exec:tool:getCustomer:1",
+        name: "getCustomer",
+        kind: "tool",
+        origin: sdkOrigin,
+      },
+    ]);
   });
 });
 

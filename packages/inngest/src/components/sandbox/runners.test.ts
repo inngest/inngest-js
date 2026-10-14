@@ -7,7 +7,9 @@
 
 import { z } from "zod";
 import type { InngestFunction } from "../InngestFunction.ts";
-import type { OneShotRunner } from "./runners.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
+import type { SandboxRawTool } from "./protocol.ts";
+import { createSandboxRunner, type OneShotRunner } from "./runners.ts";
 import { createScopeClient, runToEnd } from "./test-helpers.ts";
 import { sdkOrigin } from "./trace.ts";
 
@@ -142,6 +144,63 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
 
     expect(type).toBe("function-rejected");
     expect((error as Error).message).toBe(message);
+  });
+});
+
+describe.each(languages)("sandbox.$language with tools", ({ language }) => {
+  test("hands them to the command", async () => {
+    const exec = {
+      protocolVersion: 1,
+      action: "exec",
+      result: {
+        stdout: "",
+        stderr: "",
+        encoding: "base64",
+        exitCode: 0,
+        output: { truncated: false },
+      },
+    };
+    const download = {
+      protocolVersion: 1,
+      action: "file.download",
+      result: { data: "" },
+    };
+    const rawTool: SandboxRawTool = vi.fn(
+      async (_id, operation, _tools, finish) => {
+        const result = operation.action === "exec" ? exec : download;
+
+        return finish ? finish(result) : result;
+      },
+    );
+    const sandbox = createDurableSandboxFacade(
+      {
+        kind: "inngest/sandbox",
+        version: 1,
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "box",
+        status: "RUNNING",
+        vpcId: "11111111-1111-4111-8111-111111111111",
+        imageRef: "default",
+        resources: { vcpu: 2, memoryMb: 2048 },
+        createdAt: "2026-07-28T00:00:00Z",
+      },
+      () => {
+        return rawTool;
+      },
+    );
+    const tools = { a: async () => 1 };
+
+    await createSandboxRunner(() => sandbox, language)("py", "return 1", {
+      tools,
+      toolOptions: { maxCalls: 3 },
+    });
+
+    expect(rawTool).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: "py", name: "Running code" }),
+      expect.objectContaining({ action: "exec" }),
+      { tools, toolOptions: { maxCalls: 3 } },
+    );
   });
 });
 
@@ -329,6 +388,23 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
     expect(type).toBe("function-rejected");
     expect(ran).toEqual([]);
     expect(calls.destroys).toBe(0);
+  });
+
+  test("rejects an input named tools when it has tools, before creating the sandbox", async () => {
+    const { type, ran } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "tools-input", triggers: [{ event: "runner/code" }] },
+        async ({ step }) => {
+          await step.sandbox[language]("py", "return 1", {
+            input: { tools: 1 },
+            tools: { a: async () => 1 },
+          });
+        },
+      );
+    });
+
+    expect(type).toBe("function-rejected");
+    expect(ran).toEqual([]);
   });
 
   test("destroys the sandbox when the code fails", async () => {

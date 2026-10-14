@@ -21,6 +21,7 @@
  */
 
 import type { StepOptions, StepOptionsOrId } from "../../types.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult } from "./durable.ts";
@@ -223,8 +224,14 @@ const followCommand = async (
       const body = await host.run(
         {
           id: stepId,
-          name: `tool ${call.tool}`,
-          "~span": { id: stepId, name: call.tool, kind: "tool" },
+          name: call.tool,
+          "~origin": sdkOrigin,
+          "~span": {
+            id: stepId,
+            name: call.tool,
+            kind: "tool",
+            origin: sdkOrigin,
+          },
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
@@ -363,12 +370,12 @@ const basename = (path: string): string => {
 
 const runningNames = {
   python: "Python running…",
-  ts: "TypeScript running…",
-  sh: "Shell running…",
+  typescript: "TypeScript running…",
+  sh: "Waiting for tool calls",
 };
 
 /**
- * What the command runs, for the trace: `python`, `ts` (node, tsx, bun and
+ * What the command runs, for the trace: `python`, `typescript` (node, tsx, bun and
  * deno) or `sh` for anything else. A string command arrives as `sh -c <script>`,
  * so the script's first word is the program.
  */
@@ -386,7 +393,7 @@ export const commandKind = ([
     return "python";
   }
 
-  return tsPrograms.has(name) ? "ts" : "sh";
+  return tsPrograms.has(name) ? "typescript" : "sh";
 };
 
 /**
@@ -401,11 +408,13 @@ export const runCommandWithTools = (
   request: SandboxToolsRequest,
 ): Promise<SandboxOperationResultV1> => {
   const { id, name } = getStepOptions(idOrOptions);
+  const kind = commandKind(operation.input[0].command);
+  const run = () => {
+    return followCommand(host, idOrOptions, operation, request);
+  };
 
-  return withSpan(
-    { id, name, kind: commandKind(operation.input[0].command) },
-    () => {
-      return followCommand(host, idOrOptions, operation, request);
-    },
-  );
+  // A runner's own group of this kind already holds the command's steps.
+  const group = getAsyncCtxSync()?.execution?.span?.at(-1);
+
+  return group?.kind === kind ? run() : withSpan({ id, name, kind }, run);
 };

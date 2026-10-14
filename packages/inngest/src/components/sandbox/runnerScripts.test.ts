@@ -5,7 +5,13 @@
  * tested by what they do rather than by their text.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,7 +33,11 @@ const canRun: Record<RunnerLanguage, boolean> = {
 const dir = mkdtempSync(join(tmpdir(), "runner-scripts-"));
 let count = 0;
 
-const execute = (plan: RunnerPlan, resultPath: string) => {
+const execute = (
+  plan: RunnerPlan,
+  resultPath: string,
+  env: Record<string, string> = {},
+) => {
   if (plan.upload) {
     writeFileSync(plan.upload.path, plan.upload.content);
   }
@@ -35,6 +45,7 @@ const execute = (plan: RunnerPlan, resultPath: string) => {
   const [file, ...args] = plan.command;
   const { status, stdout, stderr } = spawnSync(file as string, args, {
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 
   return {
@@ -236,6 +247,48 @@ test.skipIf(!canRun.typescript)(
     expect(output.wroteResult).toBe(false);
   },
 );
+
+/**
+ * What the engine's wrapper puts on `PYTHONPATH` and `NODE_PATH`, reduced to
+ * a module whose `tools` is a marker.
+ */
+const stubs = join(dir, "stubs");
+mkdirSync(join(stubs, "inngest_tools"), { recursive: true });
+writeFileSync(join(stubs, "inngest_tools.py"), 'tools = "stub"\n');
+writeFileSync(
+  join(stubs, "inngest_tools", "index.js"),
+  'exports.tools = "stub";\n',
+);
+
+describe.each(languages)("%s runner with tools", (language) => {
+  test.skipIf(!canRun[language]).each<{
+    name: string;
+    env: Record<string, string>;
+    result: string | undefined;
+  }>([
+    { name: "is a global", env: { INNGEST_TOOLS_DIR: dir }, result: "stub" },
+    { name: "is not defined without them", env: {}, result: undefined },
+  ])("`tools` $name", ({ env, result }) => {
+    const resultPath = join(dir, `tools-${count++}.json`);
+    const plan = buildRunner({
+      language,
+      code:
+        language === "typescript"
+          ? 'return typeof tools === "undefined" ? undefined : tools'
+          : "return globals().get('tools')",
+      payloadPath: join(dir, "tools-payload.json"),
+      resultPath,
+    });
+    const output = execute(plan, resultPath, {
+      ...env,
+      PYTHONPATH: stubs,
+      NODE_PATH: stubs,
+    });
+
+    expect(output.exitCode).toBe(0);
+    expect(output.result).toBe(result);
+  });
+});
 
 describe("buildRunner", () => {
   test("a small payload rides in the command", () => {

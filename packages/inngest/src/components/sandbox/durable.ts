@@ -490,18 +490,16 @@ const callRawTool = async <
 ): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
-    if (finish) {
-      return (await rawTool(idOrOptions, operation, tools, (result) => {
-        return finish(validateSandboxResult(operation, result));
-      })) as T;
-    }
+    // A plain operation passes nothing more, so the raw tool sees it as one.
+    const result = finish
+      ? await rawTool(idOrOptions, operation, tools, (raw) => {
+          return finish(validateSandboxResult(operation, raw));
+        })
+      : await (tools
+          ? rawTool(idOrOptions, operation, tools)
+          : rawTool(idOrOptions, operation));
 
-    return validateSandboxResult(
-      operation,
-      await (tools
-        ? rawTool(idOrOptions, operation, tools)
-        : rawTool(idOrOptions, operation)),
-    ) as T;
+    return (finish ? result : validateSandboxResult(operation, result)) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
       throw error;
