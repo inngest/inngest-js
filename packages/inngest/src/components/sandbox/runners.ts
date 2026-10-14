@@ -12,6 +12,7 @@ import {
   buildRunner,
   parseRunnerOutput,
   type RunnerLanguage,
+  resultSentinel,
 } from "./runnerScripts.ts";
 import {
   type DurableSandbox,
@@ -65,13 +66,15 @@ const titles: Record<RunnerLanguage, string> = {
  */
 const payloadPath = "/tmp/inngest-runner.json";
 
-const runCode = async (
-  commands: DurableSandbox["commands"],
+/**
+ * The command that runs `code`, refused before any sandbox exists if it
+ * can't be sent.
+ */
+const buildCommand = (
   language: RunnerLanguage,
-  idOrOptions: StepOptionsOrId,
   code: string,
-  { input, ...commandOptions }: RunnerOptions = {},
-): Promise<unknown> => {
+  input: RunnerOptions["input"],
+): string[] => {
   const { command, upload } = buildRunner({
     language,
     code,
@@ -84,7 +87,17 @@ const runCode = async (
     );
   }
 
-  const { stdout, stderr, exitCode } = await commands.run(
+  return command;
+};
+
+const runCommand = async (
+  commands: DurableSandbox["commands"],
+  language: RunnerLanguage,
+  idOrOptions: StepOptionsOrId,
+  command: string[],
+  commandOptions: SandboxCommandOptions,
+): Promise<unknown> => {
+  const { stdout, stderr, exitCode, output } = await commands.run(
     idOrOptions,
     command,
     commandOptions,
@@ -93,6 +106,14 @@ const runCode = async (
     throw new NonRetriableError(
       `${titles[language]} exited with code ${exitCode}:\n${stderr}`,
       { cause: { exitCode, stdout, stderr } },
+    );
+  }
+
+  // The result is printed last and truncation keeps the tail, so a result
+  // that is missing from truncated output was too big to keep.
+  if (output.truncated && !stdout.includes(resultSentinel)) {
+    throw new NonRetriableError(
+      `${titles[language]} result was too large to capture`,
     );
   }
 
@@ -107,18 +128,18 @@ export const createSandboxRunner = (
   commands: () => DurableSandbox["commands"],
   language: RunnerLanguage,
 ): SandboxRunner => {
-  return <T>(
+  return async <T>(
     idOrOptions: StepOptionsOrId,
     code: string,
-    options?: RunnerOptions,
+    { input, ...commandOptions }: RunnerOptions = {},
   ) => {
-    return runCode(
+    return (await runCommand(
       commands(),
       language,
       idOrOptions,
-      code,
-      options,
-    ) as Promise<T>;
+      buildCommand(language, code, input),
+      commandOptions,
+    )) as T;
   };
 };
 
@@ -130,20 +151,25 @@ export const createOneShotRunner = (
   tools: DurableSandboxTools,
   language: RunnerLanguage,
 ): OneShotRunner => {
-  return <T>(id: string, code: string, options: OneShotRunnerOptions = {}) => {
+  return async <T>(
+    id: string,
+    code: string,
+    options: OneShotRunnerOptions = {},
+  ) => {
     const { input, cwd, timeout, ...create } = options;
+    const command = buildCommand(language, code, input);
 
     return withSandbox(
       tools,
       { kind: language, title: titles[language] },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
-        return runCode(
+        return runCommand(
           sandbox.commands,
           language,
           { id: `${id}:run`, name: `Run ${titles[language]}` },
-          code,
-          { input, cwd, timeout },
+          command,
+          { cwd, timeout },
         ) as Promise<T>;
       },
     );

@@ -126,6 +126,13 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
       input: undefined,
       message: `${title} code and input must be under 16 KiB`,
     },
+    {
+      name: "a result too big to capture",
+      output: { stdout: "x".repeat(3_000_000) },
+      code: "return 'x' * 3000000",
+      input: undefined,
+      message: "Python result was too large to capture",
+    },
   ])("rejects $name", async ({ output, code, input, message }) => {
     let error: unknown;
     const { type } = await runWith(output, (client) => {
@@ -199,6 +206,23 @@ describe.each(languages)("step.sandbox.$language", ({ language, title }) => {
         input: [{ vcpu: 1, memoryMb: 2048, environment: { A: "b" } }],
       },
     ]);
+  });
+
+  test("rejects invalid input before creating the sandbox", async () => {
+    const { type, ran, calls } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "invalid", triggers: [{ event: "runner/python" }] },
+        async ({ step }) => {
+          await step.sandbox.python("py", "return d", {
+            input: { d: new Date() },
+          });
+        },
+      );
+    });
+
+    expect(type).toBe("function-rejected");
+    expect(ran).toEqual([]);
+    expect(calls.destroys).toBe(0);
   });
 
   test("destroys the sandbox when the code fails", async () => {
