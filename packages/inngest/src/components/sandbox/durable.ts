@@ -471,13 +471,16 @@ const callRawTool = async <
 ): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
-    const output = await rawTool(
-      idOrOptions,
-      operation,
-      finish && ((result) => finish(validateSandboxResult(operation, result))),
-    );
+    if (finish) {
+      return (await rawTool(idOrOptions, operation, (result) => {
+        return finish(validateSandboxResult(operation, result));
+      })) as T;
+    }
 
-    return (finish ? output : validateSandboxResult(operation, output)) as T;
+    return validateSandboxResult(
+      operation,
+      await rawTool(idOrOptions, operation),
+    ) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
       throw error;

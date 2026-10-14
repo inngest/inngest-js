@@ -4,7 +4,7 @@
  * as one `sandbox` group in the trace.
  */
 
-import type { StepOptionsOrId } from "../../types.ts";
+import type { StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -79,13 +79,19 @@ export const sandboxDefaults = (id: string) => {
 
 /**
  * Run `callback` with a new sandbox inside a span of the given kind, and
- * destroy the sandbox when it ends.
+ * destroy the sandbox when it ends. The span is named for its ID, after `title`
+ * if there is one. `steps` adds options, such as a name, to the create and
+ * destroy steps.
  */
 export const withSandbox = <T>(
   tools: DurableSandboxTools,
-  span: { kind: string; title: string },
+  span: { kind: string; title?: string },
   idOrOptions: GroupSandboxOptionsOrId,
   callback: (sandbox: DurableSandbox) => Promise<T>,
+  steps: {
+    create?: Omit<StepOptions, "id">;
+    destroy?: Omit<StepOptions, "id">;
+  } = {},
 ): Promise<T> => {
   const { id, ...options } =
     typeof idOrOptions === "string"
@@ -93,9 +99,9 @@ export const withSandbox = <T>(
       : idOrOptions;
 
   return withSpan(
-    { id, name: `${span.title} ${id}`, kind: span.kind },
+    { id, name: span.title ? `${span.title} ${id}` : id, kind: span.kind },
     async () => {
-      const sandbox = await tools.create(id, options);
+      const sandbox = await tools.create({ ...steps.create, id }, options);
       let failure: { error: unknown } | undefined;
 
       try {
@@ -106,7 +112,10 @@ export const withSandbox = <T>(
         throw error;
       } finally {
         if (!failure || isFinal(failure.error)) {
-          await sandbox[Symbol.asyncDispose]();
+          await destroyQuietly(sandbox, {
+            ...steps.destroy,
+            id: `${id}:destroy`,
+          });
         }
       }
     },
