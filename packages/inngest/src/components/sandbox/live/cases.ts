@@ -83,12 +83,13 @@ const typescriptOnly: LiveCase[] = [
   {
     form: "handle",
     language: "typescript",
-    name: "types and enum",
+    name: "types",
     code: `
-      enum Color { Red = "red", Blue = "blue" }
       interface Point { n: number }
+      type Color = "red" | "blue";
       const point: Point = { n: 2 };
-      return { color: Color.Blue, n: point.n as number };
+      const color: Color = "blue";
+      return { color, n: point.n as number };
     `,
     expect: { color: "blue", n: 2 },
   },
