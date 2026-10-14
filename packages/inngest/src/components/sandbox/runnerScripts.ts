@@ -86,7 +86,7 @@ const [arg, resultPath] = process.argv.slice(-2);
 const payload = JSON.parse(arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8") : arg);
 
 const names = Object.keys(payload.input);
-const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}", { mode: "transform" });
+const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}");
 const main = new Function(source + "\nreturn __inngest_main;")();
 
 let text = "";

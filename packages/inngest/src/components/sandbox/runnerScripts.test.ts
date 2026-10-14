@@ -221,12 +221,6 @@ test.skipIf(!canRun.ts)("types are stripped from TypeScript", () => {
   expect(output.result).toBe(8);
 });
 
-test.skipIf(!canRun.ts)("TypeScript that needs transforming runs", () => {
-  const output = run("ts", "enum Dir { Up, Down } return Dir.Down");
-
-  expect(output.result).toBe(1);
-});
-
 describe("buildRunner", () => {
   test("a small payload rides in the command", () => {
     const plan = buildRunner({
