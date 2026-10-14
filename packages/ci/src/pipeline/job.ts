@@ -21,6 +21,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
+import { settledSources } from "../github/source.ts";
 import {
   identityOf,
   ownJob,
@@ -231,6 +232,7 @@ export const invokeBuild = async ({
     ...(unnamed ? { unnamed } : {}),
     ...(base ? { base: baseForBuild(base) } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
     rootRunId,
     parent: {

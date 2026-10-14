@@ -16,7 +16,10 @@ import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
-import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type {
+  createGroupTools,
+  GroupTools,
+} from "./components/InngestGroupTools.ts";
 import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
@@ -1027,18 +1030,35 @@ type ApplyMiddlewareCtxExtensionsInternal<
   : {};
 
 /**
- * Extract the step extensions from a middleware class (constructor).
+ * Extract the extensions to `ctx[TKey]` from a middleware class (constructor).
  * Looks at the return type of `transformFunctionInput` and extracts additional
- * properties on `ctx.step` (excluding base `StepTools` properties).
+ * properties on `ctx[TKey]` (excluding the properties of `TBase`).
  */
-type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
+type GetMiddlewareCtxKeyExtensions<
+  T,
+  TKey extends "step" | "group",
+  TBase,
+> = T extends Middleware.Class
   ? InstanceType<T> extends {
       transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
-        ctx: { step: infer TStep };
+        ctx: { [K in TKey]: infer TValue };
       };
     }
-    ? Omit<TStep, keyof Middleware.StepTools>
+    ? Omit<TValue, keyof TBase>
     : {}
+  : {};
+
+/**
+ * Merge the extensions to `ctx[TKey]` of all middleware. When no middleware is
+ * provided, returns an empty object.
+ */
+type ApplyAllMiddlewareCtxKeyExtensions<
+  TMw extends Middleware.Class[] | undefined,
+  TKey extends "step" | "group",
+  TBase,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareCtxKeyExtensions<First, TKey, TBase> &
+      ApplyAllMiddlewareCtxKeyExtensions<Rest, TKey, TBase>
   : {};
 
 /**
@@ -1048,19 +1068,14 @@ type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
  */
 export type ApplyAllMiddlewareStepExtensions<
   TMw extends Middleware.Class[] | undefined,
-> = TMw extends [Middleware.Class, ...Middleware.Class[]]
-  ? ApplyMiddlewareStepExtensionsInternal<TMw>
-  : {};
+> = ApplyAllMiddlewareCtxKeyExtensions<TMw, "step", Middleware.StepTools>;
 
 /**
- * Internal helper that recursively merges middleware step extensions.
+ * Apply all middleware group extensions, like `ApplyAllMiddlewareStepExtensions`.
  */
-type ApplyMiddlewareStepExtensionsInternal<
+export type ApplyAllMiddlewareGroupExtensions<
   TMw extends Middleware.Class[] | undefined,
-> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
-  ? GetMiddlewareStepExtensions<First> &
-      ApplyMiddlewareStepExtensionsInternal<Rest>
-  : {};
+> = ApplyAllMiddlewareCtxKeyExtensions<TMw, "group", GroupTools>;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
