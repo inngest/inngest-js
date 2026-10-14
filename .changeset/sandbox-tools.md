@@ -16,5 +16,5 @@ await sb.commands.run("node agent.js", { tools: { getCustomer } });
 ```js
 // agent.js, inside the sandbox
 const { tools } = require("inngest_tools");
-const customer = await tools.getCustomer("cus_1");
+const customer = await tools.getCustomer({ id: "cus_1" });
 ```
