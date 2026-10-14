@@ -10,6 +10,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { readParsedFile } from "./durable.ts";
 import { sandboxDefaults, withSandbox } from "./group.ts";
 import {
   buildRunner,
@@ -175,7 +176,8 @@ const runPlan = async (
     );
   }
 
-  return sandbox.files.read(
+  return readParsedFile(
+    sandbox,
     generated("Gathering result", "result"),
     plan.resultPath,
     (file) => {
