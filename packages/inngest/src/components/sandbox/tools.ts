@@ -4,7 +4,7 @@
  *
  * A tool is a function in your app. Sandbox code calls it by name, and the
  * call runs here, in your function, as a durable step with your credentials.
- * This module holds the parts that don't touch a sandbox: the `tool()` helper,
+ * This module holds the parts that don't touch a sandbox: the `tool.step()` helper,
  * name validation, and turning a request from the sandbox into a checked call.
  * `toolRunner.ts` moves the requests and replies.
  *
@@ -61,7 +61,7 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * A tool declared with `tool()`.
+ * A tool declared with `tool.step()`.
  */
 export interface SandboxTool {
   readonly input?: StandardSchemaV1;
@@ -70,7 +70,7 @@ export interface SandboxTool {
 }
 
 /**
- * A plain function takes positional JSON arguments. A `tool()` can declare an
+ * A plain function takes positional JSON arguments. A `tool.step()` can declare an
  * `input` schema, which makes the call take named arguments.
  */
 export type SandboxToolEntry = SandboxTool | ((...args: never[]) => unknown);
@@ -144,13 +144,14 @@ export interface ToolDefinition<
 
 /**
  * EXPERIMENTAL: Declares a tool that sandbox code can call.
+ * `tool.step()` runs its body as one durable step.
  *
  * @example
  * ```ts
  * import { tool } from "inngest/experimental";
  * import { z } from "zod";
  *
- * const getCustomer = tool({
+ * const getCustomer = tool.step({
  *   input: z.object({ id: z.string() }),
  *   run: async ({ id }) => {
  *     return db.customers.find(id);
@@ -162,13 +163,15 @@ export interface ToolDefinition<
  * });
  * ```
  */
-export const tool = <
-  TInput extends StandardSchemaV1 | undefined = undefined,
-  TOutput extends StandardSchemaV1 | undefined = undefined,
->(
-  definition: ToolDefinition<TInput, TOutput>,
-): SandboxTool => {
-  return definition as SandboxTool;
+export const tool = {
+  step: <
+    TInput extends StandardSchemaV1 | undefined = undefined,
+    TOutput extends StandardSchemaV1 | undefined = undefined,
+  >(
+    definition: ToolDefinition<TInput, TOutput>,
+  ): SandboxTool => {
+    return definition as SandboxTool;
+  },
 };
 
 const isTool = (entry: SandboxToolEntry): entry is SandboxTool => {

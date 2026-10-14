@@ -1,6 +1,7 @@
 import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
@@ -39,13 +40,13 @@ type SandboxGroupExtension = {
 };
 
 /**
- * Attach `inngest.sandbox` metadata (and an optional warning) to the step
- * that's executing, describing the sandbox action for the trace. Tracing must
- * never fail the step.
+ * Attach metadata to the step that's executing. Tracing must never fail the
+ * step.
  */
-const addSandboxMetadata = (
-  metadata: () => SandboxTraceMetadata,
-  warning?: () => string | undefined,
+const addStepMetadata = (
+  kind: MetadataKind,
+  values: () => Record<string, unknown> | undefined,
+  op: MetadataOpcode = "merge",
 ): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
@@ -54,25 +55,10 @@ const addSandboxMetadata = (
       return;
     }
 
-    execution.instance.addMetadata(
-      stepId,
-      sandboxMetadataKind,
-      "step",
-      "merge",
-      metadata(),
-    );
+    const metadata = values();
 
-    const message = warning?.();
-    if (message) {
-      execution.instance.addMetadata(
-        stepId,
-        "inngest.warnings",
-        "step",
-        "set",
-        {
-          "sdk.sandbox.destroy": message,
-        },
-      );
+    if (metadata) {
+      execution.instance.addMetadata(stepId, kind, "step", op, metadata);
     }
   } catch {
     // An operation that fails validation has nothing to describe.
@@ -83,28 +69,34 @@ const describeStep = (
   operation: unknown,
   outcome: { result: SandboxOperationResultV1 } | { error: unknown },
 ): void => {
-  addSandboxMetadata(
-    () => {
-      return sandboxTraceMetadata(
-        parseSandboxOperation(operation),
-        "result" in outcome
-          ? outcome
-          : { error: getSandboxError(outcome.error) },
-      );
-    },
-    () => {
-      const parsed = parseSandboxOperation(operation);
-      if (!("error" in outcome) || parsed.action !== "destroy") {
-        return;
-      }
+  addStepMetadata(sandboxMetadataKind, () => {
+    return sandboxTraceMetadata(
+      parseSandboxOperation(operation),
+      "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
+    );
+  });
 
-      return `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
-        outcome.error instanceof Error
-          ? outcome.error.message
-          : String(outcome.error)
-      }`;
-    },
-  );
+  if ("error" in outcome) {
+    addStepMetadata(
+      "inngest.warnings",
+      () => {
+        const parsed = parseSandboxOperation(operation);
+
+        if (parsed.action !== "destroy") {
+          return;
+        }
+
+        return {
+          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : String(outcome.error)
+          }`,
+        };
+      },
+      "set",
+    );
+  }
 };
 
 /**
@@ -193,7 +185,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
                 try {
                   const result = await fn();
                   if (meta) {
-                    addSandboxMetadata(() => {
+                    addStepMetadata(sandboxMetadataKind, () => {
                       return meta;
                     });
                   }

@@ -21,7 +21,7 @@
  */
 
 import type { StepOptions, StepOptionsOrId } from "../../types.ts";
-import { getStepOptions } from "../InngestStepTools.ts";
+import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult } from "./durable.ts";
 import type {
@@ -118,7 +118,7 @@ const errorMessage = (error: unknown): string => {
  * Runs `operation` (a `commands.run` call) with `request.tools` available to
  * the code it runs.
  */
-export const runCommandWithTools = async (
+const followCommand = async (
   host: ToolsHost,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<"exec">,
@@ -221,7 +221,11 @@ export const runCommandWithTools = async (
 
     try {
       const body = await host.run(
-        { id: stepId, name: `tool ${call.tool}` },
+        {
+          id: stepId,
+          name: `tool ${call.tool}`,
+          "~span": { id: stepId, name: call.tool, kind: "tool" },
+        },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
           const timedOut = new Promise<never>((_, reject) => {
@@ -338,11 +342,70 @@ export const runCommandWithTools = async (
 
     const { lines } = state;
     state = await host.run(
-      sdkStep(`${id}:wait:${++waits}`, "Wait for tool calls"),
+      sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {
         return follow(started.dir, lines, replies);
       },
       { ...meta, kind: "wait" },
     );
   }
+};
+
+const pythonProgram = /^python[\d.]*$/;
+
+const tsPrograms = new Set(["node", "tsx", "bun", "deno"]);
+
+const shellPrograms = new Set(["sh", "bash", "zsh", "dash"]);
+
+const basename = (path: string): string => {
+  return path.split("/").pop() ?? "";
+};
+
+const runningNames = {
+  python: "Python running…",
+  ts: "TypeScript running…",
+  sh: "Shell running…",
+};
+
+/**
+ * What the command runs, for the trace: `python`, `ts` (node, tsx, bun and
+ * deno) or `sh` for anything else. A string command arrives as `sh -c <script>`,
+ * so the script's first word is the program.
+ */
+export const commandKind = ([
+  program = "",
+  ...rest
+]: string[]): keyof typeof runningNames => {
+  const [word = ""] =
+    shellPrograms.has(basename(program)) && rest[0] === "-c"
+      ? (rest[1] ?? "").trim().split(/\s+/)
+      : [program];
+  const name = basename(word);
+
+  if (pythonProgram.test(name)) {
+    return "python";
+  }
+
+  return tsPrograms.has(name) ? "ts" : "sh";
+};
+
+/**
+ * Runs `operation` (a `commands.run` call) with `request.tools` available to
+ * the code it runs. All its steps share one trace group, kinded by what the
+ * command runs, and each tool call is a `tool` row inside it.
+ */
+export const runCommandWithTools = (
+  host: ToolsHost,
+  idOrOptions: StepOptionsOrId,
+  operation: SandboxOperationForAction<"exec">,
+  request: SandboxToolsRequest,
+): Promise<SandboxOperationResultV1> => {
+  const { id, name } = getStepOptions(idOrOptions);
+
+  return withSpan(
+    { id, name, kind: commandKind(operation.input[0].command) },
+    () => {
+      return followCommand(host, idOrOptions, operation, request);
+    },
+  );
 };

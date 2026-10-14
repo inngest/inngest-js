@@ -5,7 +5,8 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod/v3";
-
+import type { StepOptions } from "../../types.ts";
+import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
 import {
@@ -143,12 +144,22 @@ const createHost = (
 ) => {
   const executed: string[] = [];
   const attempts = new Map<string, number>();
+  const spans = new Map<string, unknown[]>();
+  const names = new Map<string, string | undefined>();
   const host: ToolsHost = {
-    run: async <T>(
-      idOrOptions: string | { id: string },
-      fn: () => Promise<T>,
-    ) => {
+    run: async <T>(idOrOptions: string | StepOptions, fn: () => Promise<T>) => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      names.set(
+        id,
+        typeof idOrOptions === "string" ? undefined : idOrOptions.name,
+      );
+
+      const own =
+        typeof idOrOptions === "string" ? undefined : idOrOptions["~span"];
+      spans.set(id, [
+        ...(getAsyncCtxSync()?.execution?.span ?? []),
+        ...(own ? [own] : []),
+      ]);
       const hit = memo.get(id);
       if (hit !== undefined) {
         return JSON.parse(hit) as T;
@@ -184,15 +195,18 @@ const createHost = (
     runId: "run-1",
   };
 
-  return { host, executed, attempts };
+  return { host, executed, attempts, spans, names };
 };
 
-const operation = (timeoutMs = 300_000) => {
+const operation = (
+  timeoutMs = 300_000,
+  command = ["/bin/sh", "-c", "python3 x.py"],
+) => {
   return parseSandboxOperationForAction("exec", {
     protocolVersion: 1,
     action: "exec",
     target: { sandbox: sandboxRef },
-    input: [{ command: ["/bin/sh", "-c", "python3 x.py"], timeoutMs }],
+    input: [{ command, timeoutMs }],
   });
 };
 
@@ -317,7 +331,7 @@ describe("commands.run with tools", () => {
     {
       name: "named arguments checked against the input schema",
       tools: {
-        getCustomer: tool({
+        getCustomer: tool.step({
           input: z.object({ id: z.string() }),
           run: async ({ id }) => {
             return { id };
@@ -361,7 +375,7 @@ describe("commands.run with tools", () => {
     {
       name: "a result the output schema rejects",
       tools: {
-        count: tool({
+        count: tool.step({
           output: z.object({ n: z.number() }),
           run: async () => {
             return { n: "nope" };
@@ -422,7 +436,10 @@ describe("commands.run with tools", () => {
     });
 
     await run(host, {
-      getCustomer: tool({ input: z.object({ id: z.string() }), run: runTool }),
+      getCustomer: tool.step({
+        input: z.object({ id: z.string() }),
+        run: runTool,
+      }),
     });
 
     expect(runTool).toHaveBeenCalledExactlyOnceWith(
@@ -618,6 +635,83 @@ describe("commands.run with tools", () => {
   });
 });
 
+describe("commands.run with tools trace group", () => {
+  const inExecution = <T>(fn: () => T): T => {
+    return runWithAsyncCtx({ app: {} as never, execution: {} as never }, fn);
+  };
+
+  test.each([
+    {
+      command: ["/bin/sh", "-c", "python3 x.py"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/usr/bin/python3.12", "x.py"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/bin/sh", "-c", "node a.js"],
+      kind: "ts",
+      wait: "TypeScript running…",
+    },
+    {
+      command: ["bun", "run", "x.ts"],
+      kind: "ts",
+      wait: "TypeScript running…",
+    },
+    {
+      command: ["/usr/bin/python3", "-c", "import os"],
+      kind: "python",
+      wait: "Python running…",
+    },
+    {
+      command: ["/bin/sh", "-c", "ls -la"],
+      kind: "sh",
+      wait: "Shell running…",
+    },
+    { command: ["bash", "x.sh"], kind: "sh", wait: "Shell running…" },
+  ])("$command runs in a $kind group", async ({ command, kind, wait }) => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans, names } = createHost(sandbox);
+
+    await inExecution(() => {
+      return runCommandWithTools(
+        host,
+        { id: "exec", name: "Analyse" },
+        operation(300_000, command),
+        {
+          tools: { getCustomer: async () => ({ id: "cus_1" }) },
+          toolOptions: { waitWindow: 5 },
+        },
+      );
+    });
+
+    expect(spans.get("exec")).toEqual([{ id: "exec", name: "Analyse", kind }]);
+    expect(names.get("exec:wait:1")).toBe(wait);
+  });
+
+  test("tool calls are tool rows in the group, and waits stay in the group", async () => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return run(host, { getCustomer: async () => ({ id: "cus_1" }) });
+    });
+
+    const group = { id: "exec", name: "exec", kind: "python" };
+    expect(Object.fromEntries(spans)).toEqual({
+      exec: [group],
+      "exec:tool:getCustomer:1": [
+        group,
+        { id: "exec:tool:getCustomer:1", name: "getCustomer", kind: "tool" },
+      ],
+      "exec:wait:1": [group],
+    });
+  });
+});
+
 describe("durable commands.run routing", () => {
   const execResult = {
     protocolVersion: 1,
@@ -639,14 +733,21 @@ describe("durable commands.run routing", () => {
       tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
     },
   ])("$name it is one raw tool call", async ({ options, tools }) => {
+    let span: unknown;
     const rawTool: SandboxRawTool = vi.fn(async () => {
+      span = getAsyncCtxSync()?.execution?.span;
+
       return execResult;
     });
     const sandbox = createDurableSandboxFacade(sandboxRef, () => {
       return rawTool;
     });
 
-    await sandbox.commands.run("exec", "true", options);
+    await runWithAsyncCtx({ app: {} as never, execution: {} as never }, () => {
+      return sandbox.commands.run("exec", "true", options);
+    });
+
+    expect(span).toBeUndefined();
 
     expect(rawTool).toHaveBeenCalledExactlyOnceWith(
       "exec",
