@@ -30,7 +30,7 @@ export type GroupSandbox = <T>(
 const retriesRemain = (): boolean => {
   const ctx = getAsyncCtxSync()?.execution?.ctx;
 
-  return ctx?.maxAttempts !== undefined && ctx.attempt < ctx.maxAttempts - 1;
+  return !ctx?.maxAttempts || ctx.attempt < ctx.maxAttempts - 1;
 };
 
 /**

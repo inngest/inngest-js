@@ -4,7 +4,7 @@
  */
 
 import { NonRetriableError } from "../NonRetriableError.ts";
-import { createScopeClient, runToEnd } from "./test-helpers.ts";
+import { createScopeClient, runToEnd, sandboxId } from "./test-helpers.ts";
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
@@ -84,29 +84,39 @@ describe("group.sandbox", () => {
     {
       name: "an unknown error with retries remaining",
       attempt: 0,
+      maxAttempts: 5 as number | undefined,
+      fail: () => Promise.reject(new Error("boom")),
+      destroys: 0,
+    },
+    {
+      name: "an unknown error with no attempt limit",
+      attempt: 0,
+      maxAttempts: undefined,
       fail: () => Promise.reject(new Error("boom")),
       destroys: 0,
     },
     {
       name: "an unknown error on the last attempt",
       attempt: 4,
+      maxAttempts: 5,
       fail: () => Promise.reject(new Error("boom")),
       destroys: 1,
     },
     {
       name: "a non-retriable error",
       attempt: 0,
+      maxAttempts: 5,
       fail: () => Promise.reject(new NonRetriableError("boom")),
       destroys: 1,
     },
   ])(
     "on $name, destroys $destroys time",
-    async ({ attempt, fail, destroys }) => {
+    async ({ attempt, maxAttempts, fail, destroys }) => {
       const { client, calls } = createScopeClient();
 
       const { type } = await runToEnd(buildFailing(client, fail), {
         attempt,
-        maxAttempts: 5,
+        maxAttempts,
       });
 
       expect(type).toBe("function-rejected");
@@ -131,5 +141,54 @@ describe("group.sandbox", () => {
 
     expect(ran).toEqual(["box", "fail", "box:destroy"]);
     expect(calls.destroys).toBe(1);
+  });
+
+  test.each([
+    {
+      name: "returns the callback's result",
+      callback: async () => {
+        return "result";
+      },
+      type: "function-resolved",
+    },
+    {
+      name: "rethrows the callback's error",
+      callback: async () => {
+        throw new NonRetriableError("boom");
+      },
+      type: "function-rejected",
+    },
+  ])("$name when the destroy fails permanently", async ({ callback, type }) => {
+    const { client } = createScopeClient(() => {
+      return Response.json(
+        { errors: [{ code: "forbidden", message: "no access" }] },
+        { status: 403 },
+      );
+    });
+    const fn = client.createFunction(
+      { id: "group-undestroyable", triggers: [{ event: "group/sandbox" }] },
+      async ({ group }) => {
+        return group.sandbox("box", callback);
+      },
+    );
+
+    const result = await runToEnd(fn, { attempt: 0, maxAttempts: 5 });
+    const destroy = result.steps.find((step) => {
+      return step.userland?.id === "box:destroy";
+    });
+
+    expect(result.type).toBe(type);
+    expect(destroy?.metadata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "inngest.warnings",
+          values: {
+            "sdk.sandbox.destroy": expect.stringContaining(
+              `Sandbox ${sandboxId} couldn't be destroyed: `,
+            ),
+          },
+        }),
+      ]),
+    );
   });
 });

@@ -1,5 +1,6 @@
 import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
+import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -8,6 +9,7 @@ import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
   getSandboxError,
+  operationSandboxId,
   parseSandboxOperation,
   type SandboxOperationResultV1,
   type SandboxRawTool,
@@ -34,10 +36,14 @@ type SandboxGroupExtension = {
 };
 
 /**
- * Attach `inngest.sandbox` metadata to the step that's executing, describing
- * the sandbox action for the trace. Tracing must never fail the step.
+ * Attach metadata to the step that's executing. Tracing must never fail the
+ * step.
  */
-const addSandboxMetadata = (metadata: () => SandboxTraceMetadata): void => {
+const addStepMetadata = (
+  kind: MetadataKind,
+  values: () => Record<string, unknown> | undefined,
+  op: MetadataOpcode = "merge",
+): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
     const stepId = execution?.executingStep?.id;
@@ -45,13 +51,11 @@ const addSandboxMetadata = (metadata: () => SandboxTraceMetadata): void => {
       return;
     }
 
-    execution.instance.addMetadata(
-      stepId,
-      sandboxMetadataKind,
-      "step",
-      "merge",
-      metadata(),
-    );
+    const metadata = values();
+
+    if (metadata) {
+      execution.instance.addMetadata(stepId, kind, "step", op, metadata);
+    }
   } catch {
     // An operation that fails validation has nothing to describe.
   }
@@ -61,12 +65,34 @@ const describeStep = (
   operation: unknown,
   outcome: { result: SandboxOperationResultV1 } | { error: unknown },
 ): void => {
-  addSandboxMetadata(() => {
+  addStepMetadata(sandboxMetadataKind, () => {
     return sandboxTraceMetadata(
       parseSandboxOperation(operation),
       "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
     );
   });
+
+  if ("error" in outcome) {
+    addStepMetadata(
+      "inngest.warnings",
+      () => {
+        const parsed = parseSandboxOperation(operation);
+
+        if (parsed.action !== "destroy") {
+          return;
+        }
+
+        return {
+          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : String(outcome.error)
+          }`,
+        };
+      },
+      "set",
+    );
+  }
 };
 
 /**
@@ -155,7 +181,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
                 try {
                   const result = await fn();
                   if (meta) {
-                    addSandboxMetadata(() => {
+                    addStepMetadata(sandboxMetadataKind, () => {
                       return meta;
                     });
                   }
