@@ -11,7 +11,7 @@ import { serve } from "../../../node.ts";
 import { Inngest } from "../../Inngest.ts";
 import { sandboxMiddleware } from "../middleware.ts";
 import type { DurableSandbox } from "../types.ts";
-import { caseId, cases, type LiveCase } from "./cases.ts";
+import { caseId, cases, type LiveCase, liveTools } from "./cases.ts";
 
 const inngest = new Inngest({
   id: "sandbox-runners-live",
@@ -83,6 +83,24 @@ const roundTrip = async (
   return undefined;
 };
 
+/**
+ * Run the case's code with its language's interpreter, and return the stdout.
+ */
+const runCommand = async (
+  handle: DurableSandbox,
+  id: string,
+  { language, code }: LiveCase,
+  { tools, toolOptions }: { tools?: typeof liveTools; toolOptions?: object },
+): Promise<string> => {
+  const flag = language === "python" ? ["python3", "-c"] : ["node", "-e"];
+  const { stdout } = await handle.commands.run(id, [...flag, code], {
+    tools,
+    toolOptions,
+  });
+
+  return stdout.trim();
+};
+
 const live = inngest.createFunction(
   {
     id: "run-live-cases",
@@ -107,7 +125,7 @@ const live = inngest.createFunction(
     };
 
     const needsHandle = selected.some((c) => {
-      return c.form === "handle";
+      return c.form !== "oneshot";
     });
     const handle = needsHandle
       ? await step.sandbox.create("shared", {
@@ -121,17 +139,20 @@ const live = inngest.createFunction(
       const options = {
         input: c.input,
         ...(c.schema && { schema: { output: c.schema } }),
+        ...(c.tools && {
+          tools: liveTools,
+          toolOptions: c.tools === true ? {} : c.tools,
+        }),
       };
       const id = caseId(c);
       const runner = c.form === "handle" ? handle?.[c.language] : undefined;
 
       let outcome: { value: unknown } | { error: string };
       try {
-        const value = await (runner ?? step.sandbox[c.language])(
-          id,
-          c.code,
-          options,
-        );
+        const value =
+          c.form === "command"
+            ? await runCommand(handle as DurableSandbox, id, c, options)
+            : await (runner ?? step.sandbox[c.language])(id, c.code, options);
         outcome = {
           value: c.measure === "length" ? (value as string).length : value,
         };
