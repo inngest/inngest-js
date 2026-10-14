@@ -25,8 +25,8 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import type { BaseImage } from "../image.ts";
 import { settledSources } from "../github/source.ts";
+import type { BaseImage } from "../image.ts";
 import {
   ancestry,
   buildsInRun,

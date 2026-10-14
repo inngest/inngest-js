@@ -26,8 +26,8 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import type { SandboxToolsRequest } from "./tools.ts";
 import { createSandboxRunner } from "./runners.ts";
+import type { SandboxToolsRequest } from "./tools.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
