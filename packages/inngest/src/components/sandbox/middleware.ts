@@ -3,8 +3,10 @@ import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
+import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
   getSandboxError,
+  operationSandboxId,
   parseSandboxOperation,
   type SandboxOperationResultV1,
   type SandboxRawTool,
@@ -19,6 +21,10 @@ import {
 
 type SandboxStepExtension = {
   sandbox: DurableSandboxTools;
+};
+
+type SandboxGroupExtension = {
+  sandbox: GroupSandbox;
 };
 
 /**
@@ -36,18 +42,36 @@ const describeStep = (
       return;
     }
 
+    const parsed = parseSandboxOperation(operation);
+
     execution.instance.addMetadata(
       stepId,
       sandboxMetadataKind,
       "step",
       "merge",
       sandboxTraceMetadata(
-        parseSandboxOperation(operation),
+        parsed,
         "result" in outcome
           ? outcome
           : { error: getSandboxError(outcome.error) },
       ),
     );
+
+    if ("error" in outcome && parsed.action === "destroy") {
+      execution.instance.addMetadata(
+        stepId,
+        "inngest.warnings",
+        "step",
+        "set",
+        {
+          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : String(outcome.error)
+          }`,
+        },
+      );
+    }
   } catch {
     // An operation that fails validation has nothing to describe.
   }
@@ -122,6 +146,8 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     ctx: Middleware.TransformFunctionInputArgs["ctx"] & {
       step: Middleware.TransformFunctionInputArgs["ctx"]["step"] &
         SandboxStepExtension;
+      group: Middleware.TransformFunctionInputArgs["ctx"]["group"] &
+        SandboxGroupExtension;
     };
   } {
     const rawTool: SandboxRawTool = (idOrOptions, operation) =>
@@ -131,14 +157,14 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         operation,
       );
 
+    const sandbox = createSandboxTools(() => rawTool);
+
     return {
       ...arg,
       ctx: {
         ...arg.ctx,
-        step: {
-          ...arg.ctx.step,
-          sandbox: createSandboxTools(() => rawTool),
-        },
+        step: { ...arg.ctx.step, sandbox },
+        group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };
   }
