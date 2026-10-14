@@ -93,6 +93,14 @@ const typescriptOnly: LiveCase[] = [
     `,
     expect: { color: "blue", n: 2 },
   },
+  {
+    form: "handle",
+    language: "typescript",
+    name: "enum gives a clear error",
+    code: "enum Color { Red }\nreturn Color.Red",
+    expect:
+      /exited with code 1[\s\S]*parameter properties need full TypeScript/,
+  },
 ];
 
 const forLanguage = (language: RunnerLanguage): LiveCase[] => {
