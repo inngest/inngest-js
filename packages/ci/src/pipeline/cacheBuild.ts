@@ -18,6 +18,7 @@ import type { Inngest, InngestFunction } from "inngest";
 import { NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type {
   CheckAnnotation,
   MachineConfig,
@@ -80,6 +81,8 @@ export interface CacheBuildData extends Record<string, unknown> {
   base?: CacheBuildResult;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
+  /** The commits the invoking run resolved for other repositories, by source key. */
+  sources?: Record<string, ResolvedSource>;
   /** The invoking run's machine settings, for jobs that set none of their own. */
   machine?: MachineConfig;
   /**
