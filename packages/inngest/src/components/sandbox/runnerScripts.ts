@@ -8,13 +8,12 @@
  *
  * - Small payloads ride in the command itself. Large ones are uploaded to a
  *   file first, and the command reads that.
- * - The wrapper prints the JSON of the returned value behind a sentinel as
- *   the last thing on stdout once the process exits cleanly, and
- *   `parseRunnerOutput` splits it back off, so anything the snippet prints
- *   stays in `stdout`, even output scheduled after it returned.
+ * - The wrapper writes the JSON of the returned value to a result file once
+ *   the process exits cleanly, and `parseRunnerResult` reads it back, so
+ *   stdout and stderr stay pure logs, however large the result is.
  *
- * Everything here is pure: running the command and uploading the file is the
- * caller's job.
+ * Everything here is pure: running the command, uploading the payload and
+ * downloading the result is the caller's job.
  */
 import { SandboxValidationError } from "./types.ts";
 
@@ -39,6 +38,11 @@ export interface Runner {
    * Where a payload too large for the command is uploaded. Only used then.
    */
   payloadPath: string;
+
+  /**
+   * Where the wrapper writes the result. It is empty when there is none.
+   */
+  resultPath: string;
 }
 
 export interface RunnerPlan {
@@ -58,11 +62,9 @@ export interface RunnerPlan {
  */
 const maxInlinePayloadBytes = 16 * 1024;
 
-export const resultSentinel = "__INNGEST_RESULT__";
-
 const pythonWrapper = String.raw`import ast, asyncio, json, sys
 
-arg = sys.argv[1]
+arg, result_path = sys.argv[1], sys.argv[2]
 payload = json.load(open(arg[1:])) if arg.startswith("@") else json.loads(arg)
 
 wrapped = ast.parse("async def __inngest_main(): pass")
@@ -74,41 +76,45 @@ exec(compile(wrapped, "<code>", "exec"), scope)
 
 result = asyncio.run(scope["__inngest_main"]())
 text = "" if result is None else json.dumps(result, allow_nan=False)
-sys.stdout.write("\n${resultSentinel}" + text + "\n")
+open(result_path, "w").write(text)
 `;
 
 const tsWrapper = String.raw`const fs = require("node:fs");
 const { stripTypeScriptTypes } = require("node:module");
 
-const arg = process.argv.at(-1);
+const [arg, resultPath] = process.argv.slice(-2);
 const payload = JSON.parse(arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8") : arg);
 
 const names = Object.keys(payload.input);
 const source = stripTypeScriptTypes("async function __inngest_main(" + names + ") {" + payload.code + "\n}", { mode: "transform" });
 const main = new Function(source + "\nreturn __inngest_main;")();
 
-let frame = "";
+let text = "";
 process.on("exit", (code) => {
-  if (code === 0) process.stdout.write(frame);
+  if (code === 0) fs.writeFileSync(resultPath, text);
 });
 
 main(...Object.values(payload.input)).then((result) => {
-  frame = "\n${resultSentinel}" + (JSON.stringify(result) ?? "") + "\n";
+  text = JSON.stringify(result) ?? "";
 });
 `;
 
-const commands: Record<RunnerLanguage, (payload: string) => string[]> = {
-  ts: (payload) => {
+const commands: Record<
+  RunnerLanguage,
+  (payload: string, resultPath: string) => string[]
+> = {
+  ts: (payload, resultPath) => {
     return [
       "node",
       "--disable-warning=ExperimentalWarning",
       "-e",
       tsWrapper,
       payload,
+      resultPath,
     ];
   },
-  python: (payload) => {
-    return ["python3", "-c", pythonWrapper, payload];
+  python: (payload, resultPath) => {
+    return ["python3", "-c", pythonWrapper, payload, resultPath];
   },
 };
 
@@ -212,39 +218,25 @@ export const buildRunner = ({
   code,
   input = {},
   payloadPath,
+  resultPath,
 }: Runner): RunnerPlan => {
   assertInput(language, input);
 
   const payload = JSON.stringify({ code, input });
   if (new TextEncoder().encode(payload).byteLength <= maxInlinePayloadBytes) {
-    return { command: commands[language](payload) };
+    return { command: commands[language](payload, resultPath) };
   }
 
   return {
-    command: commands[language](`@${payloadPath}`),
+    command: commands[language](`@${payloadPath}`, resultPath),
     upload: { path: payloadPath, content: payload },
   };
 };
 
 /**
- * Splits a runner's stdout into what the snippet printed and what it
- * returned. `result` is undefined when it returned nothing or the command
- * failed, whatever it printed.
+ * The value a runner's result file holds: undefined when the snippet returned
+ * nothing.
  */
-export const parseRunnerOutput = (
-  stdout: string,
-  exitCode: number | null,
-): { stdout: string; result?: unknown } => {
-  const marker = `\n${resultSentinel}`;
-  const index = stdout.lastIndexOf(marker);
-  if (exitCode !== 0 || index === -1) {
-    return { stdout };
-  }
-
-  const json = stdout.slice(index + marker.length).trim();
-
-  return {
-    stdout: stdout.slice(0, index),
-    result: json === "" ? undefined : JSON.parse(json),
-  };
+export const parseRunnerResult = (text: string): unknown => {
+  return text === "" ? undefined : JSON.parse(text);
 };
