@@ -180,6 +180,7 @@ const forLanguage = (language: RunnerLanguage): LiveCase[] => {
   const handle = { form: "handle", language } as const;
   const oneshot = { form: "oneshot", language } as const;
   const command = { form: "command", language } as const;
+  const prefix = language === "python" ? "" : "ToolError: ";
 
   return [
     {
@@ -286,7 +287,7 @@ const forLanguage = (language: RunnerLanguage): LiveCase[] => {
       name: "tools: tool.step rejects a bad input",
       code: code.badNamed,
       tools: true,
-      expect: /Invalid arguments for getCustomer/,
+      expect: `${prefix}Invalid arguments for getCustomer: id: Expected string, received number`,
     },
     {
       ...handle,
@@ -300,7 +301,7 @@ const forLanguage = (language: RunnerLanguage): LiveCase[] => {
       name: "tools: a tool that throws is a ToolError",
       code: code.toolThrows,
       tools: true,
-      expect: /tool exploded/,
+      expect: `${prefix}tool exploded`,
     },
     {
       ...handle,
