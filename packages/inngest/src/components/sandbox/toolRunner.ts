@@ -23,7 +23,7 @@
 import type { StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import { execOperationResult, sdkOrigin } from "./durable.ts";
+import { execOperationResult } from "./durable.ts";
 import type {
   SandboxOperationForAction,
   SandboxOperationResultV1,
@@ -38,7 +38,11 @@ import {
   type ToolRequest,
   validateTools,
 } from "./tools.ts";
-import { type SandboxTraceMetadata, sandboxTraceMetadata } from "./trace.ts";
+import {
+  type SandboxTraceMetadata,
+  sandboxTraceMetadata,
+  sdkOrigin,
+} from "./trace.ts";
 import { type Sandbox, SandboxValidationError } from "./types.ts";
 import {
   decodeBase64,

@@ -655,7 +655,8 @@ describe("durable commands.run routing", () => {
           expect.objectContaining({ timeoutMs: tools ? 300_000 : 30_000 }),
         ],
       }),
-      ...(tools ? [tools] : []),
+      tools,
+      undefined,
     );
   });
 });

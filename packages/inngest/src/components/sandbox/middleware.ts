@@ -5,12 +5,15 @@ import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
+import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
   getSandboxError,
+  operationSandboxId,
   parseSandboxOperation,
   type SandboxOperationResultV1,
   type SandboxRawTool,
 } from "./protocol.ts";
+import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
 import { runCommandWithTools } from "./toolRunner.ts";
 import {
   type SandboxTraceMetadata,
@@ -25,14 +28,25 @@ import {
 } from "./types.ts";
 
 type SandboxStepExtension = {
-  sandbox: DurableSandboxTools;
+  sandbox: DurableSandboxTools & {
+    python: OneShotRunner;
+    typescript: OneShotRunner;
+  };
+};
+
+type SandboxGroupExtension = {
+  sandbox: GroupSandbox;
 };
 
 /**
- * Attach `inngest.sandbox` metadata to the step that's executing, describing
- * the sandbox action for the trace. Tracing must never fail the step.
+ * Attach `inngest.sandbox` metadata (and an optional warning) to the step
+ * that's executing, describing the sandbox action for the trace. Tracing must
+ * never fail the step.
  */
-const addSandboxMetadata = (metadata: () => SandboxTraceMetadata): void => {
+const addSandboxMetadata = (
+  metadata: () => SandboxTraceMetadata,
+  warning?: () => string | undefined,
+): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
     const stepId = execution?.executingStep?.id;
@@ -47,6 +61,19 @@ const addSandboxMetadata = (metadata: () => SandboxTraceMetadata): void => {
       "merge",
       metadata(),
     );
+
+    const message = warning?.();
+    if (message) {
+      execution.instance.addMetadata(
+        stepId,
+        "inngest.warnings",
+        "step",
+        "set",
+        {
+          "sdk.sandbox.destroy": message,
+        },
+      );
+    }
   } catch {
     // An operation that fails validation has nothing to describe.
   }
@@ -56,12 +83,28 @@ const describeStep = (
   operation: unknown,
   outcome: { result: SandboxOperationResultV1 } | { error: unknown },
 ): void => {
-  addSandboxMetadata(() => {
-    return sandboxTraceMetadata(
-      parseSandboxOperation(operation),
-      "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
-    );
-  });
+  addSandboxMetadata(
+    () => {
+      return sandboxTraceMetadata(
+        parseSandboxOperation(operation),
+        "result" in outcome
+          ? outcome
+          : { error: getSandboxError(outcome.error) },
+      );
+    },
+    () => {
+      const parsed = parseSandboxOperation(operation);
+      if (!("error" in outcome) || parsed.action !== "destroy") {
+        return;
+      }
+
+      return `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+        outcome.error instanceof Error
+          ? outcome.error.message
+          : String(outcome.error)
+      }`;
+    },
+  );
 };
 
 /**
@@ -132,10 +175,12 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     ctx: Middleware.TransformFunctionInputArgs["ctx"] & {
       step: Middleware.TransformFunctionInputArgs["ctx"]["step"] &
         SandboxStepExtension;
+      group: Middleware.TransformFunctionInputArgs["ctx"]["group"] &
+        SandboxGroupExtension;
     };
   } {
     const { step, runId } = arg.ctx;
-    const rawTool: SandboxRawTool = (idOrOptions, operation, tools) => {
+    const rawTool: SandboxRawTool = (idOrOptions, operation, tools, finish) => {
       if (tools && operation.action === "exec") {
         return runCommandWithTools(
           {
@@ -173,10 +218,16 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 
       return step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
+        async (input) => {
+          const result = await executeAsStep(this.client, input);
+
+          return finish ? finish(result) : result;
+        },
         operation,
       );
     };
+
+    const sandbox = createSandboxTools(() => rawTool);
 
     return {
       ...arg,
@@ -184,8 +235,13 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         ...arg.ctx,
         step: {
           ...arg.ctx.step,
-          sandbox: createSandboxTools(() => rawTool),
+          sandbox: {
+            ...sandbox,
+            python: createOneShotRunner(sandbox, "python"),
+            typescript: createOneShotRunner(sandbox, "typescript"),
+          },
         },
+        group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };
   }

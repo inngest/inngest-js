@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxRunner } from "./runners.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
@@ -565,6 +566,28 @@ export interface DurableSandbox {
       options?: SandboxCommandOptions & SandboxToolsOptions,
     ): Promise<SandboxCommandResult>;
   };
+  /**
+   * Files move through memoized steps, so each is limited by what a step can
+   * return (about 2 MiB).
+   */
+  readonly files: {
+    write(
+      idOrOptions: StepOptionsOrId,
+      options: { path: string; data: string | Uint8Array },
+    ): Promise<void>;
+    read(idOrOptions: StepOptionsOrId, path: string): Promise<Uint8Array>;
+    /**
+     * Read a file and turn its bytes into the step's output, so the output
+     * is `parse`'s JSON-safe return value and not the file.
+     */
+    read<T>(
+      idOrOptions: StepOptionsOrId,
+      path: string,
+      parse: (bytes: Uint8Array) => T | Promise<T>,
+    ): Promise<T>;
+  };
+  readonly python: SandboxRunner;
+  readonly typescript: SandboxRunner;
   readonly processes: {
     start(
       idOrOptions: StepOptionsOrId,
@@ -661,10 +684,16 @@ export interface DurableSandboxProcess {
 }
 
 export interface DurableSandboxTools {
+  /**
+   * Create a sandbox. With `await using`, the sandbox is destroyed when the
+   * scope ends, in a memoized `<id>:destroy` step.
+   *
+   * Disposing can't see why the scope ended, so it also destroys before a retry.
+   */
   create(
     idOrOptions: StepOptionsOrId,
     options: SandboxCreateOptions,
-  ): Promise<DurableSandbox>;
+  ): Promise<DurableSandbox & AsyncDisposable>;
   list(
     idOrOptions: StepOptionsOrId,
     options?: SandboxListOptions,

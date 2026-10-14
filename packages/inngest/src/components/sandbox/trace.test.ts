@@ -1,27 +1,11 @@
-import { runSteps, testClientId } from "../../test/helpers.ts";
+import { runSteps } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { version } from "../../version.ts";
-import { Inngest } from "../Inngest.ts";
-import { sandboxMiddleware } from "./middleware.ts";
 import { parseSandboxOperation } from "./protocol.ts";
+import { createClient, now, sandboxId, sandboxRef } from "./test-helpers.ts";
 import { sandboxTraceMetadata } from "./trace.ts";
 
-const sandboxId = "22222222-2222-4222-8222-222222222222";
 const snapshotId = "44444444-4444-4444-8444-444444444444";
-const now = "2026-07-28T00:00:00Z";
-
-const sandboxRef = {
-  kind: "inngest/sandbox" as const,
-  version: 1 as const,
-  id: sandboxId,
-  name: "ci-box",
-  status: "RUNNING" as const,
-  vpcId: "11111111-1111-4111-8111-111111111111",
-  imageRef: "default",
-  resources: { vcpu: 2, memoryMb: 2048 },
-  createdAt: now,
-  startedAt: now,
-};
 
 const snapshotResource = {
   id: snapshotId,
@@ -36,41 +20,6 @@ const snapshotResource = {
   createdAt: now,
   updatedAt: now,
   expiresAt: "2026-08-04T00:00:00Z",
-};
-
-/**
- * A client whose sandbox API returns `sandboxRef` for a `get`, answers other
- * paths with `route`, and 404s the rest.
- */
-const createClient = (route: (path: string) => Response | undefined) => {
-  const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-
-  return new Inngest({
-    id: testClientId,
-    signingKey: "signkey-test",
-    baseUrl: "https://api.example.test",
-    fetch: async (input, init) => {
-      const { pathname } = new URL(
-        input instanceof Request ? input.url : input,
-      );
-
-      if (
-        pathname === `/v2/sandboxes/${sandboxId}` &&
-        (init?.method ?? "GET") === "GET"
-      ) {
-        return Response.json({ data: sandboxResource });
-      }
-
-      return (
-        route(pathname) ??
-        Response.json(
-          { errors: [{ code: "missing", message: "missing" }] },
-          { status: 404 },
-        )
-      );
-    },
-    middleware: [sandboxMiddleware()],
-  });
 };
 
 /**
@@ -297,13 +246,55 @@ describe("step.sandbox trace metadata", () => {
 
     for (const step of [snapshot, wait]) {
       expect(step?.opts?.span).toStrictEqual([
-        { id: "snap", name: "Snapshot" },
+        { id: "snap", name: "Snapshot", kind: "snapshot" },
       ]);
       expect(step?.opts?.origin).toBe(`inngest@${version}`);
     }
 
     expect(snapshot?.displayName).toBe("Create snapshot");
     expect(wait?.displayName).toBe("Wait for snapshot");
+  });
+
+  describe("snapshot span", () => {
+    const snapshotRoutes = (path: string) => {
+      if (path === `/v2/sandboxes/${sandboxId}/snapshots`) {
+        return Response.json(
+          { data: { ...snapshotResource, status: "CREATING" } },
+          { status: 202 },
+        );
+      }
+
+      if (path === `/v2/snapshots/${snapshotId}`) {
+        return Response.json({ data: snapshotResource });
+      }
+
+      return undefined;
+    };
+
+    test("uses the caller's span instead of opening a second group", async () => {
+      const client = createClient(snapshotRoutes);
+      const span = { id: "save", name: "Save", kind: "snapshot" };
+
+      const fn = client.createFunction(
+        { id: "sandbox-caller-span", triggers: [{ event: "sandbox/trace" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.get("get-box", sandboxId);
+
+          if (!sandbox) {
+            throw new Error("Expected sandbox");
+          }
+
+          return (await sandbox.snapshot({ id: "snap", "~span": span })).id;
+        },
+      );
+
+      const [, create, wait] = await runSteps(fn, 3);
+
+      for (const step of [create, wait]) {
+        expect(step?.opts?.span).toStrictEqual([span]);
+        expect(step?.opts?.origin).toBe(`inngest@${version}`);
+      }
+    });
   });
 
   test("emits one full entry per step attempt", async () => {

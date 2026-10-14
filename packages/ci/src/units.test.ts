@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { cacheScopes, lookupCache, snapshotName } from "./cache/cache.ts";
+import { cacheScopes, lookupCache } from "./cache/cache.ts";
+import { formatName } from "./cache/names.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -684,7 +685,12 @@ describe("formatting", () => {
 });
 
 describe("looking a cached snapshot up by name", () => {
-  const name = snapshotName("global", "setup", "k1");
+  const name = formatName({
+    kind: "cache",
+    scope: "global",
+    jobId: "setup",
+    ownKey: "k1",
+  });
 
   // One moment for every fixture, so two snapshots built apart still match.
   const now = Date.now();
@@ -710,6 +716,7 @@ describe("looking a cached snapshot up by name", () => {
     get: () => Promise<unknown> = async () => {
       return null;
     },
+    exclude?: string,
   ) => {
     const scope = {
       path: "setup",
@@ -728,6 +735,7 @@ describe("looking a cached snapshot up by name", () => {
       scope,
       { key: "v1", scope: "global" },
       { ownKey: "k1", name },
+      exclude,
     );
   };
 
@@ -793,16 +801,39 @@ describe("looking a cached snapshot up by name", () => {
       createdAt: snapshot({}).createdAt,
     });
   });
+
+  test("a snapshot found to be bad is never found again", async () => {
+    expect(await lookup(listing(snapshot({})), undefined, "s1")).toBe(
+      undefined,
+    );
+  });
 });
 
 describe("snapshot names", () => {
   test("say what they are for", () => {
-    expect(snapshotName("pr:4", "setup", "abc")).toBe("ci/pr:4/setup/abc");
+    expect(
+      formatName({
+        kind: "cache",
+        scope: "pr:4",
+        jobId: "setup",
+        ownKey: "abc",
+      }),
+    ).toBe("ci/pr:4/setup/abc");
   });
 
   test("too long a name keeps its start and stays unique", () => {
-    const long = snapshotName("main", "j".repeat(300), "abc");
-    const other = snapshotName("main", "j".repeat(300), "abd");
+    const long = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abc",
+    });
+    const other = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abd",
+    });
 
     expect(long).toHaveLength(255);
     expect(long.startsWith("ci/main/jjj")).toBe(true);

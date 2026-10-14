@@ -4,6 +4,11 @@ export {
   createSandboxTools,
   executeSandboxOperation,
 } from "./sandbox/durable.ts";
+export type {
+  GroupSandbox,
+  GroupSandboxOptions,
+  GroupSandboxOptionsOrId,
+} from "./sandbox/group.ts";
 export {
   SandboxMiddleware,
   sandboxMiddleware,
@@ -24,6 +29,12 @@ export {
   sandboxOperationSchema,
   validateSandboxResult,
 } from "./sandbox/protocol.ts";
+export type {
+  OneShotRunner,
+  OneShotRunnerOptions,
+  RunnerOptions,
+  SandboxRunner,
+} from "./sandbox/runners.ts";
 export type {
   DurableSandbox,
   DurableSandboxProcess,
