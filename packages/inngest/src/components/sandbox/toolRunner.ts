@@ -184,9 +184,10 @@ const followCommand = async (
 
   const [{ command, environment, cwd, timeoutMs }] = operation.input;
   const { sandbox } = host;
-  const dir = `${toolsRoot}/${sha256()
-    .update(`${host.runId ?? ""}:${id}`)
-    .digest("hex")}`;
+  // Concurrent callers of a group tool share step IDs, so their prefix tells
+  // them apart
+  const scope = `${host.runId ?? ""}:${getAsyncCtxSync()?.execution?.stepIdPrefix ?? ""}`;
+  const dir = `${toolsRoot}/${sha256().update(`${scope}${id}`).digest("hex")}`;
   const meta = sandboxTraceMetadata(operation, { error: undefined });
 
   const sdkStep = (stepId: string, name: string): StepOptions => {
@@ -281,19 +282,22 @@ const followCommand = async (
     }
 
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
-    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
+    const idempotencyKey = `${scope}${stepId}`;
 
     try {
       if (resolved.group) {
         // The body's own steps are the durable part, so there is no step here.
-        const value = await withSpan(toolSpan(stepId, call.tool), () => {
-          return withStepIdPrefix(`${stepId}:`, () => {
-            return resolved.invoke({
-              signal: new AbortController().signal,
-              idempotencyKey,
+        const value = await withSpan(
+          { ...toolSpan(stepId, call.tool), origin: undefined },
+          () => {
+            return withStepIdPrefix(`${stepId}:`, () => {
+              return resolved.invoke({
+                signal: new AbortController().signal,
+                idempotencyKey,
+              });
             });
-          });
-        });
+          },
+        );
 
         return resultLine(call.id, call.tool, value);
       }

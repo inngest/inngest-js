@@ -736,6 +736,33 @@ describe("commands.run with tools", () => {
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
     ]);
   });
+
+  test("names the directory apart for each step ID prefix", async () => {
+    const dirs = new Set<string | undefined>();
+
+    for (const stepIdPrefix of [undefined, "a:", "b:"]) {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          exitWith(f);
+        }
+      });
+      const { host } = createHost(sandbox);
+
+      await runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { ctx: {}, stepIdPrefix } as never,
+        },
+        () => {
+          return run(host, {});
+        },
+      );
+
+      dirs.add(fake.processCommand?.[4]);
+    }
+
+    expect(dirs.size).toBe(3);
+  });
 });
 
 describe("tool.step", () => {
