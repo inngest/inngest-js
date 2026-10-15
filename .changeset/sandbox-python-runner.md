@@ -17,5 +17,3 @@ return {"mean": statistics.mean(values)}`,
   },
 );
 ```
-
-A sandbox you created has the same `sandbox.python(id, code, options)`.
