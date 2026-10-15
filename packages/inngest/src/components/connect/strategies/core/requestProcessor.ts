@@ -11,6 +11,7 @@ import type { Logger } from "../../../../middleware/logger.ts";
 import {
   ConnectMessage,
   type ConnectMessage as ConnectMessageType,
+  type GatewayExecutorRequestData,
   GatewayMessageType,
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
@@ -130,6 +131,42 @@ export class RequestProcessor {
       ),
     );
 
+    await this.processRequest(gatewayExecutorRequest, conn, () =>
+      this.callbacks.handleExecutionRequest(gatewayExecutorRequest),
+    );
+  }
+
+  /**
+   * Resume an executor request that was acknowledged before, e.g. by a worker
+   * thread that crashed. It is not acknowledged or executed again: only its
+   * lease is extended and its reply is sent once `waitForResponse` resolves.
+   */
+  async resumeExecutorRequest(
+    gatewayExecutorRequest: GatewayExecutorRequestData,
+    conn: Connection,
+    waitForResponse: () => Promise<Uint8Array>,
+  ): Promise<void> {
+    this.logger.debug(
+      {
+        requestId: gatewayExecutorRequest.requestId,
+        functionSlug: gatewayExecutorRequest.functionSlug,
+        connectionId: conn.id,
+      },
+      "Resuming executor request",
+    );
+
+    await this.processRequest(gatewayExecutorRequest, conn, waitForResponse);
+  }
+
+  /**
+   * Track an acknowledged request, extend its lease while it runs, and send
+   * its reply.
+   */
+  private async processRequest(
+    gatewayExecutorRequest: GatewayExecutorRequestData,
+    conn: Connection,
+    execute: () => Promise<Uint8Array>,
+  ): Promise<void> {
     this.accessor.inProgressRequests.wg.add(1);
     this.accessor.inProgressRequests.requestLeases[
       gatewayExecutorRequest.requestId
@@ -250,9 +287,7 @@ export class RequestProcessor {
     }, conn.extendLeaseIntervalMs);
 
     try {
-      const responseBytes = await this.callbacks.handleExecutionRequest(
-        gatewayExecutorRequest,
-      );
+      const responseBytes = await execute();
 
       const durationMs = Date.now() - startedAt;
       this.logger.debug(
@@ -390,6 +425,10 @@ export class RequestProcessor {
     if (extendLeaseAck.newLeaseId) {
       this.accessor.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
         extendLeaseAck.newLeaseId;
+      this.callbacks.onLeaseExtended?.(
+        extendLeaseAck.requestId,
+        extendLeaseAck.newLeaseId,
+      );
     } else {
       this.logger.error(
         {
