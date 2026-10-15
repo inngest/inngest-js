@@ -1,6 +1,6 @@
 /**
  * @module
- * The sandbox side of tools: an `inngest_tools` module for Node,
+ * The sandbox side of tools: an `inngest_tools` module for Python and Node,
  * the wrapper that installs it around the command, and the waiter that reports
  * back.
  *
@@ -8,8 +8,8 @@
  * directory (`INNGEST_TOOLS_DIR`). `ops.log` holds one JSON event per line, and
  * `op` says whose it is:
  *
- * - `{"op":"call","id":1,"tool":"getCustomer","args":["c1"]}` is a request,
- *   appended by the stub.
+ * - `{"op":"call","id":1,"tool":"getCustomer","args":["c1"],"kwargs":{}}` is a
+ *   request, appended by the stub. `kwargs` is Python only.
  * - `{"op":"reply","id":1,"result":{...}}` (or `"error":"..."` in place of
  *   `result`) answers request `id`. The waiter appends it, and the stub scans
  *   the log for it from where its own request was written.
@@ -37,6 +37,45 @@ export const toolsRoot = "/inngest/tools";
  * of lines.
  */
 const append = `dd of="$d/ops.log" oflag=append conv=notrunc iflag=fullblock bs=32M status=none`;
+
+const pythonStub = `import asyncio, json, os
+
+_log = os.open(os.environ["INNGEST_TOOLS_DIR"] + "/ops.log", os.O_RDWR | os.O_APPEND | os.O_CREAT)
+_seq = 0
+
+
+class ToolError(Exception):
+    pass
+
+
+class _Tools:
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        async def call(*args, **kwargs):
+            global _seq
+            _seq += 1
+            line = json.dumps({"op": "call", "id": _seq, "tool": name, "args": args, "kwargs": kwargs}) + "\\n"
+            if len(line) > ${maxToolRequestBytes}:
+                raise ToolError("request to " + name + " is too large")
+            pos = os.fstat(_log).st_size
+            os.write(_log, line.encode())
+            prefix = b'{"op":"reply","id":%d,' % _seq
+            while True:
+                for found in os.pread(_log, os.fstat(_log).st_size - pos, pos).split(b"\\n")[:-1]:
+                    if found.startswith(prefix):
+                        reply = json.loads(found)
+                        if "error" in reply:
+                            raise ToolError(reply["error"])
+                        return reply["result"]
+                await asyncio.sleep(0.02)
+
+        return call
+
+
+tools = _Tools()
+`;
 
 const nodeStub = `const fs = require("node:fs");
 
@@ -90,13 +129,15 @@ exports.tools = new Proxy({}, {
  */
 export const wrapperScript = `put() { cat > "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
 d=$1; shift
-mkdir -p "$d" ${toolsRoot}/js/inngest_tools
+mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools
 mkdir "$d/started" 2>/dev/null || exit 0
 echo $$ > "$d/pid"
+put ${toolsRoot}/py/inngest_tools.py <<'INNGEST_TOOLS_PY'
+${pythonStub}INNGEST_TOOLS_PY
 put ${toolsRoot}/js/inngest_tools/index.js <<'INNGEST_TOOLS_JS'
 ${nodeStub}INNGEST_TOOLS_JS
-export INNGEST_TOOLS_DIR=$d
-export NODE_PATH="${toolsRoot}/js\${NODE_PATH:+:$NODE_PATH}"
+export INNGEST_TOOLS_DIR=$d PYTHONUNBUFFERED=1
+export PYTHONPATH="${toolsRoot}/py\${PYTHONPATH:+:$PYTHONPATH}" NODE_PATH="${toolsRoot}/js\${NODE_PATH:+:$NODE_PATH}"
 "$@" > "$d/out" 2> "$d/err"
 printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s"}\\n' $? "$(base64 -w0 "$d/out")" "$(base64 -w0 "$d/err")" | ${append}
 `;

@@ -1,7 +1,8 @@
 /**
  * @module
- * Runs the wrapper, the stub and the waiter for real, with the local `node`,
- * against a host that answers calls the way the tool runner does.
+ * Runs the wrapper, the stubs and the waiter for real, with the local `node`
+ * and `python3` (the Python cases are skipped when there is none), against a
+ * host that answers calls the way the tool runner does.
  */
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -19,6 +20,8 @@ import { parseToolEvent } from "./tools.ts";
 
 const root = mkdtempSync(join(tmpdir(), "tool-stubs-"));
 let count = 0;
+
+const hasPython = spawnSync("python3", ["--version"]).status === 0;
 
 const sh = (
   script: string,
@@ -80,6 +83,7 @@ describe("the stubs, wrapper and waiter", () => {
   test.each([
     {
       name: "node",
+      runnable: true,
       command: [
         "node",
         "-e",
@@ -87,9 +91,34 @@ describe("the stubs, wrapper and waiter", () => {
 Promise.all([tools.add(1, 2), tools.add(3, 4), tools.big()]).then((r) => console.log(r[0], r[1], r[2].length));`,
       ],
     },
-  ])("$name code gets its replies, parallel and large", async ({ command }) => {
-    expect(await converse(command)).toBe("3 7 100000\n");
-  });
+    {
+      name: "python",
+      runnable: hasPython,
+      command: [
+        "python3",
+        "-c",
+        `import asyncio
+from inngest_tools import tools
+
+
+async def main():
+    a, b, c = await asyncio.gather(tools.add(1, 2), tools.add(3, 4), tools.big())
+    print(a, b, len(c))
+
+
+asyncio.run(main())`,
+      ],
+    },
+  ])(
+    "$name code gets its replies, parallel and large",
+    async ({ runnable, command }) => {
+      if (!runnable) {
+        return;
+      }
+
+      expect(await converse(command)).toBe("3 7 100000\n");
+    },
+  );
 });
 
 describe("the wrapper", () => {
