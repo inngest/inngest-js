@@ -4,14 +4,15 @@
  *
  * A tool is a function in your app. Sandbox code calls it by name, and the
  * call runs here, in your function, as a durable step with your credentials.
- * This module holds the parts that don't touch a sandbox: the options, name
- * validation, and turning a request from the sandbox into a checked call.
- * `toolRunner.ts` moves the requests and replies.
+ * This module holds the parts that don't touch a sandbox: the `tool.step()`
+ * helper, name validation, and turning a request from the sandbox into a
+ * checked call. `toolRunner.ts` moves the requests and replies.
  *
  * Everything that arrives from the sandbox is untrusted. Tool names must be own
- * keys of the `tools` object, and requests are checked for size here, on the
- * host, before a step is created.
+ * keys of the `tools` object, and arguments are checked for shape and size
+ * here, on the host, before a step is created.
  */
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
@@ -34,9 +35,47 @@ export const byteLength = (text: string): number => {
 };
 
 /**
- * A function the sandbox code can call. It takes positional JSON arguments.
+ * What a tool receives besides its arguments.
  */
-export type SandboxTools = Record<string, (...args: never[]) => unknown>;
+export interface SandboxToolContext {
+  /**
+   * Aborts when the tool times out.
+   */
+  signal: AbortSignal;
+
+  /**
+   * Stable across retries of the same call. Pass it to APIs that deduplicate
+   * writes, so a retry doesn't send the same Slack message twice.
+   */
+  idempotencyKey: string;
+}
+
+type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
+  TInput extends StandardSchemaV1
+    ? StandardSchemaV1.InferOutput<TInput>
+    : never;
+
+type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
+  TOutput extends StandardSchemaV1
+    ? StandardSchemaV1.InferInput<TOutput>
+    : unknown;
+
+/**
+ * A tool declared with `tool.step()`.
+ */
+export interface SandboxTool {
+  readonly input?: StandardSchemaV1;
+  readonly output?: StandardSchemaV1;
+  readonly run: (...args: never[]) => unknown;
+}
+
+/**
+ * A plain function takes positional JSON arguments. A `tool.step()` can declare
+ * an `input` schema, which makes the call take named arguments.
+ */
+export type SandboxToolEntry = SandboxTool | ((...args: never[]) => unknown);
+
+export type SandboxTools = Record<string, SandboxToolEntry>;
 
 export interface SandboxToolOptions {
   /**
@@ -47,7 +86,7 @@ export interface SandboxToolOptions {
   waitWindow?: SandboxDuration;
 
   /**
-   * How long one tool may run before its step fails. Default 30s.
+   * How long one `tool.step()` may run before its step fails. Default 30s.
    */
   toolTimeout?: SandboxDuration;
 
@@ -76,6 +115,72 @@ export interface SandboxToolsOptions {
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
   tools: SandboxTools;
+};
+
+export interface ToolDefinition<
+  TInput extends StandardSchemaV1 | undefined,
+  TOutput extends StandardSchemaV1 | undefined,
+> {
+  /**
+   * What the tool does, for the people reading the code.
+   */
+  description?: string;
+
+  /**
+   * Any Standard Schema. With it, sandbox code calls the tool with named
+   * arguments (`tools.getCustomer(id="cus_1")`) and a bad call gets a
+   * `ToolError` back without running anything. Without it the tool takes
+   * positional JSON values.
+   */
+  input?: TInput;
+
+  /**
+   * Any Standard Schema. A result that doesn't match fails the tool step.
+   */
+  output?: TOutput;
+
+  run: TInput extends StandardSchemaV1
+    ? (
+        input: ToolInputOf<TInput>,
+        ctx: SandboxToolContext,
+      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>
+    : (...args: never[]) => unknown;
+}
+
+/**
+ * EXPERIMENTAL: Declares a tool that sandbox code can call.
+ * `tool.step()` runs its body as one durable step.
+ *
+ * @example
+ * ```ts
+ * import { tool } from "inngest/experimental";
+ * import { z } from "zod";
+ *
+ * const getCustomer = tool.step({
+ *   input: z.object({ id: z.string() }),
+ *   run: async ({ id }) => {
+ *     return db.customers.find(id);
+ *   },
+ * });
+ *
+ * await sandbox.commands.run("analyse", "python3 analyse.py", {
+ *   tools: { getCustomer },
+ * });
+ * ```
+ */
+export const tool = {
+  step: <
+    TInput extends StandardSchemaV1 | undefined = undefined,
+    TOutput extends StandardSchemaV1 | undefined = undefined,
+  >(
+    definition: ToolDefinition<TInput, TOutput>,
+  ): SandboxTool => {
+    return definition as SandboxTool;
+  },
+};
+
+const isTool = (entry: SandboxToolEntry): entry is SandboxTool => {
+  return typeof entry === "object";
 };
 
 /**
@@ -129,35 +234,85 @@ export const parseToolEvent = (line: string): ToolEvent | undefined => {
   }
 };
 
+const issuesMessage = (issues: readonly StandardSchemaV1.Issue[]): string => {
+  return issues
+    .slice(0, 5)
+    .map((issue) => {
+      const path = issue.path
+        ?.map((part) => {
+          return String(typeof part === "object" ? part.key : part);
+        })
+        .join(".");
+
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join("; ");
+};
+
 /**
  * Checks a request against the declared tools: the name, the size, and the
- * arguments. A request that fails comes back as an error to send to the
- * sandbox, and no step is created for it. Otherwise it comes back as the call
- * to run.
+ * shape of the arguments. A request that fails comes back as an error to send
+ * to the sandbox, and no step is created for it. Otherwise it comes back as the
+ * call to run.
  */
-export const resolveToolCall = (
+export const resolveToolCall = async (
   tools: SandboxTools,
   request: ToolRequest,
   line: string,
 ) => {
   const { tool: name, args } = request;
-  const run = Object.hasOwn(tools, name) ? tools[name] : undefined;
+  const entry = Object.hasOwn(tools, name) ? tools[name] : undefined;
+  const kwargs = Object.keys(request.kwargs ?? {}).length
+    ? request.kwargs
+    : undefined;
 
   if (byteLength(line) > maxToolRequestBytes) {
     return { error: `Request is larger than ${maxToolRequestBytes} bytes` };
   }
 
-  if (!run) {
+  if (!entry) {
     return { error: `Unknown tool: ${name.slice(0, 64)}` };
   }
 
-  if (Object.keys(request.kwargs ?? {}).length) {
+  // A plain function takes positional values and no context.
+  const definition: SandboxTool = isTool(entry) ? entry : { run: entry };
+  const run = definition.run as (...values: unknown[]) => unknown;
+  let values = args;
+
+  if (definition.input) {
+    if ((kwargs ? args.length + 1 : args.length) !== 1) {
+      return { error: `${name} takes one set of named arguments` };
+    }
+
+    const result = await definition.input["~standard"].validate(
+      kwargs ?? args[0],
+    );
+    if (result.issues) {
+      return {
+        error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
+      };
+    }
+
+    values = [result.value];
+  } else if (kwargs) {
     return { error: `${name} takes positional arguments only` };
   }
 
   return {
-    invoke: async () => {
-      return (run as (...values: unknown[]) => unknown)(...args);
+    invoke: async (ctx: SandboxToolContext) => {
+      const value = await run(...values, ...(isTool(entry) ? [ctx] : []));
+      if (!isTool(entry) || !entry.output) {
+        return value;
+      }
+
+      const result = await entry.output["~standard"].validate(value);
+      if (result.issues) {
+        throw new SandboxValidationError(
+          `${name} returned an invalid result: ${issuesMessage(result.issues)}`,
+        );
+      }
+
+      return result.value;
     },
   };
 };

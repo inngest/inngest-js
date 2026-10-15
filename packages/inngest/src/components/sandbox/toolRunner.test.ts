@@ -3,7 +3,8 @@
  * Tests for tools on `commands.run`, using a fake sandbox that plays the part
  * of the stub and the waiter, and a fake step that memoizes like replay.
  */
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { z } from "zod/v3";
 import type { StepOptions } from "../../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
@@ -15,7 +16,7 @@ import {
 } from "./protocol.ts";
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
-import type { SandboxTools } from "./tools.ts";
+import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import type { Sandbox } from "./types.ts";
 
@@ -367,6 +368,32 @@ describe("commands.run with tools", () => {
       steps: [],
     },
     {
+      name: "named arguments checked against the input schema",
+      tools: {
+        getCustomer: tool.step({
+          input: z.object({ id: z.string() }),
+          run: async ({ id }) => {
+            return { id };
+          },
+        }),
+      },
+      requests: [
+        request(1, "getCustomer", [], { id: 5 }),
+        request(2, "getCustomer", [], { id: "cus_2" }),
+        request(3, "getCustomer", ["a", "b"]),
+      ],
+      replies: [
+        {
+          id: 1,
+          error:
+            "Invalid arguments for getCustomer: id: Expected string, received number",
+        },
+        { id: 2, result: { id: "cus_2" } },
+        { id: 3, error: "getCustomer takes one set of named arguments" },
+      ],
+      steps: ["exec:tool:getCustomer:2"],
+    },
+    {
       name: "named arguments to a tool with no input schema",
       tools: { plain: async () => 1 },
       requests: [request(1, "plain", [], { a: 1 })],
@@ -382,6 +409,26 @@ describe("commands.run with tools", () => {
       },
       requests: [request(1, "boom")],
       replies: [{ id: 1, error: "kaput" }],
+      steps: [],
+    },
+    {
+      name: "a result the output schema rejects",
+      tools: {
+        count: tool.step({
+          output: z.object({ n: z.number() }),
+          run: async () => {
+            return { n: "nope" };
+          },
+        }),
+      },
+      requests: [request(1, "count")],
+      replies: [
+        {
+          id: 1,
+          error:
+            "count returned an invalid result: n: Expected number, received string",
+        },
+      ],
       steps: [],
     },
     {
@@ -416,6 +463,30 @@ describe("commands.run with tools", () => {
 
     expect(replies(fake)).toEqual(expected);
     expect(executed.filter((id) => id.includes(":tool:"))).toEqual(steps);
+  });
+
+  test("passes the run-scoped idempotency key to a tool", async () => {
+    const { sandbox } = createFakeSandbox(
+      sendAll([request(1, "getCustomer", [], { id: "cus_2" })]),
+    );
+    const { host } = createHost(sandbox);
+    const runTool = vi.fn(async ({ id }: { id: string }) => {
+      return { id };
+    });
+
+    await run(host, {
+      getCustomer: tool.step({
+        input: z.object({ id: z.string() }),
+        run: runTool,
+      }),
+    });
+
+    expect(runTool).toHaveBeenCalledExactlyOnceWith(
+      { id: "cus_2" },
+      expect.objectContaining({
+        idempotencyKey: "run-1:exec:tool:getCustomer:1",
+      }),
+    );
   });
 
   test("a tool that outlives its timeout fails with a timeout error", async () => {
@@ -663,6 +734,21 @@ describe("commands.run with tools", () => {
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
     ]);
+  });
+});
+
+describe("tool.step", () => {
+  test("types the body's input from the schema and its result from the output", () => {
+    tool.step({
+      input: z.object({ id: z.string() }),
+      output: z.object({ n: z.number() }),
+      run: ({ id }, ctx) => {
+        expectTypeOf(id).toEqualTypeOf<string>();
+        expectTypeOf(ctx.idempotencyKey).toEqualTypeOf<string>();
+
+        return { n: id.length };
+      },
+    });
   });
 });
 

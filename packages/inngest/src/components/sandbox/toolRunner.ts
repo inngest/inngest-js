@@ -271,12 +271,13 @@ const followCommand = async (
     request: ToolRequest;
     line: string;
   }): Promise<string> => {
-    const resolved = resolveToolCall(tools, call, line);
+    const resolved = await resolveToolCall(tools, call, line);
     if (resolved.error !== undefined) {
       return replyLine(call.id, { error: resolved.error });
     }
 
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
+    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
 
     try {
       return await host.run(
@@ -295,7 +296,10 @@ const followCommand = async (
               );
             });
           });
-          const value = await Promise.race([resolved.invoke(), timedOut]);
+          const value = await Promise.race([
+            resolved.invoke({ signal, idempotencyKey }),
+            timedOut,
+          ]);
 
           return resultLine(call.id, call.tool, value);
         },
