@@ -1,5 +1,39 @@
 # inngest
 
+## 4.24.1
+
+### Patch Changes
+
+- [#1783](https://github.com/inngest/inngest-js/pull/1783) [`167709c6`](https://github.com/inngest/inngest-js/commit/167709c6322b6a1104ce677b2529a4041546e481) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: you can now run Python in a sandbox with `step.sandbox.python`, available with `sandboxMiddleware()`. It creates a sandbox, runs your code, and destroys it, and a top-level `return` gives the result back. Pass data in with `input`: each key becomes a variable. A non-zero exit fails the step with the error output. Code and input of any size work, and results can be as large as a step can return.
+
+  Pass a schema as `schema.output` to validate the result: it's typed from the schema (as its JSON form, like `step.run`), and a result that doesn't match fails the step with the schema's issues.
+
+  ```ts
+  const stats = await step.sandbox.python(
+    "stats",
+    `import statistics
+  return {"mean": statistics.mean(values)}`,
+    {
+      input: { values: [1, 2, 3, 4] },
+      schema: { output: z.object({ mean: z.number() }) },
+    },
+  );
+  ```
+
+  Like any other step, it takes a step ID or step options, such as `{ id: "stats", name: "Compute the mean" }`, as its first argument.
+
+- [#1787](https://github.com/inngest/inngest-js/pull/1787) [`dc120418`](https://github.com/inngest/inngest-js/commit/dc1204183c601163b1c4cac3b4330f337d551637) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: inline sandbox runner code can be indented to match your source; it's dedented before it runs.
+
+- [#1784](https://github.com/inngest/inngest-js/pull/1784) [`f5b71099`](https://github.com/inngest/inngest-js/commit/f5b71099489c6db3a806de55b7f3471eeed0dd3d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: you can now run TypeScript in a sandbox with `step.sandbox.typescript`, available with `sandboxMiddleware()`. `input` keys become variables, a top-level `return` gives the result back, and top-level `await` works. It takes the same `schema.output` as `step.sandbox.python` to validate and type the result. The sandbox image needs Node 22.13 or later.
+
+  ```ts
+  const total = await step.sandbox.typescript(
+    "sum",
+    `return numbers.reduce((a: number, b: number) => a + b, 0)`,
+    { input: { numbers: [1, 2, 3] } },
+  );
+  ```
+
 ## 4.24.0
 
 ### Minor Changes
