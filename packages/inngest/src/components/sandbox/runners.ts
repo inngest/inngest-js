@@ -8,7 +8,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { StepOptionsOrId } from "../../types.ts";
+import type { StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { readParsedFile } from "./durable.ts";
@@ -156,15 +156,14 @@ const validate = async (
 const runPlan = async (
   sandbox: DurableSandbox,
   language: RunnerLanguage,
-  idOrOptions: StepOptionsOrId,
+  step: StepOptions,
   plan: LocatedPlan,
   { schema, ...commandOptions }: Omit<RunnerOptions, "input">,
 ): Promise<unknown> => {
-  const options = getStepOptions(idOrOptions);
   const generated = (name: string, suffix?: string) => {
     return {
-      ...options,
-      id: suffix ? `${options.id}:${suffix}` : options.id,
+      ...step,
+      id: suffix ? `${step.id}:${suffix}` : step.id,
       name,
       "~origin": sdkOrigin,
     };
@@ -216,11 +215,12 @@ export const createSandboxRunner = (
     code: string,
     { input, ...options }: RunnerOptions = {},
   ) => {
-    const { id, name } = getStepOptions(idOrOptions);
+    const step = getStepOptions(idOrOptions);
+    const { id, name } = step;
     const plan = buildPlan(language, id, code, input, options.tools);
 
     return withSpan({ id, name: name ?? id, kind: language }, () => {
-      return runPlan(sandbox(), language, idOrOptions, plan, options);
+      return runPlan(sandbox(), language, step, plan, options);
     });
   }) as SandboxRunner;
 };
@@ -247,7 +247,7 @@ export const createOneShotRunner = (
       { kind: language },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
-        return runPlan(sandbox, language, `${id}:run`, plan, {
+        return runPlan(sandbox, language, { id: `${id}:run` }, plan, {
           cwd,
           timeout,
           schema,
