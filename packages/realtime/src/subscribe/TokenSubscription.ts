@@ -87,9 +87,9 @@ export class TokenSubscription {
     } else {
       url = new URL(
         path,
-        getEnvVar("NODE_ENV") === "production"
-          ? "https://api.inngest.com/"
-          : "http://localhost:8288/",
+        getEnvVar("NODE_ENV") === "development"
+          ? "http://localhost:8288/"
+          : "https://api.inngest.com/",
       );
     }
 
