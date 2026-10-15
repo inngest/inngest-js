@@ -266,7 +266,7 @@ describe("image.job", () => {
     expect(result.type).toBe("function-rejected");
 
     expect(JSON.stringify(result.error)).toContain(
-      "`platform/a` → `web/b` → `platform/a` starts from itself",
+      "`platform/a` > `web/b` > `platform/a` starts from itself",
     );
   });
 
