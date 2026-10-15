@@ -61,9 +61,10 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * A tool declared with `tool.step()`.
+ * A tool declared with `tool.step()` or `tool.group()`.
  */
 export interface SandboxTool {
+  readonly group?: boolean;
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -86,7 +87,7 @@ export interface SandboxToolOptions {
   waitWindow?: SandboxDuration;
 
   /**
-   * How long one tool may run before its step fails. Default 30s.
+   * How long one `tool.step()` may run before its step fails. Default 30s.
    */
   toolTimeout?: SandboxDuration;
 
@@ -121,6 +122,11 @@ export interface ToolDefinition<
   TInput extends StandardSchemaV1 | undefined,
   TOutput extends StandardSchemaV1 | undefined,
 > {
+  /**
+   * What the tool does, for the people reading the code.
+   */
+  description?: string;
+
   /**
    * Any Standard Schema. With it, sandbox code calls the tool with named
    * arguments (`tools.getCustomer(id="cus_1")`) and a bad call gets a
@@ -172,6 +178,38 @@ export const tool = {
   ): SandboxTool => {
     return definition as SandboxTool;
   },
+
+  /**
+   * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
+   * running as one durable step, `run` can use the global `step`
+   * (`import { step } from "inngest"`) to run steps, invoke functions, send
+   * events and wait for events. Each call's steps are scoped to that call.
+   *
+   * @example
+   * ```ts
+   * const refund = tool.group({
+   *   input: z.object({ orderId: z.string() }),
+   *   run: async ({ orderId }) => {
+   *     const result = await step.invoke("refund", {
+   *       function: refundFn,
+   *       data: { orderId },
+   *     });
+   *
+   *     await step.sendEvent("notify", { name: "order/refunded", data: result });
+   *
+   *     return result;
+   *   },
+   * });
+   * ```
+   */
+  group: <
+    TInput extends StandardSchemaV1 | undefined = undefined,
+    TOutput extends StandardSchemaV1 | undefined = undefined,
+  >(
+    definition: ToolDefinition<TInput, TOutput>,
+  ): SandboxTool => {
+    return { ...definition, group: true } as SandboxTool;
+  },
 };
 
 const isTool = (entry: SandboxToolEntry): entry is SandboxTool => {
@@ -219,7 +257,10 @@ export const parseToolRequest = (line: string): ToolRequest | undefined => {
  */
 export type ResolvedCall =
   | { error: string }
-  | { invoke: (ctx: SandboxToolContext) => Promise<unknown> };
+  | {
+      invoke: (ctx: SandboxToolContext) => Promise<unknown>;
+      group: boolean;
+    };
 
 const issuesMessage = (issues: readonly StandardSchemaV1.Issue[]): string => {
   return issues
@@ -289,6 +330,7 @@ export const resolveToolCall = async (
   }
 
   return {
+    group: isTool(entry) && entry.group === true,
     invoke: async (ctx) => {
       const value = await run(...values, ...(isTool(entry) ? [ctx] : []));
       if (!isTool(entry) || !entry.output) {

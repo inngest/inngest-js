@@ -287,6 +287,30 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
 };
 
 /**
+ * Run a callback whose steps get `prefix` before their IDs, so concurrent
+ * callers can use the same IDs. The steps belong to the code that created
+ * them, so they don't inherit the origin of the span they are in.
+ */
+export const withStepIdPrefix = <T>(prefix: string, callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: {
+        ...currentCtx.execution,
+        stepIdPrefix: `${currentCtx.execution.stepIdPrefix ?? ""}${prefix}`,
+      },
+    },
+    callback,
+  );
+};
+
+/**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
@@ -342,9 +366,18 @@ export const createStepTools = <
     opts?: StepToolOptions<T>,
   ): T => {
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
-      const op = matchOp(stepOptions, ...rest);
-
       const alsCtx = getAsyncCtxSync()?.execution;
+      const prefix = alsCtx?.stepIdPrefix;
+      const op = matchOp(
+        prefix
+          ? {
+              ...stepOptions,
+              id: `${prefix}${stepOptions.id}`,
+              name: stepOptions.name ?? stepOptions.id,
+            }
+          : stepOptions,
+        ...rest,
+      );
 
       if (alsCtx?.insideExperimentSelect) {
         throw new NonRetriableError(
@@ -371,7 +404,8 @@ export const createStepTools = <
       }
 
       // The step's own origin wins, then the innermost span's
-      const origin = stepOptions["~origin"] ?? spanOrigin(span);
+      const origin =
+        stepOptions["~origin"] ?? (prefix ? undefined : spanOrigin(span));
 
       if (origin) {
         op.opts = { ...op.opts, origin };

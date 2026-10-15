@@ -20,9 +20,13 @@
  * re-read, and user output stays in files until the process exits.
  */
 
-import type { StepOptions, StepOptionsOrId } from "../../types.ts";
+import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
-import { getStepOptions, withSpan } from "../InngestStepTools.ts";
+import {
+  getStepOptions,
+  withSpan,
+  withStepIdPrefix,
+} from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult } from "./durable.ts";
 import type {
@@ -113,6 +117,25 @@ const errorMessage = (error: unknown): string => {
     0,
     2000,
   );
+};
+
+const toolSpan = (stepId: string, name: string): StepSpan => {
+  return { id: stepId, name, kind: "tool", origin: sdkOrigin };
+};
+
+/**
+ * The reply body for a tool's result.
+ */
+const replyBody = (name: string, value: unknown): string => {
+  const text = JSON.stringify({ result: value ?? null });
+
+  if (byteLength(text) > maxToolReplyBytes) {
+    throw new NonRetriableError(
+      `${name} returned more than ${maxToolReplyBytes} bytes; write large data to a file instead`,
+    );
+  }
+
+  return text;
 };
 
 /**
@@ -219,19 +242,29 @@ const followCommand = async (
     }
 
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
+    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
 
     try {
+      if (resolved.group) {
+        // The body's own steps are the durable part, so there is no step here.
+        const value = await withSpan(toolSpan(stepId, call.tool), () => {
+          return withStepIdPrefix(`${stepId}:`, () => {
+            return resolved.invoke({
+              signal: new AbortController().signal,
+              idempotencyKey,
+            });
+          });
+        });
+
+        return { id: call.id, body: replyBody(call.tool, value) };
+      }
+
       const body = await host.run(
         {
           id: stepId,
           name: call.tool,
           "~origin": sdkOrigin,
-          "~span": {
-            id: stepId,
-            name: call.tool,
-            kind: "tool",
-            origin: sdkOrigin,
-          },
+          "~span": toolSpan(stepId, call.tool),
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
@@ -243,21 +276,11 @@ const followCommand = async (
             });
           });
           const value = await Promise.race([
-            resolved.invoke({
-              signal,
-              idempotencyKey: `${host.runId ?? ""}:${stepId}`,
-            }),
+            resolved.invoke({ signal, idempotencyKey }),
             timedOut,
           ]);
-          const text = JSON.stringify({ result: value ?? null });
 
-          if (byteLength(text) > maxToolReplyBytes) {
-            throw new NonRetriableError(
-              `${call.tool} returned more than ${maxToolReplyBytes} bytes; write large data to a file instead`,
-            );
-          }
-
-          return text;
+          return replyBody(call.tool, value);
         },
       );
 
