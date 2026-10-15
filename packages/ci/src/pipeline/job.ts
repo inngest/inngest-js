@@ -205,6 +205,28 @@ export const invokeBuild = async (
   return invokeBuildRun(args);
 };
 
+/**
+ * Where a build reports to: the pipeline run at the root, and the job there
+ * that waits on it.
+ */
+export const buildParent = (
+  run: CiRunScope,
+  /** The waiting job's path in the root run. */
+  jobPath: string,
+  check?: CacheBuildData["parent"]["check"],
+): CacheBuildData["parent"] => {
+  const asking = run.build?.parent;
+
+  return {
+    runId: rootRunIdOf(run),
+    pipelineId: asking?.pipelineId ?? run.pipelineId,
+    jobPath,
+    trigger:
+      asking?.trigger ?? (run.event as { name?: string })?.name ?? "manual",
+    ...(check ? { check } : {}),
+  };
+};
+
 interface BuildArgs {
   run: CiRunScope;
   /** The job's path here, which is where the build's activity goes. */
@@ -314,8 +336,6 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
   } = args;
   const { target, exclude, broken, unnamed, base } = requestFrom(args);
   const origin = matrixOriginOf(config);
-  const parent = run.build?.parent;
-  const rootRunId = rootRunIdOf(run);
 
   const data: CacheBuildData = {
     jobId: config.id,
@@ -330,15 +350,8 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...(run.repo ? { repo: run.repo } : {}),
     sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
-    rootRunId,
-    parent: {
-      runId: rootRunId,
-      pipelineId: parent?.pipelineId ?? run.pipelineId,
-      jobPath: path,
-      trigger:
-        parent?.trigger ?? (run.event as { name?: string })?.name ?? "manual",
-      ...(check ? { check } : {}),
-    },
+    rootRunId: rootRunIdOf(run),
+    parent: buildParent(run, path, check),
   };
 
   // A snapshot that is already there needs no build run, and no wait behind
