@@ -20,7 +20,7 @@
  * re-read, and user output stays in files until the process exits.
  */
 
-import type { StepOptions, StepOptionsOrId } from "../../types.ts";
+import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -113,6 +113,25 @@ const errorMessage = (error: unknown): string => {
     0,
     2000,
   );
+};
+
+const toolSpan = (stepId: string, name: string): StepSpan => {
+  return { id: stepId, name, kind: "tool", origin: sdkOrigin };
+};
+
+/**
+ * The reply body for a tool's result.
+ */
+const replyBody = (name: string, value: unknown): string => {
+  const text = JSON.stringify({ result: value ?? null });
+
+  if (byteLength(text) > maxToolReplyBytes) {
+    throw new NonRetriableError(
+      `${name} returned more than ${maxToolReplyBytes} bytes; write large data to a file instead`,
+    );
+  }
+
+  return text;
 };
 
 /**
@@ -226,12 +245,7 @@ const followCommand = async (
           id: stepId,
           name: call.tool,
           "~origin": sdkOrigin,
-          "~span": {
-            id: stepId,
-            name: call.tool,
-            kind: "tool",
-            origin: sdkOrigin,
-          },
+          "~span": toolSpan(stepId, call.tool),
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
@@ -249,15 +263,8 @@ const followCommand = async (
             }),
             timedOut,
           ]);
-          const text = JSON.stringify({ result: value ?? null });
 
-          if (byteLength(text) > maxToolReplyBytes) {
-            throw new NonRetriableError(
-              `${call.tool} returned more than ${maxToolReplyBytes} bytes; write large data to a file instead`,
-            );
-          }
-
-          return text;
+          return replyBody(call.tool, value);
         },
       );
 
