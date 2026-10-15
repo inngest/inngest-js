@@ -188,7 +188,14 @@ const live = inngest.createFunction(
   },
 );
 
-const handler = serve({ client: inngest, functions: [live] });
+const helper = inngest.createFunction(
+  { id: "live-helper", triggers: [{ event: "sandbox-runners-live/help" }] },
+  async ({ event }) => {
+    return { echoed: event.data.id };
+  },
+);
+
+const handler = serve({ client: inngest, functions: [live, helper] });
 
 createServer((req, res) => {
   return handler(req, res);

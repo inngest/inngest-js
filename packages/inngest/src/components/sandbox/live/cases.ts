@@ -6,6 +6,8 @@
  */
 
 import { z } from "zod";
+import { referenceFunction } from "../../InngestFunctionReference.ts";
+import { step } from "../../InngestStepTools.ts";
 
 import type { RunnerLanguage } from "../runnerScripts.ts";
 import { type SandboxToolOptions, tool } from "../tools.ts";
@@ -62,6 +64,25 @@ export const liveTools = {
   boom: () => {
     throw new Error("tool exploded");
   },
+  lookup: tool.group({
+    input: z.object({ id: z.string() }),
+    run: async ({ id }) => {
+      const [first, second] = await Promise.all([
+        step.run("first", () => {
+          return "a";
+        }),
+        step.run("second", () => {
+          return "b";
+        }),
+      ]);
+      const helped = await step.invoke("help", {
+        function: referenceFunction({ functionId: "live-helper" }),
+        data: { id },
+      });
+
+      return { id, steps: [first, second], helped };
+    },
+  }),
   getCustomer: tool.step({
     input: z.object({ id: z.string() }),
     run: ({ id }) => {
@@ -103,6 +124,8 @@ const snippets: Record<
     bigResult: string;
     threeCalls: string;
     command: string;
+    group: string;
+    groupTwice: string;
   }
 > = {
   python: {
@@ -128,6 +151,9 @@ const snippets: Record<
     threeCalls: "for i in range(3):\n    await tools.add(i, i)\nreturn 'done'",
     command:
       "import asyncio\nfrom inngest_tools import tools\nprint(asyncio.run(tools.add(1, 2)))",
+    group: "return await tools.lookup(id='c1')",
+    groupTwice:
+      "import asyncio\nreturn await asyncio.gather(tools.lookup(id='c1'), tools.lookup(id='c2'))",
   },
   typescript: {
     small: "return { sum: a + b }",
@@ -153,6 +179,9 @@ const snippets: Record<
       "for (let i = 0; i < 3; i++) await tools.add(i, i);\nreturn 'done'",
     command:
       'const { tools } = require("inngest_tools"); tools.add(1, 2).then(console.log)',
+    group: 'return await tools.lookup({ id: "c1" })',
+    groupTwice:
+      'return await Promise.all([tools.lookup({ id: "c1" }), tools.lookup({ id: "c2" })])',
   },
 };
 
@@ -300,6 +329,23 @@ const forLanguage = (language: ToolsLanguage): LiveCase[] => {
       code: code.parallel,
       tools: true,
       expect: [0, 2, 4, 6, 8],
+    },
+    {
+      ...handle,
+      name: "tools: tool.group runs steps and invokes a function",
+      code: code.group,
+      tools: true,
+      expect: { id: "c1", steps: ["a", "b"], helped: { echoed: "c1" } },
+    },
+    {
+      ...handle,
+      name: "tools: tool.group called twice at once",
+      code: code.groupTwice,
+      tools: true,
+      expect: [
+        { id: "c1", steps: ["a", "b"], helped: { echoed: "c1" } },
+        { id: "c2", steps: ["a", "b"], helped: { echoed: "c2" } },
+      ],
     },
     {
       ...handle,
