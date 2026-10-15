@@ -359,6 +359,15 @@ describe("extractAIMetadataFromSpan", () => {
     ).toEqual({});
   });
 
+  test("returns an empty object for a span with no attributes", () => {
+    // dd-trace's OTel bridge passes span processors spans without `attributes`.
+    const span = {
+      startTime: [0, 0],
+      endTime: [0, 0],
+    } as unknown as ReadableSpan;
+    expect(extractAIMetadataFromSpan(span)).toEqual({});
+  });
+
   test("drops undefined values", () => {
     expect(
       extractAIMetadataFromSpan(
