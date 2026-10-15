@@ -172,6 +172,11 @@ printf '{"op":"exit","code":%s}\\n' $? >> "$d/ops.log"
  * the exit past its first `lines` lines, or the time is up. It tolerates
  * running before the wrapper has started.
  *
+ * It waits with `tail -f`, which is woken by inotify, so it ends the moment
+ * the line lands rather than polling. That needs GNU `tail`, `timeout` and
+ * `grep`, and `dd` for the replies, which the default image has. Only
+ * requests and the exit end the wait: the replies it appends itself don't.
+ *
  * A reply is a whole log line, or `@<path>` for a file holding one (too big to
  * ride in the command). `dd` appends each with a single write, which is what
  * keeps it from interleaving with the stub's: its block size is above the
@@ -180,8 +185,9 @@ printf '{"op":"exit","code":%s}\\n' $? >> "$d/ops.log"
  * Prints the log lines past `lines`, then one `output` line with the base64
  * stdout and stderr when they include the exit.
  */
-export const waiterScript = `d=$1; n=$2; i=$(($3 * 50)); shift 3
+export const waiterScript = `d=$1; n=$2; s=$3; shift 3
 mkdir -p "$d"
+: >> "$d/ops.log"
 put() { dd of="$d/ops.log" oflag=append conv=notrunc iflag=fullblock bs=2M status=none; }
 for r; do
   case $r in
@@ -190,7 +196,7 @@ for r; do
   esac
 done
 new() { tail -n +$((n + 1)) "$d/ops.log" 2>/dev/null; }
-while ! new | grep -q -E '^\\{"op":"(call|exit)"' && [ $i -gt 0 ]; do sleep 0.02; i=$((i - 1)); done
+timeout "$s" tail -n +$((n + 1)) -f "$d/ops.log" 2>/dev/null | grep -q -E '^\\{"op":"(call|exit)"'
 new
 if new | grep -q '^{"op":"exit"'; then
   printf '{"op":"output","stdout":"%s","stderr":"%s"}\\n' "$(base64 -w0 "$d/out")" "$(base64 -w0 "$d/err")"

@@ -5,7 +5,7 @@
  * host that answers calls the way the tool runner does.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -116,4 +116,48 @@ asyncio.run(main())`,
       expect(await converse(command)).toBe("3 7 100000\n");
     },
   );
+});
+
+describe("the waiter", () => {
+  const call = '{"op":"call","id":1,"tool":"t","args":[]}';
+
+  test.each([
+    {
+      name: "ends the moment a request lands",
+      append: `${call}\n`,
+      seconds: 10,
+      ends: (ms: number) => ms < 5000,
+      printed: call,
+    },
+    {
+      name: "keeps waiting past the replies it appended itself",
+      append: undefined,
+      seconds: 1,
+      ends: (ms: number) => ms >= 900,
+      printed: reply(1, 2),
+    },
+  ])("$name", async ({ append, seconds, ends, printed }) => {
+    const dir = join(root, `waiter-${count++}`);
+    const inline = append === undefined ? [reply(1, 2)] : [];
+    const start = Date.now();
+    const waiter = spawn(
+      "/bin/sh",
+      ["-c", waiterScript, "sh", dir, "0", `${seconds}`, ...inline],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    let stdout = "";
+    waiter.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+
+    if (append) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      appendFileSync(join(dir, "ops.log"), append);
+    }
+
+    await new Promise((resolve) => waiter.on("close", resolve));
+
+    expect(ends(Date.now() - start)).toBe(true);
+    expect(stdout.trim().split("\n")).toContain(printed);
+  });
 });
