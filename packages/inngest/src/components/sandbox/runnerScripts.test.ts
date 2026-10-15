@@ -286,7 +286,7 @@ writeFileSync(
 );
 
 describe.each(languages)("%s runner with tools", (language) => {
-  test.skipIf(!canRun[language]).each<{
+  test.skipIf(!canRun[language] || language === "ruby").each<{
     name: string;
     env: Record<string, string>;
     result: string | undefined;
