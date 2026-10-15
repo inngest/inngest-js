@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.config.integration.ts",
+    "test:sandbox-live": "pnpm run pb:version && tsx src/components/sandbox/live/run.ts",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
     "test:types": "tsc --noEmit --project tsconfig.types.json",
