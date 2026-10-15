@@ -1,5 +1,15 @@
 # @inngest/ci
 
+## 0.4.0
+
+### Minor Changes
+
+- [#1780](https://github.com/inngest/inngest-js/pull/1780) [`4491a641`](https://github.com/inngest/inngest-js/commit/4491a641a1ddea87084c3afbd789b6316a2c202f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `checkout()` and `files()` can now read another repository or ref, including in runs whose trigger has no repository.
+
+  ```ts
+  await checkout({ repo: "acme/shared-config", ref: "main" });
+  ```
+
 ## 0.3.0
 
 ### Minor Changes
