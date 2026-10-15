@@ -1674,7 +1674,7 @@ describe("from", () => {
     {
       name: "a `from` function that leads back to the start",
       message:
-        "`a` → `b` → `a` starts from itself. A job can't start from itself; remove one of these `from`s.",
+        "`a` > `b` > `a` starts from itself. A job can't start from itself; remove one of these `from`s.",
       define: (ci: Ci) => {
         const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
         const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
@@ -1684,7 +1684,7 @@ describe("from", () => {
     },
     {
       name: "a cycle only reachable through a parent's own parent",
-      message: "`c` → `a` → `b` → `a` starts from itself",
+      message: "`c` > `a` > `b` > `a` starts from itself",
       define: (ci: Ci) => {
         const a: Job = ci.job({ id: "a", from: () => b }, async () => {});
         const b: Job = ci.job({ id: "b", from: () => a }, async () => {});
@@ -1694,7 +1694,7 @@ describe("from", () => {
     },
     {
       name: "a job that names itself",
-      message: "`a` → `a` starts from itself",
+      message: "`a` > `a` starts from itself",
       define: (ci: Ci) => {
         const a: Job = ci.job({ id: "a", from: () => a }, async () => {});
 

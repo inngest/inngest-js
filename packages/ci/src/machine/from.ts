@@ -240,7 +240,7 @@ export const cycleMessage = (path: string[]): string => {
     .map((id) => {
       return `\`${id}\``;
     })
-    .join(" → ");
+    .join(" > ");
 
   return `${named} starts from itself. A job can't start from itself; remove one of these \`from\`s.`;
 };
