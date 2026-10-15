@@ -15,10 +15,10 @@ import { type SandboxToolOptions, tool } from "../tools.ts";
 export interface LiveCase {
   /**
    * `oneshot` is `step.sandbox.<language>`: a sandbox of its own, destroyed
-   * after. `handle` is `sandbox.<language>` on the one sandbox the suite shares.
-   * `command` is `commands.run` of `code` with that language's interpreter.
+   * after. `command` is `commands.run` of `code` with that language's
+   * interpreter, on the one sandbox the suite shares.
    */
-  form: "oneshot" | "handle" | "command";
+  form: "oneshot" | "command";
   language: RunnerLanguage;
   name: string;
   code: string;
@@ -190,7 +190,7 @@ const snippets: Record<
 
 const typescriptOnly: LiveCase[] = [
   {
-    form: "handle",
+    form: "oneshot",
     language: "typescript",
     name: "types",
     code: `
@@ -203,7 +203,7 @@ const typescriptOnly: LiveCase[] = [
     expect: { color: "blue", n: 2 },
   },
   {
-    form: "handle",
+    form: "oneshot",
     language: "typescript",
     name: "enum gives a clear error",
     code: "enum Color { Red }\nreturn Color.Red",
@@ -214,7 +214,6 @@ const typescriptOnly: LiveCase[] = [
 
 const forLanguage = (language: ToolsLanguage): LiveCase[] => {
   const code = snippets[language];
-  const handle = { form: "handle", language } as const;
   const oneshot = { form: "oneshot", language } as const;
   const command = { form: "command", language } as const;
   const prefix = language === "python" ? "" : "ToolError: ";
@@ -241,73 +240,53 @@ const forLanguage = (language: ToolsLanguage): LiveCase[] => {
       expect: /exited with code 1[\s\S]*boom/,
     },
     {
-      ...handle,
-      name: "small input",
-      code: code.small,
-      input: { a: 1, b: 2 },
-      expect: { sum: 3 },
-    },
-    {
-      ...handle,
+      ...oneshot,
       name: "indented code",
       code: code.indented,
       input: { a: 1, b: 2 },
       expect: { sum: 3 },
     },
     {
-      ...handle,
+      ...oneshot,
       name: "schema.output passes",
       code: code.total,
       schema: total,
       expect: { total: 3 },
     },
     {
-      ...handle,
-      name: "schema.output fails",
-      code: code.badTotal,
-      schema: total,
-      expect: /didn't match schema\.output[\s\S]*total/,
-    },
-    {
-      ...handle,
+      ...oneshot,
       name: "top-level await and return",
       code: code.await,
       expect: 7,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "input over 16 KiB",
       code: code.bigInput,
       input: { blob: "x".repeat(20 * kib) },
       expect: 20 * kib,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "code over 16 KiB",
       code: code.bigCode,
       expect: 20 * kib,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "output of 1.5 MiB",
       code: code.output(1.5 * mib),
       measure: "length",
       expect: 1.5 * mib,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "output over 2 MiB",
       code: code.output(3 * mib),
       expect: /bytes a step can return/,
     },
     {
-      ...handle,
-      name: "code throws",
-      code: code.throws,
-      expect: /exited with code 1[\s\S]*boom/,
-    },
-    {
-      ...handle,
+      ...oneshot,
       name: "non-zero exit",
       code: code.exits,
       expect: /exited with code 3/,
@@ -320,35 +299,35 @@ const forLanguage = (language: ToolsLanguage): LiveCase[] => {
       expect: 3,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: tool.step with named input",
       code: code.named,
       tools: true,
       expect: { id: "c1", name: "Customer c1" },
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: tool.step rejects a bad input",
       code: code.badNamed,
       tools: true,
       expect: `${prefix}Invalid arguments for getCustomer: id: Expected string, received number`,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: parallel calls",
       code: code.parallel,
       tools: true,
       expect: [0, 2, 4, 6, 8],
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: tool.group runs steps and invokes a function",
       code: code.group,
       tools: true,
       expect: { id: "c1", steps: ["a", "b"], helped: { echoed: "c1" } },
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: tool.group called twice at once",
       code: code.groupTwice,
       tools: true,
@@ -358,28 +337,28 @@ const forLanguage = (language: ToolsLanguage): LiveCase[] => {
       ],
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: a tool that throws is a ToolError",
       code: code.toolThrows,
       tools: true,
       expect: `${prefix}tool exploded`,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: 200 KiB argument",
       code: code.bigArgs,
       tools: true,
       expect: 200 * kib,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: 900 KiB result",
       code: code.bigResult,
       tools: true,
       expect: 900 * kib,
     },
     {
-      ...handle,
+      ...oneshot,
       name: "tools: maxCalls exceeded",
       code: code.threeCalls,
       tools: { maxCalls: 2 },
@@ -408,7 +387,7 @@ const rubyCases: LiveCase[] = [
   },
   {
     ...ruby,
-    form: "handle",
+    form: "oneshot",
     name: "schema.output passes",
     code: "return { total: 3 }",
     schema: total,
@@ -416,7 +395,7 @@ const rubyCases: LiveCase[] = [
   },
   {
     ...ruby,
-    form: "handle",
+    form: "oneshot",
     name: "input over 16 KiB",
     code: "return blob.length",
     input: { blob: "x".repeat(20 * kib) },
@@ -424,7 +403,7 @@ const rubyCases: LiveCase[] = [
   },
   {
     ...ruby,
-    form: "handle",
+    form: "oneshot",
     name: "code throws",
     code: "raise 'boom'",
     expect: /exited with code 1[\s\S]*boom/,

@@ -1,7 +1,7 @@
 # Live sandbox runner suite
 
-Runs `sandbox.python`, `sandbox.typescript` and their `step.sandbox` forms
-against **real Cloud sandboxes**. It costs sandbox time, so it never runs in
+Runs `step.sandbox.python`, `step.sandbox.typescript` and
+`step.sandbox.ruby` against **real Cloud sandboxes**. It costs sandbox time, so it never runs in
 CI or in `pnpm test`.
 
 ```sh
@@ -26,4 +26,4 @@ is non-zero if any case fails.
   no sandbox it created is still running.
 - `run.ts` is the driver: devstack, one event, a pass/fail table.
 
-Cases marked `oneshot` create a sandbox each; every `handle` case shares one.
+Cases marked `oneshot` create a sandbox each; every `command` case shares one.

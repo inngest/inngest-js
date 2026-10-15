@@ -59,23 +59,23 @@ const mismatch = (
 };
 
 /**
- * Write a file to the handle, read it back, and read it from user code.
+ * Write a file to the sandbox, read it back, and read it from a command.
  */
 const roundTrip = async (
-  handle: DurableSandbox,
+  sandbox: DurableSandbox,
 ): Promise<string | undefined> => {
   const path = "/tmp/live-file.txt";
 
   try {
-    await handle.files.write("file-write", { path, data: "hello" });
+    await sandbox.files.write("file-write", { path, data: "hello" });
     const back = new TextDecoder().decode(
-      await handle.files.read("file-read", path),
+      await sandbox.files.read("file-read", path),
     );
-    const fromCode = await handle.python(
-      "file-in-code",
-      `return open('${path}').read()`,
-    );
-    deepStrictEqual([back, fromCode], ["hello", "hello"]);
+    const { stdout } = await sandbox.commands.run("file-in-command", [
+      "cat",
+      path,
+    ]);
+    deepStrictEqual([back, stdout], ["hello", "hello"]);
   } catch (error) {
     return messageOf(error).slice(0, 300);
   }
@@ -87,13 +87,13 @@ const roundTrip = async (
  * Run the case's code with its language's interpreter, and return the stdout.
  */
 const runCommand = async (
-  handle: DurableSandbox,
+  sandbox: DurableSandbox,
   id: string,
   { language, code }: LiveCase,
   { tools, toolOptions }: { tools?: typeof liveTools; toolOptions?: object },
 ): Promise<string> => {
   const flag = language === "python" ? ["python3", "-c"] : ["node", "-e"];
-  const { stdout } = await handle.commands.run(id, [...flag, code], {
+  const { stdout } = await sandbox.commands.run(id, [...flag, code], {
     tools,
     toolOptions,
   });
@@ -124,10 +124,10 @@ const live = inngest.createFunction(
       verdicts.push({ name, pass: !problem, detail: problem ?? "" });
     };
 
-    const needsHandle = selected.some((c) => {
-      return c.form !== "oneshot";
+    const needsSandbox = selected.some((c) => {
+      return c.form === "command";
     });
-    const handle = needsHandle
+    const shared = needsSandbox
       ? await step.sandbox.create("shared", {
           name: `${runId}-shared`,
           vcpu: 2,
@@ -150,9 +150,7 @@ const live = inngest.createFunction(
       try {
         let value: unknown;
         if (c.form === "command") {
-          value = await runCommand(handle as DurableSandbox, id, c, options);
-        } else if (handle && c.form === "handle") {
-          value = await handle[c.language]({ id, ...options }, c.code);
+          value = await runCommand(shared as DurableSandbox, id, c, options);
         } else {
           value = await step.sandbox[c.language]({ id, ...options }, c.code);
         }
@@ -167,9 +165,9 @@ const live = inngest.createFunction(
       record(id, mismatch(c, outcome));
     }
 
-    if (handle) {
-      record("handle.files.write and read", await roundTrip(handle));
-      await handle.destroy("shared:destroy");
+    if (shared) {
+      record("files.write and read", await roundTrip(shared));
+      await shared.destroy("shared:destroy");
     }
 
     const leaked = await step.run("check-destroyed", async () => {
