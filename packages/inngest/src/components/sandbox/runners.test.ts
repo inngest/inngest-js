@@ -69,6 +69,27 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
     expect(value).toEqual(expected);
   });
 
+  test("names the span after the name option", async () => {
+    const { steps } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "named", triggers: [{ event: "runner/code" }] },
+        async ({ step }) => {
+          const sandbox = await step.sandbox.create("box", {
+            name: "box",
+            vcpu: 2,
+            memoryMb: 2048,
+          });
+
+          await sandbox[language]({ id: "py", name: "Mean" }, "return 1");
+        },
+      );
+    });
+
+    expect(steps[1]?.opts?.span).toEqual([
+      { id: "py", name: "Mean", kind: language },
+    ]);
+  });
+
   test(`passes the code and input to ${binary} as one payload`, async () => {
     const { steps } = await runWith({}, (client) => {
       return client.createFunction(
@@ -80,7 +101,7 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
             memoryMb: 2048,
           });
 
-          await sandbox[language]("py", "return n", { input: { n: 1 } });
+          await sandbox[language]({ id: "py", input: { n: 1 } }, "return n");
         },
       );
     });
@@ -132,7 +153,7 @@ describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
           });
 
           try {
-            await sandbox[language]("py", code, { input });
+            await sandbox[language]({ id: "py", input }, code);
           } catch (err) {
             error = err;
 
@@ -190,10 +211,10 @@ describe.each(languages)("sandbox.$language with tools", ({ language }) => {
     );
     const tools = { a: async () => 1 };
 
-    await createSandboxRunner(() => sandbox, language)("py", "return 1", {
-      tools,
-      toolOptions: { maxCalls: 3 },
-    });
+    await createSandboxRunner(() => sandbox, language)(
+      { id: "py", tools, toolOptions: { maxCalls: 3 } },
+      "return 1",
+    );
 
     expect(rawTool).toHaveBeenNthCalledWith(
       1,
@@ -250,7 +271,7 @@ describe.each(languages)("$language schema.output", ({ language, title }) => {
       return client.createFunction(
         { id: "schema", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          keep(await step.sandbox[language]("py", "return 1", { schema }));
+          keep(await step.sandbox[language]({ id: "py", schema }, "return 1"));
         },
       );
     });
@@ -260,7 +281,7 @@ describe.each(languages)("$language schema.output", ({ language, title }) => {
     const runner = null as unknown as OneShotRunner;
 
     expectTypeOf(() =>
-      runner("py", "return 1", { schema }),
+      runner({ id: "py", schema }, "return 1"),
     ).returns.resolves.toEqualTypeOf<{ n: number }>();
     expectTypeOf(() =>
       runner<number>("py", "return 1"),
@@ -299,7 +320,7 @@ describe.each(languages)("$language schema.output", ({ language, title }) => {
           });
 
           try {
-            await sandbox[language]("py", "return 1", { schema });
+            await sandbox[language]({ id: "py", schema }, "return 1");
           } catch (err) {
             error = err;
 
@@ -357,10 +378,10 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
       return client.createFunction(
         { id: "options", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          await step.sandbox[language]("py", "return 1", {
-            vcpu: 1,
-            environment: { A: "b" },
-          });
+          await step.sandbox[language](
+            { id: "py", vcpu: 1, environment: { A: "b" } },
+            "return 1",
+          );
         },
       );
     });
@@ -378,9 +399,10 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
       return client.createFunction(
         { id: "invalid", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          await step.sandbox[language]("py", "return d", {
-            input: { d: new Date() },
-          });
+          await step.sandbox[language](
+            { id: "py", input: { d: new Date() } },
+            "return d",
+          );
         },
       );
     });
@@ -395,10 +417,10 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
       return client.createFunction(
         { id: "tools-input", triggers: [{ event: "runner/code" }] },
         async ({ step }) => {
-          await step.sandbox[language]("py", "return 1", {
-            input: { tools: 1 },
-            tools: { a: async () => 1 },
-          });
+          await step.sandbox[language](
+            { id: "py", input: { tools: 1 }, tools: { a: async () => 1 } },
+            "return 1",
+          );
         },
       );
     });
