@@ -17,3 +17,5 @@ return {"mean": statistics.mean(values)}`,
   },
 );
 ```
+
+Like any other step, it takes a step ID or step options, such as `{ id: "stats", name: "Compute the mean" }`, as its first argument.
