@@ -71,7 +71,7 @@ wrapped = ast.parse("async def __inngest_main(): pass")
 body = ast.parse(payload["code"], "<code>").body
 wrapped.body[0].body = body or wrapped.body[0].body
 
-scope = dict(payload["input"])
+scope = {"asyncio": asyncio, **payload["input"]}
 if "INNGEST_TOOLS_DIR" in os.environ:
     from inngest_tools import tools
     scope["tools"] = tools

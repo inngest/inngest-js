@@ -229,22 +229,37 @@ export const validateTools = (tools: SandboxTools): void => {
   }
 };
 
-const requestSchema = z.object({
-  id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  tool: z.string().max(128),
-  args: z.array(z.unknown()),
-  kwargs: z.record(z.unknown()).optional(),
-});
-
-export type ToolRequest = z.infer<typeof requestSchema>;
+const eventSchema = z.discriminatedUnion("op", [
+  z.object({
+    op: z.literal("call"),
+    id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    tool: z.string().max(128),
+    args: z.array(z.unknown()),
+    kwargs: z.record(z.unknown()).optional(),
+  }),
+  z.object({ op: z.literal("exit"), code: z.number().int() }),
+  z.object({
+    op: z.literal("output"),
+    stdout: z.string(),
+    stderr: z.string(),
+  }),
+]);
 
 /**
- * Parses one line of the request log. Returns `undefined` for anything that
- * isn't a request, which is skipped.
+ * An event the host reads from the sandbox: a request, the command's exit, or
+ * the output the waiter prints with the exit.
  */
-export const parseToolRequest = (line: string): ToolRequest | undefined => {
+export type ToolEvent = z.infer<typeof eventSchema>;
+
+export type ToolRequest = Extract<ToolEvent, { op: "call" }>;
+
+/**
+ * Parses one line of the log. Returns `undefined` for anything that isn't an
+ * event the host reads (its own replies, for one), which is skipped.
+ */
+export const parseToolEvent = (line: string): ToolEvent | undefined => {
   try {
-    const parsed = requestSchema.safeParse(JSON.parse(line));
+    const parsed = eventSchema.safeParse(JSON.parse(line));
 
     return parsed.success ? parsed.data : undefined;
   } catch {
