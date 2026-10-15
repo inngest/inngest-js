@@ -1,8 +1,7 @@
 /**
  * @module
- * Tests for the Python runner on a sandbox handle and on `step.sandbox`, with
- * a fake sandbox API that answers every command with the output a test gives
- * it.
+ * Tests for the Python runner of `step.sandbox`, with a fake sandbox API that
+ * answers every command with the output a test gives it.
  */
 
 import { z } from "zod";
@@ -40,40 +39,13 @@ const runWith = async (
   return { ...run, calls, value };
 };
 
-describe("sandbox.python", () => {
-  test.each(outputs)("returns $name", async ({ file, expected }) => {
-    const { type, ran, value } = await runWith({ file }, (client, keep) => {
-      return client.createFunction(
-        { id: "handle", triggers: [{ event: "runner/python" }] },
-        async ({ step }) => {
-          await using sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
-          keep(await sandbox.python("py", "return 1"));
-        },
-      );
-    });
-
-    expect(type).toBe("function-resolved");
-    expect(ran).toEqual(["box", "py", "py:result", "box:destroy"]);
-    expect(value).toEqual(expected);
-  });
-
+describe("step.sandbox.python input and failures", () => {
   test("passes the code and input to python3 as one payload", async () => {
     const { steps } = await runWith({}, (client) => {
       return client.createFunction(
         { id: "payload", triggers: [{ event: "runner/python" }] },
         async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
-          await sandbox.python("py", "return n", { input: { n: 1 } });
+          await step.sandbox.python("py", "return n", { input: { n: 1 } });
         },
       );
     });
@@ -118,14 +90,8 @@ describe("sandbox.python", () => {
       return client.createFunction(
         { id: "rejects", triggers: [{ event: "runner/python" }] },
         async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
           try {
-            await sandbox.python("py", code, { input });
+            await step.sandbox.python("py", code, { input });
           } catch (err) {
             error = err;
 
@@ -140,19 +106,13 @@ describe("sandbox.python", () => {
   });
 });
 
-describe("sandbox.python with a large payload", () => {
+describe("step.sandbox.python with a large payload", () => {
   test("uploads it and runs the file", async () => {
     const { ran, steps, calls } = await runWith({}, (client) => {
       return client.createFunction(
         { id: "large", triggers: [{ event: "runner/python" }] },
         async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
-          await sandbox.python("py", "x".repeat(20_000));
+          await step.sandbox.python("py", "x".repeat(20_000));
         },
       );
     });
@@ -160,9 +120,15 @@ describe("sandbox.python with a large payload", () => {
       { input: [{ command: string[] }] },
     ];
 
-    expect(ran).toEqual(["box", "py:payload", "py", "py:result"]);
+    expect(ran).toEqual([
+      "py",
+      "py:run:payload",
+      "py:run",
+      "py:run:result",
+      "py:destroy",
+    ]);
     expect(calls.uploads).toHaveLength(1);
-    expect(steps.slice(1).map((step) => step.displayName)).toEqual([
+    expect(steps.slice(1, -1).map((step) => step.displayName)).toEqual([
       "Uploading code",
       "Running code",
       "Gathering result",
@@ -223,14 +189,8 @@ describe("schema.output", () => {
       return client.createFunction(
         { id: "issues", triggers: [{ event: "runner/python" }] },
         async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
           try {
-            await sandbox.python("py", "return 1", { schema });
+            await step.sandbox.python("py", "return 1", { schema });
           } catch (err) {
             error = err;
 
