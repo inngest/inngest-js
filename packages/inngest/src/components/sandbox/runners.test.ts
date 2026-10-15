@@ -281,6 +281,30 @@ describe.each(languages)(
 );
 
 describe.each(languages)("step.sandbox.$language", ({ language }) => {
+  test.each([
+    { form: "a step ID", first: "py", name: "py" },
+    { form: "step options", first: { id: "py" }, name: "py" },
+    {
+      form: "step options with a name",
+      first: { id: "py", name: "Compute the mean" },
+      name: "Compute the mean",
+    },
+  ])("takes $form first", async ({ first, name }) => {
+    const { ran, steps } = await runWith({}, (client) => {
+      return client.createFunction(
+        { id: "first", triggers: [{ event: "runner/code" }] },
+        async ({ step }) => {
+          await step.sandbox[language](first, "return 1");
+        },
+      );
+    });
+
+    expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
+    expect(steps.map((step) => step.opts?.span)).toEqual(
+      steps.map(() => [{ id: "py", name, kind: language }]),
+    );
+  });
+
   test.each(outputs)("returns $name", async ({ file, expected }) => {
     const { type, ran, steps, calls, value } = await runWith(
       { file },

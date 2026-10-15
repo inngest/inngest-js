@@ -79,13 +79,13 @@ export const sandboxDefaults = (id: string) => {
 
 /**
  * Run `callback` with a new sandbox inside a span of the given kind, and
- * destroy the sandbox when it ends. The span is named for its ID, after `title`
- * if there is one. `steps` adds options, such as a name, to the create and
+ * destroy the sandbox when it ends. The span is named `name`, or else for its
+ * ID, after `title` if there is one. `steps` adds options, such as a name, to the create and
  * destroy steps.
  */
 export const withSandbox = <T>(
   tools: DurableSandboxTools,
-  span: { kind: string; title?: string },
+  span: { kind: string; title?: string; name?: string },
   idOrOptions: GroupSandboxOptionsOrId,
   callback: (sandbox: DurableSandbox) => Promise<T>,
   steps: {
@@ -99,7 +99,11 @@ export const withSandbox = <T>(
       : idOrOptions;
 
   return withSpan(
-    { id, name: span.title ? `${span.title} ${id}` : id, kind: span.kind },
+    {
+      id,
+      name: span.name ?? (span.title ? `${span.title} ${id}` : id),
+      kind: span.kind,
+    },
     async () => {
       const sandbox = await tools.create({ ...steps.create, id }, options);
       let failure: { error: unknown } | undefined;
