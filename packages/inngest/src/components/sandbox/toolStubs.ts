@@ -154,7 +154,7 @@ exports.${handle} = new Proxy({}, {
  * files, and appends its exit. The directory is in the command so that the
  * process can be found again.
  */
-export const wrapperScript = `put() { cat > "$1.tmp$" && mv "$1.tmp$" "$1"; }
+export const wrapperScript = `put() { cat > "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
 d=$1; shift
 export INNGEST_TOOLS_DIR=$d
 mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools
