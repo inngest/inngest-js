@@ -1,6 +1,6 @@
 /**
  * @module
- * `step.sandbox.python()` and `step.sandbox.typescript()`: run a snippet in a
+ * `step.sandbox.python()`, `.typescript()` and `.ruby()`: run a snippet in a
  * sandbox of its own and get its `return` value back, checked against
  * `schema.output` when one is given. The snippet's command comes from
  * `runnerScripts.ts`; this file runs it and reads the result back from the file
@@ -74,6 +74,7 @@ export interface OneShotRunner {
 const titles: Record<RunnerLanguage, string> = {
   python: "Python",
   typescript: "TypeScript",
+  ruby: "Ruby",
 };
 
 type LocatedPlan = RunnerPlan & { resultPath: string };
