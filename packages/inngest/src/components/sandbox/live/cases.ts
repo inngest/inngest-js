@@ -107,6 +107,7 @@ const snippets: Record<
   ToolsLanguage,
   {
     small: string;
+    indented: string;
     await: string;
     total: string;
     badTotal: string;
@@ -130,6 +131,7 @@ const snippets: Record<
 > = {
   python: {
     small: "return {'sum': a + b}",
+    indented: "\n    total = a + b\n\n    return {'sum': total}\n  ",
     await: "import asyncio\nawait asyncio.sleep(0.01)\nreturn 7",
     total: "return {'total': 3}",
     badTotal: "return {'total': 'three'}",
@@ -157,6 +159,7 @@ const snippets: Record<
   },
   typescript: {
     small: "return { sum: a + b }",
+    indented: "\n    const total = a + b;\n\n    return { sum: total };\n  ",
     await: "await new Promise((r) => setTimeout(r, 10));\nreturn 7",
     total: "return { total: 3 }",
     badTotal: "return { total: 'three' }",
@@ -241,6 +244,13 @@ const forLanguage = (language: ToolsLanguage): LiveCase[] => {
       ...handle,
       name: "small input",
       code: code.small,
+      input: { a: 1, b: 2 },
+      expect: { sum: 3 },
+    },
+    {
+      ...handle,
+      name: "indented code",
+      code: code.indented,
       input: { a: 1, b: 2 },
       expect: { sum: 3 },
     },
