@@ -31,6 +31,7 @@ import {
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
+  isInline,
   joinId,
   outsideJobs,
   rebuildSuffix,
@@ -229,6 +230,18 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
+ * Whether a job has to be built in this run: it was defined here, or its
+ * parent was, and either way the build function couldn't find it.
+ */
+export const buildsInRun = (
+  config: JobConfig,
+  /** The job's `from` parent, if it has one. */
+  parent: Parent | undefined,
+): boolean => {
+  return isInline(config) || (parent ? isInline(parent.config) : false);
+};
+
+/**
  * The jobs above a job, nearest first: its `from` parent, that job's parent,
  * and so on, each with its input validated. The one walk of `from`, so every
  * question about the chain is asked of this list.
@@ -374,9 +387,10 @@ export const parentBuildOf = async (
     return undefined;
   }
 
-  const given = run.build?.jobId === config.id ? run.build.base : undefined;
-
-  return resolvedBase(parent, given ?? (await resolveParent(scope, parent)));
+  return resolvedBase(
+    parent,
+    scope.request?.base ?? (await resolveParent(scope, parent)),
+  );
 };
 
 /**
