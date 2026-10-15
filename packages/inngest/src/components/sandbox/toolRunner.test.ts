@@ -18,6 +18,7 @@ import {
 } from "./protocol.ts";
 import { createClient } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
+import { startedScript } from "./toolStubs.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import type { Sandbox } from "./types.ts";
@@ -55,6 +56,11 @@ interface Fake {
   stdout: string;
   killed: boolean;
   started: number;
+
+  /**
+   * The command of the process that was started.
+   */
+  processCommand?: string[];
   waits: { lines: number; seconds: number }[];
 
   /**
@@ -67,6 +73,11 @@ interface Fake {
    */
   uploads: { path: string; body: string }[];
   failWaits: number;
+
+  /**
+   * Fails the first step's wait once.
+   */
+  failFirstWait: boolean;
   /**
    * Plays the sandbox code. Runs when the process starts and again each time
    * a reply lands, with the id of that reply.
@@ -89,12 +100,27 @@ const createFakeSandbox = (react: Fake["react"]) => {
     replies: [],
     uploads: [],
     failWaits: 0,
+    failFirstWait: false,
     react,
   };
   const sandbox = {
     commands: {
       run: async (command: string[]) => {
-        const [, , , , , lines, seconds, ...replies] = command;
+        const [, , script, , , lines, seconds, ...replies] = command;
+
+        if (script === startedScript) {
+          return {
+            stdout: fake.started > 0 ? "started\n" : "",
+            stderr: "",
+            exitCode: 0,
+          };
+        }
+
+        if (fake.failFirstWait && Number(lines) === 0) {
+          fake.failFirstWait = false;
+
+          throw new Error("wait failed");
+        }
 
         if (fake.failWaits > 0 && replies.length > 0) {
           fake.failWaits--;
@@ -149,17 +175,26 @@ const createFakeSandbox = (react: Fake["react"]) => {
       },
     },
     processes: {
-      start: async () => {
+      start: async ({ command }: { command: string[] }) => {
         fake.started++;
+        fake.processCommand = command;
         fake.react(fake, undefined);
 
         return { id: "proc-1" };
       },
-      get: async () => {
+      list: async () => {
         return {
-          signal: async () => {
-            fake.killed = true;
-          },
+          items: fake.processCommand
+            ? [
+                {
+                  command: fake.processCommand,
+                  signal: async () => {
+                    fake.killed = true;
+                  },
+                },
+              ]
+            : [],
+          page: { hasMore: false },
         };
       },
     },
@@ -691,15 +726,43 @@ describe("commands.run with tools", () => {
     },
   );
 
-  test("does not retry a start step that failed after the process began", async () => {
-    const { sandbox } = createFakeSandbox(() => undefined);
-    const { host } = createHost(sandbox);
+  test("a retried first step finds the running process and starts no other", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        exitWith(f);
+      }
+    });
+    const { host, attempts } = createHost(sandbox);
 
-    (sandbox.commands as { run: unknown }).run = async () => {
-      throw new Error("waiter blew up");
-    };
+    fake.failFirstWait = true;
 
-    await expect(run(host, {})).rejects.toBeInstanceOf(NonRetriableError);
+    const result = await run(host, {});
+
+    expect(attempts.get("exec")).toBe(2);
+    expect(fake.started).toBe(1);
+    expect(result).toMatchObject({ result: { exitCode: 0 } });
+  });
+
+  test("names the directory for the run and step, so a rerun finds it", async () => {
+    const dirs = new Set<string | undefined>();
+
+    for (const runId of ["run-1", "run-1", "run-2"]) {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          exitWith(f);
+        }
+      });
+      const { host } = createHost(sandbox);
+
+      await run({ ...host, runId }, {});
+
+      dirs.add(fake.processCommand?.[4]);
+    }
+
+    expect([...dirs]).toEqual([
+      expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
+      expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
+    ]);
   });
 });
 

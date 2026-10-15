@@ -3,8 +3,10 @@
  * EXPERIMENTAL: Runs a sandbox command whose code can call tools.
  *
  * The first step starts the process and waits, in the same moment, for it to
- * exit or make its first request. A command that never calls a tool is one
- * step and about one round trip, the same as a plain `commands.run`. From then
+ * exit or make its first request. The process's directory is named for the run
+ * and step, and the wrapper marks it, so a retry of this step finds the process
+ * already running and only waits. A command that never calls a tool is one step
+ * and two round trips (that check, then the start and wait together). From then
  * on each round is:
  *
  * 1. One step per request (`<id>:tool:<name>:<id>`) runs the tool and returns
@@ -21,6 +23,7 @@
  * in files until the process exits. `toolStubs.ts` describes the log.
  */
 
+import hashjs from "hash.js";
 import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import {
@@ -34,7 +37,12 @@ import type {
   SandboxOperationForAction,
   SandboxOperationResultV1,
 } from "./protocol.ts";
-import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
+import {
+  startedScript,
+  toolsRoot,
+  waiterScript,
+  wrapperScript,
+} from "./toolStubs.ts";
 import {
   byteLength,
   maxToolReplyBytes,
@@ -49,12 +57,18 @@ import {
   sandboxTraceMetadata,
   sdkOrigin,
 } from "./trace.ts";
-import { type Sandbox, SandboxValidationError } from "./types.ts";
+import {
+  type Sandbox,
+  type SandboxProcess,
+  SandboxValidationError,
+} from "./types.ts";
 import {
   decodeBase64,
   maxSandboxProcessTimeoutMs,
   normalizeDurationMs,
 } from "./validation.ts";
+
+const { sha256 } = hashjs;
 
 const maxConcurrentCalls = 8;
 
@@ -182,6 +196,9 @@ const followCommand = async (
 
   const [{ command, environment, cwd, timeoutMs }] = operation.input;
   const { sandbox } = host;
+  const dir = `${toolsRoot}/${sha256()
+    .update(`${host.runId ?? ""}:${id}`)
+    .digest("hex")}`;
   const meta = sandboxTraceMetadata(operation, { error: undefined });
 
   const sdkStep = (stepId: string, name: string): StepOptions => {
@@ -267,9 +284,30 @@ const followCommand = async (
     };
   };
 
-  const abort = async (processId: string, reason: string): Promise<never> => {
+  /**
+   * The process the wrapper runs as: the one whose command names `dir`.
+   */
+  const findProcess = async (): Promise<SandboxProcess | undefined> => {
+    let cursor: string | undefined;
+
+    do {
+      const { items, page } = await sandbox.processes.list({ cursor });
+      const found = items.find((process) => {
+        return process.command.includes(dir);
+      });
+      if (found) {
+        return found;
+      }
+
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+
+    return undefined;
+  };
+
+  const abort = async (reason: string): Promise<never> => {
     await host.run(sdkStep(`${id}:abort`, "Stop command"), async () => {
-      const process = await sandbox.processes.get(processId);
+      const process = await findProcess();
 
       await process?.signal({ signal: 9 });
 
@@ -341,31 +379,27 @@ const followCommand = async (
   const started = await host.run(
     idOrOptions,
     async () => {
-      const dir = `${toolsRoot}/${crypto.randomUUID()}`;
       const startedAt = Date.now();
+      const { stdout } = await sandbox.commands.run([
+        "/bin/sh",
+        "-c",
+        startedScript,
+        "sh",
+        dir,
+      ]);
       // The wait doesn't need the process to exist yet, so it runs alongside.
-      const [process, round] = await Promise.allSettled([
-        sandbox.processes.start({
-          command: ["/bin/sh", "-c", wrapperScript, "sh", ...command],
-          environment: { ...environment, INNGEST_TOOLS_DIR: dir },
-          ...(cwd !== undefined && { cwd }),
-        }),
+      const [, round] = await Promise.all([
+        stdout.trim() === "started"
+          ? undefined
+          : sandbox.processes.start({
+              command: ["/bin/sh", "-c", wrapperScript, "sh", dir, ...command],
+              ...(environment && { environment }),
+              ...(cwd !== undefined && { cwd }),
+            }),
         follow(dir, 0, []),
       ]);
 
-      if (process.status === "rejected") {
-        throw process.reason;
-      }
-
-      // The command is running, and a retry would start another.
-      if (round.status === "rejected") {
-        throw new NonRetriableError(
-          `Command started but could not be followed: ${errorMessage(round.reason)}`,
-          { cause: round.reason },
-        );
-      }
-
-      return { ...round.value, processId: process.value.id, dir, startedAt };
+      return { ...round, startedAt };
     },
     meta,
   );
@@ -381,10 +415,7 @@ const followCommand = async (
     }
 
     if (state.now - started.startedAt > timeoutMs) {
-      return abort(
-        started.processId,
-        `Command with tools exceeded its ${timeoutMs}ms timeout`,
-      );
+      return abort(`Command with tools exceeded its ${timeoutMs}ms timeout`);
     }
 
     const pending: Round["requests"] = [];
@@ -396,10 +427,7 @@ const followCommand = async (
       seen.add(request.id);
 
       if (++calls > maxCalls) {
-        return abort(
-          started.processId,
-          `Command made more than ${maxCalls} tool calls`,
-        );
+        return abort(`Command made more than ${maxCalls} tool calls`);
       }
 
       pending.push({ request, line });
@@ -418,7 +446,7 @@ const followCommand = async (
     state = await host.run(
       sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {
-        return follow(started.dir, lines, replies);
+        return follow(dir, lines, replies);
       },
       { ...meta, kind: "wait" },
     );

@@ -40,9 +40,7 @@ const reply = (id: number, result: unknown): string => {
 const converse = async (command: string[]) => {
   const dir = join(root, `run-${count++}`);
   const wrapper = wrapperScript.replaceAll(toolsRoot, root);
-  const child = spawn("/bin/sh", ["-c", wrapper, "sh", ...command], {
-    env: { ...process.env, INNGEST_TOOLS_DIR: dir },
-  });
+  const child = spawn("/bin/sh", ["-c", wrapper, "sh", dir, ...command]);
   let lines = 0;
   let replies: string[] = [];
 

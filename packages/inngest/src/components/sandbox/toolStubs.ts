@@ -149,12 +149,16 @@ exports.${handle} = new Proxy({}, {
 `;
 
 /**
- * Runs as a process: "/bin/sh -c <script> sh <command...>". Installs the
- * stubs, runs the command with its output in files, and appends its exit.
+ * Runs as a process: "/bin/sh -c <script> sh <dir> <command...>". Marks the
+ * directory as started, installs the stubs, runs the command with its output in
+ * files, and appends its exit. The directory is in the command so that the
+ * process can be found again.
  */
-export const wrapperScript = `put() { cat > "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
-d=$INNGEST_TOOLS_DIR
+export const wrapperScript = `put() { cat > "$1.tmp$" && mv "$1.tmp$" "$1"; }
+d=$1; shift
+export INNGEST_TOOLS_DIR=$d
 mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools
+: > "$d/started"
 put ${toolsRoot}/py/inngest_tools.py <<'INNGEST_TOOLS_PY'
 ${pythonStub}INNGEST_TOOLS_PY
 put ${toolsRoot}/js/inngest_tools/index.js <<'INNGEST_TOOLS_JS'
@@ -165,6 +169,13 @@ export PYTHONUNBUFFERED=1
 "$@" > "$d/out" 2> "$d/err"
 printf '{"op":"exit","code":%s}\\n' $? >> "$d/ops.log"
 `;
+
+/**
+ * Runs as an exec: "/bin/sh -c <script> sh <dir>"; prints `started` when the
+ * wrapper has run there, which is how a retried first step knows not to start
+ * the command twice.
+ */
+export const startedScript = `[ -e "$1/started" ] && echo started`;
 
 /**
  * Runs as an exec: "/bin/sh -c <script> sh <dir> <lines> <seconds> <replies...>".
