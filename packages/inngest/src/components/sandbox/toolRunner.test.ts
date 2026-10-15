@@ -7,7 +7,8 @@ import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod/v3";
 import type { StepOptions } from "../../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
-import { withSpan } from "../InngestStepTools.ts";
+import { referenceFunction } from "../InngestFunctionReference.ts";
+import { step, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
 import {
@@ -861,6 +862,119 @@ describe("commands.run with tools trace group", () => {
         kind: "tool",
         origin: sdkOrigin,
       },
+    ]);
+  });
+});
+
+describe("commands.run with tool.group", () => {
+  const seen: { id: string; prefix?: string; tool?: string }[] = [];
+  const fakeStep = {
+    run: async (id: string, fn: () => unknown) => {
+      seen.push({
+        id,
+        prefix: getAsyncCtxSync()?.execution?.stepIdPrefix,
+        tool: getAsyncCtxSync()?.execution?.span?.at(-1)?.name,
+      });
+
+      return fn();
+    },
+    invoke: async (id: string) => {
+      seen.push({ id, prefix: getAsyncCtxSync()?.execution?.stepIdPrefix });
+
+      return { refunded: true };
+    },
+  };
+
+  const inFunction = <T>(fn: () => T): T => {
+    seen.length = 0;
+
+    return runWithAsyncCtx(
+      {
+        app: {} as never,
+        execution: { ctx: { step: fakeStep } } as never,
+      },
+      fn,
+    );
+  };
+
+  interface GroupCase {
+    name: string;
+    tool: SandboxTools[string];
+    reply: unknown;
+  }
+
+  test.each<GroupCase>([
+    {
+      name: "runs real steps and returns their result",
+      tool: tool.group({
+        input: z.object({ orderId: z.string() }),
+        run: async () => {
+          return step.run("double", () => {
+            return 4;
+          });
+        },
+      }),
+      reply: { result: 4 },
+    },
+    {
+      name: "returns an invoke result to the sandbox",
+      tool: tool.group({
+        input: z.object({ orderId: z.string() }),
+        run: async ({ orderId }) => {
+          return step.invoke("refund", {
+            function: referenceFunction({ functionId: "refund" }),
+            data: { orderId },
+          });
+        },
+      }),
+      reply: { result: { refunded: true } },
+    },
+    {
+      name: "turns a thrown error into a tool error",
+      tool: tool.group({
+        input: z.object({ orderId: z.string() }),
+        run: async () => {
+          await step.run("fail", () => {
+            throw new Error("card declined");
+          });
+        },
+      }),
+      reply: { error: "card declined" },
+    },
+  ])("$name", async ({ tool: entry, reply }) => {
+    const { fake, sandbox } = createFakeSandbox(
+      sendAll([request(1, "refund", [], { orderId: "o_1" })]),
+    );
+    const { host, executed } = createHost(sandbox);
+
+    await inFunction(() => {
+      return run(host, { refund: entry });
+    });
+
+    expect(replies(fake)).toEqual([{ id: 1, ...(reply as object) }]);
+    expect(executed).toEqual(["exec", "exec:wait:1"]);
+  });
+
+  test("two calls of the same tool scope their steps apart", async () => {
+    const { sandbox } = createFakeSandbox(
+      sendAll([request(1, "lookup"), request(2, "lookup")]),
+    );
+    const { host } = createHost(sandbox);
+    const lookup = tool.group({
+      run: async () => {
+        return step.run("find", () => {
+          return "found";
+        });
+      },
+    });
+
+    await inFunction(() => {
+      return run(host, { lookup });
+    });
+
+    expect(seen).toEqual([
+      { id: "find", prefix: "exec:tool:lookup:1:", tool: "lookup" },
+      { id: "find", prefix: "exec:tool:lookup:2:", tool: "lookup" },
     ]);
   });
 });
