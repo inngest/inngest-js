@@ -21,7 +21,10 @@ import {
 } from "./types.ts";
 
 type SandboxStepExtension = {
-  sandbox: DurableSandboxTools & { python: OneShotRunner };
+  sandbox: DurableSandboxTools & {
+    python: OneShotRunner;
+    typescript: OneShotRunner;
+  };
 };
 
 type SandboxGroupExtension = {
@@ -173,6 +176,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
           sandbox: {
             ...sandbox,
             python: createOneShotRunner(sandbox, "python"),
+            typescript: createOneShotRunner(sandbox, "typescript"),
           },
         },
         group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },

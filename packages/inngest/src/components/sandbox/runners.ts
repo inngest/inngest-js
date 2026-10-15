@@ -1,9 +1,10 @@
 /**
  * @module
- * `step.sandbox.python()`: run a snippet in a sandbox of its own and get its
- * `return` value back, checked against `schema.output` when one is given. The
- * snippet's command comes from `runnerScripts.ts`; this file runs it and reads
- * the result back from the file it wrote.
+ * `step.sandbox.python()` and `step.sandbox.typescript()`: run a snippet in a
+ * sandbox of its own and get its `return` value back, checked against
+ * `schema.output` when one is given. The snippet's command comes from
+ * `runnerScripts.ts`; this file runs it and reads the result back from the file
+ * it wrote.
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
