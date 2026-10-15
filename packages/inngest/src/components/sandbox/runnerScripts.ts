@@ -223,6 +223,35 @@ const assertInput = (
 };
 
 /**
+ * Lets a snippet be indented to match its source: drops one leading newline
+ * and the trailing blank lines, then removes the indentation every non-blank
+ * line shares (tabs and spaces count as different characters).
+ */
+export const dedentCode = (code: string): string => {
+  const lines = code
+    .replace(/^\r?\n/, "")
+    .replace(/(\r?\n[ \t]*)+$/, "")
+    .split("\n");
+
+  let margin: string | undefined;
+  for (const line of lines.filter((l) => l.trim() !== "")) {
+    const indent = line.match(/^[ \t]*/)?.[0] ?? "";
+    let shared = 0;
+    while (shared < indent.length && indent[shared] === margin?.[shared]) {
+      shared++;
+    }
+
+    margin = margin === undefined ? indent : margin.slice(0, shared);
+  }
+
+  return lines
+    .map((line) => {
+      return line.trim() === "" ? "" : line.slice(margin?.length ?? 0);
+    })
+    .join("\n");
+};
+
+/**
  * Validates the input, then returns the command that runs `code`, plus the
  * file it needs when the payload is too large for the command.
  */
@@ -235,7 +264,7 @@ export const buildRunner = ({
 }: Runner): RunnerPlan => {
   assertInput(language, input);
 
-  const payload = JSON.stringify({ code, input });
+  const payload = JSON.stringify({ code: dedentCode(code), input });
   if (new TextEncoder().encode(payload).byteLength <= maxInlinePayloadBytes) {
     return { command: commands[language](payload, resultPath) };
   }
