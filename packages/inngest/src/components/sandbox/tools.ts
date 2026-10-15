@@ -19,6 +19,7 @@ import { internalEvents } from "../../helpers/consts.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { EventType } from "../triggers/triggers.ts";
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
 /**
@@ -231,9 +232,20 @@ const triggerSchema = (
 ): StandardSchemaV1 | undefined => {
   const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
     fn.opts.triggers ?? [];
-  const typed = triggers.filter((trigger) => {
-    return trigger.schema;
-  });
+  const typed = triggers
+    .map((trigger) => {
+      return {
+        event: trigger.event,
+        schema:
+          trigger.schema ??
+          (trigger.event instanceof EventType
+            ? trigger.event.schema
+            : undefined),
+      };
+    })
+    .filter((trigger) => {
+      return trigger.schema;
+    });
   const invoked = typed.find((trigger) => {
     return trigger.event === internalEvents.FunctionInvoked;
   });

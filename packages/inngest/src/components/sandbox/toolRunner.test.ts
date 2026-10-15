@@ -979,6 +979,21 @@ describe("commands.run with tools that run steps", () => {
         return { refunded: true };
       },
     );
+    const wrapped = createClient(() => undefined).createFunction(
+      {
+        id: "wrapped",
+        triggers: [
+          {
+            event: eventType("order/wrapped", {
+              schema: z.object({ orderId: z.string() }),
+            }),
+          },
+        ],
+      },
+      async () => {
+        return { refunded: true };
+      },
+    );
     const untyped = createClient(() => undefined).createFunction(
       { id: "untyped", triggers: [{ event: "order/untyped" }] },
       async () => {
@@ -1005,6 +1020,16 @@ describe("commands.run with tools that run steps", () => {
       {
         name: "gets its data checked against its trigger's schema",
         tool: refund,
+        request: request(1, "refund", [], { orderId: 5 }),
+        reply: {
+          error:
+            "Invalid arguments for refund: orderId: Expected string, received number",
+        },
+        invoked: [],
+      },
+      {
+        name: "gets its data checked against a schema on a wrapped event type",
+        tool: wrapped,
         request: request(1, "refund", [], { orderId: 5 }),
         reply: {
           error:
