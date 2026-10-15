@@ -1,8 +1,10 @@
+import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { sandboxForOperation } from "./client.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
@@ -13,7 +15,12 @@ import {
   type SandboxRawTool,
 } from "./protocol.ts";
 import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
-import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
+import { runCommandWithTools } from "./toolRunner.ts";
+import {
+  type SandboxTraceMetadata,
+  sandboxMetadataKind,
+  sandboxTraceMetadata,
+} from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -164,8 +171,44 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxGroupExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation, finish) =>
-      arg.ctx.step.run(
+    const { step, runId } = arg.ctx;
+    const rawTool: SandboxRawTool = (idOrOptions, operation, finish, tools) => {
+      if (tools && operation.action === "exec") {
+        return runCommandWithTools(
+          {
+            run: async <T>(
+              idOrOptions: StepOptionsOrId,
+              fn: () => Promise<T>,
+              meta?: SandboxTraceMetadata,
+            ) => {
+              return (await step.run(idOrOptions, async () => {
+                try {
+                  const result = await fn();
+                  if (meta) {
+                    addStepMetadata(sandboxMetadataKind, () => {
+                      return meta;
+                    });
+                  }
+
+                  return result;
+                } catch (error) {
+                  throw toStepError(error);
+                }
+              })) as T;
+            },
+            sandbox: sandboxForOperation(
+              this.client.sandboxes,
+              operation.target.sandbox,
+            ),
+            runId,
+          },
+          idOrOptions,
+          operation,
+          tools,
+        );
+      }
+
+      return step.run(
         idOrOptions,
         async (input) => {
           const result = await executeAsStep(this.client, input);
@@ -174,6 +217,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         },
         operation,
       );
+    };
 
     const sandbox = createSandboxTools(() => rawTool);
 
