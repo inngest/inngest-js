@@ -18,8 +18,12 @@
 - [#1773](https://github.com/inngest/inngest-js/pull/1773) [`eee1c61e`](https://github.com/inngest/inngest-js/commit/eee1c61e8e69e93ade5d7024553ac2861adf357d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandboxes can now be scoped with `await using`; they're destroyed when the block exits.
 
   ```ts
-  await using sb = await step.sandbox.create("build");
-  await sb.commands.run("npm test");
+  await using sb = await step.sandbox.create("build", {
+    name: "build",
+    vcpu: 2,
+    memoryMb: 2048,
+  });
+  await sb.commands.run("test", "npm test");
   ```
 
 - [#1774](https://github.com/inngest/inngest-js/pull/1774) [`4d8cac24`](https://github.com/inngest/inngest-js/commit/4d8cac244705dcb34df4babf746fe3f115ba30e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: `group.sandbox()` runs a callback with a fresh sandbox and destroys it afterwards. The sandbox's whole lifetime shows as one group in the trace, and a retried failure keeps the sandbox for the next attempt.

@@ -48,6 +48,14 @@ const isFinal = (error: unknown): boolean => {
 };
 
 /**
+ * Whether the sandbox was already destroyed. The executor restarts the attempt
+ * count after the destroy step, so a replay can't tell its error was final.
+ */
+const isDestroyed = (id: string): boolean => {
+  return !!getAsyncCtxSync()?.execution?.instance.hasRunStep(`${id}:destroy`);
+};
+
+/**
  * Destroy a sandbox in a step. A destroy that failed for good is on the trace
  * as a warning, and must not change the outcome of the run.
  */
@@ -112,6 +120,13 @@ export const withSandbox = <T>(
         return await callback(sandbox);
       } catch (error) {
         failure = { error };
+
+        if (isDestroyed(id)) {
+          throw new NonRetriableError(
+            error instanceof Error ? error.message : String(error),
+            { cause: error },
+          );
+        }
 
         throw error;
       } finally {
