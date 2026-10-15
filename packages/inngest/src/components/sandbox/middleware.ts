@@ -192,6 +192,14 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 
                   return result;
                 } catch (error) {
+                  if (meta) {
+                    addStepMetadata(sandboxMetadataKind, () => {
+                      const code = getSandboxError(error)?.code;
+
+                      return code ? { ...meta, error_code: code } : meta;
+                    });
+                  }
+
                   throw toStepError(error);
                 }
               })) as T;

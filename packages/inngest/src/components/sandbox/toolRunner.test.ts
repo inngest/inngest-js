@@ -472,6 +472,60 @@ describe("commands.run with tools", () => {
       replies(fake).map((reply) => (reply as { result: number }).result),
     ).toEqual(ids.map((n) => n * 2));
   });
+  test("many small replies together stay under the inline budget", async () => {
+    const calls = Array.from({ length: 20 }, (_, index) => {
+      return request(index + 1, "mid");
+    });
+    const { fake, sandbox } = createFakeSandbox(sendAll(calls));
+    const { host } = createHost(sandbox);
+    const wait = sandbox.commands.run.bind(sandbox.commands);
+    const commands: string[][] = [];
+
+    sandbox.commands.run = async (command, options) => {
+      commands.push(command as string[]);
+
+      return wait(command, options);
+    };
+
+    await run(host, {
+      mid: async () => {
+        return "x".repeat(2 * 1024);
+      },
+    });
+
+    const inlineBytes = commands
+      .flatMap((command) => {
+        return command.slice(7);
+      })
+      .filter((reply) => {
+        return !reply.startsWith("@");
+      })
+      .reduce((total, reply) => {
+        return total + reply.length;
+      }, 0);
+
+    expect(inlineBytes).toBeLessThanOrEqual(24 * 1024);
+    expect(fake.uploads.length).toBeGreaterThan(0);
+    expect(fake.replies).toHaveLength(20);
+  });
+
+  test("waits are bounded by the time left on the command", async () => {
+    const { fake, sandbox } = createFakeSandbox(() => undefined);
+    const { host } = createHost(sandbox);
+    const wait = sandbox.commands.run.bind(sandbox.commands);
+
+    sandbox.commands.run = async (command, options) => {
+      if (fake.waits.length === 1) {
+        exitWith(fake);
+      }
+
+      return wait(command, options);
+    };
+
+    await run(host, {}, { waitWindow: 20_000 }, 2500);
+
+    expect(fake.waits[0]?.seconds).toBe(3);
+  });
 
   test("replies that don't fit the waiter's command go up as files", async () => {
     const { fake, sandbox } = createFakeSandbox(
@@ -663,6 +717,40 @@ describe("commands.run with tools", () => {
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
     ]);
+  });
+
+  test("a repeated command ID gets its own directory", async () => {
+    const dirs = new Set<string | undefined>();
+
+    for (const stepId of ["hashed", "hashed:1"]) {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          exitWith(f);
+        }
+      });
+      const { host } = createHost(sandbox);
+      const inStep: ToolsHost["run"] = (idOrOptions, fn, meta) => {
+        return host.run(
+          idOrOptions,
+          () => {
+            return runWithAsyncCtx(
+              {
+                app: {} as never,
+                execution: { executingStep: { id: stepId } } as never,
+              },
+              fn,
+            );
+          },
+          meta,
+        );
+      };
+
+      await run({ ...host, run: inStep }, {});
+
+      dirs.add(fake.processCommand?.[4]);
+    }
+
+    expect(dirs.size).toBe(2);
   });
 });
 
