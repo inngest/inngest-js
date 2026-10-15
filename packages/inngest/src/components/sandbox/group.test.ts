@@ -80,80 +80,58 @@ describe("group.sandbox", () => {
     ]);
   });
 
-  test.each([
-    {
-      name: "an unknown error with retries remaining",
-      attempt: 0,
-      maxAttempts: 5 as number | undefined,
-      fail: () => Promise.reject(new Error("boom")),
-      destroys: 0,
-    },
-    {
-      name: "an unknown error with no attempt limit",
-      attempt: 0,
-      maxAttempts: undefined,
-      fail: () => Promise.reject(new Error("boom")),
-      destroys: 0,
-    },
-    {
-      name: "an unknown error on the last attempt",
-      attempt: 4,
-      maxAttempts: 5,
-      fail: () => Promise.reject(new Error("boom")),
-      destroys: 1,
-    },
-    {
-      name: "a non-retriable error",
-      attempt: 0,
-      maxAttempts: 5,
-      fail: () => Promise.reject(new NonRetriableError("boom")),
-      destroys: 1,
-    },
-  ])(
-    "on $name, destroys $destroys time",
-    async ({ attempt, maxAttempts, fail, destroys }) => {
-      const { client, calls } = createScopeClient();
-
-      const { type } = await runToEnd(buildFailing(client, fail), {
-        attempt,
-        maxAttempts,
-      });
-
-      expect(type).toBe("function-rejected");
-      expect(calls.destroys).toBe(destroys);
-    },
-  );
-
-  test("stays failed for good once the last attempt's cleanup has run", async () => {
+  test("destroys and throws a non-retriable error with the cause for a plain error", async () => {
     const { client, calls } = createScopeClient();
+    const cause = new Error("boom");
 
-    const { retriable, ran } = await runToEnd(
-      buildFailing(client, () => Promise.reject(new Error("boom"))),
-      { attempts: [0, 0, 4, 0], maxAttempts: 5 },
+    const { type, error, ran } = await runToEnd(
+      buildFailing(client, () => Promise.reject(cause)),
     );
 
+    expect(type).toBe("function-rejected");
     expect(ran).toEqual(["box", "run", "box:destroy"]);
     expect(calls.destroys).toBe(1);
-    expect(retriable).toBe(false);
+    expect(error).toMatchObject({
+      name: "NonRetriableError",
+      message: "boom",
+      cause: { message: "boom" },
+    });
   });
 
-  test("destroys when a step in the callback fails for good", async () => {
+  test("rethrows a non-retriable error unchanged", async () => {
+    const { client, calls } = createScopeClient();
+
+    const { error } = await runToEnd(
+      buildFailing(client, () => Promise.reject(new NonRetriableError("boom"))),
+    );
+
+    expect(calls.destroys).toBe(1);
+    expect(error).toMatchObject({ name: "NonRetriableError", message: "boom" });
+    expect(error).toHaveProperty("cause", undefined);
+  });
+
+  test("rethrows a step error unchanged and destroys", async () => {
     const { client, calls } = createScopeClient();
     const fn = client.createFunction(
-      { id: "group-step-fails", triggers: [{ event: "group/sandbox" }] },
+      {
+        id: "group-step-fails",
+        retries: 0,
+        triggers: [{ event: "group/sandbox" }],
+      },
       async ({ group, step }) => {
         await group.sandbox("box", async () => {
           await step.run("fail", () => {
-            throw new NonRetriableError("boom");
+            throw new Error("boom");
           });
         });
       },
     );
 
-    const { ran } = await runToEnd(fn, { attempt: 0, maxAttempts: 5 });
+    const { ran, error } = await runToEnd(fn);
 
     expect(ran).toEqual(["box", "fail", "box:destroy"]);
     expect(calls.destroys).toBe(1);
+    expect(error).toMatchObject({ name: "Error", message: "boom" });
   });
 
   test.each([
@@ -167,7 +145,7 @@ describe("group.sandbox", () => {
     {
       name: "rethrows the callback's error",
       callback: async () => {
-        throw new NonRetriableError("boom");
+        throw new Error("boom");
       },
       type: "function-rejected",
     },
@@ -185,7 +163,7 @@ describe("group.sandbox", () => {
       },
     );
 
-    const result = await runToEnd(fn, { attempt: 0, maxAttempts: 5 });
+    const result = await runToEnd(fn);
     const destroy = result.steps.find((step) => {
       return step.userland?.id === "box:destroy";
     });

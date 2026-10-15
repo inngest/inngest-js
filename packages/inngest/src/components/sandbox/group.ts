@@ -27,33 +27,6 @@ export type GroupSandbox = <T>(
   callback: (sandbox: DurableSandbox) => Promise<T>,
 ) => Promise<T>;
 
-const retriesRemain = (): boolean => {
-  const ctx = getAsyncCtxSync()?.execution?.ctx;
-
-  return !ctx?.maxAttempts || ctx.attempt < ctx.maxAttempts - 1;
-};
-
-/**
- * Whether an error ends the sandbox. A final error, or any error on the last
- * attempt, does. Any other error is about to be retried, and the retry replays
- * the memoized creation, so the sandbox must stay alive for it.
- */
-const isFinal = (error: unknown): boolean => {
-  return (
-    error instanceof StepError ||
-    error instanceof NonRetriableError ||
-    !retriesRemain()
-  );
-};
-
-/**
- * Whether the sandbox was already destroyed. The executor restarts the attempt
- * count after the destroy step, so a replay can't tell its error was final.
- */
-const isDestroyed = (id: string): boolean => {
-  return !!getAsyncCtxSync()?.execution?.instance.hasRunStep(`${id}:destroy`);
-};
-
 /**
  * Build `group.sandbox()` on top of `step.sandbox.create()`.
  */
@@ -76,25 +49,24 @@ export const createGroupSandbox = (
       { id, name: `Sandbox ${id}`, kind: "sandbox" },
       async () => {
         const sandbox = await tools.create(id, options);
-        let failure: { error: unknown } | undefined;
 
         try {
           return await callback(sandbox);
         } catch (error) {
-          failure = { error };
-
-          if (isDestroyed(id)) {
-            throw new NonRetriableError(
-              error instanceof Error ? error.message : String(error),
-              { cause: error },
-            );
+          // The sandbox is destroyed below, so a retry couldn't reuse it
+          if (
+            error instanceof NonRetriableError ||
+            error instanceof StepError
+          ) {
+            throw error;
           }
 
-          throw error;
+          throw new NonRetriableError(
+            error instanceof Error ? error.message : String(error),
+            { cause: error },
+          );
         } finally {
-          if (!failure || isFinal(failure.error)) {
-            await sandbox[Symbol.asyncDispose]();
-          }
+          await sandbox[Symbol.asyncDispose]();
         }
       },
     );

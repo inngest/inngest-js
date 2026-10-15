@@ -239,9 +239,4 @@ export interface IInngestExecution {
     values: Record<string, unknown>,
     opts?: MetadataWriteOptions,
   ): boolean;
-
-  /**
-   * Whether the step with this ID already ran in an earlier request.
-   */
-  hasRunStep(stepId: string): boolean;
 }

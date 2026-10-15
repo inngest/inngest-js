@@ -58,7 +58,6 @@ const mockExecution = (): IInngestExecution & { addMetadata: Mock } => ({
   version: 1,
   start: vi.fn(),
   addMetadata: vi.fn(() => true),
-  hasRunStep: vi.fn(() => false),
 });
 
 /**
