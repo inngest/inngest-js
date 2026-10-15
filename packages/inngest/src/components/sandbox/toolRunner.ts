@@ -180,9 +180,6 @@ const followCommand = async (
 
   const [{ command, environment, cwd, timeoutMs }] = operation.input;
   const { sandbox } = host;
-  const dir = `${toolsRoot}/${sha256()
-    .update(`${host.runId ?? ""}:${id}`)
-    .digest("hex")}`;
   const meta = sandboxTraceMetadata(operation, { error: undefined });
 
   const sdkStep = (stepId: string, name: string): StepOptions => {
@@ -193,7 +190,7 @@ const followCommand = async (
    * Replies ride in the waiter's command while they're small. A larger one is
    * uploaded, and the command names its file.
    */
-  const stage = (replies: string[]): Promise<string[]> => {
+  const stage = (dir: string, replies: string[]): Promise<string[]> => {
     return Promise.all(
       replies.map(async (reply, index) => {
         if (byteLength(reply) <= maxInlineReplyBytes) {
@@ -212,7 +209,11 @@ const followCommand = async (
    * Has the waiter append `replies`, then wait for news, since the code can't
    * ask for anything new until it has its reply.
    */
-  const follow = async (lines: number, replies: string[]): Promise<Round> => {
+  const follow = async (
+    dir: string,
+    lines: number,
+    replies: string[],
+  ): Promise<Round> => {
     const seconds = Math.ceil(waitWindowMs / 1000);
     const waited = await sandbox.commands.run(
       [
@@ -223,7 +224,7 @@ const followCommand = async (
         dir,
         `${lines}`,
         `${seconds}`,
-        ...(await stage(replies)),
+        ...(await stage(dir, replies)),
       ],
       { timeout: (seconds + 30) * 1000 },
     );
@@ -248,7 +249,7 @@ const followCommand = async (
     return { now: Date.now(), lines: lines + log.length, requests, result };
   };
 
-  const abort = async (reason: string): Promise<never> => {
+  const abort = async (dir: string, reason: string): Promise<never> => {
     await host.run(sdkStep(`${id}:abort`, "Stop command"), async () => {
       await sandbox.commands.run([
         "/bin/sh",
@@ -309,6 +310,11 @@ const followCommand = async (
     idOrOptions,
     async () => {
       const startedAt = Date.now();
+      // The step's own ID, which stays distinct when a command ID repeats.
+      const stepId = getAsyncCtxSync()?.execution?.executingStep?.id ?? id;
+      const dir = `${toolsRoot}/${sha256()
+        .update(`${host.runId ?? ""}:${stepId}`)
+        .digest("hex")}`;
       // The wait doesn't need the process to exist yet, so it runs alongside.
       const [, round] = await Promise.all([
         sandbox.processes.start({
@@ -316,14 +322,15 @@ const followCommand = async (
           ...(environment && { environment }),
           ...(cwd !== undefined && { cwd }),
         }),
-        follow(0, []),
+        follow(dir, 0, []),
       ]);
 
-      return { ...round, startedAt };
+      return { ...round, startedAt, dir };
     },
     meta,
   );
 
+  const { dir } = started;
   const seen = new Set<number>();
   let state: Round = started;
   let waits = 0;
@@ -334,7 +341,10 @@ const followCommand = async (
     }
 
     if (state.now - started.startedAt > timeoutMs) {
-      return abort(`Command with tools exceeded its ${timeoutMs}ms timeout`);
+      return abort(
+        dir,
+        `Command with tools exceeded its ${timeoutMs}ms timeout`,
+      );
     }
 
     const pending: Round["requests"] = [];
@@ -346,7 +356,7 @@ const followCommand = async (
       seen.add(request.id);
 
       if (seen.size > maxCalls) {
-        return abort(`Command made more than ${maxCalls} tool calls`);
+        return abort(dir, `Command made more than ${maxCalls} tool calls`);
       }
 
       pending.push({ request, line });
@@ -365,7 +375,7 @@ const followCommand = async (
     state = await host.run(
       sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {
-        return follow(lines, replies);
+        return follow(dir, lines, replies);
       },
       { ...meta, kind: "wait" },
     );

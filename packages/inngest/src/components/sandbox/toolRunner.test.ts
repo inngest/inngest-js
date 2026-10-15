@@ -664,6 +664,40 @@ describe("commands.run with tools", () => {
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
     ]);
   });
+
+  test("a repeated command ID gets its own directory", async () => {
+    const dirs = new Set<string | undefined>();
+
+    for (const stepId of ["hashed", "hashed:1"]) {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          exitWith(f);
+        }
+      });
+      const { host } = createHost(sandbox);
+      const inStep: ToolsHost["run"] = (idOrOptions, fn, meta) => {
+        return host.run(
+          idOrOptions,
+          () => {
+            return runWithAsyncCtx(
+              {
+                app: {} as never,
+                execution: { executingStep: { id: stepId } } as never,
+              },
+              fn,
+            );
+          },
+          meta,
+        );
+      };
+
+      await run({ ...host, run: inStep }, {});
+
+      dirs.add(fake.processCommand?.[4]);
+    }
+
+    expect(dirs.size).toBe(2);
+  });
 });
 
 describe("commands.run with tools trace group", () => {
