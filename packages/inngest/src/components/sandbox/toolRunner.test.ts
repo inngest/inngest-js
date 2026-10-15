@@ -401,6 +401,40 @@ describe("commands.run with tools", () => {
       steps: [],
     },
     {
+      name: "no arguments, checked as an empty set of named arguments",
+      tools: {
+        list: tool.step({
+          input: z.object({ limit: z.number().default(10) }),
+          run: async ({ limit }) => {
+            return limit;
+          },
+        }),
+      },
+      requests: [request(1, "list")],
+      replies: [{ id: 1, result: 10 }],
+      steps: ["exec:tool:list:1"],
+    },
+    {
+      name: "an input check that throws",
+      tools: {
+        flaky: tool.step({
+          input: {
+            "~standard": {
+              version: 1,
+              vendor: "test",
+              validate: () => {
+                throw new Error("schema service down");
+              },
+            },
+          },
+          run: vi.fn(),
+        }),
+      },
+      requests: [request(1, "flaky", [], { a: 1 })],
+      replies: [{ id: 1, error: "schema service down" }],
+      steps: [],
+    },
+    {
       name: "a tool that throws, after its step fails",
       tools: {
         boom: async () => {
@@ -416,6 +450,7 @@ describe("commands.run with tools", () => {
       tools: {
         count: tool.step({
           output: z.object({ n: z.number() }),
+          // @ts-expect-error the body breaks its output schema on purpose
           run: async () => {
             return { n: "nope" };
           },
@@ -747,6 +782,16 @@ describe("tool.step", () => {
         expectTypeOf(ctx.idempotencyKey).toEqualTypeOf<string>();
 
         return { n: id.length };
+      },
+    });
+  });
+
+  test("a body without an input schema is checked against the output", () => {
+    tool.step({
+      output: z.number(),
+      // @ts-expect-error the body returns a string, not a number
+      run: () => {
+        return "nope";
       },
     });
   });
