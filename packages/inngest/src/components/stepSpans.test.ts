@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createClient, runFnWithStack, runSteps } from "../test/helpers.ts";
 import type { InngestFunction } from "./InngestFunction.ts";
 import { createGroupTools } from "./InngestGroupTools.ts";
+import { withSpan, withStepIdPrefix } from "./InngestStepTools.ts";
 
 const client = createClient({ id: "test", isDev: true });
 
@@ -375,5 +376,34 @@ describe('step "~origin"', () => {
     // Strict equality fails on an `origin` key, even an undefined one
     expect(steps.outside?.opts).toStrictEqual({});
     expect(steps.inside?.opts).toStrictEqual({ span: [job] });
+  });
+});
+
+describe("withStepIdPrefix()", () => {
+  test("gives the same step ID in two scopes distinct IDs, and keeps the user's origin", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step }) => {
+        const span = { id: "t", kind: "tool", origin: "sdk" };
+
+        await Promise.all(
+          ["a:", "b:"].map((prefix) => {
+            return withSpan(span, () => {
+              return withStepIdPrefix(prefix, () => {
+                return step.run("find", () => {
+                  return prefix;
+                });
+              });
+            });
+          }),
+        );
+      },
+    );
+
+    const steps = Object.values(await findSteps(fn));
+
+    expect(steps.map((op) => op.userland?.id)).toEqual(["a:find", "b:find"]);
+    expect(steps.map((op) => op.displayName)).toEqual(["find", "find"]);
+    expect(steps.map((op) => op.opts?.origin)).toEqual([undefined, undefined]);
   });
 });
