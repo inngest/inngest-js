@@ -380,11 +380,11 @@ describe('step "~origin"', () => {
 });
 
 describe("withStepIdPrefix()", () => {
-  test("gives the same step ID in two scopes distinct IDs, and keeps the user's origin", async () => {
+  test("gives the same step ID in two scopes distinct IDs", async () => {
     const fn = client.createFunction(
       { id: "fn", triggers: [{ event: "test" }] },
       async ({ step }) => {
-        const span = { id: "t", kind: "tool", origin: "sdk" };
+        const span = { id: "t", kind: "tool" };
 
         await Promise.all(
           ["a:", "b:"].map((prefix) => {
@@ -405,5 +405,24 @@ describe("withStepIdPrefix()", () => {
     expect(steps.map((op) => op.userland?.id)).toEqual(["a:find", "b:find"]);
     expect(steps.map((op) => op.displayName)).toEqual(["find", "find"]);
     expect(steps.map((op) => op.opts?.origin)).toEqual([undefined, undefined]);
+  });
+
+  test("keeps the origin of a span inside the scope", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step }) => {
+        await withStepIdPrefix("a:", () => {
+          return withSpan({ id: "work", origin: "lib" }, () => {
+            return step.run("find", () => {
+              return "found";
+            });
+          });
+        });
+      },
+    );
+
+    const steps = Object.values(await findSteps(fn));
+
+    expect(steps.map((op) => op.opts?.origin)).toEqual(["lib"]);
   });
 });

@@ -6,7 +6,8 @@
  *
  * Sandbox code and the host talk through one append-only log in a per-run
  * directory (`INNGEST_TOOLS_DIR`). `ops.log` holds one JSON event per line, and
- * `op` says whose it is:
+ * `op` says whose it is. A request claims its `id` by creating the directory
+ * `id.<id>`, so ids are unique across the interpreters of one command:
  *
  * - `{"op":"call","id":1,"tool":"getCustomer","args":["c1"],"kwargs":{}}` is a
  *   request, appended by the stub. `kwargs` is Python only.
@@ -40,8 +41,20 @@ const append = `dd of="$d/ops.log" oflag=append conv=notrunc iflag=fullblock bs=
 
 const pythonStub = `import asyncio, json, os
 
-_log = os.open(os.environ["INNGEST_TOOLS_DIR"] + "/ops.log", os.O_RDWR | os.O_APPEND | os.O_CREAT)
+_dir = os.environ["INNGEST_TOOLS_DIR"]
+_log = os.open(_dir + "/ops.log", os.O_RDWR | os.O_APPEND | os.O_CREAT)
 _seq = 0
+
+
+def _claim():
+    global _seq
+    while True:
+        _seq += 1
+        try:
+            os.mkdir(_dir + "/id." + str(_seq))
+            return _seq
+        except FileExistsError:
+            pass
 
 
 class ToolError(Exception):
@@ -54,14 +67,13 @@ class _Tools:
             raise AttributeError(name)
 
         async def call(*args, **kwargs):
-            global _seq
-            _seq += 1
-            line = json.dumps({"op": "call", "id": _seq, "tool": name, "args": args, "kwargs": kwargs}) + "\\n"
+            id = _claim()
+            line = json.dumps({"op": "call", "id": id, "tool": name, "args": args, "kwargs": kwargs}) + "\\n"
             if len(line) > ${maxToolRequestBytes}:
                 raise ToolError("request to " + name + " is too large")
             pos = os.fstat(_log).st_size
             os.write(_log, line.encode())
-            prefix = b'{"op":"reply","id":%d,' % _seq
+            prefix = b'{"op":"reply","id":%d,' % id
             while True:
                 for found in os.pread(_log, os.fstat(_log).st_size - pos, pos).split(b"\\n")[:-1]:
                     if found.startswith(prefix):
@@ -79,13 +91,25 @@ tools = _Tools()
 
 const nodeStub = `const fs = require("node:fs");
 
-const log = fs.openSync(process.env.INNGEST_TOOLS_DIR + "/ops.log", "a+");
+const dir = process.env.INNGEST_TOOLS_DIR;
+const log = fs.openSync(dir + "/ops.log", "a+");
 let seq = 0;
+
+const claim = () => {
+  for (;;) {
+    try {
+      fs.mkdirSync(dir + "/id." + ++seq);
+      return seq;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+  }
+};
 
 class ToolError extends Error { name = "ToolError"; }
 
 const call = async (name, args) => {
-  const id = ++seq;
+  const id = claim();
   const line = JSON.stringify({ op: "call", id, tool: name, args }) + "\\n";
   if (Buffer.byteLength(line) > ${maxToolRequestBytes}) {
     throw new ToolError("request to " + name + " is too large");

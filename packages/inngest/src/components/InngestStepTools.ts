@@ -282,8 +282,7 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
 
 /**
  * Run a callback whose steps get `prefix` before their IDs, so concurrent
- * callers can use the same IDs. The steps belong to the code that created
- * them, so they don't inherit the origin of the span they are in.
+ * callers can use the same IDs.
  */
 export const withStepIdPrefix = <T>(prefix: string, callback: () => T): T => {
   const currentCtx = getAsyncCtxSync();
@@ -398,8 +397,7 @@ export const createStepTools = <
       }
 
       // The step's own origin wins, then the innermost span's
-      const origin =
-        stepOptions["~origin"] ?? (prefix ? undefined : spanOrigin(span));
+      const origin = stepOptions["~origin"] ?? spanOrigin(span);
 
       if (origin) {
         op.opts = { ...op.opts, origin };

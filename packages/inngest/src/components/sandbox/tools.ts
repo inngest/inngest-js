@@ -156,7 +156,9 @@ export interface ToolDefinition<
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
       ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>
-    : (...args: never[]) => unknown;
+    : (
+        ...args: never[]
+      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>;
 }
 
 /**
@@ -380,12 +382,13 @@ export const resolveToolCall = async (
   let values = args;
 
   if (definition.input) {
-    if ((kwargs ? args.length + 1 : args.length) !== 1) {
+    if (args.length + (kwargs ? 1 : 0) > 1) {
       return { error: `${name} takes one set of named arguments` };
     }
 
+    // A call with nothing passed is an empty set of named arguments.
     const result = await definition.input["~standard"].validate(
-      kwargs ?? args[0],
+      kwargs ?? (args.length ? args[0] : {}),
     );
     if (result.issues) {
       return {
