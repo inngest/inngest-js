@@ -8,6 +8,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { Jsonify } from "../../helpers/jsonify.ts";
 import type { StepOptionsOrId } from "../../types.ts";
 import { getStepOptions } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -56,7 +57,8 @@ export type OneShotRunnerOptions = Omit<RunnerOptions, "environment"> &
 /**
  * Create a sandbox, run `code` in it, and destroy it. It takes a step ID, or
  * step options with an ID and a name. A top-level `return` is the result,
- * typed by `schema.output` when given, or by `T`.
+ * typed by `schema.output` when given, or by `T`, as its JSON form, like
+ * `step.run`.
  */
 export interface OneShotRunner {
   <TSchema extends StandardSchemaV1>(
@@ -65,12 +67,12 @@ export interface OneShotRunner {
     options: Omit<OneShotRunnerOptions, "schema"> & {
       schema: { output: TSchema };
     },
-  ): Promise<StandardSchemaV1.InferOutput<TSchema>>;
+  ): Promise<Jsonify<StandardSchemaV1.InferOutput<TSchema>>>;
   <T = unknown>(
     idOrOptions: StepOptionsOrId,
     code: string,
     options?: OneShotRunnerOptions,
-  ): Promise<T>;
+  ): Promise<Jsonify<T>>;
 }
 
 const titles: Record<RunnerLanguage, string> = {
