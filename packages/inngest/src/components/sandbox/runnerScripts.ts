@@ -225,7 +225,8 @@ const assertInput = (
 /**
  * Lets a snippet be indented to match its source: drops one leading newline
  * and the trailing blank lines, then removes the indentation every non-blank
- * line shares (tabs and spaces count as different characters).
+ * line shares (tabs and spaces count as different characters). A blank line
+ * loses at most that much, so whitespace inside a string survives.
  */
 export const dedentCode = (code: string): string => {
   const lines = code
@@ -246,7 +247,7 @@ export const dedentCode = (code: string): string => {
 
   return lines
     .map((line) => {
-      return line.trim() === "" ? "" : line.slice(margin?.length ?? 0);
+      return line.slice(margin?.length ?? 0);
     })
     .join("\n");
 };
