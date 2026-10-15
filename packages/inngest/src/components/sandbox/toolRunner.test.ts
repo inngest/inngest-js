@@ -10,6 +10,7 @@ import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { eventType } from "../triggers/triggers.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
 import {
   parseSandboxOperationForAction,
@@ -866,8 +867,13 @@ describe("commands.run with tools trace group", () => {
   });
 });
 
-describe("commands.run with tool.group", () => {
-  const seen: { id: string; prefix?: string; tool?: string }[] = [];
+describe("commands.run with tools that run steps", () => {
+  const seen: {
+    id: string;
+    prefix?: string;
+    tool?: string;
+    data?: unknown;
+  }[] = [];
   const fakeStep = {
     run: async (id: string, fn: () => unknown) => {
       seen.push({
@@ -878,8 +884,12 @@ describe("commands.run with tool.group", () => {
 
       return fn();
     },
-    invoke: async (id: string) => {
-      seen.push({ id, prefix: getAsyncCtxSync()?.execution?.stepIdPrefix });
+    invoke: async (id: string, options: { data?: unknown }) => {
+      seen.push({
+        id,
+        prefix: getAsyncCtxSync()?.execution?.stepIdPrefix,
+        data: options.data,
+      });
 
       return { refunded: true };
     },
@@ -953,6 +963,91 @@ describe("commands.run with tool.group", () => {
 
     expect(replies(fake)).toEqual([{ id: 1, ...(reply as object) }]);
     expect(executed).toEqual(["exec", "exec:wait:1"]);
+  });
+
+  describe("an Inngest function", () => {
+    const refund = createClient(() => undefined).createFunction(
+      {
+        id: "refund",
+        triggers: [
+          eventType("order/refund", {
+            schema: z.object({ orderId: z.string() }),
+          }),
+        ],
+      },
+      async () => {
+        return { refunded: true };
+      },
+    );
+    const untyped = createClient(() => undefined).createFunction(
+      { id: "untyped", triggers: [{ event: "order/untyped" }] },
+      async () => {
+        return { refunded: true };
+      },
+    );
+
+    interface FunctionCase {
+      name: string;
+      tool: SandboxTools[string];
+      request: string;
+      reply: unknown;
+      invoked: unknown[];
+    }
+
+    test.each<FunctionCase>([
+      {
+        name: "is invoked with the named arguments as its data",
+        tool: refund,
+        request: request(1, "refund", [], { orderId: "o_1" }),
+        reply: { result: { refunded: true } },
+        invoked: [{ orderId: "o_1" }],
+      },
+      {
+        name: "gets its data checked against its trigger's schema",
+        tool: refund,
+        request: request(1, "refund", [], { orderId: 5 }),
+        reply: {
+          error:
+            "Invalid arguments for refund: orderId: Expected string, received number",
+        },
+        invoked: [],
+      },
+      {
+        name: "without a trigger schema takes any named arguments",
+        tool: untyped,
+        request: request(1, "refund", [], { anything: 1 }),
+        reply: { result: { refunded: true } },
+        invoked: [{ anything: 1 }],
+      },
+      {
+        name: "without a trigger schema still takes one set of named arguments",
+        tool: untyped,
+        request: request(1, "refund", ["o_1", "o_2"]),
+        reply: { error: "refund takes one set of named arguments" },
+        invoked: [],
+      },
+      {
+        name: "can be a reference to a function",
+        tool: referenceFunction({ functionId: "refund" }),
+        request: request(1, "refund", [], { orderId: "o_1" }),
+        reply: { result: { refunded: true } },
+        invoked: [{ orderId: "o_1" }],
+      },
+    ])("$name", async ({ tool: entry, request: sent, reply, invoked }) => {
+      const { fake, sandbox } = createFakeSandbox(sendAll([sent]));
+      const { host } = createHost(sandbox);
+
+      await inFunction(() => {
+        return run(host, { refund: entry });
+      });
+
+      expect(replies(fake)).toEqual([{ id: 1, ...(reply as object) }]);
+      expect(seen).toEqual(
+        invoked.map((data) => {
+          return { id: "invoke", prefix: "exec:tool:refund:1:", data };
+        }),
+      );
+    });
   });
 
   test("two calls of the same tool scope their steps apart", async () => {

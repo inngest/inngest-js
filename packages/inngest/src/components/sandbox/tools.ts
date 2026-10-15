@@ -15,6 +15,10 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import { internalEvents } from "../../helpers/consts.ts";
+import { InngestFunction } from "../InngestFunction.ts";
+import { InngestFunctionReference } from "../InngestFunctionReference.ts";
+import { step } from "../InngestStepTools.ts";
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
 /**
@@ -72,9 +76,15 @@ export interface SandboxTool {
 
 /**
  * A plain function takes positional JSON arguments. A `tool.step()` can declare
- * an `input` schema, which makes the call take named arguments.
+ * an `input` schema, which makes the call take named arguments. An Inngest
+ * function, or a reference to one, is invoked with the named arguments as its
+ * event data.
  */
-export type SandboxToolEntry = SandboxTool | ((...args: never[]) => unknown);
+export type SandboxToolEntry =
+  | SandboxTool
+  | ((...args: never[]) => unknown)
+  | InngestFunction.Any
+  | InngestFunctionReference.Any;
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
 
@@ -212,8 +222,54 @@ export const tool = {
   },
 };
 
-const isTool = (entry: SandboxToolEntry): entry is SandboxTool => {
-  return typeof entry === "object";
+/**
+ * The schema of the data a function takes, when its triggers say: that of its
+ * `invoke()` trigger, or of its only event trigger with a schema.
+ */
+const triggerSchema = (
+  fn: InngestFunction.Any,
+): StandardSchemaV1 | undefined => {
+  const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
+    fn.opts.triggers ?? [];
+  const typed = triggers.filter((trigger) => {
+    return trigger.schema;
+  });
+  const invoked = typed.find((trigger) => {
+    return trigger.event === internalEvents.FunctionInvoked;
+  });
+
+  return (invoked ?? (typed.length === 1 ? typed[0] : undefined))?.schema;
+};
+
+/**
+ * An Inngest function as a tool: a group whose only step invokes it with the
+ * call's named arguments. The input is checked against the function's trigger
+ * when that has a schema; otherwise it's any record, and a tool that wants
+ * more declares it with `tool.group()`.
+ */
+const functionTool = (
+  fn: InngestFunction.Any | InngestFunctionReference.Any,
+): SandboxTool => {
+  return {
+    group: true,
+    input:
+      (fn instanceof InngestFunction ? triggerSchema(fn) : undefined) ??
+      z.record(z.unknown()),
+    run: (data: Record<string, unknown>) => {
+      return step.invoke("invoke", { function: fn, data });
+    },
+  } as SandboxTool;
+};
+
+const toTool = (entry: SandboxToolEntry): SandboxTool => {
+  if (typeof entry === "function") {
+    return { run: entry };
+  }
+
+  return entry instanceof InngestFunction ||
+    entry instanceof InngestFunctionReference
+    ? functionTool(entry)
+    : entry;
 };
 
 /**
@@ -307,8 +363,7 @@ export const resolveToolCall = async (
     return { error: `Unknown tool: ${name.slice(0, 64)}` };
   }
 
-  // A plain function takes positional values and no context.
-  const definition: SandboxTool = isTool(entry) ? entry : { run: entry };
+  const definition = toTool(entry);
   const run = definition.run as (...values: unknown[]) => unknown;
   let values = args;
 
@@ -332,14 +387,18 @@ export const resolveToolCall = async (
   }
 
   return {
-    group: isTool(entry) && entry.group === true,
+    group: definition.group === true,
     invoke: async (ctx: SandboxToolContext) => {
-      const value = await run(...values, ...(isTool(entry) ? [ctx] : []));
-      if (!isTool(entry) || !entry.output) {
+      // A plain function takes positional values and no context.
+      const value = await run(
+        ...values,
+        ...(typeof entry === "function" ? [] : [ctx]),
+      );
+      if (!definition.output) {
         return value;
       }
 
-      const result = await entry.output["~standard"].validate(value);
+      const result = await definition.output["~standard"].validate(value);
       if (result.issues) {
         throw new SandboxValidationError(
           `${name} returned an invalid result: ${issuesMessage(result.issues)}`,
