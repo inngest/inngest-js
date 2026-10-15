@@ -6,12 +6,9 @@ Experimental: `step.sandbox.python` and `step.sandbox.typescript` now take `tool
 
 ```ts
 const total = await step.sandbox.python(
-  {
-    id: "total",
-    tools: { getCustomer },
-    schema: { output: z.number() },
-  },
+  "total",
   `customer = await tools.getCustomer(id="cus_1")
 return customer["seats"] * 10`,
+  { tools: { getCustomer }, schema: { output: z.number() } },
 );
 ```

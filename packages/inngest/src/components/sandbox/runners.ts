@@ -51,23 +51,22 @@ export interface RunnerOptions
 export type OneShotRunnerOptions = Omit<RunnerOptions, "environment"> &
   Partial<Omit<SandboxCreateFreshOptions, "name" | "snapshotId">>;
 
-type IdentifiedOneShotOptions = OneShotRunnerOptions & { id: string };
-
 /**
- * Create a sandbox, run `code` in it, and destroy it. It takes a step ID, or
- * options that include one. A top-level `return` is the result, typed by
- * `schema.output` when given, or by `T`.
+ * Create a sandbox, run `code` in it, and destroy it. A top-level `return` is
+ * the result, typed by `schema.output` when given, or by `T`.
  */
 export interface OneShotRunner {
   <TSchema extends StandardSchemaV1>(
-    options: Omit<IdentifiedOneShotOptions, "schema"> & {
+    id: string,
+    code: string,
+    options: Omit<OneShotRunnerOptions, "schema"> & {
       schema: { output: TSchema };
     },
-    code: string,
   ): Promise<StandardSchemaV1.InferOutput<TSchema>>;
   <T = unknown>(
-    idOrOptions: string | IdentifiedOneShotOptions,
+    id: string,
     code: string,
+    options?: OneShotRunnerOptions,
   ): Promise<T>;
 }
 
@@ -200,20 +199,12 @@ export const createOneShotRunner = (
   language: RunnerLanguage,
 ): OneShotRunner => {
   return (async (
-    idOrOptions: string | IdentifiedOneShotOptions,
+    id: string,
     code: string,
+    options: OneShotRunnerOptions = {},
   ) => {
-    const {
-      id,
-      input,
-      cwd,
-      timeout,
-      schema,
-      tools,
-      toolOptions,
-      ...create
-    }: IdentifiedOneShotOptions =
-      typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
+    const { input, cwd, timeout, schema, tools, toolOptions, ...create } =
+      options;
     const plan = buildPlan(language, id, code, input, tools);
 
     return withSandbox(

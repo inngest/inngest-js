@@ -6,7 +6,8 @@ Experimental: you can now run TypeScript in a sandbox with `step.sandbox.typescr
 
 ```ts
 const total = await step.sandbox.typescript(
-  { id: "sum", input: { numbers: [1, 2, 3] } },
+  "sum",
   `return numbers.reduce((a: number, b: number) => a + b, 0)`,
+  { input: { numbers: [1, 2, 3] } },
 );
 ```
