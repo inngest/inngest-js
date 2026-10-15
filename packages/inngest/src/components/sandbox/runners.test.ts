@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import type { Jsonify } from "../../helpers/jsonify.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { createSandboxTools } from "./durable.ts";
 import type { SandboxRawTool } from "./protocol.ts";
@@ -226,7 +227,7 @@ describe.each(languages)(
       });
     };
 
-    test("types the result by the schema", () => {
+    test("types the result as its JSON form, like step.run", () => {
       const runner = null as unknown as OneShotRunner;
 
       expectTypeOf(() =>
@@ -235,6 +236,15 @@ describe.each(languages)(
       expectTypeOf(() =>
         runner<number>("py", "return 1"),
       ).returns.resolves.toEqualTypeOf<number>();
+      expectTypeOf(() =>
+        runner("py", "return 1", { schema: { output: z.coerce.date() } }),
+      ).returns.resolves.toEqualTypeOf<string>();
+      expectTypeOf(() =>
+        runner<{ at: Date }>("py", "return 1"),
+      ).returns.resolves.toEqualTypeOf<{ at: string }>();
+      expectTypeOf(() =>
+        runner("py", "return 1"),
+      ).returns.resolves.toEqualTypeOf<Jsonify<unknown>>();
     });
 
     test("returns the validated result", async () => {
