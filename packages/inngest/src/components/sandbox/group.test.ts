@@ -124,6 +124,19 @@ describe("group.sandbox", () => {
     },
   );
 
+  test("stays failed for good once the last attempt's cleanup has run", async () => {
+    const { client, calls } = createScopeClient();
+
+    const { retriable, ran } = await runToEnd(
+      buildFailing(client, () => Promise.reject(new Error("boom"))),
+      { attempts: [0, 0, 4, 0], maxAttempts: 5 },
+    );
+
+    expect(ran).toEqual(["box", "run", "box:destroy"]);
+    expect(calls.destroys).toBe(1);
+    expect(retriable).toBe(false);
+  });
+
   test("destroys when a step in the callback fails for good", async () => {
     const { client, calls } = createScopeClient();
     const fn = client.createFunction(

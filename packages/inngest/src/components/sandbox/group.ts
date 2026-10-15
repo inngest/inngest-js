@@ -47,6 +47,14 @@ const isFinal = (error: unknown): boolean => {
 };
 
 /**
+ * Whether the sandbox was already destroyed. The executor restarts the attempt
+ * count after the destroy step, so a replay can't tell its error was final.
+ */
+const isDestroyed = (id: string): boolean => {
+  return !!getAsyncCtxSync()?.execution?.instance.hasRunStep(`${id}:destroy`);
+};
+
+/**
  * Build `group.sandbox()` on top of `step.sandbox.create()`.
  */
 export const createGroupSandbox = (
@@ -74,6 +82,13 @@ export const createGroupSandbox = (
           return await callback(sandbox);
         } catch (error) {
           failure = { error };
+
+          if (isDestroyed(id)) {
+            throw new NonRetriableError(
+              error instanceof Error ? error.message : String(error),
+              { cause: error },
+            );
+          }
 
           throw error;
         } finally {

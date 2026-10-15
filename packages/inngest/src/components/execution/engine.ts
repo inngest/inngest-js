@@ -412,6 +412,10 @@ class InngestExecutionEngine
     return true;
   }
 
+  public hasRunStep(stepId: string): boolean {
+    return _internals.hashId(stepId) in this.state.stepState;
+  }
+
   /**
    * Starts execution of the user's function and the core loop.
    *
