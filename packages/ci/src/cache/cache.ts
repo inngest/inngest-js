@@ -313,20 +313,21 @@ const identityKey = (
   }
 
   if (base) {
-    parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
+    parts.push(`from:${base.from}@${base.snapshotId ?? ""}`);
   }
 
   return parts.length === 1 ? key : hash(parts.join("\0"));
 };
 
 /**
- * The parent a job starts from, as its key sees it: the parent's job and its
- * snapshot, which is missing when there was none to take. A parent rebuilt
- * with any change has a new snapshot, so every job below it gets a new name
- * and misses on lookup, without a machine starting to find out.
+ * The base a job starts from, as its key sees it: what it is and its snapshot,
+ * which is missing when there was none to take. A base rebuilt with any
+ * change has a new snapshot, so every job below it gets a new name and misses
+ * on lookup, without a machine starting to find out.
  */
 export interface BaseIdentity {
-  jobId: string;
+  /** The parent's job ID, or `image:<name>` for an image. */
+  from: string;
   snapshotId?: string;
 }
 

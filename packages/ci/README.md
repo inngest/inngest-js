@@ -51,6 +51,20 @@ const test = ci.job({ id: "test", from: base }, async () => {
 
 A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
 
+## Start from another app's job
+
+Share a base across apps with `image.job()`. The other app builds the job if it's missing, once for every app that asks, from the commit it was deployed from.
+
+```ts
+import { image } from "@inngest/ci";
+
+ci.job({ id: "test", from: image.job("platform/node-base") }, async () => {
+  await $`pnpm test`;
+});
+```
+
+The other app finds that commit in its host's variables (Vercel or GitHub Actions) or its git checkout. Both apps run `@inngest/ci` in the same Inngest environment.
+
 ## Another repository or ref
 
 `checkout()` and `files()` take `repo` and `ref`. A ref is a branch, tag or commit, and it's resolved to a commit once per run.

@@ -36,6 +36,7 @@ import {
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import { chainOf } from "./appJob.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
@@ -336,6 +337,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
   } = args;
   const { target, exclude, broken, unnamed, base } = requestFrom(args);
   const origin = matrixOriginOf(config);
+  const chain = chainOf(run);
 
   const data: CacheBuildData = {
     jobId: config.id,
@@ -343,6 +345,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
     cacheKey: target.name,
+    ...(chain.length ? { chain } : {}),
     ...(exclude ? { exclude } : {}),
     ...(broken ? { broken } : {}),
     ...(unnamed ? { unnamed } : {}),
@@ -634,7 +637,7 @@ const jobSteps = async ({
   // that decides to reuse the snapshot or build it. So outside a build run,
   // only the name is needed here. A job the build function can't find builds
   // right here, and is its own build.
-  const inRun = !request && buildsInRun(config, fromParent?.parent);
+  const inRun = !request && buildsInRun(config, fromParent?.base);
   const asksBuild = Boolean(config.cache) && !request && !inRun;
 
   const cacheAt =
