@@ -328,6 +328,23 @@ describe("dedentCode", () => {
       dedented: "return `A\n   \nC`",
     },
     {
+      name: "an unindented first line",
+      code: "def f():\n    return 1",
+      dedented: "def f():\n    return 1",
+    },
+    {
+      name: "a whitespace-only line inside an indented template string",
+      code: "\n    return `A\n       \n    C`\n",
+      dedented: "return `A\n   \nC`",
+    },
+    {
+      name: "CRLF line endings",
+      code: "\r\n  a\r\n  b\r\n",
+      dedented: "a\r\nb",
+    },
+    { name: "shared tabs", code: "\n\ta\n\t\tb\n", dedented: "a\n\tb" },
+    { name: "empty input", code: "", dedented: "" },
+    {
       name: "flush code",
       code: "a = 1\nb = 2",
       dedented: "a = 1\nb = 2",
