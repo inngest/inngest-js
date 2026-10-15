@@ -187,3 +187,40 @@ describe("the waiter", () => {
     expect(stdout.trim().split("\n")).toContain(printed);
   });
 });
+
+describe("request ids", () => {
+  test("two interpreters in one command never share an id", async () => {
+    const dir = join(root, `run-${count++}`);
+    const wrapper = wrapperScript.replaceAll(toolsRoot, root);
+    const worker = `const { tools } = require("inngest_tools"); tools.t().then(() => {});`;
+    const child = spawn("/bin/sh", [
+      "-c",
+      wrapper,
+      "sh",
+      dir,
+      "/bin/sh",
+      "-c",
+      `node -e '${worker}' & node -e '${worker}' & wait`,
+    ]);
+    const ids = new Set<number>();
+
+    for (let tries = 0; tries < 100 && ids.size < 2; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      try {
+        for (const line of readFileSync(join(dir, "ops.log"), "utf8").split(
+          "\n",
+        )) {
+          const event = parseToolEvent(line);
+          if (event?.op === "call") {
+            ids.add(event.id);
+          }
+        }
+      } catch {}
+    }
+
+    child.kill();
+
+    expect(ids.size).toBe(2);
+  });
+});

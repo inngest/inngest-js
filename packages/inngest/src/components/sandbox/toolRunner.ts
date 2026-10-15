@@ -66,6 +66,11 @@ const maxConcurrentCalls = 8;
 const maxInlineReplyBytes = 3 * 1024;
 
 /**
+ * The most the replies of one wait may weigh inline, whatever their number.
+ */
+const maxInlineTotalBytes = maxConcurrentCalls * maxInlineReplyBytes;
+
+/**
  * How the engine runs steps and reaches the sandbox. `middleware.ts` supplies
  * the real one, and the tests supply a fake.
  */
@@ -194,9 +199,17 @@ const followCommand = async (
    * uploaded, and the command names its file.
    */
   const stage = (replies: string[]): Promise<string[]> => {
+    let inlineBytes = 0;
+
     return Promise.all(
       replies.map(async (reply, index) => {
-        if (byteLength(reply) <= maxInlineReplyBytes) {
+        const size = byteLength(reply);
+        if (
+          size <= maxInlineReplyBytes &&
+          inlineBytes + size <= maxInlineTotalBytes
+        ) {
+          inlineBytes += size;
+
           return reply;
         }
 
@@ -212,8 +225,12 @@ const followCommand = async (
    * Has the waiter append `replies`, then wait for news, since the code can't
    * ask for anything new until it has its reply.
    */
-  const follow = async (lines: number, replies: string[]): Promise<Round> => {
-    const seconds = Math.ceil(waitWindowMs / 1000);
+  const follow = async (
+    lines: number,
+    replies: string[],
+    windowMs: number,
+  ): Promise<Round> => {
+    const seconds = Math.max(1, Math.ceil(windowMs / 1000));
     const waited = await sandbox.commands.run(
       [
         "/bin/sh",
@@ -253,7 +270,7 @@ const followCommand = async (
       await sandbox.commands.run([
         "/bin/sh",
         "-c",
-        'pkill -9 -P "$(cat "$1/pid")"; kill -9 "$(cat "$1/pid")"',
+        'tree() { echo $1; for c in $(pgrep -P $1); do tree $c; done; }; kill -9 $(tree "$(cat "$1/pid")")',
         "sh",
         dir,
       ]);
@@ -316,7 +333,7 @@ const followCommand = async (
           ...(environment && { environment }),
           ...(cwd !== undefined && { cwd }),
         }),
-        follow(0, []),
+        follow(0, [], Math.min(waitWindowMs, timeoutMs)),
       ]);
 
       return { ...round, startedAt };
@@ -362,10 +379,11 @@ const followCommand = async (
     }
 
     const { lines } = state;
+    const remainingMs = timeoutMs - (state.now - started.startedAt);
     state = await host.run(
       sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {
-        return follow(lines, replies);
+        return follow(lines, replies, Math.min(waitWindowMs, remainingMs));
       },
       { ...meta, kind: "wait" },
     );
