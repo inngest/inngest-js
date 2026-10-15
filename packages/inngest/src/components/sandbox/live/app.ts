@@ -152,7 +152,7 @@ const live = inngest.createFunction(
         if (c.form === "command") {
           value = await runCommand(shared as DurableSandbox, id, c, options);
         } else {
-          value = await step.sandbox[c.language]({ id, ...options }, c.code);
+          value = await step.sandbox[c.language](id, c.code, options);
         }
 
         outcome = {
