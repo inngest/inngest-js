@@ -116,6 +116,12 @@ export class ConnectionCore {
     requestMeta: {},
   };
 
+  // Requests to resume when a connection is active.
+  private pendingResumes: {
+    request: GatewayExecutorRequestData;
+    response: Promise<Uint8Array>;
+  }[] = [];
+
   private _lastHeartbeatSentAt: number | undefined;
   private _lastHeartbeatReceivedAt: number | undefined;
   private _lastMessageReceivedAt: number | undefined;
@@ -272,25 +278,38 @@ export class ConnectionCore {
   /**
    * Resume an executor request that was acknowledged before this core
    * started, e.g. by a worker thread that crashed and was respawned. The lease
-   * is extended until `waitForResponse` resolves, then the reply is sent.
+   * is extended until `response` resolves, then the reply is sent. Without an
+   * active connection, the request is resumed when the next one is active.
    */
-  async resumeExecutorRequest(
+  resumeExecutorRequest(
     request: GatewayExecutorRequestData,
-    waitForResponse: () => Promise<Uint8Array>,
-  ): Promise<void> {
-    if (!this._activeConnection) {
-      this.callbacks.logger.warn(
-        { requestId: request.requestId },
-        "Cannot resume request, no active connection",
-      );
-      return;
-    }
+    response: Promise<Uint8Array>,
+  ): void {
+    // The response can settle before the request is resumed. The request
+    // processor handles a rejection when it awaits the response.
+    response.catch(() => {});
 
-    await this.requestProcessor.resumeExecutorRequest(
-      request,
-      this._activeConnection,
-      waitForResponse,
-    );
+    this.pendingResumes.push({ request, response });
+    if (!this._activeConnection) {
+      this.callbacks.logger.debug(
+        { requestId: request.requestId },
+        "No active connection, resuming request on the next connection",
+      );
+    }
+    this.startPendingResumes();
+  }
+
+  private startPendingResumes(): void {
+    const conn = this._activeConnection;
+    if (!conn) return;
+
+    for (const { request, response } of this.pendingResumes.splice(0)) {
+      void this.requestProcessor.resumeExecutorRequest(
+        request,
+        conn,
+        () => response,
+      );
+    }
   }
 
   /**
@@ -395,7 +414,10 @@ export class ConnectionCore {
   // ---------------------------------------------------------------------------
 
   private hasInFlightRequests(): boolean {
-    return Object.keys(this._inProgressRequests.requestLeases).length > 0;
+    return (
+      Object.keys(this._inProgressRequests.requestLeases).length > 0 ||
+      this.pendingResumes.length > 0
+    );
   }
 
   /**
@@ -580,6 +602,8 @@ export class ConnectionCore {
 
           // Flush any buffered responses via HTTP now that we're active.
           this.callbacks.onConnectionActive?.(this.useSigningKey);
+
+          this.startPendingResumes();
 
           this.resolveFirstReady?.();
           this.resolveFirstReady = undefined;

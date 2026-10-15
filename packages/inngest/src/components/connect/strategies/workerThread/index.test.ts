@@ -16,6 +16,7 @@ import {
 import { Inngest } from "../../../Inngest.ts";
 import { MockGateway } from "../core/mock-gateway.ts";
 import { WorkerThreadStrategy } from "./index.ts";
+import type { MainToWorkerMessage } from "./protocol.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,8 +115,10 @@ describe.skipIf(!hasNativeWebSocket)(
   () => {
     let gateway: MockGateway;
     let strategy: WorkerThreadStrategy | undefined;
+    let blocking: ReturnType<typeof createBlockingHandler>;
 
     beforeEach(async () => {
+      blocking = createBlockingHandler();
       gateway = new MockGateway({ extendLeaseInterval: "100ms" });
       await gateway.start();
 
@@ -143,14 +146,15 @@ describe.skipIf(!hasNativeWebSocket)(
     });
 
     afterEach(async () => {
+      // Release the step first, or close() waits for it if a test failed
+      // before releasing it.
+      blocking.release();
       await strategy?.close();
       strategy = undefined;
       await gateway.stop();
     });
 
-    async function startStepAndKillWorker(
-      blocking: ReturnType<typeof createBlockingHandler>,
-    ) {
+    async function startStepAndKillWorker() {
       strategy = createStrategy(gateway, blocking.handler);
       await strategy.connect();
 
@@ -179,8 +183,7 @@ describe.skipIf(!hasNativeWebSocket)(
     }
 
     it("resumes lease extension and delivers the reply of a step that finishes after the respawn", async () => {
-      const blocking = createBlockingHandler();
-      const firstClient = await startStepAndKillWorker(blocking);
+      const firstClient = await startStepAndKillWorker();
 
       // The respawned worker opens a new connection.
       await waitFor(() => gateway.connectionCount === 2);
@@ -209,8 +212,7 @@ describe.skipIf(!hasNativeWebSocket)(
     }, 30_000);
 
     it("delivers the reply of a step that finishes while the worker is down", async () => {
-      const blocking = createBlockingHandler();
-      await startStepAndKillWorker(blocking);
+      await startStepAndKillWorker();
 
       // The step finishes before the worker respawns.
       const replyPromise = gateway.waitForMessage(
@@ -221,6 +223,65 @@ describe.skipIf(!hasNativeWebSocket)(
 
       const reply = await replyPromise;
       expect(gateway.connectionCount).toBe(2);
+      expect(SDKResponse.decode(reply.payload).requestId).toBe("req-1");
+    }, 30_000);
+
+    it("resumes a step when the new connection is lost before the resume", async () => {
+      await startStepAndKillWorker();
+      const activeStrategy = strategy;
+      if (!activeStrategy) {
+        throw new Error("No strategy");
+      }
+
+      // Hold the resume on the main thread until the respawned worker has
+      // lost its first connection.
+      const heldResumes: MainToWorkerMessage[] = [];
+      const sendToWorker = activeStrategy["sendToWorker"].bind(activeStrategy);
+      activeStrategy["sendToWorker"] = (msg: MainToWorkerMessage) => {
+        if (msg.type === "RESUME_EXECUTION") {
+          heldResumes.push(msg);
+          return;
+        }
+        sendToWorker(msg);
+      };
+
+      await waitFor(() => heldResumes.length === 1);
+      const secondClient = gateway.lastClient;
+
+      // Refuse the next reconnect once, and send the resume while the worker
+      // waits for it, so the worker has no active connection.
+      let refuseStart = true;
+      gateway.onStartRequest = () => {
+        if (!refuseStart) {
+          return null;
+        }
+        refuseStart = false;
+        for (const msg of heldResumes) {
+          sendToWorker(msg);
+        }
+        return { status: 503 };
+      };
+      gateway.sendGatewayClosing(secondClient);
+
+      // The worker extends the lease on its next connection.
+      await waitFor(() => gateway.connectionCount === 3);
+      const extendLease = await gateway.waitForMessage(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+        5_000,
+      );
+      const extendLeaseData = WorkerRequestExtendLeaseData.decode(
+        extendLease.payload,
+      );
+      expect(extendLeaseData.requestId).toBe("req-1");
+      expect(extendLeaseData.leaseId).toBe("lease-2");
+
+      // The step finishes and the worker sends its reply.
+      const replyPromise = gateway.waitForMessage(
+        GatewayMessageType.WORKER_REPLY,
+        5_000,
+      );
+      blocking.release();
+      const reply = await replyPromise;
       expect(SDKResponse.decode(reply.payload).requestId).toBe("req-1");
     }, 30_000);
   },

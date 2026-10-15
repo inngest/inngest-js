@@ -168,18 +168,13 @@ class WorkerRunner {
       case "RESUME_EXECUTION": {
         // A request that the main thread started with a previous worker
         // thread. Extend its lease and wait for its response, but do not send
-        // it to the main thread again.
+        // it to the main thread again. Wait for the response from now on, even
+        // if the request is resumed only on a later connection.
         const request = GatewayExecutorRequestData.decode(msg.request);
-        this.core
-          ?.resumeExecutorRequest(request, () =>
-            this.waitForExecution(request.requestId),
-          )
-          .catch((err) => {
-            this.logger.error(
-              { err: toError(err), requestId: msg.requestId },
-              "Failed to resume request",
-            );
-          });
+        this.core?.resumeExecutorRequest(
+          request,
+          this.waitForExecution(request.requestId),
+        );
         break;
       }
     }
