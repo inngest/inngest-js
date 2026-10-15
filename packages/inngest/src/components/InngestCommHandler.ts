@@ -2273,19 +2273,15 @@ export class InngestCommHandler<
         headerKeys.InngestJobId,
       );
 
-      const stepState = Object.entries(steps ?? {}).reduce<
-        InngestExecutionOptions["stepState"]
-      >((acc, [id, result]) => {
-        return {
-          ...acc,
-          [id]:
-            result.type === "data"
-              ? { id, data: result.data }
-              : result.type === "input"
-                ? { id, input: result.input }
-                : { id, error: result.error },
-        };
-      }, {});
+      const stepState: InngestExecutionOptions["stepState"] = {};
+      for (const [id, result] of Object.entries(steps ?? {})) {
+        stepState[id] =
+          result.type === "data"
+            ? { id, data: result.data }
+            : result.type === "input"
+              ? { id, input: result.input }
+              : { id, error: result.error };
+      }
 
       const requestedRunStep =
         stepId === "step" ? undefined : stepId || undefined;
