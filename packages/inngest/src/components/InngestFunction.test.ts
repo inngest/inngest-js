@@ -34,6 +34,7 @@ import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
   type FailureEventPayload,
+  functionConfigSchema,
   type OutgoingOp,
   StepMode,
   StepOpCode,
@@ -155,6 +156,80 @@ describe("optimizeParallelism deprecation warning", () => {
       vi.fn(),
     );
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("function config", () => {
+  test("serializes throttle scope when specified", () => {
+    const clientId = "testclient";
+    const inngest = createClient({ id: clientId });
+
+    const fn = inngest.createFunction(
+      {
+        id: "send-email",
+        throttle: {
+          scope: "account",
+          key: '"resend-api"',
+          limit: 2,
+          period: "1s",
+          burst: 2,
+        },
+        triggers: [{ event: "email/send.requested" }],
+      },
+      () => undefined,
+    );
+
+    const [fnConfig] = fn["getConfig"]({
+      baseUrl: new URL("https://example.com"),
+      appPrefix: clientId,
+    });
+
+    if (!fnConfig) {
+      throw new Error("Expected function config");
+    }
+
+    expect(fnConfig.throttle).toEqual({
+      scope: "account",
+      key: '"resend-api"',
+      limit: 2,
+      period: "1s",
+      burst: 2,
+    });
+    expect(functionConfigSchema.safeParse(fnConfig).success).toBe(true);
+  });
+
+  test("does not add throttle scope when omitted", () => {
+    const clientId = "testclient";
+    const inngest = createClient({ id: clientId });
+
+    const fn = inngest.createFunction(
+      {
+        id: "send-email",
+        throttle: {
+          key: '"resend-api"',
+          limit: 2,
+          period: "1s",
+        },
+        triggers: [{ event: "email/send.requested" }],
+      },
+      () => undefined,
+    );
+
+    const [fnConfig] = fn["getConfig"]({
+      baseUrl: new URL("https://example.com"),
+      appPrefix: clientId,
+    });
+
+    if (!fnConfig) {
+      throw new Error("Expected function config");
+    }
+
+    expect(fnConfig.throttle).toEqual({
+      key: '"resend-api"',
+      limit: 2,
+      period: "1s",
+    });
+    expect(fnConfig.throttle).not.toHaveProperty("scope");
   });
 });
 
