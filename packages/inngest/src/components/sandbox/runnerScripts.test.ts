@@ -156,6 +156,7 @@ describe.each(languages)("%s runner", (language) => {
       code: pick(
         "\n    let total = a + b;\n\n    if (total) {\n      total *= 1;\n    }\n    return { sum: total };\n  ",
         '\n    total = a + b\n\n    if total:\n      total *= 1\n    return {"sum": total}\n  ',
+        '\n    total = a + b\n\n    if total > 0\n      total *= 1\n    end\n    return { "sum" => total }\n  ',
       ),
       input: { a: 1, b: 2 },
       result: { sum: 3 },
