@@ -8,8 +8,8 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { StepOptionsOrId } from "../../types.ts";
-import { getStepOptions, withSpan } from "../InngestStepTools.ts";
+import type { StepOptions } from "../../types.ts";
+import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { readParsedFile } from "./durable.ts";
 import { sandboxDefaults, withSandbox } from "./group.ts";
@@ -53,21 +53,23 @@ type OutputOf<TOptions, TSchema extends StandardSchemaV1> = Omit<
 };
 
 /**
- * A runner: its result is typed by `schema.output` when given, or by `T`.
+ * A runner: it takes a step ID, or options that include one, and its result is
+ * typed by `schema.output` when given, or by `T`.
  */
-interface Runner<TId, TOptions> {
+interface Runner<TOptions extends { id: string }> {
   <TSchema extends StandardSchemaV1>(
-    id: TId,
-    code: string,
     options: OutputOf<TOptions, TSchema>,
+    code: string,
   ): Promise<StandardSchemaV1.InferOutput<TSchema>>;
-  <T = unknown>(id: TId, code: string, options?: TOptions): Promise<T>;
+  <T = unknown>(idOrOptions: string | TOptions, code: string): Promise<T>;
 }
+
+type SandboxRunnerOptions = RunnerOptions & Pick<StepOptions, "id" | "name">;
 
 /**
  * Run `code` in this sandbox. A top-level `return` is the result.
  */
-export type SandboxRunner = Runner<StepOptionsOrId, RunnerOptions>;
+export type SandboxRunner = Runner<SandboxRunnerOptions>;
 
 /**
  * The options of a runner that creates its own sandbox: those of
@@ -77,10 +79,12 @@ export type SandboxRunner = Runner<StepOptionsOrId, RunnerOptions>;
 export type OneShotRunnerOptions = Omit<RunnerOptions, "environment"> &
   Partial<Omit<SandboxCreateFreshOptions, "name" | "snapshotId">>;
 
+type IdentifiedOneShotOptions = OneShotRunnerOptions & { id: string };
+
 /**
  * Create a sandbox, run `code` in it, and destroy it.
  */
-export type OneShotRunner = Runner<string, OneShotRunnerOptions>;
+export type OneShotRunner = Runner<IdentifiedOneShotOptions>;
 
 const titles: Record<RunnerLanguage, string> = {
   python: "Python",
@@ -157,15 +161,14 @@ const validate = async (
 const runPlan = async (
   sandbox: DurableSandbox,
   language: RunnerLanguage,
-  idOrOptions: StepOptionsOrId,
+  step: StepOptions,
   plan: LocatedPlan,
   { schema, ...commandOptions }: Omit<RunnerOptions, "input">,
 ): Promise<unknown> => {
-  const options = getStepOptions(idOrOptions);
   const generated = (name: string, suffix?: string) => {
     return {
-      ...options,
-      id: suffix ? `${options.id}:${suffix}` : options.id,
+      ...step,
+      id: suffix ? `${step.id}:${suffix}` : step.id,
       name,
       "~origin": sdkOrigin,
     };
@@ -212,16 +215,13 @@ export const createSandboxRunner = (
   sandbox: () => DurableSandbox,
   language: RunnerLanguage,
 ): SandboxRunner => {
-  return (async (
-    idOrOptions: StepOptionsOrId,
-    code: string,
-    { input, ...options }: RunnerOptions = {},
-  ) => {
-    const { id, name } = getStepOptions(idOrOptions);
+  return (async (idOrOptions: string | SandboxRunnerOptions, code: string) => {
+    const { id, name, input, ...options }: SandboxRunnerOptions =
+      typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
     const plan = buildPlan(language, id, code, input, options.tools);
 
     return withSpan({ id, name: name ?? id, kind: language }, () => {
-      return runPlan(sandbox(), language, idOrOptions, plan, options);
+      return runPlan(sandbox(), language, { id, name }, plan, options);
     });
   }) as SandboxRunner;
 };
@@ -235,12 +235,20 @@ export const createOneShotRunner = (
   language: RunnerLanguage,
 ): OneShotRunner => {
   return (async (
-    id: string,
+    idOrOptions: string | IdentifiedOneShotOptions,
     code: string,
-    options: OneShotRunnerOptions = {},
   ) => {
-    const { input, cwd, timeout, schema, tools, toolOptions, ...create } =
-      options;
+    const {
+      id,
+      input,
+      cwd,
+      timeout,
+      schema,
+      tools,
+      toolOptions,
+      ...create
+    }: IdentifiedOneShotOptions =
+      typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
     const plan = buildPlan(language, id, code, input, tools);
 
     return withSandbox(
@@ -248,7 +256,7 @@ export const createOneShotRunner = (
       { kind: language },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
-        return runPlan(sandbox, language, `${id}:run`, plan, {
+        return runPlan(sandbox, language, { id: `${id}:run` }, plan, {
           cwd,
           timeout,
           schema,

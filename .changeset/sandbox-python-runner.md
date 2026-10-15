@@ -8,14 +8,14 @@ Pass a schema as `schema.output` to validate the result: it's typed from the sch
 
 ```ts
 const stats = await step.sandbox.python(
-  "stats",
-  `import statistics
-return {"mean": statistics.mean(values)}`,
   {
+    id: "stats",
     input: { values: [1, 2, 3, 4] },
     schema: { output: z.object({ mean: z.number() }) },
   },
+  `import statistics
+return {"mean": statistics.mean(values)}`,
 );
 ```
 
-A sandbox you created has the same `sandbox.python(id, code, options)`.
+A sandbox you created has the same `sandbox.python(idOrOptions, code)`.
