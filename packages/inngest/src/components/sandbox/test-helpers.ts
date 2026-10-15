@@ -138,29 +138,18 @@ export const createScopeClient = (
  * Run `fn` request by request until it finishes, memoizing each step, and
  * return how it finished and the steps that ran.
  */
-export const runToEnd = async (
-  fn: InngestFunction.Any,
-  opts?: {
-    attempt?: number;
-    // The attempt of each request, as the executor counts them
-    attempts?: number[];
-    maxAttempts?: number;
-  },
-) => {
+export const runToEnd = async (fn: InngestFunction.Any) => {
   const ran: string[] = [];
   const steps: OutgoingOp[] = [];
   let stepState: Parameters<typeof runFnWithStack>[1] = {};
 
   for (let request = 0; request < 20; request++) {
-    const result = await runFnWithStack(fn, stepState, {
-      ...opts,
-      attempt: opts?.attempts?.[request] ?? opts?.attempt,
-    });
+    const result = await runFnWithStack(fn, stepState);
 
     if (result.type !== "step-ran") {
       return {
         type: result.type,
-        retriable: "retriable" in result ? result.retriable : undefined,
+        error: "error" in result ? result.error : undefined,
         ran,
         steps,
       };

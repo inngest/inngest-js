@@ -42,7 +42,7 @@ const runWith = async (
   const fn = define(client, (result) => {
     value = result;
   });
-  const run = await runToEnd(fn, { attempt: 0, maxAttempts: 5 });
+  const run = await runToEnd(fn);
 
   return { ...run, calls, value };
 };
