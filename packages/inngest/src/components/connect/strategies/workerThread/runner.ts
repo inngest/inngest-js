@@ -164,7 +164,43 @@ class WorkerRunner {
         }
         break;
       }
+
+      case "RESUME_EXECUTION": {
+        // A request that the main thread started with a previous worker
+        // thread. Extend its lease and wait for its response, but do not send
+        // it to the main thread again.
+        const request = GatewayExecutorRequestData.decode(msg.request);
+        this.core
+          ?.resumeExecutorRequest(request, () =>
+            this.waitForExecution(request.requestId),
+          )
+          .catch((err) => {
+            this.logger.error(
+              { err: toError(err), requestId: msg.requestId },
+              "Failed to resume request",
+            );
+          });
+        break;
+      }
     }
+  }
+
+  /**
+   * Wait for the main thread to send the response of a request.
+   */
+  private async waitForExecution(requestId: string): Promise<Uint8Array> {
+    const responseBytes = await new Promise<Uint8Array>((resolve, reject) => {
+      this.pendingExecutions.set(requestId, { resolve, reject });
+    });
+
+    // Add to pending with deadline for acknowledgment tracking
+    this.messageBuffer?.addPending(
+      requestId,
+      responseBytes,
+      responseAcknowledgeDeadline,
+    );
+
+    return responseBytes;
   }
 
   private initializeCore() {
@@ -200,9 +236,7 @@ class WorkerRunner {
         getState: () => this.state,
         handleExecutionRequest: async (request) => {
           // Send execution request to main thread and wait for response
-          const requestPromise = new Promise<Uint8Array>((resolve, reject) => {
-            this.pendingExecutions.set(request.requestId, { resolve, reject });
-          });
+          const responsePromise = this.waitForExecution(request.requestId);
 
           // Send the request to main thread (as serialized bytes)
           this.sendMessage({
@@ -212,19 +246,15 @@ class WorkerRunner {
           });
 
           // Wait for main thread to complete execution
-          const responseBytes = await requestPromise;
-
-          // Add to pending with deadline for acknowledgment tracking
-          this.messageBuffer?.addPending(
-            request.requestId,
-            responseBytes,
-            responseAcknowledgeDeadline,
-          );
-
-          return responseBytes;
+          return responsePromise;
         },
         onReplyAck: (requestId) => {
           this.messageBuffer?.acknowledgePending(requestId);
+        },
+        onLeaseExtended: (requestId, leaseId) => {
+          // Let the main thread know the current lease, so it can hand the
+          // request to a new worker thread if this one crashes.
+          this.sendMessage({ type: "LEASE_EXTENDED", requestId, leaseId });
         },
         onBufferResponse: (requestId, responseBytes) => {
           this.messageBuffer?.append(requestId, responseBytes);

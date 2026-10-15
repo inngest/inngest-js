@@ -24,9 +24,11 @@ The `data` field is typed as `Record<string, unknown> | undefined` (not `unknown
 
 See `protocol.ts` for the full message types. Key message flows:
 
-- **Main -> Worker**: `INIT` (config), `CONNECT`, `CLOSE`, `EXECUTION_RESPONSE`, `EXECUTION_ERROR`
-- **Worker -> Main**: `STATE_CHANGE`, `CONNECTION_READY`, `ERROR`, `EXECUTION_REQUEST`, `CLOSED`, `LOG`
+- **Main -> Worker**: `INIT` (config), `CONNECT`, `CLOSE`, `EXECUTION_RESPONSE`, `EXECUTION_ERROR`, `RESUME_EXECUTION`
+- **Worker -> Main**: `STATE_CHANGE`, `CONNECTION_READY`, `ERROR`, `EXECUTION_REQUEST`, `LEASE_EXTENDED`, `CLOSED`, `LOG`
 
 ## Crash Recovery
 
 The main thread monitors the worker's exit events. If the worker exits unexpectedly (state is not `CLOSING`/`CLOSED`), it assumes a crash and respawns with exponential backoff (500ms base, 30s max, up to 10 consecutive crashes before giving up). The crash counter resets on a successful `CONNECTION_READY`.
+
+User code keeps running on the main thread while the worker is down, so the main thread keeps each in-flight request (with its current lease ID, which the worker reports with `LEASE_EXTENDED`) until it sends the reply. When the respawned worker sends `CONNECTION_READY`, the main thread sends a `RESUME_EXECUTION` for each in-flight request, then any reply that finished while the worker was down. The new worker extends the lease of each resumed request and sends its reply to the gateway, without acknowledging or executing it again.

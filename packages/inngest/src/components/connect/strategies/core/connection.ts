@@ -84,6 +84,7 @@ export interface ConnectionCoreCallbacks {
     request: GatewayExecutorRequestData,
   ) => Promise<Uint8Array>;
   onReplyAck?: (requestId: string) => void;
+  onLeaseExtended?: (requestId: string, leaseId: string) => void;
   onBufferResponse?: (requestId: string, responseBytes: Uint8Array) => void;
   onConnectionActive?: (signingKey: string | undefined) => void;
 }
@@ -266,6 +267,30 @@ export class ConnectionCore {
     });
 
     await firstReadyPromise;
+  }
+
+  /**
+   * Resume an executor request that was acknowledged before this core
+   * started, e.g. by a worker thread that crashed and was respawned. The lease
+   * is extended until `waitForResponse` resolves, then the reply is sent.
+   */
+  async resumeExecutorRequest(
+    request: GatewayExecutorRequestData,
+    waitForResponse: () => Promise<Uint8Array>,
+  ): Promise<void> {
+    if (!this._activeConnection) {
+      this.callbacks.logger.warn(
+        { requestId: request.requestId },
+        "Cannot resume request, no active connection",
+      );
+      return;
+    }
+
+    await this.requestProcessor.resumeExecutorRequest(
+      request,
+      this._activeConnection,
+      waitForResponse,
+    );
   }
 
   /**
