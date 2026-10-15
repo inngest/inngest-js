@@ -40,7 +40,7 @@ const request = (
   args: unknown[] = [],
   kwargs?: Record<string, unknown>,
 ): string => {
-  return `${JSON.stringify({ id, tool: name, args, ...(kwargs && { kwargs }) })}\n`;
+  return `${JSON.stringify({ op: "call", id, tool: name, args, ...(kwargs && { kwargs }) })}\n`;
 };
 
 const base64 = (text: string): string => {
@@ -48,14 +48,25 @@ const base64 = (text: string): string => {
 };
 
 interface Fake {
+  /**
+   * `ops.log`.
+   */
   log: string;
   stdout: string;
-  exitCode?: number;
   killed: boolean;
   started: number;
   waits: { lines: number; seconds: number }[];
+
+  /**
+   * Replies, as the lines the waiter was told to append.
+   */
+  replies: string[];
+
+  /**
+   * Files uploaded for replies too big for the waiter's command.
+   */
   uploads: { path: string; body: string }[];
-  failUploads: number;
+  failWaits: number;
   /**
    * Plays the sandbox code. Runs when the process starts and again each time
    * a reply lands, with the id of that reply.
@@ -65,7 +76,7 @@ interface Fake {
 
 const exitWith = (fake: Fake, stdout = "done\n", code = 0): void => {
   fake.stdout = stdout;
-  fake.exitCode = code;
+  fake.log += `{"op":"exit","code":${code}}\n`;
 };
 
 const createFakeSandbox = (react: Fake["react"]) => {
@@ -75,32 +86,56 @@ const createFakeSandbox = (react: Fake["react"]) => {
     killed: false,
     started: 0,
     waits: [],
+    replies: [],
     uploads: [],
-    failUploads: 0,
+    failWaits: 0,
     react,
   };
   const sandbox = {
     commands: {
       run: async (command: string[]) => {
-        const [, , , , , lines, seconds] = command;
+        const [, , , , , lines, seconds, ...replies] = command;
 
-        // The real waiter blocks, so replies uploaded alongside it land first.
-        await new Promise((resolve) => {
-          return setTimeout(resolve, 0);
-        });
+        if (fake.failWaits > 0 && replies.length > 0) {
+          fake.failWaits--;
+
+          throw new Error("wait failed");
+        }
+
+        for (const reply of replies) {
+          const line = reply.startsWith("@")
+            ? fake.uploads.find(({ path }) => {
+                return path === reply.slice(1);
+              })?.body
+            : `${reply}\n`;
+
+          fake.log += line;
+          fake.replies.push(String(line).trim());
+          fake.react(fake, JSON.parse(String(line)).id);
+        }
 
         const news = fake.log.split("\n").slice(Number(lines), -1);
+        const exited = news.some((line) => {
+          return line.startsWith('{"op":"exit"');
+        });
 
         fake.waits.push({ lines: Number(lines), seconds: Number(seconds) });
 
+        const printed = [
+          ...news,
+          ...(exited
+            ? [
+                JSON.stringify({
+                  op: "output",
+                  stdout: base64(fake.stdout),
+                  stderr: "",
+                }),
+              ]
+            : []),
+        ];
+
         return {
-          stdout: [
-            fake.exitCode ?? "",
-            fake.exitCode === undefined ? "" : base64(fake.stdout),
-            "",
-            ...news,
-            "",
-          ].join("\n"),
+          stdout: printed.map((line) => `${line}\n`).join(""),
           stderr: "",
           exitCode: 0,
         };
@@ -108,14 +143,7 @@ const createFakeSandbox = (react: Fake["react"]) => {
     },
     files: {
       upload: async ({ path, data }: { path: string; data: unknown }) => {
-        if (fake.failUploads > 0) {
-          fake.failUploads--;
-
-          throw new Error("upload failed");
-        }
-
         fake.uploads.push({ path, body: String(data) });
-        fake.react(fake, Number(path.split("/").pop()?.replace(".json", "")));
 
         return { path, bytesWritten: 0 };
       },
@@ -243,19 +271,21 @@ const sendAll = (requests: string[]): Fake["react"] => {
       fake.log += requests.join("");
     }
 
-    if (fake.uploads.length === requests.length) {
+    if (fake.replies.length === requests.length) {
       exitWith(fake);
     }
   };
 };
 
+/**
+ * The replies the code received, by request ID.
+ */
 const replies = (fake: Fake): unknown[] => {
-  return fake.uploads
-    .map((upload) => {
-      return {
-        id: Number(upload.path.match(/(\d+)\.json$/)?.[1]),
-        ...JSON.parse(upload.body),
-      };
+  return fake.replies
+    .map((line) => {
+      const { op: _op, ...reply } = JSON.parse(line);
+
+      return reply;
     })
     .sort((a, b) => {
       return a.id - b.id;
@@ -319,6 +349,7 @@ describe("commands.run with tools", () => {
       { lines: 0, seconds: 1 },
       { lines: 1, seconds: 1 },
     ]);
+    expect(fake.uploads).toEqual([]);
     expect(stdoutOf(result)).toBe("pro\n");
   });
 
@@ -510,7 +541,39 @@ describe("commands.run with tools", () => {
     ).toEqual(ids.map((n) => n * 2));
   });
 
-  test("a failed reply upload retries without running the tool again", async () => {
+  test("replies that don't fit the waiter's command go up as files", async () => {
+    const { fake, sandbox } = createFakeSandbox(
+      sendAll([request(1, "big", [20]), request(2, "big", [20])]),
+    );
+    const { host } = createHost(sandbox);
+    const wait = sandbox.commands.run.bind(sandbox.commands);
+    const commands: string[][] = [];
+
+    sandbox.commands.run = async (command, options) => {
+      commands.push(command as string[]);
+
+      return wait(command, options);
+    };
+
+    await run(host, {
+      big: async (kib: number) => {
+        return "x".repeat(kib * 1024);
+      },
+    });
+
+    const [answering] = commands.filter((command) => {
+      return command.length > 7;
+    });
+
+    expect(fake.uploads).toHaveLength(1);
+    expect(fake.uploads[0]?.path).toMatch(/\/reply\.1$/);
+    expect(answering).toHaveLength(9);
+    expect(answering?.[7]).toContain('"op":"reply"');
+    expect(answering?.[8]).toBe(`@${fake.uploads[0]?.path}`);
+    expect(fake.replies).toHaveLength(2);
+  });
+
+  test("a failed wait retries without running the tool again", async () => {
     const { fake, sandbox } = createFakeSandbox((f, replied) => {
       if (replied === undefined) {
         f.log += request(1, "sendSlack", ["hi"]);
@@ -524,7 +587,7 @@ describe("commands.run with tools", () => {
       return { ok: true };
     });
 
-    fake.failUploads = 1;
+    fake.failWaits = 1;
 
     await run(host, { sendSlack });
 
@@ -533,7 +596,7 @@ describe("commands.run with tools", () => {
     expect(
       executed.filter((id) => id === "exec:tool:sendSlack:1"),
     ).toHaveLength(1);
-    expect(fake.uploads).toHaveLength(1);
+    expect(fake.replies).toHaveLength(1);
   });
 
   test("replay serves memoized steps without touching the sandbox or tools", async () => {
@@ -561,7 +624,7 @@ describe("commands.run with tools", () => {
 
     expect(sendSlack).toHaveBeenCalledTimes(1);
     expect(replay.fake.started).toBe(0);
-    expect(replay.fake.uploads).toEqual([]);
+    expect(replay.fake.replies).toEqual([]);
     expect(result).toMatchObject({ result: { exitCode: 0 } });
   });
 

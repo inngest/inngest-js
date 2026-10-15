@@ -9,15 +9,16 @@
  *
  * 1. One step per request (`<id>:tool:<name>:<id>`) runs the tool and returns
  *    just the reply body, so a tool is memoized the moment it returns.
- * 2. One wait step (`<id>:wait:<n>`) uploads those replies (same bytes to the
- *    same path, so a retry is harmless), then blocks inside the sandbox until
- *    the request log grows, the process exits, or the wait window ends.
+ * 2. One wait step (`<id>:wait:<n>`) appends those replies to the sandbox's
+ *    `ops.log`, then blocks inside the sandbox until the log has a new request
+ *    or the exit, or the wait window ends. A retry appends them again, which
+ *    the stub ignores.
  *
  * The wait window is a ceiling, not a delay: it ends the moment there is news.
  * A quiet stretch longer than the window continues in a fresh wait step.
  *
- * Requests go to an append-only log read by line count, so output is never
- * re-read, and user output stays in files until the process exits.
+ * The log is read by line count, so nothing is re-read, and user output stays
+ * in files until the process exits. `toolStubs.ts` describes the log.
  */
 
 import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
@@ -37,7 +38,7 @@ import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
   maxToolReplyBytes,
-  parseToolRequest,
+  parseToolEvent,
   resolveToolCall,
   type SandboxToolsRequest,
   type ToolRequest,
@@ -56,6 +57,12 @@ import {
 } from "./validation.ts";
 
 const maxConcurrentCalls = 8;
+
+/**
+ * How much of the waiter's command replies may take, since a command is capped
+ * at 32 KiB in all. Replies past that go up as files.
+ */
+const maxInlineReplyBytes = 24 * 1024;
 
 /**
  * How the engine runs steps and reaches the sandbox. `middleware.ts` supplies
@@ -92,24 +99,19 @@ interface Round {
   now: number;
 
   /**
-   * Lines of the request log consumed so far.
+   * Lines of `ops.log` consumed so far.
    */
   lines: number;
 
   /**
-   * Complete lines of the request log that are new.
+   * The requests among the new lines, each with the line it arrived as.
    */
-  requests: string[];
+  requests: { request: ToolRequest; line: string }[];
 
   /**
    * Set once the command has exited.
    */
   result?: SandboxOperationResultV1;
-}
-
-interface Reply {
-  id: number;
-  body: string;
 }
 
 const errorMessage = (error: unknown): string => {
@@ -124,18 +126,28 @@ const toolSpan = (stepId: string, name: string): StepSpan => {
 };
 
 /**
- * The reply body for a tool's result.
+ * The `ops.log` line that answers request `id`.
  */
-const replyBody = (name: string, value: unknown): string => {
-  const text = JSON.stringify({ result: value ?? null });
+const replyLine = (
+  id: number,
+  outcome: { result: unknown } | { error: string },
+): string => {
+  return JSON.stringify({ op: "reply", id, ...outcome });
+};
 
-  if (byteLength(text) > maxToolReplyBytes) {
+/**
+ * The reply line for a tool's result.
+ */
+const resultLine = (id: number, name: string, value: unknown): string => {
+  const line = replyLine(id, { result: value ?? null });
+
+  if (byteLength(line) > maxToolReplyBytes) {
     throw new NonRetriableError(
       `${name} returned more than ${maxToolReplyBytes} bytes; write large data to a file instead`,
     );
   }
 
-  return text;
+  return line;
 };
 
 /**
@@ -177,43 +189,81 @@ const followCommand = async (
   };
 
   /**
-   * Uploads replies while waiting for news, since the code can't ask for
-   * anything new until it has its reply.
+   * Replies ride in the waiter's command while they fit. A reply that doesn't
+   * is uploaded, and the command names its file.
+   */
+  const stage = (dir: string, replies: string[]): Promise<string[]> => {
+    let room = maxInlineReplyBytes;
+
+    return Promise.all(
+      replies.map(async (reply, index) => {
+        const bytes = byteLength(reply);
+        if (bytes <= room) {
+          room -= bytes;
+
+          return reply;
+        }
+
+        const path = `${dir}/reply.${index}`;
+        await sandbox.files.upload({ path, data: `${reply}\n` });
+
+        return `@${path}`;
+      }),
+    );
+  };
+
+  /**
+   * Has the waiter append `replies`, then wait for news, since the code can't
+   * ask for anything new until it has its reply.
    */
   const follow = async (
     dir: string,
     lines: number,
-    replies: Reply[],
+    replies: string[],
   ): Promise<Round> => {
     const seconds = Math.ceil(waitWindowMs / 1000);
-    const [waited] = await Promise.all([
-      sandbox.commands.run(
-        ["/bin/sh", "-c", waiterScript, "sh", dir, `${lines}`, `${seconds}`],
-        { timeout: (seconds + 30) * 1000 },
-      ),
-      ...replies.map((reply) => {
-        return sandbox.files.upload({
-          path: `${dir}/${reply.id}.json`,
-          data: reply.body,
-        });
-      }),
-    ]);
-    const [code = "", stdout = "", stderr = "", ...rest] =
-      waited.stdout.split("\n");
+    const waited = await sandbox.commands.run(
+      [
+        "/bin/sh",
+        "-c",
+        waiterScript,
+        "sh",
+        dir,
+        `${lines}`,
+        `${seconds}`,
+        ...(await stage(dir, replies)),
+      ],
+      { timeout: (seconds + 30) * 1000 },
+    );
     // Whatever follows the last newline is a cut-off line, or nothing.
-    const requests = rest.slice(0, -1);
+    const log = waited.stdout.split("\n").slice(0, -1);
+    const requests: Round["requests"] = [];
+    let exitCode: number | undefined;
+    let output: { stdout: string; stderr: string } | undefined;
+
+    for (const line of log) {
+      const event = parseToolEvent(line);
+      if (event?.op === "call") {
+        requests.push({ request: event, line });
+      } else if (event?.op === "exit") {
+        exitCode = event.code;
+      } else if (event?.op === "output") {
+        output = event;
+      }
+    }
 
     return {
       now: Date.now(),
-      lines: lines + requests.length,
+      lines: lines + log.length,
       requests,
-      ...(code !== "" && {
-        result: execOperationResult({
-          stdout: decodeBase64(stdout, "stdout"),
-          stderr: decodeBase64(stderr, "stderr"),
-          exitCode: Number(code),
+      ...(exitCode !== undefined &&
+        output && {
+          result: execOperationResult({
+            stdout: decodeBase64(output.stdout, "stdout"),
+            stderr: decodeBase64(output.stderr, "stderr"),
+            exitCode,
+          }),
         }),
-      }),
     };
   };
 
@@ -235,10 +285,10 @@ const followCommand = async (
   }: {
     request: ToolRequest;
     line: string;
-  }): Promise<Reply> => {
+  }): Promise<string> => {
     const resolved = await resolveToolCall(tools, call, line);
     if ("error" in resolved) {
-      return { id: call.id, body: JSON.stringify({ error: resolved.error }) };
+      return replyLine(call.id, { error: resolved.error });
     }
 
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
@@ -256,10 +306,10 @@ const followCommand = async (
           });
         });
 
-        return { id: call.id, body: replyBody(call.tool, value) };
+        return resultLine(call.id, call.tool, value);
       }
 
-      const body = await host.run(
+      return await host.run(
         {
           id: stepId,
           name: call.tool,
@@ -280,16 +330,11 @@ const followCommand = async (
             timedOut,
           ]);
 
-          return replyBody(call.tool, value);
+          return resultLine(call.id, call.tool, value);
         },
       );
-
-      return { id: call.id, body };
     } catch (error) {
-      return {
-        id: call.id,
-        body: JSON.stringify({ error: errorMessage(error) }),
-      };
+      return replyLine(call.id, { error: errorMessage(error) });
     }
   };
 
@@ -342,10 +387,9 @@ const followCommand = async (
       );
     }
 
-    const pending: { request: ToolRequest; line: string }[] = [];
-    for (const line of state.requests) {
-      const request = parseToolRequest(line);
-      if (!request || seen.has(request.id)) {
+    const pending: Round["requests"] = [];
+    for (const { request, line } of state.requests) {
+      if (seen.has(request.id)) {
         continue;
       }
 
@@ -361,7 +405,7 @@ const followCommand = async (
       pending.push({ request, line });
     }
 
-    const replies: Reply[] = [];
+    const replies: string[] = [];
     for (let at = 0; at < pending.length; at += maxConcurrentCalls) {
       replies.push(
         ...(await Promise.all(
