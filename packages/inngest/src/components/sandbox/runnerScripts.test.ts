@@ -168,6 +168,18 @@ describe.each(languages)("%s runner", (language) => {
     },
   ];
 
+  test.skipIf(language !== "python" || !runnable)(
+    "asyncio is available without an import",
+    () => {
+      const output = run(
+        "python",
+        "return await asyncio.gather(asyncio.sleep(0, 1), asyncio.sleep(0, 2))",
+      );
+
+      expect(output.result).toEqual([1, 2]);
+    },
+  );
+
   test.skipIf(!runnable).each(values)(
     "$name",
     ({ code, input, result, stdout = "" }) => {
