@@ -26,7 +26,6 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import { createSandboxRunner } from "./runners.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import {
@@ -154,9 +153,6 @@ const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
   status: sandbox.status,
   vpcId: sandbox.vpcId,
   imageRef: sandbox.imageRef,
-  ...(sandbox.imageDigest !== undefined && {
-    imageDigest: sandbox.imageDigest,
-  }),
   resources: { ...sandbox.resources },
   createdAt: sandbox.createdAt,
   ...(sandbox.startedAt !== undefined && { startedAt: sandbox.startedAt }),
@@ -822,9 +818,6 @@ export const createDurableSandboxFacade = (
         return decodeBase64(result.result.data, "sandbox file data");
       },
     }),
-    python: createSandboxRunner(() => facade, "python"),
-    typescript: createSandboxRunner(() => facade, "typescript"),
-    ruby: createSandboxRunner(() => facade, "ruby"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {

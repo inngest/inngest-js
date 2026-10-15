@@ -4,10 +4,9 @@
  *
  * The first step starts the process and waits, in the same moment, for it to
  * exit or make its first request. The process's directory is named for the run
- * and step, and the wrapper marks it, so a retry of this step finds the process
- * already running and only waits. A command that never calls a tool is one step
- * and two round trips (that check, then the start and wait together). From then
- * on each round is:
+ * and step, and the wrapper claims it, so a retry of this step starts a process
+ * that exits at once and only waits on the first. A command that never calls a
+ * tool is one step and one round trip. From then on each round is:
  *
  * 1. One step per request (`<id>:tool:<name>:<id>`) runs the tool and returns
  *    just the reply body, so a tool is memoized the moment it returns.
@@ -37,12 +36,7 @@ import type {
   SandboxOperationForAction,
   SandboxOperationResultV1,
 } from "./protocol.ts";
-import {
-  startedScript,
-  toolsRoot,
-  waiterScript,
-  wrapperScript,
-} from "./toolStubs.ts";
+import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
   maxToolReplyBytes,
@@ -293,7 +287,7 @@ const followCommand = async (
     do {
       const { items, page } = await sandbox.processes.list({ cursor });
       const found = items.find((process) => {
-        return process.command.includes(dir);
+        return process.state !== "EXITED" && process.command.includes(dir);
       });
       if (found) {
         return found;
@@ -380,22 +374,13 @@ const followCommand = async (
     idOrOptions,
     async () => {
       const startedAt = Date.now();
-      const { stdout } = await sandbox.commands.run([
-        "/bin/sh",
-        "-c",
-        startedScript,
-        "sh",
-        dir,
-      ]);
       // The wait doesn't need the process to exist yet, so it runs alongside.
       const [, round] = await Promise.all([
-        stdout.trim() === "started"
-          ? undefined
-          : sandbox.processes.start({
-              command: ["/bin/sh", "-c", wrapperScript, "sh", dir, ...command],
-              ...(environment && { environment }),
-              ...(cwd !== undefined && { cwd }),
-            }),
+        sandbox.processes.start({
+          command: ["/bin/sh", "-c", wrapperScript, "sh", dir, ...command],
+          ...(environment && { environment }),
+          ...(cwd !== undefined && { cwd }),
+        }),
         follow(dir, 0, []),
       ]);
 

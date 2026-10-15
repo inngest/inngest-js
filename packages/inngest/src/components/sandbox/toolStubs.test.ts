@@ -5,7 +5,12 @@
  * host that answers calls the way the tool runner does.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -114,6 +119,29 @@ asyncio.run(main())`,
       expect(await converse(command)).toBe("3 7 100000\n");
     },
   );
+});
+
+describe("the wrapper", () => {
+  test("a repeated start exits at once and runs the command only once", () => {
+    const dir = join(root, `run-${count++}`);
+    const wrapper = wrapperScript.replaceAll(toolsRoot, root);
+    const marks = join(root, `marks-${count++}`);
+    const start = () => {
+      return spawnSync(
+        "/bin/sh",
+        ["-c", wrapper, "sh", dir, "/bin/sh", "-c", `echo ran >> ${marks}`],
+        { encoding: "utf8" },
+      );
+    };
+
+    expect(start().status).toBe(0);
+    expect(start().status).toBe(0);
+    expect(readFileSync(marks, "utf8")).toBe("ran\n");
+    expect(readFileSync(join(dir, "ops.log"), "utf8").split("\n")).toEqual([
+      '{"op":"exit","code":0}',
+      "",
+    ]);
+  });
 });
 
 describe("the waiter", () => {
