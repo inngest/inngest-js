@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { subscribe } from "./subscribe";
 import { type Realtime } from "./types";
 
@@ -39,6 +39,14 @@ export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
    * TODO
    */
   state: InngestSubscriptionState;
+
+  /**
+   * Clears all accumulated message data from the internal state.
+   * 
+   * This includes data, freshData, and latestData arrays.
+   * Does not affect the connection or error state.
+   */
+  clear: () => void;
 }
 
 /**
@@ -246,11 +254,18 @@ export function useInngestSubscription<
     };
   }, [bufferInterval]);
 
+  const clear = useCallback(() => {
+    setData([]);
+    setFreshData([]);
+    messageBuffer.current = [];
+  }, []);
+
   return {
     data,
     latestData: data[data.length - 1] ?? null,
     freshData,
     error,
     state,
+    clear,
   } as unknown as InngestSubscription<NonNullable<TToken>>;
 }
