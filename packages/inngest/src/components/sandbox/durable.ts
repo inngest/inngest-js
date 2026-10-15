@@ -255,10 +255,21 @@ export const executeSandboxOperation = async (
       };
     }
     case "destroy": {
-      const result = await sandboxForOperation(
-        client,
-        operation.target.sandbox,
-      ).destroy();
+      // A destroy that already happened, such as one retried after a lost
+      // response, has the outcome the caller wanted.
+      const result = await sandboxForOperation(client, operation.target.sandbox)
+        .destroy()
+        .catch((error: unknown): SandboxDestroyResult => {
+          if (
+            error instanceof SandboxError &&
+            error.code === "sandbox_not_found"
+          ) {
+            return { status: "TERMINATED", sandbox: null };
+          }
+
+          throw error;
+        });
+
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -651,10 +662,20 @@ export const createDurableSandboxFacade = (
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
   };
-  // The create and readiness wait are one call, so they share one span.
+  // The create and readiness wait are one statement, so they share one span
+  // of kind `snapshot`. A caller that already groups the statement (such as
+  // `@inngest/ci`) passes its own `"~span"`, which both steps carry, so the
+  // statement is never grouped twice.
   const snapshot: DurableSandbox["snapshot"] = (idOrOptions, ...args) => {
-    const { id, name } = getStepOptions(idOrOptions);
-    return withSpan({ id, name }, () => createSnapshot(idOrOptions, ...args));
+    const { id, name, "~span": callerSpan } = getStepOptions(idOrOptions);
+
+    if (callerSpan) {
+      return createSnapshot(idOrOptions, ...args);
+    }
+
+    return withSpan({ id, name, kind: "snapshot" }, () => {
+      return createSnapshot(idOrOptions, ...args);
+    });
   };
   const facade: DurableSandbox = {
     ...ref,
@@ -805,6 +826,11 @@ export const createDurableSandboxFacade = (
   return Object.freeze(facade);
 };
 
+// Node before 20.5 lacks the symbol that `await using` looks up.
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
+  "Symbol.asyncDispose",
+);
+
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
 ): DurableSandboxTools => ({
@@ -815,7 +841,23 @@ export const createSandboxTools = (
       input: [normalizeSandboxCreateOptions(options)],
     });
     const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    const { id } = getStepOptions(idOrOptions);
+
+    return Object.freeze({
+      ...sandbox,
+      [Symbol.asyncDispose]: async () => {
+        try {
+          await sandbox.destroy(`${id}:destroy`);
+        } catch (error) {
+          // A destroy that failed for good is on the trace as a warning. It
+          // must not change the outcome of the run.
+          if (!(error instanceof StepError)) {
+            throw error;
+          }
+        }
+      },
+    });
   },
   list: async (idOrOptions, options) => {
     const operation = parseSandboxOperationForAction("list", {
