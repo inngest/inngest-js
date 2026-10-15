@@ -26,6 +26,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import type { SandboxToolsRequest } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
@@ -52,6 +53,7 @@ import {
   decodeOutputChunk,
   decodeUtf8,
   encodeBase64,
+  maxSandboxProcessTimeoutMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
@@ -480,9 +482,17 @@ const callRawTool = async <
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
   finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
+  tools?: SandboxToolsRequest,
 ): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
+    if (tools) {
+      return validateSandboxResult(
+        operation,
+        await rawTool(idOrOptions, operation, undefined, tools),
+      ) as T;
+    }
+
     if (finish) {
       return (await rawTool(idOrOptions, operation, (result) => {
         return finish(validateSandboxResult(operation, result));
@@ -755,7 +765,13 @@ export const createDurableSandboxFacade = (
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
       run: async (idOrOptions, command, options) => {
-        const normalized = normalizeSandboxCommandOptions(command, options);
+        const { tools, toolOptions, ...commandOptions } = options ?? {};
+        const normalized = normalizeSandboxCommandOptions(command, {
+          ...commandOptions,
+          ...(tools && {
+            timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+          }),
+        });
         const { timeout: _timeout, ...input } = normalized;
         const operation = parseSandboxOperationForAction("exec", {
           protocolVersion: sandboxProtocolVersion,
@@ -767,6 +783,8 @@ export const createDurableSandboxFacade = (
           rawToolResolver,
           idOrOptions,
           operation,
+          undefined,
+          tools && { tools, toolOptions },
         );
         return {
           stdout: decodeUtf8(

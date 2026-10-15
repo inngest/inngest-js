@@ -82,4 +82,9 @@ export {
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
+export type {
+  SandboxToolOptions,
+  SandboxTools,
+  SandboxToolsOptions,
+} from "./components/sandbox/tools.ts";
 export type { ExperimentRef } from "./types.ts";

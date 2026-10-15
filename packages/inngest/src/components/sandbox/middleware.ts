@@ -1,7 +1,10 @@
+import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { sandboxForOperation } from "./client.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import { createGroupSandbox, type GroupSandbox } from "./group.ts";
 import {
@@ -12,7 +15,12 @@ import {
   type SandboxRawTool,
 } from "./protocol.ts";
 import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
-import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
+import { runCommandWithTools } from "./toolRunner.ts";
+import {
+  type SandboxTraceMetadata,
+  sandboxMetadataKind,
+  sandboxTraceMetadata,
+} from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -32,12 +40,13 @@ type SandboxGroupExtension = {
 };
 
 /**
- * Attach `inngest.sandbox` metadata to the step that's executing, describing
- * the sandbox action for the trace. Tracing must never fail the step.
+ * Attach metadata to the step that's executing. Tracing must never fail the
+ * step.
  */
-const describeStep = (
-  operation: unknown,
-  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
+const addStepMetadata = (
+  kind: MetadataKind,
+  values: () => Record<string, unknown> | undefined,
+  op: MetadataOpcode = "merge",
 ): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
@@ -46,39 +55,86 @@ const describeStep = (
       return;
     }
 
-    const parsed = parseSandboxOperation(operation);
+    const metadata = values();
 
-    execution.instance.addMetadata(
-      stepId,
-      sandboxMetadataKind,
-      "step",
-      "merge",
-      sandboxTraceMetadata(
-        parsed,
-        "result" in outcome
-          ? outcome
-          : { error: getSandboxError(outcome.error) },
-      ),
+    if (metadata) {
+      execution.instance.addMetadata(stepId, kind, "step", op, metadata);
+    }
+  } catch {
+    // An operation that fails validation has nothing to describe.
+  }
+};
+
+const describeStep = (
+  operation: unknown,
+  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
+): void => {
+  addStepMetadata(sandboxMetadataKind, () => {
+    return sandboxTraceMetadata(
+      parseSandboxOperation(operation),
+      "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
     );
+  });
 
-    if ("error" in outcome && parsed.action === "destroy") {
-      execution.instance.addMetadata(
-        stepId,
-        "inngest.warnings",
-        "step",
-        "set",
-        {
+  if ("error" in outcome) {
+    addStepMetadata(
+      "inngest.warnings",
+      () => {
+        const parsed = parseSandboxOperation(operation);
+
+        if (parsed.action !== "destroy") {
+          return;
+        }
+
+        return {
           "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
             outcome.error instanceof Error
               ? outcome.error.message
               : String(outcome.error)
           }`,
-        },
-      );
-    }
-  } catch {
-    // An operation that fails validation has nothing to describe.
+        };
+      },
+      "set",
+    );
   }
+};
+
+/**
+ * What a failed sandbox step throws: retryable errors retry, the rest do not.
+ */
+const toStepError = (error: unknown): unknown => {
+  if (error instanceof SandboxError) {
+    const cause = {
+      protocolVersion: error.protocolVersion,
+      action: error.action,
+      code: error.code,
+      message: error.message,
+      ...(error.status !== undefined && { status: error.status }),
+      ...(error.sandboxId !== undefined && { sandboxId: error.sandboxId }),
+      ...(error.processId !== undefined && { processId: error.processId }),
+      ...(error.snapshotId !== undefined && { snapshotId: error.snapshotId }),
+      ambiguous: error.ambiguous,
+      retryable: error.retryable,
+      ...(error.requestId !== undefined && { requestId: error.requestId }),
+      details: [...error.details],
+    };
+    if (error.retryable) {
+      const retryableError = new Error(error.message, { cause });
+      retryableError.name = error.name;
+      return retryableError;
+    }
+    return new NonRetriableError(error.message, { cause });
+  }
+  if (error instanceof SandboxValidationError) {
+    return new NonRetriableError(error.message, {
+      cause: {
+        protocolVersion: sandboxProtocolVersion,
+        type: "sandbox_validation_error" as const,
+        message: error.message,
+      },
+    });
+  }
+  return error;
 };
 
 const executeAsStep = async (
@@ -91,46 +147,7 @@ const executeAsStep = async (
     return result;
   } catch (error) {
     describeStep(operation, { error });
-    if (error instanceof SandboxError) {
-      const cause = {
-        protocolVersion: error.protocolVersion,
-        action: error.action,
-        code: error.code,
-        message: error.message,
-        ...(error.status !== undefined && { status: error.status }),
-        ...(error.sandboxId !== undefined && {
-          sandboxId: error.sandboxId,
-        }),
-        ...(error.processId !== undefined && {
-          processId: error.processId,
-        }),
-        ...(error.snapshotId !== undefined && {
-          snapshotId: error.snapshotId,
-        }),
-        ambiguous: error.ambiguous,
-        retryable: error.retryable,
-        ...(error.requestId !== undefined && {
-          requestId: error.requestId,
-        }),
-        details: [...error.details],
-      };
-      if (error.retryable) {
-        const retryableError = new Error(error.message, { cause });
-        retryableError.name = error.name;
-        throw retryableError;
-      }
-      throw new NonRetriableError(error.message, { cause });
-    }
-    if (error instanceof SandboxValidationError) {
-      throw new NonRetriableError(error.message, {
-        cause: {
-          protocolVersion: sandboxProtocolVersion,
-          type: "sandbox_validation_error" as const,
-          message: error.message,
-        },
-      });
-    }
-    throw error;
+    throw toStepError(error);
   }
 };
 
@@ -154,8 +171,52 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxGroupExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation, finish) =>
-      arg.ctx.step.run(
+    const { step, runId } = arg.ctx;
+    const rawTool: SandboxRawTool = (idOrOptions, operation, finish, tools) => {
+      if (tools && operation.action === "exec") {
+        return runCommandWithTools(
+          {
+            run: async <T>(
+              idOrOptions: StepOptionsOrId,
+              fn: () => Promise<T>,
+              meta?: SandboxTraceMetadata,
+            ) => {
+              return (await step.run(idOrOptions, async () => {
+                try {
+                  const result = await fn();
+                  if (meta) {
+                    addStepMetadata(sandboxMetadataKind, () => {
+                      return meta;
+                    });
+                  }
+
+                  return result;
+                } catch (error) {
+                  if (meta) {
+                    addStepMetadata(sandboxMetadataKind, () => {
+                      const code = getSandboxError(error)?.code;
+
+                      return code ? { ...meta, error_code: code } : meta;
+                    });
+                  }
+
+                  throw toStepError(error);
+                }
+              })) as T;
+            },
+            sandbox: sandboxForOperation(
+              this.client.sandboxes,
+              operation.target.sandbox,
+            ),
+            runId,
+          },
+          idOrOptions,
+          operation,
+          tools,
+        );
+      }
+
+      return step.run(
         idOrOptions,
         async (input) => {
           const result = await executeAsStep(this.client, input);
@@ -164,6 +225,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         },
         operation,
       );
+    };
 
     const sandbox = createSandboxTools(() => rawTool);
 

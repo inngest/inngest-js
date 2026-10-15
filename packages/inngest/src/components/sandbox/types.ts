@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -561,7 +562,7 @@ export interface DurableSandbox {
     run(
       idOrOptions: StepOptionsOrId,
       command: SandboxCommand,
-      options?: SandboxCommandOptions,
+      options?: SandboxCommandOptions & SandboxToolsOptions,
     ): Promise<SandboxCommandResult>;
   };
   /**
