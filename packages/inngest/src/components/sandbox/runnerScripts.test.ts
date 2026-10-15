@@ -322,7 +322,22 @@ describe("dedentCode", () => {
     {
       name: "blank lines and relative indentation",
       code: "\n  if x:\n\n      y = 1\n   \n  z = 2\n",
-      dedented: "if x:\n\n    y = 1\n\nz = 2",
+      dedented: "if x:\n\n    y = 1\n \nz = 2",
+    },
+    {
+      name: "a whitespace-only line inside an indented string",
+      code: '\n  return """A\n     \n  C"""\n',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only line in flush code",
+      code: 'return """A\n   \nC"""',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only template string line in flush code",
+      code: "return `A\n   \nC`",
+      dedented: "return `A\n   \nC`",
     },
     {
       name: "flush code",
