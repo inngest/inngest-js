@@ -145,14 +145,18 @@ const live = inngest.createFunction(
         }),
       };
       const id = caseId(c);
-      const runner = c.form === "handle" ? handle?.[c.language] : undefined;
 
       let outcome: { value: unknown } | { error: string };
       try {
-        const value =
-          c.form === "command"
-            ? await runCommand(handle as DurableSandbox, id, c, options)
-            : await (runner ?? step.sandbox[c.language])(id, c.code, options);
+        let value: unknown;
+        if (c.form === "command") {
+          value = await runCommand(handle as DurableSandbox, id, c, options);
+        } else if (handle && c.form === "handle") {
+          value = await handle[c.language]({ id, ...options }, c.code);
+        } else {
+          value = await step.sandbox[c.language]({ id, ...options }, c.code);
+        }
+
         outcome = {
           value: c.measure === "length" ? (value as string).length : value,
         };
