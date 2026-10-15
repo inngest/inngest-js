@@ -254,10 +254,12 @@ export const isSnapshotNotFound = (error: unknown): boolean => {
 };
 
 /**
- * Human-readable duration, like "1m 05s", for check titles.
+ * Human-readable duration, like "1m 05s", for check titles. Values of a second
+ * or more round to whole seconds unless `exact`, which keeps milliseconds when
+ * the value isn't a whole number of seconds.
  */
-export const formatDuration = (ms: number): string => {
-  if (ms < 1000) {
+export const formatDuration = (ms: number, exact = false): string => {
+  if (ms < 1000 || (exact && ms % 1000 !== 0)) {
     return `${ms}ms`;
   }
 

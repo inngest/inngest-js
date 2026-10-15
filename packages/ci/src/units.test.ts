@@ -631,6 +631,9 @@ describe("formatting", () => {
     expect(formatDuration(500)).toBe("500ms");
     expect(formatDuration(22_000)).toBe("22s");
     expect(formatDuration(65_000)).toBe("1m 05s");
+    expect(formatDuration(1500)).toBe("2s");
+    expect(formatDuration(1500, true)).toBe("1500ms");
+    expect(formatDuration(65_000, true)).toBe("1m 05s");
   });
 
   test("relative times read as check summaries", () => {

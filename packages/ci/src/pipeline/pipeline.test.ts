@@ -890,41 +890,47 @@ describe("commands", () => {
     },
   );
 
-  test("a captured command that times out throws CommandTimeoutError", async () => {
-    const { api, ci } = setup();
+  test.each([
+    ["2s", "2s"],
+    [1500, "1500ms"],
+  ])(
+    "a captured command that times out throws CommandTimeoutError (%s)",
+    async (limit, shown) => {
+      const { api, ci } = setup();
 
-    api.script([{ match: "hang", execTimesOut: true }]);
+      api.script([{ match: "hang", execTimesOut: true }]);
 
-    let caught: unknown = "no error";
+      let caught: unknown = "no error";
 
-    const job = ci.job("hang", async () => {
-      let lookedAround = false;
+      const job = ci.job("hang", async () => {
+        let lookedAround = false;
 
-      try {
-        await $`hang`.timeout("2s").onTimeout(async () => {
-          lookedAround = true;
-        });
-      } catch (error) {
-        caught = {
-          isTimeout: error instanceof CommandTimeoutError,
-          message: (error as Error).message,
-          lookedAround,
-        };
-      }
-    });
+        try {
+          await $`hang`.timeout(limit).onTimeout(async () => {
+            lookedAround = true;
+          });
+        } catch (error) {
+          caught = {
+            isTimeout: error instanceof CommandTimeoutError,
+            message: (error as Error).message,
+            lookedAround,
+          };
+        }
+      });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      });
 
-    await runFunction(pipeline, { event: prEvent });
+      await runFunction(pipeline, { event: prEvent });
 
-    expect(caught).toEqual({
-      isTimeout: true,
-      message: "`hang` timed out after 2s",
-      lookedAround: true,
-    });
-  });
+      expect(caught).toEqual({
+        isTimeout: true,
+        message: `\`hang\` timed out after ${shown}`,
+        lookedAround: true,
+      });
+    },
+  );
 
   test("withSecret throws instead of persisting the value", async () => {
     const { api, ci } = setup();

@@ -390,7 +390,7 @@ class CommandBuilder implements Command {
   private timeoutError(scope: CiJobScope): CommandTimeoutError {
     return new CommandTimeoutError({
       command: this.state.argv,
-      timeout: formatDuration(this.state.timeoutMs ?? 0),
+      timeout: formatDuration(this.state.timeoutMs ?? 0, true),
       jobPath: scope.path,
     });
   }
