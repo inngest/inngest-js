@@ -216,6 +216,88 @@ const assertInput = (
   }
 };
 
+const isIndent = (char: number): boolean => {
+  return char === 32 || char === 9;
+};
+
+/**
+ * Drops one leading newline and the trailing blank lines, including an
+ * indentation-only last line.
+ */
+const trimNewlines = (code: string): string => {
+  let start = 0;
+  if (code.startsWith("\r\n")) {
+    start = 2;
+  } else if (code.startsWith("\n")) {
+    start = 1;
+  }
+
+  let end = code.length;
+  for (;;) {
+    let i = end;
+    while (i > start && isIndent(code.charCodeAt(i - 1))) {
+      i--;
+    }
+
+    if (i === start || code.charCodeAt(i - 1) !== 10) {
+      return code.slice(start, end);
+    }
+
+    end = i - 1;
+    if (end > start && code.charCodeAt(end - 1) === 13) {
+      end--;
+    }
+  }
+};
+
+/**
+ * Lets a snippet be indented to match its source: trims the newlines around
+ * it, then removes the indentation every non-blank line shares (tabs and
+ * spaces count as different characters). A blank line loses at most that
+ * much, so whitespace inside a string survives, and a snippet with an
+ * unindented line is left alone.
+ */
+export const dedentCode = (code: string): string => {
+  const trimmed = trimNewlines(code);
+  const lines = trimmed.split("\n");
+
+  let first = "";
+  let shared = -1;
+  for (const line of lines) {
+    const end = line.endsWith("\r") ? line.length - 1 : line.length;
+    let indent = 0;
+    while (indent < end && isIndent(line.charCodeAt(indent))) {
+      indent++;
+    }
+
+    if (indent === end) {
+      continue;
+    }
+
+    if (shared < 0) {
+      first = line;
+      shared = indent;
+    } else {
+      let same = 0;
+      while (same < shared && same < indent && line[same] === first[same]) {
+        same++;
+      }
+
+      shared = same;
+    }
+
+    if (shared === 0) {
+      return trimmed;
+    }
+  }
+
+  return lines
+    .map((line) => {
+      return line.slice(Math.max(shared, 0));
+    })
+    .join("\n");
+};
+
 /**
  * Validates the input, then returns the command that runs `code`, plus the
  * file it needs when the payload is too large for the command.
@@ -229,7 +311,7 @@ export const buildRunner = ({
 }: Runner): RunnerPlan => {
   assertInput(language, input);
 
-  const payload = JSON.stringify({ code, input });
+  const payload = JSON.stringify({ code: dedentCode(code), input });
   if (new TextEncoder().encode(payload).byteLength <= maxInlinePayloadBytes) {
     return { command: commands[language](payload, resultPath) };
   }

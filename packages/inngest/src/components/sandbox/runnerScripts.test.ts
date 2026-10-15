@@ -14,6 +14,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildRunner,
+  dedentCode,
   parseRunnerResult,
   type RunnerLanguage,
   type RunnerPlan,
@@ -145,6 +146,15 @@ describe.each(languages)("%s runner", (language) => {
       result: 1,
       stdout: "later\n",
     },
+    {
+      name: "indented code runs",
+      code: pick(
+        "\n    let total = a + b;\n\n    if (total) {\n      total *= 1;\n    }\n    return { sum: total };\n  ",
+        '\n    total = a + b\n\n    if total:\n      total *= 1\n    return {"sum": total}\n  ',
+      ),
+      input: { a: 1, b: 2 },
+      result: { sum: 3 },
+    },
   ];
 
   test.skipIf(!runnable).each(values)(
@@ -236,6 +246,71 @@ test.skipIf(!canRun.typescript)(
     expect(output.wroteResult).toBe(false);
   },
 );
+
+describe("dedentCode", () => {
+  test.each([
+    {
+      name: "an indented block",
+      code: "\n    a = 1\n    b = 2\n  ",
+      dedented: "a = 1\nb = 2",
+    },
+    {
+      name: "blank lines and relative indentation",
+      code: "\n  if x:\n\n      y = 1\n   \n  z = 2\n",
+      dedented: "if x:\n\n    y = 1\n \nz = 2",
+    },
+    {
+      name: "a whitespace-only line inside an indented string",
+      code: '\n  return """A\n     \n  C"""\n',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only line in flush code",
+      code: 'return """A\n   \nC"""',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only template string line in flush code",
+      code: "return `A\n   \nC`",
+      dedented: "return `A\n   \nC`",
+    },
+    {
+      name: "an unindented first line",
+      code: "def f():\n    return 1",
+      dedented: "def f():\n    return 1",
+    },
+    {
+      name: "a whitespace-only line inside an indented template string",
+      code: "\n    return `A\n       \n    C`\n",
+      dedented: "return `A\n   \nC`",
+    },
+    {
+      name: "CRLF line endings",
+      code: "\r\n  a\r\n  b\r\n",
+      dedented: "a\r\nb",
+    },
+    { name: "shared tabs", code: "\n\ta\n\t\tb\n", dedented: "a\n\tb" },
+    { name: "empty input", code: "", dedented: "" },
+    {
+      name: "flush code",
+      code: "a = 1\nb = 2",
+      dedented: "a = 1\nb = 2",
+    },
+    { name: "a single line", code: "  return 1  ", dedented: "return 1  " },
+    {
+      name: "tabs and spaces as distinct",
+      code: "\t  a\n\t\tb",
+      dedented: "  a\n\tb",
+    },
+    {
+      name: "mixed indentation with no shared prefix",
+      code: "\ta\n  b",
+      dedented: "\ta\n  b",
+    },
+  ])("$name", ({ code, dedented }) => {
+    expect(dedentCode(code)).toBe(dedented);
+  });
+});
 
 describe("buildRunner", () => {
   test("a small payload rides in the command", () => {
