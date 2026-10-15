@@ -26,7 +26,6 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import { createSandboxRunner } from "./runners.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import {
@@ -819,8 +818,6 @@ export const createDurableSandboxFacade = (
         return decodeBase64(result.result.data, "sandbox file data");
       },
     }),
-    python: createSandboxRunner(() => facade, "python"),
-    typescript: createSandboxRunner(() => facade, "typescript"),
     processes: Object.freeze({
       start: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.start", {
