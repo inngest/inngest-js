@@ -1,8 +1,7 @@
 /**
  * @module
- * Tests for the Python, TypeScript and Ruby runners on a sandbox handle and on
- * `step.sandbox`, with a fake sandbox API that answers every command with the
- * output a test gives it.
+ * Tests for the Python, TypeScript and Ruby runners of `step.sandbox`, with a fake
+ * sandbox API that answers every command with the output a test gives it.
  */
 
 import { z } from "zod";
@@ -46,121 +45,85 @@ const runWith = async (
   return { ...run, calls, value };
 };
 
-describe.each(languages)("sandbox.$language", ({ language, title, binary }) => {
-  test.each(outputs)("returns $name", async ({ file, expected }) => {
-    const { type, ran, value } = await runWith({ file }, (client, keep) => {
-      return client.createFunction(
-        { id: "handle", triggers: [{ event: "runner/code" }] },
-        async ({ step }) => {
-          await using sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
+describe.each(languages)(
+  "step.sandbox.$language input and failures",
+  ({ language, title, binary }) => {
+    test(`passes the code and input to ${binary} as one payload`, async () => {
+      const { steps } = await runWith({}, (client) => {
+        return client.createFunction(
+          { id: "payload", triggers: [{ event: "runner/code" }] },
+          async ({ step }) => {
+            await step.sandbox[language]("py", "return n", { input: { n: 1 } });
+          },
+        );
+      });
 
-          keep(await sandbox[language]("py", "return 1"));
-        },
+      const [exec] = steps[1]?.opts?.input as [
+        { input: [{ command: string[] }] },
+      ];
+
+      expect(exec.input[0].command[0]).toBe(binary);
+      expect(exec.input[0].command.at(-2)).toBe(
+        '{"code":"return n","input":{"n":1}}',
       );
+      expect(exec.input[0].command.at(-1)).toBe("/tmp/inngest-py.result.json");
     });
 
-    expect(type).toBe("function-resolved");
-    expect(ran).toEqual(["box", "py", "py:result", "box:destroy"]);
-    expect(value).toEqual(expected);
-  });
+    test.each([
+      {
+        name: "a failed run",
+        output: { exitCode: 1, stderr: "NameError: x" },
+        code: "return x",
+        input: undefined,
+        message: `${title} exited with code 1:\nNameError: x`,
+      },
+      {
+        name: "input that isn't JSON",
+        output: {},
+        code: "return d",
+        input: { d: new Date() },
+        message: "input.d must be a JSON value, got Date",
+      },
+      {
+        name: "a result too big for a step to return",
+        output: { file: "x".repeat(3_000_000) },
+        code: "return 'x' * 3000000",
+        input: undefined,
+        message:
+          "/tmp/inngest-py.result.json is 3000000 bytes, over the 2097152 bytes a step can return",
+      },
+    ])("rejects $name", async ({ output, code, input, message }) => {
+      let error: unknown;
+      const { type } = await runWith(output, (client) => {
+        return client.createFunction(
+          { id: "rejects", triggers: [{ event: "runner/code" }] },
+          async ({ step }) => {
+            try {
+              await step.sandbox[language]("py", code, { input });
+            } catch (err) {
+              error = err;
 
-  test(`passes the code and input to ${binary} as one payload`, async () => {
-    const { steps } = await runWith({}, (client) => {
-      return client.createFunction(
-        { id: "payload", triggers: [{ event: "runner/code" }] },
-        async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
+              throw err;
+            }
+          },
+        );
+      });
 
-          await sandbox[language]("py", "return n", { input: { n: 1 } });
-        },
-      );
+      expect(type).toBe("function-rejected");
+      expect((error as Error).message).toBe(message);
     });
-
-    const [exec] = steps[1]?.opts?.input as [
-      { input: [{ command: string[] }] },
-    ];
-
-    expect(exec.input[0].command[0]).toBe(binary);
-    expect(exec.input[0].command.at(-2)).toBe(
-      '{"code":"return n","input":{"n":1}}',
-    );
-    expect(exec.input[0].command.at(-1)).toBe("/tmp/inngest-py.result.json");
-  });
-
-  test.each([
-    {
-      name: "a failed run",
-      output: { exitCode: 1, stderr: "NameError: x" },
-      code: "return x",
-      input: undefined,
-      message: `${title} exited with code 1:\nNameError: x`,
-    },
-    {
-      name: "input that isn't JSON",
-      output: {},
-      code: "return d",
-      input: { d: new Date() },
-      message: "input.d must be a JSON value, got Date",
-    },
-    {
-      name: "a result too big for a step to return",
-      output: { file: "x".repeat(3_000_000) },
-      code: "return 'x' * 3000000",
-      input: undefined,
-      message:
-        "/tmp/inngest-py.result.json is 3000000 bytes, over the 2097152 bytes a step can return",
-    },
-  ])("rejects $name", async ({ output, code, input, message }) => {
-    let error: unknown;
-    const { type } = await runWith(output, (client) => {
-      return client.createFunction(
-        { id: "rejects", triggers: [{ event: "runner/code" }] },
-        async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
-          try {
-            await sandbox[language]("py", code, { input });
-          } catch (err) {
-            error = err;
-
-            throw err;
-          }
-        },
-      );
-    });
-
-    expect(type).toBe("function-rejected");
-    expect((error as Error).message).toBe(message);
-  });
-});
+  },
+);
 
 describe.each(languages)(
-  "sandbox.$language with a large payload",
+  "step.sandbox.$language with a large payload",
   ({ language }) => {
     test("uploads it and runs the file", async () => {
       const { ran, steps, calls } = await runWith({}, (client) => {
         return client.createFunction(
           { id: "large", triggers: [{ event: "runner/code" }] },
           async ({ step }) => {
-            const sandbox = await step.sandbox.create("box", {
-              name: "box",
-              vcpu: 2,
-              memoryMb: 2048,
-            });
-
-            await sandbox[language]("py", "x".repeat(20_000));
+            await step.sandbox[language]("py", "x".repeat(20_000));
           },
         );
       });
@@ -168,9 +131,15 @@ describe.each(languages)(
         { input: [{ command: string[] }] },
       ];
 
-      expect(ran).toEqual(["box", "py:payload", "py", "py:result"]);
+      expect(ran).toEqual([
+        "py",
+        "py:run:payload",
+        "py:run",
+        "py:run:result",
+        "py:destroy",
+      ]);
       expect(calls.uploads).toHaveLength(1);
-      expect(steps.slice(1).map((step) => step.displayName)).toEqual([
+      expect(steps.slice(1, -1).map((step) => step.displayName)).toEqual([
         "Uploading code",
         "Running code",
         "Gathering result",
@@ -184,78 +153,75 @@ describe.each(languages)(
   },
 );
 
-describe.each(languages)("$language schema.output", ({ language, title }) => {
-  const schema = { output: z.object({ n: z.number() }) };
+describe.each(languages)(
+  "step.sandbox.$language schema.output",
+  ({ language, title }) => {
+    const schema = { output: z.object({ n: z.number() }) };
 
-  const run = (file: string) => {
-    return runWith({ file }, (client, keep) => {
-      return client.createFunction(
-        { id: "schema", triggers: [{ event: "runner/code" }] },
-        async ({ step }) => {
-          keep(await step.sandbox[language]("py", "return 1", { schema }));
-        },
-      );
-    });
-  };
+    const run = (file: string) => {
+      return runWith({ file }, (client, keep) => {
+        return client.createFunction(
+          { id: "schema", triggers: [{ event: "runner/code" }] },
+          async ({ step }) => {
+            keep(await step.sandbox[language]("py", "return 1", { schema }));
+          },
+        );
+      });
+    };
 
-  test("types the result by the schema", () => {
-    const runner = null as unknown as OneShotRunner;
+    test("types the result by the schema", () => {
+      const runner = null as unknown as OneShotRunner;
 
-    expectTypeOf(() =>
-      runner("py", "return 1", { schema }),
-    ).returns.resolves.toEqualTypeOf<{ n: number }>();
-    expectTypeOf(() =>
-      runner<number>("py", "return 1"),
-    ).returns.resolves.toEqualTypeOf<number>();
-  });
-
-  test("returns the validated result", async () => {
-    const { type, value } = await run('{"n":1}');
-
-    expect(type).toBe("function-resolved");
-    expect(value).toEqual({ n: 1 });
-  });
-
-  test("fails the step with the issues, without retrying", async () => {
-    const { type, ran, steps } = await run('{"n":"one"}');
-    const gathering = steps[2];
-    const error = gathering?.error as Error;
-
-    expect(type).toBe("function-rejected");
-    expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
-    expect(gathering?.displayName).toBe("Gathering result");
-    expect(error.message).toContain("n: Expected number");
-    expect(error.name).toBe("NonRetriableError");
-  });
-
-  test("names every issue in the error", async () => {
-    let error: unknown;
-    await runWith({ file: '{"n":"one"}' }, (client) => {
-      return client.createFunction(
-        { id: "issues", triggers: [{ event: "runner/code" }] },
-        async ({ step }) => {
-          const sandbox = await step.sandbox.create("box", {
-            name: "box",
-            vcpu: 2,
-            memoryMb: 2048,
-          });
-
-          try {
-            await sandbox[language]("py", "return 1", { schema });
-          } catch (err) {
-            error = err;
-
-            throw err;
-          }
-        },
-      );
+      expectTypeOf(() =>
+        runner("py", "return 1", { schema }),
+      ).returns.resolves.toEqualTypeOf<{ n: number }>();
+      expectTypeOf(() =>
+        runner<number>("py", "return 1"),
+      ).returns.resolves.toEqualTypeOf<number>();
     });
 
-    expect((error as Error).message).toBe(
-      `${title} result didn't match schema.output:\nn: Expected number, received string`,
-    );
-  });
-});
+    test("returns the validated result", async () => {
+      const { type, value } = await run('{"n":1}');
+
+      expect(type).toBe("function-resolved");
+      expect(value).toEqual({ n: 1 });
+    });
+
+    test("fails the step with the issues, without retrying", async () => {
+      const { type, ran, steps } = await run('{"n":"one"}');
+      const gathering = steps[2];
+      const error = gathering?.error as Error;
+
+      expect(type).toBe("function-rejected");
+      expect(ran).toEqual(["py", "py:run", "py:run:result", "py:destroy"]);
+      expect(gathering?.displayName).toBe("Gathering result");
+      expect(error.message).toContain("n: Expected number");
+      expect(error.name).toBe("NonRetriableError");
+    });
+
+    test("names every issue in the error", async () => {
+      let error: unknown;
+      await runWith({ file: '{"n":"one"}' }, (client) => {
+        return client.createFunction(
+          { id: "issues", triggers: [{ event: "runner/code" }] },
+          async ({ step }) => {
+            try {
+              await step.sandbox[language]("py", "return 1", { schema });
+            } catch (err) {
+              error = err;
+
+              throw err;
+            }
+          },
+        );
+      });
+
+      expect((error as Error).message).toBe(
+        `${title} result didn't match schema.output:\nn: Expected number, received string`,
+      );
+    });
+  },
+);
 
 describe.each(languages)("step.sandbox.$language", ({ language }) => {
   test.each(outputs)("returns $name", async ({ file, expected }) => {
@@ -339,7 +305,7 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
         return client.createFunction(
           { id: "fails", triggers: [{ event: "runner/code" }] },
           async ({ step }) => {
-            await step.sandbox[language]("py", "fail()");
+            await step.sandbox[language]("py", "raise Exception()");
           },
         );
       },
