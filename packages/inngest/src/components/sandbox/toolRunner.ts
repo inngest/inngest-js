@@ -22,7 +22,11 @@
 
 import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
-import { getStepOptions, withSpan } from "../InngestStepTools.ts";
+import {
+  getStepOptions,
+  withSpan,
+  withStepIdPrefix,
+} from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult } from "./durable.ts";
 import type {
@@ -238,8 +242,23 @@ const followCommand = async (
     }
 
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
+    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
 
     try {
+      if (resolved.group) {
+        // The body's own steps are the durable part, so there is no step here.
+        const value = await withSpan(toolSpan(stepId, call.tool), () => {
+          return withStepIdPrefix(`${stepId}:`, () => {
+            return resolved.invoke({
+              signal: new AbortController().signal,
+              idempotencyKey,
+            });
+          });
+        });
+
+        return { id: call.id, body: replyBody(call.tool, value) };
+      }
+
       const body = await host.run(
         {
           id: stepId,
@@ -257,10 +276,7 @@ const followCommand = async (
             });
           });
           const value = await Promise.race([
-            resolved.invoke({
-              signal,
-              idempotencyKey: `${host.runId ?? ""}:${stepId}`,
-            }),
+            resolved.invoke({ signal, idempotencyKey }),
             timedOut,
           ]);
 
