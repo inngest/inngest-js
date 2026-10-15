@@ -2,7 +2,7 @@
 "inngest": minor
 ---
 
-Experimental: `sandbox.python`, `sandbox.typescript` and their `step.sandbox` forms now take `tools`. The code calls them as `tools.name(...)` with no import, and each call is a durable step in your app.
+Experimental: `step.sandbox.python` and `step.sandbox.typescript` now take `tools`. The code calls them as `tools.name(...)` with no import, and each call is a durable step in your app.
 
 ```ts
 const total = await step.sandbox.python(

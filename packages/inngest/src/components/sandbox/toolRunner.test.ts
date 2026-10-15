@@ -18,7 +18,6 @@ import {
 } from "./protocol.ts";
 import { createClient } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
-import { startedScript } from "./toolStubs.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import type { Sandbox } from "./types.ts";
@@ -55,6 +54,10 @@ interface Fake {
   log: string;
   stdout: string;
   killed: boolean;
+
+  /**
+   * How many times the process was started, though its code runs only once.
+   */
   started: number;
 
   /**
@@ -106,15 +109,7 @@ const createFakeSandbox = (react: Fake["react"]) => {
   const sandbox = {
     commands: {
       run: async (command: string[]) => {
-        const [, , script, , , lines, seconds, ...replies] = command;
-
-        if (script === startedScript) {
-          return {
-            stdout: fake.started > 0 ? "started\n" : "",
-            stderr: "",
-            exitCode: 0,
-          };
-        }
+        const [, , , , , lines, seconds, ...replies] = command;
 
         if (fake.failFirstWait && Number(lines) === 0) {
           fake.failFirstWait = false;
@@ -176,7 +171,11 @@ const createFakeSandbox = (react: Fake["react"]) => {
     },
     processes: {
       start: async ({ command }: { command: string[] }) => {
-        fake.started++;
+        // The wrapper exits at once when the directory is already claimed
+        if (fake.started++ > 0) {
+          return { id: "proc-2" };
+        }
+
         fake.processCommand = command;
         fake.react(fake, undefined);
 
@@ -726,9 +725,11 @@ describe("commands.run with tools", () => {
     },
   );
 
-  test("a retried first step finds the running process and starts no other", async () => {
+  test("a retried first step runs the code once", async () => {
+    const code = vi.fn();
     const { fake, sandbox } = createFakeSandbox((f, replied) => {
       if (replied === undefined) {
+        code();
         exitWith(f);
       }
     });
@@ -739,7 +740,8 @@ describe("commands.run with tools", () => {
     const result = await run(host, {});
 
     expect(attempts.get("exec")).toBe(2);
-    expect(fake.started).toBe(1);
+    expect(fake.started).toBe(2);
+    expect(code).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ result: { exitCode: 0 } });
   });
 

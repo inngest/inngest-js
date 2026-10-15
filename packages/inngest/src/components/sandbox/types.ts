@@ -1,7 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
 import type { SandboxImage } from "./image.ts";
-import type { SandboxRunner } from "./runners.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
@@ -603,9 +602,6 @@ export interface DurableSandbox {
     ): Promise<void>;
     read(idOrOptions: StepOptionsOrId, path: string): Promise<Uint8Array>;
   };
-  readonly python: SandboxRunner;
-  readonly typescript: SandboxRunner;
-  readonly ruby: SandboxRunner;
   readonly processes: {
     start(
       idOrOptions: StepOptionsOrId,
