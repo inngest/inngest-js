@@ -337,8 +337,40 @@ describe("dedentCode", () => {
     {
       name: "blank lines and relative indentation",
       code: "\n  if x:\n\n      y = 1\n   \n  z = 2\n",
-      dedented: "if x:\n\n    y = 1\n\nz = 2",
+      dedented: "if x:\n\n    y = 1\n \nz = 2",
     },
+    {
+      name: "a whitespace-only line inside an indented string",
+      code: '\n  return """A\n     \n  C"""\n',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only line in flush code",
+      code: 'return """A\n   \nC"""',
+      dedented: 'return """A\n   \nC"""',
+    },
+    {
+      name: "a whitespace-only template string line in flush code",
+      code: "return `A\n   \nC`",
+      dedented: "return `A\n   \nC`",
+    },
+    {
+      name: "an unindented first line",
+      code: "def f():\n    return 1",
+      dedented: "def f():\n    return 1",
+    },
+    {
+      name: "a whitespace-only line inside an indented template string",
+      code: "\n    return `A\n       \n    C`\n",
+      dedented: "return `A\n   \nC`",
+    },
+    {
+      name: "CRLF line endings",
+      code: "\r\n  a\r\n  b\r\n",
+      dedented: "a\r\nb",
+    },
+    { name: "shared tabs", code: "\n\ta\n\t\tb\n", dedented: "a\n\tb" },
+    { name: "empty input", code: "", dedented: "" },
     {
       name: "flush code",
       code: "a = 1\nb = 2",

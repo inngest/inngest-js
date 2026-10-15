@@ -8,6 +8,8 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { StepOptionsOrId } from "../../types.ts";
+import { getStepOptions } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { readParsedFile } from "./durable.ts";
 import { sandboxDefaults, withSandbox } from "./group.ts";
@@ -52,19 +54,20 @@ export type OneShotRunnerOptions = Omit<RunnerOptions, "environment"> &
   Partial<Omit<SandboxCreateFreshOptions, "name" | "snapshotId">>;
 
 /**
- * Create a sandbox, run `code` in it, and destroy it. A top-level `return` is
- * the result, typed by `schema.output` when given, or by `T`.
+ * Create a sandbox, run `code` in it, and destroy it. It takes a step ID, or
+ * step options with an ID and a name. A top-level `return` is the result,
+ * typed by `schema.output` when given, or by `T`.
  */
 export interface OneShotRunner {
   <TSchema extends StandardSchemaV1>(
-    id: string,
+    idOrOptions: StepOptionsOrId,
     code: string,
     options: Omit<OneShotRunnerOptions, "schema"> & {
       schema: { output: TSchema };
     },
   ): Promise<StandardSchemaV1.InferOutput<TSchema>>;
   <T = unknown>(
-    id: string,
+    idOrOptions: StepOptionsOrId,
     code: string,
     options?: OneShotRunnerOptions,
   ): Promise<T>;
@@ -199,17 +202,18 @@ export const createOneShotRunner = (
   language: RunnerLanguage,
 ): OneShotRunner => {
   return (async (
-    id: string,
+    idOrOptions: StepOptionsOrId,
     code: string,
     options: OneShotRunnerOptions = {},
   ) => {
+    const { id, name } = getStepOptions(idOrOptions);
     const { input, cwd, timeout, schema, tools, toolOptions, ...create } =
       options;
     const plan = buildPlan(language, id, code, input, tools);
 
     return withSandbox(
       sandboxTools,
-      { kind: language },
+      { kind: language, name },
       { ...sandboxDefaults(id), ...create },
       (sandbox) => {
         return runPlan(sandbox, language, `${id}:run`, plan, {
