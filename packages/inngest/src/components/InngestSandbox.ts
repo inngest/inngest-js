@@ -57,6 +57,7 @@ export type {
   SandboxFileDownloadOptions,
   SandboxFileUploadOptions,
   SandboxFileUploadResult,
+  SandboxImageOptions,
   SandboxLifecycleOptions,
   SandboxListOptions,
   SandboxListResult,

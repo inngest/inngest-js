@@ -1,4 +1,5 @@
 import { z } from "zod/v3";
+import { createImageClient } from "./images.ts";
 
 import {
   type Sandbox,
@@ -1424,16 +1425,35 @@ const createSandbox = async (
   options: SandboxCreateOptions,
 ): Promise<Sandbox> => {
   const { runningTimeoutMs, ...body } = normalizeSandboxCreateOptions(options);
+  const imageOptions = body.imageOptions;
   const { status, envelope } = await transport.json(
     "create",
     "POST",
     "/v2/sandboxes",
-    { body, statuses: [200, 201, 202] },
+    {
+      body: {
+        ...body,
+        ...(imageOptions && {
+          imageOptions: {
+            ...imageOptions,
+            ...(imageOptions.entrypoint !== undefined && {
+              entrypoint: { argv: imageOptions.entrypoint },
+            }),
+            ...(imageOptions.cmd !== undefined && {
+              cmd: { argv: imageOptions.cmd },
+            }),
+          },
+        }),
+      },
+      statuses: [200, 201, 202],
+    },
   );
   const sandbox = sandboxRefFromResource(envelope?.data);
   if (
     (status === 201 && sandbox.status !== "RUNNING") ||
-    (status === 202 && sandbox.status !== "STARTING")
+    (status === 202 &&
+      sandbox.status !== "PENDING" &&
+      sandbox.status !== "STARTING")
   ) {
     throw new SandboxValidationError(
       `Sandbox Create returned HTTP ${status} with status ${sandbox.status}`,
@@ -1454,6 +1474,7 @@ export const createSandboxClient = (
 ): SandboxClient => {
   const transport = new SandboxRestTransport(config);
   const client: SandboxClient = {
+    images: createImageClient(config),
     create: async (options) => createSandbox(transport, options),
     list: async (options) => {
       const normalized = normalizeSandboxListOptions(options);
