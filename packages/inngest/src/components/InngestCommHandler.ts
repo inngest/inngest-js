@@ -1163,6 +1163,12 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
+    // Detect whether this looks like an inbound Inngest request (a run ID and a
+    // signature header are both present). Self-hosted servers send step-execution
+    // requests as `GET` with a JSON body; knowing this lets us read and verify
+    // the body for those requests too (inngest/inngest-js#1543).
+    const isInngestRequest = await this.isInngestReq(actions);
+
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1185,6 +1191,24 @@ export class InngestCommHandler<
             return JSON.parse(body);
           }
           return body;
+        }
+
+        // Self-hosted Inngest servers send signed step-execution requests as
+        // `GET` with a JSON body (inngest/inngest-js#1543). Read and verify the
+        // body for these requests so signature validation succeeds and the step
+        // is executed, instead of always signing an empty body and failing the
+        // check.
+        if (method === "GET" && isInngestRequest) {
+          const getBody = await actions.body(
+            `checking body for request signing as method is ${method}`,
+          );
+          if (!getBody) {
+            return "";
+          }
+          if (typeof getBody === "string") {
+            return JSON.parse(getBody);
+          }
+          return getBody;
         }
 
         return "";
@@ -1266,6 +1290,7 @@ export class InngestCommHandler<
           signatureValidation,
           body,
           method,
+          isInngestRequest,
           forceExecution: Boolean(forceExecution),
           fns,
           mwInstances,
@@ -1582,6 +1607,7 @@ export class InngestCommHandler<
     signatureValidation,
     body: rawBody,
     method,
+    isInngestRequest,
     forceExecution,
     fns,
     mwInstances,
@@ -1593,6 +1619,7 @@ export class InngestCommHandler<
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     body: unknown;
     method: string;
+    isInngestRequest: boolean;
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
     mwInstances?: Middleware.BaseMiddleware[];
@@ -1640,7 +1667,11 @@ export class InngestCommHandler<
         }
       }
 
-      if (method === "POST" || forceExecution) {
+      if (
+        method === "POST" ||
+        forceExecution ||
+        (method === "GET" && isInngestRequest)
+      ) {
         if (!forceExecution && isMissingBody) {
           this.client[internalLoggerSymbol].error(
             "Missing body when executing, possibly due to missing request body middleware",
