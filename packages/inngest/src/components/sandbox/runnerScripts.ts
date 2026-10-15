@@ -17,7 +17,7 @@
  */
 import { SandboxValidationError } from "./types.ts";
 
-export type RunnerLanguage = "ts" | "python";
+export type RunnerLanguage = "typescript" | "python";
 
 export interface Runner {
   language: RunnerLanguage;
@@ -110,7 +110,7 @@ const commands: Record<
   RunnerLanguage,
   (payload: string, resultPath: string) => string[]
 > = {
-  ts: (payload, resultPath) => {
+  typescript: (payload, resultPath) => {
     return [
       "node",
       "--disable-warning=ExperimentalWarning",
@@ -128,7 +128,7 @@ const commands: Record<
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const reservedNames: Record<RunnerLanguage, ReadonlySet<string>> = {
-  ts: new Set(
+  typescript: new Set(
     `arguments await break case catch class const continue debugger default
     delete do else enum eval export extends false finally for function if
     implements import in instanceof interface let new null package private

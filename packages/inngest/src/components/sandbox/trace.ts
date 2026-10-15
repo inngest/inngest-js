@@ -1,3 +1,4 @@
+import { version } from "../../version.ts";
 import {
   operationProcessId,
   operationSandboxId,
@@ -11,6 +12,12 @@ import type { SandboxError } from "./types.ts";
  * The metadata kind attached to every step behind `step.sandbox`.
  */
 export const sandboxMetadataKind = "inngest.sandbox";
+
+/**
+ * Marks the steps the SDK runs on the user's behalf, such as the create and
+ * wait inside `snapshot()`. See `StepOptions["~origin"]`.
+ */
+export const sdkOrigin = `inngest@${version}`;
 
 /**
  * The facade method a user calls for each action, where it isn't the action's

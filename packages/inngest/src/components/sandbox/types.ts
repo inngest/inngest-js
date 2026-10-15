@@ -564,6 +564,17 @@ export interface DurableSandbox {
       options?: SandboxCommandOptions,
     ): Promise<SandboxCommandResult>;
   };
+  /**
+   * Files move through memoized steps, so each is limited by what a step can
+   * return (about 2 MiB).
+   */
+  readonly files: {
+    write(
+      idOrOptions: StepOptionsOrId,
+      options: { path: string; data: string | Uint8Array },
+    ): Promise<void>;
+    read(idOrOptions: StepOptionsOrId, path: string): Promise<Uint8Array>;
+  };
   readonly processes: {
     start(
       idOrOptions: StepOptionsOrId,
