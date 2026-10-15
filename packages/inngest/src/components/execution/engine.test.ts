@@ -109,6 +109,7 @@ describe("Execution engine checkpoint retry behavior", () => {
     handler,
     priorDefers,
     stepMode = StepMode.AsyncCheckpointing,
+    optimizeParallelism,
   }: {
     handler: (
       ctx: Context.Any,
@@ -116,11 +117,16 @@ describe("Execution engine checkpoint retry behavior", () => {
     ) => unknown;
     priorDefers?: Record<string, { abortable?: boolean }>;
     stepMode?: StepMode;
+    optimizeParallelism?: boolean;
   }) => {
     const client = createClient({ id: "test" });
     const deferFn = createDefer(client, { id: "foo" }, async () => {});
     const fn = client.createFunction(
-      { id: "test-fn", triggers: [{ event: "test/event" }] },
+      {
+        id: "test-fn",
+        triggers: [{ event: "test/event" }],
+        optimizeParallelism,
+      },
       (ctx) => handler(ctx, deferFn),
     );
 
@@ -375,10 +381,11 @@ describe("Execution engine checkpoint retry behavior", () => {
       { mode: "async", stepMode: StepMode.Async },
       { mode: "async checkpointing", stepMode: StepMode.AsyncCheckpointing },
     ])(
-      "ships lazy ops with RunComplete and drops unawaited steps ($mode)",
+      "optimizeParallelism: false ships lazy ops with RunComplete and drops unawaited steps ($mode)",
       async ({ stepMode }) => {
         const result = await runDeferExecution({
           stepMode,
+          optimizeParallelism: false,
           handler: ({ defer, step }, deferFn) => {
             defer("foo", { function: deferFn, data: {} });
             void step.sleep("floating", "1h");

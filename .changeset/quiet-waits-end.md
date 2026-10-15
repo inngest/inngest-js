@@ -2,10 +2,15 @@
 "inngest": patch
 ---
 
-A run now completes when your function returns, as it did in v3. Steps you started but didn't await (a `step.waitForEvent`, `step.sleep` or `step.run`, or the losing branches of a `group.parallel({ mode: "race" })`) are no longer scheduled after the return; previously the run stayed open until they resolved. This includes functions using `optimizeParallelism: false`, whose run-on-return behaviour changed unintentionally in v4. If your function awaits all of its steps, nothing changes.
+Functions using `optimizeParallelism: false` once again complete the run when the function returns, as they did in v3. In v4 this changed unintentionally: the run waited for steps you started but never awaited. If you don't use `optimizeParallelism: false`, nothing changes.
 
 ```ts
-step.waitForEvent("unused", { event: "app/done", timeout: "7d" });
+inngest.createFunction(
+  { id: "example", optimizeParallelism: false, triggers: [{ event: "app/example" }] },
+  async ({ step }) => {
+    step.sleep("unused", "7d");
 
-return "done";
+    return "done";
+  },
+);
 ```
