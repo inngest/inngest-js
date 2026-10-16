@@ -939,6 +939,109 @@ describe("createFunction", () => {
   });
 });
 
+describe("removeFunctions", () => {
+  const createFn = (inngest: Inngest.Any, id: string) =>
+    inngest.createFunction(
+      { id, triggers: [{ event: "test/event" }] },
+      async () => {},
+    );
+
+  test("removes the given functions from client.funcs", () => {
+    const inngest = createClient({ id: "test" });
+
+    const fn1 = createFn(inngest, "fn-1");
+    const fn2 = createFn(inngest, "fn-2");
+
+    expect(inngest.funcs).toHaveLength(2);
+
+    inngest.removeFunctions([fn1]);
+
+    expect(inngest.funcs).toHaveLength(1);
+    expect(inngest.funcs).toContain(fn2);
+    expect(inngest.funcs).not.toContain(fn1);
+  });
+
+  test("accepts a single function", () => {
+    const inngest = createClient({ id: "test" });
+
+    const fn = createFn(inngest, "fn-1");
+
+    expect(inngest.funcs).toHaveLength(1);
+
+    inngest.removeFunctions(fn);
+
+    expect(inngest.funcs).toHaveLength(0);
+  });
+
+  test("keeps functions created after removal", () => {
+    const inngest = createClient({ id: "test" });
+
+    const oldFn = createFn(inngest, "old");
+
+    inngest.removeFunctions([oldFn]);
+
+    const newFn = createFn(inngest, "new");
+
+    expect(inngest.funcs).toEqual([newFn]);
+  });
+
+  test("mutates the same array returned by client.funcs", () => {
+    const inngest = createClient({ id: "test" });
+
+    const fn = createFn(inngest, "fn-1");
+    const funcs = inngest.funcs;
+
+    inngest.removeFunctions([fn]);
+
+    expect(inngest.funcs).toBe(funcs);
+    expect(funcs).toHaveLength(0);
+  });
+
+  test("ignores functions that are not registered", () => {
+    const inngest = createClient({ id: "test" });
+
+    const fn = createFn(inngest, "fn-1");
+    const other = createClient({ id: "other" });
+    const foreignFn = createFn(other, "foreign");
+
+    inngest.removeFunctions([fn, foreignFn]);
+
+    expect(inngest.funcs).toHaveLength(0);
+    expect(other.funcs).toContain(foreignFn);
+  });
+
+  test("closed apps release their functions for garbage collection", () => {
+    const inngest = createClient({ id: "test" });
+
+    // An app factory that builds its functions from per-instance
+    // dependencies, as in https://github.com/inngest/inngest-js/issues/1768
+    const buildApp = () => {
+      const deps = { state: new Array(250_000).fill(0) };
+
+      const functions = [
+        inngest.createFunction(
+          { id: "job", triggers: [{ event: "app/job" }] },
+          async () => deps.state.length,
+        ),
+      ];
+
+      return {
+        functions,
+        close() {
+          inngest.removeFunctions(functions);
+        },
+      };
+    };
+
+    for (let i = 0; i < 50; i++) {
+      const app = buildApp();
+      app.close();
+    }
+
+    expect(inngest.funcs).toHaveLength(0);
+  });
+});
+
 describe("setEnvVars", () => {
   test("mode is mutable after construction", () => {
     const inngest = createClient({ id: "test" });
