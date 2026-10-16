@@ -49,10 +49,10 @@ test("scorer targets the attached experiment", async () => {
         values: { name: "exp", variant: "control" },
       },
       {
-        kind: "inngest.score",
+        kind: "inngest.score.rizz",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { rizz: { value: 100 } },
+        values: { value: 100 },
       },
     ]),
   );
@@ -129,10 +129,10 @@ test("success", async () => {
   expect(metadata).toEqual(
     expect.arrayContaining([
       {
-        kind: "inngest.score",
+        kind: "inngest.score.verbosity",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { verbosity: { value: 2 } },
+        values: { value: 2 },
       },
     ]),
   );

@@ -1,5 +1,6 @@
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
+import { warningMetadataKind } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
@@ -62,13 +63,14 @@ const describeStep = (
     );
 
     if ("error" in outcome && parsed.action === "destroy") {
+      const code = "sdk.sandbox.destroy";
       execution.instance.addMetadata(
         stepId,
-        "inngest.warnings",
+        warningMetadataKind(code),
         "step",
         "set",
         {
-          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+          [code]: `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
             outcome.error instanceof Error
               ? outcome.error.message
               : String(outcome.error)
