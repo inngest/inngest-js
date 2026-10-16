@@ -215,7 +215,7 @@ describe("await using a sandbox that can't be destroyed", () => {
       expect(destroy.step.metadata).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            kind: "inngest.warnings",
+            kind: "inngest.warning.sdk.sandbox.destroy",
             values: {
               "sdk.sandbox.destroy": expect.stringContaining(
                 `Sandbox ${sandboxId} couldn't be destroyed: `,
