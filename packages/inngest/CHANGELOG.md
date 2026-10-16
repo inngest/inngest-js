@@ -1,5 +1,55 @@
 # inngest
 
+## 4.24.0
+
+### Minor Changes
+
+- [#1777](https://github.com/inngest/inngest-js/pull/1777) [`700c58d9`](https://github.com/inngest/inngest-js/commit/700c58d96ac50342648d51224715c72dacfb2696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox durations now accept compound strings like `"4m30s"`.
+
+  ```ts
+  await step.sandbox.create("build", {
+    name: "build",
+    vcpu: 2,
+    memoryMb: 2048,
+    runningTimeout: "4m30s",
+  });
+  ```
+
+- [#1773](https://github.com/inngest/inngest-js/pull/1773) [`eee1c61e`](https://github.com/inngest/inngest-js/commit/eee1c61e8e69e93ade5d7024553ac2861adf357d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandboxes can now be scoped with `await using`; they're destroyed when the block exits.
+
+  ```ts
+  await using sb = await step.sandbox.create("build");
+  await sb.commands.run("npm test");
+  ```
+
+- [#1774](https://github.com/inngest/inngest-js/pull/1774) [`4d8cac24`](https://github.com/inngest/inngest-js/commit/4d8cac244705dcb34df4babf746fe3f115ba30e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: `group.sandbox()` runs a callback with a fresh sandbox and destroys it afterwards. The sandbox's whole lifetime shows as one group in the trace, and a retried failure keeps the sandbox for the next attempt.
+
+  ```ts
+  await group.sandbox("build", async (sb) => {
+    await sb.commands.run("test", "npm test");
+  });
+  ```
+
+### Patch Changes
+
+- [#1770](https://github.com/inngest/inngest-js/pull/1770) [`714d46a7`](https://github.com/inngest/inngest-js/commit/714d46a70f57864bc48ab62be511d21c9c8a65b0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Mark the span around a sandbox snapshot's create and wait steps as `kind: "snapshot"`, and let a caller's `"~span"` option replace it, so a snapshot is one statement in a trace. The group has no origin because the statement is the user's; the create and wait steps inside it carry an `inngest@<version>` origin. Step IDs are unchanged.
+
+## 4.23.0
+
+### Minor Changes
+
+- [#1763](https://github.com/inngest/inngest-js/pull/1763) [`a00d53fe`](https://github.com/inngest/inngest-js/commit/a00d53fecbc085a44e2154519e9645a8d5fdaed9) Thanks [@rhino1998](https://github.com/rhino1998)! - Add `set()` to the experimental metadata builders (`inngest.metadata` and `step.metadata()`), which replaces all values for a metadata kind, and deprecate `update()` in favor of it.
+
+  The SDK now sends metadata writes as `set`. Repeated `update()` calls to the same kind within a single step are still merged, but `update()` calls to the same kind from different steps, or sent via the API (IE targeting another run/step/attempt/span or made outside of a step), now replace each other instead of merging.
+
+- [#1753](https://github.com/inngest/inngest-js/pull/1753) [`758de572`](https://github.com/inngest/inngest-js/commit/758de572465f694fc3a6b3ea0ee1433900ff62ab) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox snapshots can be named with `snapshot({ name })` and listed by name with `snapshots.list({ name })`.
+
+### Patch Changes
+
+- [#1754](https://github.com/inngest/inngest-js/pull/1754) [`1793a5e1`](https://github.com/inngest/inngest-js/commit/1793a5e1d2ffda20ddd0dbde9edc4a7314e4ed1e) Thanks [@Linell](https://github.com/Linell)! - Warn once when the extended trace spans fail to export to Inngest.
+
+- [#1758](https://github.com/inngest/inngest-js/pull/1758) [`fceb5ef0`](https://github.com/inngest/inngest-js/commit/fceb5ef0c656fadaaf46775bab7950c34a242cfd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Traces for `step.sandbox` steps now show what each step did: its `inngest.sandbox` metadata names the action, the method called, and the machine, command, process, or snapshot involved. `snapshot()` appears as one group, "Create snapshot" and "Wait for snapshot", with its internal steps marked as Inngest's own. Also adds internal, unstable `group["~span"]()`, `"~span"`, and `"~origin"` for grouping steps and marking library-run steps in traces.
+
 ## 4.22.0
 
 ### Minor Changes

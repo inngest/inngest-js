@@ -46,6 +46,7 @@ import {
 import type { FeatureObservations } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import {
   type ApplyAllMiddlewareCtxExtensions,
+  type ApplyAllMiddlewareGroupExtensions,
   type ApplyAllMiddlewareStepExtensions,
   type ApplyAllMiddlewareTransforms,
   type BaseContext,
@@ -64,6 +65,7 @@ import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
@@ -1419,6 +1421,11 @@ export namespace Inngest {
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
             ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+          group: GroupTools &
+            ApplyAllMiddlewareGroupExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
         }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
@@ -1437,6 +1444,11 @@ export namespace Inngest {
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
             ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+          group: GroupTools &
+            ApplyAllMiddlewareGroupExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
         }
     >,
   >(
@@ -1495,6 +1507,10 @@ export type GetFunctionInput<TClient extends Inngest.Any> = Parameters<
       > & {
         step: ReturnType<typeof createStepTools<TClient>> &
           ApplyAllMiddlewareStepExtensions<
+            ClientOptionsFromInngest<TClient>["middleware"]
+          >;
+        group: GroupTools &
+          ApplyAllMiddlewareGroupExtensions<
             ClientOptionsFromInngest<TClient>["middleware"]
           >;
       }

@@ -1,8 +1,18 @@
+import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
-import type { SandboxRawTool } from "./protocol.ts";
+import { createGroupSandbox, type GroupSandbox } from "./group.ts";
+import {
+  getSandboxError,
+  operationSandboxId,
+  parseSandboxOperation,
+  type SandboxOperationResultV1,
+  type SandboxRawTool,
+} from "./protocol.ts";
+import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
+import { sandboxMetadataKind, sandboxTraceMetadata } from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -11,7 +21,64 @@ import {
 } from "./types.ts";
 
 type SandboxStepExtension = {
-  sandbox: DurableSandboxTools;
+  sandbox: DurableSandboxTools & {
+    python: OneShotRunner;
+    typescript: OneShotRunner;
+  };
+};
+
+type SandboxGroupExtension = {
+  sandbox: GroupSandbox;
+};
+
+/**
+ * Attach `inngest.sandbox` metadata to the step that's executing, describing
+ * the sandbox action for the trace. Tracing must never fail the step.
+ */
+const describeStep = (
+  operation: unknown,
+  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
+): void => {
+  try {
+    const execution = getAsyncCtxSync()?.execution;
+    const stepId = execution?.executingStep?.id;
+    if (!execution || !stepId) {
+      return;
+    }
+
+    const parsed = parseSandboxOperation(operation);
+
+    execution.instance.addMetadata(
+      stepId,
+      sandboxMetadataKind,
+      "step",
+      "merge",
+      sandboxTraceMetadata(
+        parsed,
+        "result" in outcome
+          ? outcome
+          : { error: getSandboxError(outcome.error) },
+      ),
+    );
+
+    if ("error" in outcome && parsed.action === "destroy") {
+      execution.instance.addMetadata(
+        stepId,
+        "inngest.warnings",
+        "step",
+        "set",
+        {
+          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : String(outcome.error)
+          }`,
+        },
+      );
+    }
+  } catch {
+    // An operation that fails validation has nothing to describe.
+  }
 };
 
 const executeAsStep = async (
@@ -19,8 +86,11 @@ const executeAsStep = async (
   operation: unknown,
 ): Promise<unknown> => {
   try {
-    return await executeSandboxOperation(client.sandboxes, operation);
+    const result = await executeSandboxOperation(client.sandboxes, operation);
+    describeStep(operation, { result });
+    return result;
   } catch (error) {
+    describeStep(operation, { error });
     if (error instanceof SandboxError) {
       const cause = {
         protocolVersion: error.protocolVersion,
@@ -80,14 +150,22 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     ctx: Middleware.TransformFunctionInputArgs["ctx"] & {
       step: Middleware.TransformFunctionInputArgs["ctx"]["step"] &
         SandboxStepExtension;
+      group: Middleware.TransformFunctionInputArgs["ctx"]["group"] &
+        SandboxGroupExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
+    const rawTool: SandboxRawTool = (idOrOptions, operation, finish) =>
       arg.ctx.step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
+        async (input) => {
+          const result = await executeAsStep(this.client, input);
+
+          return finish ? finish(result) : result;
+        },
         operation,
       );
+
+    const sandbox = createSandboxTools(() => rawTool);
 
     return {
       ...arg,
@@ -95,8 +173,13 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         ...arg.ctx,
         step: {
           ...arg.ctx.step,
-          sandbox: createSandboxTools(() => rawTool),
+          sandbox: {
+            ...sandbox,
+            python: createOneShotRunner(sandbox, "python"),
+            typescript: createOneShotRunner(sandbox, "typescript"),
+          },
         },
+        group: { ...arg.ctx.group, sandbox: createGroupSandbox(sandbox) },
       },
     };
   }

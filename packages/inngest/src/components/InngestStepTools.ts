@@ -31,9 +31,14 @@ import {
   StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
+  type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
+import {
+  getAsyncCtx,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
@@ -226,6 +231,56 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 };
 
 /**
+ * The origin a step or nested span in `path` inherits. Each span in a path
+ * already carries its effective origin, so the innermost span's is the answer.
+ * See `StepOptions["~origin"]`.
+ */
+const spanOrigin = (path: StepSpan[] | undefined): string | undefined => {
+  return path?.[path.length - 1]?.origin;
+};
+
+/**
+ * Append a span to a span path, naming it by its ID if it has no name. `kind`
+ * is only sent when given. A span without its own `origin` takes the origin of
+ * its parent, so `origin` is only sent when one is in scope.
+ */
+const appendSpan = (
+  path: (StepSpan & { name: string })[] | undefined,
+  span: StepSpan,
+): (StepSpan & { name: string })[] => {
+  const { id, name = id, kind } = span;
+  const origin = span.origin ?? spanOrigin(path);
+
+  return [
+    ...(path ?? []),
+    { id, name, ...(kind ? { kind } : {}), ...(origin ? { origin } : {}) },
+  ];
+};
+
+/**
+ * Run a callback with `span` appended to the current span path, so steps
+ * created within it carry the path. See `GroupTools["~span"]`.
+ */
+export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: {
+        ...currentCtx.execution,
+        span: appendSpan(currentCtx.execution.span, span),
+      },
+    },
+    callback,
+  );
+};
+
+/**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
@@ -298,6 +353,22 @@ export const createStepTools = <
 
       if (parallelMode) {
         op.opts = { ...op.opts, parallelMode };
+      }
+
+      // The span option nests inside the `group["~span"]()` scope, if any
+      const span = stepOptions["~span"]
+        ? appendSpan(alsCtx?.span, stepOptions["~span"])
+        : alsCtx?.span;
+
+      if (span) {
+        op.opts = { ...op.opts, span };
+      }
+
+      // The step's own origin wins, then the innermost span's
+      const origin = stepOptions["~origin"] ?? spanOrigin(span);
+
+      if (origin) {
+        op.opts = { ...op.opts, origin };
       }
 
       // Propagate experiment context to variant sub-steps
@@ -1214,6 +1285,7 @@ export const group: GroupTools = {
     getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
   experiment: (...args) =>
     getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
+  "~span": withSpan,
 };
 
 /**

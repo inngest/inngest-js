@@ -9,6 +9,7 @@ import {
   testClientId,
 } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
+import { version } from "../version.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   createSandboxClient,
@@ -27,6 +28,16 @@ import {
   SandboxValidationError,
   sandboxMiddleware,
 } from "./InngestSandbox.ts";
+import {
+  maxSandboxProcessTimeoutMs,
+  maxSandboxRunningTimeoutMs,
+  maxSandboxSnapshotWaitTimeoutMs,
+  normalizeSandboxCommandOptions,
+  normalizeSandboxCreateOptions,
+  normalizeSandboxProcessWaitOptions,
+  normalizeSandboxSnapshotWaitOptions,
+  normalizeSandboxWaitUntilRunningOptions,
+} from "./sandbox/validation.ts";
 
 const vpcId = "11111111-1111-4111-8111-111111111111";
 const sandboxId = "22222222-2222-4222-8222-222222222222";
@@ -121,6 +132,14 @@ const resultForOperation = (
           exitCode: 0,
           output: { truncated: false },
         },
+      };
+    case "file.upload":
+      return { protocolVersion: 1, action: "file.upload", result: null };
+    case "file.download":
+      return {
+        protocolVersion: 1,
+        action: "file.download",
+        result: { data: "" },
       };
     case "destroy":
       return {
@@ -383,12 +402,20 @@ describe("step.sandbox", () => {
     });
     expect(rawTool).toHaveBeenNthCalledWith(
       11,
-      "snapshot-create",
+      {
+        id: "snapshot-create",
+        name: "Create snapshot",
+        "~origin": `inngest@${version}`,
+      },
       expect.objectContaining({ action: "snapshot.create" }),
     );
     expect(rawTool).toHaveBeenNthCalledWith(
       12,
-      "snapshot-create:wait-until-ready",
+      {
+        id: "snapshot-create:wait-until-ready",
+        name: "Wait for snapshot",
+        "~origin": `inngest@${version}`,
+      },
       expect.objectContaining({ action: "snapshot.waitUntilReady" }),
     );
     expect(operations[16]).toMatchObject({
@@ -426,6 +453,53 @@ describe("step.sandbox", () => {
         input: [{ ...createOptions, runningTimeoutMs: false }],
       },
     ]);
+  });
+
+  test.each([
+    {
+      name: "create runningTimeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxCreateOptions({
+          ...createOptions,
+          runningTimeout: timeout,
+        });
+      },
+      maxMs: maxSandboxRunningTimeoutMs,
+    },
+    {
+      name: "waitUntilRunning timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxWaitUntilRunningOptions({ timeout });
+      },
+      maxMs: maxSandboxRunningTimeoutMs,
+    },
+    {
+      name: "snapshot wait timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxSnapshotWaitOptions({ timeout });
+      },
+      maxMs: maxSandboxSnapshotWaitTimeoutMs,
+    },
+    {
+      name: "command timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxCommandOptions("true", { timeout });
+      },
+      maxMs: maxSandboxProcessTimeoutMs,
+    },
+    {
+      name: "process wait timeout",
+      normalize: (timeout: string) => {
+        return normalizeSandboxProcessWaitOptions({ timeout });
+      },
+      maxMs: maxSandboxProcessTimeoutMs,
+    },
+  ])("caps $name at the SDK maximum", ({ normalize, maxMs }) => {
+    expect(() => normalize("5m")).not.toThrow();
+    expect(() => normalize("4m 59s")).not.toThrow();
+    expect(() => normalize(`${maxMs + 1}ms`)).toThrow(
+      `must not exceed ${maxMs} milliseconds`,
+    );
   });
 
   test.each([

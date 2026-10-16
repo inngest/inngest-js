@@ -18,6 +18,7 @@ export type MetadataKind =
   | ScoreMetadataKind
   | WarningMetadataKind
   | "inngest.ai"
+  | "inngest.sandbox"
   | `userland.${string}`;
 
 /**

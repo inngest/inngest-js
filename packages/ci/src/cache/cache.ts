@@ -1,49 +1,79 @@
 /**
- * The in-memory cache store and the machinery behind a job's `cache`
- * option: keys, lookups, storing entries, and the `files()` key helper.
+ * The machinery behind a job's `cache` option: keys, the names cached
+ * snapshots are found by, looking them up, checking what they were built from,
+ * and the `files()` key helper.
+ *
+ * A cached job is the snapshot of its machine, named after the job's key. There
+ * is no other record of it: whatever a run needs to know about a snapshot is
+ * either in its name or in the metadata file inside it.
  *
  * @module
  */
 
-import { tagStep } from "../pipeline/metadata.ts";
+import { NonRetriableError } from "inngest";
+import { mapGitHubError, rest } from "../github/rest.ts";
+import type { ResolvedSource } from "../github/source.ts";
+import {
+  octokitForSource,
+  resolveSource,
+  targetsRunRepo,
+} from "../github/source.ts";
+import { ciRun } from "../pipeline/metadata.ts";
+import type { StepSpec } from "../pipeline/names.ts";
+import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, joinId, localRepo, rootRunIdOf } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
-  CacheEntry,
   CacheKey,
   CacheKeyPart,
-  CacheStore,
+  FilesOptions,
+  JobConfig,
   RepoContext,
 } from "../types.ts";
-import { hash, stableStringify } from "../util.ts";
+import {
+  filterPaths,
+  formatRelative,
+  hash,
+  isSnapshotNotFound,
+  parseRepo,
+  stableStringify,
+} from "../util.ts";
+import { formatName } from "./names.ts";
 
 /**
- * Keep cache entries in memory, for as long as the process lives. A miss
- * just rebuilds the job. Internal: named Sandboxes snapshots replace this.
- */
-export const memoryCacheStore = (): CacheStore => {
-  const entries = new Map<string, CacheEntry>();
-
-  return {
-    get: async (key) => {
-      return entries.get(key);
-    },
-    set: async (key, entry) => {
-      entries.set(key, entry);
-    },
-  };
-};
-
-/**
- * Where a job reads and writes cache entries.
+ * Where a job reads and writes its cached snapshots.
  *
- * With the default `"branch"` scope, a pull request reads entries built on the
- * branch it targets and writes its own, so one PR can't poison another. A
+ * With the default `"branch"` scope, a pull request reads snapshots built on
+ * the branch it targets and writes its own, so one PR can't poison another. A
  * pull request's scope has a `:`, which a branch name can't contain, so a
  * branch called `pr-4` never shares it.
+ *
+ * A local run, from `inngest-ci`, writes only to `local`, whatever its event
+ * says: its fixtures look like real pull requests and pushes, and a working
+ * tree must never stand in for one. It still reads what CI built.
  */
 export const cacheScopes = (
+  repo: RepoContext | undefined,
+  scope: CacheConfig["scope"],
+): { read: string[]; write: string } => {
+  const shared = sharedScopes(repo, scope);
+
+  if (!repo?.local) {
+    return shared;
+  }
+
+  const read = shared.read.filter((name) => {
+    return !name.startsWith("pr:");
+  });
+
+  return { read: [localScope, ...read], write: localScope };
+};
+
+/** The scope every local run writes to. */
+const localScope = "local";
+
+const sharedScopes = (
   repo: RepoContext | undefined,
   scope: CacheConfig["scope"],
 ): { read: string[]; write: string } => {
@@ -64,16 +94,13 @@ export const cacheScopes = (
   return { read: [branch], write: branch };
 };
 
-export const storeKey = (scope: string, jobId: string, key: string): string => {
-  return `${scope}:${jobId}:${key}`;
-};
-
 /**
  * Resolve the parts of a cache key into a single hash.
  *
  * `files()` parts are resolved against the repository: the git tree for the
- * run's commit on GitHub, or the working tree locally, so a key changes
- * exactly when the matched files do.
+ * run's commit on GitHub (or for the commit its `repo` and `ref` resolved to),
+ * or the working tree locally, so a key changes exactly when the matched files
+ * do.
  */
 export const resolveCacheKey = async (
   run: CiRunScope,
@@ -87,47 +114,115 @@ export const resolveCacheKey = async (
     return hash(await key());
   }
 
-  const parts = Array.isArray(key) ? key : [key];
   const resolved: string[] = [];
 
-  for (const part of parts) {
-    if (typeof part === "string") {
-      resolved.push(part);
-
-      continue;
-    }
-
-    resolved.push(await resolveFilesPart(run, part));
+  for (const part of keyParts(key)) {
+    resolved.push(
+      typeof part === "string" ? part : await resolveFilesPart(run, part),
+    );
   }
 
   return hash(resolved.join("\0"));
+};
+
+/** The parts of a cache key, which a function key doesn't have. */
+const keyParts = (key: CacheKey | undefined): (CacheKeyPart | string)[] => {
+  if (key === undefined || typeof key === "function") {
+    return [];
+  }
+
+  return Array.isArray(key) ? key : [key];
+};
+
+/**
+ * Resolve the repository and ref of every `files()` part that reads another
+ * commit than the run's own, each in a memoized step. A key is worked out
+ * inside a step, which can't start another, so this runs just before it.
+ */
+export const resolveKeySources = async (
+  run: CiRunScope,
+  key: CacheKey | undefined,
+): Promise<void> => {
+  for (const part of keyParts(key)) {
+    if (typeof part !== "string" && !targetsRunRepo(run, part)) {
+      await resolveSource(run, part);
+    }
+  }
 };
 
 const resolveFilesPart = async (
   run: CiRunScope,
   part: CacheKeyPart,
 ): Promise<string> => {
-  const repo = run.repo;
+  if (!targetsRunRepo(run, part)) {
+    return hashRemoteFiles(run, await resolveSource(run, part), part);
+  }
 
-  if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
+  const local = localRepo(run);
+
+  if (local) {
     const { hashLocalFiles } = await import("./localCache.ts");
 
-    return hashLocalFiles(repo.local.path, part.patterns);
+    return hashLocalFiles(local.path, part.patterns);
   }
+
+  const repo = run.repo;
 
   if (!repo) {
     return `files:${part.patterns.join(",")}`;
   }
-
-  const { rest } = await import("../github/rest.ts");
-  const { filterPaths } = await import("../util.ts");
 
   const tree = await rest.git.getTree({
     tree_sha: repo.sha,
     recursive: "1",
   });
 
-  const entries = (tree.tree ?? [])
+  return hashTree(tree, part.patterns, repo.fullName);
+};
+
+/**
+ * Hash the matched files of another repository or ref, at the commit it
+ * resolved to, with a client for the installation that can read it.
+ */
+const hashRemoteFiles = async (
+  run: CiRunScope,
+  source: ResolvedSource,
+  part: CacheKeyPart,
+): Promise<string> => {
+  const octokit = await octokitForSource(run, source);
+
+  try {
+    const { data } = await octokit.rest.git.getTree({
+      owner: source.owner,
+      repo: source.name,
+      tree_sha: source.sha,
+      recursive: "1",
+    });
+
+    return hashTree(data, part.patterns, source.fullName);
+  } catch (error) {
+    throw mapGitHubError(error) ?? error;
+  }
+};
+
+/** A hash of the blobs in a git tree that match the patterns. */
+const hashTree = (
+  listing: {
+    tree?: { type?: string; path?: string; sha?: string }[];
+    truncated?: boolean;
+  },
+  patterns: string[],
+  fullName: string,
+): string => {
+  // A truncated listing would hash only some of the files, and a key that
+  // ignores the rest never changes when they do.
+  if (listing.truncated) {
+    throw new NonRetriableError(
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Key the job on a string instead.`,
+    );
+  }
+
+  const entries = (listing.tree ?? [])
     .filter((entry) => {
       return entry.type === "blob" && entry.path;
     })
@@ -139,7 +234,7 @@ const resolveFilesPart = async (
     entries.map((entry) => {
       return entry.path;
     }),
-    { include: part.patterns },
+    { include: patterns },
   );
 
   const byPath = new Map(
@@ -159,38 +254,265 @@ const resolveFilesPart = async (
 };
 
 /**
- * A job's own cache key: its resolved key, with the input it was called with
- * folded in, since the same key with a different input is a different job.
- * Lookups, stores and parent keys all go through this, so they always agree.
+ * A job's own cache key: its resolved key, with the repository, the input it
+ * was called with and the snapshot it starts from folded in, since any of
+ * them changing makes it a different job. The app's ID is always part of it,
+ * so two apps in one repository never share a snapshot, and the repository
+ * is too when the run has one (a cron with no `repo` set has none). Names and
+ * lookups both go through this, so they always agree.
  */
 export const jobCacheKey = async (
   run: CiRunScope,
   cache: CacheConfig,
   input: unknown,
+  /** What the job starts from. */
+  base?: BaseIdentity,
 ): Promise<string> => {
   const key = await resolveCacheKey(run, cache.key);
 
-  return input === undefined
-    ? key
-    : hash(`${key}\0input:${stableStringify(input)}`);
+  // Repositories and apps can share a Sandbox environment, so the same
+  // branch, job and key in two of them are still two names.
+  const app = `app:${run.ci.client?.id ?? ""}`;
+  const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
+
+  return identityKey(hash(`${key}\0${owner}`), input, base);
 };
 
-export interface CacheLookup {
-  /** The key this job's entry is stored under. */
-  writeKey: string;
-  entry?: CacheEntry;
-  /** The resolved key the entry is stored under. */
-  ownKey: string;
+/**
+ * Fold a job's input and the snapshot it starts from into a key. A key with
+ * neither stays as it is.
+ */
+const identityKey = (
+  key: string,
+  input: unknown,
+  base: BaseIdentity | undefined,
+): string => {
+  const parts = [key];
+
+  if (input !== undefined) {
+    parts.push(`input:${stableStringify(input)}`);
+  }
+
+  if (base) {
+    parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
+  }
+
+  return parts.length === 1 ? key : hash(parts.join("\0"));
+};
+
+/**
+ * The parent a job starts from, as its key sees it: the parent's job and its
+ * snapshot, which is missing when there was none to take. A parent rebuilt
+ * with any change has a new snapshot, so every job below it gets a new name
+ * and misses on lookup, without a machine starting to find out.
+ */
+export interface BaseIdentity {
+  jobId: string;
+  snapshotId?: string;
 }
 
-const findEntry = async (
+/** A cached job's snapshot, as found by its name. */
+export interface CachedSnapshot {
+  snapshotId: string;
+  /** The name it has, which may be another scope's, such as the base branch's. */
+  name: string;
+  /** When it was taken, as an ISO timestamp. */
+  createdAt: string;
+}
+
+/** Where a job's cached snapshot is written. */
+export interface CacheTarget {
+  /** The job's resolved key. */
+  ownKey: string;
+  /** The name a build gives the snapshot, in the scope the job writes. */
+  name: string;
+}
+
+/**
+ * Compute a job's key and the name its snapshot is written under, as a
+ * memoized step. What a pipeline needs to ask a build function for it.
+ */
+export const cacheTarget = async (
   run: CiRunScope,
+  job: {
+    /** The job's ID, which its snapshot's name has. */
+    id: string;
+    /** Where the job's steps go: its own path, or the one its build is asked under. */
+    path: string;
+  },
   cache: CacheConfig,
+  /** The input the job was called with, which is part of its identity. */
+  input?: unknown,
+  /** What the job starts from, which is part of its identity too. */
+  base?: BaseIdentity,
+): Promise<CacheTarget> => {
+  const jobId = job.id;
+
+  countApi("cache");
+
+  await resolveKeySources(run, cache.key);
+
+  const ownKey = await ciRun(run, steps.cacheKey(job.path), () => {
+    return jobCacheKey(run, cache, input, base);
+  });
+
+  return {
+    ownKey,
+    name: formatName({
+      kind: "cache",
+      scope: cacheScopes(run.repo, cache.scope).write,
+      jobId,
+      ownKey,
+    }),
+  };
+};
+
+/**
+ * Where a job without a `cache` has its snapshot for `from`: a name that
+ * belongs to the pipeline run at the root, so another run never starts from
+ * it, and that a second build anywhere in that pipeline finds rather than
+ * builds again.
+ */
+export const runTarget = (
+  run: CiRunScope,
   jobId: string,
-  key: string,
-): Promise<CacheEntry | undefined> => {
-  for (const readScope of cacheScopes(run.repo, cache.scope).read) {
-    const found = await run.ci.cacheStore.get(storeKey(readScope, jobId, key));
+  input?: unknown,
+  /** What the job starts from. */
+  base?: BaseIdentity,
+) => {
+  const ownKey = identityKey("", input, base);
+
+  return {
+    ownKey,
+    name: formatName({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId,
+      ownKey,
+    }),
+  };
+};
+
+/**
+ * How long before its `expiresAt` a snapshot stops being reused: long enough
+ * for the jobs that start from it to get their machines.
+ */
+const expiryMarginMs = 15 * 60 * 1000;
+
+/** Whether a snapshot expires within the margin, or already has. */
+const isExpiring = (expiresAt: string | undefined): boolean => {
+  if (!expiresAt) {
+    return false;
+  }
+
+  const at = Date.parse(expiresAt);
+
+  return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
+};
+
+/** How long a lookup waits for a snapshot another build is still taking. */
+const readyWaitMs = 2 * 60 * 1000;
+const readyPollMs = 1000;
+
+interface SnapshotResource {
+  id: string;
+  name?: string;
+  status: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/** The direct snapshots client, for CI's own steps. */
+// biome-ignore lint/suspicious/noExplicitAny: SandboxClient["snapshots"], kept loose
+const snapshotsClient = (run: CiRunScope): any => {
+  return run.ci.client.sandboxes.snapshots;
+};
+
+/**
+ * Wait for a snapshot that is still being created, for a while. `undefined`
+ * if it never became ready.
+ */
+const waitUntilReady = async (
+  run: CiRunScope,
+  snapshotId: string,
+): Promise<SnapshotResource | undefined> => {
+  const deadline = Date.now() + readyWaitMs;
+
+  while (true) {
+    const snapshot = (await snapshotsClient(run).get(snapshotId)) as
+      | SnapshotResource
+      | null
+      | undefined;
+
+    if (!snapshot || snapshot.status !== "CREATING") {
+      return snapshot ?? undefined;
+    }
+
+    if (Date.now() >= deadline) {
+      return undefined;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, readyPollMs);
+    });
+  }
+};
+
+/**
+ * The newest snapshot with exactly this name, if it can be used: ready, or
+ * ready after waiting for the build taking it, and not about to expire.
+ *
+ * Any error is a miss, and only an exact name counts, since a server that
+ * doesn't know names ignores the filter and lists every snapshot.
+ */
+const findNamed = async (
+  run: CiRunScope,
+  name: string,
+  /** A snapshot that must not be used, though it may still hold the name. */
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  try {
+    const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
+      items: SnapshotResource[];
+    };
+
+    const newest = page.items.find((snapshot) => {
+      return snapshot.name === name;
+    });
+
+    if (!newest || newest.id === exclude) {
+      return undefined;
+    }
+
+    const ready =
+      newest.status === "CREATING"
+        ? await waitUntilReady(run, newest.id)
+        : newest;
+
+    if (ready?.status !== "READY" || isExpiring(ready.expiresAt)) {
+      return undefined;
+    }
+
+    return { snapshotId: ready.id, name, createdAt: ready.createdAt };
+  } catch {
+    return undefined;
+  }
+};
+
+/** Look a job's snapshot up in each scope it reads, in order. */
+const findInScopes = async (
+  run: CiRunScope,
+  jobId: string,
+  cache: CacheConfig,
+  ownKey: string,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  for (const scope of cacheScopes(run.repo, cache.scope).read) {
+    const found = await findNamed(
+      run,
+      formatName({ kind: "cache", scope, jobId, ownKey }),
+      exclude,
+    );
 
     if (found) {
       return found;
@@ -201,166 +523,257 @@ const findEntry = async (
 };
 
 /**
- * The current keys of the cached jobs a job starts `from()`, by job ID.
- *
- * `from()` only runs inside the job body, after the lookup, so a job's entry
- * records its parents' keys when it is built and a lookup compares them with
- * the current ones. Each key folds in the parent's own parents, read from the
- * parent's stored entry, so a change anywhere up the chain changes it. A parent
- * that isn't cached has no key and is left out.
- */
-export const resolveParentKeys = async (
-  run: CiRunScope,
-  jobIds: string[],
-  /** The input each parent was called with, by job ID. */
-  inputs: Record<string, unknown>,
-): Promise<Record<string, string>> => {
-  const keys: Record<string, string> = {};
-
-  for (const jobId of jobIds) {
-    const cache = run.ci.jobs.get(jobId)?.config.cache;
-
-    if (!cache) {
-      continue;
-    }
-
-    const key = await jobCacheKey(run, cache, inputs[jobId]);
-
-    const entry = await findEntry(run, cache, jobId, key);
-
-    const parents = await resolveParentKeys(
-      run,
-      Object.keys(entry?.fromKeys ?? {}),
-      entry?.fromInputs ?? {},
-    );
-
-    keys[jobId] = hash(
-      `${key}|${entry ? "built" : "unbuilt"}|${JSON.stringify(parents)}`,
-    );
-  }
-
-  return keys;
-};
-
-/**
- * Compute this job's key and look for an entry, both as memoized steps. An
- * entry is a miss if any parent's key has changed since it was built.
+ * Look a job's cached snapshot up, as a memoized step. Its parents need no
+ * check: they are part of its name.
  */
 export const lookupCache = async (
   scope: CiJobScope,
-  cache: CacheConfig,
-  /** The input the job was called with, which is part of its identity. */
-  input?: unknown,
-): Promise<CacheLookup> => {
-  const { run } = scope;
-  const jobId = scope.config.id;
-  const tag = { kind: "cache", job: scope.path } as const;
+  /** The job's `cache`, or none for a job whose snapshot is only for this run. */
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  /** A snapshot found to be bad, which a rebuild must not find again. */
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  return lookUp(
+    scope.run,
+    steps.lookUpCache(joinId(scope.path, "cache:lookup"), scope.path),
+    scope.config.id,
+    cache,
+    target,
+    exclude,
+  );
+};
 
-  countApi("cache");
+/** A lookup as a memoized step: a hit is returned, a miss is `null` in the step. */
+const lookUp = async (
+  run: CiRunScope,
+  spec: StepSpec,
+  jobId: string,
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  const found = await ciRun(run, spec, async () => {
+    return (await findCached(run, jobId, cache, target, exclude)) ?? null;
+  });
 
-  const ownKey = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:key`,
-      name: "cache:key",
-    },
-    async () => {
-      await tagStep(run, tag);
+  return found ?? undefined;
+};
 
-      return jobCacheKey(run, cache, input);
-    },
-  )) as string;
-
-  const entry = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:lookup`,
-      name: "cache:lookup",
-    },
-    async () => {
-      await tagStep(run, tag);
-
-      const found = await findEntry(run, cache, jobId, ownKey);
-      const built = found?.fromKeys ?? {};
-      const current = await resolveParentKeys(
-        run,
-        Object.keys(built),
-        found?.fromInputs ?? {},
-      );
-      const unchanged = JSON.stringify(current) === JSON.stringify(built);
-
-      return found && unchanged ? found : null;
-    },
-  )) as CacheEntry | null;
-
-  return {
-    writeKey: storeKey(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
-    ownKey,
-    ...(entry ? { entry } : {}),
-  };
+/** A job's usable snapshot: in the scopes it reads if cached, else by its run's name. */
+const findCached = (
+  run: CiRunScope,
+  jobId: string,
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  return cache
+    ? findInScopes(run, jobId, cache, target.ownKey, exclude)
+    : findNamed(run, target.name, exclude);
 };
 
 /**
- * Store an entry after a successful run, with the keys of its parents.
+ * Look a snapshot up before asking a build function for it, as a memoized step
+ * in the run that needs it. A hit saves the invoke and its place in the queue
+ * behind any build still taking the name. A miss, or a snapshot that is about
+ * to expire or is the bad one, is for the build function to settle, which
+ * looks again when it starts.
  */
-export const storeCache = async (
-  scope: CiJobScope,
-  lookup: CacheLookup,
-  entry: Omit<CacheEntry, "key" | "fromKeys" | "fromInputs">,
-): Promise<void> => {
-  const { run } = scope;
+export const lookupBeforeBuild = async (
+  run: CiRunScope,
+  job: {
+    id: string;
+    /** The job's path, where its activity goes. */
+    path: string;
+    /** What the step's ID is built on. */
+    stepPath: string;
+  },
+  cache: CacheConfig | undefined,
+  target: CacheTarget,
+  /** A snapshot found to be bad, which a rebuild must not find again. */
+  exclude?: string,
+): Promise<CachedSnapshot | undefined> => {
+  return lookUp(
+    run,
+    steps.lookUpCache(joinId(job.stepPath, "lookup"), job.path),
+    job.id,
+    cache,
+    target,
+    exclude,
+  );
+};
 
-  // A cache entry's snapshot outlives the run, so a later run can restore it.
-  if (entry.snapshotId) {
-    run.createdSnapshots.delete(entry.snapshotId);
-  }
+/**
+ * Find the snapshot that holds a name a build couldn't take, as a memoized
+ * step. If it can't be used, because it is about to expire or is the bad one
+ * the build replaces, it is deleted so the build can take the name after all.
+ */
+export const resolveTakenName = async (
+  run: CiRunScope,
+  stepId: string,
+  name: string,
+  exclude?: string,
+  /**
+   * Whether `exclude` was decided to be broken, which is the only case where
+   * it is deleted. A snapshot that merely failed to start once may be a
+   * shared one, such as the base branch's, that other runs still use.
+   */
+  broken?: boolean,
+): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
+  return ciRun(
+    run,
+    steps.resolveCacheName(stepId),
+    async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
+      const winner = await findNamed(run, name, exclude);
 
-  await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:store`,
-      name: "cache:store",
-    },
-    async () => {
-      const fromInputs = scope.fromInputs;
-      const fromKeys = await resolveParentKeys(
-        run,
-        scope.fromJobIds,
-        fromInputs,
-      );
+      if (winner) {
+        return { winner, cleared: false };
+      }
 
-      const full: CacheEntry = {
-        ...entry,
-        key: lookup.ownKey,
-        fromKeys,
-        fromInputs,
-      };
+      let cleared = false;
 
-      await run.ci.cacheStore.set(lookup.writeKey, full);
+      try {
+        const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
+          items: SnapshotResource[];
+        };
 
-      return { key: lookup.writeKey };
+        for (const holder of page.items) {
+          const unusable =
+            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
+
+          if (holder.name !== name || holder.status !== "READY" || !unusable) {
+            continue;
+          }
+
+          const snapshot = await snapshotsClient(run).get(holder.id);
+
+          await snapshot?.delete();
+
+          cleared = true;
+        }
+      } catch {
+        // Nothing more to try: the build keeps its snapshot without a name.
+      }
+
+      return { cleared };
     },
   );
 };
 
 /**
- * A cached snapshot may have expired, in which case the entry is a miss.
+ * What a snapshot is now, as a memoized step: `gone` if it doesn't exist or
+ * is being deleted, `creating` while it is being taken, and `ready` otherwise.
+ * `ready` is also what an unreadable answer gives, since that is the case
+ * where the snapshot has to be assumed usable.
  */
-export const snapshotIsReady = async (
+export const snapshotState = async (
   run: CiRunScope,
-  scopePath: string,
+  stepId: string,
+  snapshotId: string,
+): Promise<"gone" | "creating" | "ready"> => {
+  return ciRun(
+    run,
+    steps.checkSnapshotState(stepId),
+    async (): Promise<"gone" | "creating" | "ready"> => {
+      try {
+        const snapshot = (await snapshotsClient(run).get(snapshotId)) as
+          | SnapshotResource
+          | null
+          | undefined;
+
+        if (!snapshot || /^DELET/.test(snapshot.status)) {
+          return "gone";
+        }
+
+        return snapshot.status === "CREATING" ? "creating" : "ready";
+      } catch {
+        return "ready";
+      }
+    },
+  );
+};
+
+/**
+ * Delete a snapshot that is no use, so no run finds it again. Whether it is
+ * gone afterwards: `false` when it can't be deleted (as Cloud refuses some),
+ * which leaves it to expire and must not be reused.
+ */
+export const deleteSnapshot = async (
+  run: CiRunScope,
+  stepId: string,
   snapshotId: string,
 ): Promise<boolean> => {
   try {
-    const snapshot = await run.sandboxTools.snapshots.get(
-      {
-        id: `${scopePath}${scopeSeparator}cache:snapshot`,
-        name: "cache:snapshot",
+    const result = await ciRun(
+      run,
+      steps.deleteBadSnapshot(stepId),
+      async () => {
+        try {
+          const snapshot = await snapshotsClient(run).get(snapshotId);
+
+          await snapshot?.delete();
+
+          return { deleted: Boolean(snapshot), gone: true };
+        } catch (error) {
+          // Deleted meanwhile by someone else, which is as good.
+          return { deleted: false, gone: isSnapshotNotFound(error) };
+        }
       },
-      snapshotId,
     );
 
-    return snapshot?.status === "READY";
+    // Outside the step, which a replay doesn't run: the set is rebuilt on
+    // every replay, so a snapshot gone now must leave it on each of them.
+    if (result.gone) {
+      run.createdSnapshots.delete(snapshotId);
+    }
+
+    return result.gone;
   } catch {
+    // Best effort only.
     return false;
   }
+};
+
+/**
+ * What a cached job that starts from a job with no `cache` says in the run's
+ * warnings. A job without a cache is built fresh in every run, and the cached
+ * job's key holds that build's snapshot, so the cached job could never be
+ * found again. It is built in every run, and its snapshot belongs to the run,
+ * until the job above it has a `cache`.
+ */
+export const uncachedBaseNote = (
+  /** The cached job. */
+  jobId: string,
+  /** The job it starts from, which has no cache. */
+  baseId: string,
+): { line: string } => {
+  return {
+    line: `never reused: \`${jobId}\` starts from \`${baseId}\`, which has no \`cache\` (give \`${baseId}\` a \`cache\`)`,
+  };
+};
+
+/** Add a cached job's uncached-base line to the run's warnings, once. */
+export const warnUncachedBase = (
+  run: CiRunScope,
+  jobId: string,
+  baseId: string,
+): void => {
+  const { line } = uncachedBaseNote(jobId, baseId);
+
+  if (!run.warnings.includes(line)) {
+    run.warnings.push(line);
+  }
+};
+
+/**
+ * How a cached snapshot is described wherever it shows: `cached 10h ago`.
+ */
+export const describeCached = (
+  /** When the snapshot was taken, as an ISO timestamp. */
+  createdAt: string,
+): string => {
+  return `cached ${formatRelative(createdAt)}`;
 };
 
 /**
@@ -379,14 +792,43 @@ export const snapshotIsReady = async (
  * Contents are read from the git tree for the run's commit, or from the
  * working tree locally, so uncommitted changes change the key too.
  *
+ * End with `{ repo, ref }` to read another repository or ref. `ref` is a
+ * branch, tag or commit, and `repo` is `"owner/name"` with `ref` defaulting to
+ * its default branch. The ref is resolved to a commit once per run, so a branch
+ * that moves changes the key exactly when the matched files change. Locally,
+ * this reads from GitHub too, unless it names the local repository with no
+ * `ref`.
+ *
+ * ```ts
+ * cache: {
+ *   key: files("images/node-base/**", { repo: "acme/platform", ref: "main" }),
+ * }
+ * ```
+ *
  * Patterns support `**`, `*`, `?`, and `{a,b}`.
  */
 export const files = (
-  /** Glob patterns for the files to hash. */ ...patterns: string[]
+  /** Glob patterns for the files to hash, then optionally where to read them from. */
+  ...args: string[] | [...patterns: string[], options: FilesOptions]
 ): CacheKeyPart => {
+  const list: (string | FilesOptions)[] = args;
+  const last = list.at(-1);
+  const options = typeof last === "object" ? last : undefined;
+
+  // Checked here, where the pipeline is defined, so a bad `repo` fails at boot.
+  if (options?.repo !== undefined) {
+    parseRepo(options.repo);
+  }
+
+  const patterns = list.filter((arg): arg is string => {
+    return typeof arg === "string";
+  });
+
   return {
     kind: "inngest/ci.cacheKeyPart",
     type: "files",
     patterns,
+    ...(options?.repo === undefined ? {} : { repo: options.repo }),
+    ...(options?.ref === undefined ? {} : { ref: options.ref }),
   };
 };

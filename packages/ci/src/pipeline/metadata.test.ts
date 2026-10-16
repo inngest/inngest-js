@@ -9,54 +9,29 @@
 import { readFileSync } from "node:fs";
 import { runWithAsyncCtx } from "inngest/experimental";
 import { describe, expect, test, vi } from "vitest";
-import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
-import { from } from "../machine/from.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
-import { createCiWithStore } from "./createCi.ts";
+import { createCi } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
+import { ciOrigin } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 
-const prEvent = {
-  name: "github/pull_request.opened",
-  data: {
-    action: "opened",
-    number: 7,
-    repository: { full_name: "inngest/inngest-js" },
-    pull_request: {
-      number: 7,
-      head: {
-        sha: "abc1234",
-        ref: "feature",
-        repo: { full_name: "inngest/inngest-js" },
-      },
-      base: { sha: "def5678", ref: "main" },
-    },
-    _github: { event: "pull_request", installationId: 1 },
-  },
-};
-
-const prTrigger = [{ event: "github/pull_request.opened" }];
-
-const setup = (cacheStore = memoryCacheStore()) => {
+const setup = () => {
   const api = createFakeSandboxApi();
   const client = createCiTestClient(api);
 
-  const ci = createCiWithStore(
-    client,
-    {
-      github: consoleReporter(),
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
-      },
+  const ci = createCi(client, {
+    github: consoleReporter(),
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
     },
-    cacheStore,
-  );
+  });
 
   return { api, client, ci };
 };
@@ -69,9 +44,13 @@ const runScoped = (metadata: Update[]) => {
   });
 };
 
+/**
+ * CI's own step tags. The SDK adds metadata of its own to some steps, such as
+ * `inngest.sandbox` on sandbox steps, which these tests don't look at.
+ */
 const stepScoped = (metadata: Update[]) => {
   return metadata.filter((update) => {
-    return update.scope === "step";
+    return update.scope === "step" && update.kind === "userland.inngest-ci";
   });
 };
 
@@ -83,9 +62,7 @@ describe("run metadata", () => {
       await $`pnpm install`;
     });
 
-    const test = ci.job("test", async () => {
-      await from(install);
-
+    const test = ci.job({ id: "test", from: install }, async () => {
       await $`pnpm test`;
       await $`pnpm lint`;
 
@@ -158,7 +135,7 @@ describe("run metadata", () => {
         waitForChecks: 0,
         waitForWorkflow: 0,
         waitFor: 0,
-        commands: 6,
+        commands: 4,
         background: 0,
         shard: 0,
         skip: 0,
@@ -274,6 +251,9 @@ describe("run metadata", () => {
 
     expect(result.stepIds).toContain("ci › metadata:start");
     expect(result.stepIds).toContain("ci › metadata:end");
+
+    expect(result.origins["ci › metadata:start"]).toBe(ciOrigin);
+    expect(result.origins["ci › metadata:end"]).toBe(ciOrigin);
   });
 
   test("a pipeline with its check on adds no steps of its own", async () => {
@@ -316,18 +296,24 @@ describe("step metadata", () => {
 
     expect(tags).toEqual([
       ["github › check:pr:start", { kind: "check" }],
-      ["cache:key", { kind: "cache", job: "built" }],
-      ["cache:lookup", { kind: "cache", job: "built" }],
+      ["built › cache:key", { kind: "cache", job: "built" }],
       ["github › check:built:start", { kind: "check", job: "built" }],
+      ["built › lookup", { kind: "cache", job: "built" }],
       ["github › check:built:complete", { kind: "check", job: "built" }],
       ["start:plain", { kind: "job", job: "plain" }],
       ["end:plain", { kind: "job", job: "plain" }],
+      ["github › check:jobs:complete", { kind: "check" }],
       ["github › check:pr:complete", { kind: "check" }],
     ]);
 
     for (const update of stepScoped(result.metadata)) {
       expect(update.kind).toBe("userland.inngest-ci");
       expect(update.op).toBe("merge");
+    }
+
+    // Caching, start times and checks are all CI's work, not the jobs'.
+    for (const [step] of tags) {
+      expect(result.origins[step as string]).toBe(ciOrigin);
     }
   });
 });

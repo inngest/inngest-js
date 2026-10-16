@@ -16,7 +16,6 @@ import { checkout } from "./checkout/checkout.ts";
 import { waitForHttp } from "./checkout/wait.ts";
 import { consoleReporter } from "./github/auth.ts";
 import { $ } from "./machine/command.ts";
-import { from } from "./machine/from.ts";
 import { createCi } from "./pipeline/createCi.ts";
 import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
@@ -114,22 +113,16 @@ const buildPipeline = () => {
     },
   );
 
-  const lint = ci.job("lint", async () => {
-    await from(setup);
-
+  const lint = ci.job({ id: "lint", from: setup }, async () => {
     await $`pnpm lint`;
   });
 
-  const test = ci.job("test", async () => {
-    await from(setup);
-
+  const test = ci.job({ id: "test", from: setup }, async () => {
     await $`pnpm test`.retries(1);
   });
 
   const compat = (node: string) => {
-    return ci.job(`compat (node:${node})`, async () => {
-      await from(setup);
-
+    return ci.job({ id: `compat (node:${node})`, from: setup }, async () => {
       await $`pnpm test`.env({ NODE_VERSION: node });
     })();
   };
@@ -150,9 +143,7 @@ const buildPipeline = () => {
   });
 
   const e2e = (baseUrl: string) => {
-    return ci.job("e2e", async () => {
-      await from(setup);
-
+    return ci.job({ id: "e2e", from: setup }, async () => {
       await $`serve`.background();
 
       await waitForHttp("http://127.0.0.1:3000");
@@ -231,8 +222,8 @@ describe("the example's pr pipeline", () => {
     expect(seen.testedAgainst).toBe("https://preview.example.dev");
     expect(deploys()).toBe(2);
 
-    // One machine for setup, and one clone each for the jobs that start from
-    // it. `deploy` never gets one.
+    // One machine for setup, built in its own run, and one clone each for the
+    // jobs that start from it. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
 
     expect(
@@ -240,7 +231,7 @@ describe("the example's pr pipeline", () => {
         return machine.name;
       }),
     ).toEqual([
-      "ci-01TESTRUN-setup",
+      expect.stringMatching(/^ci-01TESTINVOKED\d+-setup$/),
       "ci-01TESTRUN-lint",
       "ci-01TESTRUN-test",
       "ci-01TESTRUN-compat-node-20",
@@ -272,8 +263,9 @@ describe("the example's pr pipeline", () => {
         return `${entry.name}: ${entry.conclusion}`;
       });
 
+    // `setup` is only started from, so it is built in a run of its own and
+    // has no check.
     expect(completed).toEqual([
-      "pr / setup: success",
       "pr / lint: success",
       "pr / test: success",
       "pr / compat (node:20): success",

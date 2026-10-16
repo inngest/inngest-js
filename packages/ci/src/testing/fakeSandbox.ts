@@ -35,16 +35,24 @@ export interface FakeProcess {
 export interface FakeSandbox {
   id: string;
   name: string;
-  status: "RUNNING" | "PAUSED" | "TERMINATED";
+  status: "STARTING" | "RUNNING" | "PAUSED" | "TERMINATED";
   snapshotId?: string;
+  /** Set on a sandbox whose start failed, which the create call reported. */
+  stuck?: boolean;
   vcpu: number;
   memoryMb: number;
 }
 
 export interface FakeSnapshot {
   id: string;
+  /** The name it was created with, if any. */
+  name?: string;
   status: string;
   sandboxId: string;
+  createdAt: string;
+  expiresAt: string;
+  /** How many reads a `CREATING` snapshot answers before it is `READY`. */
+  readyAfterGets?: number;
 }
 
 export interface CommandScript {
@@ -71,6 +79,11 @@ export interface FakeSandboxApi {
   snapshots: Map<string, FakeSnapshot>;
   /** Every command or process argv the API was asked to run, in order. */
   commands: string[][];
+  /**
+   * Commands asked of machines and snapshots taken of them, in order, as
+   * `command <argv>` and `snapshot <machine name>`.
+   */
+  timeline: string[];
   /** Every request path, in order. */
   requests: string[];
   script(scripts: CommandScript[]): void;
@@ -78,7 +91,59 @@ export interface FakeSandboxApi {
   disableSnapshots(): void;
   /** Make snapshot creation fail the way Cloud does when none are left. */
   exhaustSnapshots(): void;
+  /**
+   * Make a sandbox created from any snapshot that exists now fail to start
+   * for good, as a broken one does: the machine goes `FAILED`, which the
+   * create reports as `sandbox_start_failed`. Snapshots taken afterwards
+   * start normally.
+   */
+  failSnapshotStarts(): void;
+  /**
+   * Like `failSnapshotStarts`, but the machine never reaches `RUNNING` in
+   * time and stays stuck `STARTING`, which the create reports as
+   * `sandbox_start_timed_out`.
+   */
+  timeoutSnapshotStarts(): void;
+  /** Make a sandbox created from any snapshot, even one taken later, never start. */
+  failAllSnapshotStarts(): void;
+  /**
+   * Make the next starts from a snapshot fail one way, then start normally:
+   * `timeout` is `sandbox_start_timed_out`, `failed` is
+   * `sandbox_start_failed`, and `capacity` is a retryable
+   * `compute_unavailable` (503) that leaves no machine behind.
+   */
+  failNextSnapshotStarts(
+    mode: StartFault,
+    options?: {
+      /** How many starts fail. Defaults to 1. */
+      count?: number;
+      /**
+       * What becomes of the snapshot when the first of them fails, as when it
+       * is deleted, or is being taken again, by the time anything looks.
+       */
+      then?: "gone" | "CREATING" | "DELETING";
+    },
+  ): void;
+  /** Make deleting any snapshot that exists now fail the way Cloud refuses some: `409`. */
+  refuseSnapshotDeletes(): void;
+  /** The snapshot of every sandbox create that asked for one, in order. */
+  snapshotStarts: string[];
+  /**
+   * Behave like a server without snapshot names, as Cloud is today: a create
+   * with a name is refused as a bad request, and a list ignores `name` and
+   * gives snapshots without one.
+   */
+  withoutSnapshotNames(): void;
+  /**
+   * Have another builder win every named snapshot create: just before it, a
+   * snapshot with the same name and the same files appears, still `CREATING`,
+   * and the create is refused because the name is taken.
+   */
+  loseSnapshotNameRaces(): void;
 }
+
+/** How a start from a snapshot can fail. */
+export type StartFault = "timeout" | "failed" | "capacity";
 
 // biome-ignore lint/suspicious/noExplicitAny: request bodies are untyped JSON
 type Body = any;
@@ -161,6 +226,7 @@ const processResource = (process: FakeProcess) => {
 const snapshotResource = (snapshot: FakeSnapshot) => {
   return {
     id: snapshot.id,
+    ...(snapshot.name === undefined ? {} : { name: snapshot.name }),
     sourceImageId: "a".repeat(64),
     status: snapshot.status,
     compatibilityId: "fake-linux-amd64-v1",
@@ -168,10 +234,21 @@ const snapshotResource = (snapshot: FakeSnapshot) => {
     memoryPackCount: 1,
     diskPackCount: 1,
     storedBytes: 1024,
-    createdAt: now(),
-    updatedAt: now(),
-    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.createdAt,
+    expiresAt: snapshot.expiresAt,
   };
+};
+
+/**
+ * Whether a snapshot holds its name: while it is being created, or while it is
+ * ready and not yet expired.
+ */
+const holdsName = (snapshot: FakeSnapshot): boolean => {
+  return (
+    snapshot.status === "CREATING" ||
+    (snapshot.status === "READY" && Date.parse(snapshot.expiresAt) > Date.now())
+  );
 };
 
 /**
@@ -182,11 +259,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const processes = new Map<string, FakeProcess>();
   const snapshots = new Map<string, FakeSnapshot>();
   const commands: string[][] = [];
+  const timeline: string[] = [];
   const requests: string[] = [];
 
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
   let snapshotsExhausted = false;
+  let snapshotNames = true;
+  let loseNameRaces = false;
   let counter = 1;
 
   const nextId = (): string => {
@@ -244,15 +324,95 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     });
   };
 
+  interface Fault {
+    mode: StartFault;
+    then?: "gone" | "CREATING" | "DELETING";
+  }
+
+  /** Snapshots whose starts fail for good, and how. */
+  const failingSnapshots = new Map<string, StartFault>();
+  let failingAllSnapshots: StartFault | undefined;
+  const queuedFaults: Fault[] = [];
+  const undeletable = new Set<string>();
+  const snapshotStarts: string[] = [];
+
+  /** The fault the next start from this snapshot meets, if any. */
+  const startFaultFor = (snapshotId: string): Fault | undefined => {
+    const queued = queuedFaults.shift();
+
+    if (queued) {
+      return queued;
+    }
+
+    const mode = failingAllSnapshots ?? failingSnapshots.get(snapshotId);
+
+    return mode ? { mode } : undefined;
+  };
+
   const createSandbox: Handler = ({ body }) => {
+    if (body.snapshotId) {
+      snapshotStarts.push(body.snapshotId);
+    }
+
     // A name identifies an *active* sandbox; once one is terminated the same
     // name creates a new one.
-    const existing = [...sandboxes.values()].find((sandbox) => {
+    const taken = [...sandboxes.values()].some((sandbox) => {
       return sandbox.name === body.name && sandbox.status !== "TERMINATED";
     });
 
-    if (existing) {
-      return json(201, sandboxResource(existing));
+    if (taken) {
+      return apiError(
+        409,
+        "sandbox_name_taken",
+        "Sandbox name is already in use",
+      );
+    }
+
+    const fault = body.snapshotId ? startFaultFor(body.snapshotId) : undefined;
+
+    if (fault) {
+      const snapshot = snapshots.get(body.snapshotId);
+
+      if (snapshot && fault.then === "gone") {
+        snapshots.delete(snapshot.id);
+      } else if (snapshot && fault.then) {
+        snapshot.status = fault.then;
+      }
+
+      if (fault.mode === "capacity") {
+        return apiError(
+          503,
+          "compute_unavailable",
+          "Sandbox did not reach RUNNING: no capacity to start it right now",
+        );
+      }
+
+      // As on the real API, the sandbox exists and keeps its name though the
+      // create call fails: stuck in STARTING if it timed out, and ended if it
+      // failed.
+      const failed: FakeSandbox = {
+        id: nextId(),
+        name: body.name,
+        status: fault.mode === "timeout" ? "STARTING" : "TERMINATED",
+        vcpu: body.vcpu ?? 2,
+        memoryMb: body.memoryMb ?? 2048,
+        snapshotId: body.snapshotId,
+        stuck: true,
+      };
+
+      sandboxes.set(failed.id, failed);
+
+      return fault.mode === "timeout"
+        ? apiError(
+            504,
+            "sandbox_start_timed_out",
+            "Sandbox did not reach RUNNING within 120000 milliseconds",
+          )
+        : apiError(
+            422,
+            "sandbox_start_failed",
+            "Sandbox entered FAILED before reaching RUNNING",
+          );
     }
 
     const sandbox: FakeSandbox = {
@@ -269,10 +429,11 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     return json(201, sandboxResource(sandbox));
   };
 
-  const execInSandbox: Handler = onSandbox(({ body }) => {
+  const execInSandbox: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -289,7 +450,32 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     });
   });
 
-  const createSnapshot: Handler = onSandbox((_req, sandbox) => {
+  const newSnapshot = (
+    sandbox: FakeSandbox,
+    fields: { name?: string; status?: string } = {},
+  ): FakeSnapshot => {
+    const snapshot: FakeSnapshot = {
+      id: nextId(),
+      ...(fields.name === undefined ? {} : { name: fields.name }),
+      status: fields.status ?? "READY",
+      sandboxId: sandbox.id,
+      createdAt: now(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    };
+
+    snapshots.set(snapshot.id, snapshot);
+    timeline.push(`snapshot ${sandbox.name}`);
+
+    return snapshot;
+  };
+
+  const nameIsHeld = (name: string): boolean => {
+    return [...snapshots.values()].some((snapshot) => {
+      return snapshot.name === name && holdsName(snapshot);
+    });
+  };
+
+  const createSnapshot: Handler = onSandbox(({ body }, sandbox) => {
     if (!snapshotsEnabled) {
       return apiError(501, "not_implemented", "snapshots unsupported");
     }
@@ -302,17 +488,77 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       );
     }
 
-    const snapshot = { id: nextId(), status: "READY", sandboxId: sandbox.id };
+    const name: string | undefined = body?.name;
 
-    snapshots.set(snapshot.id, snapshot);
+    if (name === undefined) {
+      return json(201, snapshotResource(newSnapshot(sandbox)));
+    }
 
-    return json(201, snapshotResource(snapshot));
+    if (!snapshotNames) {
+      return apiError(400, "invalid_request", "request body not allowed");
+    }
+
+    if (loseNameRaces && !nameIsHeld(name)) {
+      newSnapshot(sandbox, { name, status: "CREATING" }).readyAfterGets = 1;
+    }
+
+    if (nameIsHeld(name)) {
+      return apiError(
+        409,
+        "sandbox_snapshot_name_taken",
+        "Sandbox snapshot name is already in use",
+      );
+    }
+
+    return json(201, snapshotResource(newSnapshot(sandbox, { name })));
   });
+
+  /** Read a snapshot, moving a `CREATING` one along towards `READY`. */
+  const readSnapshot = (snapshot: FakeSnapshot): FakeSnapshot => {
+    if (
+      snapshot.status === "CREATING" &&
+      snapshot.readyAfterGets !== undefined
+    ) {
+      snapshot.readyAfterGets -= 1;
+
+      if (snapshot.readyAfterGets < 0) {
+        snapshot.status = "READY";
+      }
+    }
+
+    return snapshot;
+  };
+
+  const listSnapshots: Handler = ({ url }) => {
+    const name = snapshotNames ? url.searchParams.get("name") : null;
+
+    // Newest first, as the API lists them.
+    const items = [...snapshots.values()]
+      .reverse()
+      .filter((snapshot) => {
+        return name === null || snapshot.name === name;
+      })
+      .map((snapshot) => {
+        const resource = snapshotResource(readSnapshot(snapshot));
+
+        if (snapshotNames) {
+          return resource;
+        }
+
+        // A server without names never gives one.
+        const { name: _name, ...withoutName } = resource;
+
+        return withoutName;
+      });
+
+    return json(200, items, { page: { hasMore: false, limit: 100 } });
+  };
 
   const startProcess: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -498,12 +744,17 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     },
     {
       method: "GET",
+      path: /^\/v2\/snapshots$/,
+      handler: listSnapshots,
+    },
+    {
+      method: "GET",
       path: /^\/v2\/snapshots\/(?<id>[^/]+)$/,
       handler: ({ params }) => {
         const snapshot = snapshots.get(params.id ?? "");
 
         return snapshot
-          ? json(200, snapshotResource(snapshot))
+          ? json(200, snapshotResource(readSnapshot(snapshot)))
           : apiError(404, "sandbox_snapshot_not_found", "snapshot not found");
       },
     },
@@ -518,6 +769,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
             404,
             "sandbox_snapshot_not_found",
             "snapshot not found",
+          );
+        }
+
+        if (undeletable.has(snapshot.id)) {
+          return apiError(
+            409,
+            "sandbox_snapshot_in_use",
+            "Sandbox snapshot can't be deleted right now",
           );
         }
 
@@ -569,6 +828,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     processes,
     snapshots,
     commands,
+    timeline,
     requests,
     script: (next) => {
       scripts = next;
@@ -578,6 +838,39 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     },
     exhaustSnapshots: () => {
       snapshotsExhausted = true;
+    },
+    failSnapshotStarts: () => {
+      for (const id of snapshots.keys()) {
+        failingSnapshots.set(id, "failed");
+      }
+    },
+    timeoutSnapshotStarts: () => {
+      for (const id of snapshots.keys()) {
+        failingSnapshots.set(id, "timeout");
+      }
+    },
+    failAllSnapshotStarts: () => {
+      failingAllSnapshots = "failed";
+    },
+    failNextSnapshotStarts: (mode, options) => {
+      for (let i = 0; i < (options?.count ?? 1); i++) {
+        queuedFaults.push({
+          mode,
+          ...(i === 0 && options?.then ? { then: options.then } : {}),
+        });
+      }
+    },
+    refuseSnapshotDeletes: () => {
+      for (const id of snapshots.keys()) {
+        undeletable.add(id);
+      }
+    },
+    snapshotStarts,
+    withoutSnapshotNames: () => {
+      snapshotNames = false;
+    },
+    loseSnapshotNameRaces: () => {
+      loseNameRaces = true;
     },
   };
 };
