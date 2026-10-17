@@ -209,23 +209,48 @@ export class EventType<
 type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
+ * Whether `T` carries a brand, i.e. has symbol keys that its base primitive
+ * `TBase` doesn't have.
+ */
+type HasBrand<T, TBase> = [Exclude<keyof T, keyof TBase>] extends [never]
+  ? false
+  : true;
+
+/**
+ * Map each element of an array or tuple through `Unbrand`, keeping tuple
+ * positions, optional elements, and rest elements intact.
+ */
+type UnbrandElements<T extends readonly unknown[]> = {
+  [K in keyof T]: Unbrand<T[K]>;
+};
+
+/**
  * Recursively strip nominal "brands" from a type.
  *
  * Brands (e.g. Zod's `.brand()`) are modelled as an intersection with an
  * object that only has `unique symbol` keys, like `string & { [BRAND]: ... }`.
  * They change the static type but never the runtime value, so a branded
- * schema is not a transform and should be accepted. Removing all symbol keys
- * (and reducing branded primitives back to their base) lets us compare a
- * schema's input and output types without the brands getting in the way.
+ * schema is not a transform and should be accepted. Removing the brands lets
+ * us compare a schema's input and output types without them getting in the
+ * way.
+ *
+ * Unbranded literals are kept exact so that literal-to-literal transforms
+ * (e.g. `1` to `2`) are still caught. Branded numbers and bigints are widened
+ * to their base type, since TypeScript can't recover the literal from a
+ * branded literal.
  */
 type Unbrand<T> = T extends string
   ? T extends `${infer TLiteral}`
     ? TLiteral
     : string
   : T extends number
-    ? number
+    ? HasBrand<T, number> extends true
+      ? number
+      : T
     : T extends bigint
-      ? bigint
+      ? HasBrand<T, bigint> extends true
+        ? bigint
+        : T
       : T extends boolean
         ? T extends true
           ? true
@@ -235,7 +260,12 @@ type Unbrand<T> = T extends string
           : T extends null | undefined
             ? T
             : T extends readonly unknown[]
-              ? { [K in keyof T]: Unbrand<T[K]> }
+              ? // Re-infer the items to drop any brand on the array itself
+                T extends readonly [...infer TItems]
+                ? T extends unknown[]
+                  ? UnbrandElements<TItems>
+                  : Readonly<UnbrandElements<TItems>>
+                : never
               : T extends object
                 ? {
                     [K in keyof T as K extends symbol ? never : K]: Unbrand<

@@ -495,6 +495,10 @@ describe("eventType with schema", () => {
               count: z.number().brand<"Count">(),
               nested: z.object({ ok: z.boolean().brand<"Ok">() }),
               tags: z.array(z.string().brand<"Tag">()),
+              list: z.array(z.string()).brand<"List">(),
+              pair: z.tuple([z.string(), z.number()]).brand<"Pair">(),
+              lit: z.literal(1).brand<"One">(),
+              big: z.bigint().brand<"Big">(),
             }),
           }),
           eventType("event-2", {
@@ -530,6 +534,21 @@ describe("eventType with schema", () => {
     eventType("evt", {
       // @ts-expect-error - Transforms are not supported
       schema: z.object({ a: z.literal("a").transform(() => "b" as const) }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ n: z.literal(1).transform(() => 2 as const) }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ n: z.literal(1n).transform(() => 2n as const) }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ b: z.literal(true).transform(() => false as const) }),
     });
   });
 });
