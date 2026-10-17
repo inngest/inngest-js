@@ -3,6 +3,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { z as z4 } from "zod/v4";
 import type { EventMeta } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import { cron, eventType, invoke, staticSchema } from "./triggers.ts";
@@ -478,6 +479,58 @@ describe("eventType with schema", () => {
         expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
       },
     );
+  });
+
+  test("schema with branded types", () => {
+    // Brands only change the static output type, not the runtime value, so
+    // they must not be treated as transforms.
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", {
+            schema: z.object({
+              id: z.string().brand<"UserId">(),
+              count: z.number().brand<"Count">(),
+              nested: z.object({ ok: z.boolean().brand<"Ok">() }),
+              tags: z.array(z.string().brand<"Tag">()),
+            }),
+          }),
+          eventType("event-2", {
+            schema: z4.object({ id: z4.string().brand<"UserId">() }),
+          }),
+          eventType("event-3", {
+            schema: z
+              .object({ id: z.string().brand<"UserId">() })
+              .brand<"Evt">(),
+          }),
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "event-2" | "event-3" | "inngest/function.invoked"
+        >();
+      },
+    );
+  });
+
+  test("schema with transforms is rejected", () => {
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ id: z.string().transform((s) => s.length) }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ a: z.string() }).transform((o) => ({ ...o, b: 1 })),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ a: z.literal("a").transform(() => "b" as const) }),
+    });
   });
 });
 

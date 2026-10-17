@@ -209,8 +209,46 @@ export class EventType<
 type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
+ * Recursively strip nominal "brands" from a type.
+ *
+ * Brands (e.g. Zod's `.brand()`) are modelled as an intersection with an
+ * object that only has `unique symbol` keys, like `string & { [BRAND]: ... }`.
+ * They change the static type but never the runtime value, so a branded
+ * schema is not a transform and should be accepted. Removing all symbol keys
+ * (and reducing branded primitives back to their base) lets us compare a
+ * schema's input and output types without the brands getting in the way.
+ */
+type Unbrand<T> = T extends string
+  ? T extends `${infer TLiteral}`
+    ? TLiteral
+    : string
+  : T extends number
+    ? number
+    : T extends bigint
+      ? bigint
+      : T extends boolean
+        ? T extends true
+          ? true
+          : false
+        : T extends symbol
+          ? symbol
+          : T extends null | undefined
+            ? T
+            : T extends readonly unknown[]
+              ? { [K in keyof T]: Unbrand<T[K]> }
+              : T extends object
+                ? {
+                    [K in keyof T as K extends symbol ? never : K]: Unbrand<
+                      T[K]
+                    >;
+                  }
+                : T;
+
+/**
  * Ensure that users don't use transforms in their schemas, since we don't
  * support transforms.
+ *
+ * Branded types are allowed, as they don't change the runtime value.
  */
 type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
   TSchema extends undefined
@@ -221,8 +259,11 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
         [TInput] extends [TOutput]
         ? // Input and output schemas match, so we're good
           TSchema
-        : // Return an error message since the input and output schemas don't match
-          StaticTypeError<"Transforms not supported: schema input/output types must match">
+        : [TInput] extends [Unbrand<TOutput>]
+          ? // Input and output only differ by brands, so we're good
+            TSchema
+          : // Return an error message since the input and output schemas don't match
+            StaticTypeError<"Transforms not supported: schema input/output types must match">
       : // Return an error message since the schema is not a StandardSchemaV1
         StaticTypeError<"Transforms not supported: schema input/output types must match">;
 
