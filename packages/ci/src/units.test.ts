@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { cacheScopes, storeKey } from "./cache/cache.ts";
+import { cacheScopes, lookupCache } from "./cache/cache.ts";
+import { formatName } from "./cache/names.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -29,7 +30,12 @@ import {
 } from "./github/triggers.ts";
 import { buildArgv, buildShellString } from "./machine/command.ts";
 import { behaviourFor } from "./pipeline/durable.ts";
-import { expandMatrix, matrixJobId, runPool } from "./pipeline/matrix.ts";
+import {
+  expandMatrix,
+  matrixJobId,
+  runPool,
+  sameCombo,
+} from "./pipeline/matrix.ts";
 import {
   durationToMs,
   filterPaths,
@@ -38,6 +44,7 @@ import {
   globToRegExp,
   maskSecrets,
   shellEscape,
+  shortReason,
   stableStringify,
   truncateLabel,
 } from "./util.ts";
@@ -196,6 +203,16 @@ describe("matrix", () => {
     expect(matrixJobId("compat", { node: "20", db: "sqlite" })).toBe(
       "compat (node:20, db:sqlite)",
     );
+  });
+});
+
+describe("matrix combinations compare by value", () => {
+  test("object values match after a round trip", () => {
+    const combo = { node: "22", env: { region: "eu", tier: ["a", "b"] } };
+
+    expect(sameCombo(combo, JSON.parse(JSON.stringify(combo)))).toBe(true);
+    expect(sameCombo(combo, { ...combo, env: { region: "us" } })).toBe(false);
+    expect(sameCombo({ node: "22" }, { node: "20" })).toBe(false);
   });
 });
 
@@ -577,8 +594,34 @@ describe("cache scopes", () => {
     ).toEqual({ read: ["global"], write: "global" });
   });
 
-  test("store keys include the scope and job", () => {
-    expect(storeKey("main", "setup", "abc")).toBe("main:setup:abc");
+  describe("a local run writes only to its own scope, and reads what CI built", () => {
+    const local = { path: "/repo", baseRef: "main" };
+    const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
+
+    test.each([
+      [
+        "a pull request fixture",
+        {
+          ...repo,
+          baseRef: "main",
+          pullRequest: { number: 1, headRef: "f", fork: false },
+        },
+        undefined,
+        ["local", "main"],
+      ],
+      [
+        "a push fixture",
+        { ...repo, ref: "refs/heads/main" },
+        undefined,
+        ["local", "main"],
+      ],
+      ["global scope", repo, "global" as const, ["local", "global"]],
+    ])("%s", (_label, fixture, scope, read) => {
+      expect(cacheScopes({ ...fixture, local }, scope)).toEqual({
+        read,
+        write: "local",
+      });
+    });
   });
 });
 
@@ -638,5 +681,200 @@ describe("formatting", () => {
     expect(maskSecrets("token=abc123 and abc123", ["abc123"])).toBe(
       "token=*** and ***",
     );
+  });
+});
+
+describe("looking a cached snapshot up by name", () => {
+  const name = formatName({
+    kind: "cache",
+    scope: "global",
+    jobId: "setup",
+    ownKey: "k1",
+  });
+
+  // One moment for every fixture, so two snapshots built apart still match.
+  const now = Date.now();
+
+  const inHours = (hours: number) => {
+    return new Date(now + hours * 3_600_000).toISOString();
+  };
+
+  const snapshot = (fields: Record<string, unknown>) => {
+    return {
+      id: "s1",
+      name,
+      status: "READY",
+      createdAt: inHours(-1),
+      expiresAt: inHours(10),
+      ...fields,
+    };
+  };
+
+  /** A job scope just big enough for a lookup, over a list and a get. */
+  const lookup = async (
+    list: () => Promise<unknown>,
+    get: () => Promise<unknown> = async () => {
+      return null;
+    },
+    exclude?: string,
+  ) => {
+    const scope = {
+      path: "setup",
+      config: { id: "setup" },
+      run: {
+        step: {
+          run: async (_id: unknown, fn: () => Promise<unknown>) => {
+            return fn();
+          },
+        },
+        ci: { client: { sandboxes: { snapshots: { list, get } } } },
+      },
+    } as never;
+
+    return lookupCache(
+      scope,
+      { key: "v1", scope: "global" },
+      { ownKey: "k1", name },
+      exclude,
+    );
+  };
+
+  const listing = (...items: unknown[]) => {
+    return async () => {
+      return { items };
+    };
+  };
+
+  test.each([
+    ["a READY snapshot well before its expiry", listing(snapshot({})), "s1"],
+    [
+      "a snapshot past its expiry",
+      listing(snapshot({ expiresAt: inHours(-1) })),
+      undefined,
+    ],
+    [
+      "a snapshot that expires within the margin",
+      listing(snapshot({ expiresAt: inHours(0.1) })),
+      undefined,
+    ],
+    [
+      "a snapshot that failed",
+      listing(snapshot({ status: "FAILED" })),
+      undefined,
+    ],
+    [
+      "another snapshot, from a server that ignores the name",
+      listing(snapshot({ name: undefined })),
+      undefined,
+    ],
+    [
+      "a list the server refuses",
+      async () => {
+        throw new Error("unknown query parameter: name");
+      },
+      undefined,
+    ],
+    ["nothing", listing(), undefined],
+  ])("%s gives %s", async (_label, list, expected) => {
+    expect((await lookup(list))?.snapshotId).toBe(expected);
+  });
+
+  test("only the newest snapshot with the name counts", async () => {
+    const found = await lookup(
+      listing(snapshot({ id: "s2", status: "FAILED" }), snapshot({})),
+    );
+
+    expect(found).toBeUndefined();
+  });
+
+  test("a snapshot still being created is waited for", async () => {
+    const found = await lookup(
+      listing(snapshot({ status: "CREATING" })),
+      async () => {
+        return snapshot({});
+      },
+    );
+
+    expect(found).toEqual({
+      snapshotId: "s1",
+      name,
+      createdAt: snapshot({}).createdAt,
+    });
+  });
+
+  test("a snapshot found to be bad is never found again", async () => {
+    expect(await lookup(listing(snapshot({})), undefined, "s1")).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("snapshot names", () => {
+  test("say what they are for", () => {
+    expect(
+      formatName({
+        kind: "cache",
+        scope: "pr:4",
+        jobId: "setup",
+        ownKey: "abc",
+      }),
+    ).toBe("ci/pr:4/setup/abc");
+  });
+
+  test("too long a name keeps its start and stays unique", () => {
+    const long = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abc",
+    });
+    const other = formatName({
+      kind: "cache",
+      scope: "main",
+      jobId: "j".repeat(300),
+      ownKey: "abd",
+    });
+
+    expect(long).toHaveLength(255);
+    expect(long.startsWith("ci/main/jjj")).toBe(true);
+    expect(long).not.toBe(other);
+  });
+});
+
+describe("shortReason", () => {
+  test("Sandbox errors get fixed wording, from the code or its cause", () => {
+    expect(shortReason({ code: "sandbox_start_failed" })).toBe(
+      "machine failed to start",
+    );
+
+    expect(shortReason({ cause: { code: "cloud_login_required" } })).toBe(
+      "not logged in to Inngest",
+    );
+
+    expect(
+      shortReason({ code: "ERR_JOB", cause: { code: "access_denied" } }),
+    ).toBe("Sandboxes not enabled for your account");
+  });
+
+  test("an unknown code falls back to the message", () => {
+    expect(shortReason({ code: "constructor", message: "boom" })).toBe("boom");
+  });
+
+  test("a start timeout says how long it waited", () => {
+    expect(
+      shortReason(
+        new Error("Sandbox did not reach RUNNING within 90000 milliseconds"),
+      ),
+    ).toBe("machine didn't start in 1m 30s");
+  });
+
+  test("anything else is its first line, trimmed and capped", () => {
+    expect(
+      shortReason(new Error("\n  NonRetriableError: Error: nope.\nmore")),
+    ).toBe("nope");
+
+    expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
+
+    expect(shortReason(undefined)).toBe("");
   });
 });

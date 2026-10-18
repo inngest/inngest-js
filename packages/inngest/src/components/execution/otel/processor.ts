@@ -16,8 +16,10 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
+import { warnOnce } from "../../../helpers/log.ts";
 import { hashSigningKey } from "../../../helpers/strings.ts";
-import type { Inngest } from "../../Inngest.ts";
+import type { Logger } from "../../../middleware/logger.ts";
+import { type Inngest, internalLoggerSymbol } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
 import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
@@ -92,6 +94,8 @@ export class InngestSpanProcessor implements SpanProcessor {
    * which may be from an incoming request.
    */
   #batcher: Promise<BatchSpanProcessor> | undefined;
+
+  #logger: Logger | undefined;
 
   /**
    * A set of spans used to track spans that we care about, so that we can
@@ -309,6 +313,7 @@ export class InngestSpanProcessor implements SpanProcessor {
           }
 
           const app = store.app as Inngest.Any;
+          this.#logger = app[internalLoggerSymbol];
 
           const path = "/v1/traces/userland";
           const url = new URL(path, app.apiBaseUrl);
@@ -520,6 +525,14 @@ export class InngestSpanProcessor implements SpanProcessor {
       ?.then((batcher) => batcher.forceFlush())
       .catch((err) => {
         flushDebug("error flushing batcher", err, "ignoring");
+        if (this.#logger) {
+          warnOnce(
+            this.#logger,
+            "extended-traces-export-failed",
+            { err },
+            "Failed to export extended traces to Inngest; spans dropped",
+          );
+        }
       });
   }
 

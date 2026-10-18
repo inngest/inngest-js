@@ -1,7 +1,6 @@
 import {
   $,
   files,
-  from,
   github,
   report,
   sandbox,
@@ -25,34 +24,26 @@ export const base = ci.job(
   },
 );
 
-export const lint = ci.job("lint", async () => {
-  await from(base);
-
+export const lint = ci.job({ id: "lint", from: base }, async () => {
   await $`pnpm lint`.cwd(appDir);
 });
 
-export const test = ci.job("test", async () => {
-  await from(base);
-
+export const test = ci.job({ id: "test", from: base }, async () => {
   const result = await $`pnpm test`.cwd(appDir).retries(1);
 
   await report.summary(`Tests exited with ${result.exitCode}`);
 });
 
 export const compat = ci.matrix(
-  { id: "compat", axes: { node: ["20", "22"] } },
+  { id: "compat", axes: { node: ["20", "22"] }, from: base },
   async ({ node }) => {
-    await from(base);
-
     await $`node --version`;
 
     await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
   },
 );
 
-export const e2e = ci.job("e2e", async () => {
-  await from(base);
-
+export const e2e = ci.job({ id: "e2e", from: base }, async () => {
   await $`node -e ${"require('http').createServer((_,res)=>res.end('ok')).listen(3000)"}`.background();
   await waitForHttp("http://127.0.0.1:3000");
 

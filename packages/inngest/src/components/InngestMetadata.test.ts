@@ -1,9 +1,16 @@
+import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
 import type { unknown } from "zod";
 import * as experimental from "../experimental";
 import type { KnownKeys } from "../helpers/types.ts";
+import { StepMode } from "../types.ts";
 import * as als from "./execution/als.ts";
+import { _internals as _engineInternals } from "./execution/engine.ts";
+import type {
+  ExecutionResults,
+  InngestExecutionOptions,
+} from "./execution/InngestExecution.ts";
 import { Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import {
   buildTarget,
@@ -237,6 +244,70 @@ describe('"lost on retries" warning at function-body level', () => {
   });
 });
 
+describe("MetadataBuilder.set", () => {
+  test("batches set() when execution context supports metadata", async () => {
+    const addMetadata = vi.fn(() => true);
+    const ctx = {
+      execution: {
+        ctx: { runId: "run-ctx", attempt: 0 },
+        executingStep: { id: "step-ctx" },
+        instance: { addMetadata },
+      },
+    };
+
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
+    );
+
+    const client = mockClient();
+    await new UnscopedMetadataBuilder(client).set({ foo: "bar" }, "custom");
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step-ctx",
+      "userland.custom",
+      "step",
+      "set",
+      { foo: "bar" },
+      undefined,
+    );
+    expect(client["updateMetadata"]).not.toHaveBeenCalled();
+  });
+
+  test("sends set() via API when batching unavailable", async () => {
+    const ctx = {
+      execution: {
+        ctx: { runId: "current-run" },
+        instance: {
+          options: { headers: { Authorization: "Bearer 123" } },
+        },
+      },
+    };
+
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
+    );
+
+    const client = mockClient();
+    await new UnscopedMetadataBuilder(client)
+      .run("other-run")
+      .set({ foo: "bar" });
+
+    expect(client["updateMetadata"]).toHaveBeenCalledWith({
+      target: {
+        run_id: "other-run",
+      },
+      metadata: [
+        {
+          kind: "userland.default",
+          op: "set",
+          values: { foo: "bar" },
+        },
+      ],
+      headers: { Authorization: "Bearer 123" },
+    });
+  });
+});
+
 describe("MetadataBuilder.update", () => {
   test("batches updates when execution context supports metadata", async () => {
     const addMetadata = vi.fn(() => true);
@@ -259,10 +330,11 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step",
-      "merge",
+      "set",
       {
         foo: "bar",
       },
+      { merge: true },
     );
     expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
@@ -288,10 +360,11 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step",
-      "merge",
+      "set",
       {
         foo: "bar",
       },
+      { merge: true },
     );
     expect(client["updateMetadata"]).toHaveBeenCalled();
   });
@@ -322,7 +395,7 @@ describe("MetadataBuilder.update", () => {
       metadata: [
         {
           kind: "userland.default",
-          op: "merge",
+          op: "set",
           values: { foo: "bar" },
         },
       ],
@@ -553,5 +626,73 @@ describe("MetadataBuilder.update", () => {
         >(true);
       },
     );
+  });
+});
+
+describe("step.metadata().set", () => {
+  // Runs step.metadata(id).set() through tools.run() via a real execution,
+  // then replays the completed step to make sure it doesn't write again.
+  const setup = () => {
+    const client = new Inngest({
+      id: "test",
+      isDev: true,
+      middleware: [experimental.metadataMiddleware()],
+    });
+    const apiSpy = vi
+      .spyOn(client["inngestApi"], "updateMetadata")
+      .mockResolvedValue(undefined as never);
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "foo" }] },
+      async ({ step }) => {
+        await step.metadata("md").set({ a: 1 }, "k");
+        return "done";
+      },
+    );
+
+    // runFnWithStack doesn't pass a runId, which metadata writes need to
+    // resolve their target, so build the execution here.
+    const run = (stepState: InngestExecutionOptions["stepState"]) =>
+      fn["createExecution"]({
+        partialOptions: {
+          client,
+          data: fromPartial({ event: { name: "foo", data: {} }, runId: "run" }),
+          runId: "run",
+          stepState,
+          stepCompletionOrder: Object.keys(stepState),
+          reqArgs: [],
+          headers: {},
+          stepMode: StepMode.Async,
+        },
+      }).start();
+
+    return { run, apiSpy };
+  };
+
+  test("batches the set onto the memoizing step's op", async () => {
+    const { run, apiSpy } = setup();
+
+    const ret = await run({});
+
+    expect(ret.type).toBe("step-ran");
+    const { step } = ret as ExecutionResults["step-ran"];
+    expect(step.id).toBe(_engineInternals.hashId("md"));
+    expect(step.metadata).toEqual([
+      // step.metadata(id) targets the run by default, the step only
+      // memoizes the write.
+      { kind: "userland.k", scope: "run", op: "set", values: { a: 1 } },
+    ]);
+    expect(apiSpy).not.toHaveBeenCalled();
+  });
+
+  test("doesn't write again when the step is replayed", async () => {
+    const { run, apiSpy } = setup();
+    const id = _engineInternals.hashId("md");
+
+    const ret = await run({ [id]: { id, data: null } });
+
+    expect(ret.type).toBe("function-resolved");
+    expect((ret as ExecutionResults["function-resolved"]).data).toBe("done");
+    expect(apiSpy).not.toHaveBeenCalled();
   });
 });
