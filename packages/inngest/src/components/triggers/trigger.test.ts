@@ -3,6 +3,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { z as z3 } from "zod/v3";
 import { z as z4 } from "zod/v4";
 import type { EventMeta } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
@@ -518,6 +519,69 @@ describe("eventType with schema", () => {
         >();
       },
     );
+  });
+
+  test("schema with branded arrays and tuples", () => {
+    // A brand on the array or tuple itself must be stripped while keeping
+    // element types, optional elements, and rest elements intact.
+    eventType("evt", {
+      schema: z.object({ tags: z.array(z.string()).brand<"Tags">() }),
+    });
+
+    eventType("evt", {
+      schema: z.object({
+        tags: z.array(z.string().brand<"Tag">()).brand<"Tags">(),
+      }),
+    });
+
+    eventType("evt", {
+      schema: z.object({
+        rows: z
+          .array(z.object({ id: z.number().brand<"RowId">() }))
+          .brand<"Rows">(),
+      }),
+    });
+
+    eventType("evt", {
+      schema: z.object({
+        pair: z
+          .tuple([z.string(), z.number().optional()])
+          .brand<"OptionalPair">(),
+      }),
+    });
+
+    eventType("evt", {
+      schema: z.object({
+        head: z.tuple([z.string()]).rest(z.number()).brand<"Head">(),
+      }),
+    });
+
+    eventType("evt", {
+      schema: z3.object({ tags: z3.array(z3.string()).brand<"Tags">() }),
+    });
+  });
+
+  test("schema with array and tuple transforms is rejected", () => {
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({ a: z.array(z.string()).transform((a) => a.length) }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({
+        a: z.array(z.string()).transform((a) => a.map((s) => s.length)),
+      }),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Transforms are not supported
+      schema: z.object({
+        a: z
+          .tuple([z.string()])
+          .transform(([s]) => [s, s.length] as [string, number]),
+      }),
+    });
   });
 
   test("schema with transforms is rejected", () => {
