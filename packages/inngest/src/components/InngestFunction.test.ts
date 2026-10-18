@@ -16,6 +16,7 @@ const clearConsole = () => {
 
 import { fromPartial } from "@total-typescript/shoehorn";
 import type { Mock } from "vitest";
+import { z } from "zod";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
@@ -48,6 +49,7 @@ import {
 } from "./execution/InngestExecution.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
+import { eventType } from "./triggers/triggers.ts";
 
 const mockLogger = {
   info: vi.fn(globalThis.console.log),
@@ -2028,6 +2030,61 @@ describe("runFn", () => {
             // no-op
           },
         );
+      });
+    });
+
+    test("onCancel events are the cancellation event, not the main triggers", () => {
+      const inngest = createClient({ id: "test" });
+
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [
+            eventType("shop/order.created", {
+              schema: z.object({ orderId: z.string() }),
+            }),
+          ],
+          onCancel: ({ event, events }) => {
+            expectTypeOf(events).toEqualTypeOf<[CancelledEventPayload]>();
+            expectTypeOf(events[0]).toEqualTypeOf(event);
+            expectTypeOf(events[0].data).not.toHaveProperty("orderId");
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+    });
+
+    test("onCancel registers a ws runtime for Connect apps", () => {
+      const inngest = createClient({ id: "testclient" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          onCancel: () => {
+            // no-op
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+
+      const [mainConfig, cancelConfig] = fn["getConfig"]({
+        baseUrl: new URL("wss://connect"),
+        appPrefix: "testclient",
+        isConnect: true,
+      });
+
+      expect(mainConfig?.steps[InngestFunction.stepId]?.runtime).toMatchObject({
+        type: "ws",
+      });
+      expect(cancelConfig?.id).toBe("testclient-testfn-cancel");
+      expect(cancelConfig?.steps[InngestFunction.stepId]?.runtime).toEqual({
+        type: "ws",
+        url: "wss://connect/?fnId=testclient-testfn-cancel&stepId=step",
       });
     });
 

@@ -22,6 +22,7 @@ test("runs onCancel with the cancelled run's details", async () => {
       runId: string;
       originalEventName: string;
       originalEventData: unknown;
+      eventNames: string[];
     },
   });
 
@@ -42,13 +43,14 @@ test("runs onCancel with the cancelled run's details", async () => {
         schema: z.object({ id: z.string() }),
       }),
       cancelOn: [{ event: cancelName, match: "data.id" }],
-      onCancel: ({ event }) => {
+      onCancel: ({ event, events }) => {
         state.cancelled = {
           name: event.name,
           functionId: event.data.function_id,
           runId: event.data.run_id,
           originalEventName: event.data.event.name,
           originalEventData: event.data.event.data,
+          eventNames: events.map((e) => e.name),
         };
       },
     },
@@ -75,6 +77,7 @@ test("runs onCancel with the cancelled run's details", async () => {
     runId,
     originalEventName: triggerName,
     originalEventData: { id: "abc" },
+    eventNames: ["inngest/function.cancelled"],
   });
   expect(state.mainCalls).toBe(1);
 });

@@ -235,6 +235,13 @@ export type CancelledEventArgs<P extends EventPayload = EventPayload> = {
    * The event data present in the payload.
    */
   event: CancelledEventPayload<P>;
+
+  /**
+   * The events that triggered this run. A cancellation handler is only ever
+   * triggered by the single cancellation event, not the main function's
+   * triggers.
+   */
+  events: [CancelledEventPayload<P>];
 };
 
 /**

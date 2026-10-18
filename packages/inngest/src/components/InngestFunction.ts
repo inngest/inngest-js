@@ -277,7 +277,7 @@ export class InngestFunction<
             id: InngestFunction.stepId,
             name: InngestFunction.stepId,
             runtime: {
-              type: "http",
+              type: isConnect ? "ws" : "http",
               url: cancelStepUrl.href,
             },
             retries: { attempts: 1 },
