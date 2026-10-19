@@ -68,7 +68,6 @@ export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { realtime } from "./components/realtime/index.ts";
 export type { Realtime } from "./components/realtime/types";
 export { StepError } from "./components/StepError.ts";
-export { image } from "./components/sandbox/image.ts";
 export {
   cron,
   EventType,
