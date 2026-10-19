@@ -127,10 +127,13 @@ export interface MachineHandle {
   claimedProcessIds?: Set<string>;
 }
 
+/** What the ID of a function that refreshes a cached job starts with. */
+export const cacheRefreshIdPrefix = "ci/cache-refresh/";
+
 /** What a build run is asked to build, from the data it was invoked with. */
 export const requestOf = (data: CacheBuildData): BuildRequest => {
   return {
-    target: { ownKey: data.ownKey, name: data.cacheKey },
+    target: { ownKey: data.ownKey, key: data.key ?? {}, name: data.cacheKey },
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),

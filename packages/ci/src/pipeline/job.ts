@@ -35,7 +35,16 @@ import {
   withoutUnreusableCache,
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
-import type { AnyJob, CheckConclusion, Duration, JobConfig } from "../types.ts";
+import type {
+  Ancestor,
+  AnyJob,
+  CacheReason,
+  CheckConclusion,
+  Duration,
+  FromContext,
+  JobConfig,
+  JobContext,
+} from "../types.ts";
 import {
   durationToMs,
   errorMessage,
@@ -54,6 +63,7 @@ import type {
   JobSummary,
 } from "./scope.ts";
 import {
+  cacheRefreshIdPrefix,
   getRunScope,
   inJobSpan,
   inlineKey,
@@ -68,7 +78,7 @@ export interface RegisteredJob {
   id: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<void>;
+  handler: (ctx: any) => Promise<void>;
 }
 
 export const defineJob = ({
@@ -182,7 +192,7 @@ interface RunJobArgs {
   path?: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<void>;
+  handler: (ctx: any) => Promise<void>;
   input: unknown;
 }
 
@@ -315,7 +325,9 @@ const requestFrom = ({
  * is whatever the builds it asked for did.
  */
 export const builtResult = (
-  { target, sink }: BuildRequest,
+  { target, sink, base }: BuildRequest,
+  /** The job's ID. */
+  id: string,
   rest: Pick<CacheBuildResult, "createdSnapshots" | "warnings" | "report">,
 ): CacheBuildResult => {
   const { outcome, summary } = sink;
@@ -325,10 +337,88 @@ export const builtResult = (
     ...(outcome?.cached ? { cached: outcome.cached } : {}),
     reused: outcome?.reused ?? false,
     target,
+    ancestry: ancestryOf(id, target, base),
     hadMachine: outcome?.hadMachine ?? false,
     ...(summary ? { summary } : {}),
     ...rest,
   };
+};
+
+/**
+ * What a handler is given. The matrix wrapper adds `matrix` to it, and
+ * `from` is the parent's ancestry (its own entry first) made into what the
+ * image was built from.
+ */
+export const handlerContext = ({
+  run,
+  id,
+  input,
+  key,
+  cache,
+  ancestry,
+}: {
+  run: CiRunScope;
+  id: string;
+  input: unknown;
+  /** The named parts of the job's own cache key. */
+  key: Record<string, string>;
+  cache: CacheReason | undefined;
+  /** The parent and the jobs above it, nearest first. */
+  ancestry: Ancestor[];
+}): Omit<JobContext<unknown>, "from"> & { from?: FromContext } => {
+  const [parent] = ancestry;
+
+  return {
+    id,
+    key,
+    cache,
+    input,
+    ...(parent
+      ? {
+          from: {
+            id: parent.id,
+            // Nearest last, so a shared name takes its nearest value.
+            key: Object.assign(
+              {},
+              ...[...ancestry].reverse().map((above) => {
+                return above.key;
+              }),
+            ),
+            ancestry,
+          },
+        }
+      : {}),
+    repo: run.repo,
+    run: { id: rootRunIdOf(run) },
+  };
+};
+
+/** Why a cached job runs now, if it has a cache. */
+export const cacheReason = (
+  run: CiRunScope,
+  config: JobConfig,
+  request: BuildRequest | undefined,
+): CacheReason | undefined => {
+  if (!config.cache) {
+    return undefined;
+  }
+
+  if (request?.exclude) {
+    return "rebuild";
+  }
+
+  const asking = run.build?.parent.pipelineId ?? run.pipelineId;
+
+  return asking.startsWith(cacheRefreshIdPrefix) ? "refresh" : "miss";
+};
+
+/** A job and the jobs above it, nearest first, as a job that starts from it sees them. */
+const ancestryOf = (
+  id: string,
+  target: CacheTarget,
+  base: CacheBuildResult | undefined,
+): Ancestor[] => {
+  return [{ id, key: target.key }, ...(base?.ancestry ?? [])];
 };
 
 /**
@@ -359,7 +449,10 @@ const buildInline = async (args: BuildArgs): Promise<CacheBuildResult> => {
     request,
   });
 
-  return builtResult(request, { createdSnapshots: [], warnings: [] });
+  return builtResult(request, config.id, {
+    createdSnapshots: [],
+    warnings: [],
+  });
 };
 
 const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
@@ -382,6 +475,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
     cacheKey: target.name,
+    ...(Object.keys(target.key).length ? { key: target.key } : {}),
     ...(chain.length ? { chain } : {}),
     ...(exclude ? { exclude } : {}),
     ...(broken ? { broken } : {}),
@@ -407,7 +501,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     );
 
     if (hit) {
-      return reusedBuild(config, target, hit);
+      return reusedBuild(config, target, hit, args.base);
     }
   }
 
@@ -442,6 +536,7 @@ const baseForBuild = (built: CacheBuildResult): CacheBuildResult => {
     ...(built.cached ? { cached: built.cached } : {}),
     reused: built.reused,
     target: built.target,
+    ancestry: built.ancestry,
     hadMachine: built.hadMachine,
     createdSnapshots: [],
     warnings: [],
@@ -453,12 +548,15 @@ export const reusedBuild = (
   config: JobConfig,
   target: CacheTarget,
   hit: CachedSnapshot,
+  /** What the job starts from. */
+  base?: CacheBuildResult,
 ): CacheBuildResult => {
   return {
     snapshotId: hit.snapshotId,
     ...(config.cache ? { cached: hit } : {}),
     reused: true,
     target,
+    ancestry: ancestryOf(config.id, target, base),
     hadMachine: true,
     createdSnapshots: [],
     summary: {
@@ -488,24 +586,6 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   if (built.snapshotId && !built.cached) {
     run.createdSnapshots.add(built.snapshotId);
   }
-};
-
-/**
- * Fail a build whose invoker sent a key or name other than the ones the job's
- * registered config, its input and its parent's snapshot give.
- */
-const verifyBuildTarget = (
-  { target: claimed }: BuildRequest,
-  jobId: string,
-  expected: CacheTarget,
-): void => {
-  if (claimed.ownKey === expected.ownKey && claimed.name === expected.name) {
-    return;
-  }
-
-  throw new NonRetriableError(
-    `The build of "${jobId}" was asked for under a name that doesn't match the job: it was sent \`${claimed.name}\`, and the job's cache key and input give \`${expected.name}\`.`,
-  );
 };
 
 /**
@@ -678,7 +758,7 @@ const jobSteps = async ({
   const asksBuild = Boolean(config.cache) && !request && !inRun;
 
   const cacheAt =
-    config.cache && !parentFailure && !asked
+    config.cache && !parentFailure && !request
       ? await cacheTarget(
           run,
           { id: config.id, path: scope.path },
@@ -687,16 +767,6 @@ const jobSteps = async ({
           fromParent?.identity,
         )
       : undefined;
-
-  // The invoker names the snapshot, but the job's own config decides what it
-  // may be called, so no invoker can write under a name of its choosing.
-  if (isBuild && request && !parentFailure) {
-    verifyBuildTarget(
-      request,
-      config.id,
-      cacheAt ?? runTarget(run, config.id, input, fromParent?.identity),
-    );
-  }
 
   // A build snapshots its job, cached or not, under the name the run that
   // asked for it chose.
@@ -771,7 +841,16 @@ const jobSteps = async ({
           await startFrom(scope, fromParent);
         }
 
-        return handler(input);
+        return handler(
+          handlerContext({
+            run,
+            id: config.id,
+            input,
+            key: builtAs?.key ?? {},
+            cache: cacheReason(run, config, request),
+            ancestry: fromParent?.built.ancestry ?? [],
+          }),
+        );
       });
 
       if (builtAs) {
