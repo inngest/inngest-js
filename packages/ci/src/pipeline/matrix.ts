@@ -9,7 +9,13 @@ import { NonRetriableError } from "inngest";
 import { checkCache } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { checkStaticFrom } from "../machine/from.ts";
-import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
+import type {
+  JobConfig,
+  Matrix,
+  MatrixCombo,
+  MatrixConfig,
+  MatrixContext,
+} from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import type { RegisteredJob } from "./job.ts";
 import { countApi, getRunScope, inlineKey, matrixOriginKey } from "./scope.ts";
@@ -63,7 +69,7 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
   /** The client's job registry, which a static `from` is checked against. */
   jobs: Map<string, RegisteredJob>;
   config: MatrixConfig<TAxes>;
-  handler: (combo: MatrixCombo<TAxes>) => Promise<void>;
+  handler: (ctx: MatrixContext<TAxes>) => Promise<void>;
 }): Matrix<TAxes> => {
   // A matrix made inside a run is gone with it, and so are its combinations.
   const inline = Boolean(getRunScope());
@@ -119,8 +125,8 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
             [matrixOriginKey]: { id: config.id, combo },
             [inlineKey]: inline,
           } as JobConfig,
-          () => {
-            return handler(combo);
+          (ctx) => {
+            return handler({ ...ctx, matrix: combo } as MatrixContext<TAxes>);
           },
         );
 
