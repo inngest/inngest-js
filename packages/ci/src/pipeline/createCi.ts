@@ -21,6 +21,7 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
+  CacheConfig,
   CacheKey,
   CiSkip,
   CiTrigger,
@@ -92,7 +93,9 @@ export interface Ci {
    *
    * Its input is inferred from the handler. Every call runs the job again, on
    * its own machine and with its own check, named `test (2)` the second time.
-   * A job that starts `from` another runs on a copy of its machine.
+   * A job that starts `from` another runs on a copy of its machine, which is
+   * made before the handler runs because that is where the outputs of the jobs
+   * above it are kept.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -151,23 +154,26 @@ export interface Ci {
       | From<StandardSchemaV1.InferOutput<TSchema>>
       | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
     TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
   >(
     config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
       input: TSchema;
+      cache?: TCache;
     },
     handler: (
       ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
     ) => Promise<TOutput>,
-  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom, TOutput>;
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom, TOutput, TCache>;
   job<
     TInput = void,
     const TKey extends CacheKey | undefined = undefined,
     TFrom extends From<TInput> | undefined = NoFrom<TInput>,
     TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
   >(
-    idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
+    idOrConfig: string | (JobConfig<TInput, TKey, TFrom> & { cache?: TCache }),
     handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<TOutput>,
-  ): Job<TInput, TKey, TFrom, TOutput>;
+  ): Job<TInput, TKey, TFrom, TOutput, TCache>;
 
   /**
    * Define a matrix: one job per combination of the axes.
