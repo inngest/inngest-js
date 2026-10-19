@@ -28,11 +28,13 @@ import {
   Middleware,
   NonRetriableError,
   RetryAfterError,
+  referenceFunction,
 } from "../index.ts";
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
+  type Context,
   type FailureEventPayload,
   type OutgoingOp,
   StepMode,
@@ -963,6 +965,254 @@ describe("runFn", () => {
               ],
             },
             disableImmediateExecution: true,
+          },
+        }),
+      },
+    );
+
+    // With `optimizeParallelism: false`, a handler returning during discovery
+    // is the end of the run, whatever it left unawaited.
+    const unawaitedCases: {
+      name: string;
+      start: (step: Context.Any["step"]) => void;
+    }[] = [
+      {
+        name: "waitForEvent",
+        start: (step) => {
+          void step.waitForEvent("floating", { event: "never", timeout: "1h" });
+        },
+      },
+      {
+        name: "sleep",
+        start: (step) => {
+          void step.sleep("floating", "1h");
+        },
+      },
+      {
+        name: "run",
+        start: (step) => {
+          void step.run("floating", () => {
+            return "floating";
+          });
+        },
+      },
+      {
+        name: "invoke",
+        start: (step) => {
+          void step.invoke("floating", {
+            function: referenceFunction({ functionId: "other-fn" }),
+            data: {},
+          });
+        },
+      },
+    ];
+
+    for (const c of unawaitedCases) {
+      testFn(
+        `optimizeParallelism: false, unawaited ${c.name} when the handler returns`,
+        () => {
+          const A = vi.fn(() => "A");
+
+          const fn = inngest.createFunction(
+            {
+              id: `ofp-false-${c.name}`,
+              triggers: [{ event: "foo" }],
+              optimizeParallelism: false,
+            },
+            async ({ step }) => {
+              await step.run("A", A);
+              c.start(step);
+
+              return "done";
+            },
+          );
+
+          return { fn, steps: { A } };
+        },
+        {
+          hashes: { A: "A" },
+          tests: ({ A }) => ({
+            "completes without scheduling the step": {
+              stack: { [A]: { id: A, data: "A" } },
+              expectedWarnings: ["optimizeParallelism"],
+              expectedReturn: {
+                type: "function-resolved",
+                data: "done",
+              },
+            },
+          }),
+        },
+      );
+    }
+
+    testFn(
+      "optimizeParallelism: false, error thrown after an unawaited step",
+      () => {
+        const A = vi.fn(() => "A");
+
+        const fn = inngest.createFunction(
+          {
+            id: "ofp-false-1",
+            triggers: [{ event: "foo" }],
+            optimizeParallelism: false,
+          },
+          async ({ step }) => {
+            await step.run("A", A);
+            void step.sleep("floating", "1h");
+
+            throw new Error("boom");
+          },
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        hashes: { A: "A" },
+        tests: ({ A }) => ({
+          "rejects without scheduling the step": {
+            stack: { [A]: { id: A, data: "A" } },
+            expectedWarnings: ["optimizeParallelism"],
+            expectedReturn: {
+              type: "function-rejected",
+              error: matchError(new Error("boom")),
+              retriable: true,
+            },
+            expectedErrors: ["boom"],
+          },
+        }),
+      },
+    );
+
+    testFn(
+      "optimizeParallelism: false, handler returns before the requested step runs",
+      () => {
+        const A = vi.fn(() => "A");
+        const bg = vi.fn(() => "bg");
+
+        const fn = inngest.createFunction(
+          {
+            id: "ofp-false-2",
+            triggers: [{ event: "foo" }],
+            optimizeParallelism: false,
+          },
+          async ({ step }) => {
+            await step.run("A", A);
+            void step.run("bg", bg);
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { A, bg } };
+      },
+      {
+        hashes: { A: "A", bg: "bg" },
+        tests: ({ A, bg }) => ({
+          "a targeted request runs the step and never completes the run": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: bg,
+            expectedWarnings: ["optimizeParallelism"],
+            expectedReturn: {
+              type: "step-ran",
+              step: expect.objectContaining({
+                id: bg,
+                name: "bg",
+                op: StepOpCode.StepRun,
+                data: "bg",
+              }),
+            },
+            expectedStepsRun: ["bg"],
+          },
+
+          "a targeted request for a step that doesn't exist is not found": {
+            stack: { [A]: { id: A, data: "A" } },
+            runStep: "missing",
+            expectedReturn: {
+              type: "step-not-found",
+              step: expect.objectContaining({
+                id: "missing",
+                op: StepOpCode.StepNotFound,
+              }),
+              foundSteps: expect.any(Array),
+              totalFoundSteps: expect.any(Number),
+            },
+          },
+        }),
+      },
+    );
+
+    testFn(
+      "optimizeParallelism: false, group.parallel race with losers pending when the handler returns",
+      () => {
+        const fast = vi.fn(() => "fast");
+        const slow = vi.fn(() => "slow");
+
+        const fn = inngest.createFunction(
+          {
+            id: "ofp-false-3",
+            triggers: [{ event: "foo" }],
+            optimizeParallelism: false,
+          },
+          async ({ step, group }) => {
+            await group.parallel({ mode: "race" }, async () => {
+              return Promise.race([
+                step.run("fast", fast),
+                step.run("slow", slow),
+              ]);
+            });
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { fast, slow } };
+      },
+      {
+        hashes: { fast: "fast", slow: "slow" },
+        tests: ({ fast }) => ({
+          "completes without scheduling the losers": {
+            stack: { [fast]: { id: fast, data: "fast" } },
+            expectedWarnings: ["optimizeParallelism"],
+            expectedReturn: {
+              type: "function-resolved",
+              data: "done",
+            },
+          },
+        }),
+      },
+    );
+
+    testFn(
+      "default, unawaited step when the handler returns",
+      () => {
+        const A = vi.fn(() => "A");
+
+        const fn = inngest.createFunction(
+          { id: "name", triggers: [{ event: "foo" }] },
+          async ({ step }) => {
+            await step.run("A", A);
+            void step.sleep("floating", "1h");
+
+            return "done";
+          },
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        hashes: { A: "A" },
+        tests: ({ A }) => ({
+          "still schedules the step": {
+            stack: { [A]: { id: A, data: "A" } },
+            expectedReturn: {
+              type: "steps-found",
+              steps: [
+                expect.objectContaining({
+                  displayName: "floating",
+                  op: StepOpCode.Sleep,
+                }),
+              ],
+            },
           },
         }),
       },
