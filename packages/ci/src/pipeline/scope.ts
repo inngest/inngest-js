@@ -12,6 +12,7 @@ import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
 import { policyFromFlags } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -41,6 +42,20 @@ export const rebuildSuffix = " (rebuild)";
 
 /** The default working directory, which is where `checkout()` puts the repo. */
 export const defaultCwd = "/work";
+
+/**
+ * The local working tree this run reads, when it has one. A run with local
+ * repository data still talks to GitHub when `INNGEST_CI_GITHUB=live`.
+ */
+export const localRepo = (
+  run: Pick<CiRunScope, "repo">,
+): NonNullable<RepoContext["local"]> | undefined => {
+  if (process.env.INNGEST_CI_GITHUB === "live") {
+    return undefined;
+  }
+
+  return run.repo?.local;
+};
 
 /**
  * Where a matrix combination's job config remembers the matrix and combination
@@ -226,6 +241,12 @@ export interface CiRunScope {
   builds: Map<string, Promise<CacheBuildResult>>;
   /** The IDs of the jobs defined in this run, which must be unique. */
   definedJobs: Set<string>;
+  /**
+   * The repositories and refs `checkout()` and `files()` have resolved to a
+   * commit, keyed by repository and ref, so each is resolved by one step per
+   * run. It holds promises and nothing else.
+   */
+  sources: Map<string, Promise<ResolvedSource>>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**

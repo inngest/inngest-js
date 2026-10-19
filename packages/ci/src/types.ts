@@ -149,10 +149,21 @@ export interface RepoContext {
 /**
  * A part of a cache key that's resolved at runtime, like `files()`.
  */
-export interface CacheKeyPart {
+export interface CacheKeyPart extends Readonly<FilesOptions> {
   readonly kind: "inngest/ci.cacheKeyPart";
   readonly type: "files";
   readonly patterns: string[];
+}
+
+/** Where `files()` reads from, when that isn't the run's own commit. */
+export interface FilesOptions {
+  /** The repository to read the files from, as `owner/name`. Defaults to the run's. */
+  repo?: string;
+  /**
+   * The branch, tag or commit to read them at. Defaults to the run's commit, or
+   * to the repository's default branch when `repo` is another repository.
+   */
+  ref?: string;
 }
 
 /**
@@ -187,6 +198,15 @@ export interface CacheConfig {
    * their own scope.
    */
   scope?: "branch" | "global";
+
+  /**
+   * How old a cached snapshot may be before it is rebuilt, like `"1d"`. A
+   * snapshot older than this, counted from when it was taken, is a miss: the
+   * job builds again and the new snapshot takes the name.
+   *
+   * Without it a snapshot is reused until its key changes or it expires.
+   */
+  maxAge?: Duration;
 }
 
 /**

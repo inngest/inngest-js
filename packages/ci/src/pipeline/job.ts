@@ -25,6 +25,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
+import { settledSources } from "../github/source.ts";
 import {
   ancestry,
   buildsInRun,
@@ -38,6 +39,7 @@ import {
 import { lockMachineName, snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import {
+  durationToMs,
   errorMessage,
   formatDuration,
   isSandboxNameTaken,
@@ -85,6 +87,8 @@ export const defineJob = ({
 }): any => {
   const given: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
+
+  checkMaxAge(given);
 
   const run = getRunScope();
 
@@ -137,6 +141,29 @@ export const defineJob = ({
   ownJob(job, jobs);
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's snapshots.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  try {
+    if (durationToMs(maxAge) <= 0) {
+      throw new Error("It must be longer than zero.");
+    }
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
@@ -339,6 +366,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...policyToFlags(name),
     ...(base ? { base } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
     rootRunId,
     parent: {
@@ -946,6 +974,7 @@ const snapshotBuilt = async (
   const taken = await snapshotMachine(scope, {
     target,
     name,
+    cache: scope.config.cache,
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
 

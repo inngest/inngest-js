@@ -14,6 +14,7 @@ import {
   normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
   parseWithSchema,
+  sandboxImageSchema,
   sandboxNameSchema,
   sandboxProcessRefSchema,
   sandboxRefSchema,
@@ -52,6 +53,7 @@ const createInputSchema = z
         name: sandboxNameSchema,
         vcpu: z.number().int().positive().max(0xffffffff),
         memoryMb: z.number().int().positive().max(0xffffffff),
+        image: sandboxImageSchema.optional(),
         environment: z.record(z.string()).optional(),
         secrets: z.array(sandboxSecretNameSchema).optional(),
         runningTimeoutMs: z
@@ -134,6 +136,8 @@ const execInputSchema = z
   })
   .strict()
   .superRefine(validateProcessSpec);
+const fileInputSchema = z.object({ path: z.string().min(1) }).strict();
+const fileWriteInputSchema = fileInputSchema.extend({ data: z.string() });
 const signalInputSchema = z
   .object({
     signal: z.number().int().min(1).max(64),
@@ -196,6 +200,22 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       action: z.literal("exec"),
       target: sandboxTargetSchema,
       input: z.tuple([execInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.upload"),
+      target: sandboxTargetSchema,
+      input: z.tuple([fileWriteInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.download"),
+      target: sandboxTargetSchema,
+      input: z.tuple([fileInputSchema]),
     })
     .strict(),
   z
@@ -471,6 +491,20 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("file.upload"),
+      result: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("file.download"),
+      result: z.object({ data: z.string() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("destroy"),
       result: wireDestroyResultSchema,
     })
@@ -590,6 +624,8 @@ const sandboxErrorPayloadSchema = z
       "get",
       "waitUntilRunning",
       "exec",
+      "file.upload",
+      "file.download",
       "destroy",
       "pause",
       "resume",
@@ -633,9 +669,14 @@ export type SandboxOperationResultV1 = z.infer<
   typeof sandboxOperationResultSchema
 >;
 export type DurableSandboxAction = SandboxOperationV1["action"];
+/**
+ * Runs an operation as a step. `finish` runs inside the step, and what it
+ * returns is the step's output instead of the operation's result.
+ */
 export type SandboxRawTool = (
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationV1,
+  finish?: (result: unknown) => unknown,
 ) => Promise<unknown>;
 export type SandboxRawToolResolver = () =>
   | SandboxRawTool

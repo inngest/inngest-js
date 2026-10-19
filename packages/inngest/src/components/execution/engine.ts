@@ -1240,6 +1240,29 @@ class InngestExecutionEngine
       },
     };
 
+    const asyncStepRanHandler = async (
+      stepResult: OutgoingOp,
+    ): Promise<ExecutionResult> => {
+      // If the step's handler buffered any lazy ops (e.g. `defer` calls), ship
+      // them alongside the step result instead of losing them in the
+      // `step-ran` → single-op response.
+      if (this.state.lazyOps.length === 0) {
+        return stepRanHandler(stepResult);
+      }
+
+      const transformed = await stepRanHandler(stepResult);
+      if (transformed.type !== "step-ran") {
+        return transformed;
+      }
+
+      return this.attachLazyOps({
+        type: "steps-found",
+        ctx: transformed.ctx,
+        ops: transformed.ops,
+        steps: [transformed.step],
+      });
+    };
+
     const asyncHandlers: CheckpointHandlers[StepMode.Async] = {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -1261,23 +1284,59 @@ class InngestExecutionEngine
           sseResponse = defaultSseResponse(resultData);
         }
 
-        // Real new steps (e.g. from `Promise.race` where the winning branch
-        // completed before losing branches reported). The function isn't truly
-        // done: the executor needs to memoize these and call back. Don't close
-        // the stream. `filterNewSteps` excludes lazy ops, so `attachLazyOps`
-        // is what folds them in here.
-        const newSteps = await this.filterNewSteps(
-          Array.from(this.state.steps.values()),
-        );
+        if (this.options.fn["shouldOptimizeParallelism"]()) {
+          // Real new steps (e.g. from `Promise.race` where the winning branch
+          // completed before losing branches reported). The function isn't
+          // truly done: the executor needs to memoize these and call back.
+          // Don't close the stream. `filterNewSteps` excludes lazy ops, so
+          // `attachLazyOps` is what folds them in here.
+          const newSteps = await this.filterNewSteps(
+            Array.from(this.state.steps.values()),
+          );
 
-        if (newSteps?.length) {
-          return this.attachLazyOps({
-            type: "steps-found",
+          if (newSteps?.length) {
+            return this.attachLazyOps({
+              type: "steps-found",
+              ctx: this.fnArg,
+              ops: this.ops,
+              steps: newSteps as [OutgoingOp, ...OutgoingOp[]],
+            });
+          }
+        } else if (this.options.requestedRunStep) {
+          // With `optimizeParallelism: false` only a discovery request can
+          // complete a run. A targeted request is for one specific step, so
+          // run it and report its result, even though the handler returned
+          // before the step got to run.
+          const stepResult = await this.tryExecuteStep(
+            Array.from(this.state.steps.values()),
+          );
+
+          if (stepResult) {
+            return asyncStepRanHandler(stepResult);
+          }
+
+          // The handler returned without ever finding the requested step.
+          const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
+
+          return {
+            type: "step-not-found",
             ctx: this.fnArg,
             ops: this.ops,
-            steps: newSteps as [OutgoingOp, ...OutgoingOp[]],
-          });
+            step: {
+              id: this.options.requestedRunStep,
+              op: StepOpCode.StepNotFound,
+            },
+            foundSteps,
+            totalFoundSteps,
+          };
         }
+
+        // With `optimizeParallelism: false`, the handler returning is the end
+        // of the run. Steps it never awaited and that were never run (a
+        // floating `waitForEvent`, `sleep` or `step.run`, or the losers of a
+        // race) are not scheduled. Buffered lazy ops (e.g. `defer` calls) are
+        // the exception: they are drained and sent alongside `RunComplete`
+        // below.
 
         // Function is truly done. Close the stream with a terminal
         // succeeded event.
@@ -1339,24 +1398,7 @@ class InngestExecutionEngine
           return maybeReturnNewSteps(steps);
         }
 
-        // If the step's handler buffered any lazy ops (e.g. `defer` calls),
-        // ship them alongside the step result instead of losing them in the
-        // `step-ran` → single-op response.
-        if (this.state.lazyOps.length === 0) {
-          return stepRanHandler(stepResult);
-        }
-
-        const transformed = await stepRanHandler(stepResult);
-        if (transformed.type !== "step-ran") {
-          return transformed;
-        }
-
-        return this.attachLazyOps({
-          type: "steps-found",
-          ctx: transformed.ctx,
-          ops: transformed.ops,
-          steps: [transformed.step],
-        });
+        return asyncStepRanHandler(stepResult);
       },
 
       /**

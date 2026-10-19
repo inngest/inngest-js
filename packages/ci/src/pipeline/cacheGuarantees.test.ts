@@ -512,6 +512,79 @@ describe("jobs that start from one parent", () => {
   });
 });
 
+describe("a snapshot older than the cache's maxAge", () => {
+  const hours = 60 * 60 * 1000;
+
+  /** Run a one-job pipeline, age its snapshot, and run it again. */
+  const rerunAged = async (ageMs: number) => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1", maxAge: "1d" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await install();
+    });
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [holder] = named(api);
+
+    (holder as { createdAt: string }).createdAt = new Date(
+      Date.now() - ageMs,
+    ).toISOString();
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+
+    return { api, holder };
+  };
+
+  test("is reused while it is younger", async () => {
+    const { api, holder } = await rerunAged(hours);
+
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(true);
+  });
+
+  test("is rebuilt, and the rebuild takes the name", async () => {
+    const { api, holder } = await rerunAged(48 * hours);
+
+    expect(count(api, "pnpm install")).toBe(2);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(false);
+
+    const [replacement, ...rest] = named(api);
+
+    expect(rest).toEqual([]);
+    expect(replacement?.id).not.toBe(holder?.id);
+    expect(replacement?.name).toBe(holder?.name);
+    expect(replacement?.status).toBe("READY");
+  });
+
+  test.each(["a day", "0s"])(
+    "a maxAge of %j throws when the job is defined",
+    (maxAge) => {
+      const { ci } = setup(createFakeSandboxApi());
+
+      expect(() => {
+        return ci.job(
+          { id: "install", cache: { key: "v1", maxAge } },
+          async () => {},
+        );
+      }).toThrow(/cache\.maxAge/);
+    },
+  );
+});
+
 describe("a job that starts from a job in its own app", () => {
   /**
    * `test` starts from `build`, which starts from `install`, each keyed on

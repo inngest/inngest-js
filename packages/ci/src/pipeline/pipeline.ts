@@ -45,7 +45,7 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { formatDuration, parseRepo } from "../util.ts";
 import type { BuildDone } from "./buildLock.ts";
 import { buildDoneEvent, endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
@@ -231,6 +231,11 @@ const newRunScope = ({
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
     definedJobs: new Set(),
+    sources: new Map(
+      Object.entries(build?.sources ?? {}).map(([key, source]) => {
+        return [key, Promise.resolve(source)];
+      }),
+    ),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
@@ -257,19 +262,6 @@ const newRunScope = ({
       }),
     ) as CiRunScope["apis"],
   };
-};
-
-/** Split a configured `repo` into its owner and name. */
-const parseRepo = (fullName: string): { owner: string; name: string } => {
-  const [owner, name, ...rest] = fullName.split("/");
-
-  if (!owner || !name || rest.length > 0) {
-    throw new CiUsageError(
-      `\`repo\` must be "owner/name", but got "${fullName}".`,
-    );
-  }
-
-  return { owner, name };
 };
 
 /**
