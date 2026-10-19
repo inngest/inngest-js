@@ -184,9 +184,10 @@ describe("what a job starts from", () => {
     id: "mid",
     key: { lock: "l1", shared: "mid", extra: "e1" },
     output: {},
+    $: {},
     ancestry: [
-      { id: "mid", key: { shared: "mid", extra: "e1" }, output: {} },
-      { id: "base", key: { lock: "l1", shared: "base" }, output: {} },
+      { id: "mid", key: { shared: "mid", extra: "e1" }, output: {}, $: {} },
+      { id: "base", key: { lock: "l1", shared: "base" }, output: {}, $: {} },
     ],
   };
 
@@ -273,7 +274,10 @@ describe("what a job starts from", () => {
       id: "node-base",
       key: { devServer: "d1" },
       output: {},
-      ancestry: [{ id: "node-base", key: { devServer: "d1" }, output: {} }],
+      $: {},
+      ancestry: [
+        { id: "node-base", key: { devServer: "d1" }, output: {}, $: {} },
+      ],
     };
 
     expect(unique(seen)).toEqual([image1]);
@@ -345,16 +349,16 @@ describe("what a job returns", () => {
       },
     );
 
-    const leaf = ci.job({ id: "leaf", from: base }, async ({ from, $from }) => {
+    const leaf = ci.job({ id: "leaf", from: base }, async ({ from }) => {
       seen.push({
         output: from.output,
         ancestry: from.ancestry.map((above) => {
           return above.output;
         }),
-        dev: JSON.parse(JSON.stringify($from.dev)),
+        dev: JSON.parse(JSON.stringify(from.$.dev)),
       });
 
-      await $from.dev.env({ MODE: "test" });
+      await from.$.dev.env({ MODE: "test" });
     });
 
     return { ci, leaf };
@@ -373,7 +377,7 @@ describe("what a job returns", () => {
     },
   };
 
-  test("the job that starts from it gets the data as from.output and the command as $from", async () => {
+  test("the job that starts from it gets the data as from.output and the command as from.$", async () => {
     const api = createFakeSandboxApi();
     const seen: unknown[] = [];
     const { ci, leaf } = chain(api, seen);
@@ -519,13 +523,13 @@ describe("what a job returns", () => {
       },
     );
 
-    const leaf = ci.job({ id: "leaf", from: mid }, async ({ from, $from }) => {
+    const leaf = ci.job({ id: "leaf", from: mid }, async ({ from }) => {
       seen.push({
         output: from.output,
         ancestry: from.ancestry.map((above) => {
-          return [above.id, above.output];
+          return [above.id, above.output, Object.keys(above.$)];
         }),
-        run: JSON.parse(JSON.stringify($from.run)).$cmd.argv,
+        run: JSON.parse(JSON.stringify(from.$.run)).$cmd.argv,
       });
 
       await $`pnpm test`;
@@ -544,15 +548,15 @@ describe("what a job returns", () => {
       {
         output: { shared: "mid", only: "base" },
         ancestry: [
-          ["mid", { shared: "mid" }],
-          ["base", { shared: "base", only: "base" }],
+          ["mid", { shared: "mid" }, ["run"]],
+          ["base", { shared: "base", only: "base" }, ["run"]],
         ],
         run: ["pnpm", "mid"],
       },
     ]);
   });
 
-  test("each use of a command in $from is a command of its own", async () => {
+  test("each use of a command in from.$ is a command of its own", async () => {
     const seen: unknown[] = [];
     const ci = app(createFakeSandboxApi(), "web");
 
@@ -562,9 +566,9 @@ describe("what a job returns", () => {
       return { dev: $`pnpm dev` };
     });
 
-    const child = ci.job({ id: "child", from: base }, async ({ $from }) => {
-      seen.push(JSON.parse(JSON.stringify($from.dev.env({ A: "1" }))));
-      seen.push(JSON.parse(JSON.stringify($from.dev)));
+    const child = ci.job({ id: "child", from: base }, async ({ from }) => {
+      seen.push(JSON.parse(JSON.stringify(from.$.dev.env({ A: "1" }))));
+      seen.push(JSON.parse(JSON.stringify(from.$.dev)));
     });
 
     await go(
@@ -598,10 +602,10 @@ describe("what a job returns", () => {
 
       const test = web.job(
         { id: "test", from: image.job("platform/node-base") },
-        async ({ from, $from }) => {
+        async ({ from }) => {
           seen.push({
             output: from.output,
-            dev: JSON.parse(JSON.stringify($from.dev)).$cmd.argv,
+            dev: JSON.parse(JSON.stringify(from.$.dev)).$cmd.argv,
           });
 
           await $`pnpm test`;

@@ -1,6 +1,6 @@
 /**
  * What a job returns, and what the jobs that start from it are given: its data
- * as `from.output` and its commands as `$from`.
+ * as `from.output` and its commands as `from.$`.
  *
  * @module
  */
@@ -54,11 +54,32 @@ export const dataOf = (
   );
 };
 
+/** The commands of an output, each made again on every read. */
+const commandsIn = (
+  getScope: () => CiJobScope,
+  stored: Record<string, unknown> | undefined,
+): Record<string, Command> => {
+  const commands: Record<string, Command> = {};
+
+  for (const [name, value] of Object.entries(stored ?? {})) {
+    if (isStoredCommand(value)) {
+      Object.defineProperty(commands, name, {
+        enumerable: true,
+        get: () => {
+          return commandFromJson(getScope, value.$cmd);
+        },
+      });
+    }
+  }
+
+  return commands;
+};
+
 /**
  * What a handler is given of what its ancestors returned. A name that two of
  * them returned has the nearest one's value, whether it is data or a command.
- * Each use of a command in `$from` is a command of its own, so one that is
- * given `.env()` doesn't change another.
+ * Each use of a command in `$` is a command of its own, so one that is given
+ * `.env()` doesn't change another.
  */
 export const outputsFrom = (
   getScope: () => CiJobScope,
@@ -67,7 +88,7 @@ export const outputsFrom = (
   stored: StoredOutputs,
 ): {
   output: Record<string, unknown>;
-  $from: Record<string, Command>;
+  $: Record<string, Command>;
   ancestry: AncestorContext[];
 } => {
   // Nearest last, so a shared name takes its nearest value.
@@ -78,24 +99,15 @@ export const outputsFrom = (
     }),
   ) as Record<string, unknown>;
 
-  const $from: Record<string, Command> = {};
-
-  for (const [name, value] of Object.entries(merged)) {
-    if (isStoredCommand(value)) {
-      Object.defineProperty($from, name, {
-        enumerable: true,
-        get: () => {
-          return commandFromJson(getScope, value.$cmd);
-        },
-      });
-    }
-  }
-
   return {
     output: dataOf(merged),
-    $from,
+    $: commandsIn(getScope, merged),
     ancestry: ancestry.map((above) => {
-      return { ...above, output: dataOf(stored[above.id]) };
+      return {
+        ...above,
+        output: dataOf(stored[above.id]),
+        $: commandsIn(getScope, stored[above.id]),
+      };
     }),
   };
 };
