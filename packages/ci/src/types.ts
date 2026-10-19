@@ -244,7 +244,7 @@ export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
 export interface JobConfig<
   TInput = void,
   TKey extends CacheKey | undefined = CacheKey,
-  TFrom = From<TInput>,
+  TFrom extends FromTarget | undefined = FromTarget | undefined,
 > {
   /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
@@ -283,7 +283,7 @@ export interface JobConfig<
    * To choose a parent from facts only known at run time, define two jobs and
    * choose between them in the pipeline.
    */
-  from?: TFrom;
+  from?: TFrom | ((ctx: { input: TInput }) => TFrom);
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
@@ -341,7 +341,7 @@ export interface JobConfig<
  *
  * A job is called for its side effects, so it resolves to nothing.
  */
-export interface Job<TInput = void, TKey = undefined> {
+export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
   (input: TInput): Promise<void>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
@@ -368,6 +368,13 @@ export interface Job<TInput = void, TKey = undefined> {
    * @internal
    */
   readonly "~key"?: TKey;
+  /**
+   * What the job starts from, for type checks only: it's never set. It lets
+   * the `from.key` of a job below this one include the keys above it.
+   *
+   * @internal
+   */
+  readonly "~from"?: TFrom;
 }
 
 /**
@@ -376,7 +383,7 @@ export interface Job<TInput = void, TKey = undefined> {
 export interface JobRef<TInput = unknown> {
   readonly kind: "inngest/ci.jobRef";
   // biome-ignore lint/suspicious/noExplicitAny: a job of any cache key
-  readonly job: Job<TInput, any>;
+  readonly job: Job<TInput, any, any>;
   readonly input: TInput;
 }
 
@@ -400,19 +407,20 @@ type JobLike = Pick<AnyJob, "id" | "kind" | "with"> & {
  * function of the starting job's own input that gives any of them.
  */
 export type From<TInput = void> =
-  | JobLike
-  | AnyJobRef
-  | Image
+  | FromTarget
   | ((ctx: {
       /** The starting job's input. */
       input: TInput;
-    }) => JobLike | AnyJobRef | Image);
+    }) => FromTarget);
+
+/** What `from` names: a job, a job with input, or an `image`. */
+export type FromTarget = JobLike | AnyJobRef | Image;
 
 /**
  * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any, any>;
+export type AnyJob = Job<any, any, any>;
 
 /** A job above another, with the named parts of its cache key resolved. */
 export interface Ancestor {
@@ -437,17 +445,23 @@ export interface FromContext<TKey = unknown> {
   ancestry: Ancestor[];
 }
 
+/**
+ * The named key parts of everything a `from` names, flattened up the chain
+ * with the nearest job winning a shared name. Omitting the shadowed names from
+ * the parents' keys, rather than intersecting, keeps each part's own type and
+ * the JSDoc on its declaration.
+ */
+type KeysOf<TFrom> = TFrom extends { kind: "inngest/ci.job" }
+  ? TFrom extends Job<unknown, infer TKey, infer TUp>
+    ? Omit<KeysOf<TUp>, keyof KeyValues<TKey>> & KeyValues<TKey>
+    : unknown
+  : TFrom extends { kind: "inngest/ci.jobRef"; job: infer TJob }
+    ? KeysOf<TJob>
+    : unknown;
+
 type ParentOf<TFrom> = TFrom extends undefined
   ? undefined
-  : TFrom extends { kind: "inngest/ci.job" }
-    ? TFrom extends Job<unknown, infer TKey>
-      ? FromContext<KeyValues<TKey>>
-      : FromContext
-    : TFrom extends { kind: "inngest/ci.jobRef"; job: infer TJob }
-      ? ParentOf<TJob>
-      : TFrom extends (ctx: never) => infer TResult
-        ? ParentOf<TResult>
-        : FromContext;
+  : FromContext<KeysOf<TFrom>>;
 
 /**
  * Why a cached job is running instead of being reused: `"miss"` when no
@@ -506,7 +520,7 @@ export interface JobContext<
 export interface MatrixContext<
   TAxes extends MatrixAxes = MatrixAxes,
   TKey = Record<string, string>,
-  TFrom = From<MatrixCombo<TAxes>> | undefined,
+  TFrom = FromTarget | undefined,
 > extends JobContext<void, TKey, TFrom> {
   /** This job's combination of the axes. */
   matrix: MatrixCombo<TAxes>;

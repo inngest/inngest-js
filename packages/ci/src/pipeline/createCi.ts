@@ -25,7 +25,7 @@ import type {
   CiSkip,
   CiTrigger,
   CiTriggerInput,
-  From,
+  FromTarget,
   Job,
   JobConfig,
   JobContext,
@@ -120,8 +120,7 @@ export interface Ci {
   job<
     TSchema extends StandardSchemaV1,
     TKey extends CacheKey | undefined = undefined,
-    TFrom extends From<StandardSchemaV1.InferOutput<TSchema>> | undefined =
-      undefined,
+    TFrom extends FromTarget | undefined = undefined,
   >(
     config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
       input: TSchema;
@@ -129,15 +128,15 @@ export interface Ci {
     handler: (
       ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
     ) => Promise<void>,
-  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey>;
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
   job<
     TInput = void,
     TKey extends CacheKey | undefined = undefined,
-    TFrom extends From<TInput> | undefined = undefined,
+    TFrom extends FromTarget | undefined = undefined,
   >(
     idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
     handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
-  ): Job<TInput, TKey>;
+  ): Job<TInput, TKey, TFrom>;
 
   /**
    * Define a matrix: one job per combination of the axes.

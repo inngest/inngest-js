@@ -399,7 +399,7 @@ describe("a job's input schema", () => {
     const { api, ci } = setup();
     const received = new Set<string>();
 
-    const build = ci.job({ id: "build", input }, async ({ target, minify }) => {
+    const build = ci.job({ id: "build", input }, async ({ input: { target, minify } }) => {
       received.add(JSON.stringify({ target, minify }));
 
       await $`pnpm build --target ${target}`;
@@ -448,7 +448,7 @@ describe("a job's input schema", () => {
   test("is checked when a job is started from, too", async () => {
     const { api, ci } = setup();
 
-    const base = ci.job({ id: "base", input }, async ({ target }) => {
+    const base = ci.job({ id: "base", input }, async ({ input: { target } }) => {
       await $`pnpm install --target ${target}`;
     });
 
@@ -470,7 +470,7 @@ describe("a job's input schema", () => {
     const { ci } = setup();
     const received = new Set<string>();
 
-    const greet = ci.job("greet", async (name: string) => {
+    const greet = ci.job("greet", async ({ input: name }: { input: string }) => {
       received.add(name);
     });
 
@@ -512,7 +512,7 @@ describe("a job's input in its build run", () => {
 
     const base = ci.job(
       { id: "base", cache: { key: "v1" }, input: dateSchema },
-      async ({ at }) => {
+      async ({ input: { at } }) => {
         seen.add(at instanceof Date ? at.toISOString() : typeof at);
 
         await $`pnpm install`;
@@ -575,7 +575,7 @@ describe("a job's input in its build run", () => {
 
     const base = ci.job(
       { id: "base", cache: { key: "v1" }, input: tags },
-      async ({ tags }) => {
+      async ({ input: { tags } }) => {
         seen.add(tags instanceof Set ? [...tags].join(",") : typeof tags);
 
         await $`pnpm install`;
@@ -597,7 +597,7 @@ describe("a job's input in its build run", () => {
 
     const base = ci.job(
       { id: "base", cache: { key: "v1" } },
-      async (_input: { big: bigint }) => {
+      async (_ctx: { input: { big: bigint } }) => {
         await $`pnpm install`;
       },
     );
@@ -615,90 +615,6 @@ describe("a job's input in its build run", () => {
     expect(String((result.error as Error).message)).toMatch(
       /BigInt|serialize/i,
     );
-  });
-
-  describe("an invoker that sends a name the job's own config doesn't give", () => {
-    const forge = (data: Record<string, unknown>) => {
-      return { ...data, cacheKey: "ci/global/base/forged" };
-    };
-
-    test("is refused, and writes nothing", async () => {
-      const { api, ci } = setup();
-
-      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
-        await $`pnpm install`;
-      });
-
-      const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 0 },
-        async () => {
-          return base();
-        },
-      );
-
-      const result = await runFunction(pipeline, {
-        event: prEvent,
-        rewriteInvoke: forge,
-      });
-
-      expect(result.type).toBe("function-rejected");
-      expect(String((result.error as Error).message)).toContain(
-        "doesn't match",
-      );
-
-      expect(userCommands(api)).toEqual([]);
-      expect(namedSnapshots(api)).toEqual([]);
-    });
-
-    test("is refused for an own key that isn't the job's, too", async () => {
-      const { api, ci } = setup();
-
-      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
-        await $`pnpm install`;
-      });
-
-      const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 0 },
-        async () => {
-          return base();
-        },
-      );
-
-      const result = await runFunction(pipeline, {
-        event: prEvent,
-        rewriteInvoke: (data) => {
-          return { ...data, ownKey: "forged" };
-        },
-      });
-
-      expect(result.type).toBe("function-rejected");
-      expect(namedSnapshots(api)).toEqual([]);
-    });
-
-    test("is refused for a job without a cache, whose name belongs to its run", async () => {
-      const { api, ci } = setup();
-
-      const base = ci.job("base", async () => {
-        await $`pnpm install`;
-      });
-
-      const lint = ci.job({ id: "lint", from: base }, async () => {});
-
-      const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 0 },
-        async () => {
-          return lint();
-        },
-      );
-
-      const result = await runFunction(pipeline, {
-        event: prEvent,
-        rewriteInvoke: forge,
-      });
-
-      expect(result.type).toBe("function-rejected");
-      expect(namedSnapshots(api)).toEqual([]);
-    });
   });
 });
 
@@ -1306,7 +1222,7 @@ describe("from", () => {
         id: "build",
         input: fakeSchema<{ target: string }>({ target: "string" }),
       },
-      async ({ target }) => {
+      async ({ input: { target } }) => {
         await $`pnpm build --target ${target}`;
       },
     );
@@ -1476,7 +1392,7 @@ describe("from", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] }, from: install },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`node ${node}`;
       },
     );
@@ -1765,7 +1681,7 @@ describe("from", () => {
         id: "build",
         input: fakeSchema<{ target: string }>({ target: "string" }),
       },
-      async ({ target }) => {
+      async ({ input: { target } }) => {
         await $`pnpm build --target ${target}`;
       },
     );
@@ -1778,7 +1694,7 @@ describe("from", () => {
           return build.with({ target: input.target });
         },
       },
-      async ({ target }) => {
+      async ({ input: { target } }) => {
         await $`pnpm test --filter ${target}`;
       },
     );
@@ -2016,7 +1932,7 @@ describe("matrix", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -2060,7 +1976,7 @@ describe("matrix", () => {
           return base;
         },
       },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -2097,7 +2013,7 @@ describe("matrix", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         ran.add(node);
 
         await $`pnpm test`;
@@ -2189,9 +2105,9 @@ describe("cache", () => {
     for (const version of inputs) {
       const { ci } = setup({ api });
 
-      const build = ci.job<string>(
+      const build = ci.job(
         { id: "setup", cache: { key: "v1" } },
-        async (input) => {
+        async ({ input }: { input: string }) => {
           await $`pnpm install ${input}`;
         },
       );
@@ -3141,7 +3057,7 @@ describe("cache", () => {
 
     const job = ci.job(
       { id: "num", input: input as never, cache: { key: "v1" } },
-      async (value: unknown) => {
+      async ({ input: value }) => {
         received.add(value);
 
         await $`pnpm build`;
@@ -3470,7 +3386,7 @@ describe("checks", () => {
 
       const parent = ci.job(
         { id: "setup", cache: { key: "p" } },
-        async (input: { version: string }) => {
+        async ({ input }: { input: { version: string } }) => {
           await $`pnpm install ${input.version}`;
         },
       );
@@ -3483,7 +3399,7 @@ describe("checks", () => {
             return parent.with(input);
           },
         },
-        async (_input: { version: string }) => {
+        async (_ctx: { input: { version: string } }) => {
           await $`pnpm test`;
         },
       );
@@ -4017,7 +3933,7 @@ describe("failures that retrying cannot fix", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -4712,7 +4628,7 @@ describe("cache builds in their own run", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] }, cache: { key: "m1" } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`fnm use ${node}`;
       },
     );

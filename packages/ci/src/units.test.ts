@@ -753,7 +753,7 @@ describe("looking a cached snapshot up by name", () => {
     return lookupCache(
       scope,
       { key: "v1", scope: "global" },
-      { ownKey: "k1", name },
+      { ownKey: "k1", key: {}, name },
       exclude,
     );
   };

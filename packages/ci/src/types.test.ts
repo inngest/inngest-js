@@ -271,24 +271,24 @@ describe("jobs infer their input", () => {
     });
 
     expectTypeOf(job).toExtend<Job>();
-    expectTypeOf(job).toEqualTypeOf<Job<void>>();
+    expectTypeOf(job).toEqualTypeOf<Job<void, undefined, undefined>>();
     expectTypeOf(job.id).toBeString();
     expectTypeOf(job.kind).toEqualTypeOf<"inngest/ci.job">();
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input-inferred", async (node: string) => {
+    const job = ci.job("with-input-inferred", async ({ input: node }: { input: string }) => {
       await $`fnm use ${node}`;
     });
 
-    expectTypeOf(job).toEqualTypeOf<Job<string>>();
+    expectTypeOf(job).toEqualTypeOf<Job<string, undefined, undefined>>();
     expectTypeOf(job).parameter(0).toBeString();
   });
 
   test("an object input", () => {
     const job = ci.job(
       "combo",
-      async (input: { node: string; db: "sqlite" | "postgres" }) => {
+      async ({ input }: { input: { node: string; db: "sqlite" | "postgres" } }) => {
         await $`pnpm test --db ${input.db}`;
       },
     );
@@ -307,7 +307,7 @@ describe("jobs infer their input", () => {
       },
     );
 
-    expectTypeOf(job).toEqualTypeOf<Job<void>>();
+    expectTypeOf(job).toEqualTypeOf<Job<void, CacheKeyPart, undefined>>();
   });
 
   test("calling a job resolves to nothing", () => {
@@ -329,7 +329,7 @@ describe("jobs infer their input", () => {
     });
 
     // @ts-expect-error jobs have no return value
-    ci.job("returns-a-string", async (node: string) => {
+    ci.job("returns-a-string", async ({ input: node }: { input: string }) => {
       return node;
     });
 
@@ -345,7 +345,7 @@ describe("jobs infer their input", () => {
   });
 
   test("the checker rejects the wrong input", () => {
-    const job = ci.job("needs-string", async (node: string) => {
+    const job = ci.job("needs-string", async ({ input: node }: { input: string }) => {
       await $`fnm use ${node}`;
     });
 
@@ -386,7 +386,7 @@ describe("a job's input schema types its input", () => {
   };
 
   test("the handler gets the schema's output", () => {
-    ci.job({ id: "build", input }, async (value) => {
+    ci.job({ id: "build", input }, async ({ input: value }) => {
       expectTypeOf(value).toEqualTypeOf<{
         target: "web" | "api";
         minify: boolean;
@@ -395,7 +395,7 @@ describe("a job's input schema types its input", () => {
   });
 
   test("the caller gives the schema's input", () => {
-    const job = ci.job({ id: "build-called", input }, async ({ target }) => {
+    const job = ci.job({ id: "build-called", input }, async ({ input: { target } }) => {
       await $`pnpm build --target ${target}`;
     });
 
@@ -415,7 +415,7 @@ describe("a job's input schema types its input", () => {
   });
 
   test("a job config without a schema still infers from the handler", () => {
-    const job = ci.job({ id: "no-schema" }, async (node: string) => {
+    const job = ci.job({ id: "no-schema" }, async ({ input: node }: { input: string }) => {
       await $`fnm use ${node}`;
     });
 
@@ -428,7 +428,7 @@ describe("from starts from a job", () => {
     await $`pnpm install`;
   });
 
-  const withInput = ci.job("with-input", async (node: string) => {
+  const withInput = ci.job("with-input", async ({ input: node }: { input: string }) => {
     await $`fnm use ${node}`;
   });
 
@@ -457,7 +457,7 @@ describe("from starts from a job", () => {
       async () => {},
     );
 
-    const optional = ci.job("optional", async (_node?: string) => {});
+    const optional = ci.job("optional", async (_ctx: { input?: string }) => {});
 
     ci.job({ id: "from-optional", from: optional }, async () => {});
   });
@@ -472,7 +472,7 @@ describe("from starts from a job", () => {
           return withInput.with(input);
         },
       },
-      async (_node: string) => {},
+      async (_ctx: { input: string }) => {},
     );
   });
 
@@ -491,7 +491,7 @@ describe("matrices keep their literal values", () => {
         id: "compat-1",
         axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
       },
-      async (combo) => {
+      async ({ matrix: combo }) => {
         expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
         expectTypeOf(combo.db).toEqualTypeOf<"sqlite" | "postgres">();
       },
@@ -501,7 +501,7 @@ describe("matrices keep their literal values", () => {
   test("the matrix itself is typed", () => {
     const matrix = ci.matrix(
       { id: "compat-2", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -515,7 +515,7 @@ describe("matrices keep their literal values", () => {
   test("running part of a matrix is checked", () => {
     const matrix = ci.matrix(
       { id: "compat-3", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -540,7 +540,7 @@ describe("matrices keep their literal values", () => {
         exclude: [{ node: "20", db: "postgres" }],
         include: [{ node: "22", db: "sqlite" }],
       },
-      async (combo) => {
+      async ({ matrix: combo }) => {
         await $`pnpm test --node ${combo.node}`;
       },
     );
@@ -552,7 +552,7 @@ describe("matrices keep their literal values", () => {
         // @ts-expect-error "21" was never an axis value
         exclude: [{ node: "21" }],
       },
-      async (combo) => {
+      async ({ matrix: combo }) => {
         await $`pnpm test --node ${combo.node}`;
       },
     );
@@ -572,7 +572,7 @@ describe("matrices keep their literal values", () => {
           return { key: [files("pnpm-lock.yaml"), combo.node] };
         },
       },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -582,7 +582,7 @@ describe("matrices keep their literal values", () => {
     ci.matrix(
       { id: "compat-6", axes: { node: ["20", "22"] } },
       // @ts-expect-error matrices have no return value
-      async (combo) => {
+      async ({ matrix: combo }) => {
         return combo.node;
       },
     );

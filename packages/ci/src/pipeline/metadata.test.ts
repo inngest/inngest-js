@@ -71,7 +71,7 @@ describe("run metadata", () => {
 
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
