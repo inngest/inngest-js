@@ -52,7 +52,7 @@ export const integration = ci.matrix(
   async ({ matrix, from }) => {
     await $`pnpm --filter inngest run test:integration --shard=${matrix.shard}`.env(
       {
-        INNGEST_CLI_VERSION: (from.key as { devServer: string }).devServer,
+        INNGEST_CLI_VERSION: from.key.devServer,
       },
     );
   },

@@ -44,30 +44,30 @@ const listExamples = async (): Promise<string[]> => {
     });
 };
 
-export const examples = async (): Promise<void> => {
-  const run = (forced: boolean) => {
-    return async ({
-      matrix,
-      from,
-    }: {
-      matrix: { example: string };
-      from: { key: unknown };
-    }) => {
-      await $`pnpm --filter inngest run itest ${matrix.example}`.env({
-        INNGEST_CLI_VERSION: (from.key as { devServer: string }).devServer,
-        INNGEST_STREAMING: forced ? "force" : "",
-      });
-    };
-  };
+const itest = async (
+  example: string,
+  devServer: string,
+  streaming: "" | "force",
+): Promise<void> => {
+  await $`pnpm --filter inngest run itest ${example}`.env({
+    INNGEST_CLI_VERSION: devServer,
+    INNGEST_STREAMING: streaming,
+  });
+};
 
+export const examples = async (): Promise<void> => {
   await Promise.all([
     ci.matrix(
       { id: "examples", from: pack, axes: { example: await listExamples() } },
-      run(false),
+      async ({ matrix, from }) => {
+        await itest(matrix.example, from.key.devServer, "");
+      },
     )(),
     ci.matrix(
       { id: "examples-streaming", from: pack, axes: { example: streaming } },
-      run(true),
+      async ({ matrix, from }) => {
+        await itest(matrix.example, from.key.devServer, "force");
+      },
     )(),
   ]);
 };
