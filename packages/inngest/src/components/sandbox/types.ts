@@ -27,6 +27,8 @@ export interface SandboxResource {
   status: SandboxStatus;
   vpcId: string;
   imageRef: string;
+  /** Pinned launch artifact (`sha256:<hex>`), absent for legacy sandboxes. */
+  imageDigest?: string;
   resources: SandboxResources;
   createdAt: string;
   startedAt?: string;
@@ -77,6 +79,18 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   memoryMb: number;
 
   /**
+   * An already-published image accessible to this workspace, such as
+   * `inngest/base:latest`, `my-image:v1`, `my-image@sha256:<hex>`, or
+   * `sha256:<hex>`. A name without a tag uses latest. Omit this to use the
+   * default base image. This does not build or upload an image.
+   *
+   * Resolved once for a new sandbox. Retrying the same name and configuration
+   * returns its original image, even if the tag has moved. Use a new sandbox
+   * name to pick up an updated tag. Cannot be combined with snapshotId.
+   */
+  image?: string;
+
+  /**
    * Literal environment inherited by commands and managed processes. Values
    * are persisted as sandbox configuration. Use `secrets` for workspace secret
    * references. Guest defaults are retained, and operation-specific values
@@ -103,6 +117,7 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
 export interface SandboxCreateFromSnapshotOptions
   extends SandboxCreateBaseOptions {
   snapshotId: string;
+  image?: never;
   vcpu?: never;
   memoryMb?: never;
   environment?: never;
@@ -385,6 +400,7 @@ export type SandboxErrorCode =
   | "sandbox_exec_output_too_large"
   | "sandbox_exec_timed_out"
   | "sandbox_name_taken"
+  | "sandbox_image_not_found"
   | "sandbox_not_found"
   | "sandbox_start_failed"
   | "sandbox_start_timed_out"
@@ -465,6 +481,7 @@ export interface Sandbox {
   readonly status: SandboxStatus;
   readonly vpcId: string;
   readonly imageRef: string;
+  readonly imageDigest?: string;
   readonly resources: SandboxResources;
   readonly createdAt: string;
   readonly startedAt?: string;
@@ -552,6 +569,7 @@ export interface DurableSandbox {
   readonly status: SandboxStatus;
   readonly vpcId: string;
   readonly imageRef: string;
+  readonly imageDigest?: string;
   readonly resources: SandboxResources;
   readonly createdAt: string;
   readonly startedAt?: string;
