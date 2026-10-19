@@ -1,9 +1,9 @@
 /**
  * The images every job starts from. `base` has the repository's dependencies
- * and the latest Dev Server, `build` adds the built `inngest` and `test`
- * packages, `source` moves them to the commit being tested, and `pack` adds
- * the `inngest` tarball. `base` and `build` are cached, and pushes to main
- * keep them warm for pull requests.
+ * and the latest Dev Server, and returns its version for the tests to use.
+ * `build` adds the built `inngest` and `test` packages, `source` moves them
+ * to the commit being tested, and `pack` adds the `inngest` tarball. `base`
+ * and `build` are cached, and pushes to main keep them warm for pull requests.
  *
  * @module
  */
@@ -52,9 +52,15 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
-    await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --help`.as(
-      "download the Dev Server",
-    );
+    const devServer =
+      await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`
+        .as("download the Dev Server")
+        .text();
+
+    return {
+      /** The Dev Server the integration tests run against, as the image has it. */
+      devServerVersion: devServer.replace(/^inngest version |-\w+$/g, ""),
+    };
   },
 );
 

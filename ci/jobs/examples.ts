@@ -60,13 +60,13 @@ export const examples = async (): Promise<void> => {
     ci.matrix(
       { id: "examples", from: pack, axes: { example: await listExamples() } },
       async ({ matrix, from }) => {
-        await itest(matrix.example, from.key.devServer, "");
+        await itest(matrix.example, from.output.devServerVersion, "");
       },
     )(),
     ci.matrix(
       { id: "examples-streaming", from: pack, axes: { example: streaming } },
       async ({ matrix, from }) => {
-        await itest(matrix.example, from.key.devServer, "force");
+        await itest(matrix.example, from.output.devServerVersion, "force");
       },
     )(),
   ]);

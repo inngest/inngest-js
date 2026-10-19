@@ -51,7 +51,7 @@ export const middlewareSentry = ci.job(
   { id: "middleware-sentry", from: source },
   async ({ from }) => {
     await $`pnpm --filter @inngest/middleware-sentry run test:integration`.env({
-      INNGEST_CLI_VERSION: from.key.devServer,
+      INNGEST_CLI_VERSION: from.output.devServerVersion,
     });
   },
 );
