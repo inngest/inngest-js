@@ -740,6 +740,10 @@ export const deleteRunSnapshots = async (
 /**
  * A run that ended permanently never reached its own cleanup step, so the
  * snapshots it owned are found by name, which starts with the run's.
+ *
+ * A snapshot still being taken when this runs is not seen. A cancelled run
+ * can't check for it afterwards, because its code stops running, so such a
+ * snapshot is left to expire.
  */
 export const deleteOrphanSnapshots = async (
   client: Inngest.Any,

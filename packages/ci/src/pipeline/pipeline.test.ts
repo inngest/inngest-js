@@ -2793,7 +2793,7 @@ describe("cache", () => {
     });
 
     test.each([
-      ["gone", "gone"],
+      ["gone, as when a newer cache key replaced it", "gone"],
       ["deleting", "DELETING"],
     ] as const)(
       "a snapshot that is %s is rebuilt, not deleted",
