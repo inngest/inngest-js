@@ -10,7 +10,7 @@
 import { $, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { devServerEnv, pack } from "./base.ts";
+import { pack } from "./base.ts";
 
 const skipped = [
   "framework-hono",
@@ -46,9 +46,15 @@ const listExamples = async (): Promise<string[]> => {
 
 export const examples = async (): Promise<void> => {
   const run = (forced: boolean) => {
-    return async ({ example }: { example: string }) => {
-      await $`pnpm --filter inngest run itest ${example}`.env({
-        ...(await devServerEnv()),
+    return async ({
+      matrix,
+      from,
+    }: {
+      matrix: { example: string };
+      from: { key: unknown };
+    }) => {
+      await $`pnpm --filter inngest run itest ${matrix.example}`.env({
+        INNGEST_CLI_VERSION: (from.key as { devServer: string }).devServer,
         INNGEST_STREAMING: forced ? "force" : "",
       });
     };

@@ -9,7 +9,6 @@
  */
 
 import { $, checkout, files, github } from "@inngest/ci";
-import { step } from "inngest";
 
 import { ci } from "../client.ts";
 
@@ -31,29 +30,20 @@ const latestDevServer = async (): Promise<string> => {
   return tag_name.replace(/^v/, "");
 };
 
-export const devServerEnv = async (): Promise<Record<string, string>> => {
-  return {
-    INNGEST_CLI_VERSION: await step.run(
-      "find the Dev Server release",
-      latestDevServer,
-    ),
-  };
-};
-
 export const base = ci.job(
   {
     id: "base",
     cache: {
-      key: [
-        files("pnpm-lock.yaml", "package.json", "ci/jobs/base.ts"),
-        latestDevServer,
-      ],
+      key: {
+        /** The dependencies, and the code of this image. */
+        deps: files("pnpm-lock.yaml", "package.json", "ci/jobs/base.ts"),
+        /** The latest Dev Server release, so a new one rebuilds the image. */
+        devServer: latestDevServer,
+      },
       refresh: warm,
     },
   },
-  async () => {
-    const { INNGEST_CLI_VERSION } = await devServerEnv();
-
+  async ({ key }) => {
     await checkout();
 
     await $.sh`npm install -g --prefix /usr/local "$(node -p "require('./package.json').packageManager.split('+')[0]")"`.as(
@@ -62,7 +52,7 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
-    await $`npx --yes --ignore-scripts=false inngest-cli@${INNGEST_CLI_VERSION} --help`.as(
+    await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --help`.as(
       "download the Dev Server",
     );
   },

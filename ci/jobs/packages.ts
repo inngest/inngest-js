@@ -9,7 +9,7 @@
 import { $ } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { devServerEnv, source } from "./base.ts";
+import { source } from "./base.ts";
 
 export const audit = ci.job({ id: "audit", from: source }, async () => {
   await $`pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors`;
@@ -49,10 +49,10 @@ export const testPackage = ci.job(
 
 export const middlewareSentry = ci.job(
   { id: "middleware-sentry", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/middleware-sentry run test:integration`.env(
-      await devServerEnv(),
-    );
+  async ({ from }) => {
+    await $`pnpm --filter @inngest/middleware-sentry run test:integration`.env({
+      INNGEST_CLI_VERSION: from.key.devServer,
+    });
   },
 );
 
