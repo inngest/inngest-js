@@ -17,7 +17,7 @@ const warm = github.push({ branches: ["main"] });
 
 const latestDevServer = async (): Promise<string> => {
   const response = await fetch(
-    "https://mod.jpwilliams.dev/github-release-version/inngest/inngest",
+    "https://api.github.com/repos/inngest/inngest/releases/latest",
   );
 
   if (!response.ok) {
@@ -26,7 +26,18 @@ const latestDevServer = async (): Promise<string> => {
     );
   }
 
-  return (await response.text()).trim().replace(/^v/, "");
+  const { tag_name } = (await response.json()) as { tag_name: string };
+
+  return tag_name.replace(/^v/, "");
+};
+
+export const devServerEnv = async (): Promise<Record<string, string>> => {
+  return {
+    INNGEST_CLI_VERSION: await step.run(
+      "find the Dev Server release",
+      latestDevServer,
+    ),
+  };
 };
 
 export const base = ci.job(
@@ -41,10 +52,7 @@ export const base = ci.job(
     },
   },
   async () => {
-    const devServer = await step.run(
-      "find the Dev Server release",
-      latestDevServer,
-    );
+    const { INNGEST_CLI_VERSION } = await devServerEnv();
 
     await checkout();
 
@@ -54,7 +62,7 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
-    await $`npx --yes --ignore-scripts=false inngest-cli@${devServer} --help`.as(
+    await $`npx --yes --ignore-scripts=false inngest-cli@${INNGEST_CLI_VERSION} --help`.as(
       "download the Dev Server",
     );
   },

@@ -176,7 +176,7 @@ async function startDevServer(
     [
       "--yes",
       "--ignore-scripts=false",
-      "inngest-cli@latest",
+      `inngest-cli@${process.env.INNGEST_CLI_VERSION ?? "latest"}`,
       "dev",
       "--port",
       devServerPort.toString(),

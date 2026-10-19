@@ -10,7 +10,7 @@
 import { $, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { pack } from "./base.ts";
+import { devServerEnv, pack } from "./base.ts";
 
 const skipped = [
   "framework-hono",
@@ -48,6 +48,7 @@ export const examples = async (): Promise<void> => {
   const run = (forced: boolean) => {
     return async ({ example }: { example: string }) => {
       await $`pnpm --filter inngest run itest ${example}`.env({
+        ...(await devServerEnv()),
         INNGEST_STREAMING: forced ? "force" : "",
       });
     };

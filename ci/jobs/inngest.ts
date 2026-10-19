@@ -9,7 +9,7 @@
 import { $ } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { pack, source } from "./base.ts";
+import { devServerEnv, pack, source } from "./base.ts";
 
 const inngestDir = "/work/packages/inngest";
 
@@ -50,7 +50,9 @@ export const deps = ci.job({ id: "deps", from: source }, async () => {
 export const integration = ci.matrix(
   { id: "integration", from: source, axes: { shard: ["1/3", "2/3", "3/3"] } },
   async ({ shard }) => {
-    await $`pnpm --filter inngest run test:integration --shard=${shard}`;
+    await $`pnpm --filter inngest run test:integration --shard=${shard}`.env(
+      await devServerEnv(),
+    );
   },
 );
 
