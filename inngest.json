@@ -1,0 +1,5 @@
+{
+  "ci": {
+    "start": "ci/node_modules/.bin/tsx ci/server.ts"
+  }
+}

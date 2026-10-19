@@ -1,0 +1,20 @@
+{
+  "name": "inngest-js-ci",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The pull request checks for inngest-js, as @inngest/ci pipelines",
+  "type": "module",
+  "scripts": {
+    "start": "tsx server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@inngest/ci": "0.4.0",
+    "inngest": "4.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.2"
+  }
+}
