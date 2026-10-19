@@ -26,7 +26,11 @@
 import hashjs from "hash.js";
 import type { StepOptions, StepOptionsOrId, StepSpan } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
-import { getStepOptions, withSpan } from "../InngestStepTools.ts";
+import {
+  getStepOptions,
+  withSpan,
+  withStepIdPrefix,
+} from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { execOperationResult } from "./durable.ts";
 import type {
@@ -200,6 +204,9 @@ const followCommand = async (
 
   const [{ command, environment, cwd, timeoutMs }] = operation.input;
   const { sandbox } = host;
+  // Concurrent callers of a group tool share step IDs, so their prefix tells
+  // them apart
+  const scope = `${host.runId ?? ""}:${getAsyncCtxSync()?.execution?.stepIdPrefix ?? ""}`;
   const meta = sandboxTraceMetadata(operation, { error: undefined });
 
   const sdkStep = (stepId: string, name: string): StepOptions => {
@@ -302,7 +309,7 @@ const followCommand = async (
     line: string;
   }): Promise<string> => {
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
-    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
+    const idempotencyKey = `${scope}${stepId}`;
 
     try {
       const resolved = await Promise.race([
@@ -311,6 +318,23 @@ const followCommand = async (
       ]);
       if (resolved.error !== undefined) {
         return replyLine(call.id, { error: resolved.error });
+      }
+
+      if (resolved.group) {
+        // The body's own steps are the durable part, so there is no step here.
+        const value = await withSpan(
+          { ...toolSpan(stepId, call.tool), origin: undefined },
+          () => {
+            return withStepIdPrefix(`${stepId}:`, () => {
+              return resolved.invoke({
+                signal: new AbortController().signal,
+                idempotencyKey,
+              });
+            });
+          },
+        );
+
+        return resultLine(call.id, call.tool, value);
       }
 
       return await host.run(
@@ -341,9 +365,7 @@ const followCommand = async (
       const startedAt = Date.now();
       // The step's own ID, which stays distinct when a command ID repeats.
       const stepId = getAsyncCtxSync()?.execution?.executingStep?.id ?? id;
-      const dir = `${toolsRoot}/${sha256()
-        .update(`${host.runId ?? ""}:${stepId}`)
-        .digest("hex")}`;
+      const dir = `${toolsRoot}/${sha256().update(`${scope}${stepId}`).digest("hex")}`;
       // The wait doesn't need the process to exist yet, so it runs alongside.
       const [, round] = await Promise.all([
         sandbox.processes.start({
