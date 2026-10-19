@@ -169,14 +169,18 @@ export interface FilesOptions {
 }
 
 /**
- * What a job's cache is keyed on: a string, a `files()` part, a list of those
- * joined together, or a function that computes the key when the job runs.
+ * What a job's cache is keyed on: a string, a `files()` part, a function that
+ * computes a string when the job runs, or a list of those joined together.
+ *
+ * ```ts
+ * key: [files("pnpm-lock.yaml"), async () => latestRelease("inngest/inngest")]
+ * ```
  */
 export type CacheKey =
   | CacheKeyPart
   | string
-  | (CacheKeyPart | string)[]
-  | (() => Promise<string>);
+  | (() => Promise<string>)
+  | (CacheKeyPart | string | (() => Promise<string>))[];
 
 /**
  * A job's cache settings. `from` shares a job's machine within one run, and

@@ -137,16 +137,22 @@ export const resolveCacheKey = async (
   const resolved: string[] = [];
 
   for (const part of keyParts(key)) {
-    resolved.push(
-      typeof part === "string" ? part : await resolveFilesPart(run, part),
-    );
+    if (typeof part === "function") {
+      resolved.push(await part());
+    } else if (typeof part === "string") {
+      resolved.push(part);
+    } else {
+      resolved.push(await resolveFilesPart(run, part));
+    }
   }
 
   return hash(resolved.join("\0"));
 };
 
 /** The parts of a cache key, which a function key doesn't have. */
-const keyParts = (key: CacheKey | undefined): (CacheKeyPart | string)[] => {
+const keyParts = (
+  key: CacheKey | undefined,
+): (CacheKeyPart | string | (() => Promise<string>))[] => {
   if (key === undefined || typeof key === "function") {
     return [];
   }
@@ -164,7 +170,7 @@ export const resolveKeySources = async (
   key: CacheKey | undefined,
 ): Promise<void> => {
   for (const part of keyParts(key)) {
-    if (typeof part !== "string" && !targetsRunRepo(run, part)) {
+    if (typeof part === "object" && !targetsRunRepo(run, part)) {
       await resolveSource(run, part);
     }
   }

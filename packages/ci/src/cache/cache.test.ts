@@ -10,7 +10,12 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot, resolveTakenName, usableFor } from "./cache.ts";
+import {
+  deleteSnapshot,
+  resolveCacheKey,
+  resolveTakenName,
+  usableFor,
+} from "./cache.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -215,5 +220,28 @@ describe("usableFor", () => {
         ...overrides,
       }),
     ).toBe(expected);
+  });
+});
+
+describe("resolveCacheKey", () => {
+  const run = {} as CiRunScope;
+
+  const keyOf = (text: string, fetched: string): Promise<string> => {
+    return resolveCacheKey(run, [
+      text,
+      async () => {
+        return fetched;
+      },
+    ]);
+  };
+
+  test.each([
+    ["the same parts", ["a", "v1", "a", "v1"], true],
+    ["another function value", ["a", "v1", "a", "v2"], false],
+    ["another string", ["a", "v1", "b", "v1"], false],
+  ] as const)("%s", async (_name, [text, fetched, text2, fetched2], same) => {
+    expect(
+      (await keyOf(text, fetched)) === (await keyOf(text2, fetched2)),
+    ).toBe(same);
   });
 });
