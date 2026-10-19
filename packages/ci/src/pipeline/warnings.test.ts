@@ -111,6 +111,35 @@ describe("a parent built just in time", () => {
     expect(result.data).toHaveLength(1);
   });
 
+  test("each cached ancestor in a chain is named once, by its own refresh", async () => {
+    const ci = makeCi();
+
+    const a = ci.job({ id: "a", cache: { key: "v1", refresh } }, async () => {
+      await $`echo a`;
+    });
+
+    const b = ci.job({ id: "b", cache: { key: "v1" }, from: a }, async () => {
+      await $`echo b`;
+    });
+
+    const c = ci.job({ id: "c", from: b }, async () => {
+      await $`echo c`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await c();
+
+      return getRunScope()?.warnings;
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.data).toEqual([
+      "built just in time: `a` (not refreshed for these inputs yet)",
+      `built just in time: \`b\` (${advice})`,
+    ]);
+  });
+
   test("a hit has no warning", async () => {
     const pipeline = pipelineOf({});
 
