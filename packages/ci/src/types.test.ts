@@ -331,6 +331,31 @@ describe("jobs infer their input", () => {
     });
   });
 
+  test("calling a cached job resolves to nothing, whatever it returns", () => {
+    const job = ci.job(
+      { id: "cached-output", cache: { key: "v1" } },
+      async () => {
+        return { count: 1 };
+      },
+    );
+
+    const withSchema = ci.job(
+      {
+        id: "cached-schema-output",
+        input: {} as StandardSchemaV1<{ a: string }>,
+        cache: { key: "v1" },
+      },
+      async () => {
+        return { count: 1 };
+      },
+    );
+
+    types(async () => {
+      expectTypeOf(await job()).toBeVoid();
+      expectTypeOf(await withSchema({ a: "x" })).toBeVoid();
+    });
+  });
+
   test("calling a job resolves to nothing", () => {
     const job = ci.job("side-effects", async () => {
       await $`pnpm build`;

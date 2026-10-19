@@ -369,9 +369,16 @@ export type CommandsOf<TOutput> = {
     : K]: Extract<TOutput[K], Command>;
 };
 
-/** What awaiting a job gives: the data of its output. */
+/**
+ * What awaiting a job gives: the data of its output. A job with a `cache` is
+ * built in a run of its own and may be reused, so it gives nothing.
+ */
 // biome-ignore lint/suspicious/noConfusingVoidType: a job that returns nothing resolves to `void`
-type Returned<TOutput> = [TOutput] extends [void] ? void : DataOf<TOutput>;
+type Returned<TOutput, TCache> = [TCache] extends [undefined]
+  ? [TOutput] extends [void]
+    ? void
+    : DataOf<TOutput>
+  : void;
 
 /**
  * A job: call it like a function.
@@ -390,8 +397,9 @@ export interface Job<
   TKey = unknown,
   TFrom = unknown,
   TOutput = void,
+  TCache = undefined,
 > {
-  (input: TInput): Promise<Returned<TOutput>>;
+  (input: TInput): Promise<Returned<TOutput, TCache>>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
@@ -439,7 +447,7 @@ export interface Job<
 export interface JobRef<TInput = unknown> {
   readonly kind: "inngest/ci.jobRef";
   // biome-ignore lint/suspicious/noExplicitAny: a job of any cache key
-  readonly job: Job<TInput, any, any, any>;
+  readonly job: Job<TInput, any, any, any, any>;
   readonly input: TInput;
 }
 
@@ -476,7 +484,7 @@ export type FromTarget = JobLike | AnyJobRef | Image;
  * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any, any, any, any>;
+export type AnyJob = Job<any, any, any, any, any>;
 
 /** A job above another, with the named parts of its cache key resolved. */
 export interface Ancestor {
