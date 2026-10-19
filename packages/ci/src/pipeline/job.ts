@@ -6,10 +6,12 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
+  checkCache,
   describeCached,
   lookupBeforeBuild,
   lookupCache,
@@ -23,7 +25,7 @@ import {
 import type { CheckReporter } from "../github/checks.ts";
 import { settledSources } from "../github/source.ts";
 import {
-  identityOf,
+  checkStaticFrom,
   ownJob,
   parentBuildOf,
   startFrom,
@@ -81,6 +83,10 @@ export const defineJob = ({
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
     );
   }
+
+  checkStaticFrom(jobs, config);
+
+  checkCache(config.id, config.cache);
 
   jobs.set(config.id, { id: config.id, config, handler });
 
@@ -416,19 +422,26 @@ export const validateInput = async (
     return result.value;
   }
 
-  const problems = result.issues.map((issue) => {
-    const path = (issue.path ?? [])
-      .map((segment) => {
-        return String(typeof segment === "object" ? segment.key : segment);
-      })
-      .join(".");
-
-    return `  - ${path ? `${path}: ` : ""}${issue.message}`;
-  });
-
   throw new CiUsageError(
-    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${problems.join("\n")}`,
+    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${describeIssues(result.issues)}`,
   );
+};
+
+/** A schema's issues, one per line, each with the path it's at. */
+export const describeIssues = (
+  issues: readonly StandardSchemaV1.Issue[],
+): string => {
+  return issues
+    .map((issue) => {
+      const path = (issue.path ?? [])
+        .map((segment) => {
+          return String(typeof segment === "object" ? segment.key : segment);
+        })
+        .join(".");
+
+      return `  - ${path ? `${path}: ` : ""}${issue.message}`;
+    })
+    .join("\n");
 };
 
 /** Everything a job does is in its span. */
@@ -461,11 +474,7 @@ const jobSteps = async ({
   // plans its first step at once.
   const config =
     declared.cache && declared.from !== undefined
-      ? await withoutUnreusableCache(run, {
-          config: declared,
-          input,
-          raw: given,
-        })
+      ? await withoutUnreusableCache(run, declared, input)
       : declared;
 
   const scope: CiJobScope = {
@@ -534,9 +543,7 @@ const jobSteps = async ({
           { id: config.id, path: scope.path },
           config.cache,
           input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
+          fromParent?.identity,
         )
       : undefined;
 
@@ -545,15 +552,7 @@ const jobSteps = async ({
   if (isBuild && !parentFailure) {
     verifyBuildTarget(
       run,
-      cacheAt ??
-        runTarget(
-          run,
-          config.id,
-          input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
-        ),
+      cacheAt ?? runTarget(run, config.id, input, fromParent?.identity),
     );
   }
 
