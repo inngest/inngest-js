@@ -9,7 +9,7 @@ The client and the run engine.
 - `hooks.ts`: `CiHooks`, what a run tells a tool that watches it (`run.ci.hooks`); the default hooks do nothing.
 - `matrix.ts`: `ci.matrix()`, matrix expansion and the concurrency pool.
 - `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, the `inngest.warnings` metadata that puts a warning on a step's row, and the helpers that build and attach them.
-- `warnings.ts`: what a run warns about and the words for it: a warning that shows on a step's row and in the run's warnings has its text written once here. Today that is the parent built just in time (advising `cache.refresh`); the other `run.warnings` sites belong here too.
+- `warnings.ts`: what a run warns about and the words for it, written once for the step row and the run's warnings.
 - `scope.ts`: the run and job scopes held in async context. Jobs only write to the run scope, except for `builds`, the promises of the builds `from` parents need.
 - `names.ts`: what each step and span CI writes is called in the trace, and the origin that marks CI's own work.
 - `spans.ts`: the one place CI touches the SDK's experimental trace-span API.

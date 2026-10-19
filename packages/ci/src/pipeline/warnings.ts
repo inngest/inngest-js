@@ -1,10 +1,8 @@
 /**
- * What a run warns about, in the words it uses for it. A warning that also
- * shows on a step's row has its text written once here, as a `message` for the
- * row and a `line` for the run's warnings, so the two can't drift apart.
- *
- * This is where the run's other warnings belong too (the `run.warnings.push`
- * sites that are spread over the machine, job and cache code), one entry each.
+ * What a run warns about, in the words it uses for it. A warning that shows on
+ * a step's row and in the run's warnings has its text written once here, as a
+ * `message` for the row and a `line` for the run. A new warning is one function
+ * here that returns both.
  *
  * @module
  */
@@ -23,14 +21,10 @@ export const warnOnce = (
 };
 
 /**
- * What a cached job that a pipeline run had to build while the jobs that start
- * from it waited says, on the row of its lookup (`message`) and in the run's
- * warnings (`line`).
- *
- * A miss is more than "never built": the lookup also comes back empty on an
- * API error, a snapshot about to expire or still being made, or one that isn't
- * ready. The wording is true for all of them, and only advises `cache.refresh`
- * when the job has none.
+ * A cached job that was built while the jobs that start from it waited. A miss
+ * is more than "never built": the lookup also comes back empty on an API error
+ * or a snapshot that is expiring or still being made, so the wording is true
+ * for all of them and only advises `cache.refresh` when the job has none.
  */
 export const builtJustInTime = (
   jobId: string,
@@ -38,16 +32,12 @@ export const builtJustInTime = (
 ): { message: string; line: string } => {
   const refreshed = Boolean(cache.refresh?.length);
 
+  const hint = refreshed
+    ? "not refreshed for these inputs yet"
+    : "add `cache.refresh` to build it ahead of time";
+
   return {
-    message: `\`${jobId}\` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited. ${
-      refreshed
-        ? "Its `cache.refresh` triggers hadn't built a usable snapshot for these inputs yet."
-        : "Add `cache.refresh` to build it ahead of time."
-    }`,
-    line: `built just in time: \`${jobId}\` (${
-      refreshed
-        ? "not refreshed for these inputs yet"
-        : "add `cache.refresh` to build it ahead of time"
-    })`,
+    message: `\`${jobId}\` had no usable cached snapshot for these inputs, so it was built while the jobs that start from it waited (${hint}).`,
+    line: `built just in time: \`${jobId}\` (${hint})`,
   };
 };
