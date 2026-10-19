@@ -33,7 +33,12 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { isRecord } from "../helpers/types.ts";
 import { ConsoleLogger, Inngest, type InngestFunction } from "../index.ts";
-import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
+import {
+  type EventPayload,
+  type FunctionConfig,
+  type OutgoingOp,
+  StepMode,
+} from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -139,6 +144,8 @@ export const runFnWithStack = async (
     event?: EventPayload;
     stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
     disableImmediateExecution?: boolean;
+    attempt?: number;
+    maxAttempts?: number;
   },
 ) => {
   const execution = fn["createExecution"]({
@@ -146,6 +153,9 @@ export const runFnWithStack = async (
       client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
+        runId: "run",
+        attempt: opts?.attempt,
+        maxAttempts: opts?.maxAttempts,
       }),
       runId: "run",
       stepState,
@@ -225,6 +235,42 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
     };
   };
 }
+
+/**
+ * Run `fn` request by request, memoizing each new step, and return the steps
+ * in the order they ran. A step that fails before the last request throws,
+ * since memoizing its error as data would carry the run past the failure.
+ */
+export const runSteps = async (
+  fn: InngestFunction.Any,
+  count: number,
+  stepState: InngestExecutionOptions["stepState"] = {},
+): Promise<OutgoingOp[]> => {
+  const steps: OutgoingOp[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const result = await runFnWithStack(fn, stepState);
+
+    if (result.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${result.type}`);
+    }
+
+    steps.push(result.step);
+
+    if (result.step.error !== undefined && i < count - 1) {
+      throw new Error(
+        `Step ${result.step.id} failed on request ${i + 1} of ${count}`,
+      );
+    }
+
+    stepState = {
+      ...stepState,
+      [result.step.id]: { id: result.step.id, data: result.step.data },
+    };
+  }
+
+  return steps;
+};
 
 /**
  * Test signing key used for cloud mode tests.

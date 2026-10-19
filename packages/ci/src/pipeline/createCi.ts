@@ -1,14 +1,14 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
  * pipeline, job and matrix definitions to a shared set of internals (checks,
- * cache store, GitHub provider).
+ * the cache build function, GitHub provider).
  *
  * @module
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Inngest, InngestFunction } from "inngest";
-import { memoryCacheStore } from "../cache/cache.ts";
+import { CiUsageError } from "../errors.ts";
 import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
 import { consoleReporter } from "../github/auth.ts";
 import type { CheckSink } from "../github/checks.ts";
@@ -21,7 +21,6 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
-  CacheStore,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
@@ -35,11 +34,18 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
+import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
-import { cacheRefreshFunctions, definePipeline } from "./pipeline.ts";
+import {
+  cacheRefreshFunctions,
+  cleanupFunction,
+  definePipeline,
+} from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
 
 export interface CiOptions {
   /**
@@ -80,8 +86,8 @@ export interface Ci {
    *
    * Its input is inferred from the handler. Every call runs the job again, on
    * its own machine and with its own check, named `test (2)` the second time.
-   * `from()` is how jobs share one run. It has no return value, and a handler
-   * that returns one is a type error.
+   * A job that starts `from` another runs on a copy of its machine. A job has
+   * no return value, and a handler that returns one is a type error.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -93,7 +99,24 @@ export interface Ci {
    *   await $`fnm use ${node}`;
    * });
    * ```
+   *
+   * Give it an `input` schema to validate the input:
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
    */
+  job<TSchema extends StandardSchemaV1>(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>> & {
+      input: TSchema;
+    },
+    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>>;
   job<TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
     handler: (input: TInput) => Promise<void>,
@@ -184,19 +207,6 @@ export interface Ci {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
-  return createCiWithStore(client, options, memoryCacheStore());
-};
-
-/**
- * `createCi` with a given cache store. Not exported from the package: cache
- * entries live in memory for now (named Sandboxes snapshots replace this),
- * and tests pass one store to several clients to simulate later runs.
- */
-export const createCiWithStore = (
-  client: Inngest.Any,
-  options: CiOptions,
-  cacheStore: CacheStore,
-): Ci => {
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
   const isDev = () => {
@@ -207,14 +217,31 @@ export const createCiWithStore = (
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+  const matrices = new Map<string, Matrix<MatrixAxes>>();
+  const hooks = noopHooks;
+  let buildFunction: InngestFunction.Any | undefined;
 
   const internals: CiInternals = {
     client,
     isDev,
     github: provider,
-    checks: createCheckReporter(sinkFor(provider, client, isDev)),
-    cacheStore,
+    checks: createCheckReporter(
+      hooks.wrapSink(sinkFor(provider, client, isDev)),
+    ),
+    hooks,
     jobs,
+    // One build function for every job and matrix, made when first needed
+    // so a pipeline can invoke it whether or not `functions()` has run.
+    cacheBuild: () => {
+      buildFunction ??= cacheBuildFunction({
+        client,
+        internals,
+        jobs,
+        matrices,
+      });
+
+      return buildFunction;
+    },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
@@ -259,7 +286,19 @@ export const createCiWithStore = (
     }) as any,
 
     matrix: (config, handler) => {
-      return createMatrix(ci, config, handler);
+      // Inside a run, a matrix is rebuilt per call, so the same ID again is
+      // expected, as it is for jobs.
+      if (matrices.has(config.id) && !getRunScope()) {
+        throw new CiUsageError(
+          `Matrix IDs must be unique per app, and "${config.id}" is already defined.`,
+        );
+      }
+
+      const matrix = createMatrix(ci, config, handler);
+
+      matrices.set(config.id, matrix as Matrix<MatrixAxes>);
+
+      return matrix;
     },
 
     manual: (opts) => {
@@ -277,6 +316,9 @@ export const createCiWithStore = (
       return [
         ...pipelines,
         ...generated,
+        // Any job can be started from, so one function builds them all.
+        internals.cacheBuild(),
+        cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
         ...cacheRefreshFunctions({
           client,
           internals,

@@ -16,7 +16,10 @@ import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
-import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type {
+  createGroupTools,
+  GroupTools,
+} from "./components/InngestGroupTools.ts";
 import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
@@ -1027,18 +1030,35 @@ type ApplyMiddlewareCtxExtensionsInternal<
   : {};
 
 /**
- * Extract the step extensions from a middleware class (constructor).
+ * Extract the extensions to `ctx[TKey]` from a middleware class (constructor).
  * Looks at the return type of `transformFunctionInput` and extracts additional
- * properties on `ctx.step` (excluding base `StepTools` properties).
+ * properties on `ctx[TKey]` (excluding the properties of `TBase`).
  */
-type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
+type GetMiddlewareCtxKeyExtensions<
+  T,
+  TKey extends "step" | "group",
+  TBase,
+> = T extends Middleware.Class
   ? InstanceType<T> extends {
       transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
-        ctx: { step: infer TStep };
+        ctx: { [K in TKey]: infer TValue };
       };
     }
-    ? Omit<TStep, keyof Middleware.StepTools>
+    ? Omit<TValue, keyof TBase>
     : {}
+  : {};
+
+/**
+ * Merge the extensions to `ctx[TKey]` of all middleware. When no middleware is
+ * provided, returns an empty object.
+ */
+type ApplyAllMiddlewareCtxKeyExtensions<
+  TMw extends Middleware.Class[] | undefined,
+  TKey extends "step" | "group",
+  TBase,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareCtxKeyExtensions<First, TKey, TBase> &
+      ApplyAllMiddlewareCtxKeyExtensions<Rest, TKey, TBase>
   : {};
 
 /**
@@ -1048,19 +1068,14 @@ type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
  */
 export type ApplyAllMiddlewareStepExtensions<
   TMw extends Middleware.Class[] | undefined,
-> = TMw extends [Middleware.Class, ...Middleware.Class[]]
-  ? ApplyMiddlewareStepExtensionsInternal<TMw>
-  : {};
+> = ApplyAllMiddlewareCtxKeyExtensions<TMw, "step", Middleware.StepTools>;
 
 /**
- * Internal helper that recursively merges middleware step extensions.
+ * Apply all middleware group extensions, like `ApplyAllMiddlewareStepExtensions`.
  */
-type ApplyMiddlewareStepExtensionsInternal<
+export type ApplyAllMiddlewareGroupExtensions<
   TMw extends Middleware.Class[] | undefined,
-> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
-  ? GetMiddlewareStepExtensions<First> &
-      ApplyMiddlewareStepExtensionsInternal<Rest>
-  : {};
+> = ApplyAllMiddlewareCtxKeyExtensions<TMw, "group", GroupTools>;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -1969,6 +1984,60 @@ export interface StepOptions {
    * `group.parallel()`.
    */
   parallelMode?: "race";
+
+  /**
+   * Group this step's trace under a span, nested inside any
+   * `group["~span"]()` scope the step is called in.
+   *
+   * @internal Unstable and may change without a major version bump.
+   */
+  "~span"?: StepSpan;
+
+  /**
+   * EXPERIMENTAL. The library that created this step on the user's behalf, as
+   * `"<package>@<version>"`, such as `"@inngest/ci@0.1.0"`. Leave it unset for
+   * steps the user wrote themselves.
+   *
+   * It separates what the user wrote from what a library does for them, so a
+   * trace can show both. The Inngest UI de-emphasises steps whose origin is
+   * an Inngest package.
+   *
+   * When unset, a step inherits the origin of the innermost span it is in
+   * that has one (see {@link StepSpan.origin}), else it has no origin. When
+   * set, it overrides any inherited origin.
+   *
+   * @internal Unstable and may change or be removed without a major version
+   * bump.
+   */
+  "~origin"?: string;
+}
+
+/**
+ * A span that groups steps in a trace. Steps under the same path of span IDs
+ * share a span, and `name` defaults to `id`. `kind` says what sort of thing
+ * the span is, such as `"job"`, so a UI can label it.
+ *
+ * @internal Unstable and may change without a major version bump.
+ */
+export interface StepSpan {
+  id: string;
+  name?: string;
+  kind?: string;
+
+  /**
+   * EXPERIMENTAL. The library that created this span on the user's behalf,
+   * as `"<package>@<version>"`, such as `"@inngest/ci@0.1.0"`. Leave it unset
+   * for spans that stand for the user's own code.
+   *
+   * Steps inside the span inherit it unless they set their own `"~origin"`,
+   * or a span nested inside this one sets its own origin. A nested span that
+   * sets none inherits this one's. The Inngest UI de-emphasises spans and
+   * steps whose origin is an Inngest package.
+   *
+   * @internal Unstable and may change or be removed without a major version
+   * bump.
+   */
+  origin?: string;
 }
 
 /**

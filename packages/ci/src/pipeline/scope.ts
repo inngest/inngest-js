@@ -5,18 +5,23 @@
  * @module
  */
 
-import type { GetStepTools, Inngest } from "inngest";
+import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
-import { runWithAsyncCtx } from "inngest/experimental";
+import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
+import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { ResolvedSource } from "../github/source.ts";
 import type {
-  CacheEntry,
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
   MachineConfig,
   RepoContext,
 } from "../types.ts";
+import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import type { CiHooks } from "./hooks.ts";
+import { spans } from "./names.ts";
+import { inSpan } from "./spans.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -25,14 +30,47 @@ import type {
  */
 export const scopeSeparator = " › ";
 
+/** A step ID built from parts, as in `test › machine › setup`. */
+export const joinId = (...parts: string[]): string => {
+  return parts.join(scopeSeparator);
+};
+
+/** What a rebuilt job's path adds to its ID, as in `base (rebuild)`. */
+export const rebuildSuffix = " (rebuild)";
+
 /** The default working directory, which is where `checkout()` puts the repo. */
 export const defaultCwd = "/work";
 
 /**
- * Where a job keeps its handler, so `from()` can re-run it on another machine
- * when there are no snapshots to copy from.
+ * The local working tree this run reads, when it has one. A run with local
+ * repository data still talks to GitHub when `INNGEST_CI_GITHUB=live`.
  */
-export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
+export const localRepo = (
+  run: Pick<CiRunScope, "repo">,
+): NonNullable<RepoContext["local"]> | undefined => {
+  if (process.env.INNGEST_CI_GITHUB === "live") {
+    return undefined;
+  }
+
+  return run.repo?.local;
+};
+
+/**
+ * Where a matrix combination's job config remembers the matrix and combination
+ * it came from, so its snapshot is built by the matrix's build function.
+ */
+export const matrixOriginKey = Symbol("inngest/ci.matrixOrigin");
+
+/** The matrix and combination a job was expanded from, if it was. */
+export const matrixOriginOf = (
+  config: JobConfig,
+): { id: string; combo: Record<string, unknown> } | undefined => {
+  return (
+    config as unknown as {
+      [matrixOriginKey]?: { id: string; combo: Record<string, unknown> };
+    }
+  )[matrixOriginKey];
+};
 
 /**
  * A machine held by a job or an extra machine scope. It's a promise so
@@ -49,6 +87,21 @@ export interface MachineHandle {
    * ambiguous start never adopts one of them.
    */
   claimedProcessIds?: Set<string>;
+}
+
+/**
+ * What a build run's job ended with, which the run hands back to the run that
+ * invoked it. A build run has one job, so nothing else writes it.
+ */
+export interface BuildOutcome {
+  /** The job's snapshot, if it had a machine and snapshots could be taken. */
+  snapshotId?: string;
+  /** Set when the snapshot is the job's cache entry, found or made. */
+  cached?: CachedSnapshot;
+  /** Whether the snapshot was already there, rather than built by this run. */
+  reused: boolean;
+  /** Whether the job ran commands, so it had a machine to snapshot. */
+  hadMachine: boolean;
 }
 
 export interface JobSummary {
@@ -72,9 +125,7 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  // biome-ignore lint/suspicious/noExplicitAny: CacheStore
-  cacheStore: any;
-  /** Every job defined on the client, so a cache key can look up its parents. */
+  /** Every job defined on the client, so a job's `from` can find its parent. */
   jobs: Map<
     string,
     {
@@ -85,8 +136,15 @@ export interface CiInternals {
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
+  /** What the run tells a tool that watches it. Does nothing by default. */
+  hooks: CiHooks;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
+  /**
+   * The one function that builds the snapshot of any job, or of a matrix's
+   * combinations, in a run of its own. Which one is in the invoke's data.
+   */
+  cacheBuild: () => InngestFunction.Any;
   isDev: () => boolean;
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };
@@ -130,31 +188,37 @@ export interface CiRunScope {
   event: unknown;
   repo?: RepoContext;
   /**
-   * The first run of each job in this pipeline run, keyed by job ID. It's the
-   * shared one `from()` copies from. Later direct calls aren't stored.
+   * The builds `from` has asked for, keyed by request: the parent's job ID
+   * (with its input, when it has one), or the same plus `(rebuild)` for a
+   * snapshot that went bad. Each is the one `step.invoke()` of the parent's
+   * build, so children of one parent share it. It holds promises and nothing
+   * else, and no job reads another job's state through it.
    */
-  jobs: Map<string, Promise<void>>;
-  /** How many runs of each job have started, keyed by job ID. */
+  builds: Map<string, Promise<CacheBuildResult>>;
+  /**
+   * The repositories and refs `checkout()` and `files()` have resolved to a
+   * commit, keyed by repository and ref, so each is resolved by one step per
+   * run. It holds promises and nothing else.
+   */
+  sources: Map<string, Promise<ResolvedSource>>;
+  /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * The jobs that started `from()` each job, keyed by the parent's job ID and
-   * holding the children's paths.
-   */
-  fromChildren: Map<string, Set<string>>;
-  /** Machines created in this run, keyed by scope path. */
-  machines: Map<string, Promise<MachineHandle>>;
-  /** Snapshots taken of finished jobs, keyed by job path. */
-  snapshots: Map<string, Promise<string | undefined>>;
-  /**
-   * Snapshots this run took itself, by ID. They're deleted when the run ends,
-   * so a snapshot the run keeps (a cache entry, `keepOnFailure`) is removed
-   * from here, and one it only restored is never added.
+   * Snapshots the builds this run asked for left for it, by ID: a `from`
+   * parent's without a `cache`, and the unnamed fallback of any build. They are
+   * deleted when the run ends. A named cache snapshot is never added, so later
+   * runs find it.
    */
   createdSnapshots: Set<string>;
-  /** Cache entries resolved this run, keyed by job path. */
-  cacheEntries: Map<string, CacheEntry | undefined>;
-  /** Sandbox IDs created in this run, for cleanup. */
-  sandboxes: Set<string>;
+  /**
+   * Set when this run is a build: one job's snapshot, built for the run that
+   * invoked it. It has no checks of its own and reports to that run.
+   */
+  build?: CacheBuildData;
+  /** What the build's job ended with, which the build hands back. */
+  outcome?: BuildOutcome;
+  /** What the build's job reported, which the build hands back. */
+  report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
   /**
@@ -189,12 +253,10 @@ export interface CiRunScope {
   asyncCtx: AsyncContext;
   /** Step ID counters, keyed by the ID's base. */
   counters: Map<string, number>;
-  /** Set when snapshots turned out to be unavailable, so `from()` fell back. */
-  snapshotsUnavailable: boolean;
   /** Warnings to surface on the pipeline check. */
   warnings: string[];
-  /** The run's changed files, resolved once. */
-  changedFiles?: string[];
+  /** The run's changed files, read once; `null` when they can't be read. */
+  changedFiles?: Promise<string[] | null>;
   /** Markdown added with `report.summary()` outside a job. */
   pipelineSummaries: string[];
   /** Annotations added with `report.annotate()` outside a job. */
@@ -212,10 +274,31 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
-  fromCalled: boolean;
+  /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
+  rebuildParent?: () => Promise<void>;
+  /**
+   * Asks for the `from` parent's snapshot to be built again, once per run
+   * whatever the number of children that need it, and gives the new one. Set
+   * by `startFrom`.
+   *
+   * With `broken`, the snapshot failed to start twice, so it is deleted first
+   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
+   * alone, as when another build is still taking the snapshot.
+   */
+  rebuildSnapshot?: (why: {
+    broken: boolean;
+    unnamed: boolean;
+  }) => Promise<string | undefined>;
+  /**
+   * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
+   * has to be brought to where the snapshot would have been.
+   */
+  restoreFallback?: () => Promise<void>;
+  /** What the job's first machine is for, shown while it starts. */
+  startNote?: string;
+  /** The one run of `restoreFallback`, which every other command waits on. */
+  fallbackRan?: Promise<void>;
   fromJobIds: string[];
-  /** The input each `from()` parent was called with, by job ID. */
-  fromInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];
@@ -231,6 +314,8 @@ export interface CiJobScope {
 interface CiStore {
   run?: CiRunScope;
   job?: CiJobScope;
+  /** The job whose `restoreFallback` is running here. Its commands don't wait on it. */
+  restoring?: CiJobScope;
 }
 
 type CiAls = {
@@ -278,11 +363,25 @@ const getStore = (): CiStore | undefined => {
   return resolvedAls?.getStore();
 };
 
+/**
+ * The ID of the pipeline run at the root: this run, or for a build run, the
+ * root it was invoked with. It travels in the invoke data, never in shared
+ * memory.
+ */
+export const rootRunIdOf = (run: CiRunScope): string => {
+  return run.build?.rootRunId ?? run.runId;
+};
+
 export const getRunScope = (): CiRunScope | undefined => {
   return getStore()?.run;
 };
 export const getJobScope = (): CiJobScope | undefined => {
   return getStore()?.job;
+};
+
+/** Whether this code is part of `scope`'s `restoreFallback`. */
+export const isRestoring = (scope: CiJobScope): boolean => {
+  return getStore()?.restoring === scope;
 };
 
 /**
@@ -343,7 +442,7 @@ export const nextStepId = (
   scopePath: string | undefined,
   label: string,
 ): string => {
-  const base = scopePath ? `${scopePath}${scopeSeparator}${label}` : label;
+  const base = scopePath ? joinId(scopePath, label) : label;
   const seen = (run.counters.get(base) ?? 0) + 1;
 
   run.counters.set(base, seen);
@@ -439,9 +538,16 @@ export const withScopePreserved = <T extends object>(tools: T): T => {
   return withStepIdPrefix(tools);
 };
 
+/**
+ * Prefix a step's ID with its scope path, and name it by the ID it was given,
+ * since its job's span already shows the rest.
+ */
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {
-    return `${prefix}${scopeSeparator}${idOrOptions}`;
+    return {
+      id: joinId(prefix, idOrOptions),
+      name: idOrOptions,
+    };
   }
 
   if (
@@ -454,7 +560,7 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
 
     return {
       ...opts,
-      id: `${prefix}${scopeSeparator}${opts.id}`,
+      id: joinId(prefix, opts.id),
       name: opts.name ?? opts.id,
     };
   }
@@ -463,16 +569,54 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
 };
 
 /**
+ * Run `fn` in a job's trace span. The span is top-level wherever the job is
+ * started from, so work on its machine that another job asks for later, like
+ * a snapshot, comes back to it.
+ */
+export const inJobSpan = <R>(
+  run: CiRunScope,
+  config: JobConfig,
+  jobPath: string,
+  fn: () => R,
+): R => {
+  return runWithAsyncCtx(run.asyncCtx, () => {
+    return inSpan(spans.job(config, jobPath), fn);
+  });
+};
+
+/**
+ * Run `fn` outside every job's span, wherever it's called from. Jobs that
+ * start from one parent share its build, so the build's steps belong to none
+ * of them, and which one asks first must not decide where they sit in the
+ * trace.
+ */
+export const outsideJobs = <R>(run: CiRunScope, fn: () => R): R => {
+  return runWithAsyncCtx(run.asyncCtx, fn);
+};
+
+/**
+ * Run `fn` in the run's one top-level GitHub span, wherever it's called from.
+ * Reporting isn't a job's own work, so a job's span ends with the job, and a
+ * failed job doesn't end on a green check update.
+ */
+export const inGitHubSpan = <R>(run: CiRunScope, fn: () => R): R => {
+  return runWithAsyncCtx(run.asyncCtx, () => {
+    return inSpan(spans.github(), fn);
+  });
+};
+
+/**
  * Run a job handler inside both the CI job scope and a copy of the SDK's async
- * context whose `step` prefixes IDs with the job path.
+ * context whose `step` prefixes IDs with the job path. It copies the context
+ * `inJobSpan` set, so the handler's steps are in the job's span.
  */
 export const runJobBody = async <R>(
   scope: CiJobScope,
   fn: () => Promise<R>,
 ): Promise<R> => {
-  const { asyncCtx } = scope.run;
+  const asyncCtx = await getAsyncCtx();
 
-  if (!asyncCtx.execution) {
+  if (!asyncCtx?.execution) {
     return runInScope({ run: scope.run, job: scope }, fn);
   }
 

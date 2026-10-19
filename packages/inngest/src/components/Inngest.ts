@@ -46,6 +46,7 @@ import {
 import type { FeatureObservations } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import {
   type ApplyAllMiddlewareCtxExtensions,
+  type ApplyAllMiddlewareGroupExtensions,
   type ApplyAllMiddlewareStepExtensions,
   type ApplyAllMiddlewareTransforms,
   type BaseContext,
@@ -64,6 +65,7 @@ import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
@@ -373,11 +375,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    *
    * @example
    * ```ts
-   * // Update metadata for the current run
-   * await inngest.metadata.update({ status: "processing" });
+   * // Set metadata for the current run
+   * await inngest.metadata.set({ status: "processing" });
    *
-   * // Update metadata for a different run
-   * await inngest.metadata.run(otherRunId).update({ key: "val" });
+   * // Set metadata for a different run
+   * await inngest.metadata.run(otherRunId).set({ key: "val" });
    *
    * ```
    */
@@ -725,7 +727,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       metadata: [
         {
           kind: "inngest.warnings",
-          op: "merge",
+          op: "set",
           values: {
             [`sdk.${kind}`]: formatLogMessage(log),
           },
@@ -1407,6 +1409,11 @@ export namespace Inngest {
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
             ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+          group: GroupTools &
+            ApplyAllMiddlewareGroupExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
         }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
@@ -1425,6 +1432,11 @@ export namespace Inngest {
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
             ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+          group: GroupTools &
+            ApplyAllMiddlewareGroupExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
         }
     >,
   >(
@@ -1483,6 +1495,10 @@ export type GetFunctionInput<TClient extends Inngest.Any> = Parameters<
       > & {
         step: ReturnType<typeof createStepTools<TClient>> &
           ApplyAllMiddlewareStepExtensions<
+            ClientOptionsFromInngest<TClient>["middleware"]
+          >;
+        group: GroupTools &
+          ApplyAllMiddlewareGroupExtensions<
             ClientOptionsFromInngest<TClient>["middleware"]
           >;
       }

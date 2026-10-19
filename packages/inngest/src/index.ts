@@ -83,6 +83,8 @@ export {
   isInngestRequest,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
+export type { DurationInput } from "./helpers/duration.ts";
+export { durationToMs } from "./helpers/duration.ts";
 export { serializeError } from "./helpers/errors.ts";
 export { wrapStringFirstLogger } from "./helpers/log.ts";
 export { slugify } from "./helpers/strings.ts";

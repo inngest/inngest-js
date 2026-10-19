@@ -9,8 +9,7 @@
 
 - **Plain TypeScript.** Use `if`, loops, `Promise.all`, types, and your own SDKs. [Pipelines](https://www.inngest.com/docs/labs/ci/pipelines)
 - **Durable jobs.** A retry never reruns work that already passed. [Concepts](https://www.inngest.com/docs/labs/ci/concepts)
-- **Jobs that start from other jobs.** `from()` starts a job on a copy of another job's machine. [Machines](https://www.inngest.com/docs/labs/ci/machines#start-a-job-from-another-job)
-- **The same code locally.** Run a pipeline against the Dev Server with your uncommitted changes. [Quick start](https://www.inngest.com/docs/labs/ci/quick-start#5-run-locally)
+- **Jobs that start from other jobs.** `from` starts a job on a copy of another job's machine. [Machines](https://www.inngest.com/docs/labs/ci/machines#start-a-job-from-another-job)
 - **GitHub checks.** One check for each pipeline and one for each job. [Checks and reports](https://www.inngest.com/docs/labs/ci/checks-and-reports)
 - **Flow control.** Cancel superseded runs, cap concurrency, debounce, throttle, and rate limit. [Flow control](https://www.inngest.com/docs/labs/ci/pipelines#flow-control)
 
@@ -20,7 +19,7 @@ This pipeline runs on every pull request. `base` installs dependencies once. `li
 
 ```ts
 import { Inngest } from "inngest";
-import { createCi, github, checkout, from, $ } from "@inngest/ci";
+import { createCi, github, checkout, $ } from "@inngest/ci";
 
 const inngest = new Inngest({ id: "my-app" });
 const ci = createCi(inngest);
@@ -41,18 +40,54 @@ const base = ci.job("base", async () => {
   await $`pnpm install`;
 });
 
-const lint = ci.job("lint", async () => {
-  await from(base);
+const lint = ci.job({ id: "lint", from: base }, async () => {
   await $`pnpm lint`;
 });
 
-const test = ci.job("test", async () => {
-  await from(base);
+const test = ci.job({ id: "test", from: base }, async () => {
   await $`pnpm test`.retries(1);
 });
 ```
 
 A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
+
+## Caching
+
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+
+```ts
+const base = ci.job(
+  { id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } },
+  async () => {
+    await checkout();
+    await $`pnpm install`;
+  },
+);
+```
+
+## Another repository or ref
+
+`checkout()` and `files()` take `repo` and `ref`. A ref is a branch, tag or commit, and it's resolved to a commit once per run.
+
+```ts
+await checkout({ repo: "acme/platform" });                // default branch
+await checkout({ repo: "acme/platform", ref: "v2.1.0" });
+await checkout({ ref: "main" });                          // this repository
+
+const image = ci.job(
+  {
+    id: "image",
+    cache: {
+      key: files("images/node-base/**", { repo: "acme/platform", ref: "main" }),
+    },
+  },
+  async () => {
+    await checkout({ repo: "acme/platform", ref: "main" });
+  },
+);
+```
+
+A run whose trigger has no repository, like a cron, needs `repo`. The GitHub App must have access to the repository. Locally, `checkout()` still uploads your working tree unless you name another repository or a `ref`.
 
 ## Install
 
@@ -62,7 +97,7 @@ npm install @inngest/ci inngest
 
 ## Get started
 
-Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to write, serve, and run your first pipeline locally.
+Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to write and serve your first pipeline.
 
 ## Learn more
 
@@ -70,7 +105,7 @@ Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to wr
 - [Pipelines and triggers](https://www.inngest.com/docs/labs/ci/pipelines)
 - [Jobs](https://www.inngest.com/docs/labs/ci/jobs)
 - [Commands](https://www.inngest.com/docs/labs/ci/commands)
-- [Machines and `from()`](https://www.inngest.com/docs/labs/ci/machines)
+- [Machines and `from`](https://www.inngest.com/docs/labs/ci/machines)
 - [Caching](https://www.inngest.com/docs/labs/ci/caching)
 - [Checks and reports](https://www.inngest.com/docs/labs/ci/checks-and-reports)
 - [Run on GitHub](https://www.inngest.com/docs/labs/ci/reference#run-on-github)

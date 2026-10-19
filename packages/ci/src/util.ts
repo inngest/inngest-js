@@ -1,6 +1,6 @@
 /**
  * Small shared helpers: hashing, durations, glob matching, formatting,
- * warn-once and running local git.
+ * and running local git.
  *
  * @module
  */
@@ -179,6 +179,15 @@ export const filterPaths = (
   });
 };
 
+const msPerUnit: Record<string, number> = {
+  ms: 1,
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+
 /**
  * Parse a duration string like `"10m"` into milliseconds. Only the small
  * subset CI uses is supported, because these are written by hand in pipelines.
@@ -192,38 +201,10 @@ export const durationToMs = (duration: string): number => {
     );
   }
 
-  const matches = duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g);
   let total = 0;
 
-  for (const match of matches) {
-    const value = Number(match[1]);
-
-    switch (match[2]) {
-      case "ms":
-        total += value;
-
-        break;
-      case "s":
-        total += value * 1000;
-
-        break;
-      case "m":
-        total += value * 60_000;
-
-        break;
-      case "h":
-        total += value * 3_600_000;
-
-        break;
-      case "d":
-        total += value * 86_400_000;
-
-        break;
-      case "w":
-        total += value * 604_800_000;
-
-        break;
-    }
+  for (const match of duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g)) {
+    total += Number(match[1]) * (msPerUnit[match[2] as string] as number);
   }
 
   return total;
@@ -260,17 +241,21 @@ export const stableStringify = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
+const hasErrorCode = (error: unknown, code: string): boolean => {
+  const { code: own, cause } = (error ?? {}) as {
+    code?: string;
+    cause?: { code?: string };
+  };
+
+  return own === code || cause?.code === code;
+};
+
 /**
  * Whether the Sandbox API said the machine doesn't exist, which is the only
  * failure cleanup may ignore.
  */
 export const isSandboxNotFound = (error: unknown): boolean => {
-  const code = (error as { code?: string } | undefined)?.code;
-
-  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
-    ?.code;
-
-  return code === "sandbox_not_found" || causeCode === "sandbox_not_found";
+  return hasErrorCode(error, "sandbox_not_found");
 };
 
 /**
@@ -278,15 +263,7 @@ export const isSandboxNotFound = (error: unknown): boolean => {
  * deleting one that is already gone.
  */
 export const isSnapshotNotFound = (error: unknown): boolean => {
-  const code = (error as { code?: string } | undefined)?.code;
-
-  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
-    ?.code;
-
-  return (
-    code === "sandbox_snapshot_not_found" ||
-    causeCode === "sandbox_snapshot_not_found"
-  );
+  return hasErrorCode(error, "sandbox_snapshot_not_found");
 };
 
 /**
@@ -306,6 +283,66 @@ export const formatDuration = (ms: number): string => {
   }
 
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+};
+
+/** Fixed wording for the Sandbox errors that are worth naming. */
+const codeReasons = new Map([
+  ["cloud_login_required", "not logged in to Inngest"],
+  ["environment_required", "no Inngest environment selected"],
+  ["access_denied", "Sandboxes not enabled for your account"],
+  ["sandbox_start_failed", "machine failed to start"],
+]);
+
+/**
+ * A failure reason short enough for a narrow column or a check title. Known
+ * Sandbox errors get fixed wording, matched by `code` (or the cause's);
+ * anything else is its first non-empty line without an `Error:` style prefix
+ * or trailing period, capped at 60 characters. No message gives an empty
+ * string.
+ */
+export const shortReason = (error: unknown): string => {
+  const { code, message, cause } = (error ?? {}) as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string };
+  };
+  const text = typeof message === "string" ? message : "";
+  const codes = [code, cause?.code];
+
+  const known = codes
+    .map((candidate) => {
+      return codeReasons.get(String(candidate));
+    })
+    .find(Boolean);
+
+  if (known) {
+    return known;
+  }
+
+  if (
+    codes.includes("sandbox_start_timed_out") ||
+    /did not reach RUNNING/i.test(text)
+  ) {
+    const ms = Number(/within (\d+) milliseconds/i.exec(text)?.[1]);
+
+    if (!Number.isFinite(ms)) {
+      return "machine didn't start";
+    }
+
+    const waited = ms % 60_000 === 0 ? `${ms / 60_000}m` : formatDuration(ms);
+
+    return `machine didn't start in ${waited}`;
+  }
+
+  const first = text.split("\n").find((part) => {
+    return part.trim();
+  });
+  const line = (first ?? "")
+    .trim()
+    .replace(/^(?:\w*Error:\s*)+/, "")
+    .replace(/\.$/, "");
+
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
 };
 
 /**
@@ -332,27 +369,6 @@ export const formatRelative = (from: string, now = Date.now()): string => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
-const warned = new Set<string>();
-
-/**
- * Warn at most once per key, so a deprecated option in a loop doesn't fill the
- * logs.
- */
-export const warnOnce = (
-  // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
-  logger: { warn: (...args: any[]) => void } | undefined,
-  key: string,
-  message: string,
-): void => {
-  if (warned.has(key)) {
-    return;
-  }
-
-  warned.add(key);
-
-  (logger ?? console).warn({ feature: key }, message);
-};
-
 /**
  * Run `git` in a local directory and return its stdout.
  */
@@ -368,4 +384,53 @@ export const git = async (cwd: string, args: string[]): Promise<string> => {
 /** The message of anything thrown, whether or not it's an `Error`. */
 export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
+};
+
+const ownerPattern = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+const namePattern = /^[A-Za-z0-9._-]+$/;
+
+/** Split `owner/name`, or say what a repository should look like. */
+export const parseRepo = (
+  fullName: string,
+): { owner: string; name: string } => {
+  const [owner, name, ...rest] = fullName.split("/");
+
+  if (
+    !owner ||
+    !name ||
+    rest.length > 0 ||
+    !ownerPattern.test(owner) ||
+    !namePattern.test(name) ||
+    name === "." ||
+    name === ".."
+  ) {
+    throw new CiUsageError(
+      `\`repo\` must be "owner/name", but got "${fullName}".`,
+    );
+  }
+
+  return { owner, name };
+};
+
+/**
+ * The value kept under `key`, made by `make` the first time it's asked for.
+ * Kept values are promises, so every caller of a key awaits the same work.
+ */
+export const once = <T>(
+  kept: Map<string, T>,
+  key: string,
+  make: () => T,
+): T => {
+  const known = kept.get(key);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const made = make();
+
+  kept.set(key, made);
+
+  return made;
 };

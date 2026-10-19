@@ -75,7 +75,6 @@ export type {
 } from "./github/triggers.ts";
 // Commands and machines
 export { $ } from "./machine/command.ts";
-export { from } from "./machine/from.ts";
 export { sandbox } from "./machine/sandbox.ts";
 // Client and pipelines
 export type { Ci, CiOptions } from "./pipeline/createCi.ts";
@@ -102,9 +101,12 @@ export type {
   Duration,
   EventDataOf,
   ExtraMachine,
+  FilesOptions,
   FlowControlOptions,
+  From,
   Job,
   JobConfig,
+  JobRef,
   MachineConfig,
   Matrix,
   MatrixAxes,

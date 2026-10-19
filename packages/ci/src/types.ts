@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestFunction } from "inngest";
 
 /**
@@ -148,10 +149,21 @@ export interface RepoContext {
 /**
  * A part of a cache key that's resolved at runtime, like `files()`.
  */
-export interface CacheKeyPart {
+export interface CacheKeyPart extends Readonly<FilesOptions> {
   readonly kind: "inngest/ci.cacheKeyPart";
   readonly type: "files";
   readonly patterns: string[];
+}
+
+/** Where `files()` reads from, when that isn't the run's own commit. */
+export interface FilesOptions {
+  /** The repository to read the files from, as `owner/name`. Defaults to the run's. */
+  repo?: string;
+  /**
+   * The branch, tag or commit to read them at. Defaults to the run's commit, or
+   * to the repository's default branch when `repo` is another repository.
+   */
+  ref?: string;
 }
 
 /**
@@ -165,16 +177,13 @@ export type CacheKey =
   | (() => Promise<string>);
 
 /**
- * A job's cache settings. `from()` shares a job's machine within one run, and
+ * A job's cache settings. `from` shares a job's machine within one run, and
  * only a `cache` key reuses it across runs.
  */
 export interface CacheConfig {
   /**
    * What the job depends on. If nothing in the key changed since the last
    * successful run, the job is reused.
-   *
-   * "Cache" reads a little oddly for jobs like `test` that don't restore
-   * anything; the trace and checks say "restored" or "passed at …" instead.
    */
   key?: CacheKey;
 
@@ -189,37 +198,15 @@ export interface CacheConfig {
    * their own scope.
    */
   scope?: "branch" | "global";
-}
 
-/**
- * A stored cache entry: a job's last successful run and where it came from.
- */
-export interface CacheEntry {
-  /** The resolved cache key. */
-  key: string;
-  /** The job that wrote the entry. */
-  jobId: string;
   /**
-   * The snapshot of the job's machine, if one was taken, for `from()`. It
-   * outlives the run that took it, unlike a run's other snapshots.
+   * How old a cached snapshot may be before it is rebuilt, like `"1d"`. A
+   * snapshot older than this, counted from when it was taken, is a miss: the
+   * job builds again and the new snapshot takes the name.
+   *
+   * Without it a snapshot is reused until its key changes or it expires.
    */
-  snapshotId?: string;
-  /** When the entry was written, as an ISO timestamp. */
-  builtAt: string;
-  /** The run that wrote the entry. */
-  builtBy: { runId: string; sha?: string; trigger: string };
-  /** The keys of the cached jobs this job started `from()` when it was built. */
-  fromKeys?: Record<string, string>;
-  /** The input each of those jobs was called with, by job ID. */
-  fromInputs?: Record<string, unknown>;
-}
-
-/** Where cache entries live. Internal: not exported from the package. */
-export interface CacheStore {
-  /** Read an entry, or `undefined` if there isn't one. */
-  get(key: string): Promise<CacheEntry | undefined>;
-  /** Write an entry, replacing any under the same key. */
-  set(key: string, entry: CacheEntry): Promise<void>;
+  maxAge?: Duration;
 }
 
 /**
@@ -234,18 +221,46 @@ export interface CacheStore {
  * });
  * ```
  */
-export interface JobConfig<_TInput = void> {
-  /** Unique within the CI client. It's the job's path in the trace and its check name. */
+export interface JobConfig<TInput = void> {
+  /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
+  /**
+   * The job to start from: this job runs on a copy of that job's machine, so
+   * it begins where the parent left off. The parent runs once however many
+   * jobs start from it.
+   *
+   * ```ts
+   * const install = ci.job("install", async () => {
+   *   await checkout();
+   *   await $`pnpm install`;
+   * });
+   *
+   * const test = ci.job({ id: "test", from: install }, async () => {
+   *   await $`pnpm test`;
+   * });
+   * ```
+   *
+   * A parent that takes input is given it with `job.with(input)`, and a
+   * parent can depend on this job's own input by passing a function:
+   *
+   * ```ts
+   * ci.job({ id: "web", from: build.with("web") }, …);
+   * ci.job({ id: "test", from: ({ input }) => build.with(input) }, …);
+   * ```
+   *
+   * To choose a parent from facts only known at run time, define two jobs and
+   * choose between them in the pipeline.
+   */
+  from?: From<TInput>;
+  /** What the trace calls the job. Defaults to `id`. */
+  name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
-   * Skip the job when nothing it depends on has changed since it last passed,
-   * and let jobs that start `from()` it reuse its machine.
-   *
-   * "Cache" reads oddly for a job like `test`, where nothing is restored and
-   * the job simply doesn't need to run again. The trace and checks say what
-   * actually happened: "restored" or "passed at …".
+   * Snapshot the job's machine when it passes, and reuse that snapshot while
+   * nothing in the key has changed: the job doesn't run again, and jobs that
+   * start `from` it start from the snapshot. A job that runs no commands has
+   * no machine, so it isn't cached.
    */
   cache?: CacheConfig;
   /** Check settings for this job. `false` means no job check. */
@@ -258,10 +273,31 @@ export interface JobConfig<_TInput = void> {
    * The duration is currently ignored: the snapshot is kept for the
    * platform's default retention, whatever you pass.
    *
-   * Every other snapshot a run takes for `from()` is deleted when the run
+   * Every other snapshot a run takes for `from` is deleted when the run
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
+  /**
+   * The shape of the job's input, as any Standard Schema (Zod, Valibot,
+   * ArkType, …). The handler gets the validated value.
+   *
+   * A cached job, and a job another starts `from`, is built in a run of its
+   * own, which is sent the input you gave as JSON and validates it again. So
+   * the input you give must survive JSON. The cache key is built from the
+   * schema's output, so that must be plain JSON too (no `Date`, `Map`, `Set`
+   * or `bigint`). Transforms that normalise input, such as trim, lowercase or
+   * defaults, are fine, and let varied inputs share a key.
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
+   */
+  input?: StandardSchemaV1;
 }
 
 /**
@@ -269,7 +305,7 @@ export interface JobConfig<_TInput = void> {
  *
  * Every call is its own run of the job, with its own machine, steps and check:
  * the second call in a pipeline run is `test (2)`. To share one run between
- * jobs, start them with `from()`, which builds the parent once.
+ * jobs, start them `from` it, which builds the parent once.
  *
  * A job is called for its side effects, so it resolves to nothing.
  */
@@ -278,7 +314,58 @@ export interface Job<TInput = void> {
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
+  /**
+   * This job with an input, for another job to start `from`.
+   *
+   * ```ts
+   * ci.job({ id: "web", from: build.with("web") }, …);
+   * ```
+   */
+  with(input: TInput): JobRef<TInput>;
+  /**
+   * The job's input type, for type checks only: it's never set. It lets a
+   * bare `from: job` accept only a job that runs without input.
+   *
+   * @internal
+   */
+  readonly "~input"?: (input: TInput) => void;
 }
+
+/**
+ * A job with the input to run it with, from `job.with(input)`.
+ */
+export interface JobRef<TInput = unknown> {
+  readonly kind: "inngest/ci.jobRef";
+  readonly job: Job<TInput>;
+  readonly input: TInput;
+}
+
+/**
+ * Any job with input, regardless of its input type.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
+export type AnyJobRef = JobRef<any>;
+
+/**
+ * A job as `from` takes it bare: one that runs without input. A job that
+ * needs input is given it with `job.with(input)`. Without the call signature,
+ * a function given to `from` is typed as the function of input it is.
+ */
+type JobLike = Pick<AnyJob, "id" | "kind" | "with"> & {
+  readonly "~input"?: (input: undefined) => void;
+};
+
+/**
+ * What a job can start `from`: a job, a job with input, or a function of the
+ * starting job's own input that gives either.
+ */
+export type From<TInput = void> =
+  | JobLike
+  | AnyJobRef
+  | ((ctx: {
+      /** The starting job's input. */
+      input: TInput;
+    }) => JobLike | AnyJobRef);
 
 /**
  * Any job, regardless of its input type.
@@ -593,6 +680,11 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
   machine?: MachineConfig | ((combo: MatrixCombo<TAxes>) => MachineConfig);
   /** Cache settings, per combination if you need them to differ. */
   cache?: CacheConfig | ((combo: MatrixCombo<TAxes>) => CacheConfig);
+  /**
+   * The job each combination starts `from`. A function is given the
+   * combination as its `input`.
+   */
+  from?: From<MatrixCombo<TAxes>>;
   /** Check settings for each combination's job. `false` means no job checks. */
   check?: false | { name?: string };
 }

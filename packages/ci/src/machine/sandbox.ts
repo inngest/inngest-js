@@ -6,11 +6,7 @@
 
 import { waitForHttp, waitForPort } from "../checkout/wait.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
-import {
-  countApi,
-  requireJobScope,
-  scopeSeparator,
-} from "../pipeline/scope.ts";
+import { countApi, joinId, requireJobScope } from "../pipeline/scope.ts";
 import type { Duration, ExtraMachine, MachineConfig } from "../types.ts";
 import { createCommandTag } from "./command.ts";
 import { ensureMachine } from "./machine.ts";
@@ -39,7 +35,7 @@ import { ensureMachine } from "./machine.ts";
  * | If the work… | Use |
  * | --- | --- |
  * | is independent, like lint and test | separate jobs |
- * | follows on from earlier work | separate jobs, with `from()` |
+ * | follows on from earlier work | separate jobs, with `from` |
  * | needs several machines at once | one job, with `sandbox()` |
  *
  * @throws {CiUsageError} When called outside a job.
@@ -53,7 +49,7 @@ export const sandbox = async (
   const job = requireJobScope("sandbox");
 
   countApi("sandbox");
-  const path = `${job.jobPath}${scopeSeparator}${name}`;
+  const path = joinId(job.jobPath, name);
 
   const existing = job.extras?.get(name);
 
@@ -64,9 +60,7 @@ export const sandbox = async (
       path,
       jobPath: job.jobPath,
       config: { ...job.config, id: path, machine: config },
-      fromCalled: false,
       fromJobIds: [],
-      fromInputs: {},
       annotations: [],
       summaries: [],
       env: {},
