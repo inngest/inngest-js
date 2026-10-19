@@ -172,6 +172,7 @@ const flowControl = (config: PipelineConfig) => {
     on: _on,
     check: _check,
     machine: _machine,
+    childRuns: _childRuns,
     repo: _repo,
     commentPermissions: _commentPermissions,
     ...rest
@@ -220,6 +221,7 @@ const newRunScope = ({
       : { checkName: config.check?.name ?? config.id }),
     jobChecks: config.check === false ? false : config.check?.jobs !== false,
     ...(config.machine ? { machine: config.machine } : {}),
+    childRuns: config.childRuns !== false,
     event: ctx.event,
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),

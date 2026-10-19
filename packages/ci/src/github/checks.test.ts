@@ -506,7 +506,7 @@ describe("a required check never hangs", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: [{ event: "test/event" }], retries: 1 },
+      { id: "pr", on: [{ event: "test/event" }], retries: 1, childRuns: false },
       async () => {
         await Promise.all([failing(), slow()]);
       },

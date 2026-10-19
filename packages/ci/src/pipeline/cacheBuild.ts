@@ -15,7 +15,7 @@
  */
 
 import type { Inngest, InngestFunction } from "inngest";
-import { NonRetriableError } from "inngest";
+import { internalEvents, NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -32,7 +32,7 @@ import type { RegisteredJob } from "./job.ts";
 import { builtResult, runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
 import { pipelineFunctionOptions, runPipeline } from "./pipeline.ts";
-import type { CiInternals, JobSummary } from "./scope.ts";
+import type { CiInternals, CiRunScope, JobSummary } from "./scope.ts";
 import { getRunScope, requestOf } from "./scope.ts";
 
 /** The event every invoked function runs from. */
@@ -87,6 +87,11 @@ export interface CacheBuildData extends Record<string, unknown> {
    * it. The invoking run starts its jobs from it and deletes it at its end.
    */
   unnamed?: boolean;
+  /**
+   * Set for a job the pipeline called itself, which nothing starts from: the
+   * run takes no snapshot, and `cacheKey` only keeps such runs apart.
+   */
+  direct?: boolean;
   /**
    * What the job starts from, as the invoking run found it. The job's name was
    * worked out from this snapshot, so the build starts from it rather than
@@ -143,6 +148,8 @@ export interface CacheBuildResult {
   summary?: JobSummary;
   /** What the invoking run should say about the build, like a fallback. */
   warnings: string[];
+  /** How often the job used each public API, for the invoking run's metadata. */
+  apis?: CiRunScope["apis"];
   /** What the job reported while it ran, for the invoking job's check. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
 }
@@ -181,6 +188,18 @@ export const cacheBuildFunction = ({
       // runs that miss together from each building: it only keeps one step per
       // name at a time. A build that finds the name taken adopts the winner.
       concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
+      // A run that ends or is cancelled takes with it the jobs it called, which
+      // have no one left to report to. A cache build outlives its invoker.
+      cancelOn: [
+        {
+          event: internalEvents.FunctionCancelled,
+          if: "async.data.run_id == event.data.rootRunId",
+        },
+        {
+          event: internalEvents.FunctionFinished,
+          if: "event.data.direct == true && async.data.run_id == event.data.rootRunId",
+        },
+      ],
       ...pipelineFunctionOptions,
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
@@ -263,6 +282,7 @@ const buildSnapshot = async ({
   return builtResult(request, data.jobId, {
     createdSnapshots: [...(run?.createdSnapshots ?? [])],
     warnings: run?.warnings ?? [],
+    ...(run ? { apis: run.apis } : {}),
     ...(run?.report ? { report: run.report } : {}),
   });
 };

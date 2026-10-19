@@ -109,9 +109,12 @@ describe("pipelines and jobs", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -178,13 +181,16 @@ describe("pipelines and jobs", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
 
-      await test();
+        await test();
 
-      await test();
-    });
+        await test();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -250,9 +256,12 @@ describe("pipelines and jobs", () => {
       await $`pnpm build`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([build(), build()]);
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all([build(), build()]);
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -292,11 +301,14 @@ describe("pipelines and jobs", () => {
       await $`echo two`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await one();
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await one();
 
-      await two();
-    });
+        await two();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -325,9 +337,12 @@ describe("pipelines and jobs", () => {
       await $`pnpm build`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -349,9 +364,12 @@ describe("pipelines and jobs", () => {
       await $`pnpm build --filter web`.as("build web");
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -734,9 +752,12 @@ describe("commands", () => {
       await $`flaky`.retries(1);
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -766,9 +787,12 @@ describe("commands", () => {
       output = await $`slow`.text();
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -955,9 +979,12 @@ describe("commands", () => {
       seen = { first, second, server: await server.output() };
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1072,9 +1099,12 @@ describe("from", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([lint(), test()]);
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all([lint(), test()]);
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1258,7 +1288,7 @@ describe("from", () => {
     );
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
         await Promise.all([web(), web2(), api2()]);
       }),
       { event: prEvent },
@@ -1285,11 +1315,14 @@ describe("from", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await base();
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await base();
 
-      await lint();
-    });
+        await lint();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1325,11 +1358,14 @@ describe("from", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
 
-      await base();
-    });
+        await base();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1364,9 +1400,12 @@ describe("from", () => {
         await $`pnpm lint`;
       });
 
-      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        await lint();
-      });
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        async () => {
+          await lint();
+        },
+      );
 
       const result = await runFunction(pipeline, {
         event: {
@@ -1790,9 +1829,12 @@ describe("from", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return test();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return test();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1918,9 +1960,12 @@ describe("machines", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -1946,9 +1991,12 @@ describe("matrix", () => {
       },
     );
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await compat();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await compat();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -2327,7 +2375,7 @@ describe("cache", () => {
       });
 
       return runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
           await Promise.all([lint(), test()]);
 
           return getRunScope()?.warnings;
@@ -2401,11 +2449,14 @@ describe("cache", () => {
         );
 
         const result = await runFunction(
-          ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-            await buildJob();
+          ci.pipeline(
+            { id: "pr", on: prTrigger, childRuns: false },
+            async () => {
+              await buildJob();
 
-            return getRunScope()?.warnings;
-          }),
+              return getRunScope()?.warnings;
+            },
+          ),
           { event: prEvent, runId },
         );
 
@@ -2611,7 +2662,7 @@ describe("cache", () => {
     });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
         await lint();
 
         return getRunScope()?.warnings;
@@ -2650,7 +2701,7 @@ describe("cache", () => {
       });
 
       const result = await runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
           await lint();
 
           return getRunScope()?.warnings;
@@ -2714,15 +2765,18 @@ describe("cache", () => {
       });
 
       const result = await runFunction(
-        ci.pipeline({ id: "ci", on: options.on ?? prTrigger }, async () => {
-          await Promise.all(
-            children.map((child) => {
-              return child();
-            }),
-          );
+        ci.pipeline(
+          { id: "ci", on: options.on ?? prTrigger, childRuns: false },
+          async () => {
+            await Promise.all(
+              children.map((child) => {
+                return child();
+              }),
+            );
 
-          return getRunScope()?.warnings;
-        }),
+            return getRunScope()?.warnings;
+          },
+        ),
         { event: options.event ?? prEvent },
       );
 
@@ -3529,9 +3583,12 @@ describe("checks", () => {
       await report.summary("Coverage: **91%**");
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -3947,9 +4004,12 @@ describe("failures that retrying cannot fix", () => {
       },
     );
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return compat();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return compat();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -4233,7 +4293,7 @@ describe("checks across retries", () => {
       });
 
       const pipeline = ci.pipeline(
-        { id: "pr", on: prTrigger, retries: 1 },
+        { id: "pr", on: prTrigger, childRuns: false, retries: 1 },
         async (ctx) => {
           attempt = ctx.attempt;
 
@@ -4328,9 +4388,12 @@ describe("cache builds in their own run", () => {
       await $`pnpm lint`;
     });
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return lint();
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return lint();
+      },
+    );
   };
 
   /** A pipeline that calls the cached job itself, so it has a check. */
@@ -4338,9 +4401,12 @@ describe("cache builds in their own run", () => {
     ci: ReturnType<typeof setup>["ci"],
     base: ReturnType<typeof buildJob>,
   ) => {
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return base();
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        return base();
+      },
+    );
   };
 
   const installs = (api: ReturnType<typeof createFakeSandboxApi>) => {
@@ -4415,9 +4481,12 @@ describe("cache builds in their own run", () => {
     const base = buildJob(ci);
 
     const first = childPipeline(ci, base);
-    const second = ci.pipeline({ id: "push", on: prTrigger }, async () => {
-      return base();
-    });
+    const second = ci.pipeline(
+      { id: "push", on: prTrigger, childRuns: false },
+      async () => {
+        return base();
+      },
+    );
 
     const [a, b] = await Promise.all([
       runFunction(first, { event: prEvent, runId: "01RUNA" }),

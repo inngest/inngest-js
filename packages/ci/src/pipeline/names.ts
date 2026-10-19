@@ -414,6 +414,10 @@ export const traceName = {
     return `Build ${path} in its own run`;
   },
 
+  runInOwnRun: (path: string): string => {
+    return `Run ${path} in its own run`;
+  },
+
   canUser: (login: string, permission: string): string => {
     return `Check ${login} can ${permission}`;
   },

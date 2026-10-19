@@ -48,7 +48,10 @@ const ciTest = (
     ci,
     /** Run the pipeline whose handler `define` makes from `ci`. */
     run: (define: (ci: Ci) => () => Promise<unknown>): Promise<RunResult> => {
-      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, define(ci));
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        define(ci),
+      );
 
       return runFunction(pipeline, { event: prEvent });
     },
