@@ -836,7 +836,12 @@ export type MatrixCombo<TAxes> = {
  * );
  * ```
  */
-export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
+export interface MatrixConfig<
+  TAxes extends MatrixAxes = MatrixAxes,
+  TFrom extends From<MatrixCombo<TAxes>> | undefined =
+    | From<MatrixCombo<TAxes>>
+    | undefined,
+> {
   /** Unique within the CI client. Each combination's job ID starts with it. */
   id: string;
   /** The axes to combine, in the order they should appear in job IDs. */
@@ -860,7 +865,7 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
    * The job each combination starts `from`. A function is given the
    * combination as its `input`.
    */
-  from?: From<MatrixCombo<TAxes>>;
+  from?: TFrom;
   /** Check settings for each combination's job. `false` means no job checks. */
   check?: false | { name?: string };
 }
