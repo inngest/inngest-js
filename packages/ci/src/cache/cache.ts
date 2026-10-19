@@ -19,6 +19,7 @@ import {
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
+import { deleteMatching } from "../machine/admin.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -42,7 +43,7 @@ import {
   parseRepo,
   stableStringify,
 } from "../util.ts";
-import { formatName } from "./names.ts";
+import { formatName, slotOf } from "./names.ts";
 
 /**
  * Check a static `cache` when the job or matrix is defined, so a mistake fails
@@ -321,8 +322,15 @@ export const jobCacheKey = async (
   const app = `app:${run.ci.client?.id ?? ""}`;
   const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
+  // Ahead of the key, so the entries of one app, repository and input share a
+  // name up to it, and a new key can replace the old one among them.
+  const slot = hash(
+    `${owner}\0${input === undefined ? "" : stableStringify(input)}`,
+    8,
+  );
+
   return {
-    ownKey: identityKey(hash(`${resolved}\0${owner}`), input, base),
+    ownKey: `${slot}/${identityKey(hash(`${resolved}\0${owner}`), input, base)}`,
     key: named,
   };
 };
@@ -836,6 +844,44 @@ export const deleteSnapshot = async (
     // Best effort only.
     return false;
   }
+};
+
+/**
+ * Delete the entries a new cache snapshot replaces, as a memoized step: those
+ * of the same scope, job, app, repository and input under another key. Their
+ * key can't be named again, so nothing else would ever remove them. Entries
+ * of other scopes (such as the base branch's) and of other inputs stay.
+ *
+ * Best effort: one that can't be deleted is logged and left to expire.
+ */
+export const deleteReplacedCache = async (
+  run: CiRunScope,
+  stepId: string,
+  /** The name the new snapshot was taken under. */
+  name: string,
+): Promise<void> => {
+  const slot = slotOf(name);
+
+  const warn = (snapshotId: string | undefined, error: unknown) => {
+    run.ci.logger?.warn(
+      { snapshotId, error },
+      "Couldn't delete a replaced cache snapshot; it will expire on its own",
+    );
+  };
+
+  await ciRun(run, steps.deleteReplacedCache(stepId), async () => {
+    try {
+      await deleteMatching(
+        run.ci.client,
+        (other) => {
+          return other !== name && slotOf(other) === slot;
+        },
+        warn,
+      );
+    } catch (error) {
+      warn(undefined, error);
+    }
+  });
 };
 
 /**

@@ -39,6 +39,45 @@ export const listSandboxes = (client: Inngest.Any) => {
 };
 
 /**
+ * Every snapshot that still exists, whoever made it. The API keeps the records
+ * of deleted ones in its lists, which are not snapshots any more.
+ */
+export async function* listSnapshots(client: Inngest.Any) {
+  const all = pages((cursor) => {
+    return client.sandboxes.snapshots.list({
+      ...(cursor ? { cursor } : {}),
+      limit: 100,
+    });
+  });
+
+  for await (const snapshot of all) {
+    if (!/^DELET/.test(snapshot.status)) {
+      yield snapshot;
+    }
+  }
+}
+
+/**
+ * Delete the snapshots whose name matches. Listing has no name filter beyond
+ * an exact one, so the comparison happens here.
+ */
+export const deleteMatching = async (
+  client: Inngest.Any,
+  matches: (name: string) => boolean,
+  onFailure?: (id: string, error: unknown) => void,
+): Promise<{ deleted: string[]; failed: string[] }> => {
+  const ids: string[] = [];
+
+  for await (const snapshot of listSnapshots(client)) {
+    if (snapshot.name && matches(snapshot.name)) {
+      ids.push(snapshot.id);
+    }
+  }
+
+  return deleteSnapshots(client, ids, onFailure);
+};
+
+/**
  * Delete snapshots by ID. One that is already gone counts for nothing, and one
  * that can't be deleted is reported to `onFailure` and left to expire, so a
  * snapshot that stays never stops the rest.
