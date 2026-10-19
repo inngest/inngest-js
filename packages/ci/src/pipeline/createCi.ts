@@ -21,16 +21,20 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
+  CacheKey,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
+  From,
   Job,
   JobConfig,
+  JobContext,
   MachineConfig,
   Matrix,
   MatrixAxes,
-  MatrixCombo,
   MatrixConfig,
+  MatrixContext,
+  NoFrom,
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
@@ -95,8 +99,8 @@ export interface Ci {
    *   await $`pnpm test`;
    * });
    *
-   * const compat = ci.job("compat", async (node: string) => {
-   *   await $`fnm use ${node}`;
+   * const compat = ci.job("compat", async ({ input }: { input: string }) => {
+   *   await $`fnm use ${input}`;
    * });
    * ```
    *
@@ -105,41 +109,56 @@ export interface Ci {
    * ```ts
    * const build = ci.job(
    *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
-   *   async ({ target }) => {
-   *     await $`pnpm build --target ${target}`;
+   *   async ({ input }) => {
+   *     await $`pnpm build --target ${input.target}`;
    *   },
    * );
    * ```
+   *
+   * The handler is given the job's `id`, the `key` its cache was made of, its
+   * `input`, and what it started `from`.
    */
-  job<TSchema extends StandardSchemaV1>(
-    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>> & {
+  job<
+    TSchema extends StandardSchemaV1,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends
+      | From<StandardSchemaV1.InferOutput<TSchema>>
+      | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
+  >(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
       input: TSchema;
     },
-    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<void>,
-  ): Job<StandardSchemaV1.InferInput<TSchema>>;
-  job<TInput = void>(
-    idOrConfig: string | JobConfig<TInput>,
-    handler: (input: TInput) => Promise<void>,
-  ): Job<TInput>;
+    handler: (
+      ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
+    ) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
+  job<
+    TInput = void,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends From<TInput> | undefined = NoFrom<TInput>,
+  >(
+    idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
+    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
+  ): Job<TInput, TKey, TFrom>;
 
   /**
    * Define a matrix: one job per combination of the axes.
    *
-   * Axis values keep their literal types, so the handler's `combo` is exact
+   * Axis values keep their literal types, so the handler's `matrix` is exact
    * and a typo in `exclude` or in `matrix({ … })` is a type error.
    *
    * ```ts
    * const compat = ci.matrix(
    *   { id: "compat", axes: { node: ["20", "22"] } },
-   *   async ({ node }) => {
-   *     await $`pnpm test`.env({ NODE_VERSION: node });
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ NODE_VERSION: matrix.node });
    *   },
    * );
    * ```
    */
   matrix<const TAxes extends MatrixAxes>(
     config: MatrixConfig<TAxes>,
-    handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
+    handler: (ctx: MatrixContext<TAxes>) => Promise<void>,
   ): Matrix<TAxes>;
 
   /**

@@ -4,8 +4,8 @@
  * and the `files()` key helper.
  *
  * A cached job is the snapshot of its machine, named after the job's key. There
- * is no other record of it: whatever a run needs to know about a snapshot is
- * either in its name or in the metadata file inside it.
+ * is no other record of it: a run works out the key and name itself, and what
+ * a job started from it needs to know travels in the build's result.
  *
  * @module
  */
@@ -28,6 +28,7 @@ import type {
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  CacheKeyValue,
   FilesOptions,
   JobConfig,
   RepoContext,
@@ -50,7 +51,7 @@ import { formatName } from "./names.ts";
  * @throws {CiUsageError} When the key is empty or the scope isn't known.
  */
 export const checkCache = (id: string, cache?: CacheConfig): void => {
-  if (cache?.key === "" || (Array.isArray(cache?.key) && !cache.key.length)) {
+  if (cache?.key === "" || (cache?.key && !keyParts(cache.key).length)) {
     throw new CiUsageError(`The \`cache.key\` of "${id}" can't be empty.`);
   }
 
@@ -115,49 +116,62 @@ const sharedScopes = (
 };
 
 /**
- * Resolve the parts of a cache key into a single hash.
+ * Resolve the parts of a cache key: a single hash of all of them, and the
+ * named ones as strings, for the job's handler.
  *
  * `files()` parts are resolved against the repository: the git tree for the
  * run's commit on GitHub (or for the commit its `repo` and `ref` resolved to),
  * or the working tree locally, so a key changes exactly when the matched files
- * do.
+ * do. A function part is called once, here, and its value is what the hash and
+ * the handler both get.
  */
 export const resolveCacheKey = async (
   run: CiRunScope,
   key: CacheKey | undefined,
-): Promise<string> => {
-  if (key === undefined) {
-    return "";
-  }
-
-  if (typeof key === "function") {
-    return hash(await key());
-  }
-
+): Promise<{ hash: string; named: Record<string, string> }> => {
   const resolved: string[] = [];
+  const named: Record<string, string> = {};
 
-  for (const part of keyParts(key)) {
+  for (const [name, part] of keyParts(key)) {
+    let value: string;
+
     if (typeof part === "function") {
-      resolved.push(await part());
+      value = await part();
     } else if (typeof part === "string") {
-      resolved.push(part);
+      value = part;
     } else {
-      resolved.push(await resolveFilesPart(run, part));
+      value = await resolveFilesPart(run, part);
+    }
+
+    resolved.push(value);
+
+    if (name !== undefined) {
+      named[name] = value;
     }
   }
 
-  return hash(resolved.join("\0"));
+  return { hash: hash(resolved.join("\0")), named };
 };
 
-/** The parts of a cache key, which a function key doesn't have. */
+/** The parts of a cache key, each with its name if the key is an object of them. */
 const keyParts = (
   key: CacheKey | undefined,
-): (CacheKeyPart | string | (() => Promise<string>))[] => {
-  if (key === undefined || typeof key === "function") {
+): [name: string | undefined, part: CacheKeyValue][] => {
+  if (key === undefined) {
     return [];
   }
 
-  return Array.isArray(key) ? key : [key];
+  if (Array.isArray(key)) {
+    return key.map((part) => {
+      return [undefined, part];
+    });
+  }
+
+  if (typeof key !== "object" || "kind" in key) {
+    return [[undefined, key as CacheKeyValue]];
+  }
+
+  return Object.entries(key);
 };
 
 /**
@@ -169,7 +183,7 @@ export const resolveKeySources = async (
   run: CiRunScope,
   key: CacheKey | undefined,
 ): Promise<void> => {
-  for (const part of keyParts(key)) {
+  for (const [, part] of keyParts(key)) {
     if (typeof part === "object" && !targetsRunRepo(run, part)) {
       await resolveSource(run, part);
     }
@@ -282,7 +296,8 @@ const hashTree = (
 /**
  * A job's own cache key: its resolved key, with the repository, the input it
  * was called with and the snapshot it starts from folded in, since any of
- * them changing makes it a different job. The app's ID is always part of it,
+ * them changing makes it a different job. The key's named parts come back
+ * beside it. The app's ID is always part of it,
  * so two apps in one repository never share a snapshot, and the repository
  * is too when the run has one (a cron with no `repo` set has none). Names and
  * lookups both go through this, so they always agree.
@@ -293,15 +308,18 @@ export const jobCacheKey = async (
   input: unknown,
   /** What the job starts from. */
   base?: BaseIdentity,
-): Promise<string> => {
-  const key = await resolveCacheKey(run, cache.key);
+): Promise<{ ownKey: string; key: Record<string, string> }> => {
+  const { hash: resolved, named } = await resolveCacheKey(run, cache.key);
 
   // Repositories and apps can share a Sandbox environment, so the same
   // branch, job and key in two of them are still two names.
   const app = `app:${run.ci.client?.id ?? ""}`;
   const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
-  return identityKey(hash(`${key}\0${owner}`), input, base);
+  return {
+    ownKey: identityKey(hash(`${resolved}\0${owner}`), input, base),
+    key: named,
+  };
 };
 
 /**
@@ -351,6 +369,8 @@ export interface CachedSnapshot {
 export interface CacheTarget {
   /** The job's resolved key. */
   ownKey: string;
+  /** The named parts of the job's `cache.key`, resolved: what its handler gets as `key`. */
+  key: Record<string, string>;
   /** The name a build gives the snapshot, in the scope the job writes. */
   name: string;
 }
@@ -379,12 +399,13 @@ export const cacheTarget = async (
 
   await resolveKeySources(run, cache.key);
 
-  const ownKey = await ciRun(run, steps.cacheKey(job.path), () => {
+  const { ownKey, key } = await ciRun(run, steps.cacheKey(job.path), () => {
     return jobCacheKey(run, cache, input, base);
   });
 
   return {
     ownKey,
+    key,
     name: formatName({
       kind: "cache",
       scope: cacheScopes(run.repo, cache.scope).write,
@@ -411,6 +432,7 @@ export const runTarget = (
 
   return {
     ownKey,
+    key: {},
     name: formatName({
       kind: "run",
       rootRunId: rootRunIdOf(run),
