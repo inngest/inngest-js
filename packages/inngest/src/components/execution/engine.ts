@@ -1334,9 +1334,9 @@ class InngestExecutionEngine
         // With `optimizeParallelism: false`, the handler returning is the end
         // of the run. Steps it never awaited and that were never run (a
         // floating `waitForEvent`, `sleep` or `step.run`, or the losers of a
-        // race) are not scheduled. Buffered lazy ops (e.g. `defer` calls) are
-        // the exception: they are drained and sent alongside `RunComplete`
-        // below.
+        // race) are not scheduled. When the executor finalizes the run it
+        // deletes the run's pauses and dequeues its scheduled jobs, whether
+        // the response is a plain 200 or `RunComplete`.
 
         // Function is truly done. Close the stream with a terminal
         // succeeded event.
@@ -1354,8 +1354,9 @@ class InngestExecutionEngine
           data = await this.options.createResponse(jsonResponse(resultData));
         }
 
-        // Terminal. `attachLazyOps` bundles any buffered ops with
-        // `RunComplete` so the executor finalizes in one round-trip.
+        // Terminal. `attachLazyOps` only adds `RunComplete` when lazy ops
+        // (e.g. `defer` calls) are buffered, so the executor receives them
+        // and finalizes in one round-trip. Otherwise this is a plain 200.
         return this.attachLazyOps(this.transformOutput({ data }));
       },
 
