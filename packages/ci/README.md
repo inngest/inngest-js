@@ -109,6 +109,23 @@ A run whose trigger has no repository, like a cron, needs `repo`. The GitHub App
 npm install @inngest/ci inngest
 ```
 
+## Run locally
+
+`inngest-ci` runs a pipeline, job or matrix from your working tree on Sandboxes, with a Dev Server of its own. At a terminal it asks for whatever you leave out, including how to start your app the first time.
+
+```bash
+npx inngest-ci                     # pick what to run
+npx inngest-ci pr --event pull_request.opened
+npx inngest-ci compat --node 22    # one matrix combination
+npx inngest-ci greet --input '"jack"'
+```
+
+It exits 0 when the run passes, 1 when it fails or is cancelled, and 2 when setup needs fixing. The app's start command and path live under `ci` in `inngest.json`:
+
+```json
+{ "ci": { "start": "tsx ci/server.ts", "path": "/api/inngest" } }
+```
+
 ## Get started
 
 Follow the [Quick start](https://www.inngest.com/docs/labs/ci/quick-start) to write and serve your first pipeline.
