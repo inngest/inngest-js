@@ -373,12 +373,16 @@ export type CommandsOf<TOutput> = {
  * What awaiting a job gives: the data of its output. A job with a `cache` is
  * built in a run of its own and may be reused, so it gives nothing.
  */
-// biome-ignore lint/suspicious/noConfusingVoidType: a job that returns nothing resolves to `void`
 type Returned<TOutput, TCache> = [TCache] extends [undefined]
-  ? [TOutput] extends [void]
-    ? void
-    : DataOf<TOutput>
-  : void;
+  ? DataOrNothing<TOutput>
+  : Nothing;
+
+// biome-ignore lint/suspicious/noConfusingVoidType: a job that returns nothing resolves to `void`
+type Nothing = void;
+
+type DataOrNothing<TOutput> = [TOutput] extends [Nothing]
+  ? Nothing
+  : DataOf<TOutput>;
 
 /**
  * A job: call it like a function.
@@ -410,7 +414,7 @@ export interface Job<
    * ci.job({ id: "web", from: build.with("web") }, …);
    * ```
    */
-  with(input: TInput): JobRef<TInput>;
+  with(input: TInput): JobRef<TInput, TKey, TFrom, TOutput>;
   /**
    * The job's input type, for type checks only: it's never set. It lets a
    * bare `from: job` accept only a job that runs without input.
@@ -444,10 +448,15 @@ export interface Job<
 /**
  * A job with the input to run it with, from `job.with(input)`.
  */
-export interface JobRef<TInput = unknown> {
+export interface JobRef<
+  TInput = unknown,
+  TKey = unknown,
+  TFrom = unknown,
+  TOutput = void,
+> {
   readonly kind: "inngest/ci.jobRef";
-  // biome-ignore lint/suspicious/noExplicitAny: a job of any cache key
-  readonly job: Job<TInput, any, any, any, any>;
+  // biome-ignore lint/suspicious/noExplicitAny: a ref reads nothing of its job's cache
+  readonly job: Job<TInput, TKey, TFrom, TOutput, any>;
   readonly input: TInput;
 }
 
@@ -455,7 +464,7 @@ export interface JobRef<TInput = unknown> {
  * Any job with input, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
-export type AnyJobRef = JobRef<any>;
+export type AnyJobRef = JobRef<any, any, any, any>;
 
 /**
  * A job as `from` takes it bare: one that runs without input. A job that
