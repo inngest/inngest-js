@@ -1,5 +1,63 @@
 # @inngest/ci
 
+## 0.4.0
+
+### Minor Changes
+
+- [#1779](https://github.com/inngest/inngest-js/pull/1779) [`314fb478`](https://github.com/inngest/inngest-js/commit/314fb478f48ebf5f5034e8520fe45449d30b4c5e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Cached jobs can now expire with `cache.maxAge`: a snapshot older than it is rebuilt.
+
+  ```ts
+  ci.job({ id: "base", cache: { key: files("images/node-base/**"), maxAge: "1d" } }, …);
+  ```
+
+- [#1780](https://github.com/inngest/inngest-js/pull/1780) [`4491a641`](https://github.com/inngest/inngest-js/commit/4491a641a1ddea87084c3afbd789b6316a2c202f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `checkout()` and `files()` can now read another repository or ref, including in runs whose trigger has no repository.
+
+  ```ts
+  await checkout({ repo: "acme/shared-config", ref: "main" });
+  ```
+
+- [#1782](https://github.com/inngest/inngest-js/pull/1782) [`c410e598`](https://github.com/inngest/inngest-js/commit/c410e5983bb2a964d8b05b1bf0f48b165b8ed200) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Every duration option (`cache.maxAge`, `keepOnFailure`, `.timeout()`, `waitForPort`, `waitForHttp`, `github.waitForChecks`, `waitForWorkflow`) now takes milliseconds, a string like `"1d"` or `"1h30m"`, or a `Temporal.Duration`. A bad value throws a `CiUsageError` naming the field. A bare numeric string like `"10"` now means 10 milliseconds.
+
+  ```ts
+  await waitForPort(3000, { timeout: "1m30s" });
+  ```
+
+- [#1803](https://github.com/inngest/inngest-js/pull/1803) [`0e733c99`](https://github.com/inngest/inngest-js/commit/0e733c990c4e9f62456d292aa05fbf1eba2908e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - A job can now start from a job another app defines with `image.job()`. That app builds it once for every app that asks.
+
+  ```ts
+  import { image } from "@inngest/ci";
+
+  ci.job({ id: "test", from: image.job("platform/node-base") }, async () => {
+    await # @inngest/cipnpm test`;
+  });
+  ```
+
+- [#1803](https://github.com/inngest/inngest-js/pull/1803) [`0e733c99`](https://github.com/inngest/inngest-js/commit/0e733c990c4e9f62456d292aa05fbf1eba2908e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - You can now define jobs inside a pipeline, and start other jobs `from` them. They build in the run that defined them, and cached ones are still reused by later runs.
+
+  ```ts
+  ci.pipeline({ id: "pr", on }, async () => {
+    const base = ci.job("base", async () => {
+      await # @inngest/cipnpm install`;
+    });
+
+    const lint = ci.job({ id: "lint", from: base }, async () => {
+      await # @inngest/cipnpm lint`;
+    });
+
+    await lint();
+  });
+  ```
+
+  Defining the same job ID twice in one run now throws a `CiUsageError`.
+
+### Patch Changes
+
+- [#1803](https://github.com/inngest/inngest-js/pull/1803) [`0e733c99`](https://github.com/inngest/inngest-js/commit/0e733c990c4e9f62456d292aa05fbf1eba2908e2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Mistakes in a job's `from` now fail when your app boots, with a message naming the problem, instead of partway through a run. This covers a parent from another CI client, a value that isn't a job, input that doesn't match the parent's schema, and `from` cycles (which used to build forever).
+
+  ```ts
+  ci.job({ id: "test", from: notAJob }, …); // throws at boot
+  ```
+
 ## 0.3.0
 
 ### Minor Changes
