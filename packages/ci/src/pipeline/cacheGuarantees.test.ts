@@ -24,8 +24,8 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { temporalDuration } from "../testing/temporal.ts";
-import { createCi } from "./createCi.ts";
 import type { Job } from "../types.ts";
+import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
 

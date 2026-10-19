@@ -399,11 +399,14 @@ describe("a job's input schema", () => {
     const { api, ci } = setup();
     const received = new Set<string>();
 
-    const build = ci.job({ id: "build", input }, async ({ input: { target, minify } }) => {
-      received.add(JSON.stringify({ target, minify }));
+    const build = ci.job(
+      { id: "build", input },
+      async ({ input: { target, minify } }) => {
+        received.add(JSON.stringify({ target, minify }));
 
-      await $`pnpm build --target ${target}`;
-    });
+        await $`pnpm build --target ${target}`;
+      },
+    );
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       return build({ target: "web" });
@@ -448,9 +451,12 @@ describe("a job's input schema", () => {
   test("is checked when a job is started from, too", async () => {
     const { api, ci } = setup();
 
-    const base = ci.job({ id: "base", input }, async ({ input: { target } }) => {
-      await $`pnpm install --target ${target}`;
-    });
+    const base = ci.job(
+      { id: "base", input },
+      async ({ input: { target } }) => {
+        await $`pnpm install --target ${target}`;
+      },
+    );
 
     const test = ci.job(
       { id: "test", from: base.with({ target: "web" }) },
@@ -470,9 +476,12 @@ describe("a job's input schema", () => {
     const { ci } = setup();
     const received = new Set<string>();
 
-    const greet = ci.job("greet", async ({ input: name }: { input: string }) => {
-      received.add(name);
-    });
+    const greet = ci.job(
+      "greet",
+      async ({ input: name }: { input: string }) => {
+        received.add(name);
+      },
+    );
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       return greet("jack");

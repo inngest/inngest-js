@@ -126,7 +126,10 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
             [inlineKey]: inline,
           } as JobConfig,
           (ctx) => {
-            return handler({ ...ctx, matrix: combo } as MatrixContext<TAxes>);
+            return handler({
+              ...ctx,
+              matrix: combo,
+            } as unknown as MatrixContext<TAxes>);
           },
         );
 

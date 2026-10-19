@@ -87,12 +87,12 @@ export { report } from "./report.ts";
 
 // Types
 export type {
+  Ancestor,
   BackgroundProcess,
   CacheConfig,
   CacheKey,
   CacheKeyPart,
   CacheKeyValue,
-  Ancestor,
   CacheReason,
   CheckAnnotation,
   CheckConclusion,
@@ -110,10 +110,12 @@ export type {
   FilesOptions,
   FlowControlOptions,
   From,
+  FromContext,
   Job,
   JobConfig,
   JobContext,
   JobRef,
+  KeyValues,
   MachineConfig,
   Matrix,
   MatrixAxes,
@@ -121,8 +123,6 @@ export type {
   MatrixConfig,
   MatrixContext,
   PipelineConfig,
-  KeyValues,
   PipelineContext,
   RepoContext,
-  FromContext,
 } from "./types.ts";

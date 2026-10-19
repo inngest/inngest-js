@@ -35,6 +35,7 @@ import type { GitHubEventData } from "./github/events.ts";
 import { fixtures } from "./github/fixtures.ts";
 import type { RunRepo } from "./github/helpers.ts";
 import { github } from "./github/index.ts";
+import { image } from "./image.ts";
 import type {
   BackgroundProcess as EntryBackgroundProcess,
   CacheConfig as EntryCacheConfig,
@@ -80,8 +81,10 @@ import { report } from "./report.ts";
 import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
+  Ancestor,
   BackgroundProcess,
   CacheKeyPart,
+  CacheReason,
   CheckConclusion,
   CiEvent,
   CiSkip,
@@ -271,24 +274,31 @@ describe("jobs infer their input", () => {
     });
 
     expectTypeOf(job).toExtend<Job>();
-    expectTypeOf(job).toEqualTypeOf<Job<void, undefined, undefined>>();
+    expectTypeOf(job).toExtend<Job<void>>();
     expectTypeOf(job.id).toBeString();
     expectTypeOf(job.kind).toEqualTypeOf<"inngest/ci.job">();
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input-inferred", async ({ input: node }: { input: string }) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      "with-input-inferred",
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
-    expectTypeOf(job).toEqualTypeOf<Job<string, undefined, undefined>>();
+    expectTypeOf(job).toExtend<Job<string>>();
     expectTypeOf(job).parameter(0).toBeString();
   });
 
   test("an object input", () => {
     const job = ci.job(
       "combo",
-      async ({ input }: { input: { node: string; db: "sqlite" | "postgres" } }) => {
+      async ({
+        input,
+      }: {
+        input: { node: string; db: "sqlite" | "postgres" };
+      }) => {
         await $`pnpm test --db ${input.db}`;
       },
     );
@@ -307,7 +317,7 @@ describe("jobs infer their input", () => {
       },
     );
 
-    expectTypeOf(job).toEqualTypeOf<Job<void, CacheKeyPart, undefined>>();
+    expectTypeOf(job).toExtend<Job<void, CacheKeyPart>>();
   });
 
   test("calling a job resolves to nothing", () => {
@@ -345,9 +355,12 @@ describe("jobs infer their input", () => {
   });
 
   test("the checker rejects the wrong input", () => {
-    const job = ci.job("needs-string", async ({ input: node }: { input: string }) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      "needs-string",
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
     types(async () => {
       // @ts-expect-error a number isn't a string
@@ -369,6 +382,10 @@ describe("jobs infer their input", () => {
     });
   });
 });
+
+const latest = async (): Promise<string> => {
+  return "v1";
+};
 
 describe("a job's input schema types its input", () => {
   /** What a schema with a default looks like: optional going in, there coming out. */
@@ -395,9 +412,12 @@ describe("a job's input schema types its input", () => {
   });
 
   test("the caller gives the schema's input", () => {
-    const job = ci.job({ id: "build-called", input }, async ({ input: { target } }) => {
-      await $`pnpm build --target ${target}`;
-    });
+    const job = ci.job(
+      { id: "build-called", input },
+      async ({ input: { target } }) => {
+        await $`pnpm build --target ${target}`;
+      },
+    );
 
     expectTypeOf(job).parameter(0).toEqualTypeOf<{
       target: "web" | "api";
@@ -415,9 +435,12 @@ describe("a job's input schema types its input", () => {
   });
 
   test("a job config without a schema still infers from the handler", () => {
-    const job = ci.job({ id: "no-schema" }, async ({ input: node }: { input: string }) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      { id: "no-schema" },
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
     expectTypeOf(job).parameter(0).toBeString();
   });
@@ -428,9 +451,12 @@ describe("from starts from a job", () => {
     await $`pnpm install`;
   });
 
-  const withInput = ci.job("with-input", async ({ input: node }: { input: string }) => {
-    await $`fnm use ${node}`;
-  });
+  const withInput = ci.job(
+    "with-input",
+    async ({ input: node }: { input: string }) => {
+      await $`fnm use ${node}`;
+    },
+  );
 
   test("a job, or a job with its input", () => {
     ci.job({ id: "from-job", from: setup }, async () => {});
@@ -584,6 +610,100 @@ describe("matrices keep their literal values", () => {
       // @ts-expect-error matrices have no return value
       async ({ matrix: combo }) => {
         return combo.node;
+      },
+    );
+  });
+});
+
+describe("a handler's context", () => {
+  test("key holds the named parts of the cache key, as strings", () => {
+    ci.job(
+      {
+        id: "keyed",
+        cache: { key: { deps: files("pnpm-lock.yaml"), release: latest } },
+      },
+      async ({ id, key, cache, input }) => {
+        expectTypeOf(id).toBeString();
+        expectTypeOf(key).toEqualTypeOf<{
+          readonly deps: string;
+          readonly release: string;
+        }>();
+        expectTypeOf(cache).toEqualTypeOf<CacheReason | undefined>();
+        expectTypeOf(input).toEqualTypeOf<void>();
+      },
+    );
+  });
+
+  test("a key without names has nothing to read", () => {
+    ci.job(
+      { id: "unnamed", cache: { key: [files("pnpm-lock.yaml"), latest] } },
+      async ({ key }) => {
+        expectTypeOf(key).toEqualTypeOf<Record<never, never>>();
+      },
+    );
+  });
+
+  test("the input is the schema's output", () => {
+    ci.job(
+      {
+        id: "with-schema",
+        input: {} as StandardSchemaV1<{ a?: string }, { a: string }>,
+      },
+      async ({ input }) => {
+        expectTypeOf(input).toEqualTypeOf<{ a: string }>();
+      },
+    );
+  });
+
+  test("from.key is typed through the chain, the nearest job winning a name", () => {
+    const base = ci.job(
+      { id: "base", cache: { key: { lock: "l1", shared: latest } } },
+      async () => {},
+    );
+
+    const mid = ci.job(
+      { id: "mid", from: base, cache: { key: { shared: "mid", extra: "e1" } } },
+      async ({ from }) => {
+        expectTypeOf(from.id).toBeString();
+        expectTypeOf(from.key).toExtend<{ lock: string; shared: string }>();
+        expectTypeOf(from.key.lock).toBeString();
+      },
+    );
+
+    ci.job({ id: "leaf", from: mid }, async ({ from }) => {
+      expectTypeOf(from.key.lock).toBeString();
+      expectTypeOf(from.key.shared).toBeString();
+      expectTypeOf(from.key.extra).toBeString();
+
+      // @ts-expect-error no job above it has this key
+      from.key.nothing.toString();
+
+      expectTypeOf(from.ancestry).toEqualTypeOf<Ancestor[]>();
+    });
+  });
+
+  test("a job with no from has no from", () => {
+    ci.job("no-parent", async ({ from }) => {
+      expectTypeOf(from).toEqualTypeOf<undefined>();
+    });
+  });
+
+  test("another app's image has string keys only", () => {
+    ci.job(
+      { id: "on-image", from: image.job("platform/base") },
+      async ({ from }) => {
+        expectTypeOf(from.key).toEqualTypeOf<Record<string, string>>();
+      },
+    );
+  });
+
+  test("a matrix handler gets the combination as matrix", () => {
+    ci.matrix(
+      { id: "ctx-matrix", axes: { node: ["20", "22"] } },
+      async ({ id, matrix, key }) => {
+        expectTypeOf(id).toBeString();
+        expectTypeOf(matrix.node).toEqualTypeOf<"20" | "22">();
+        expectTypeOf(key).toEqualTypeOf<Record<string, string>>();
       },
     );
   });

@@ -244,7 +244,7 @@ export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
 export interface JobConfig<
   TInput = void,
   TKey extends CacheKey | undefined = CacheKey,
-  TFrom extends FromTarget | undefined = FromTarget | undefined,
+  TFrom extends From<TInput> | undefined = From<TInput> | undefined,
 > {
   /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
@@ -283,7 +283,7 @@ export interface JobConfig<
    * To choose a parent from facts only known at run time, define two jobs and
    * choose between them in the pipeline.
    */
-  from?: TFrom | ((ctx: { input: TInput }) => TFrom);
+  from?: TFrom;
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
@@ -433,17 +433,33 @@ export interface Ancestor {
  * Typed when the parent is a job defined in this app, and a record of strings
  * for another app's image or a `from` function that could give either.
  */
-export interface FromContext<TKey = unknown> {
+export interface FromContext<TKey = Record<string, string>> {
   /** The ID of the job it starts from. */
   id: string;
   /**
    * The named key parts of everything the image was built from, flattened
    * through its ancestors. The nearest one wins a shared name.
    */
-  key: Record<string, string> & TKey;
+  key: TKey;
   /** Each job above, nearest first, with its own key parts, for exact lookups. */
   ancestry: Ancestor[];
 }
+
+/**
+ * What a job without a `from` has as its `TFrom`: a function that gives
+ * nothing. It is a function so that a `from` function written in the config is
+ * typed by its parameter, and it gives `never` so that no parent is named.
+ */
+export type NoFrom<TInput> = (ctx: { input: TInput }) => never;
+
+/** What `from` names, with a function replaced by what it gives. */
+type TargetOf<TFrom> = TFrom extends {
+  kind: "inngest/ci.job" | "inngest/ci.jobRef" | "inngest/ci.image";
+}
+  ? TFrom
+  : TFrom extends (ctx: never) => infer TResult
+    ? Exclude<TResult, undefined>
+    : Exclude<TFrom, undefined>;
 
 /**
  * The named key parts of everything a `from` names, flattened up the chain
@@ -451,15 +467,22 @@ export interface FromContext<TKey = unknown> {
  * the parents' keys, rather than intersecting, keeps each part's own type and
  * the JSDoc on its declaration.
  */
-type KeysOf<TFrom> = TFrom extends { kind: "inngest/ci.job" }
-  ? TFrom extends Job<unknown, infer TKey, infer TUp>
+type KeysOf<TFrom> = [TargetOf<TFrom>] extends [never]
+  ? unknown
+  : KeysOfTarget<TargetOf<TFrom>>;
+
+type KeysOfTarget<TTarget> = TTarget extends { kind: "inngest/ci.job" }
+  ? TTarget extends {
+      readonly "~key"?: infer TKey;
+      readonly "~from"?: infer TUp;
+    }
     ? Omit<KeysOf<TUp>, keyof KeyValues<TKey>> & KeyValues<TKey>
     : unknown
-  : TFrom extends { kind: "inngest/ci.jobRef"; job: infer TJob }
+  : TTarget extends { kind: "inngest/ci.jobRef"; job: infer TJob }
     ? KeysOf<TJob>
-    : unknown;
+    : Record<string, string>;
 
-type ParentOf<TFrom> = TFrom extends undefined
+type ParentOf<TFrom> = [TargetOf<TFrom>] extends [never]
   ? undefined
   : FromContext<KeysOf<TFrom>>;
 

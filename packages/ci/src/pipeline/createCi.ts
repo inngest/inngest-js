@@ -25,7 +25,7 @@ import type {
   CiSkip,
   CiTrigger,
   CiTriggerInput,
-  FromTarget,
+  From,
   Job,
   JobConfig,
   JobContext,
@@ -34,6 +34,7 @@ import type {
   MatrixAxes,
   MatrixConfig,
   MatrixContext,
+  NoFrom,
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
@@ -119,8 +120,10 @@ export interface Ci {
    */
   job<
     TSchema extends StandardSchemaV1,
-    TKey extends CacheKey | undefined = undefined,
-    TFrom extends FromTarget | undefined = undefined,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends
+      | From<StandardSchemaV1.InferOutput<TSchema>>
+      | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
   >(
     config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
       input: TSchema;
@@ -131,8 +134,8 @@ export interface Ci {
   ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
   job<
     TInput = void,
-    TKey extends CacheKey | undefined = undefined,
-    TFrom extends FromTarget | undefined = undefined,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends From<TInput> | undefined = NoFrom<TInput>,
   >(
     idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
     handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,

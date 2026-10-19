@@ -65,6 +65,33 @@ const base = ci.job(
 );
 ```
 
+## What a job is given
+
+A handler gets the job's `id`, its `input`, the resolved `key` of its cache, and what it started `from`. Name the parts of a key to read them. A matrix handler also gets its combination as `matrix`.
+
+```ts
+const base = ci.job(
+  {
+    id: "base",
+    cache: { key: { deps: files("pnpm-lock.yaml"), devServer: latestDevServer } },
+  },
+  async ({ key }) => {
+    await $`pnpm install --dev-server ${key.devServer}`;
+  },
+);
+
+const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+  from.key.devServer; // the key parts of everything it started from
+  from.ancestry; // each job above it, nearest first: [{ id, key }, ...]
+});
+
+ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+  await $`fnm use ${matrix.node}`;
+});
+```
+
+Each part of a key is resolved once, and the same value is used to find the snapshot and to build it. The same goes for a job that starts from another app's `image.job()`.
+
 ## Start from another app's job
 
 Share a base across apps with `image.job()`. The other app builds the job if it's missing, once for every app that asks, from the commit it was deployed from.
