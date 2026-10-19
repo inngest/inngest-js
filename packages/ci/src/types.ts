@@ -8,6 +8,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { DurationInput, InngestFunction } from "inngest";
+import type { Image } from "./image.ts";
 
 /**
  * A length of time: a number of milliseconds, an `ms` string like `"10m"`,
@@ -249,6 +250,8 @@ export interface JobConfig<TInput = void> {
    * ci.job({ id: "test", from: ({ input }) => build.with(input) }, …);
    * ```
    *
+   * To start from a job another app defines, use `image.job("app/job")`.
+   *
    * A job or `job.with(input)` is checked when the app boots: it must be
    * defined on this CI client, and its input must pass the parent's `input`
    * schema (a schema that validates asynchronously is checked at run time).
@@ -363,16 +366,17 @@ type JobLike = Pick<AnyJob, "id" | "kind" | "with"> & {
 };
 
 /**
- * What a job can start `from`: a job, a job with input, or a function of the
- * starting job's own input that gives either.
+ * What a job can start `from`: a job, a job with input, an `image`, or a
+ * function of the starting job's own input that gives any of them.
  */
 export type From<TInput = void> =
   | JobLike
   | AnyJobRef
+  | Image
   | ((ctx: {
       /** The starting job's input. */
       input: TInput;
-    }) => JobLike | AnyJobRef);
+    }) => JobLike | AnyJobRef | Image);
 
 /**
  * Any job, regardless of its input type.
