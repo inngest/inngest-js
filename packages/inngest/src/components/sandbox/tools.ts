@@ -5,7 +5,7 @@
  * A tool is a function in your app. Sandbox code calls it by name, and the
  * call runs here, in your function, as a durable step with your credentials.
  * This module holds the parts that don't touch a sandbox: the `tool.step()`
- * helper, name validation, and turning a request from the sandbox into a
+ * and `tool.group()` helpers, name validation, and turning a request from the sandbox into a
  * checked call. `toolRunner.ts` moves the requests and replies.
  *
  * Everything that arrives from the sandbox is untrusted. Tool names must be own
@@ -61,9 +61,10 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * A tool declared with `tool.step()`.
+ * A tool declared with `tool.step()` or `tool.group()`.
  */
 export interface SandboxTool {
+  readonly group?: boolean;
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -178,6 +179,38 @@ export const tool = {
     definition: ToolDefinition<TInput, TOutput>,
   ): SandboxTool => {
     return definition as SandboxTool;
+  },
+
+  /**
+   * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
+   * running as one durable step, `run` can use the global `step`
+   * (`import { step } from "inngest"`) to run steps, invoke functions, send
+   * events and wait for events. Each call's steps are scoped to that call.
+   *
+   * @example
+   * ```ts
+   * const refund = tool.group({
+   *   input: z.object({ orderId: z.string() }),
+   *   run: async ({ orderId }) => {
+   *     const result = await step.invoke("refund", {
+   *       function: refundFn,
+   *       data: { orderId },
+   *     });
+   *
+   *     await step.sendEvent("notify", { name: "order/refunded", data: result });
+   *
+   *     return result;
+   *   },
+   * });
+   * ```
+   */
+  group: <
+    TInput extends StandardSchemaV1 | undefined = undefined,
+    TOutput extends StandardSchemaV1 | undefined = undefined,
+  >(
+    definition: ToolDefinition<TInput, TOutput>,
+  ): SandboxTool => {
+    return { ...definition, group: true } as SandboxTool;
   },
 };
 
@@ -302,6 +335,7 @@ export const resolveToolCall = async (
   }
 
   return {
+    group: isTool(entry) && entry.group === true,
     invoke: async (ctx: SandboxToolContext) => {
       const value = await run(...values, ...(isTool(entry) ? [ctx] : []));
       if (!isTool(entry) || !entry.output) {
