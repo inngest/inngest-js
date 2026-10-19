@@ -434,6 +434,25 @@ describe("what a job returns", () => {
     expect(unique(seen)).toEqual([expected]);
   });
 
+  test("without snapshots, the job above runs again on this machine and gives the same output", async () => {
+    const api = createFakeSandboxApi();
+    const seen: unknown[] = [];
+    const { ci, leaf } = chain(api, seen);
+
+    api.disableSnapshots();
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await leaf();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([expected]);
+  });
+
   test("an uncached job resolves to its data, without its commands", async () => {
     const ci = app(createFakeSandboxApi(), "web");
     const results: unknown[] = [];

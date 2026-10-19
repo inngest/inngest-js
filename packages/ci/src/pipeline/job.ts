@@ -913,7 +913,7 @@ const jobSteps = async ({
       ...(reusedTitle ? { cached: true } : {}),
     });
 
-    return dataOf(returned);
+    return returned && dataOf(returned);
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
