@@ -82,7 +82,7 @@ const base = ci.job(
 
 const test = ci.job({ id: "test", from: base }, async ({ from }) => {
   from.key.devServer; // the key parts of everything it started from
-  from.ancestry; // each job above it, nearest first: [{ id, key, output }, ...]
+  from.ancestry; // each job above it, nearest first: [{ id, key, output, $ }, ...]
 });
 
 ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
