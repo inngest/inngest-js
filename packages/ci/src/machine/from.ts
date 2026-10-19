@@ -34,6 +34,7 @@ import {
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
+  getRunScope,
   isInline,
   joinId,
   outsideJobs,
@@ -122,6 +123,8 @@ const resolveRef = (
   jobs: JobRegistry,
   config: Pick<JobConfig, "id">,
   named: unknown,
+  /** Where jobs are looked up, which includes the run's own if there is one. */
+  lookup: Pick<JobRegistry, "get"> = jobs,
 ): {
   job: AnyJob;
   registered: Pick<RegisteredJob, "config" | "handler">;
@@ -139,7 +142,7 @@ const resolveRef = (
     );
   }
 
-  const registered = jobs.get(ref.job.id);
+  const registered = lookup.get(ref.job.id);
 
   if (!registered || jobOwners.get(ref.job) !== jobs) {
     throw new CiUsageError(
@@ -172,10 +175,16 @@ export const checkStaticFrom = (
     return;
   }
 
-  const { job, registered, input } = resolveRef(jobs, config, from);
+  const { job, registered, input } = resolveRef(
+    jobs,
+    config,
+    from,
+    jobLookup(jobs, getRunScope()),
+  );
+
   const schema = registered.config.input;
 
-  if (!schema || input === undefined) {
+  if (!schema) {
     return;
   }
 
@@ -225,7 +234,12 @@ export const parentOf = (
     return named;
   }
 
-  const ref = resolveRef(run.ci.jobs, config, named);
+  const ref = resolveRef(
+    run.ci.jobs,
+    config,
+    named,
+    jobLookup(run.ci.jobs, run),
+  );
 
   return {
     config: ref.registered.config,
@@ -246,17 +260,41 @@ export const cycleMessage = (path: string[]): string => {
 };
 
 /**
- * Whether a job has to be built in this run: it was defined here, or its
- * parent was, and either way the build function couldn't find it.
+ * A job by ID, from the jobs defined in this run first, then the client's.
+ * Another run's jobs of the same ID are never seen.
+ */
+export const registeredJob = (
+  run: CiRunScope,
+  id: string,
+): Pick<RegisteredJob, "config" | "handler"> | undefined => {
+  return run.inlineJobs.get(id) ?? run.ci.jobs.get(id);
+};
+
+const jobLookup = (
+  jobs: JobRegistry,
+  run: CiRunScope | undefined,
+): Pick<JobRegistry, "get"> => {
+  return {
+    get: (id) => {
+      return run?.inlineJobs.get(id) ?? jobs.get(id);
+    },
+  };
+};
+
+/**
+ * Whether a job has to be built in this run: it was defined here, or any job
+ * it starts from was, and either way the build function couldn't find it.
  */
 export const buildsInRun = (
   config: JobConfig,
-  /** What the job starts from, if it starts from anything. */
-  base: Base | undefined,
+  /** The jobs above it, nearest first, as `ancestry` found them. */
+  above: readonly Base[],
 ): boolean => {
   return (
     isInline(config) ||
-    (base !== undefined && !isImage(base) && isInline(base.config))
+    above.some((base) => {
+      return !isImage(base) && isInline(base.config);
+    })
   );
 };
 
@@ -404,18 +442,22 @@ export const parentBuildOf = async (
   scope: CiJobScope,
   /** The job's own input, already validated. */
   input: unknown,
-): Promise<ResolvedBase | undefined> => {
+): Promise<(ResolvedBase & { inRun: boolean }) | undefined> => {
   const { run, config } = scope;
-  const parent = await namedParent(run, config, input);
+  const above = await ancestry(run, config, input);
+  const parent = above[0];
 
   if (!parent) {
     return undefined;
   }
 
-  return resolvedBase(
-    parent,
-    scope.request?.base ?? (await resolveParent(scope, parent)),
-  );
+  return {
+    ...resolvedBase(
+      parent,
+      scope.request?.base ?? (await resolveParent(scope, parent)),
+    ),
+    inRun: buildsInRun(config, above),
+  };
 };
 
 /**
@@ -787,7 +829,7 @@ const rerunOnThisMachine = async (
   }
 
   const { run } = scope;
-  const registered = run.ci.jobs.get(parent.config.id);
+  const registered = registeredJob(run, parent.config.id);
 
   if (!registered) {
     return;

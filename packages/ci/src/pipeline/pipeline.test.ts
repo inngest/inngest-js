@@ -1556,6 +1556,28 @@ describe("from", () => {
     }).not.toThrow();
   });
 
+  test("a `from` that gives a required schema no input throws when the job is defined", () => {
+    const { ci } = setup();
+
+    const build = ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async () => {},
+    );
+
+    expect(() => {
+      ci.job(
+        {
+          id: "test",
+          from: build.with(undefined as unknown as { target: string }),
+        },
+        async () => {},
+      );
+    }).toThrow(/target: Required/);
+  });
+
   test("input checked by an async schema waits for run time", () => {
     const { ci } = setup();
 
@@ -4646,6 +4668,43 @@ describe("cache builds in their own run", () => {
       name: "NonRetriableError",
       message: expect.stringMatching(/No job with the ID "gone".*out of date/),
     });
+  });
+
+  test("a cached job another app asks for, which starts from an uncached job, is built", async () => {
+    const { ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    ci.job({ id: "leaf", cache: { key: "v1" }, from: base }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const result = await runFunction(build as NonNullable<typeof build>, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          jobId: "leaf",
+          ownKey: "",
+          cacheKey: "leaf",
+          askedByApp: true,
+          rootRunId: "01ROOT",
+          parent: {
+            runId: "01ROOT",
+            pipelineId: "pr",
+            jobPath: "leaf",
+            trigger: "manual",
+          },
+        },
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
   });
 
   test("a cached matrix combination is built by its matrix's function", async () => {

@@ -30,6 +30,7 @@ import {
   checkStaticFrom,
   ownJob,
   parentBuildOf,
+  registeredJob,
   startFrom,
   withoutUnreusableCache,
 } from "../machine/from.ts";
@@ -56,6 +57,7 @@ import {
   getRunScope,
   inJobSpan,
   inlineKey,
+  isInline,
   joinId,
   matrixOriginOf,
   rootRunIdOf,
@@ -118,7 +120,11 @@ export const defineJob = ({
 
   checkCache(config.id, config.cache);
 
-  jobs.set(config.id, { id: config.id, config, handler });
+  (run && isInline(config) ? run.inlineJobs : jobs).set(config.id, {
+    id: config.id,
+    config,
+    handler,
+  });
 
   const job = ((input: unknown) => {
     return runJob({ config, handler, input });
@@ -228,13 +234,9 @@ export const invokeBuild = async (
   // The build function can't find a job that exists only in this run, nor one
   // whose parent does, so such a job builds here. Its `from` reads the
   // validated input, as everywhere else.
-  const [parent] = await ancestry(
-    run,
-    config,
-    await validateInput(config, input),
-  );
+  const above = await ancestry(run, config, await validateInput(config, input));
 
-  if (buildsInRun(config, parent)) {
+  if (buildsInRun(config, above)) {
     return buildInline(args);
   }
 
@@ -337,7 +339,7 @@ export const builtResult = (
  */
 const buildInline = async (args: BuildArgs): Promise<CacheBuildResult> => {
   const { run, path, stepPath = path, config, input } = args;
-  const registered = run.ci.jobs.get(config.id);
+  const registered = registeredJob(run, config.id);
 
   if (!registered) {
     throw new NonRetriableError(
@@ -672,7 +674,7 @@ const jobSteps = async ({
   // that decides to reuse the snapshot or build it. So outside a build run,
   // only the name is needed here. A job the build function can't find builds
   // right here, and is its own build.
-  const inRun = !request && buildsInRun(config, fromParent?.base);
+  const inRun = !request && (fromParent?.inRun ?? isInline(config));
   const asksBuild = Boolean(config.cache) && !request && !inRun;
 
   const cacheAt =

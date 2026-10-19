@@ -11,7 +11,11 @@
 
 import { NonRetriableError, referenceFunction } from "inngest";
 import { deployedRepo } from "../github/deployRepo.ts";
-import { buildOf, cycleMessage } from "../machine/from.ts";
+import {
+  buildOf,
+  cycleMessage,
+  withoutUnreusableCache,
+} from "../machine/from.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { cacheBuildFunctionId } from "./cacheBuild.ts";
@@ -133,9 +137,11 @@ export const answerAppJob = async ({
 
   const { config } = registered;
 
+  const input = await validateInput(config, data.input);
+
   const built = await buildOf(run, {
-    config,
-    input: await validateInput(config, data.input),
+    config: await withoutUnreusableCache(run, config, input),
+    input,
     raw: data.input,
   });
 

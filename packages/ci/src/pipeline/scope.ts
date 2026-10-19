@@ -20,6 +20,7 @@ import type {
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import type { CiHooks } from "./hooks.ts";
+import type { RegisteredJob } from "./job.ts";
 import { spans } from "./names.ts";
 import { inSpan } from "./spans.ts";
 
@@ -249,6 +250,12 @@ export interface CiRunScope {
   sources: Map<string, Promise<ResolvedSource>>;
   /** The IDs of the jobs defined in this run, which must be unique. */
   definedJobs: Set<string>;
+  /**
+   * The jobs defined in this run, which no other run can see. The client's
+   * registry is shared by every run on the worker, so two overlapping runs
+   * defining one ID would build each other's job.
+   */
+  inlineJobs: Map<string, RegisteredJob>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**

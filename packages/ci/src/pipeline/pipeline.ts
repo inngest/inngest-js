@@ -229,6 +229,7 @@ const newRunScope = ({
       }),
     ),
     definedJobs: new Set(),
+    inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
