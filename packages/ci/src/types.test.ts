@@ -81,7 +81,7 @@ import { report } from "./report.ts";
 import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
-  Ancestor,
+  AncestorContext,
   BackgroundProcess,
   CacheKeyPart,
   CacheReason,
@@ -94,6 +94,7 @@ import type {
   CommandTag,
   ExtraMachine,
   Job,
+  JsonValue,
   Matrix,
   RepoContext,
 } from "./types.ts";
@@ -320,6 +321,16 @@ describe("jobs infer their input", () => {
     expectTypeOf(job).toExtend<Job<void, CacheKeyPart>>();
   });
 
+  test("calling a job resolves to the data its handler returned", () => {
+    const job = ci.job("with-output", async () => {
+      return { count: 1, dev: $`pnpm dev` };
+    });
+
+    types(async () => {
+      expectTypeOf(await job()).toEqualTypeOf<{ count: number }>();
+    });
+  });
+
   test("calling a job resolves to nothing", () => {
     const job = ci.job("side-effects", async () => {
       await $`pnpm build`;
@@ -332,25 +343,34 @@ describe("jobs infer their input", () => {
     });
   });
 
-  test("a handler that returns a value is a type error", () => {
-    // @ts-expect-error jobs have no return value
+  test("a handler can return an object of data and commands, and nothing else", () => {
+    ci.job("returns-an-object", async () => {
+      return { count: 1, tags: ["a"], dev: $`pnpm dev` };
+    });
+
+    // @ts-expect-error a number is not an object
     ci.job("returns-a-number", async () => {
       return 42;
     });
 
-    // @ts-expect-error jobs have no return value
+    // @ts-expect-error a string is not an object
     ci.job("returns-a-string", async ({ input: node }: { input: string }) => {
       return node;
     });
 
-    // @ts-expect-error a command's result is a value too
+    // @ts-expect-error a bare command is awaited into its result
     ci.job("returns-a-command-result", async () => {
       return $`pnpm test`;
     });
 
-    // @ts-expect-error config objects are held to the same rule
-    ci.job({ id: "cached-built", cache: { key: "v1" } }, async () => {
-      return { built: true };
+    // @ts-expect-error so is an awaited one
+    ci.job("returns-an-awaited-command", async () => {
+      return await $`pnpm test`;
+    });
+
+    // @ts-expect-error a function is not JSON
+    ci.job("returns-a-function", async () => {
+      return { run: () => {} };
     });
   });
 
@@ -678,8 +698,58 @@ describe("a handler's context", () => {
       // @ts-expect-error no job above it has this key
       from.key.nothing.toString();
 
-      expectTypeOf(from.ancestry).toEqualTypeOf<Ancestor[]>();
+      expectTypeOf(from.ancestry).toEqualTypeOf<AncestorContext[]>();
     });
+  });
+
+  test("from.output and $from are typed through the chain, the nearest job winning a name", () => {
+    const base = ci.job("output-base", async () => {
+      return { shared: 1, only: "base", dev: $`pnpm dev`, shell: $.sh`ls` };
+    });
+
+    const mid = ci.job({ id: "output-mid", from: base }, async () => {
+      return { shared: "mid", shell: "now data" };
+    });
+
+    ci.job({ id: "output-leaf", from: mid }, async ({ from, $from }) => {
+      expectTypeOf(from.output).toEqualTypeOf<{
+        only: string;
+        shared: string;
+        shell: string;
+      }>();
+
+      expectTypeOf($from).toEqualTypeOf<{ dev: Command }>();
+
+      // @ts-expect-error a command is not data
+      from.output.dev;
+
+      // @ts-expect-error data is not a command
+      $from.only;
+
+      // @ts-expect-error mid's data replaced base's command
+      $from.shell;
+    });
+  });
+
+  test("a job below one with no output sees none", () => {
+    const base = ci.job("quiet", async () => {});
+
+    ci.job({ id: "quiet-leaf", from: base }, async ({ from, $from }) => {
+      expectTypeOf(from.output).toEqualTypeOf<{}>();
+      expectTypeOf($from).toEqualTypeOf<{}>();
+    });
+  });
+
+  test("another app's image has loosely typed output", () => {
+    ci.job(
+      { id: "output-on-image", from: image.job("platform/base") },
+      async ({ from, $from }) => {
+        expectTypeOf(from.output.anything).toEqualTypeOf<
+          JsonValue | undefined
+        >();
+        expectTypeOf($from.anything).toEqualTypeOf<Command | undefined>();
+      },
+    );
   });
 
   test("a job with no from has no from", () => {

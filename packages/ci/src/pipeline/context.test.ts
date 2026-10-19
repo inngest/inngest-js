@@ -183,9 +183,10 @@ describe("what a job starts from", () => {
   const expected = {
     id: "mid",
     key: { lock: "l1", shared: "mid", extra: "e1" },
+    output: {},
     ancestry: [
-      { id: "mid", key: { shared: "mid", extra: "e1" } },
-      { id: "base", key: { lock: "l1", shared: "base" } },
+      { id: "mid", key: { shared: "mid", extra: "e1" }, output: {} },
+      { id: "base", key: { lock: "l1", shared: "base" }, output: {} },
     ],
   };
 
@@ -271,7 +272,8 @@ describe("what a job starts from", () => {
     const image1 = {
       id: "node-base",
       key: { devServer: "d1" },
-      ancestry: [{ id: "node-base", key: { devServer: "d1" } }],
+      output: {},
+      ancestry: [{ id: "node-base", key: { devServer: "d1" }, output: {} }],
     };
 
     expect(unique(seen)).toEqual([image1]);
@@ -322,5 +324,283 @@ describe("a matrix job", () => {
         },
       ]),
     );
+  });
+});
+
+describe("what a job returns", () => {
+  /** `base` is cached and returns data and a command, and `leaf` starts from it. */
+  const chain = (api: Api, seen: unknown[], cache = true) => {
+    const ci = app(api, "web");
+
+    const base = ci.job(
+      { id: "base", ...(cache ? { cache: { key: "v1" } } : {}) },
+      async () => {
+        await $`pnpm install`;
+
+        return {
+          version: await $`pnpm --version`.text(),
+          release: { tag: "v9", assets: [1, 2] },
+          dev: $`pnpm dev`.env({ PORT: "3000" }),
+        };
+      },
+    );
+
+    const leaf = ci.job({ id: "leaf", from: base }, async ({ from, $from }) => {
+      seen.push({
+        output: from.output,
+        ancestry: from.ancestry.map((above) => {
+          return above.output;
+        }),
+        dev: JSON.parse(JSON.stringify($from.dev)),
+      });
+
+      await $from.dev.env({ MODE: "test" });
+    });
+
+    return { ci, leaf };
+  };
+
+  const expected = {
+    output: { version: "", release: { tag: "v9", assets: [1, 2] } },
+    ancestry: [{ version: "", release: { tag: "v9", assets: [1, 2] } }],
+    dev: {
+      $cmd: {
+        argv: ["pnpm", "dev"],
+        env: { PORT: "3000" },
+        retries: 0,
+        nothrow: false,
+      },
+    },
+  };
+
+  test("the job that starts from it gets the data as from.output and the command as $from", async () => {
+    const api = createFakeSandboxApi();
+    const seen: unknown[] = [];
+    const { ci, leaf } = chain(api, seen);
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await leaf();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([expected]);
+
+    // The command is run on this job's machine, with what it was given here.
+    expect(api.commands).toContainEqual(["pnpm", "dev"]);
+  });
+
+  test("a cached job's output is found with its snapshot, without the job running", async () => {
+    const api = createFakeSandboxApi();
+    const seen: unknown[] = [];
+
+    for (const runId of ["01FIRST", "01SECOND"]) {
+      const { ci, leaf } = chain(api, seen);
+
+      await go(
+        ci,
+        [ci],
+        async () => {
+          await leaf();
+        },
+        runId,
+      );
+    }
+
+    const installs = api.commands.filter((argv) => {
+      return argv.join(" ").includes("pnpm install");
+    });
+
+    expect(installs).toHaveLength(1);
+    expect(unique(seen)).toEqual([expected]);
+  });
+
+  test("an uncached job's output is found the same way", async () => {
+    const seen: unknown[] = [];
+    const { ci, leaf } = chain(createFakeSandboxApi(), seen, false);
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await leaf();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([expected]);
+  });
+
+  test("an uncached job resolves to its data, without its commands", async () => {
+    const ci = app(createFakeSandboxApi(), "web");
+    const results: unknown[] = [];
+
+    const job = ci.job("job", async () => {
+      return { count: 3, dev: $`pnpm dev` };
+    });
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        results.push(await job());
+      },
+      "01FIRST",
+    );
+
+    expect(unique(results)).toEqual([{ count: 3 }]);
+  });
+
+  test("a job that ran no commands but returned something still gives it", async () => {
+    const seen: unknown[] = [];
+    const ci = app(createFakeSandboxApi(), "web");
+
+    const base = ci.job("base", async () => {
+      return { answer: 42 };
+    });
+
+    const leaf = ci.job({ id: "leaf", from: base }, async ({ from }) => {
+      seen.push(from.output);
+
+      await $`pnpm test`;
+    });
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await leaf();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([{ answer: 42 }]);
+  });
+
+  test("outputs merge up the chain, the nearest job winning a name", async () => {
+    const api = createFakeSandboxApi();
+    const seen: unknown[] = [];
+    const ci = app(api, "web");
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+
+      return { shared: "base", only: "base", run: $`pnpm base` };
+    });
+
+    const mid = ci.job(
+      { id: "mid", from: base, cache: { key: "v1" } },
+      async () => {
+        await $`pnpm build`;
+
+        return { shared: "mid", run: $`pnpm mid` };
+      },
+    );
+
+    const leaf = ci.job({ id: "leaf", from: mid }, async ({ from, $from }) => {
+      seen.push({
+        output: from.output,
+        ancestry: from.ancestry.map((above) => {
+          return [above.id, above.output];
+        }),
+        run: JSON.parse(JSON.stringify($from.run)).$cmd.argv,
+      });
+
+      await $`pnpm test`;
+    });
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await leaf();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([
+      {
+        output: { shared: "mid", only: "base" },
+        ancestry: [
+          ["mid", { shared: "mid" }],
+          ["base", { shared: "base", only: "base" }],
+        ],
+        run: ["pnpm", "mid"],
+      },
+    ]);
+  });
+
+  test("each use of a command in $from is a command of its own", async () => {
+    const seen: unknown[] = [];
+    const ci = app(createFakeSandboxApi(), "web");
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+
+      return { dev: $`pnpm dev` };
+    });
+
+    const child = ci.job({ id: "child", from: base }, async ({ $from }) => {
+      seen.push(JSON.parse(JSON.stringify($from.dev.env({ A: "1" }))));
+      seen.push(JSON.parse(JSON.stringify($from.dev)));
+    });
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await child();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toMatchObject([
+      { $cmd: { env: { A: "1" } } },
+      { $cmd: { env: {} } },
+    ]);
+  });
+
+  test("another app's job gives its output, built or found", async () => {
+    const api = createFakeSandboxApi();
+    const seen: unknown[] = [];
+
+    for (const runId of ["01FIRST", "01SECOND"]) {
+      const platform = app(api, "platform");
+      const web = app(api, "web");
+
+      platform.job({ id: "node-base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+
+        return { node: "22", dev: $`pnpm dev` };
+      });
+
+      const test = web.job(
+        { id: "test", from: image.job("platform/node-base") },
+        async ({ from, $from }) => {
+          seen.push({
+            output: from.output,
+            dev: JSON.parse(JSON.stringify($from.dev)).$cmd.argv,
+          });
+
+          await $`pnpm test`;
+        },
+      );
+
+      await go(
+        web,
+        [platform, web],
+        async () => {
+          await test();
+        },
+        runId,
+      );
+    }
+
+    expect(unique(seen)).toEqual([
+      { output: { node: "22" }, dev: ["pnpm", "dev"] },
+    ]);
   });
 });

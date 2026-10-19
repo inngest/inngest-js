@@ -181,7 +181,7 @@ export interface CiInternals {
     {
       config: JobConfig;
       // biome-ignore lint/suspicious/noExplicitAny: user handler
-      handler: (input: any) => Promise<void>;
+      handler: (input: any) => Promise<unknown>;
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
@@ -323,6 +323,9 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
+/** What jobs returned, by job ID: JSON, with a command as `{ "$cmd": … }`. */
+export type StoredOutputs = Record<string, Record<string, unknown>>;
+
 export interface CiJobScope {
   run: CiRunScope;
   /** The job's path, which is its ID for a job and `${job} › ${name}` for an extra machine. */
@@ -367,6 +370,13 @@ export interface CiJobScope {
   cwd?: string;
   /** Secret values to mask in output. */
   secrets: string[];
+  /**
+   * What the jobs on this machine's chain returned, by job ID, as stored: the
+   * machine's outputs file, plus what ran here since.
+   */
+  outputs: StoredOutputs;
+  /** What the outputs file held when it was last read or written. */
+  savedOutputs: string;
   /** Extra machines created in this job with `sandbox()`, keyed by name. */
   extras?: Map<string, CiJobScope>;
 }

@@ -34,7 +34,8 @@ import {
   startFrom,
   withoutUnreusableCache,
 } from "../machine/from.ts";
-import { snapshotMachine } from "../machine/machine.ts";
+import { saveOutputs, snapshotMachine } from "../machine/machine.ts";
+import { dataOf, outputsFrom, storeOutput } from "../machine/outputs.ts";
 import type {
   Ancestor,
   AnyJob,
@@ -78,7 +79,7 @@ export interface RegisteredJob {
   id: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (ctx: any) => Promise<void>;
+  handler: (ctx: any) => Promise<unknown>;
 }
 
 export const defineJob = ({
@@ -192,7 +193,7 @@ interface RunJobArgs {
   path?: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (ctx: any) => Promise<void>;
+  handler: (ctx: any) => Promise<unknown>;
   input: unknown;
 }
 
@@ -205,7 +206,7 @@ export const runJob = async ({
   config,
   handler,
   input,
-}: RunJobArgs): Promise<void> => {
+}: RunJobArgs): Promise<unknown> => {
   const run = getRunScope();
 
   if (!run) {
@@ -350,14 +351,14 @@ export const builtResult = (
  * image was built from.
  */
 export const handlerContext = ({
-  run,
+  scope,
   id,
   input,
   key,
   cache,
   ancestry,
 }: {
-  run: CiRunScope;
+  scope: CiJobScope;
   id: string;
   input: unknown;
   /** The named parts of the job's own cache key. */
@@ -365,8 +366,18 @@ export const handlerContext = ({
   cache: CacheReason | undefined;
   /** The parent and the jobs above it, nearest first. */
   ancestry: Ancestor[];
-}): Omit<JobContext<unknown>, "from"> & { from?: FromContext } => {
+}): Omit<JobContext<unknown>, "from"> & {
+  from?: FromContext<Record<string, string>, Record<string, unknown>>;
+} => {
+  const { run } = scope;
   const [parent] = ancestry;
+  const above = outputsFrom(
+    () => {
+      return scope;
+    },
+    ancestry,
+    scope.outputs,
+  );
 
   return {
     id,
@@ -384,10 +395,12 @@ export const handlerContext = ({
                 return above.key;
               }),
             ),
-            ancestry,
+            output: above.output,
+            ancestry: above.ancestry,
           },
         }
       : {}),
+    $from: above.$from,
     repo: run.repo,
     run: { id: rootRunIdOf(run) },
   };
@@ -659,7 +672,7 @@ const jobBody = (
     number: number;
     request?: BuildRequest;
   },
-): Promise<void> => {
+): Promise<unknown> => {
   return inJobSpan(args.run, args.config, args.path, () => {
     return jobSteps(args);
   });
@@ -681,7 +694,7 @@ const jobSteps = async ({
   number: number;
   /** Set when the job is built here for a job that starts from it. */
   request?: BuildRequest;
-}): Promise<void> => {
+}): Promise<unknown> => {
   const input = await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
 
@@ -705,6 +718,8 @@ const jobSteps = async ({
     summaries: [],
     env: {},
     secrets: [],
+    outputs: {},
+    savedOutputs: "{}",
     ...(request ? { request } : {}),
   };
 
@@ -800,6 +815,7 @@ const jobSteps = async ({
 
   try {
     let reusedTitle: string | undefined;
+    let returned: Record<string, unknown> | undefined;
 
     if (parentFailure) {
       throw parentFailure.error;
@@ -836,14 +852,14 @@ const jobSteps = async ({
         warnBuiltInRun(run, config.id);
       }
 
-      await runJobBody(scope, async () => {
+      const output = await runJobBody(scope, async () => {
         if (fromParent) {
           await startFrom(scope, fromParent);
         }
 
         return handler(
           handlerContext({
-            run,
+            scope,
             id: config.id,
             input,
             key: builtAs?.key ?? {},
@@ -852,6 +868,8 @@ const jobSteps = async ({
           }),
         );
       });
+
+      returned = storeOutput(scope, config.id, output);
 
       if (builtAs) {
         await snapshotBuilt(scope, builtAs);
@@ -894,6 +912,8 @@ const jobSteps = async ({
       durationMs: reusedTitle ? 0 : durationMs,
       ...(reusedTitle ? { cached: true } : {}),
     });
+
+    return dataOf(returned);
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
@@ -1000,6 +1020,8 @@ const snapshotBuilt = async (
   target: CacheTarget,
 ): Promise<void> => {
   const { run } = scope;
+
+  await saveOutputs(scope);
 
   if (!scope.machine) {
     if (scope.config.cache) {

@@ -15,6 +15,7 @@ import type {
   CiJobScope,
   CiRunScope,
   MachineHandle,
+  StoredOutputs,
 } from "../pipeline/scope.ts";
 import {
   defaultCwd,
@@ -109,7 +110,14 @@ const machineName = (runId: string, path: string): string => {
 };
 
 /**
- * Run once on every machine before its first command.
+ * Where a machine keeps what the jobs on its chain returned. It is in the
+ * snapshot, so a job that starts from one gets it back with the machine.
+ */
+const outputsPath = "/var/tmp/.inngest-ci-outputs.json";
+
+/**
+ * Run once on every machine before its first command. It also prints the
+ * outputs file, which is how a job learns what the jobs above it returned.
  *
  * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
  * - Commands run in `/work` by default, and a sandbox won't start a process in
@@ -120,7 +128,7 @@ const machineName = (runId: string, path: string): string => {
  *   and `waitForHttp`/`waitForPort`. Bringing it up is a no-op once the
  *   platform does it itself.
  */
-export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
+export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true) && (cat ${outputsPath} 2>/dev/null || true)`;
 
 /**
  * The stages a machine is started in. Only the first is tried every time:
@@ -197,10 +205,17 @@ const startSandbox = async (
       snapshotId ? { name, snapshotId } : { name, ...machineConfig },
     );
 
-    await sandbox.commands.run(
+    const setup = await sandbox.commands.run(
       { id: joinId(step.id, "setup"), name: traceName.prepareWorkspace },
       ["/bin/sh", "-c", machineSetupScript],
     );
+
+    const onDisk: StoredOutputs = setup.stdout.trim()
+      ? JSON.parse(setup.stdout)
+      : {};
+
+    scope.savedOutputs = JSON.stringify(onDisk);
+    scope.outputs = { ...onDisk, ...scope.outputs };
 
     return sandbox;
   };
@@ -490,6 +505,31 @@ const snapshotStep = (jobPath: string, id: string) => {
     name: traceName.snapshotMachine,
     "~span": spans.save(jobPath),
   };
+};
+
+/**
+ * Put what the chain returned in the outputs file, if it isn't there yet, so
+ * the snapshot takes it. A job that returned something gets a machine to hold
+ * it, even if it ran no commands.
+ */
+export const saveOutputs = async (scope: CiJobScope): Promise<void> => {
+  const data = JSON.stringify(scope.outputs);
+
+  if (data === scope.savedOutputs) {
+    return;
+  }
+
+  const { sandbox } = await ensureMachine(scope);
+
+  await sandbox.files.write(
+    {
+      id: joinId(scope.path, "outputs"),
+      name: traceName.saveOutputs,
+    },
+    { path: outputsPath, data },
+  );
+
+  scope.savedOutputs = data;
 };
 
 /**
