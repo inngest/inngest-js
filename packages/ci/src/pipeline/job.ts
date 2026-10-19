@@ -34,7 +34,11 @@ import {
   startFrom,
   withoutUnreusableCache,
 } from "../machine/from.ts";
-import { saveOutputs, snapshotMachine } from "../machine/machine.ts";
+import {
+  destroyJobMachines,
+  saveOutputs,
+  snapshotMachine,
+} from "../machine/machine.ts";
 import { dataOf, outputsFrom, storeOutput } from "../machine/outputs.ts";
 import type {
   Ancestor,
@@ -874,6 +878,8 @@ const jobSteps = async ({
       if (builtAs) {
         await snapshotBuilt(scope, builtAs);
       }
+
+      await destroyJobMachines(scope);
     }
 
     // Replays run this from the top, so the clock here is only right on the
@@ -922,6 +928,8 @@ const jobSteps = async ({
     const keptSnapshotId = config.keepOnFailure
       ? (await snapshotMachine(scope))?.snapshotId
       : undefined;
+
+    await destroyJobMachines(scope);
 
     let checkEndedAt: number | undefined;
 

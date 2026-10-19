@@ -436,6 +436,7 @@ export const traceName = {
   saveMachine: "Save sandbox",
   saveOutputs: "Save outputs",
   snapshotMachine: "Snapshot sandbox",
+  destroyMachine: "Destroy sandbox",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
