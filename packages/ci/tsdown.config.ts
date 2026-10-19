@@ -1,11 +1,7 @@
 import { defineConfig } from "tsdown";
 
-export default defineConfig({
-  clean: true,
-  dts: true,
-  entry: ["src/index.ts"],
+const shared = {
   fixedExtension: true,
-  format: ["cjs", "esm"],
   outDir: "dist",
   tsconfig: "tsconfig.build.json",
   target: "node20",
@@ -15,6 +11,25 @@ export default defineConfig({
   minify: false,
   report: true,
   unbundle: true,
-  copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
   deps: { neverBundle: true },
-});
+} as const;
+
+export default defineConfig([
+  {
+    ...shared,
+    clean: true,
+    dts: true,
+    entry: ["src/index.ts"],
+    format: ["cjs", "esm"],
+    copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
+  },
+  {
+    ...shared,
+    clean: false,
+    dts: false,
+    entry: ["src/cli/main.ts"],
+    root: "src",
+    format: ["esm"],
+    banner: "#!/usr/bin/env node",
+  },
+]);
