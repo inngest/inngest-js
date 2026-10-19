@@ -8,7 +8,7 @@
 import { github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { examples, streamingExamples } from "../jobs/examples.ts";
+import { examples } from "../jobs/examples.ts";
 import {
   composite,
   deps,
@@ -57,7 +57,6 @@ export const pr = ci.pipeline(
       otel(),
       ciPackage(),
       examples(),
-      streamingExamples(),
     ]);
 
     const reasons = results.flatMap((result) => {
