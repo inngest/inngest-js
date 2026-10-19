@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@inngest/ci": "0.4.0",
-    "inngest": "4.25.0"
+    "@inngest/ci": "link:../packages/ci/dist",
+    "inngest": "link:../packages/inngest/dist"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
