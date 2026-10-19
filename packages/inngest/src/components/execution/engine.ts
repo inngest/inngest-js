@@ -1284,10 +1284,29 @@ class InngestExecutionEngine
           sseResponse = defaultSseResponse(resultData);
         }
 
-        // Only a discovery request can complete a run. A targeted request is
-        // for one specific step, so run it and report its result, even though
-        // the handler returned before the step got to run.
-        if (this.options.requestedRunStep) {
+        if (this.options.fn["shouldOptimizeParallelism"]()) {
+          // Real new steps (e.g. from `Promise.race` where the winning branch
+          // completed before losing branches reported). The function isn't
+          // truly done: the executor needs to memoize these and call back.
+          // Don't close the stream. `filterNewSteps` excludes lazy ops, so
+          // `attachLazyOps` is what folds them in here.
+          const newSteps = await this.filterNewSteps(
+            Array.from(this.state.steps.values()),
+          );
+
+          if (newSteps?.length) {
+            return this.attachLazyOps({
+              type: "steps-found",
+              ctx: this.fnArg,
+              ops: this.ops,
+              steps: newSteps as [OutgoingOp, ...OutgoingOp[]],
+            });
+          }
+        } else if (this.options.requestedRunStep) {
+          // With `optimizeParallelism: false` only a discovery request can
+          // complete a run. A targeted request is for one specific step, so
+          // run it and report its result, even though the handler returned
+          // before the step got to run.
           const stepResult = await this.tryExecuteStep(
             Array.from(this.state.steps.values()),
           );
@@ -1312,9 +1331,12 @@ class InngestExecutionEngine
           };
         }
 
-        // The handler returning is the end of the run. Steps it never awaited
-        // and that were never run (a floating `waitForEvent`, `sleep` or
-        // `step.run`, or the losers of a race) are not scheduled. Buffered lazy
+        // With `optimizeParallelism: false`, the handler returning is the end
+        // of the run. Steps it never awaited and that were never run (a
+        // floating `waitForEvent`, `sleep` or `step.run`, or the losers of a
+        // race) are not scheduled. Buffered lazy ops (e.g. `defer` calls) are
+        // the exception: they are drained and sent alongside `RunComplete`
+        // below.
 
         // Function is truly done. Close the stream with a terminal
         // succeeded event.
