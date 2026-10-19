@@ -82,6 +82,7 @@ export {
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
+export { image } from "./components/sandbox/image.ts";
 export type {
   SandboxTool,
   SandboxToolContext,
