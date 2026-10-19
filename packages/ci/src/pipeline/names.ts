@@ -43,8 +43,8 @@ const ciSpan = (kind: SpanKind, id: string, name: string): SpanInfo => {
  */
 export const spans = {
   /** A job, which holds everything it does. */
-  job: (config: JobConfig, path: string, name?: string): SpanInfo => {
-    return userSpan("job", path, name ?? traceName.job(config, path));
+  job: (config: JobConfig, path: string): SpanInfo => {
+    return userSpan("job", path, traceName.job(config, path));
   },
 
   /** The run's one span for reporting to GitHub. */
@@ -181,6 +181,15 @@ const fixed = (id: string, name: string, extras: StepExtras = {}) => {
  * `unmarked`.
  */
 export const steps = {
+  // Jobs of other apps.
+  buildAppJob: (id: string, name: string): StepSpec => {
+    return { id, name: `Build ${name} in its app` };
+  },
+
+  findDeployedRepo: (): StepSpec => {
+    return { id: joinId("deploy", "repo"), name: "Find deployed repository" };
+  },
+
   // The cache.
   cacheKey: (jobPath: string): StepSpec => {
     return {
@@ -363,6 +372,8 @@ export const steps = {
   },
 
   recordRunDetails: named("Record run details"),
+
+  checkBuildLock: named("Check build"),
 };
 
 export const traceName = {
@@ -403,10 +414,6 @@ export const traceName = {
 
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
-  },
-
-  buildInline: (jobId: string): string => {
-    return `Build ${jobId} inline`;
   },
 
   askForBuild: (path: string): string => {

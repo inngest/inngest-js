@@ -9,8 +9,6 @@ import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import type { NamePolicy } from "../cache/namePolicy.ts";
-import { policyFromFlags } from "../cache/namePolicy.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import type {
@@ -22,6 +20,7 @@ import type {
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import type { CiHooks } from "./hooks.ts";
+import type { RegisteredJob } from "./job.ts";
 import { spans } from "./names.ts";
 import { inSpan } from "./spans.ts";
 
@@ -88,14 +87,18 @@ export const isInline = (config: JobConfig): boolean => {
 
 /**
  * What a job is asked to build, whether by the build function's run or by the
- * run that defined it: where its snapshot goes, how the name is treated, what
+ * run that defined it: where its snapshot goes, what to do about the name, what
  * it starts from, and where it leaves what it ended with.
  */
 export interface BuildRequest {
   /** The key and snapshot name to build under. */
   target: CacheTarget;
-  /** What to do about the name, which a rebuild of a bad snapshot changes. */
-  name: NamePolicy;
+  /** A snapshot that wouldn't start, which the build must not reuse. */
+  exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
   /** What the job starts from, as a build is handed it. */
   base?: CacheBuildResult;
   /** What the job leaves for whoever asked: the job sets it, they read it. */
@@ -128,7 +131,9 @@ export interface MachineHandle {
 export const requestOf = (data: CacheBuildData): BuildRequest => {
   return {
     target: { ownKey: data.ownKey, name: data.cacheKey },
-    name: policyFromFlags(data),
+    ...(data.exclude ? { exclude: data.exclude } : {}),
+    ...(data.broken ? { broken: data.broken } : {}),
+    ...(data.unnamed ? { unnamed: data.unnamed } : {}),
     ...(data.base ? { base: data.base } : {}),
     sink: {},
   };
@@ -237,14 +242,20 @@ export interface CiRunScope {
    * else, and no job reads another job's state through it.
    */
   builds: Map<string, Promise<CacheBuildResult>>;
-  /** The IDs of the jobs defined in this run, which must be unique. */
-  definedJobs: Set<string>;
   /**
    * The repositories and refs `checkout()` and `files()` have resolved to a
    * commit, keyed by repository and ref, so each is resolved by one step per
    * run. It holds promises and nothing else.
    */
   sources: Map<string, Promise<ResolvedSource>>;
+  /** The IDs of the jobs defined in this run, which must be unique. */
+  definedJobs: Set<string>;
+  /**
+   * The jobs defined in this run, which no other run can see. The client's
+   * registry is shared by every run on the worker, so two overlapping runs
+   * defining one ID would build each other's job.
+   */
+  inlineJobs: Map<string, RegisteredJob>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
@@ -333,11 +344,14 @@ export interface CiJobScope {
    * whatever the number of children that need it, and gives the new one. Set
    * by `startFrom`.
    *
-   * The name policy says how the rebuild treats the name: a snapshot that
-   * failed to start twice is deleted first (once, whichever child asks), and a
-   * snapshot another build is still taking leaves the name alone.
+   * With `broken`, the snapshot failed to start twice, so it is deleted first
+   * (once, whichever child asks). With `unnamed`, the rebuild leaves the name
+   * alone, as when another build is still taking the snapshot.
    */
-  rebuildSnapshot?: (name: NamePolicy) => Promise<string | undefined>;
+  rebuildSnapshot?: (why: {
+    broken: boolean;
+    unnamed: boolean;
+  }) => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.
@@ -627,11 +641,9 @@ export const inJobSpan = <R>(
   config: JobConfig,
   jobPath: string,
   fn: () => R,
-  /** What the span is called, when it isn't the job's name. */
-  name?: string,
 ): R => {
   return runWithAsyncCtx(run.asyncCtx, () => {
-    return inSpan(spans.job(config, jobPath, name), fn);
+    return inSpan(spans.job(config, jobPath), fn);
   });
 };
 

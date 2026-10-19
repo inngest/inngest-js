@@ -19,7 +19,7 @@ import {
   requireRunScope,
 } from "../pipeline/scope.ts";
 import type { CheckConclusion, Duration } from "../types.ts";
-import { errorMessage, hash } from "../util.ts";
+import { durationToMs, errorMessage, hash } from "../util.ts";
 import type { Octokit } from "./auth.ts";
 import { mapGitHubError, octokitForRun, rest } from "./rest.ts";
 import { hasPermission, type Permission } from "./triggers.ts";
@@ -566,7 +566,7 @@ export const waitForChecks = async (opts: {
           },
           {
             event: "github/check_run.completed",
-            timeout: opts.timeout ?? "1h",
+            timeout: durationToMs(opts.timeout ?? "1h", "timeout"),
             if: `async.data.check_run.name == ${JSON.stringify(name)} && async.data.check_run.head_sha == ${JSON.stringify(sha)}`,
           },
         );
@@ -628,7 +628,7 @@ export const waitForWorkflow = async (opts: {
       },
       {
         event: "github/workflow_run.completed",
-        timeout: opts.timeout ?? "1h",
+        timeout: durationToMs(opts.timeout ?? "1h", "timeout"),
         if: `async.data.workflow_run.head_sha == ${JSON.stringify(sha)} && ${workflowMatch}`,
       },
     );

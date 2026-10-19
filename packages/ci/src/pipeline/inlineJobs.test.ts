@@ -87,14 +87,6 @@ describe("inline jobs", () => {
     // The run's snapshot is gone once the run's cleanup has deleted it.
     expect(machineOf(api, "lint")?.snapshotId).toBeTruthy();
     expect(api.snapshots.size).toBe(0);
-
-    const spanNames = Object.values(result.spans)
-      .flat()
-      .map((span) => {
-        return span.name;
-      });
-
-    expect(spanNames).toContain("Build base inline");
   });
 
   test("an inline cached job is found by its name in a later run", async () => {
@@ -298,6 +290,81 @@ describe("inline jobs", () => {
     expect(count(api, "pnpm install")).toBe(1);
     expect(count(api, "pnpm mid")).toBe(1);
     expect(count(api, "pnpm leaf")).toBe(1);
+  });
+
+  test("a cached job whose grandparent is inline builds in the run too", async () => {
+    const { api, ci } = setup();
+
+    const parents: { current?: ReturnType<typeof ci.job> } = {};
+
+    const mid = ci.job(
+      {
+        id: "mid",
+        cache: { key: "v1" },
+        from: () => {
+          return parents.current as never;
+        },
+      },
+      async () => {
+        await $`pnpm build`;
+      },
+    );
+
+    const leaf = ci.job(
+      { id: "leaf", cache: { key: "v1" }, from: mid },
+      async () => {
+        await $`pnpm lint`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      parents.current = ci.job(
+        { id: "base", cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      await leaf();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(invokes(result.stepIds)).toEqual([]);
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(count(api, "pnpm lint")).toBe(1);
+  });
+
+  test("overlapping runs that define one ID each build their own job", async () => {
+    const { api, ci } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      const runId = getRunScope()?.runId;
+
+      const base = ci.job("base", async () => {
+        await $`echo ${runId}`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {
+        await $`pnpm lint`;
+      });
+
+      await lint();
+    });
+
+    const runs = await Promise.all(
+      ["01A", "01B"].map((runId) => {
+        return runFunction(pipeline, { event: prEvent, runId });
+      }),
+    );
+
+    for (const run of runs) {
+      expect(run.type).toBe("function-resolved");
+    }
+
+    expect(count(api, "echo 01A")).toBe(1);
+    expect(count(api, "echo 01B")).toBe(1);
   });
 
   test("defining one ID twice in a run says to put what varies in the id", async () => {

@@ -29,6 +29,7 @@ import type {
   MatrixAxes,
   RepoContext,
 } from "../types.ts";
+import { answerAppJob } from "./appJob.ts";
 import { buildRequestedEvent } from "./buildLock.ts";
 import type { RegisteredJob } from "./job.ts";
 import { builtResult, runJob } from "./job.ts";
@@ -66,11 +67,15 @@ export interface CacheBuildData extends Record<string, unknown> {
    */
   cacheKey: string;
   /**
-   * The jobs whose builds led to this one, outermost first: each build run
-   * adds its own job when it invokes another. A build asked for a job that's
-   * already here is a cycle of `from`s.
+   * The `app/job`s whose builds led to this one, outermost first. A build
+   * asked for a job that is already here is a cycle.
    */
   chain?: string[];
+  /**
+   * Set when another app asks for this job with `image.job()`. It can't name
+   * the job's snapshot, so this run works the name out itself.
+   */
+  askedByApp?: boolean;
   /**
    * A snapshot that turned out to be bad, which may still hold the name. The
    * build never reuses it.
@@ -234,8 +239,10 @@ const buildSnapshot = async ({
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes>>;
 }): Promise<CacheBuildResult> => {
-  if (data.chain?.includes(data.jobId)) {
-    throw new NonRetriableError(cycleMessage([...data.chain, data.jobId]));
+  const run = getRunScope();
+
+  if (data.askedByApp && run) {
+    return answerAppJob({ run, data, jobs });
   }
 
   if (data.matrix) {
@@ -266,7 +273,6 @@ const buildSnapshot = async ({
     });
   }
 
-  const run = getRunScope();
   const request = run?.request ?? requestOf(data);
 
   // The job's line is the build run's own too, whose totals count it.

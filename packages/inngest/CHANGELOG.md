@@ -1,5 +1,181 @@
 # inngest
 
+## 4.25.0
+
+### Minor Changes
+
+- [#1802](https://github.com/inngest/inngest-js/pull/1802) [`40af8b5b`](https://github.com/inngest/inngest-js/commit/40af8b5b30293ab748eb51fcd600371ab89e1257) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Choose the image a sandbox starts from with `image.inngest()` or `image.custom()`, exported from `inngest/experimental`.
+
+  ```ts
+  import { image } from "inngest/experimental";
+
+  await step.sandbox.create("build", {
+    name: "build",
+    vcpu: 2,
+    memoryMb: 2048,
+    from: image.inngest("base"),
+  });
+
+  await step.sandbox.create("custom", {
+    name: "custom",
+    vcpu: 2,
+    memoryMb: 2048,
+    from: image.custom("my-image:v1"),
+  });
+  ```
+
+- [#1756](https://github.com/inngest/inngest-js/pull/1756) [`5dc1279d`](https://github.com/inngest/inngest-js/commit/5dc1279d6b45dfe1e29c91f0e2283d8775d7a51c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Select an already-published image with `image` in `inngest.sandboxes.create()` or `step.sandbox.create()`. Names, tags, and artifact SHA-256 references are supported. Omission keeps the default base image; snapshot clones retain their source image and cannot select another. Sandbox resources expose an optional `imageDigest` containing the pinned artifact digest.
+
+### Patch Changes
+
+- [#1801](https://github.com/inngest/inngest-js/pull/1801) [`023ebfa3`](https://github.com/inngest/inngest-js/commit/023ebfa3eb279e3b0364c354647d0dd6813998eb) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Functions using `optimizeParallelism: false` once again complete the run when the function returns, as they did in v3. In v4 this changed unintentionally: the run waited for steps you started but never awaited. If you don't use `optimizeParallelism: false`, nothing changes.
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "example",
+      optimizeParallelism: false,
+      triggers: [{ event: "app/example" }],
+    },
+    async ({ step }) => {
+      step.sleep("unused", "7d");
+
+      return "done";
+    },
+  );
+  ```
+
+- [#1791](https://github.com/inngest/inngest-js/pull/1791) [`b112a09e`](https://github.com/inngest/inngest-js/commit/b112a09e8f1cff2a836bfc82626bf18a32c4c7a4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: code running in a sandbox can now call functions in your app. Pass `tools` to `commands.run`, and each call the code makes runs your function as its own durable step, so it's retried and memoized like any other step.
+
+  ```ts
+  await sandbox.commands.run("agent", "node agent.js", {
+    tools: {
+      getCustomer: (id: string) => db.customers.find(id),
+    },
+  });
+  ```
+
+  ```js
+  // agent.js, inside the sandbox
+  const { tools } = require("inngest_tools");
+  const customer = await tools.getCustomer("cus_1");
+  ```
+
+  In Python, use `from inngest_tools import tools` and `await tools.getCustomer("cus_1")`. A tool that fails raises a `ToolError` the code can catch.
+
+- [#1783](https://github.com/inngest/inngest-js/pull/1783) [`167709c6`](https://github.com/inngest/inngest-js/commit/167709c6322b6a1104ce677b2529a4041546e481) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: you can now run Python in a sandbox with `step.sandbox.python`, available with `sandboxMiddleware()`. It creates a sandbox, runs your code, and destroys it, and a top-level `return` gives the result back. Pass data in with `input`: each key becomes a variable. A non-zero exit fails the step with the error output. Code and input of any size work, and results can be as large as a step can return.
+
+  Pass a schema as `schema.output` to validate the result: it's typed from the schema (as its JSON form, like `step.run`), and a result that doesn't match fails the step with the schema's issues.
+
+  ```ts
+  const stats = await step.sandbox.python(
+    "stats",
+    `import statistics
+  return {"mean": statistics.mean(values)}`,
+    {
+      input: { values: [1, 2, 3, 4] },
+      schema: { output: z.object({ mean: z.number() }) },
+    },
+  );
+  ```
+
+  Like any other step, it takes a step ID or step options, such as `{ id: "stats", name: "Compute the mean" }`, as its first argument.
+
+- [#1787](https://github.com/inngest/inngest-js/pull/1787) [`dc120418`](https://github.com/inngest/inngest-js/commit/dc1204183c601163b1c4cac3b4330f337d551637) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: inline sandbox runner code can be indented to match your source; it's dedented before it runs.
+
+- [#1793](https://github.com/inngest/inngest-js/pull/1793) [`27b3631c`](https://github.com/inngest/inngest-js/commit/27b3631c0ad03c9fc9800393877592bca3d4b1d3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: `step.sandbox.python` and `step.sandbox.typescript` now take `tools`. The code calls them as `tools.name(...)` with no import, and each call runs your function as a durable step.
+
+  ```ts
+  const total = await step.sandbox.python(
+    "total",
+    `customer = await tools.getCustomer("cus_1")
+  return customer["seats"] * 10`,
+    {
+      tools: { getCustomer: (id: string) => db.customers.find(id) },
+      schema: { output: z.number() },
+    },
+  );
+  ```
+
+- [#1795](https://github.com/inngest/inngest-js/pull/1795) [`e308aaa3`](https://github.com/inngest/inngest-js/commit/e308aaa398a7d406875867fdf0c73b5e5e731d5d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: sandbox code can now call `tool.group()` tools, whose body is a group of real steps. Run steps in parallel, invoke other functions and use their result, send events, or wait for one, all from a single tool call.
+
+  ```ts
+  import { step } from "inngest";
+  import { tool } from "inngest/experimental";
+
+  const refund = tool.group({
+    input: z.object({ orderId: z.string() }),
+    run: async ({ orderId }) => {
+      const result = await step.invoke("refund", {
+        function: refundFn,
+        data: { orderId },
+      });
+
+      await step.sendEvent("notify", { name: "order/refunded", data: result });
+
+      return result;
+    },
+  });
+  ```
+
+- [#1796](https://github.com/inngest/inngest-js/pull/1796) [`0cc19e58`](https://github.com/inngest/inngest-js/commit/0cc19e585daaf263adfae5fc7321491f7e45f124) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: an Inngest function, or a `referenceFunction()` to one, can now be a sandbox tool. The code calls it with named arguments, which become the event data, and gets the function's result back. The invoke is a durable step.
+
+  ```ts
+  import { eventType } from "inngest";
+
+  const refund = inngest.createFunction(
+    {
+      id: "refund",
+      triggers: [
+        eventType("order/refund", {
+          schema: z.object({ orderId: z.string() }),
+        }),
+      ],
+    },
+    async ({ event }) => issueRefund(event.data.orderId),
+  );
+
+  await sandbox.commands.run("agent", "node agent.js", {
+    tools: { refund },
+  });
+  ```
+
+  The arguments are checked against the function's trigger schema when it has one. Without a schema, any named arguments are sent; wrap the invoke in `tool.group()` to declare the input you want.
+
+- [#1794](https://github.com/inngest/inngest-js/pull/1794) [`80016cf0`](https://github.com/inngest/inngest-js/commit/80016cf05b6181da08efeb474b63cf3de0755fef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: declare a sandbox tool with `tool.step()` to give it typed, named arguments. The `input` schema is checked before anything runs, so a bad call gets a `ToolError` back in the sandbox, and `output` checks the result. A plain function in `tools` still works, and takes positional arguments.
+
+  ```ts
+  import { tool } from "inngest/experimental";
+
+  const getCustomer = tool.step({
+    input: z.object({ id: z.string() }),
+    output: z.object({ name: z.string() }),
+    run: async ({ id }) => db.customers.find(id),
+  });
+
+  await sandbox.commands.run("agent", "node agent.js", {
+    tools: { getCustomer },
+  });
+  ```
+
+  ```js
+  // agent.js, inside the sandbox
+  const { tools } = require("inngest_tools");
+  const customer = await tools.getCustomer({ id: "cus_1" });
+  ```
+
+  `tool.step()` works with `commands.run` and with the Python and TypeScript runners. Its body also receives an idempotency key that stays the same across retries, for APIs that deduplicate writes.
+
+- [#1784](https://github.com/inngest/inngest-js/pull/1784) [`f5b71099`](https://github.com/inngest/inngest-js/commit/f5b71099489c6db3a806de55b7f3471eeed0dd3d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: you can now run TypeScript in a sandbox with `step.sandbox.typescript`, available with `sandboxMiddleware()`. `input` keys become variables, a top-level `return` gives the result back, and top-level `await` works. It takes the same `schema.output` as `step.sandbox.python` to validate and type the result. The sandbox image needs Node 22.13 or later.
+
+  ```ts
+  const total = await step.sandbox.typescript(
+    "sum",
+    `return numbers.reduce((a: number, b: number) => a + b, 0)`,
+    { input: { numbers: [1, 2, 3] } },
+  );
+  ```
+
 ## 4.24.0
 
 ### Minor Changes

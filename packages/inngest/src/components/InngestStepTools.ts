@@ -281,6 +281,29 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
 };
 
 /**
+ * Run a callback whose steps get `prefix` before their IDs, so concurrent
+ * callers can use the same IDs.
+ */
+export const withStepIdPrefix = <T>(prefix: string, callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: {
+        ...currentCtx.execution,
+        stepIdPrefix: `${currentCtx.execution.stepIdPrefix ?? ""}${prefix}`,
+      },
+    },
+    callback,
+  );
+};
+
+/**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
@@ -336,9 +359,18 @@ export const createStepTools = <
     opts?: StepToolOptions<T>,
   ): T => {
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
-      const op = matchOp(stepOptions, ...rest);
-
       const alsCtx = getAsyncCtxSync()?.execution;
+      const prefix = alsCtx?.stepIdPrefix;
+      const op = matchOp(
+        prefix
+          ? {
+              ...stepOptions,
+              id: `${prefix}${stepOptions.id}`,
+              name: stepOptions.name ?? stepOptions.id,
+            }
+          : stepOptions,
+        ...rest,
+      );
 
       if (alsCtx?.insideExperimentSelect) {
         throw new NonRetriableError(

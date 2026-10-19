@@ -44,7 +44,6 @@
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { lookupBeforeBuild } from "../cache/cache.ts";
-import type { NamePolicy } from "../cache/namePolicy.ts";
 import { lockMachineName } from "../machine/machine.ts";
 import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
@@ -87,12 +86,13 @@ export type BuildDone = { name: string } & (
  */
 export const takesBuildLock = (
   config: JobConfig,
-  name: NamePolicy,
+  request: { exclude?: string; unnamed?: boolean },
 ): boolean => {
   return (
     config.cache !== undefined &&
     config.from === undefined &&
-    name.kind === "take"
+    !request.exclude &&
+    !request.unnamed
   );
 };
 

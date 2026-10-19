@@ -1,6 +1,6 @@
 {
   "name": "@inngest/ci",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Inngest Labs: CI pipelines in TypeScript, run by Inngest on Sandboxes",
   "type": "module",
   "publishConfig": {
@@ -64,7 +64,7 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "inngest": "^4.24.1"
+    "inngest": "^4.25.0"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.3.1",

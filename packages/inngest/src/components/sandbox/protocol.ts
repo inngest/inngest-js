@@ -1,6 +1,7 @@
 import { z } from "zod/v3";
 
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxToolsRequest } from "./tools.ts";
 import {
   type SandboxAction,
   SandboxError,
@@ -677,6 +678,10 @@ export type SandboxRawTool = (
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationV1,
   finish?: (result: unknown) => unknown,
+  /**
+   * Makes an `exec` run with tools the code can call.
+   */
+  tools?: SandboxToolsRequest,
 ) => Promise<unknown>;
 export type SandboxRawToolResolver = () =>
   | SandboxRawTool

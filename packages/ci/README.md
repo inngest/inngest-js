@@ -53,7 +53,7 @@ A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, 
 
 ## Caching
 
-A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name.
+A job with a `cache` key is reused until its key changes. Add `maxAge` to rebuild it on a schedule too: a snapshot older than that counts as a miss, and the new one takes its name. Every duration in `@inngest/ci` (`maxAge`, `.timeout()`, `waitForPort`, `waitForHttp`, `github.waitForChecks`) takes milliseconds, an `ms` string like `"30s"` or `"1h30m"`, or a `Temporal.Duration`. A bare number in a string (`"10"`) means milliseconds.
 
 ```ts
 const base = ci.job(
@@ -64,6 +64,20 @@ const base = ci.job(
   },
 );
 ```
+
+## Start from another app's job
+
+Share a base across apps with `image.job()`. The other app builds the job if it's missing, once for every app that asks, from the commit it was deployed from.
+
+```ts
+import { image } from "@inngest/ci";
+
+ci.job({ id: "test", from: image.job("platform/node-base") }, async () => {
+  await $`pnpm test`;
+});
+```
+
+The other app finds that commit in its host's variables (Vercel or GitHub Actions) or its git checkout. Both apps run `@inngest/ci` in the same Inngest environment.
 
 ## Another repository or ref
 
