@@ -124,7 +124,7 @@ export interface Ci {
    *
    * What the handler returns is the job's output: an object of JSON values and
    * commands. Jobs that start `from` it get the data as `from.output` and the
-   * commands as `$from`, and an uncached job resolves to its data.
+   * commands as `from.$`, and an uncached job resolves to its data.
    *
    * ```ts
    * const base = ci.job("base", async () => {
@@ -133,10 +133,10 @@ export interface Ci {
    *   return { version: await $`pnpm --version`.text(), dev: $`pnpm dev` };
    * });
    *
-   * const test = ci.job({ id: "test", from: base }, async ({ from, $from }) => {
+   * const test = ci.job({ id: "test", from: base }, async ({ from }) => {
    *   from.output.version; // "9.1.0"
    *
-   *   await $from.dev.background();
+   *   await from.$.dev.background();
    * });
    * ```
    *

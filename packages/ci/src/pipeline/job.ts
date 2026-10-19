@@ -400,11 +400,11 @@ export const handlerContext = ({
               }),
             ),
             output: above.output,
+            $: above.$,
             ancestry: above.ancestry,
           },
         }
       : {}),
-    $from: above.$from,
     repo: run.repo,
     run: { id: rootRunIdOf(run) },
   };

@@ -434,7 +434,7 @@ export interface Job<
   readonly "~from"?: TFrom;
   /**
    * What the handler returns, for type checks only: it's never set. It types
-   * the `from.output` and `$from` of a job that starts from this one.
+   * the `from.output` and `from.$` of a job that starts from this one.
    *
    * @internal
    */
@@ -492,10 +492,12 @@ export interface Ancestor {
   key: Record<string, string>;
 }
 
-/** A job above the one running, with the data it returned. */
+/** A job above the one running, with what it returned. */
 export interface AncestorContext extends Ancestor {
   /** The data the job returned, as it was when its image was built. */
   output: Record<string, unknown>;
+  /** The commands the job returned. */
+  $: Record<string, Command>;
 }
 
 /**
@@ -518,9 +520,23 @@ export interface FromContext<
    * The data everything the image was built from returned, flattened through
    * its ancestors. The nearest one wins a shared name. It describes the image
    * as it was built, so a cached image gives the same output every time.
-   * Commands are in `$from`.
+   * Commands are in `$`.
    */
   output: DataOf<TOutput>;
+  /**
+   * The commands everything the image was built from returned, flattened like
+   * `output`, to run on this job's machine. They are commands, not processes:
+   * nothing the jobs above started is running here.
+   *
+   * Write `from.$.devServer` rather than destructuring: `const { $ } = from`
+   * would shadow the `$` you import, and `from.$.x` says where a command
+   * comes from.
+   *
+   * ```ts
+   * await from.$.devServer.background();
+   * ```
+   */
+  $: CommandsOf<TOutput>;
   /** Each job above, nearest first, with its own key parts and output, for exact lookups. */
   ancestry: AncestorContext[];
 }
@@ -585,11 +601,6 @@ type ParentOf<TFrom> = [TargetOf<TFrom>] extends [never]
   ? undefined
   : FromContext<KeysOf<TFrom>, OutputsOf<TFrom>>;
 
-/** The commands of everything a `from` names. */
-type CommandsFrom<TFrom> = [TargetOf<TFrom>] extends [never]
-  ? Record<never, never>
-  : CommandsOf<OutputsOf<TFrom>>;
-
 /**
  * Why a cached job is running instead of being reused: `"miss"` when no
  * usable snapshot was found, `"refresh"` when its `cache.refresh` trigger
@@ -626,12 +637,6 @@ export interface JobContext<
   input: TInput;
   /** The job it starts `from`, resolved. `undefined` without a `from`. */
   from: ParentOf<TFrom>;
-  /**
-   * The commands the jobs it starts `from` returned, to run on this job's
-   * machine. They are commands, not processes: nothing the job above started
-   * is running here.
-   */
-  $from: CommandsFrom<TFrom>;
   /** The repository and change this run is for, as the pipeline's `repo`. */
   repo: RepoContext | undefined;
   /** The Inngest run the job is in. */
