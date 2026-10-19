@@ -11,11 +11,16 @@ import { $ } from "@inngest/ci";
 import { ci } from "../client.ts";
 import { pack, source } from "./base.ts";
 
-const inngestDir = "/work/packages/inngest";
-
-export const lint = ci.job({ id: "lint", from: source }, async () => {
-  await $`pnpm --filter inngest run lint`;
-});
+export const checks = ci.matrix(
+  {
+    id: "inngest",
+    from: source,
+    axes: { script: ["lint", "test:dist", "test:deps"] },
+  },
+  async ({ matrix }) => {
+    await $`pnpm --filter inngest run ${matrix.script}`;
+  },
+);
 
 export const runtime = ci.matrix(
   { id: "runtime", from: source, axes: { node: ["20", "22", "24.16.0"] } },
@@ -39,34 +44,23 @@ export const types = ci.matrix(
   },
 );
 
-export const dist = ci.job({ id: "dist", from: source }, async () => {
-  await $`pnpm --filter inngest run test:dist`;
-});
-
-export const deps = ci.job({ id: "deps", from: source }, async () => {
-  await $`pnpm --filter inngest run test:deps`;
-});
-
 export const integration = ci.matrix(
   { id: "integration", from: source, axes: { shard: ["1/3", "2/3", "3/3"] } },
-  async ({ matrix, from }) => {
-    await $`pnpm --filter inngest run test:integration --shard=${matrix.shard}`.env(
-      {
-        INNGEST_CLI_VERSION: from.output.devServerVersion,
-      },
-    );
+  async ({ matrix, $from }) => {
+    await $from.integration.env({ SHARD: matrix.shard });
   },
 );
 
-export const health = ci.job({ id: "health", from: pack }, async () => {
-  await Promise.all([
-    $`pnpm dlx publint --pack npm ./dist`.cwd(inngestDir).as("publint"),
-    $`pnpm exec attw inngest.tgz`.cwd(inngestDir).as("are the types wrong"),
-  ]);
-});
+export const health = ci.job(
+  { id: "health", from: pack },
+  async ({ $from }) => {
+    await Promise.all([$from.publint, $from.attw]);
+  },
+);
 
-export const composite = ci.job({ id: "composite", from: pack }, async () => {
-  await $`npm i ../../inngest.tgz`.cwd(`${inngestDir}/test/composite_project`);
-
-  await $`npm run test`.cwd(`${inngestDir}/test/composite_project`);
-});
+export const composite = ci.job(
+  { id: "composite", from: pack },
+  async ({ $from }) => {
+    await $from.composite;
+  },
+);

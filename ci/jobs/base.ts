@@ -1,9 +1,11 @@
 /**
- * The images every job starts from. `base` has the repository's dependencies
- * and the latest Dev Server, and returns its version for the tests to use.
- * `build` adds the built `inngest` and `test` packages, `source` moves them
- * to the commit being tested, and `pack` adds the `inngest` tarball. `base`
- * and `build` are cached, and pushes to main keep them warm for pull requests.
+ * The images every job starts from, and the commands they hand down. `base`
+ * has the repository's dependencies and the latest Dev Server, and returns the
+ * integration test commands that run against it. `build` adds the built
+ * `inngest` and `test` packages, `source` moves them to the commit being
+ * tested, and `pack` adds the `inngest` tarball and returns the commands that
+ * check it. `base` and `build` are cached, and pushes to main keep them warm
+ * for pull requests.
  *
  * @module
  */
@@ -46,7 +48,7 @@ export const base = ci.job(
   async ({ key }) => {
     await checkout();
 
-    // TODO: drop once the sandbox image maps localhost to 127.0.0.1 (raised with the platform team).
+    // The sandbox image has no IPv4 localhost entry (reported to the platform team).
     await $.sh`grep -q "127.0.0.1 localhost" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts`.as(
       "resolve localhost",
     );
@@ -57,14 +59,22 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
-    const devServer =
+    const devServer = (
       await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`
         .as("download the Dev Server")
-        .text();
+        .text()
+    ).replace(/^inngest version |-\w+$/g, "");
+
+    const env = { INNGEST_CLI_VERSION: devServer };
 
     return {
-      /** The Dev Server the integration tests run against, as the image has it. */
-      devServerVersion: devServer.replace(/^inngest version |-\w+$/g, ""),
+      /** The integration tests of `PACKAGE` (default `inngest`), in the shard `SHARD` if set. */
+      integration:
+        $.sh`pnpm --filter "\${PACKAGE:-inngest}" run test:integration \${SHARD:+--shard="$SHARD"}`.env(
+          env,
+        ),
+      /** The integration test of the example `EXAMPLE`, with streaming forced when `INNGEST_STREAMING` is `force`. */
+      itest: $.sh`pnpm --filter inngest run itest "$EXAMPLE"`.env(env),
     };
   },
 );
@@ -92,7 +102,20 @@ export const source = ci.job({ id: "source", from: build }, async () => {
 });
 
 export const pack = ci.job({ id: "pack", from: source }, async () => {
+  const dir = "/work/packages/inngest";
+
   await $.sh`mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz`.cwd(
-    "/work/packages/inngest",
+    dir,
   );
+
+  return {
+    /** How the tarball's publishing config looks to publint. */
+    publint: $`pnpm dlx publint --pack npm ./dist`.cwd(dir),
+    /** Whether the tarball's types are right for every module system. */
+    attw: $`pnpm exec attw inngest.tgz`.cwd(dir),
+    /** The tarball installed into a TypeScript composite project, and its tests. */
+    composite: $.sh`npm i ../../inngest.tgz && npm run test`.cwd(
+      `${dir}/test/composite_project`,
+    ),
+  };
 });

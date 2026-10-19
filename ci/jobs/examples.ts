@@ -7,7 +7,7 @@
  * @module
  */
 
-import { $, github } from "@inngest/ci";
+import { github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
 import { pack } from "./base.ts";
@@ -44,30 +44,21 @@ const listExamples = async (): Promise<string[]> => {
     });
 };
 
-const itest = async (
-  example: string,
-  devServer: string,
-  streaming: "" | "force",
-): Promise<void> => {
-  await $`pnpm --filter inngest run itest ${example}`.env({
-    INNGEST_CLI_VERSION: devServer,
-    INNGEST_STREAMING: streaming,
-  });
+const itests = (id: string, example: string[], force: "" | "force") => {
+  return ci.matrix(
+    { id, from: pack, axes: { example } },
+    async ({ matrix, $from }) => {
+      await $from.itest.env({
+        EXAMPLE: matrix.example,
+        INNGEST_STREAMING: force,
+      });
+    },
+  )();
 };
 
 export const examples = async (): Promise<void> => {
   await Promise.all([
-    ci.matrix(
-      { id: "examples", from: pack, axes: { example: await listExamples() } },
-      async ({ matrix, from }) => {
-        await itest(matrix.example, from.output.devServerVersion, "");
-      },
-    )(),
-    ci.matrix(
-      { id: "examples-streaming", from: pack, axes: { example: streaming } },
-      async ({ matrix, from }) => {
-        await itest(matrix.example, from.output.devServerVersion, "force");
-      },
-    )(),
+    itests("examples", await listExamples(), ""),
+    itests("examples-streaming", streaming, "force"),
   ]);
 };

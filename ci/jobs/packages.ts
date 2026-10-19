@@ -1,7 +1,7 @@
 /**
- * The checks for every package besides `inngest`. Those that only need
- * installed dependencies start from `base`; those that import built packages
- * start from `build`.
+ * The checks for every package besides `inngest`: the tests of the packages
+ * that only have tests, the integration test of the Sentry middleware, and
+ * the full checks of the packages that CI itself builds on.
  *
  * @module
  */
@@ -15,70 +15,47 @@ export const audit = ci.job({ id: "audit", from: source }, async () => {
   await $`pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors`;
 });
 
-export const eslintPlugin = ci.job(
-  { id: "eslint-plugin", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/eslint-plugin test`;
+export const tests = ci.matrix(
+  {
+    id: "tests",
+    from: source,
+    axes: {
+      package: [
+        "@inngest/eslint-plugin",
+        "@inngest/middleware-encryption",
+        "@inngest/middleware-validation",
+        "@inngest/realtime",
+        "@inngest/test",
+      ],
+    },
   },
-);
-
-export const middlewareEncryption = ci.job(
-  { id: "middleware-encryption", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/middleware-encryption test`;
-  },
-);
-
-export const middlewareValidation = ci.job(
-  { id: "middleware-validation", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/middleware-validation test`;
-  },
-);
-
-export const realtime = ci.job({ id: "realtime", from: source }, async () => {
-  await $`pnpm --filter @inngest/realtime test`;
-});
-
-export const testPackage = ci.job(
-  { id: "test-package", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/test test`;
+  async ({ matrix }) => {
+    await $`pnpm --filter ${matrix.package} test`;
   },
 );
 
 export const middlewareSentry = ci.job(
   { id: "middleware-sentry", from: source },
-  async ({ from }) => {
-    await $`pnpm --filter @inngest/middleware-sentry run test:integration`.env({
-      INNGEST_CLI_VERSION: from.output.devServerVersion,
-    });
+  async ({ $from }) => {
+    await $from.integration.env({ PACKAGE: "@inngest/middleware-sentry" });
   },
 );
 
-export const otel = ci.job({ id: "otel", from: source }, async () => {
-  await $`pnpm --filter @inngest/otel run type-check`;
-
-  await $`pnpm --filter @inngest/otel run lint`;
-
-  await $`pnpm --filter @inngest/otel run format:check`;
-
-  await $`pnpm --filter @inngest/otel run test`;
-
-  await $`pnpm --filter @inngest/otel run build`;
-});
-
-export const ciPackage = ci.job(
-  { id: "ci-package", from: source },
-  async () => {
-    await $`pnpm --filter @inngest/ci run type-check`;
-
-    await $`pnpm --filter @inngest/ci run lint`;
-
-    await $`pnpm --filter @inngest/ci run format:check`;
-
-    await $`pnpm --filter @inngest/ci run test`;
-
-    await $`pnpm --filter @inngest/ci run build`;
+export const quality = ci.matrix(
+  {
+    id: "quality",
+    from: source,
+    axes: { package: ["@inngest/otel", "@inngest/ci"] },
+  },
+  async ({ matrix }) => {
+    for (const script of [
+      "type-check",
+      "lint",
+      "format:check",
+      "test",
+      "build",
+    ]) {
+      await $`pnpm --filter ${matrix.package} run ${script}`;
+    }
   },
 );

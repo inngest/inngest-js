@@ -10,26 +10,14 @@ import { github } from "@inngest/ci";
 import { ci } from "../client.ts";
 import { examples } from "../jobs/examples.ts";
 import {
+  checks,
   composite,
-  deps,
-  dist,
   health,
   integration,
-  lint,
   runtime,
   types,
 } from "../jobs/inngest.ts";
-import {
-  audit,
-  ciPackage,
-  eslintPlugin,
-  middlewareEncryption,
-  middlewareSentry,
-  middlewareValidation,
-  otel,
-  realtime,
-  testPackage,
-} from "../jobs/packages.ts";
+import { audit, middlewareSentry, quality, tests } from "../jobs/packages.ts";
 
 export const pr = ci.pipeline(
   {
@@ -40,22 +28,15 @@ export const pr = ci.pipeline(
   async () => {
     const results = await Promise.allSettled([
       audit(),
-      lint(),
+      checks(),
       runtime(),
       types(),
-      dist(),
-      deps(),
       integration(),
       health(),
       composite(),
-      eslintPlugin(),
-      middlewareEncryption(),
-      middlewareValidation(),
+      tests(),
       middlewareSentry(),
-      realtime(),
-      testPackage(),
-      otel(),
-      ciPackage(),
+      quality(),
       examples(),
     ]);
 
