@@ -8,7 +8,12 @@ import type { StepOptions } from "../../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import { parseSandboxOperationForAction } from "./protocol.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
+import {
+  parseSandboxOperationForAction,
+  type SandboxRawTool,
+} from "./protocol.ts";
+import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import type { SandboxTools } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
@@ -713,6 +718,40 @@ describe("commands.run with tools", () => {
       expect.stringMatching(/^\/inngest\/tools\/[0-9a-f]{64}$/),
     ]);
   });
+
+  test("a repeated command ID gets its own directory", async () => {
+    const dirs = new Set<string | undefined>();
+
+    for (const stepId of ["hashed", "hashed:1"]) {
+      const { fake, sandbox } = createFakeSandbox((f, replied) => {
+        if (replied === undefined) {
+          exitWith(f);
+        }
+      });
+      const { host } = createHost(sandbox);
+      const inStep: ToolsHost["run"] = (idOrOptions, fn, meta) => {
+        return host.run(
+          idOrOptions,
+          () => {
+            return runWithAsyncCtx(
+              {
+                app: {} as never,
+                execution: { executingStep: { id: stepId } } as never,
+              },
+              fn,
+            );
+          },
+          meta,
+        );
+      };
+
+      await run({ ...host, run: inStep }, {});
+
+      dirs.add(fake.processCommand?.[4]);
+    }
+
+    expect(dirs.size).toBe(2);
+  });
 });
 
 describe("commands.run with tools trace group", () => {
@@ -825,5 +864,115 @@ describe("commands.run with tools trace group", () => {
         origin: sdkOrigin,
       },
     ]);
+  });
+});
+
+describe("durable commands.run routing", () => {
+  const execResult = {
+    protocolVersion: 1,
+    action: "exec",
+    result: {
+      stdout: "",
+      stderr: "",
+      encoding: "base64",
+      exitCode: 0,
+      output: { truncated: false },
+    },
+  };
+
+  test.each([
+    { name: "without tools", options: undefined, tools: undefined },
+    {
+      name: "with tools, and a 5m default timeout",
+      options: { tools: { a: async () => 1 } },
+      tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
+    },
+  ])("$name it is one raw tool call", async ({ options, tools }) => {
+    const rawTool: SandboxRawTool = vi.fn(async () => {
+      return execResult;
+    });
+    const sandbox = createDurableSandboxFacade(sandboxRef, () => {
+      return rawTool;
+    });
+
+    await sandbox.commands.run("exec", "true", options);
+
+    expect(rawTool).toHaveBeenCalledExactlyOnceWith(
+      "exec",
+      expect.objectContaining({
+        input: [
+          expect.objectContaining({ timeoutMs: tools ? 300_000 : 30_000 }),
+        ],
+      }),
+      ...(tools ? [undefined, tools] : []),
+    );
+  });
+});
+
+describe("commands.run with tools in a function", () => {
+  test("starts the command, follows it and returns its output", async () => {
+    const wrapped: string[][] = [];
+    const exit = JSON.stringify({
+      op: "exit",
+      code: 0,
+      stdout: base64("hello\n"),
+      stderr: "",
+    });
+    const client = createClient((path, method, { body }) => {
+      if (path === "/v2/sandboxes" && method === "POST") {
+        return Response.json({ data: sandboxResource }, { status: 201 });
+      }
+
+      if (path.endsWith("/processes") && method === "POST") {
+        wrapped.push((body ? JSON.parse(String(body)) : {}).command);
+
+        return Response.json(
+          {
+            data: {
+              id: "33333333-3333-4333-8333-333333333333",
+              command: ["sh"],
+              pid: 1,
+              state: "RUNNING",
+            },
+          },
+          { status: 201 },
+        );
+      }
+
+      if (path.endsWith("/exec")) {
+        return Response.json({
+          data: {
+            stdout: base64(`${exit}\n`),
+            stderr: "",
+            encoding: "base64",
+            exitCode: 0,
+          },
+        });
+      }
+
+      return undefined;
+    });
+    let stdout = "";
+    const fn = client.createFunction(
+      { id: "tools", triggers: [{ event: "tools/run" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.create("box", {
+          name: "box",
+          vcpu: 1,
+          memoryMb: 512,
+        });
+        const result = await sandbox.commands.run("hello", "echo hello", {
+          tools: { a: async () => 1 },
+        });
+
+        stdout = result.stdout;
+      },
+    );
+
+    const { ran } = await runToEnd(fn);
+
+    expect(ran).toEqual(["box", "hello"]);
+    expect(wrapped).toHaveLength(1);
+    expect(stdout).toBe("hello\n");
   });
 });
