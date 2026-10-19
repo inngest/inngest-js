@@ -71,7 +71,7 @@ wrapped = ast.parse("async def __inngest_main(): pass")
 body = ast.parse(payload["code"], "<code>").body
 wrapped.body[0].body = body or wrapped.body[0].body
 
-scope = dict(payload["input"])
+scope = {"asyncio": asyncio, **payload["input"]}
 exec(compile(wrapped, "<code>", "exec"), scope)
 
 result = asyncio.run(scope["__inngest_main"]())

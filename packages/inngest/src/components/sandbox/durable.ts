@@ -183,6 +183,30 @@ const snapshotRefForWire = (snapshot: SandboxSnapshotRef) => ({
 });
 
 /**
+ * The wire result of an `exec` operation, with its output fitted to the
+ * durable step's size budget.
+ */
+export const execOperationResult = (result: {
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  exitCode: number;
+}): SandboxOperationResultV1 => {
+  const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+
+  return {
+    protocolVersion: sandboxProtocolVersion,
+    action: "exec",
+    result: {
+      stdout: encodeBase64(output.stdout),
+      stderr: encodeBase64(output.stderr),
+      encoding: "base64",
+      exitCode: result.exitCode,
+      output: output.output,
+    },
+  };
+};
+
+/**
  * Execute a durable sandbox operation through the public REST client and
  * reduce its result to JSON-safe data suitable for normal step memoization.
  */
@@ -245,18 +269,7 @@ export const executeSandboxOperation = async (
         ...options,
         timeout: timeoutMs,
       });
-      const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
-      return {
-        protocolVersion: sandboxProtocolVersion,
-        action: operation.action,
-        result: {
-          stdout: encodeBase64(output.stdout),
-          stderr: encodeBase64(output.stderr),
-          encoding: "base64",
-          exitCode: result.exitCode,
-          output: output.output,
-        },
-      };
+      return execOperationResult(result);
     }
     case "file.upload": {
       const { path, data } = operation.input[0];
