@@ -64,7 +64,7 @@ const maxPollIntervalMs = 15_000;
 // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
 type SandboxProcess = any;
 
-interface CommandState {
+export interface CommandState {
   argv: string[];
   /** What the command reads as, when that isn't its argv, as for `$.sh`. */
   text?: string;
@@ -190,6 +190,11 @@ class CommandBuilder implements Command {
     this.getScope = getScope;
 
     this.state = state;
+  }
+
+  /** What a job's output stores of a command it returns. */
+  toJSON(): { $cmd: CommandState } {
+    return { $cmd: this.state };
   }
 
   env(vars: Record<string, string>): Command {
@@ -880,6 +885,19 @@ export const createRawCommand = (
     retries: 0,
     nothrow: false,
   });
+};
+
+/** Whether a value is a command, as `$` makes. */
+export const isCommand = (value: unknown): value is Command => {
+  return value instanceof CommandBuilder;
+};
+
+/** A command stored in a job's output, made again to run on `getScope`'s machine. */
+export const commandFromJson = (
+  getScope: () => CiJobScope,
+  state: CommandState,
+): Command => {
+  return new CommandBuilder(getScope, { ...state, env: { ...state.env } });
 };
 
 /**

@@ -44,6 +44,8 @@ import {
 } from "../pipeline/scope.ts";
 import type { Ancestor, AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
+import { ensureMachine } from "./machine.ts";
+import { storeOutput } from "./outputs.ts";
 
 /** The jobs defined on one CI client, by ID. */
 type JobRegistry = Map<string, Pick<RegisteredJob, "config" | "handler">>;
@@ -600,9 +602,10 @@ export const buildOf = (
  * Start this job on a copy of its parent's machine, before its handler runs.
  *
  * Within a pipeline run the parent is built once however many jobs start from
- * it, in a run of its own, and each child gets its own copy of its machine, so they can't affect each
- * other. The copy is made when this job runs its first command, so a job that
- * starts from another and then waits doesn't pay for a machine while it waits.
+ * it, in a run of its own, and each child gets its own copy of its machine, so
+ * they can't affect each other. The copy is made here rather than at the first
+ * command, because the machine is where the jobs above left what they
+ * returned, which the handler is given.
  */
 export const startFrom = async (
   scope: CiJobScope,
@@ -610,6 +613,8 @@ export const startFrom = async (
 ): Promise<void> => {
   if (isImage(parent)) {
     startFromImage(scope, parent, built);
+
+    await ensureMachine(scope);
 
     return;
   }
@@ -646,6 +651,8 @@ export const startFrom = async (
     scope.rebuildParent = () => {
       return rerunOnThisMachine(scope, parent, built.ancestry);
     };
+
+    await ensureMachine(scope);
   } else if (built.hadMachine || config.cache) {
     // A cached job is built in a run of its own, so without a snapshot its
     // work isn't on any machine here. This job's own parent gave no snapshot:
@@ -855,9 +862,9 @@ const rerunOnThisMachine = async (
     }
   }
 
-  await registered.handler(
+  const output = await registered.handler(
     handlerContext({
-      run,
+      scope,
       id: parent.config.id,
       input: parent.input,
       key: ancestry[0]?.key ?? {},
@@ -865,4 +872,6 @@ const rerunOnThisMachine = async (
       ancestry: ancestry.slice(1),
     }),
   );
+
+  storeOutput(scope, parent.config.id, output);
 };
