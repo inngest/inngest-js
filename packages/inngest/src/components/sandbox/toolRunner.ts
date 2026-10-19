@@ -124,6 +124,21 @@ const errorMessage = (error: unknown): string => {
   return String(error instanceof Error ? error.message : error).slice(0, 2000);
 };
 
+/**
+ * Rejects once `signal` (by default a fresh one of `ms`) aborts.
+ */
+const timeoutAfter = (
+  ms: number,
+  tool: string,
+  signal = AbortSignal.timeout(ms),
+): Promise<never> => {
+  return new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => {
+      reject(new Error(`${tool} timed out after ${ms}ms`));
+    });
+  });
+};
+
 const toolSpan = (stepId: string, name: string): StepSpan => {
   return { id: stepId, name, kind: "tool", origin: sdkOrigin };
 };
@@ -286,14 +301,18 @@ const followCommand = async (
     request: ToolRequest;
     line: string;
   }): Promise<string> => {
-    const resolved = resolveToolCall(tools, call, line);
-    if (resolved.error !== undefined) {
-      return replyLine(call.id, { error: resolved.error });
-    }
-
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
+    const idempotencyKey = `${host.runId ?? ""}:${stepId}`;
 
     try {
+      const resolved = await Promise.race([
+        resolveToolCall(tools, call, line),
+        timeoutAfter(toolTimeoutMs, call.tool),
+      ]);
+      if (resolved.error !== undefined) {
+        return replyLine(call.id, { error: resolved.error });
+      }
+
       return await host.run(
         {
           id: stepId,
@@ -303,14 +322,10 @@ const followCommand = async (
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
-          const timedOut = new Promise<never>((_, reject) => {
-            signal.addEventListener("abort", () => {
-              reject(
-                new Error(`${call.tool} timed out after ${toolTimeoutMs}ms`),
-              );
-            });
-          });
-          const value = await Promise.race([resolved.invoke(), timedOut]);
+          const value = await Promise.race([
+            resolved.invoke({ signal, idempotencyKey }),
+            timeoutAfter(toolTimeoutMs, call.tool, signal),
+          ]);
 
           return resultLine(call.id, call.tool, value);
         },
