@@ -697,6 +697,30 @@ describe("a handler's context", () => {
     );
   });
 
+  test("a matrix handler's from.key is typed by its parent", () => {
+    const base = ci.job(
+      { id: "matrix-base", cache: { key: { lock: "l1" } } },
+      async () => {},
+    );
+
+    ci.matrix(
+      { id: "ctx-matrix-from", axes: { node: ["20"] }, from: base },
+      async ({ from }) => {
+        expectTypeOf(from.key.lock).toBeString();
+
+        // @ts-expect-error no job above it has this key
+        from.key.nothing.toString();
+      },
+    );
+
+    ci.matrix(
+      { id: "ctx-matrix-bare", axes: { node: ["20"] } },
+      async ({ from }) => {
+        expectTypeOf(from).toEqualTypeOf<undefined>();
+      },
+    );
+  });
+
   test("a matrix handler gets the combination as matrix", () => {
     ci.matrix(
       { id: "ctx-matrix", axes: { node: ["20", "22"] } },

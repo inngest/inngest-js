@@ -32,6 +32,7 @@ import type {
   MachineConfig,
   Matrix,
   MatrixAxes,
+  MatrixCombo,
   MatrixConfig,
   MatrixContext,
   NoFrom,
@@ -156,9 +157,16 @@ export interface Ci {
    * );
    * ```
    */
-  matrix<const TAxes extends MatrixAxes>(
-    config: MatrixConfig<TAxes>,
-    handler: (ctx: MatrixContext<TAxes>) => Promise<void>,
+  matrix<
+    const TAxes extends MatrixAxes,
+    TFrom extends From<MatrixCombo<TAxes>> | undefined = NoFrom<
+      MatrixCombo<TAxes>
+    >,
+  >(
+    config: MatrixConfig<TAxes, TFrom>,
+    handler: (
+      ctx: MatrixContext<TAxes, Record<string, string>, TFrom>,
+    ) => Promise<void>,
   ): Matrix<TAxes>;
 
   /**
@@ -313,7 +321,13 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         );
       }
 
-      const matrix = createMatrix({ ci, jobs, config, handler });
+      const matrix = createMatrix({
+        ci,
+        jobs,
+        config,
+        // The context is typed by `from`, which the registry keeps wide.
+        handler: handler as Parameters<typeof createMatrix>[0]["handler"],
+      });
 
       matrices.set(config.id, matrix as Matrix<MatrixAxes>);
 
