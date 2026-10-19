@@ -47,8 +47,8 @@ const listExamples = async (): Promise<string[]> => {
 const itests = (id: string, example: string[], force: "" | "force") => {
   return ci.matrix(
     { id, from: pack, axes: { example } },
-    async ({ matrix, $from }) => {
-      await $from.itest.env({
+    async ({ matrix, from }) => {
+      await from.$.itest.env({
         EXAMPLE: matrix.example,
         INNGEST_STREAMING: force,
       });

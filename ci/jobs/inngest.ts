@@ -46,21 +46,18 @@ export const types = ci.matrix(
 
 export const integration = ci.matrix(
   { id: "integration", from: source, axes: { shard: ["1/3", "2/3", "3/3"] } },
-  async ({ matrix, $from }) => {
-    await $from.integration.env({ SHARD: matrix.shard });
+  async ({ matrix, from }) => {
+    await from.$.integration.env({ SHARD: matrix.shard });
   },
 );
 
-export const health = ci.job(
-  { id: "health", from: pack },
-  async ({ $from }) => {
-    await Promise.all([$from.publint, $from.attw]);
-  },
-);
+export const health = ci.job({ id: "health", from: pack }, async ({ from }) => {
+  await Promise.all([from.$.publint, from.$.attw]);
+});
 
 export const composite = ci.job(
   { id: "composite", from: pack },
-  async ({ $from }) => {
-    await $from.composite;
+  async ({ from }) => {
+    await from.$.composite;
   },
 );

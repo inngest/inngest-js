@@ -36,8 +36,8 @@ export const tests = ci.matrix(
 
 export const middlewareSentry = ci.job(
   { id: "middleware-sentry", from: source },
-  async ({ $from }) => {
-    await $from.integration.env({ PACKAGE: "@inngest/middleware-sentry" });
+  async ({ from }) => {
+    await from.$.integration.env({ PACKAGE: "@inngest/middleware-sentry" });
   },
 );
 

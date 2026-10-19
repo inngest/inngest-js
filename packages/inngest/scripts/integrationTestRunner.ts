@@ -96,7 +96,7 @@ async function setupExample(examplePath: string): Promise<void> {
 
   //   const sdkFunctionsPath = path.join(examplePath, "inngest");
   try {
-    await fsPromises.rmdir(exampleFunctionsPath, { recursive: true });
+    await fsPromises.rm(exampleFunctionsPath, { recursive: true, force: true });
   } catch (error) {
     if ((error as { code?: string })?.code !== "ENOENT") throw error;
   }
