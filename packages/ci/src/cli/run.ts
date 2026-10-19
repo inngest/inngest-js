@@ -302,6 +302,8 @@ const watchRun = async (opts: {
       live.print(() => {
         log.info(`Run: ${devServerUrl}/run?runID=${runId}`);
       });
+
+      live.status("Finishing the run");
     }
   };
 

@@ -164,7 +164,11 @@ export const createLiveView = (): LiveView => {
       const took = seconds(
         message.at - (startedAt.get(message.jobId) ?? message.at),
       );
-      const detail = message.title ? `: ${message.title}` : "";
+      // A passing job's title only repeats its duration.
+      const detail =
+        message.title && message.status !== "passed"
+          ? `: ${message.title}`
+          : "";
 
       print(() => {
         jobLines[message.status]?.(`${message.jobId} (${took})${detail}`);
