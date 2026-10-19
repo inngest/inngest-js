@@ -181,6 +181,15 @@ const fixed = (id: string, name: string, extras: StepExtras = {}) => {
  * `unmarked`.
  */
 export const steps = {
+  // Jobs of other apps.
+  buildAppJob: (id: string, name: string): StepSpec => {
+    return { id, name: `Build ${name} in its app` };
+  },
+
+  findDeployedRepo: (): StepSpec => {
+    return { id: joinId("deploy", "repo"), name: "Find deployed repository" };
+  },
+
   // The cache.
   cacheKey: (jobPath: string): StepSpec => {
     return {

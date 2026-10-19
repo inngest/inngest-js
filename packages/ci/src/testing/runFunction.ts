@@ -201,12 +201,20 @@ const runInvoked = async (
     createdFunctions.get((caller as any).client) ??
     [];
 
-  const target = functions.find((fn) => {
-    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
-    const internals = fn as any;
+  // The executor finds a function by its app and ID, so with several apps'
+  // functions in reach the app has to match too.
+  const named = (exact: boolean) => {
+    return functions.find((fn) => {
+      // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+      const internals = fn as any;
 
-    return call.function_id.endsWith(`-${internals.opts.id}`);
-  });
+      return exact
+        ? call.function_id === `${internals.client.id}-${internals.opts.id}`
+        : call.function_id.endsWith(`-${internals.opts.id}`);
+    });
+  };
+
+  const target = named(true) ?? named(false);
 
   if (!target) {
     throw new Error(`No function to invoke for ${call.function_id}`);
@@ -596,4 +604,9 @@ const runOnce = async (
   const { ctx: _ctx, ops: _ops, ...result } = await execution.start();
 
   return result;
+};
+
+/** How many invoked functions have run, for a test to count builds with. */
+export const invokedRunCount = (): number => {
+  return invokedRuns;
 };

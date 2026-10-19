@@ -26,12 +26,13 @@ import type {
   MatrixAxes,
   RepoContext,
 } from "../types.ts";
+import { answerAppJob } from "./appJob.ts";
 import type { RegisteredJob } from "./job.ts";
-import { runJob } from "./job.ts";
+import { builtResult, runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
 import { pipelineFunctionOptions, runPipeline } from "./pipeline.ts";
 import type { CiInternals, JobSummary } from "./scope.ts";
-import { getRunScope } from "./scope.ts";
+import { getRunScope, requestOf } from "./scope.ts";
 
 /** The event every invoked function runs from. */
 const invokedEvent = "inngest/function.invoked";
@@ -61,6 +62,16 @@ export interface CacheBuildData extends Record<string, unknown> {
    * scope of a job without a `cache` is the pipeline run.
    */
   cacheKey: string;
+  /**
+   * The `app/job`s whose builds led to this one, outermost first. A build
+   * asked for a job that is already here is a cycle.
+   */
+  chain?: string[];
+  /**
+   * Set when another app asks for this job with `image.job()`. It can't name
+   * the job's snapshot, so this run works the name out itself.
+   */
+  askedByApp?: boolean;
   /**
    * A snapshot that turned out to be bad, which may still hold the name. The
    * build never reuses it.
@@ -203,6 +214,12 @@ const buildSnapshot = async ({
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes>>;
 }): Promise<CacheBuildResult> => {
+  const run = getRunScope();
+
+  if (data.askedByApp && run) {
+    return answerAppJob({ run, data, jobs });
+  }
+
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
 
@@ -231,22 +248,16 @@ const buildSnapshot = async ({
     });
   }
 
-  const run = getRunScope();
-  const outcome = run?.outcome;
+  const request = run?.request ?? requestOf(data);
 
-  const summary = run?.summaries.find((candidate) => {
-    return candidate.path === data.jobId;
-  });
+  // The job's line is the build run's own too, whose totals count it.
+  if (run && request.sink.summary) {
+    run.summaries.push(request.sink.summary);
+  }
 
-  return {
-    ...(outcome?.snapshotId ? { snapshotId: outcome.snapshotId } : {}),
-    ...(outcome?.cached ? { cached: outcome.cached } : {}),
-    reused: outcome?.reused ?? false,
-    target: { ownKey: data.ownKey, name: data.cacheKey },
-    hadMachine: outcome?.hadMachine ?? false,
+  return builtResult(request, {
     createdSnapshots: [...(run?.createdSnapshots ?? [])],
-    ...(summary ? { summary } : {}),
     warnings: run?.warnings ?? [],
     ...(run?.report ? { report: run.report } : {}),
-  };
+  });
 };

@@ -61,6 +61,7 @@ import {
   countApi,
   inGitHubSpan,
   initCiAls,
+  requestOf,
   runInScope,
   withScopePreserved,
 } from "./scope.ts";
@@ -220,13 +221,15 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     event: ctx.event,
     ...(repo ? { repo } : {}),
-    ...(build ? { build } : {}),
+    ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
     sources: new Map(
       Object.entries(build?.sources ?? {}).map(([key, source]) => {
         return [key, Promise.resolve(source)];
       }),
     ),
+    definedJobs: new Set(),
+    inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
@@ -296,7 +299,7 @@ const runPipelineAttempt = async ({
     config,
     ctx,
     asyncCtx,
-    ...(build ? { build } : {}),
+    ...(build ? { build, request: requestOf(build) } : {}),
   });
   const checks = internals.checks as CheckReporter;
 

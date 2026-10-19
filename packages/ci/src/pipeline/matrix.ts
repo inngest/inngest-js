@@ -6,9 +6,13 @@
  */
 
 import { NonRetriableError } from "inngest";
+import { checkCache } from "../cache/cache.ts";
+import { CiUsageError } from "../errors.ts";
+import { checkStaticFrom } from "../machine/from.ts";
 import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
-import { countApi, matrixOriginKey } from "./scope.ts";
+import type { RegisteredJob } from "./job.ts";
+import { countApi, getRunScope, inlineKey, matrixOriginKey } from "./scope.ts";
 
 /**
  * Where a matrix keeps the function that runs exactly the combinations it's
@@ -49,11 +53,35 @@ export const sameCombo = (
 /**
  * Expand a matrix into its combinations and run them as jobs.
  */
-export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
-  ci: Ci,
-  config: MatrixConfig<TAxes>,
-  handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
-): Matrix<TAxes> => {
+export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
+  ci,
+  jobs,
+  config,
+  handler,
+}: {
+  ci: Ci;
+  /** The client's job registry, which a static `from` is checked against. */
+  jobs: Map<string, RegisteredJob>;
+  config: MatrixConfig<TAxes>;
+  handler: (combo: MatrixCombo<TAxes>) => Promise<void>;
+}): Matrix<TAxes> => {
+  // A matrix made inside a run is gone with it, and so are its combinations.
+  const inline = Boolean(getRunScope());
+
+  checkStaticFrom(jobs, config);
+
+  for (const [axis, values] of Object.entries(config.axes)) {
+    if (values.length === 0) {
+      throw new CiUsageError(
+        `The \`${axis}\` axis of matrix "${config.id}" has no values.`,
+      );
+    }
+  }
+
+  if (typeof config.cache !== "function") {
+    checkCache(config.id, config.cache);
+  }
+
   const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");
 
@@ -89,6 +117,7 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),
             [matrixOriginKey]: { id: config.id, combo },
+            [inlineKey]: inline,
           } as JobConfig,
           () => {
             return handler(combo);

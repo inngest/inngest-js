@@ -11,6 +11,7 @@
  */
 
 import { NonRetriableError } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
@@ -41,6 +42,24 @@ import {
   stableStringify,
 } from "../util.ts";
 import { formatName } from "./names.ts";
+
+/**
+ * Check a static `cache` when the job or matrix is defined, so a mistake fails
+ * when the app boots rather than mid-pipeline.
+ *
+ * @throws {CiUsageError} When the key is empty or the scope isn't known.
+ */
+export const checkCache = (id: string, cache?: CacheConfig): void => {
+  if (cache?.key === "" || (Array.isArray(cache?.key) && !cache.key.length)) {
+    throw new CiUsageError(`The \`cache.key\` of "${id}" can't be empty.`);
+  }
+
+  if (cache?.scope && !["branch", "global"].includes(cache.scope)) {
+    throw new CiUsageError(
+      `The \`cache.scope\` of "${id}" must be "branch" or "global", but got "${cache.scope}".`,
+    );
+  }
+};
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -295,20 +314,21 @@ const identityKey = (
   }
 
   if (base) {
-    parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
+    parts.push(`from:${base.from}@${base.snapshotId ?? ""}`);
   }
 
   return parts.length === 1 ? key : hash(parts.join("\0"));
 };
 
 /**
- * The parent a job starts from, as its key sees it: the parent's job and its
- * snapshot, which is missing when there was none to take. A parent rebuilt
- * with any change has a new snapshot, so every job below it gets a new name
- * and misses on lookup, without a machine starting to find out.
+ * The base a job starts from, as its key sees it: what it is and its snapshot,
+ * which is missing when there was none to take. A base rebuilt with any
+ * change has a new snapshot, so every job below it gets a new name and misses
+ * on lookup, without a machine starting to find out.
  */
 export interface BaseIdentity {
-  jobId: string;
+  /** The parent's job ID, or `image:<name>` for an image. */
+  from: string;
   snapshotId?: string;
 }
 
