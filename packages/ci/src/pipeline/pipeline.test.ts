@@ -781,6 +781,38 @@ describe("commands", () => {
     ).toEqual(["quick › quick › start"]);
   });
 
+  test("a command's start step carries the sandbox metadata the trace reads", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    const job = ci.job("quick", async () => {
+      await $`quick`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const entry = result.metadata.find((update) => {
+      return (
+        update.step === "quick › quick › start" &&
+        update.kind === "inngest.sandbox"
+      );
+    });
+
+    expect(entry?.values).toMatchObject({
+      version: 1,
+      action: "process.start",
+      method: "processes.start",
+      command: ["quick"],
+      process_state: "EXITED",
+      exit_code: 0,
+    });
+  });
+
   test("a command that runs on takes a step per window, and starts once", async () => {
     const { api, ci } = setup();
 

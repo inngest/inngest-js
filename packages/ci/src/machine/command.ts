@@ -7,7 +7,7 @@
  */
 
 import { NonRetriableError, StepError } from "inngest";
-import { getSandboxError } from "inngest/experimental";
+import { getAsyncCtx, getSandboxError } from "inngest/experimental";
 import {
   CiUsageError,
   CommandFailedError,
@@ -629,6 +629,107 @@ const recordFailure = async (
   }
 };
 
+/** The metadata kind the SDK's own sandbox steps carry, which the trace reads. */
+const sandboxMetadataKind = "inngest.sandbox";
+
+/** Longest command, in characters, a trace entry keeps. */
+const maxCommandMetadataChars = 1024;
+
+/** How a sandbox step reads in the trace: what it did, and to what. */
+interface StepTrace<T> {
+  machine: MachineHandle;
+  /** The sandbox API action, as in `process.start`. */
+  action: string;
+  /** The method a user would have called, as in `processes.start`. */
+  method: string;
+  /** What the step knows before it runs. */
+  base?: Record<string, unknown>;
+  /** What its result adds. */
+  of?: (result: T) => Record<string, unknown>;
+}
+
+/**
+ * Attach the metadata the SDK puts on its sandbox steps, so these steps read
+ * in the trace as those do. Each attempt sends its whole entry. Tracing never
+ * fails a step.
+ */
+const traceStep = async <T>(
+  trace: StepTrace<T>,
+  outcome: { result: T } | { code?: string | undefined },
+): Promise<void> => {
+  try {
+    const execution = (await getAsyncCtx())?.execution;
+    const stepId = execution?.executingStep?.id;
+
+    if (!execution || !stepId) {
+      return;
+    }
+
+    const values = {
+      version: 1,
+      action: trace.action,
+      method: trace.method,
+      sandbox_id: trace.machine.id,
+      ...trace.base,
+      ...("result" in outcome
+        ? trace.of?.(outcome.result)
+        : { error_code: outcome.code }),
+    };
+
+    const entry = Object.fromEntries(
+      Object.entries(values).filter(([, value]) => {
+        return value !== undefined;
+      }),
+    );
+
+    execution.instance.addMetadata(
+      stepId,
+      sandboxMetadataKind,
+      "step",
+      "merge",
+      entry,
+    );
+  } catch {
+    // The step is what matters.
+  }
+};
+
+/** A command as a trace keeps it: cut short, with a script shown as written. */
+const commandMetadata = (argv: readonly string[]): Record<string, unknown> => {
+  let remaining = maxCommandMetadataChars;
+  const command: string[] = [];
+
+  for (const argument of argv) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    command.push(argument.slice(0, remaining));
+
+    remaining -= argument.length;
+  }
+
+  const isScript =
+    command.length === 3 && command[0] === "/bin/sh" && command[1] === "-c";
+
+  return {
+    command,
+    command_display: isScript ? command[2] : undefined,
+    command_truncated:
+      remaining < 0 || command.length < argv.length || undefined,
+  };
+};
+
+/** What a process view adds to a trace entry. */
+const viewMetadata = (view: ProcessView): Record<string, unknown> => {
+  return {
+    process_id: view.id,
+    process_state: view.state,
+    exit_code: view.exitCode,
+    output_truncated: view.output?.truncated || undefined,
+  };
+};
+
 /**
  * Run a sandbox step of CI's own. An error the sandbox API says is not safe to
  * repeat is final, as it is for a durable `step.sandbox` call, so a retry
@@ -637,13 +738,20 @@ const recordFailure = async (
 const sandboxStep = <T>(
   scope: CiJobScope,
   spec: StepSpec,
+  trace: StepTrace<T>,
   fn: () => Promise<T>,
 ): Promise<T> => {
   return ciRun(scope.run, spec, async () => {
     try {
-      return await fn();
+      const result = await fn();
+
+      await traceStep(trace, { result });
+
+      return result;
     } catch (error) {
       const sandboxError = getSandboxError(error);
+
+      await traceStep(trace, { code: sandboxError?.code });
 
       if (!sandboxError || sandboxError.retryable) {
         throw error;
@@ -782,6 +890,16 @@ const startProcess = async (opts: {
   const view = await sandboxStep(
     scope,
     steps.startProcess(opts.stepId, opts.windowMs > 0),
+    {
+      machine,
+      action: "process.start",
+      method: "processes.start",
+      base: {
+        ...commandMetadata(opts.options.command),
+        cwd: opts.options.cwd,
+      },
+      of: viewMetadata,
+    },
     async () => {
       const sandbox = await directSandbox(scope.run, machine);
 
@@ -914,6 +1032,13 @@ const pollUntilTerminal = async (opts: {
     current = await sandboxStep(
       scope,
       steps.pollProcess(opts.stepId, opts.nextWait()),
+      {
+        machine,
+        action: "process.wait",
+        method: "process.wait",
+        base: { process_id: id },
+        of: viewMetadata,
+      },
       async () => {
         const sandbox = await directSandbox(scope.run, machine);
 
@@ -934,7 +1059,14 @@ const signalProcess = async (
   spec: StepSpec,
   opts: { id: string; signal: number },
 ): Promise<void> => {
-  await sandboxStep(scope, spec, async () => {
+  const trace = {
+    machine,
+    action: "process.signal",
+    method: "process.signal",
+    base: { process_id: opts.id },
+  };
+
+  await sandboxStep(scope, spec, trace, async () => {
     const sandbox = await directSandbox(scope.run, machine);
     const process = await processById(sandbox, opts.id);
 
@@ -949,7 +1081,14 @@ const readOutputStep = (
   spec: StepSpec,
   opts: { id: string; tailBytes?: number | undefined },
 ): Promise<ProcessOutput> => {
-  return sandboxStep(scope, spec, async () => {
+  const trace = {
+    machine,
+    action: "process.output",
+    method: "process.getOutput",
+    base: { process_id: opts.id },
+  };
+
+  return sandboxStep(scope, spec, trace, async () => {
     const sandbox = await directSandbox(scope.run, machine);
 
     return readProcessOutput(
