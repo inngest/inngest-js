@@ -1036,7 +1036,8 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf<Exported>().toBeArray();
 
     // A couple of the load-bearing ones, checked rather than just named.
-    expectTypeOf<EntryDuration>().toBeString();
+    expectTypeOf<string>().toExtend<EntryDuration>();
+    expectTypeOf<number>().toExtend<EntryDuration>();
     expectTypeOf<EntryJob<string>>().toExtend<Job<string>>();
     expectTypeOf<EntryCiEvent<{ a: 1 }>["data"]>().toEqualTypeOf<{ a: 1 }>();
 
