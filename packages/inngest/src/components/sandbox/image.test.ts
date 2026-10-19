@@ -37,17 +37,19 @@ describe("sandbox image helpers", () => {
     ["an invalid custom ref", { from: image.custom("My Image") }],
     ["the reserved default alias", { from: image.custom("default") }],
     ["a plain string", { from: "inngest/base" }],
-    [
-      "a snapshot clone",
-      {
-        name: "c",
-        snapshotId: "00000000-0000-4000-8000-000000000000",
-        from: image.inngest("base"),
-      },
-    ],
   ])("rejects %s", (_label, options) => {
     expect(() => {
       return normalizeSandboxCreateOptions({ ...base, ...options } as never);
+    }).toThrow();
+  });
+
+  test("rejects from on a snapshot clone", () => {
+    expect(() => {
+      return normalizeSandboxCreateOptions({
+        name: "c",
+        snapshotId: "00000000-0000-4000-8000-000000000000",
+        from: image.inngest("base"),
+      } as never);
     }).toThrow();
   });
 });
