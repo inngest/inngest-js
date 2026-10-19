@@ -44,15 +44,22 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { formatDuration, parseRepo } from "../util.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
-import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
+import {
+  ciRun,
+  metadataStep,
+  runEndMetadata,
+  runStartMetadata,
+} from "./metadata.ts";
+import { stepOptions, steps } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
   countApi,
+  inGitHubSpan,
   initCiAls,
   runInScope,
   withScopePreserved,
@@ -215,6 +222,11 @@ const newRunScope = ({
     ...(repo ? { repo } : {}),
     ...(build ? { build } : {}),
     builds: new Map(),
+    sources: new Map(
+      Object.entries(build?.sources ?? {}).map(([key, source]) => {
+        return [key, Promise.resolve(source)];
+      }),
+    ),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
@@ -241,19 +253,6 @@ const newRunScope = ({
       }),
     ) as CiRunScope["apis"],
   };
-};
-
-/** Split a configured `repo` into its owner and name. */
-const parseRepo = (fullName: string): { owner: string; name: string } => {
-  const [owner, name, ...rest] = fullName.split("/");
-
-  if (!owner || !name || rest.length > 0) {
-    throw new CiUsageError(
-      `\`repo\` must be "owner/name", but got "${fullName}".`,
-    );
-  }
-
-  return { owner, name };
 };
 
 /**
@@ -566,38 +565,42 @@ const resolveConfiguredRepo = (
 ): Promise<RepoContext> => {
   const { owner, name } = parseRepo(fullName);
 
-  return run.step.run(
-    { id: `github › repo:resolve`, name: "repo:resolve" },
-    async (): Promise<RepoContext> => {
-      const base: RepoContext = { owner, name, fullName, sha: "" };
-      const provider = run.ci.github as GitHubProvider;
+  return inGitHubSpan(run, () => {
+    return ciRun(
+      run,
+      steps.resolveRepository(),
+      async (): Promise<RepoContext> => {
+        const base: RepoContext = { owner, name, fullName, sha: "" };
+        const provider = run.ci.github as GitHubProvider;
 
-      if (provider.kind === "console") {
-        return base;
-      }
+        if (provider.kind === "console") {
+          return base;
+        }
 
-      const octokit = await provider.octokit({ owner, repo: name });
-      const { data: info } = await octokit.rest.repos.get({
-        owner,
-        repo: name,
-      });
-      const branch = info.default_branch;
+        const octokit = await provider.octokit({ owner, repo: name });
+        const { data: info } = await octokit.rest.repos.get({
+          owner,
+          repo: name,
+        });
+        const branch = info.default_branch;
 
-      const { data: head } = await octokit.rest.repos.getBranch({
-        owner,
-        repo: name,
-        branch,
-      });
+        const { data: head } = await octokit.rest.repos.getBranch({
+          owner,
+          repo: name,
+          branch,
+        });
 
-      return {
-        ...base,
-        sha: head.commit.sha,
-        ref: `refs/heads/${branch}`,
-        baseRef: branch,
-        trigger: (run.event as { name?: string } | undefined)?.name ?? "manual",
-      };
-    },
-  ) as Promise<RepoContext>;
+        return {
+          ...base,
+          sha: head.commit.sha,
+          ref: `refs/heads/${branch}`,
+          baseRef: branch,
+          trigger:
+            (run.event as { name?: string } | undefined)?.name ?? "manual",
+        };
+      },
+    );
+  });
 };
 
 /**
@@ -611,8 +614,9 @@ const resolvePullRequestHead = (
   run: CiRunScope,
   repo: RepoContext,
 ): Promise<RepoContext> => {
-  return run.step.run(
-    { id: `github › pr:resolve`, name: "pr:resolve" },
+  return ciRun(
+    run,
+    steps.resolvePullRequest(),
     async (): Promise<RepoContext> => {
       const provider = run.ci.github as GitHubProvider;
       const number = repo.pullRequest?.number;
@@ -644,7 +648,7 @@ const resolvePullRequestHead = (
         },
       };
     },
-  ) as Promise<RepoContext>;
+  );
 };
 
 /** Errors that replaying the run would only reproduce. */
@@ -826,9 +830,8 @@ const checkCommentPermission = async (
   const allowed = await canUser(login, minPermission);
 
   if (!allowed) {
-    await run.step.run(
-      { id: "github › comment:denied", name: "comment:denied" },
-      async () => {
+    await inGitHubSpan(run, () => {
+      return ciRun(run, steps.commentNotAllowed(), async () => {
         const { stickyComment } = await import("../github/helpers.ts");
 
         await stickyComment(
@@ -837,8 +840,8 @@ const checkCommentPermission = async (
         );
 
         return { denied: login };
-      },
-    );
+      });
+    });
   }
 
   return allowed;
@@ -892,7 +895,7 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run("destroy-orphans", async () => {
+      return step.run(stepOptions(steps.cleanUpEndedRun()), () => {
         return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
       });
     },

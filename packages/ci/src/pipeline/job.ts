@@ -21,6 +21,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
+import { settledSources } from "../github/source.ts";
 import {
   identityOf,
   ownJob,
@@ -30,16 +31,23 @@ import {
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  shortReason,
+} from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
-import { tagStep } from "./metadata.ts";
+import { ciRun } from "./metadata.ts";
+import { ciStep, steps, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import {
   getRunScope,
+  inJobSpan,
+  joinId,
   matrixOriginOf,
   rootRunIdOf,
   runJobBody,
-  scopeSeparator,
 } from "./scope.ts";
 
 export interface RegisteredJob {
@@ -63,6 +71,8 @@ export const defineJob = ({
 }): any => {
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
+
+  checkMaxAge(config);
 
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
@@ -91,6 +101,29 @@ export const defineJob = ({
   ownJob(job, jobs);
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's snapshots.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  try {
+    if (durationToMs(maxAge) <= 0) {
+      throw new Error("It must be longer than zero.");
+    }
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
@@ -199,6 +232,7 @@ export const invokeBuild = async ({
     ...(unnamed ? { unnamed } : {}),
     ...(base ? { base: baseForBuild(base) } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
     rootRunId,
     parent: {
@@ -231,10 +265,8 @@ export const invokeBuild = async ({
   let output: CacheBuildResult | null;
 
   try {
-    const buildStepId = `${stepPath}${scopeSeparator}build`;
-
     output = (await run.step.invoke(
-      { id: buildStepId, name: buildStepId },
+      ciStep(joinId(stepPath, "build"), traceName.buildInOwnRun(path)),
       { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {
@@ -394,7 +426,16 @@ export const validateInput = async (
   );
 };
 
-const jobBody = async ({
+/** Everything a job does is in its span. */
+const jobBody = (
+  args: RunJobArgs & { run: CiRunScope; path: string; number: number },
+): Promise<void> => {
+  return inJobSpan(args.run, args.config, args.path, () => {
+    return jobSteps(args);
+  });
+};
+
+const jobSteps = async ({
   run,
   config: declared,
   handler,
@@ -536,7 +577,7 @@ const jobBody = async ({
   const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
   const startedAt =
     checkStartedAt ??
-    (await durableNow(run, `start:${scope.path}`, scope.path));
+    (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
 
   if (checked) {
     run.openChecks.set(scope.path, checkName);
@@ -614,7 +655,8 @@ const jobBody = async ({
     }
 
     const endedAt =
-      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+      checkEndedAt ??
+      (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
     const durationMs = endedAt - startedAt;
 
     run.summaries.push({
@@ -658,7 +700,8 @@ const jobBody = async ({
     }
 
     const endedAt =
-      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+      checkEndedAt ??
+      (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
 
     run.summaries.push({
       path: scope.path,
@@ -680,10 +723,9 @@ const durableNow = (
   run: CiRunScope,
   id: string,
   jobPath: string,
+  edge: "started" | "ended",
 ): Promise<number> => {
-  return run.step.run({ id, name: id }, async () => {
-    await tagStep(run, { kind: "job", job: jobPath });
-
+  return ciRun(run, steps.recordTime(id, jobPath, edge), () => {
     return Date.now();
   });
 };
@@ -747,6 +789,7 @@ const snapshotBuilt = async (
 
   const taken = await snapshotMachine(scope, {
     target,
+    cache: scope.config.cache,
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
     ...(run.build?.broken ? { broken: true } : {}),
     ...(run.build?.unnamed ? { unnamed: true } : {}),
