@@ -755,6 +755,66 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends in its first window takes one step", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    let output: string | undefined;
+
+    const job = ci.job("quick", async () => {
+      output = await $`quick`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(output).toBe("done");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("quick › quick");
+      }),
+    ).toEqual(["quick › quick › start"]);
+  });
+
+  test("a command that runs on takes a step per window, and starts once", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "slow", ticks: 3, stdout: "eventually" }]);
+
+    const job = ci.job("slow", async () => {
+      await $`slow`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("slow › slow");
+      }),
+    ).toEqual([
+      "slow › slow › start",
+      "slow › slow › check #1",
+      "slow › slow › check #2",
+      "slow › slow › check #3",
+    ]);
+
+    // The handler replays on every step, and none of them starts it again.
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["slow"]);
+  });
+
   test("a command that needs several polls still completes", async () => {
     const { api, ci } = setup();
 
@@ -776,9 +836,9 @@ describe("commands", () => {
 
     expect(
       result.stepIds.filter((id) => {
-        return id.includes("wait #");
+        return id.includes("check #");
       }).length,
-    ).toBe(4);
+    ).toBe(3);
   });
 
   test.each(["30s", 30_000, temporalDuration(30_000)])(
@@ -963,7 +1023,8 @@ describe("commands", () => {
 
     expect(seen).toEqual({ first: "one", second: "two", server: "up" });
 
-    // Each start ran once: reconciling never starts the command again.
+    // Each start ran once: reconciling never starts the command again, and is
+    // part of the start's own step.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
@@ -974,7 +1035,7 @@ describe("commands", () => {
       result.stepIds.filter((id) => {
         return id.endsWith("reconcile");
       }),
-    ).toHaveLength(2);
+    ).toEqual([]);
   });
 
   test("an ambiguous start with nothing to adopt still fails", async () => {

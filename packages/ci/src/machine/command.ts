@@ -14,6 +14,7 @@ import {
   CommandTimeoutError,
 } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
+import type { StepSpec } from "../pipeline/names.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
@@ -40,7 +41,7 @@ import {
   tail,
   truncateLabel,
 } from "../util.ts";
-import { ensureMachine, inMachineSpan } from "./machine.ts";
+import { directSandbox, ensureMachine, inMachineSpan } from "./machine.ts";
 
 /**
  * Captured `commands.run` is capped at five minutes, so anything longer runs
@@ -54,12 +55,17 @@ const outputTailBytes = 64 * 1024;
 const terminalStates = new Set(["EXITED", "KILLED", "FAILED", "LOST"]);
 
 /**
- * Poll intervals for the managed-process loop, in milliseconds. The last one
- * repeats. There are no process exit events yet, so the loop is how a command
- * longer than the captured-exec cap is followed.
+ * How long the step that starts a managed process follows it for, so a short
+ * command is done in that one step.
  */
-const pollIntervalsMs = [1000, 2000, 5000, 10_000];
-const maxPollIntervalMs = 15_000;
+const startWindowMs = 10_000;
+
+/**
+ * How long each later step follows it for. There are no process exit events
+ * yet, so these steps are how a command longer than the captured-exec cap is
+ * followed.
+ */
+const pollWindowMs = 30_000;
 
 // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
 type SandboxProcess = any;
@@ -173,14 +179,6 @@ export const buildShellString = (
   return out;
 };
 
-/**
- * A step nested under `stepId`, named for what it does. It's CI's work: the
- * command's span is yours, but how CI runs it isn't.
- */
-const subStep = (stepId: string, suffix: string, name: string) => {
-  return ciStep(joinId(stepId, suffix), name);
-};
-
 class CommandBuilder implements Command {
   private readonly getScope: () => CiJobScope;
   private readonly state: CommandState;
@@ -273,10 +271,15 @@ class CommandBuilder implements Command {
     // Starting, awaiting, reading and killing the process are separate
     // statements, so each is a row of its own, never one span re-entered.
     const process = await this.inSpan(scope, stepId, () => {
-      return startProcess(machine, stepId, this.spawnOptions(scope));
+      return startProcess({
+        scope,
+        machine,
+        stepId,
+        options: this.spawnOptions(scope),
+        windowMs: 0,
+      });
     });
 
-    const argv = this.state.argv;
     const secrets = this.secretValues(scope);
     // Numbers the follow-up steps, so calling `exited()` or `output()` more
     // than once never reuses a step ID.
@@ -299,9 +302,10 @@ class CommandBuilder implements Command {
             });
 
             return readResult({
+              scope,
+              machine,
               process: polled.process,
               stepId,
-              argv,
               secrets,
             });
           },
@@ -313,10 +317,10 @@ class CommandBuilder implements Command {
           scope,
           stepId,
           () => {
-            return process.signal(
-              subStep(stepId, "kill", traceName.stopProcess),
-              { signal },
-            );
+            return signalProcess(scope, machine, steps.stopProcess(stepId), {
+              id: process.id,
+              signal,
+            });
           },
           { suffix: "kill", label: "kill" },
         );
@@ -328,17 +332,20 @@ class CommandBuilder implements Command {
           scope,
           stepId,
           () => {
-            return process.getOutput(
-              subStep(stepId, suffix, traceName.readOutput),
-              { tailBytes: opts?.tailBytes ?? outputTailBytes },
+            return readOutputStep(
+              scope,
+              machine,
+              steps.readOutput(stepId, suffix),
+              {
+                id: process.id,
+                tailBytes: opts?.tailBytes,
+              },
             );
           },
           { suffix, label: "output" },
         );
 
-        const decoded = decodeChunks(output);
-
-        return maskSecrets(`${decoded.stdout}${decoded.stderr}`, secrets);
+        return maskSecrets(`${output.stdout}${output.stderr}`, secrets);
       },
     };
   }
@@ -541,36 +548,47 @@ class CommandBuilder implements Command {
     stepId: string,
     timeoutMs: number | undefined,
   ): Promise<CommandResult> {
-    const process = await startProcess(
+    // The start follows the process for a while, then polling follows on from
+    // where it left off.
+    const windowMs =
+      timeoutMs === undefined
+        ? startWindowMs
+        : Math.min(startWindowMs, timeoutMs);
+
+    const started = await startProcess({
+      scope,
       machine,
       stepId,
-      this.spawnOptions(scope),
-    );
+      options: this.spawnOptions(scope),
+      windowMs,
+    });
 
     const polled = await pollUntilTerminal({
       scope,
       machine,
-      process,
+      process: started,
       stepId,
       nextWait: counter(),
       timeoutMs,
+      elapsedMs: windowMs,
     });
 
     if (polled.timedOut) {
       await this.state.onTimeout?.();
 
-      await process.signal(
-        subStep(stepId, "timeout-kill", traceName.stopAfterTimeout),
-        { signal: 9 },
-      );
+      await signalProcess(scope, machine, steps.stopAfterTimeout(stepId), {
+        id: started.id,
+        signal: 9,
+      });
 
       throw this.timeoutError(scope);
     }
 
     const result = await readResult({
+      scope,
+      machine,
       process: polled.process,
       stepId,
-      argv: this.state.argv,
       secrets: this.secretValues(scope),
     });
 
@@ -612,44 +630,195 @@ const recordFailure = async (
 };
 
 /**
- * Start a managed process. Cloud can answer a start that succeeded with an
- * ambiguous error, in which case the process that did start is adopted
- * instead of starting the command a second time.
+ * Run a sandbox step of CI's own. An error the sandbox API says is not safe to
+ * repeat is final, as it is for a durable `step.sandbox` call, so a retry
+ * never starts a command a second time.
  */
-const startProcess = async (
-  machine: MachineHandle,
-  stepId: string,
+const sandboxStep = <T>(
+  scope: CiJobScope,
+  spec: StepSpec,
+  fn: () => Promise<T>,
+): Promise<T> => {
+  return ciRun(scope.run, spec, async () => {
+    try {
+      return await fn();
+    } catch (error) {
+      const sandboxError = getSandboxError(error);
+
+      if (!sandboxError || sandboxError.retryable) {
+        throw error;
+      }
+
+      throw new NonRetriableError(sandboxError.message, {
+        cause: {
+          action: sandboxError.action,
+          code: sandboxError.code,
+          message: sandboxError.message,
+          ambiguous: sandboxError.ambiguous,
+        },
+      });
+    }
+  });
+};
+
+/** A process's output, cut to its tails. */
+interface ProcessOutput {
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+}
+
+/**
+ * A managed process as a step last saw it. It is plain data because a step's
+ * result is stored, and it is all a replay has to go on.
+ */
+interface ProcessView {
+  id: string;
+  state: string;
+  exitCode?: number;
+  startedAt?: string;
+  endedAt?: string;
+  /** Set when the process ended and the same step could read its output. */
+  output?: ProcessOutput;
+}
+
+const viewOf = (process: SandboxProcess): ProcessView => {
+  return {
+    id: process.id,
+    state: process.state,
+    exitCode: process.exitCode,
+    startedAt: process.startedAt,
+    endedAt: process.endedAt,
+  };
+};
+
+const readProcessOutput = async (
+  process: SandboxProcess,
+  tailBytes = outputTailBytes,
+): Promise<ProcessOutput> => {
+  const decoded = decodeChunks(await process.getOutput({ tailBytes }));
+  const stdout = tail(decoded.stdout, tailBytes);
+  const stderr = tail(decoded.stderr, tailBytes);
+
+  return {
+    stdout: stdout.text,
+    stderr: stderr.text,
+    truncated: stdout.truncated || stderr.truncated,
+  };
+};
+
+/**
+ * Follow a process for up to `windowMs`, and read its output if it ends. A
+ * wait that outlasts the window ends in an error, which only means the
+ * process is still running. Output that can't be read is left for a step of
+ * its own.
+ */
+const follow = async (
+  sandbox: Awaited<ReturnType<typeof directSandbox>>,
+  process: SandboxProcess,
+  windowMs: number,
+): Promise<ProcessView> => {
+  let current = process;
+
+  if (windowMs > 0) {
+    try {
+      current = await process.wait({ timeout: windowMs });
+    } catch {
+      current = (await sandbox.processes.get(process.id)) ?? process;
+    }
+  }
+
+  if (!terminalStates.has(current.state)) {
+    return viewOf(current);
+  }
+
+  try {
+    return { ...viewOf(current), output: await readProcessOutput(current) };
+  } catch {
+    return viewOf(current);
+  }
+};
+
+/** A process by ID, as the sandbox API's own client has it. */
+const processById = async (
+  sandbox: Awaited<ReturnType<typeof directSandbox>>,
+  id: string,
+): Promise<SandboxProcess> => {
+  const process = await sandbox.processes.get(id);
+
+  if (!process) {
+    throw new Error(`Process ${id} is gone`);
+  }
+
+  return process;
+};
+
+/**
+ * Start a managed process, and follow it for up to `windowMs` in the same
+ * step, so a command that ends in that time takes one step in all. Without a
+ * window the step only starts it.
+ *
+ * The process starts once: its start is a step, so a replay gets the stored
+ * result. Once it has started, nothing in the step fails it, since a retry
+ * would start the command a second time.
+ */
+const startProcess = async (opts: {
+  scope: CiJobScope;
+  machine: MachineHandle;
+  stepId: string;
+  options: {
+    command: string[];
+    environment: Record<string, string>;
+    cwd: string;
+  };
+  windowMs: number;
+}): Promise<ProcessView> => {
+  const { scope, machine } = opts;
+
+  machine.claimedProcessIds ??= new Set<string>();
+
+  const claimed = machine.claimedProcessIds;
+
+  const view = await sandboxStep(
+    scope,
+    steps.startProcess(opts.stepId, opts.windowMs > 0),
+    async () => {
+      const sandbox = await directSandbox(scope.run, machine);
+
+      const started = await startOrAdopt(sandbox, opts.options, claimed);
+
+      try {
+        return await follow(sandbox, started, opts.windowMs);
+      } catch {
+        // The next step finds out what is wrong with the process.
+        return viewOf(started);
+      }
+    },
+  );
+
+  claimed.add(view.id);
+
+  return view;
+};
+
+/**
+ * Start a process. Cloud can answer a start that succeeded with an ambiguous
+ * error, in which case the process that did start is adopted instead of
+ * starting the command a second time.
+ */
+const startOrAdopt = async (
+  sandbox: Awaited<ReturnType<typeof directSandbox>>,
   options: {
     command: string[];
     environment: Record<string, string>;
     cwd: string;
   },
+  claimed: ReadonlySet<string>,
 ): Promise<SandboxProcess> => {
-  machine.claimedProcessIds ??= new Set<string>();
-
-  const claimed = machine.claimedProcessIds;
-
   try {
-    const process = await machine.sandbox.processes.start(
-      subStep(stepId, "start", traceName.startProcess),
-      options,
-    );
-
-    claimed.add(process.id);
-
-    return process;
+    return await sandbox.processes.start(options);
   } catch (error) {
-    const adopted = await adoptAmbiguousStart(
-      machine,
-      stepId,
-      options.command,
-      claimed,
-      error,
-    );
-
-    claimed.add(adopted.id);
-
-    return adopted;
+    return adoptAmbiguousStart(sandbox, options.command, claimed, error);
   }
 };
 
@@ -660,13 +829,12 @@ const startProcess = async (
  * `claimedProcessIds` bookkeeping on `MachineHandle`, once starts are no
  * longer ambiguous.
  *
- * This lists processes, as a step, and returns the newest one running the
- * same command that this run hasn't already claimed. With nothing to adopt,
- * or any other error, the original error is rethrown.
+ * This lists processes and returns the newest one running the same command
+ * that this run hasn't already claimed. With nothing to adopt, or any other
+ * error, the original error is rethrown.
  */
 const adoptAmbiguousStart = async (
-  machine: MachineHandle,
-  stepId: string,
+  sandbox: Awaited<ReturnType<typeof directSandbox>>,
   command: readonly string[],
   claimed: ReadonlySet<string>,
   error: unknown,
@@ -680,28 +848,19 @@ const adoptAmbiguousStart = async (
     throw error;
   }
 
-  const listed = (await machine.sandbox.processes.list(
-    subStep(stepId, "reconcile", traceName.findStartedProcess),
-    { limit: 250 },
-  )) as {
-    items: Array<{
-      id: string;
-      command: readonly string[];
-      startedAt?: string;
-    }>;
-  };
+  const listed = await sandbox.processes.list({ limit: 250 });
 
   const [match] = listed.items
-    .filter((process) => {
+    .filter((process: SandboxProcess) => {
       return (
         !claimed.has(process.id) &&
         process.command.length === command.length &&
-        process.command.every((arg, index) => {
+        process.command.every((arg: string, index: number) => {
           return arg === command[index];
         })
       );
     })
-    .sort((a, b) => {
+    .sort((a: SandboxProcess, b: SandboxProcess) => {
       return (b.startedAt ?? "").localeCompare(a.startedAt ?? "");
     });
 
@@ -714,77 +873,116 @@ const adoptAmbiguousStart = async (
 
 /**
  * Follow a managed process until it reaches a terminal state, or until
- * `timeoutMs` of polling has passed.
+ * `timeoutMs` has passed.
  *
- * Each check is its own step, with a durable sleep between them, so a command
- * can run for as long as it needs without holding a worker.
+ * Each step follows it for a window, blocking on the sandbox API's
+ * `process.wait`, and reads its output when it ends. That is one step per
+ * window rather than a durable sleep and a check per tick.
  *
- * The sandbox API's `process.wait` blocks server-side for at most five minutes
- * and raises an error when that passes, which would spend the function's
- * retries on a healthy long-running command. Sleeping between `process.get`
- * calls never errors and has no upper bound.
+ * `process.wait` raises an error when its window passes with the process still
+ * running, and blocks for at most five minutes, so a window is shorter than
+ * that and its error is only a signal to look again.
  */
 const pollUntilTerminal = async (opts: {
   scope: CiJobScope;
   machine: MachineHandle;
-  process: SandboxProcess;
+  process: ProcessView;
   stepId: string;
-  /** Numbers each wait, so step IDs stay unique across calls. */
+  /** Numbers each poll, so step IDs stay unique across calls. */
   nextWait: () => number;
   timeoutMs?: number | undefined;
-}): Promise<{ process: SandboxProcess; timedOut: boolean }> => {
+  /** How much of the timeout the steps before this have used. */
+  elapsedMs?: number;
+}): Promise<{ process: ProcessView; timedOut: boolean }> => {
+  const { scope, machine } = opts;
+
   let current = opts.process;
-  let elapsed = 0;
+  let elapsed = opts.elapsedMs ?? 0;
 
   while (!terminalStates.has(current.state)) {
     if (opts.timeoutMs !== undefined && elapsed >= opts.timeoutMs) {
       return { process: current, timedOut: true };
     }
 
-    const index = opts.nextWait();
-    const interval = pollIntervalsMs[index - 1] ?? maxPollIntervalMs;
+    const windowMs =
+      opts.timeoutMs === undefined
+        ? pollWindowMs
+        : Math.min(pollWindowMs, opts.timeoutMs - elapsed);
 
-    await opts.scope.run.step.sleep(
-      subStep(opts.stepId, `wait #${index}`, traceName.wait(interval)),
-      interval,
+    const id = current.id;
+
+    current = await sandboxStep(
+      scope,
+      steps.pollProcess(opts.stepId, opts.nextWait()),
+      async () => {
+        const sandbox = await directSandbox(scope.run, machine);
+
+        return follow(sandbox, await processById(sandbox, id), windowMs);
+      },
     );
 
-    elapsed += interval;
-
-    current =
-      (await opts.machine.sandbox.processes.get(
-        subStep(opts.stepId, `check #${index}`, traceName.pollProcess),
-        current.id,
-      )) ?? current;
+    elapsed += windowMs;
   }
 
   return { process: current, timedOut: false };
 };
 
+/** Send a signal to a process, as a step. */
+const signalProcess = async (
+  scope: CiJobScope,
+  machine: MachineHandle,
+  spec: StepSpec,
+  opts: { id: string; signal: number },
+): Promise<void> => {
+  await sandboxStep(scope, spec, async () => {
+    const sandbox = await directSandbox(scope.run, machine);
+    const process = await processById(sandbox, opts.id);
+
+    await process.signal({ signal: opts.signal });
+  });
+};
+
+/** Read a process's output, as a step. */
+const readOutputStep = (
+  scope: CiJobScope,
+  machine: MachineHandle,
+  spec: StepSpec,
+  opts: { id: string; tailBytes?: number | undefined },
+): Promise<ProcessOutput> => {
+  return sandboxStep(scope, spec, async () => {
+    const sandbox = await directSandbox(scope.run, machine);
+
+    return readProcessOutput(
+      await processById(sandbox, opts.id),
+      opts.tailBytes,
+    );
+  });
+};
+
 const readResult = async (opts: {
-  process: SandboxProcess;
+  scope: CiJobScope;
+  machine: MachineHandle;
+  process: ProcessView;
   stepId: string;
-  argv: string[];
   secrets: string[];
 }): Promise<CommandResult> => {
-  const output = await opts.process.getOutput(
-    subStep(opts.stepId, "output", traceName.readOutput),
-    {
-      tailBytes: outputTailBytes,
-    },
-  );
+  const { process } = opts;
 
-  const decoded = decodeChunks(output);
-  const stdout = tail(decoded.stdout, outputTailBytes);
-  const stderr = tail(decoded.stderr, outputTailBytes);
+  const output =
+    process.output ??
+    (await readOutputStep(
+      opts.scope,
+      opts.machine,
+      steps.readOutput(opts.stepId),
+      { id: process.id },
+    ));
 
   return {
-    exitCode:
-      opts.process.exitCode ?? (opts.process.state === "EXITED" ? 0 : 1),
-    stdout: maskSecrets(stdout.text, opts.secrets),
-    stderr: maskSecrets(stderr.text, opts.secrets),
-    truncated: stdout.truncated || stderr.truncated,
-    ...processDuration(opts.process),
+    exitCode: process.exitCode ?? (process.state === "EXITED" ? 0 : 1),
+    stdout: maskSecrets(output.stdout, opts.secrets),
+    stderr: maskSecrets(output.stderr, opts.secrets),
+    truncated: output.truncated,
+    ...processDuration(process),
   };
 };
 

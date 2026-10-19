@@ -28,7 +28,7 @@ export interface FakeProcess {
   stderr: string;
   startedAt: string;
   endedAt?: string;
-  /** How many `wait`/`get` calls happen before this process exits. */
+  /** How many `wait` calls time out before this process exits. */
   ticksUntilExit: number;
 }
 
@@ -61,7 +61,7 @@ export interface CommandScript {
   exitCode?: number;
   stdout?: string;
   stderr?: string;
-  /** How many polls before a managed process exits. Defaults to 0. */
+  /** How many waits time out before a managed process exits. Defaults to 0. */
   ticks?: number;
   /**
    * How many starts of this command answer `409 operation_ambiguous` even
@@ -283,7 +283,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     );
   };
 
-  /** Advance a running process one poll, exiting it once its ticks run out. */
+  /** Advance a running process one wait, exiting it once its ticks run out. */
   const tick = (process: FakeProcess): void => {
     if (process.state !== "RUNNING") {
       return;
@@ -722,8 +722,6 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       method: "GET",
       path: new RegExp(`${PROCESS}$`),
       handler: onProcess((_req, process) => {
-        tick(process);
-
         return json(200, processResource(process));
       }),
     },
