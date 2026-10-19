@@ -26,12 +26,14 @@
  * (the pipeline functions turn off optimized parallelism, so the look is not
  * held until the wait ends).
  *
+ * TODO: `@inngest/ci` needs the `inngest` release that completes a run on
+ * return with `optimizeParallelism: false`. Set the exact version in the peer
+ * dependency range once it is released.
+ *
  * What is left to chance, a builder that died without a trace or an event that
- * was not sent, ends in the wait's timeout: the requester then checks whether
- * the lock's machine still exists. If it does it waits again, because a long
- * build is still going, and if it is gone it asks again. A builder that dies is
- * also noticed by the `ci/build` cleanup function, which releases its lock and
- * sends a `failed` `ci/build.done`.
+ * was not sent, ends in the wait's timeout: the requester then looks and asks
+ * again. A builder that dies is also noticed by the `ci/build` cleanup
+ * function, which releases its lock and sends a `failed` `ci/build.done`.
  *
  * A requester that found the snapshot by its look leaves its wait unawaited and
  * returns: the run completes and the executor drops the wait with it.
@@ -43,12 +45,11 @@ import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { lookupBeforeBuild } from "../cache/cache.ts";
 import type { NamePolicy } from "../cache/namePolicy.ts";
-import { lockMachineAlive, lockMachineName } from "../machine/machine.ts";
+import { lockMachineName } from "../machine/machine.ts";
 import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
-import { ciRun } from "./metadata.ts";
-import { ciStep, steps, traceName } from "./names.ts";
+import { ciStep, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { joinId, rootRunIdOf } from "./scope.ts";
 
@@ -57,6 +58,13 @@ export const buildRequestedEvent = "ci/build.requested";
 
 /** The event whoever let go of a build lock sends, for those waiting on it. */
 export const buildDoneEvent = "ci/build.done";
+
+/**
+ * How long a run waits for a build's event before it looks and asks again. A
+ * request for a build that is still going is skipped, so this only bounds how
+ * long a lost build goes unnoticed.
+ */
+const buildWait = "15m";
 
 /** What a build sends when it lets go of its lock. */
 export type BuildDone = { name: string } & (
@@ -120,10 +128,6 @@ export const requestBuild = async ({
   // not `functions()` has been called to serve it.
   run.ci.cacheBuild();
 
-  const id = (what: string): string => {
-    return joinId(stepPath, `build:${what}`);
-  };
-
   /**
    * What a build that passed gives this run. The run whose request was built
    * gets what the build gave back, which includes what only it can use: the
@@ -159,87 +163,74 @@ export const requestBuild = async ({
   };
 
   let failures = 0;
-  let requests = 0;
-  let ask = true;
 
   for (let round = 0; ; round++) {
     const label = round === 0 ? "" : ` (round ${round})`;
-    const { result, wake } = await waitAndLook({
-      run,
-      path,
-      config,
-      target,
-      name,
-      label,
-      stepPath,
-      reused,
-    });
 
-    if (result) {
-      return result;
-    }
-
-    if (ask) {
-      run.ci.hooks.activity(run, path, "asking for a build…");
-
-      await run.step.sendEvent(
-        ciStep(
-          joinId(stepPath, `build${requests > 0 ? ` (${requests})` : ""}`),
-          traceName.askForBuild(path),
-        ),
-        {
-          name: buildRequestedEvent,
-          data: {
-            ...data,
-            locked: true,
-            app: run.ci.client.id,
-            slot: requests === 0 ? name : `${name}:${requests}`,
-          },
-        },
-      );
-    }
-
-    ask = false;
-
-    const done = await wake;
-
-    if (done) {
-      const finished = done.data as BuildDone;
-
-      if (finished.status === "ready") {
-        return adopt(finished);
-      }
-
-      // One more try, since a builder can die for reasons that are not the
-      // job's. A second failure is the job's.
-      if (++failures > 1) {
-        throw new NonRetriableError(
-          `The build of \`${config.id}\` failed: ${finished.reason}`,
-        );
-      }
-
-      run.ci.hooks.activity(run, path, "the build failed, asking again…");
-
-      requests++;
-      ask = true;
-
-      continue;
-    }
-
-    // Nothing came in time. A lock that is still held is a build still going,
-    // however long it takes, and one that is gone left nothing to wait for.
-    const alive = await ciRun(
-      run,
-      steps.checkBuildLock(id(`alive${label}`)),
-      () => {
-        return lockMachineAlive(run.ci.client, name);
+    // Planned first and not awaited, so it is in the same batch as the look,
+    // and the executor saves it before it runs the look. A hit leaves it
+    // unawaited for the run to complete over.
+    const wake: Promise<{ data?: unknown } | null> = run.step.waitForEvent(
+      ciStep(
+        joinId(stepPath, `build:wait${label}`),
+        traceName.waitForBuild(path),
+      ),
+      {
+        event: buildDoneEvent,
+        if: `async.data.name == '${name}'`,
+        timeout: buildWait,
       },
     );
 
-    if (!alive) {
-      requests++;
-      ask = true;
+    const found = await lookupBeforeBuild(
+      run,
+      { id: config.id, path, stepPath: `${stepPath}${label}` },
+      config.cache,
+      target,
+    );
+
+    if (found) {
+      return reused(found);
     }
+
+    run.ci.hooks.activity(run, path, "asking for a build…");
+
+    // A request for a build that is still going is skipped, so asking again
+    // after a wait that ran out is how a lost build is noticed.
+    await run.step.sendEvent(
+      ciStep(joinId(stepPath, `build${label}`), traceName.askForBuild(path)),
+      {
+        name: buildRequestedEvent,
+        data: {
+          ...data,
+          locked: true,
+          app: run.ci.client.id,
+          slot: failures === 0 ? name : `${name}:${failures}`,
+        },
+      },
+    );
+
+    const done = await wake;
+
+    if (!done) {
+      continue;
+    }
+
+    const finished = done.data as BuildDone;
+
+    if (finished.status === "ready") {
+      return adopt(finished);
+    }
+
+    // One more try, since a builder can die for reasons that are not the
+    // job's. A second failure is the job's.
+    if (++failures > 1) {
+      throw new NonRetriableError(
+        `The build of \`${config.id}\` failed: ${finished.reason}`,
+      );
+    }
+
+    run.ci.hooks.activity(run, path, "the build failed, asking again…");
   }
 };
 
@@ -345,65 +336,4 @@ const announce = async (
       `couldn't tell the runs waiting on a build of \`${done.name}\` that it ended`,
     );
   }
-};
-
-/**
- * One round's start: save the wait for the lock's `ci/build.done`, then look
- * the snapshot up, and say what the look found. The one place that holds the
- * wait-beside-look logic, so a change to how a round starts is a change here.
- * On a hit the result is returned and the wait is left unawaited, for the run
- * to complete over; on a miss `result` is undefined and the caller goes on with
- * `wake`.
- */
-const waitAndLook = async ({
-  run,
-  path,
-  config,
-  target,
-  name,
-  label,
-  stepPath,
-  reused,
-}: {
-  run: CiRunScope;
-  path: string;
-  config: JobConfig;
-  target: CacheTarget;
-  /** The lock's name. */
-  name: string;
-  /** Tells this round's steps from the others'. */
-  label: string;
-  stepPath: string;
-  reused: (cached: CachedSnapshot) => CacheBuildResult;
-}): Promise<{
-  result?: CacheBuildResult;
-  /** The wait: the build's event, or null when it ran out. */
-  wake: Promise<{ data?: unknown } | null>;
-}> => {
-  // Planned first and not awaited, so it is in the same batch as the look or an
-  // earlier one, and the executor saves it before it runs the look.
-  const wake: Promise<{ data?: unknown } | null> = run.step.waitForEvent(
-    ciStep(
-      joinId(stepPath, `build:wait${label}`),
-      traceName.waitForBuild(path),
-    ),
-    {
-      event: buildDoneEvent,
-      if: `async.data.name == '${name}'`,
-      timeout: run.ci.buildWait,
-    },
-  );
-
-  const found = await lookupBeforeBuild(
-    run,
-    { id: config.id, path, stepPath: `${stepPath}${label}` },
-    config.cache,
-    target,
-  );
-
-  if (!found) {
-    return { wake };
-  }
-
-  return { result: reused(found), wake };
 };

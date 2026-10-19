@@ -1648,14 +1648,6 @@ describe("from", () => {
     }).toThrow(message);
   });
 
-  test("a `buildWait` that isn't a duration throws when the client is created", () => {
-    expect(() => {
-      createCi(createCiTestClient(createFakeSandboxApi()), {
-        buildWait: "soon",
-      });
-    }).toThrow(CiUsageError);
-  });
-
   test("a `from` function that returns a non-job fails the run for good", async () => {
     const { ci } = setup();
 

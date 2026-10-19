@@ -10,8 +10,8 @@
  * @module
  */
 
-import { CiUsageError } from "../errors.ts";
 import { NonRetriableError } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {

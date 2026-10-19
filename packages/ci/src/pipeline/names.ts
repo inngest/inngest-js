@@ -362,7 +362,6 @@ export const steps = {
     };
   },
 
-  checkBuildLock: named("Check build"),
   recordRunDetails: named("Record run details"),
 };
 

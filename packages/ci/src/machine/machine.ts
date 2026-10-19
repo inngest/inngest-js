@@ -865,17 +865,3 @@ const holdsLock = async (
     return false;
   }
 };
-
-/** Whether the machine holding a build lock's name is still alive. */
-export const lockMachineAlive = async (
-  client: Inngest.Any,
-  name: string,
-): Promise<boolean> => {
-  for await (const sandbox of listSandboxes(client)) {
-    if (sandbox.name === name && isLive(sandbox)) {
-      return true;
-    }
-  }
-
-  return false;
-};

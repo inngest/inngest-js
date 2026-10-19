@@ -20,8 +20,8 @@ import type { Inngest, InngestFunction } from "inngest";
 import { NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { cycleMessage } from "../machine/from.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import { cycleMessage } from "../machine/from.ts";
 import type {
   CheckAnnotation,
   MachineConfig,

@@ -177,7 +177,6 @@ describe("runs that miss the same cached job together", () => {
     for (const result of results) {
       expect(result.type).toBe("function-resolved");
       expect(new Set(result.stepIds).size).toBe(result.stepIds.length);
-      expect(result.stepIds.join("\n")).not.toContain("alive");
     }
 
     expect(installs(api)).toBe(1);
@@ -483,41 +482,7 @@ describe("a build that died holding the lock", () => {
 });
 
 describe("a wait that nothing ends", () => {
-  test("with the lock alive, waits again however long it takes (past an hour here), and asks for nothing more", async () => {
-    const api = createFakeSandboxApi();
-    const { snapshot, done, lock } = await learn(api);
-
-    plantLock(api, lock, "01SLOW");
-
-    const { pipeline, bus } = setup(api);
-    let finished = false;
-
-    const result = await runFunction(pipeline, {
-      event: prEvent,
-      runId: "01PATIENT",
-      beforeRequest: () => {
-        // Four waits of fifteen minutes have run out, so the build has taken
-        // longer than an hour, and then it ends.
-        if (!finished && timeouts(bus) >= 4) {
-          finished = true;
-          api.snapshots.set(snapshot.id, snapshot);
-
-          for (const machine of api.sandboxes.values()) {
-            machine.status = "TERMINATED";
-          }
-
-          bus.send({ name: buildDoneEvent, data: done.data });
-        }
-      },
-    });
-
-    expect(result.type).toBe("function-resolved");
-    expect(timeouts(bus)).toBeGreaterThanOrEqual(4);
-    expect(sentOf(bus, buildRequestedEvent)).toHaveLength(1);
-    expect(installs(api)).toBe(0);
-  });
-
-  test("with the lock gone, asks again", async () => {
+  test("is followed by another look and request, which builds once the lost lock is gone", async () => {
     const api = createFakeSandboxApi();
     const { lock } = await learn(api);
     const id = plantLock(api, lock, "01LOST");
@@ -536,13 +501,9 @@ describe("a wait that nothing ends", () => {
       },
     });
 
-    const slots = sentOf(bus, buildRequestedEvent).map(
-      (event) => event.data.slot,
-    );
-
     expect(result.type).toBe("function-resolved");
     expect(timeouts(bus)).toBe(1);
-    expect(new Set(slots).size).toBe(2);
+    expect(sentOf(bus, buildRequestedEvent)).toHaveLength(2);
     expect(installs(api)).toBe(1);
   });
 });

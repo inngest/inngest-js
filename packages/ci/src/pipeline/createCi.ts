@@ -34,7 +34,6 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
-import { durationToMs } from "../util.ts";
 import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
 import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
@@ -56,13 +55,6 @@ export interface CiOptions {
   github?: GitHubProvider;
   /** Default machine for jobs. */
   machine?: MachineConfig;
-  /**
-   * How long a run waits for a build it asked for, such as `"15m"`, before it
-   * checks that the build is still going. A build that is, however long it
-   * takes, is waited for again, so this only bounds how long a build that was
-   * lost goes unnoticed. Defaults to `"15m"`.
-   */
-  buildWait?: string;
   /** Builds the link shown on checks. */
   runUrl?: (ctx: { runId: string; functionId: string }) => string;
 }
@@ -223,9 +215,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
   // The provider answers `github.rest` and `github.token()` whatever mode
   // we're in; only where checks *go* changes in dev.
-  // Fail now rather than when a build first waits.
-  durationToMs(options.buildWait ?? "15m");
-
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
   const matrices = new Map<string, Matrix<MatrixAxes>>();
@@ -254,7 +243,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return buildFunction;
     },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
-    buildWait: options.buildWait ?? "15m",
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
       client as unknown as { logger?: { warn: (...args: unknown[]) => void } }

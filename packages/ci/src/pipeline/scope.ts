@@ -177,8 +177,6 @@ export interface CiInternals {
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
-  /** How long a run waits for a build it asked for before it checks on it. */
-  buildWait: string;
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   /** What the run tells a tool that watches it. Does nothing by default. */
   hooks: CiHooks;
