@@ -35,17 +35,22 @@ export const sandboxResource = resource;
 
 /**
  * A client whose sandbox API returns `sandboxRef` for a `get`, answers other
- * paths with `route`, and 404s the rest.
+ * paths with `route` (given the request's query and body too), and 404s the
+ * rest.
  */
 export const createClient = (
-  route: (path: string, method: string) => Response | undefined,
+  route: (
+    path: string,
+    method: string,
+    request: { query: URLSearchParams; body: unknown },
+  ) => Response | undefined,
 ) => {
   return new Inngest({
     id: testClientId,
     signingKey: "signkey-test",
     baseUrl: "https://api.example.test",
     fetch: async (input, init) => {
-      const { pathname } = new URL(
+      const { pathname, searchParams } = new URL(
         input instanceof Request ? input.url : input,
       );
 
@@ -57,7 +62,10 @@ export const createClient = (
       }
 
       return (
-        route(pathname, init?.method ?? "GET") ??
+        route(pathname, init?.method ?? "GET", {
+          query: searchParams,
+          body: init?.body,
+        }) ??
         Response.json(
           { errors: [{ code: "missing", message: "missing" }] },
           { status: 404 },
@@ -70,21 +78,47 @@ export const createClient = (
 
 /**
  * A client whose sandbox API creates, execs in and destroys sandboxes, with
- * the number of destroys it has served.
+ * the number of destroys it has served and the files uploaded to it. Every
+ * command prints `stdout`, and exits with `exitCode`; downloads serve `file`.
  */
 export const createScopeClient = (
   destroy: () => Response = () => new Response(null, { status: 204 }),
+  { stdout = "", stderr = "", exitCode = 0, file = "" } = {},
 ) => {
-  const calls = { destroys: 0 };
+  const calls = {
+    destroys: 0,
+    uploads: [] as { path: string; body: string }[],
+  };
 
-  const client = createClient((path, method) => {
+  const client = createClient((path, method, { query, body }) => {
+    if (path.endsWith("/files")) {
+      if (method === "PUT") {
+        const upload = {
+          path: query.get("path") ?? "",
+          body: new TextDecoder().decode(body as Uint8Array),
+        };
+        calls.uploads.push(upload);
+
+        return Response.json({
+          data: { path: upload.path, bytesWritten: upload.body.length },
+        });
+      }
+
+      return new Response(file);
+    }
+
     if (path === "/v2/sandboxes" && method === "POST") {
       return Response.json({ data: sandboxResource }, { status: 201 });
     }
 
     if (path.endsWith("/exec")) {
       return Response.json({
-        data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
+        data: {
+          stdout: btoa(stdout),
+          stderr: btoa(stderr),
+          encoding: "base64",
+          exitCode,
+        },
       });
     }
 
