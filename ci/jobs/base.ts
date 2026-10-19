@@ -46,6 +46,11 @@ export const base = ci.job(
   async ({ key }) => {
     await checkout();
 
+    // TODO: drop once the sandbox image maps localhost to 127.0.0.1 (raised with the platform team).
+    await $.sh`grep -q "127.0.0.1 localhost" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts`.as(
+      "resolve localhost",
+    );
+
     await $.sh`npm install -g --prefix /usr/local "$(node -p "require('./package.json').packageManager.split('+')[0]")"`.as(
       "install pnpm",
     );

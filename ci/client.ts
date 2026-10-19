@@ -5,14 +5,16 @@
  * @module
  */
 
-import { createCi, githubApp } from "@inngest/ci";
+import { createCi, githubApp, githubToken } from "@inngest/ci";
 import { Inngest } from "inngest";
 
 export const inngest = new Inngest({ id: "inngest-js-ci" });
 
 export const ci = createCi(inngest, {
-  github: githubApp({
-    appId: process.env.GITHUB_APP_ID,
-    privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-  }),
+  github: process.env.GITHUB_TOKEN
+    ? githubToken()
+    : githubApp({
+        appId: process.env.GITHUB_APP_ID,
+        privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+      }),
 });
