@@ -6,19 +6,21 @@
  * @module
  */
 
-import { $ } from "@inngest/ci";
+import { $, checkout } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { source } from "./base.ts";
+import { build } from "./base.ts";
 
-export const audit = ci.job({ id: "audit", from: source }, async () => {
+export const audit = ci.job({ id: "audit", from: build }, async () => {
+  await checkout();
+
   await $`pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors`;
 });
 
 export const tests = ci.matrix(
   {
     id: "tests",
-    from: source,
+    from: build,
     axes: {
       package: [
         "@inngest/eslint-plugin",
@@ -30,13 +32,17 @@ export const tests = ci.matrix(
     },
   },
   async ({ matrix }) => {
+    await checkout();
+
     await $`pnpm --filter ${matrix.package} test`;
   },
 );
 
 export const middlewareSentry = ci.job(
-  { id: "middleware-sentry", from: source },
+  { id: "middleware-sentry", from: build },
   async ({ from }) => {
+    await checkout();
+
     await from.$.integration.env({ PACKAGE: "@inngest/middleware-sentry" });
   },
 );
@@ -44,10 +50,12 @@ export const middlewareSentry = ci.job(
 export const quality = ci.matrix(
   {
     id: "quality",
-    from: source,
+    from: build,
     axes: { package: ["@inngest/otel", "@inngest/ci"] },
   },
   async ({ matrix }) => {
+    await checkout();
+
     for (const script of [
       "type-check",
       "lint",

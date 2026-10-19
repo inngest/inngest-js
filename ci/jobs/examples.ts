@@ -7,7 +7,7 @@
  * @module
  */
 
-import { github } from "@inngest/ci";
+import { checkout, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
 import { pack } from "./base.ts";
@@ -48,6 +48,8 @@ const itests = (id: string, example: string[], force: "" | "force") => {
   return ci.matrix(
     { id, from: pack, axes: { example } },
     async ({ matrix, from }) => {
+      await checkout();
+
       await from.$.itest.env({
         EXAMPLE: matrix.example,
         INNGEST_STREAMING: force,

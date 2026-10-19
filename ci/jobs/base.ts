@@ -2,10 +2,10 @@
  * The images every job starts from, and the commands they hand down. `base`
  * has the repository's dependencies and the latest Dev Server, and returns the
  * integration test commands that run against it. `build` adds the built
- * `inngest` and `test` packages, `source` moves them to the commit being
- * tested, and `pack` adds the `inngest` tarball and returns the commands that
- * check it. `base` and `build` are cached, and pushes to main keep them warm
- * for pull requests.
+ * `inngest` and `test` packages, `pack` adds the `inngest` tarball and
+ * returns the commands that check it. Every job checks out the commit being
+ * tested itself. `base`, `build` and `pack` are cached, and pushes to main keep
+ * them warm for pull requests.
  *
  * @module
  */
@@ -59,6 +59,8 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
+    await $`npm install -g bun`;
+
     const devServer = (
       await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`
         .as("download the Dev Server")
@@ -97,25 +99,31 @@ export const build = ci.job(
   },
 );
 
-export const source = ci.job({ id: "source", from: build }, async () => {
-  await checkout();
-});
+export const pack = ci.job(
+  {
+    id: "pack",
+    from: build,
+    cache: {
+      key: files("packages/inngest/**", "packages/test/**", "ci/jobs/base.ts"),
+      refresh: warm,
+    },
+  },
+  async () => {
+    const dir = "/work/packages/inngest";
 
-export const pack = ci.job({ id: "pack", from: source }, async () => {
-  const dir = "/work/packages/inngest";
+    await $.sh`mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz`.cwd(
+      dir,
+    );
 
-  await $.sh`mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz`.cwd(
-    dir,
-  );
-
-  return {
-    /** How the tarball's publishing config looks to publint. */
-    publint: $`pnpm dlx publint --pack npm ./dist`.cwd(dir),
-    /** Whether the tarball's types are right for every module system. */
-    attw: $`pnpm exec attw inngest.tgz`.cwd(dir),
-    /** The tarball installed into a TypeScript composite project, and its tests. */
-    composite: $.sh`npm i ../../inngest.tgz && npm run test`.cwd(
-      `${dir}/test/composite_project`,
-    ),
-  };
-});
+    return {
+      /** How the tarball's publishing config looks to publint. */
+      publint: $`pnpm dlx publint --pack npm ./dist`.cwd(dir),
+      /** Whether the tarball's types are right for every module system. */
+      attw: $`pnpm exec attw inngest.tgz`.cwd(dir),
+      /** The tarball installed into a TypeScript composite project, and its tests. */
+      composite: $.sh`npm i ../../inngest.tgz && npm run test`.cwd(
+        `${dir}/test/composite_project`,
+      ),
+    };
+  },
+);
