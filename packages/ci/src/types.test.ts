@@ -682,6 +682,28 @@ describe("a handler's context", () => {
     });
   });
 
+  test("from.key is typed through job.with(input)", () => {
+    const build = ci.job(
+      { id: "with-base", cache: { key: { lock: "l1" } } },
+      async ({ input }: { input: string }) => {},
+    );
+
+    ci.job({ id: "web", from: build.with("web") }, async ({ from }) => {
+      expectTypeOf(from.key.lock).toBeString();
+    });
+  });
+
+  test("explicit input types still take a cache and a from", () => {
+    const base = ci.job("explicit-base", async () => {});
+
+    ci.job<string>(
+      { id: "explicit", from: base, cache: { key: "v1" } },
+      async ({ input }) => {
+        expectTypeOf(input).toBeString();
+      },
+    );
+  });
+
   test("a job with no from has no from", () => {
     ci.job("no-parent", async ({ from }) => {
       expectTypeOf(from).toEqualTypeOf<undefined>();

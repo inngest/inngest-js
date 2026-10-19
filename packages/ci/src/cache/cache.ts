@@ -143,14 +143,19 @@ export const resolveCacheKey = async (
       value = await resolveFilesPart(run, part);
     }
 
-    resolved.push(value);
-
-    if (name !== undefined) {
+    if (name === undefined) {
+      resolved.push(value);
+    } else {
+      resolved.push(`${name}=${value}`);
       named[name] = value;
     }
   }
 
   return { hash: hash(resolved.join("\0")), named };
+};
+
+const isFilesPart = (value: object): value is CacheKeyPart => {
+  return (value as CacheKeyPart).kind === "inngest/ci.cacheKeyPart";
 };
 
 /** The parts of a cache key, each with its name if the key is an object of them. */
@@ -167,7 +172,7 @@ const keyParts = (
     });
   }
 
-  if (typeof key !== "object" || "kind" in key) {
+  if (typeof key !== "object" || isFilesPart(key)) {
     return [[undefined, key as CacheKeyValue]];
   }
 

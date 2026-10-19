@@ -141,6 +141,12 @@ export interface Ci {
     idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
     handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
   ): Job<TInput, TKey, TFrom>;
+  job<TInput>(
+    idOrConfig: string | JobConfig<TInput>,
+    handler: (
+      ctx: JobContext<TInput, CacheKey | undefined, From<TInput> | undefined>,
+    ) => Promise<void>,
+  ): Job<TInput>;
 
   /**
    * Define a matrix: one job per combination of the axes.

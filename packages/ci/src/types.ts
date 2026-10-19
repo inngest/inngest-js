@@ -353,7 +353,7 @@ export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
    * ci.job({ id: "web", from: build.with("web") }, …);
    * ```
    */
-  with(input: TInput): JobRef<TInput>;
+  with(input: TInput): JobRef<TInput, TKey, TFrom>;
   /**
    * The job's input type, for type checks only: it's never set. It lets a
    * bare `from: job` accept only a job that runs without input.
@@ -380,10 +380,9 @@ export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
 /**
  * A job with the input to run it with, from `job.with(input)`.
  */
-export interface JobRef<TInput = unknown> {
+export interface JobRef<TInput = unknown, TKey = unknown, TFrom = unknown> {
   readonly kind: "inngest/ci.jobRef";
-  // biome-ignore lint/suspicious/noExplicitAny: a job of any cache key
-  readonly job: Job<TInput, any, any>;
+  readonly job: Job<TInput, TKey, TFrom>;
   readonly input: TInput;
 }
 
@@ -391,7 +390,7 @@ export interface JobRef<TInput = unknown> {
  * Any job with input, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
-export type AnyJobRef = JobRef<any>;
+export type AnyJobRef = JobRef<any, any, any>;
 
 /**
  * A job as `from` takes it bare: one that runs without input. A job that
