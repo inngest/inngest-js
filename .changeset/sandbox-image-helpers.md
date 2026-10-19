@@ -7,6 +7,6 @@ Choose the image a sandbox starts from with `image.inngest()` or `image.custom()
 ```ts
 import { image } from "inngest/experimental";
 
-await step.sandbox.create("build", { from: image.inngest("node") });
-await step.sandbox.create("custom", { from: image.custom("registry.example.com/app:1.2") });
+await step.sandbox.create("build", { from: image.inngest("base") });
+await step.sandbox.create("custom", { from: image.custom("my-image:v1") });
 ```
