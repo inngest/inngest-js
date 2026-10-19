@@ -54,6 +54,7 @@ import {
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import { decodeFailure } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
 import type {
@@ -526,7 +527,10 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
       { function: run.ci.cacheBuild(), data },
     )) as CacheBuildResult | null;
   } catch (error) {
-    throw new NonRetriableError(errorMessage(error), { cause: error });
+    throw (
+      decodeFailure(error) ??
+      new NonRetriableError(errorMessage(error), { cause: error })
+    );
   }
 
   if (!output) {

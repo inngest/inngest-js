@@ -135,43 +135,73 @@ describe("jobs as child runs", () => {
     expect(child).toBeLessThan(stepLimit);
   });
 
-  test("a failing job fails its check in the pipeline, with the command that failed", async () => {
-    const { api, ci, reporter } = setup();
+  test.each([
+    {
+      why: "a command that exits non-zero",
+      script: { match: "pnpm test", exitCode: 1, stderr: "1 failing" },
+      command: () => {
+        return $`pnpm test`;
+      },
+    },
+    {
+      why: "a command that times out",
+      script: { match: "pnpm test", execTimesOut: true },
+      command: () => {
+        return $`pnpm test`.timeout("30s");
+      },
+    },
+  ])(
+    "$why fails the job's check as it does in the pipeline's run",
+    async ({ script, command }) => {
+      const outcomes = [];
 
-    api.script([{ match: "pnpm test", exitCode: 1, stderr: "1 failing" }]);
+      for (const childRuns of [false, true]) {
+        const { api, ci, reporter } = setup();
 
-    const test = ci.job("test", async () => {
-      await $`pnpm test`;
-    });
+        api.script([script]);
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
+        const test = ci.job("test", async () => {
+          await command();
+        });
 
-    const result = await runFunction(pipeline, { event: prEvent });
+        const pipeline = ci.pipeline(
+          { id: "pr", on: prTrigger, childRuns },
+          async () => {
+            await test();
+          },
+        );
 
-    expect(result.type).toBe("function-rejected");
-    expect(result.retriable).toBe(false);
+        const result = await runFunction(pipeline, { event: prEvent });
 
-    const completed = reporter.history.filter((entry) => {
-      return entry.status === "completed";
-    });
+        outcomes.push({
+          type: result.type,
+          retriable: result.retriable,
+          completed: reporter.history
+            .filter((entry) => {
+              return entry.status === "completed";
+            })
+            .map(({ at: _at, summary, ...entry }) => {
+              return {
+                ...entry,
+                summary: summary?.replace(/\d+ms/g, "<duration>"),
+              };
+            }),
+          machines: [...api.sandboxes.values()].map((machine) => {
+            return machine.status;
+          }),
+        });
+      }
 
-    expect(
-      completed.map((entry) => {
-        return `${entry.name}: ${entry.conclusion}`;
-      }),
-    ).toEqual(["pr / test: failure", "pr: failure"]);
+      const [inline, child] = outcomes;
 
-    expect(completed[0]?.title).toBe("`pnpm test` exited with 1");
-
-    // The job's machine belongs to its own run, which destroyed it.
-    expect(
-      [...api.sandboxes.values()].map((machine) => {
-        return machine.status;
-      }),
-    ).toEqual(["TERMINATED"]);
-  });
+      expect(child).toEqual(inline);
+      expect(child?.type).toBe("function-rejected");
+      expect(child?.completed[0]?.title).toMatch(
+        /^`pnpm test` (exited with 1|timed out after 30s)$/,
+      );
+      expect(child?.machines).toEqual(["TERMINATED"]);
+    },
+  );
 
   test("the same job called twice is two runs, named as in the pipeline", async () => {
     const { ci } = setup();

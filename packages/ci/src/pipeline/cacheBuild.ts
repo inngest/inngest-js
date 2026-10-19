@@ -18,6 +18,7 @@ import type { Inngest, InngestFunction } from "inngest";
 import { internalEvents, NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import type {
   Ancestor,
@@ -225,11 +226,8 @@ export const cacheBuildFunction = ({
   );
 };
 
-/**
- * Run the job as it would run in a pipeline: it looks its snapshot up, reuses
- * it if another build just took one, and otherwise runs and snapshots.
- */
-const buildSnapshot = async ({
+/** Run the job, or the matrix combination, the build was asked for. */
+const runBuilt = async ({
   data,
   jobs,
   matrices,
@@ -237,13 +235,7 @@ const buildSnapshot = async ({
   data: CacheBuildData;
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes>>;
-}): Promise<CacheBuildResult> => {
-  const run = getRunScope();
-
-  if (data.askedByApp && run) {
-    return answerAppJob({ run, data, jobs });
-  }
-
+}): Promise<void> => {
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
 
@@ -270,6 +262,89 @@ const buildSnapshot = async ({
       handler: job.handler,
       input: data.input,
     });
+  }
+};
+
+/**
+ * The name of the cause that carries a failed command across the invoke. An
+ * error that crosses a run keeps its name, message and cause, and nothing
+ * else, so the fields a check is written from travel in a message.
+ */
+const failureCause = "CiCommandFailure";
+
+/**
+ * A failed command as the error the build run fails with, so the run that
+ * invoked it can write the job's check from it as it would have inline.
+ * Anything else fails the build as it is.
+ */
+const encodeFailure = (error: unknown): Error | undefined => {
+  const failure =
+    error instanceof AggregateError && error.errors.length === 1
+      ? error.errors[0]
+      : error;
+
+  if (
+    !(failure instanceof CommandFailedError) &&
+    !(failure instanceof CommandTimeoutError)
+  ) {
+    return undefined;
+  }
+
+  const { message, name, stack, ...fields } = failure;
+  const cause = new Error(JSON.stringify({ name, ...fields }));
+
+  cause.name = failureCause;
+
+  return new NonRetriableError(message, { cause });
+};
+
+/**
+ * The failed command a build run failed with, as the error it was inline, or
+ * nothing if the build failed some other way.
+ */
+export const decodeFailure = (error: unknown): Error | undefined => {
+  for (
+    let cause = (error as { cause?: unknown } | undefined)?.cause;
+    cause instanceof Error;
+    cause = cause.cause
+  ) {
+    if (cause.name !== failureCause) {
+      continue;
+    }
+
+    const { name, ...fields } = JSON.parse(cause.message);
+
+    return name === "CommandTimeoutError"
+      ? new CommandTimeoutError(fields)
+      : new CommandFailedError(fields);
+  }
+
+  return undefined;
+};
+
+/**
+ * Run the job as it would run in a pipeline: it looks its snapshot up, reuses
+ * it if another build just took one, and otherwise runs and snapshots.
+ */
+const buildSnapshot = async ({
+  data,
+  jobs,
+  matrices,
+}: {
+  data: CacheBuildData;
+  jobs: Map<string, RegisteredJob>;
+  matrices: Map<string, Matrix<MatrixAxes>>;
+}): Promise<CacheBuildResult> => {
+  const run = getRunScope();
+
+  if (data.askedByApp && run) {
+    return answerAppJob({ run, data, jobs });
+  }
+
+  try {
+    await runBuilt({ data, jobs, matrices });
+  } catch (error) {
+    throw encodeFailure(error) ?? error;
   }
 
   const request = run?.request ?? requestOf(data);
