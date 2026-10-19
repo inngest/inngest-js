@@ -10,23 +10,35 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
+import { mapGitHubError, rest } from "../github/rest.ts";
+import type { ResolvedSource } from "../github/source.ts";
+import {
+  octokitForSource,
+  resolveSource,
+  targetsRunRepo,
+} from "../github/source.ts";
 import { ciRun, warnStep } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, joinId, rootRunIdOf } from "../pipeline/scope.ts";
+import { countApi, joinId, localRepo, rootRunIdOf } from "../pipeline/scope.ts";
 import { builtJustInTime, warnOnce } from "../pipeline/warnings.ts";
 import type {
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  FilesOptions,
   JobConfig,
   RepoContext,
 } from "../types.ts";
 import {
+  durationToMs,
+  filterPaths,
   formatRelative,
   hash,
   isSnapshotNotFound,
+  parseRepo,
   stableStringify,
 } from "../util.ts";
 import { formatName } from "./names.ts";
@@ -88,8 +100,9 @@ const sharedScopes = (
  * Resolve the parts of a cache key into a single hash.
  *
  * `files()` parts are resolved against the repository: the git tree for the
- * run's commit on GitHub, or the working tree locally, so a key changes
- * exactly when the matched files do.
+ * run's commit on GitHub (or for the commit its `repo` and `ref` resolved to),
+ * or the working tree locally, so a key changes exactly when the matched files
+ * do.
  */
 export const resolveCacheKey = async (
   run: CiRunScope,
@@ -103,47 +116,115 @@ export const resolveCacheKey = async (
     return hash(await key());
   }
 
-  const parts = Array.isArray(key) ? key : [key];
   const resolved: string[] = [];
 
-  for (const part of parts) {
-    if (typeof part === "string") {
-      resolved.push(part);
-
-      continue;
-    }
-
-    resolved.push(await resolveFilesPart(run, part));
+  for (const part of keyParts(key)) {
+    resolved.push(
+      typeof part === "string" ? part : await resolveFilesPart(run, part),
+    );
   }
 
   return hash(resolved.join("\0"));
+};
+
+/** The parts of a cache key, which a function key doesn't have. */
+const keyParts = (key: CacheKey | undefined): (CacheKeyPart | string)[] => {
+  if (key === undefined || typeof key === "function") {
+    return [];
+  }
+
+  return Array.isArray(key) ? key : [key];
+};
+
+/**
+ * Resolve the repository and ref of every `files()` part that reads another
+ * commit than the run's own, each in a memoized step. A key is worked out
+ * inside a step, which can't start another, so this runs just before it.
+ */
+export const resolveKeySources = async (
+  run: CiRunScope,
+  key: CacheKey | undefined,
+): Promise<void> => {
+  for (const part of keyParts(key)) {
+    if (typeof part !== "string" && !targetsRunRepo(run, part)) {
+      await resolveSource(run, part);
+    }
+  }
 };
 
 const resolveFilesPart = async (
   run: CiRunScope,
   part: CacheKeyPart,
 ): Promise<string> => {
-  const repo = run.repo;
+  if (!targetsRunRepo(run, part)) {
+    return hashRemoteFiles(run, await resolveSource(run, part), part);
+  }
 
-  if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
+  const local = localRepo(run);
+
+  if (local) {
     const { hashLocalFiles } = await import("./localCache.ts");
 
-    return hashLocalFiles(repo.local.path, part.patterns);
+    return hashLocalFiles(local.path, part.patterns);
   }
+
+  const repo = run.repo;
 
   if (!repo) {
     return `files:${part.patterns.join(",")}`;
   }
-
-  const { rest } = await import("../github/rest.ts");
-  const { filterPaths } = await import("../util.ts");
 
   const tree = await rest.git.getTree({
     tree_sha: repo.sha,
     recursive: "1",
   });
 
-  const entries = (tree.tree ?? [])
+  return hashTree(tree, part.patterns, repo.fullName);
+};
+
+/**
+ * Hash the matched files of another repository or ref, at the commit it
+ * resolved to, with a client for the installation that can read it.
+ */
+const hashRemoteFiles = async (
+  run: CiRunScope,
+  source: ResolvedSource,
+  part: CacheKeyPart,
+): Promise<string> => {
+  const octokit = await octokitForSource(run, source);
+
+  try {
+    const { data } = await octokit.rest.git.getTree({
+      owner: source.owner,
+      repo: source.name,
+      tree_sha: source.sha,
+      recursive: "1",
+    });
+
+    return hashTree(data, part.patterns, source.fullName);
+  } catch (error) {
+    throw mapGitHubError(error) ?? error;
+  }
+};
+
+/** A hash of the blobs in a git tree that match the patterns. */
+const hashTree = (
+  listing: {
+    tree?: { type?: string; path?: string; sha?: string }[];
+    truncated?: boolean;
+  },
+  patterns: string[],
+  fullName: string,
+): string => {
+  // A truncated listing would hash only some of the files, and a key that
+  // ignores the rest never changes when they do.
+  if (listing.truncated) {
+    throw new NonRetriableError(
+      `\`${fullName}\` is too large to hash \`files()\` from GitHub's tree API, which cut the file listing short. Key the job on a string instead.`,
+    );
+  }
+
+  const entries = (listing.tree ?? [])
     .filter((entry) => {
       return entry.type === "blob" && entry.path;
     })
@@ -155,7 +236,7 @@ const resolveFilesPart = async (
     entries.map((entry) => {
       return entry.path;
     }),
-    { include: part.patterns },
+    { include: patterns },
   );
 
   const byPath = new Map(
@@ -271,6 +352,8 @@ export const cacheTarget = async (
 
   countApi("cache");
 
+  await resolveKeySources(run, cache.key);
+
   const ownKey = await ciRun(run, steps.cacheKey(job.path), () => {
     return jobCacheKey(run, cache, input, base);
   });
@@ -329,6 +412,46 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
 };
 
+/** The parts of a snapshot that decide whether a job may use it. */
+export interface SnapshotInfo {
+  id: string;
+  status: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/** Whether a job may use a snapshot. */
+export type Usable = (snapshot: SnapshotInfo) => boolean;
+
+/**
+ * What makes a snapshot usable: ready, not the one to avoid, not about to
+ * expire, and not older than the job's `cache.maxAge`. A new freshness rule is
+ * one more clause here. `defineJob` has already checked that `maxAge` parses.
+ */
+export const usableFor = (
+  cache: CacheConfig | undefined,
+  /** A snapshot that must not be used, though it may still hold the name. */
+  exclude?: string,
+): Usable => {
+  const maxAgeMs =
+    cache?.maxAge === undefined ? undefined : durationToMs(cache.maxAge);
+
+  return (snapshot) => {
+    const createdAt = Date.parse(snapshot.createdAt);
+    const tooOld =
+      maxAgeMs !== undefined &&
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt > maxAgeMs;
+
+    return (
+      snapshot.status === "READY" &&
+      snapshot.id !== exclude &&
+      !isExpiring(snapshot.expiresAt) &&
+      !tooOld
+    );
+  };
+};
+
 /** How long a lookup waits for a snapshot another build is still taking. */
 const readyWaitMs = 2 * 60 * 1000;
 const readyPollMs = 1000;
@@ -379,7 +502,8 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the build taking it, and not about to expire.
+ * ready after waiting for the build taking it, not about to expire, and not
+ * older than the job's max age.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -387,8 +511,7 @@ const waitUntilReady = async (
 const findNamed = async (
   run: CiRunScope,
   name: string,
-  /** A snapshot that must not be used, though it may still hold the name. */
-  exclude?: string,
+  usable: Usable,
 ): Promise<CachedSnapshot | undefined> => {
   try {
     const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
@@ -399,7 +522,8 @@ const findNamed = async (
       return snapshot.name === name;
     });
 
-    if (!newest || newest.id === exclude) {
+    // Waiting is only worth it for a snapshot that would be usable once ready.
+    if (!newest || !usable({ ...newest, status: "READY" })) {
       return undefined;
     }
 
@@ -408,7 +532,7 @@ const findNamed = async (
         ? await waitUntilReady(run, newest.id)
         : newest;
 
-    if (ready?.status !== "READY" || isExpiring(ready.expiresAt)) {
+    if (!ready || !usable(ready)) {
       return undefined;
     }
 
@@ -426,11 +550,13 @@ const findInScopes = async (
   ownKey: string,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
+  const usable = usableFor(cache, exclude);
+
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
       formatName({ kind: "cache", scope, jobId, ownKey }),
-      exclude,
+      usable,
     );
 
     if (found) {
@@ -509,7 +635,7 @@ const findCached = (
 ): Promise<CachedSnapshot | undefined> => {
   return cache
     ? findInScopes(run, jobId, cache, target.ownKey, exclude)
-    : findNamed(run, target.name, exclude);
+    : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
 /**
@@ -548,13 +674,16 @@ export const lookupBeforeBuild = async (
 
 /**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
- * step. If it can't be used, because it is about to expire or is the bad one
- * the build replaces, it is deleted so the build can take the name after all.
+ * step. If it can't be used, because it is about to expire, is older than the
+ * job's max age or is the bad one the build replaces, it is deleted so the
+ * build can take the name after all.
  */
 export const resolveTakenName = async (
   run: CiRunScope,
   stepId: string,
   name: string,
+  /** The job's `cache`, whose `maxAge` a holder may be past. */
+  cache?: CacheConfig,
   exclude?: string,
   /**
    * Whether `exclude` was decided to be broken, which is the only case where
@@ -567,7 +696,7 @@ export const resolveTakenName = async (
     run,
     steps.resolveCacheName(stepId),
     async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-      const winner = await findNamed(run, name, exclude);
+      const winner = await findNamed(run, name, usableFor(cache, exclude));
 
       if (winner) {
         return { winner, cleared: false };
@@ -580,9 +709,10 @@ export const resolveTakenName = async (
           items: SnapshotResource[];
         };
 
+        const usable = usableFor(cache);
+
         for (const holder of page.items) {
-          const unusable =
-            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
+          const unusable = (broken && holder.id === exclude) || !usable(holder);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;
@@ -721,14 +851,43 @@ export const describeCached = (
  * Contents are read from the git tree for the run's commit, or from the
  * working tree locally, so uncommitted changes change the key too.
  *
+ * End with `{ repo, ref }` to read another repository or ref. `ref` is a
+ * branch, tag or commit, and `repo` is `"owner/name"` with `ref` defaulting to
+ * its default branch. The ref is resolved to a commit once per run, so a branch
+ * that moves changes the key exactly when the matched files change. Locally,
+ * this reads from GitHub too, unless it names the local repository with no
+ * `ref`.
+ *
+ * ```ts
+ * cache: {
+ *   key: files("images/node-base/**", { repo: "acme/platform", ref: "main" }),
+ * }
+ * ```
+ *
  * Patterns support `**`, `*`, `?`, and `{a,b}`.
  */
 export const files = (
-  /** Glob patterns for the files to hash. */ ...patterns: string[]
+  /** Glob patterns for the files to hash, then optionally where to read them from. */
+  ...args: string[] | [...patterns: string[], options: FilesOptions]
 ): CacheKeyPart => {
+  const list: (string | FilesOptions)[] = args;
+  const last = list.at(-1);
+  const options = typeof last === "object" ? last : undefined;
+
+  // Checked here, where the pipeline is defined, so a bad `repo` fails at boot.
+  if (options?.repo !== undefined) {
+    parseRepo(options.repo);
+  }
+
+  const patterns = list.filter((arg): arg is string => {
+    return typeof arg === "string";
+  });
+
   return {
     kind: "inngest/ci.cacheKeyPart",
     type: "files",
     patterns,
+    ...(options?.repo === undefined ? {} : { repo: options.repo }),
+    ...(options?.ref === undefined ? {} : { ref: options.ref }),
   };
 };
