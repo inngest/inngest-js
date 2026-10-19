@@ -25,7 +25,7 @@ import {
   scopeSeparator,
 } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
-import type { MachineConfig } from "../types.ts";
+import type { CacheConfig, MachineConfig } from "../types.ts";
 import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
 import { deleteSnapshots, listSandboxes } from "./admin.ts";
 
@@ -466,6 +466,8 @@ export interface SnapshotCache {
    * failing to name it isn't worth a warning.
    */
   ephemeral?: boolean;
+  /** The job's `cache`, whose `maxAge` a snapshot holding the name may be past. */
+  cache?: CacheConfig;
 }
 
 /** A snapshot of a job's machine. */
@@ -556,7 +558,7 @@ const createNamedSnapshot = async (
   handle: MachineHandle,
   jobPath: string,
   stepId: string,
-  { target, exclude, broken, ephemeral }: SnapshotCache,
+  { target, exclude, broken, ephemeral, cache }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
   const name = target.name;
 
@@ -591,6 +593,7 @@ const createNamedSnapshot = async (
       run,
       `${stepId}${scopeSeparator}name-taken`,
       name,
+      cache,
       exclude,
       broken,
     );

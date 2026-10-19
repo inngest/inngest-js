@@ -33,7 +33,12 @@ import {
 } from "../machine/from.ts";
 import { snapshotMachine } from "../machine/machine.ts";
 import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  shortReason,
+} from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
@@ -69,6 +74,8 @@ export const defineJob = ({
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
+  checkMaxAge(config);
+
   // Inside a run, curried job factories and matrices build a new job object
   // per call, so the same ID being registered again is expected.
   if (jobs.has(config.id) && !getRunScope()) {
@@ -100,6 +107,29 @@ export const defineJob = ({
   ownJob(job, jobs);
 
   return job;
+};
+
+/**
+ * Fail a malformed or non-positive `cache.maxAge` when the job is defined. A
+ * zero age would make every snapshot too old, so concurrent builds would
+ * delete each other's snapshots.
+ */
+const checkMaxAge = (config: JobConfig): void => {
+  const maxAge = config.cache?.maxAge;
+
+  if (maxAge === undefined) {
+    return;
+  }
+
+  try {
+    if (durationToMs(maxAge) <= 0) {
+      throw new Error("It must be longer than zero.");
+    }
+  } catch (error) {
+    throw new CiUsageError(
+      `Job "${config.id}" has an invalid \`cache.maxAge\`. ${errorMessage(error)}`,
+    );
+  }
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
@@ -758,6 +788,7 @@ const snapshotBuilt = async (
 
   const taken = await snapshotMachine(scope, {
     target,
+    cache: scope.config.cache,
     ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
     ...(run.build?.broken ? { broken: true } : {}),
     ...(run.build?.unnamed ? { unnamed: true } : {}),
