@@ -347,7 +347,7 @@ export const builtResult = (
     "createdSnapshots" | "warnings" | "report" | "apis"
   >,
 ): CacheBuildResult => {
-  const { outcome, summary } = sink;
+  const { outcome, summary, output } = sink;
 
   return {
     ...(outcome?.snapshotId ? { snapshotId: outcome.snapshotId } : {}),
@@ -356,6 +356,7 @@ export const builtResult = (
     target,
     ancestry: ancestryOf(id, target, base),
     ...(summary ? { summary } : {}),
+    ...(output ? { output } : {}),
     ...rest,
   };
 };
@@ -909,6 +910,8 @@ const jobSteps = async ({
 
       adoptBuilt(run, built);
 
+      returned = built.output;
+
       scope.summaries.push(...(built.report?.summaries ?? []));
       scope.annotations.push(...(built.report?.annotations ?? []));
 
@@ -948,6 +951,10 @@ const jobSteps = async ({
           fromParent?.built.ancestry ?? [],
           output,
         );
+
+        if (scope.request) {
+          scope.request.sink.output = returned;
+        }
 
         if (builtAs) {
           await snapshotBuilt(scope, builtAs);

@@ -110,6 +110,8 @@ export interface BuildRequest {
     outcome?: BuildOutcome;
     /** The job's line in the summary, for the asker to report. */
     summary?: JobSummary;
+    /** The data the job returned, which is what a direct call resolves to. */
+    output?: Record<string, unknown>;
   };
 }
 

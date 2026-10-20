@@ -162,6 +162,8 @@ export interface CacheBuildResult {
   createdSnapshots: string[];
   /** The job's line in the pipeline summary, for the run that invoked it. */
   summary?: JobSummary;
+  /** The data the job returned, which the invoking run's call resolves to. */
+  output?: Record<string, unknown>;
   /** What the invoking run should say about the build, like a fallback. */
   warnings: string[];
   /** How often the job used each public API, for the invoking run's metadata. */
