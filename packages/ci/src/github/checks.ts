@@ -97,18 +97,6 @@ export interface CheckReporter {
     name?: string;
     title: string;
   }): Promise<void>;
-  /**
-   * Keep every given job's check in progress with a retry title, in one step.
-   * Which jobs have a check held back depends on how far each sibling got in
-   * that request, so one step per job could be found on one request and
-   * missing on the next. The step exists even with no jobs.
-   */
-  retryingAll(args: {
-    run: CiRunScope;
-    /** The jobs held back, read inside the step. */
-    jobs: () => Array<{ jobPath: string; name?: string }>;
-    title: string;
-  }): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
     jobPath: string;
@@ -448,27 +436,6 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       });
     },
 
-    retryingAll: async ({ run, jobs: read, title }) => {
-      if (!run.checkName || !run.jobChecks) {
-        return;
-      }
-
-      const step = steps.retryJobChecks(run.attempt, run.maxAttempts);
-
-      await githubStep(run, step, async () => {
-        for (const { jobPath, name } of read()) {
-          await sink.update?.({
-            run,
-            name: jobCheckName(run, jobPath, name),
-            title,
-            ...idFor(run, jobPath),
-          });
-        }
-
-        return null;
-      });
-    },
-
     commandRetry: async ({ run, jobPath, attempt, of, error }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
@@ -508,7 +475,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return;
       }
 
-      const { parent } = run.build;
+      const { parent, direct } = run.build;
 
       const step = steps.buildingCheck(parent.jobPath);
 
@@ -517,7 +484,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           // The check belongs to the pipeline that invoked this run.
           run: { ...run, pipelineId: parent.pipelineId },
           name: check.name,
-          title: "Building in its own run",
+          title: direct ? "Running in its own run" : "Building in its own run",
           detailsUrl,
           ...(check.checkRunId === undefined
             ? {}

@@ -1,11 +1,4 @@
-import {
-  $,
-  files,
-  github,
-  report,
-  sandbox,
-  waitForHttp,
-} from "@inngest/ci";
+import { $, files, github, report, sandbox, waitForHttp } from "@inngest/ci";
 import { step } from "inngest";
 
 import { ci } from "./client.ts";
@@ -34,12 +27,12 @@ export const test = ci.job({ id: "test", from: base }, async () => {
   await report.summary(`Tests exited with ${result.exitCode}`);
 });
 
-export const compat = ci.matrix(
-  { id: "compat", axes: { node: ["20", "22"] }, from: base },
-  async ({ node }) => {
+export const compat = ci.job(
+  { id: "compat", matrix: { axes: { node: ["20", "22"] } }, from: base },
+  async ({ matrix }) => {
     await $`node --version`;
 
-    await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
+    await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: matrix.node });
   },
 );
 

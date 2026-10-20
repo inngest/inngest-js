@@ -73,6 +73,9 @@ export type {
   PullRequestAction,
   PullRequestEventFor,
 } from "./github/triggers.ts";
+// Bases for a job to start from
+export type { Image } from "./image.ts";
+export { image } from "./image.ts";
 // Commands and machines
 export { $ } from "./machine/command.ts";
 export { sandbox } from "./machine/sandbox.ts";
@@ -84,10 +87,14 @@ export { report } from "./report.ts";
 
 // Types
 export type {
+  Ancestor,
+  AncestorContext,
   BackgroundProcess,
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  CacheKeyValue,
+  CacheReason,
   CheckAnnotation,
   CheckConclusion,
   CiEvent,
@@ -104,14 +111,23 @@ export type {
   FilesOptions,
   FlowControlOptions,
   From,
+  FromContext,
   Job,
   JobConfig,
+  JobContext,
+  JobOutput,
   JobRef,
+  JsonValue,
+  KeyValues,
   MachineConfig,
-  Matrix,
+  MatrixJob,
   MatrixAxes,
   MatrixCombo,
-  MatrixConfig,
+  MatrixJobConfig,
+  MatrixOptions,
+  MatrixAxesContext,
+  MatrixContext,
+  OutputValue,
   PipelineConfig,
   PipelineContext,
   RepoContext,

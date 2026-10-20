@@ -14,11 +14,14 @@
  */
 
 import type { EventPayload, InngestFunction } from "inngest";
-import { createdFunctions } from "./client.ts";
+import { busOf, createdFunctions } from "./client.ts";
+import type { BusEvent, EventBus } from "./eventBus.ts";
+import { durationMs } from "./eventBus.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
   InvokeFunction: "InvokeFunction",
+  WaitForEvent: "WaitForEvent",
   StepError: "StepError",
   StepFailed: "StepFailed",
   StepPlanned: "StepPlanned",
@@ -126,11 +129,8 @@ export interface RunFunctionOptions {
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
-  /**
-   * Rewrites the data of each invoke after it went through JSON and before the
-   * invoked function runs, to play an invoker that is buggy or forged.
-   */
-  rewriteInvoke?: (data: Record<string, unknown>) => Record<string, unknown>;
+  /** Set for a run another run started, which does not wait for the rest. */
+  nested?: boolean;
 }
 
 let invokedRuns = 0;
@@ -192,7 +192,7 @@ const runInvoked = async (
 ): Promise<{ data?: unknown; error?: unknown }> => {
   const call = planned.opts as {
     function_id: string;
-    payload: { data?: unknown };
+    payload: { data?: unknown; meta?: EventPayload["meta"] };
   };
 
   const functions =
@@ -201,12 +201,20 @@ const runInvoked = async (
     createdFunctions.get((caller as any).client) ??
     [];
 
-  const target = functions.find((fn) => {
-    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
-    const internals = fn as any;
+  // The executor finds a function by its app and ID, so with several apps'
+  // functions in reach the app has to match too.
+  const named = (exact: boolean) => {
+    return functions.find((fn) => {
+      // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+      const internals = fn as any;
 
-    return call.function_id.endsWith(`-${internals.opts.id}`);
-  });
+      return exact
+        ? call.function_id === `${internals.client.id}-${internals.opts.id}`
+        : call.function_id.endsWith(`-${internals.opts.id}`);
+    });
+  };
+
+  const target = named(true) ?? named(false);
 
   if (!target) {
     throw new Error(`No function to invoke for ${call.function_id}`);
@@ -225,7 +233,8 @@ const runInvoked = async (
 
   const event: EventPayload = {
     name: "inngest/function.invoked",
-    data: opts.rewriteInvoke ? opts.rewriteInvoke(data) : data,
+    data,
+    ...(call.payload.meta ? { meta: call.payload.meta } : {}),
   };
 
   invokedRuns++;
@@ -234,6 +243,7 @@ const runInvoked = async (
     ...opts,
     event,
     runId: `01TESTINVOKED${invokedRuns}`,
+    nested: true,
   });
 
   if (child.type !== "function-resolved") {
@@ -273,11 +283,104 @@ const stepId = (step: Step): string => {
 };
 
 /**
- * Drive a function to completion the way the executor would.
+ * Drive a function to completion the way the executor would. Its waits for
+ * CI's own events, and the events its steps send, meet on the test client's
+ * bus, and the runs those events start are driven too.
  */
 export const runFunction = async (
   fn: InngestFunction.Any,
   opts: RunFunctionOptions = {},
+): Promise<RunResult> => {
+  // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+  const client = (fn as any).client as object;
+  const bus = busOf(client);
+
+  if (!bus) {
+    return driveFunction(fn, opts);
+  }
+
+  wireEvents(client, bus, opts);
+
+  bus.enter();
+
+  try {
+    return await driveFunction(fn, opts, bus);
+  } finally {
+    bus.leave();
+
+    // The runs its events started end on their own, and a test looks at what
+    // they left once its own run is over.
+    if (!opts.nested) {
+      await bus.drain();
+    }
+  }
+};
+
+const wired = new WeakSet<object>();
+let startedRuns = 0;
+
+/**
+ * Start the build function on a request for a build, as the platform does,
+ * skipping a request while one with the same `slot` runs (its singleton). The
+ * options of the run that first used the client are the ones it runs with.
+ */
+const wireEvents = (
+  client: object,
+  bus: EventBus,
+  opts: RunFunctionOptions,
+): void => {
+  if (wired.has(client)) {
+    return;
+  }
+
+  wired.add(client);
+
+  const running = new Set<string>();
+
+  bus.listeners.push((event: BusEvent) => {
+    // biome-ignore lint/suspicious/noExplicitAny: reading the client's ID
+    const appId = (client as any).id as string;
+
+    const build = (createdFunctions.get(client) ?? []).find((fn) => {
+      // biome-ignore lint/suspicious/noExplicitAny: reading the function's options
+      return (fn as any).opts?.id === "ci/build";
+    });
+
+    if (
+      event.name !== "ci/build.requested" ||
+      event.data.app !== appId ||
+      !build
+    ) {
+      return;
+    }
+
+    const slot = String(event.data.slot);
+
+    if (running.has(slot)) {
+      bus.skipped++;
+
+      return;
+    }
+
+    running.add(slot);
+
+    bus.spawn(
+      runFunction(build, {
+        ...opts,
+        event,
+        runId: `01BUILD${++startedRuns}`,
+        nested: true,
+      }).then(() => {
+        running.delete(slot);
+      }),
+    );
+  });
+};
+
+const driveFunction = async (
+  fn: InngestFunction.Any,
+  opts: RunFunctionOptions,
+  bus?: EventBus,
 ): Promise<RunResult> => {
   const event = opts.event ?? { name: "test/event", data: {} };
   const runId = opts.runId ?? "01TESTRUN";
@@ -387,6 +490,7 @@ export const runFunction = async (
   // rest. Their outcomes are only recorded between requests, so a request
   // never sees state change underneath it.
   const inflight = new Map<string, Promise<void>>();
+  const drops = new Set<() => void>();
   const started = new Set<string>();
 
   const finished: Array<{
@@ -423,6 +527,12 @@ export const runFunction = async (
     const result = await request();
 
     if (result.type === "function-resolved") {
+      // A wait nothing has ended does not hold the run open: the run completes
+      // and the executor drops the wait.
+      for (const drop of drops) {
+        drop();
+      }
+
       return {
         type: result.type,
         data: result.data,
@@ -490,6 +600,8 @@ export const runFunction = async (
 
         started.add(planned.id);
 
+        inputs[stepId(planned)] = planned.opts;
+
         progressed = true;
 
         inflight.set(
@@ -509,6 +621,44 @@ export const runFunction = async (
         continue;
       }
 
+      // A wait for one of CI's events is a pause on the bus, saved now, so
+      // events sent from here on reach it. It stays open beside the function
+      // like an invoke.
+      if (
+        planned.op === StepOpCode.WaitForEvent &&
+        bus &&
+        String(planned.name).startsWith("ci/")
+      ) {
+        if (started.has(planned.id)) {
+          continue;
+        }
+
+        started.add(planned.id);
+
+        progressed = true;
+
+        const wait = planned.opts as { timeout: string; if?: string };
+
+        const pause = bus.pause(
+          String(planned.name),
+          wait.if,
+          durationMs(wait.timeout),
+        );
+
+        drops.add(pause.drop);
+
+        inflight.set(
+          planned.id,
+          pause.event.then((matched) => {
+            finished.push({ planned, outcome: { data: matched } });
+            inflight.delete(planned.id);
+            drops.delete(pause.drop);
+          }),
+        );
+
+        continue;
+      }
+
       // Only `step.run` steps are asked to run. Everything else (sleeps,
       // waits) is fulfilled by the executor writing state, so the harness
       // does the same.
@@ -522,6 +672,8 @@ export const runFunction = async (
           data: opts.resolveWait ? opts.resolveWait(planned) : null,
           opts: planned.opts,
         });
+
+        progressed = true;
 
         continue;
       }
@@ -543,7 +695,9 @@ export const runFunction = async (
 
     // Nothing new to do, so the function is waiting on its invokes.
     if (!progressed && finished.length === 0 && inflight.size > 0) {
-      await Promise.race(inflight.values());
+      await untilSettled(bus, () => {
+        return Promise.race(inflight.values());
+      });
     }
   }
 
@@ -596,4 +750,17 @@ const runOnce = async (
   const { ctx: _ctx, ops: _ops, ...result } = await execution.start();
 
   return result;
+};
+
+/** How many invoked functions have run, for a test to count builds with. */
+export const invokedRunCount = (): number => {
+  return invokedRuns;
+};
+
+/** Wait, telling the bus the run can do nothing until something else happens. */
+const untilSettled = (
+  bus: EventBus | undefined,
+  wait: () => Promise<unknown>,
+): Promise<unknown> => {
+  return bus ? bus.blockedOn(wait) : wait();
 };

@@ -108,17 +108,25 @@ describe("Execution engine checkpoint retry behavior", () => {
   const runDeferExecution = async ({
     handler,
     priorDefers,
+    stepMode = StepMode.AsyncCheckpointing,
+    optimizeParallelism,
   }: {
     handler: (
       ctx: Context.Any,
       deferFn: ReturnType<typeof createDefer>,
     ) => unknown;
     priorDefers?: Record<string, { abortable?: boolean }>;
+    stepMode?: StepMode;
+    optimizeParallelism?: boolean;
   }) => {
     const client = createClient({ id: "test" });
     const deferFn = createDefer(client, { id: "foo" }, async () => {});
     const fn = client.createFunction(
-      { id: "test-fn", triggers: [{ event: "test/event" }] },
+      {
+        id: "test-fn",
+        triggers: [{ event: "test/event" }],
+        optimizeParallelism,
+      },
       (ctx) => handler(ctx, deferFn),
     );
 
@@ -131,7 +139,7 @@ describe("Execution engine checkpoint retry behavior", () => {
         stepCompletionOrder: [],
         reqArgs: [],
         headers: {},
-        stepMode: StepMode.AsyncCheckpointing,
+        stepMode,
         queueItemId: "queue-item-123",
         internalFnId: "internal-fn-456",
         priorDefers,
@@ -368,6 +376,33 @@ describe("Execution engine checkpoint retry behavior", () => {
         ).toBe(false);
       });
     });
+
+    test.each([
+      { mode: "async", stepMode: StepMode.Async },
+      { mode: "async checkpointing", stepMode: StepMode.AsyncCheckpointing },
+    ])(
+      "optimizeParallelism: false ships lazy ops with RunComplete and drops unawaited steps ($mode)",
+      async ({ stepMode }) => {
+        const result = await runDeferExecution({
+          stepMode,
+          optimizeParallelism: false,
+          handler: ({ defer, step }, deferFn) => {
+            defer("foo", { function: deferFn, data: {} });
+            void step.sleep("floating", "1h");
+
+            return "done";
+          },
+        });
+
+        expect(result.type).toBe("steps-found");
+        const stepsFound = result as ExecutionResults["steps-found"];
+        expect(
+          stepsFound.steps.map((step) => {
+            return step.op;
+          }),
+        ).toEqual([StepOpCode.DeferAdd, StepOpCode.RunComplete]);
+      },
+    );
 
     test("flushes buffered steps before returning parallel steps to executor", async () => {
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);

@@ -14,7 +14,7 @@
 
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { describe, expectTypeOf, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { files } from "./cache/cache.ts";
 import { changed } from "./checkout/changed.ts";
 import { checkout } from "./checkout/checkout.ts";
@@ -35,6 +35,7 @@ import type { GitHubEventData } from "./github/events.ts";
 import { fixtures } from "./github/fixtures.ts";
 import type { RunRepo } from "./github/helpers.ts";
 import { github } from "./github/index.ts";
+import { image } from "./image.ts";
 import type {
   BackgroundProcess as EntryBackgroundProcess,
   CacheConfig as EntryCacheConfig,
@@ -61,7 +62,7 @@ import type {
   Job as EntryJob,
   JobConfig as EntryJobConfig,
   MachineConfig as EntryMachineConfig,
-  Matrix as EntryMatrix,
+  MatrixJob as EntryMatrix,
   MatrixAxes as EntryMatrixAxes,
   MatrixCombo as EntryMatrixCombo,
   Permission as EntryPermission,
@@ -80,8 +81,10 @@ import { report } from "./report.ts";
 import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
+  AncestorContext,
   BackgroundProcess,
   CacheKeyPart,
+  CacheReason,
   CheckConclusion,
   CiEvent,
   CiSkip,
@@ -91,7 +94,8 @@ import type {
   CommandTag,
   ExtraMachine,
   Job,
-  Matrix,
+  JsonValue,
+  MatrixJob,
   RepoContext,
 } from "./types.ts";
 
@@ -271,24 +275,31 @@ describe("jobs infer their input", () => {
     });
 
     expectTypeOf(job).toExtend<Job>();
-    expectTypeOf(job).toEqualTypeOf<Job<void>>();
+    expectTypeOf(job).toExtend<Job<void>>();
     expectTypeOf(job.id).toBeString();
     expectTypeOf(job.kind).toEqualTypeOf<"inngest/ci.job">();
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input-inferred", async (node: string) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      "with-input-inferred",
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
-    expectTypeOf(job).toEqualTypeOf<Job<string>>();
+    expectTypeOf(job).toExtend<Job<string>>();
     expectTypeOf(job).parameter(0).toBeString();
   });
 
   test("an object input", () => {
     const job = ci.job(
       "combo",
-      async (input: { node: string; db: "sqlite" | "postgres" }) => {
+      async ({
+        input,
+      }: {
+        input: { node: string; db: "sqlite" | "postgres" };
+      }) => {
         await $`pnpm test --db ${input.db}`;
       },
     );
@@ -307,7 +318,42 @@ describe("jobs infer their input", () => {
       },
     );
 
-    expectTypeOf(job).toEqualTypeOf<Job<void>>();
+    expectTypeOf(job).toExtend<Job<void, CacheKeyPart>>();
+  });
+
+  test("calling a job resolves to the data its handler returned", () => {
+    const job = ci.job("with-output", async () => {
+      return { count: 1, dev: $`pnpm dev` };
+    });
+
+    types(async () => {
+      expectTypeOf(await job()).toEqualTypeOf<{ count: number }>();
+    });
+  });
+
+  test("calling a cached job resolves to nothing, whatever it returns", () => {
+    const job = ci.job(
+      { id: "cached-output", cache: { key: "v1" } },
+      async () => {
+        return { count: 1 };
+      },
+    );
+
+    const withSchema = ci.job(
+      {
+        id: "cached-schema-output",
+        input: {} as StandardSchemaV1<{ a: string }>,
+        cache: { key: "v1" },
+      },
+      async () => {
+        return { count: 1 };
+      },
+    );
+
+    types(async () => {
+      expectTypeOf(await job()).toBeVoid();
+      expectTypeOf(await withSchema({ a: "x" })).toBeVoid();
+    });
   });
 
   test("calling a job resolves to nothing", () => {
@@ -322,32 +368,44 @@ describe("jobs infer their input", () => {
     });
   });
 
-  test("a handler that returns a value is a type error", () => {
-    // @ts-expect-error jobs have no return value
+  test("a handler can return an object of data and commands, and nothing else", () => {
+    ci.job("returns-an-object", async () => {
+      return { count: 1, tags: ["a"], dev: $`pnpm dev` };
+    });
+
+    // @ts-expect-error a number is not an object
     ci.job("returns-a-number", async () => {
       return 42;
     });
 
-    // @ts-expect-error jobs have no return value
-    ci.job("returns-a-string", async (node: string) => {
+    // @ts-expect-error a string is not an object
+    ci.job("returns-a-string", async ({ input: node }: { input: string }) => {
       return node;
     });
 
-    // @ts-expect-error a command's result is a value too
+    // @ts-expect-error a bare command is awaited into its result
     ci.job("returns-a-command-result", async () => {
       return $`pnpm test`;
     });
 
-    // @ts-expect-error config objects are held to the same rule
-    ci.job({ id: "cached-built", cache: { key: "v1" } }, async () => {
-      return { built: true };
+    // @ts-expect-error so is an awaited one
+    ci.job("returns-an-awaited-command", async () => {
+      return await $`pnpm test`;
+    });
+
+    // @ts-expect-error a function is not JSON
+    ci.job("returns-a-function", async () => {
+      return { run: () => {} };
     });
   });
 
   test("the checker rejects the wrong input", () => {
-    const job = ci.job("needs-string", async (node: string) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      "needs-string",
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
     types(async () => {
       // @ts-expect-error a number isn't a string
@@ -370,6 +428,10 @@ describe("jobs infer their input", () => {
   });
 });
 
+const latest = async (): Promise<string> => {
+  return "v1";
+};
+
 describe("a job's input schema types its input", () => {
   /** What a schema with a default looks like: optional going in, there coming out. */
   const input: StandardSchemaV1<
@@ -386,7 +448,7 @@ describe("a job's input schema types its input", () => {
   };
 
   test("the handler gets the schema's output", () => {
-    ci.job({ id: "build", input }, async (value) => {
+    ci.job({ id: "build", input }, async ({ input: value }) => {
       expectTypeOf(value).toEqualTypeOf<{
         target: "web" | "api";
         minify: boolean;
@@ -395,9 +457,12 @@ describe("a job's input schema types its input", () => {
   });
 
   test("the caller gives the schema's input", () => {
-    const job = ci.job({ id: "build-called", input }, async ({ target }) => {
-      await $`pnpm build --target ${target}`;
-    });
+    const job = ci.job(
+      { id: "build-called", input },
+      async ({ input: { target } }) => {
+        await $`pnpm build --target ${target}`;
+      },
+    );
 
     expectTypeOf(job).parameter(0).toEqualTypeOf<{
       target: "web" | "api";
@@ -415,9 +480,12 @@ describe("a job's input schema types its input", () => {
   });
 
   test("a job config without a schema still infers from the handler", () => {
-    const job = ci.job({ id: "no-schema" }, async (node: string) => {
-      await $`fnm use ${node}`;
-    });
+    const job = ci.job(
+      { id: "no-schema" },
+      async ({ input: node }: { input: string }) => {
+        await $`fnm use ${node}`;
+      },
+    );
 
     expectTypeOf(job).parameter(0).toBeString();
   });
@@ -428,9 +496,12 @@ describe("from starts from a job", () => {
     await $`pnpm install`;
   });
 
-  const withInput = ci.job("with-input", async (node: string) => {
-    await $`fnm use ${node}`;
-  });
+  const withInput = ci.job(
+    "with-input",
+    async ({ input: node }: { input: string }) => {
+      await $`fnm use ${node}`;
+    },
+  );
 
   test("a job, or a job with its input", () => {
     ci.job({ id: "from-job", from: setup }, async () => {});
@@ -457,7 +528,7 @@ describe("from starts from a job", () => {
       async () => {},
     );
 
-    const optional = ci.job("optional", async (_node?: string) => {});
+    const optional = ci.job("optional", async (_ctx: { input?: string }) => {});
 
     ci.job({ id: "from-optional", from: optional }, async () => {});
   });
@@ -472,24 +543,26 @@ describe("from starts from a job", () => {
           return withInput.with(input);
         },
       },
-      async (_node: string) => {},
+      async (_ctx: { input: string }) => {},
     );
   });
 
   test("anything else is a type error", () => {
-    // @ts-expect-error not a job
-    ci.job({ id: "from-string", from: "setup" }, async () => {});
+    expect(() => {
+      // @ts-expect-error not a job
+      ci.job({ id: "from-string", from: "setup" }, async () => {});
+    }).toThrow("must name a job");
   });
 });
 
 describe("matrices keep their literal values", () => {
   test("combinations are exact", () => {
-    ci.matrix(
+    ci.job(
       {
         id: "compat-1",
-        axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
+        matrix: { axes: { node: ["20", "22"], db: ["sqlite", "postgres"] } },
       },
-      async (combo) => {
+      async ({ matrix: combo }) => {
         expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
         expectTypeOf(combo.db).toEqualTypeOf<"sqlite" | "postgres">();
       },
@@ -497,23 +570,23 @@ describe("matrices keep their literal values", () => {
   });
 
   test("the matrix itself is typed", () => {
-    const matrix = ci.matrix(
-      { id: "compat-2", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+    const matrix = ci.job(
+      { id: "compat-2", matrix: { axes: { node: ["20", "22"] } } },
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
 
-    expectTypeOf(matrix).toExtend<Matrix<{ node: readonly ["20", "22"] }>>();
+    expectTypeOf(matrix).toExtend<MatrixJob<{ node: readonly ["20", "22"] }>>();
 
     expectTypeOf(matrix).returns.resolves.toBeVoid();
     expectTypeOf(matrix.id).toBeString();
   });
 
   test("running part of a matrix is checked", () => {
-    const matrix = ci.matrix(
-      { id: "compat-3", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
+    const matrix = ci.job(
+      { id: "compat-3", matrix: { axes: { node: ["20", "22"] } } },
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
@@ -531,36 +604,38 @@ describe("matrices keep their literal values", () => {
   });
 
   test("exclude and include are checked against the axes", () => {
-    ci.matrix(
+    ci.job(
       {
         id: "compat-4",
-        axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
-        exclude: [{ node: "20", db: "postgres" }],
-        include: [{ node: "22", db: "sqlite" }],
+        matrix: {
+          axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
+          exclude: [{ node: "20", db: "postgres" }],
+          include: [{ node: "22", db: "sqlite" }],
+        },
       },
-      async (combo) => {
+      async ({ matrix: combo }) => {
         await $`pnpm test --node ${combo.node}`;
       },
     );
 
-    ci.matrix(
+    ci.job(
       {
         id: "typo",
-        axes: { node: ["20", "22"] },
-        // @ts-expect-error "21" was never an axis value
-        exclude: [{ node: "21" }],
+        // @ts-expect-error "21" is not an axis value, so no overload matches
+        matrix: {
+          axes: { node: ["20", "22"] },
+          exclude: [{ node: "21" }],
+        },
       },
-      async (combo) => {
-        await $`pnpm test --node ${combo.node}`;
-      },
+      async () => {},
     );
   });
 
   test("per-combination machine and cache see the combination", () => {
-    ci.matrix(
+    ci.job(
       {
         id: "compat-5",
-        axes: { node: ["20", "22"] },
+        matrix: { axes: { node: ["20", "22"] } },
         machine: (combo) => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
 
@@ -570,18 +645,234 @@ describe("matrices keep their literal values", () => {
           return { key: [files("pnpm-lock.yaml"), combo.node] };
         },
       },
-      async ({ node }) => {
+      async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
     );
   });
 
   test("a matrix handler that returns a value is a type error", () => {
-    ci.matrix(
-      { id: "compat-6", axes: { node: ["20", "22"] } },
+    ci.job(
       // @ts-expect-error matrices have no return value
-      async (combo) => {
+      { id: "compat-6", matrix: { axes: { node: ["20", "22"] } } },
+      async ({ matrix: combo }) => {
         return combo.node;
+      },
+    );
+  });
+
+  test("a matrix config kept in a variable is not a plain job", () => {
+    const config = { id: "compat-7", matrix: { axes: { node: ["20", "22"] } } };
+
+    // @ts-expect-error a handler with output is not a matrix handler
+    ci.job(config, async () => {
+      return { version: "x" };
+    });
+  });
+});
+
+describe("a handler's context", () => {
+  test("key holds the named parts of the cache key, as strings", () => {
+    ci.job(
+      {
+        id: "keyed",
+        cache: { key: { deps: files("pnpm-lock.yaml"), release: latest } },
+      },
+      async ({ id, key, cache, input }) => {
+        expectTypeOf(id).toBeString();
+        expectTypeOf(key).toEqualTypeOf<{
+          readonly deps: string;
+          readonly release: string;
+        }>();
+        expectTypeOf(cache).toEqualTypeOf<CacheReason | undefined>();
+        expectTypeOf(input).toEqualTypeOf<void>();
+      },
+    );
+  });
+
+  test("a key without names has nothing to read", () => {
+    ci.job(
+      { id: "unnamed", cache: { key: [files("pnpm-lock.yaml"), latest] } },
+      async ({ key }) => {
+        expectTypeOf(key).toEqualTypeOf<Record<never, never>>();
+      },
+    );
+  });
+
+  test("the input is the schema's output", () => {
+    ci.job(
+      {
+        id: "with-schema",
+        input: {} as StandardSchemaV1<{ a?: string }, { a: string }>,
+      },
+      async ({ input }) => {
+        expectTypeOf(input).toEqualTypeOf<{ a: string }>();
+      },
+    );
+  });
+
+  test("from.key is typed through the chain, the nearest job winning a name", () => {
+    const base = ci.job(
+      { id: "base", cache: { key: { lock: "l1", shared: latest } } },
+      async () => {},
+    );
+
+    const mid = ci.job(
+      { id: "mid", from: base, cache: { key: { shared: "mid", extra: "e1" } } },
+      async ({ from }) => {
+        expectTypeOf(from.id).toBeString();
+        expectTypeOf(from.key).toExtend<{ lock: string; shared: string }>();
+        expectTypeOf(from.key.lock).toBeString();
+      },
+    );
+
+    ci.job({ id: "leaf", from: mid }, async ({ from }) => {
+      expectTypeOf(from.key.lock).toBeString();
+      expectTypeOf(from.key.shared).toBeString();
+      expectTypeOf(from.key.extra).toBeString();
+
+      // @ts-expect-error no job above it has this key
+      from.key.nothing.toString();
+
+      expectTypeOf(from.ancestry).toEqualTypeOf<AncestorContext[]>();
+    });
+  });
+
+  test("from.output and from.$ are typed through the chain, the nearest job winning a name", () => {
+    const base = ci.job("output-base", async () => {
+      return { shared: 1, only: "base", dev: $`pnpm dev`, shell: $.sh`ls` };
+    });
+
+    const mid = ci.job({ id: "output-mid", from: base }, async () => {
+      return { shared: "mid", shell: "now data" };
+    });
+
+    ci.job({ id: "output-leaf", from: mid }, async ({ from }) => {
+      expectTypeOf(from.output).toEqualTypeOf<{
+        only: string;
+        shared: string;
+        shell: string;
+      }>();
+
+      expectTypeOf(from.$).toEqualTypeOf<{ dev: Command }>();
+
+      // @ts-expect-error a command is not data
+      from.output.dev;
+
+      // @ts-expect-error data is not a command
+      from.$.only;
+
+      // @ts-expect-error mid's data replaced base's command
+      from.$.shell;
+    });
+  });
+
+  test("a command that is only sometimes returned is optional in from.$", () => {
+    const base = ci.job("maybe-command", async () => {
+      const dev: Command | undefined =
+        Math.random() > 0.5 ? $`pnpm dev` : undefined;
+
+      return { dev, always: $`ls` };
+    });
+
+    ci.job({ id: "maybe-leaf", from: base }, async ({ from }) => {
+      expectTypeOf(from.$).toEqualTypeOf<{ always: Command; dev?: Command }>();
+    });
+  });
+
+  test("a job below one with no output sees none", () => {
+    const base = ci.job("quiet", async () => {});
+
+    ci.job({ id: "quiet-leaf", from: base }, async ({ from }) => {
+      expectTypeOf(from.output).toEqualTypeOf<{}>();
+      expectTypeOf(from.$).toEqualTypeOf<{}>();
+    });
+  });
+
+  test("another app's image has loosely typed output", () => {
+    ci.job(
+      { id: "output-on-image", from: image.job("platform/base") },
+      async ({ from }) => {
+        expectTypeOf(from.output.anything).toEqualTypeOf<
+          JsonValue | undefined
+        >();
+        expectTypeOf(from.$.anything).toEqualTypeOf<Command | undefined>();
+      },
+    );
+  });
+
+  test("from.key and from.output are typed through job.with(input)", () => {
+    const build = ci.job(
+      { id: "with-base", cache: { key: { lock: "l1" } } },
+      async ({ input }: { input: string }) => {
+        return { dir: input, dev: $`pnpm dev` };
+      },
+    );
+
+    ci.job({ id: "web", from: build.with("web") }, async ({ from }) => {
+      expectTypeOf(from.key.lock).toBeString();
+      expectTypeOf(from.output.dir).toBeString();
+      expectTypeOf(from.$.dev).toEqualTypeOf<Command>();
+    });
+  });
+
+  test("explicit input types still take a cache and a from", () => {
+    const base = ci.job("explicit-base", async () => {});
+
+    ci.job<string>(
+      { id: "explicit", from: base, cache: { key: "v1" } },
+      async ({ input }) => {
+        expectTypeOf(input).toBeString();
+      },
+    );
+  });
+
+  test("a job with no from has no from", () => {
+    ci.job("no-parent", async ({ from }) => {
+      expectTypeOf(from).toEqualTypeOf<undefined>();
+    });
+  });
+
+  test("another app's image has string keys only", () => {
+    ci.job(
+      { id: "on-image", from: image.job("platform/base") },
+      async ({ from }) => {
+        expectTypeOf(from.key).toEqualTypeOf<Record<string, string>>();
+      },
+    );
+  });
+
+  test("a matrix handler's from.key is typed by its parent", () => {
+    const base = ci.job(
+      { id: "matrix-base", cache: { key: { lock: "l1" } } },
+      async () => {},
+    );
+
+    ci.job(
+      { id: "ctx-matrix-from", matrix: { axes: { node: ["20"] } }, from: base },
+      async ({ from }) => {
+        expectTypeOf(from.key.lock).toBeString();
+
+        // @ts-expect-error no job above it has this key
+        from.key.nothing.toString();
+      },
+    );
+
+    ci.job(
+      { id: "ctx-matrix-bare", matrix: { axes: { node: ["20"] } } },
+      async ({ from }) => {
+        expectTypeOf(from).toEqualTypeOf<undefined>();
+      },
+    );
+  });
+
+  test("a matrix handler gets the combination as matrix", () => {
+    ci.job(
+      { id: "ctx-matrix", matrix: { axes: { node: ["20", "22"] } } },
+      async ({ id, matrix, key }) => {
+        expectTypeOf(id).toBeString();
+        expectTypeOf(matrix.node).toEqualTypeOf<"20" | "22">();
+        expectTypeOf(key).toEqualTypeOf<Record<string, string>>();
       },
     );
   });
@@ -1036,7 +1327,8 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf<Exported>().toBeArray();
 
     // A couple of the load-bearing ones, checked rather than just named.
-    expectTypeOf<EntryDuration>().toBeString();
+    expectTypeOf<string>().toExtend<EntryDuration>();
+    expectTypeOf<number>().toExtend<EntryDuration>();
     expectTypeOf<EntryJob<string>>().toExtend<Job<string>>();
     expectTypeOf<EntryCiEvent<{ a: 1 }>["data"]>().toEqualTypeOf<{ a: 1 }>();
 

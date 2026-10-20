@@ -28,7 +28,7 @@ export interface FakeProcess {
   stderr: string;
   startedAt: string;
   endedAt?: string;
-  /** How many `wait`/`get` calls happen before this process exits. */
+  /** How many `wait` calls time out before this process exits. */
   ticksUntilExit: number;
 }
 
@@ -41,6 +41,8 @@ export interface FakeSandbox {
   stuck?: boolean;
   vcpu: number;
   memoryMb: number;
+  /** The environment it was created with. */
+  environment?: Record<string, string>;
 }
 
 export interface FakeSnapshot {
@@ -61,7 +63,7 @@ export interface CommandScript {
   exitCode?: number;
   stdout?: string;
   stderr?: string;
-  /** How many polls before a managed process exits. Defaults to 0. */
+  /** How many waits time out before a managed process exits. Defaults to 0. */
   ticks?: number;
   /**
    * How many starts of this command answer `409 operation_ambiguous` even
@@ -109,7 +111,8 @@ export interface FakeSandboxApi {
   /**
    * Make the next starts from a snapshot fail one way, then start normally:
    * `timeout` is `sandbox_start_timed_out`, `failed` is
-   * `sandbox_start_failed`, and `capacity` is a retryable
+   * `sandbox_start_failed`, `launch` is a `sandbox_start_failed` the platform
+   * blames on its own launch, and `capacity` is a retryable
    * `compute_unavailable` (503) that leaves no machine behind.
    */
   failNextSnapshotStarts(
@@ -143,7 +146,7 @@ export interface FakeSandboxApi {
 }
 
 /** How a start from a snapshot can fail. */
-export type StartFault = "timeout" | "failed" | "capacity";
+export type StartFault = "timeout" | "failed" | "launch" | "capacity";
 
 // biome-ignore lint/suspicious/noExplicitAny: request bodies are untyped JSON
 type Body = any;
@@ -152,6 +155,8 @@ type Body = any;
 interface Req {
   url: URL;
   body: Body;
+  /** The body of a file upload. */
+  upload?: string;
   /** Named captures from the route's path pattern. */
   params: Record<string, string>;
 }
@@ -283,7 +288,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     );
   };
 
-  /** Advance a running process one poll, exiting it once its ticks run out. */
+  /** Advance a running process one wait, exiting it once its ticks run out. */
   const tick = (process: FakeProcess): void => {
     if (process.state !== "RUNNING") {
       return;
@@ -301,6 +306,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     process.ticksUntilExit -= 1;
   };
+
+  /** The files on each sandbox, and in each snapshot of one, by path. */
+  const files = new Map<string, Map<string, string>>();
 
   /** Wrap a handler that needs the sandbox named in the path. */
   const onSandbox = (
@@ -355,17 +363,24 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     }
 
     // A name identifies an *active* sandbox; once one is terminated the same
-    // name creates a new one.
-    const taken = [...sandboxes.values()].some((sandbox) => {
+    // name creates a new one. Creating it again with the same configuration
+    // gives the existing sandbox back, which is what makes a retried create
+    // safe, and a different configuration is refused.
+    const active = [...sandboxes.values()].find((sandbox) => {
       return sandbox.name === body.name && sandbox.status !== "TERMINATED";
     });
 
-    if (taken) {
-      return apiError(
-        409,
-        "sandbox_name_taken",
-        "Sandbox name is already in use",
-      );
+    if (active) {
+      const same =
+        active.vcpu === (body.vcpu ?? 2) &&
+        active.memoryMb === (body.memoryMb ?? 2048) &&
+        active.snapshotId === body.snapshotId &&
+        JSON.stringify(active.environment ?? {}) ===
+          JSON.stringify(body.environment ?? {});
+
+      return same
+        ? json(200, sandboxResource(active))
+        : apiError(409, "sandbox_name_taken", "Sandbox name is already in use");
     }
 
     const fault = body.snapshotId ? startFaultFor(body.snapshotId) : undefined;
@@ -411,7 +426,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         : apiError(
             422,
             "sandbox_start_failed",
-            "Sandbox entered FAILED before reaching RUNNING",
+            fault.mode === "launch"
+              ? "Sandbox entered FAILED before reaching RUNNING: sandbox launch failed"
+              : "Sandbox entered FAILED before reaching RUNNING",
           );
     }
 
@@ -422,15 +439,29 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       vcpu: body.vcpu ?? 2,
       memoryMb: body.memoryMb ?? 2048,
       ...(body.snapshotId ? { snapshotId: body.snapshotId } : {}),
+      ...(body.environment ? { environment: body.environment } : {}),
     };
 
     sandboxes.set(sandbox.id, sandbox);
+
+    files.set(sandbox.id, new Map(files.get(body.snapshotId)));
 
     return json(201, sandboxResource(sandbox));
   };
 
   const execInSandbox: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
+
+    // CI reads a build lock's owner out of the machine's environment. That is
+    // not a command of a job, so it is answered and not recorded.
+    if (argv.join(" ").includes('"$INNGEST_CI_LOCK_OWNER"')) {
+      return json(200, {
+        encoding: "base64",
+        stdout: btoa(sandbox.environment?.INNGEST_CI_LOCK_OWNER ?? ""),
+        stderr: "",
+        exitCode: 0,
+      });
+    }
 
     commands.push(argv);
     timeline.push(`command ${argv.join(" ")}`);
@@ -442,9 +473,18 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       return apiError(504, "sandbox_exec_timed_out", "Sandbox exec timed out");
     }
 
+    // A shell isn't run, but a `cat` of a file the sandbox has prints it.
+    const cats = [...(files.get(sandbox.id) ?? [])]
+      .filter(([path]) => {
+        return argv.join(" ").includes(`cat ${path}`);
+      })
+      .map(([, content]) => {
+        return content;
+      });
+
     return json(200, {
       encoding: "base64",
-      stdout: btoa(script.stdout ?? ""),
+      stdout: btoa((script.stdout ?? "") + cats.join("")),
       stderr: btoa(script.stderr ?? ""),
       exitCode: script.exitCode ?? 0,
     });
@@ -464,6 +504,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     snapshots.set(snapshot.id, snapshot);
+    files.set(snapshot.id, new Map(files.get(sandbox.id)));
     timeline.push(`snapshot ${sandbox.name}`);
 
     return snapshot;
@@ -693,9 +734,15 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     {
       method: "*",
       path: new RegExp(`${SANDBOX}/files`),
-      handler: onSandbox(({ url }) => {
+      handler: onSandbox(({ url, upload }, sandbox) => {
+        const path = url.searchParams.get("path") ?? "";
+
+        if (upload !== undefined) {
+          files.get(sandbox.id)?.set(path, upload);
+        }
+
         return json(200, {
-          path: url.searchParams.get("path"),
+          path,
           bytesWritten: 1,
         });
       }),
@@ -722,8 +769,6 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       method: "GET",
       path: new RegExp(`${PROCESS}$`),
       handler: onProcess((_req, process) => {
-        tick(process);
-
         return json(200, processResource(process));
       }),
     },
@@ -815,7 +860,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       const match = route.path.exec(url.pathname);
 
       if (match && (route.method === "*" || route.method === method)) {
-        return route.handler({ url, body, params: { ...match.groups } });
+        return route.handler({
+          url,
+          body,
+          ...(init?.body instanceof Uint8Array
+            ? { upload: new TextDecoder().decode(init.body) }
+            : {}),
+          params: { ...match.groups },
+        });
       }
     }
 

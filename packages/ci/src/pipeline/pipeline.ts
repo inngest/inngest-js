@@ -30,9 +30,11 @@ import {
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
+  deleteOrphanSnapshots,
   deleteRunSnapshots,
   destroyOrphans,
   destroyRunMachines,
+  lockMachineName,
 } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
@@ -45,6 +47,8 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration, parseRepo } from "../util.ts";
+import type { BuildDone } from "./buildLock.ts";
+import { buildDoneEvent, endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -58,9 +62,11 @@ import { stepOptions, steps } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
+  cacheRefreshIdPrefix,
   countApi,
   inGitHubSpan,
   initCiAls,
+  requestOf,
   runInScope,
   withScopePreserved,
 } from "./scope.ts";
@@ -75,6 +81,10 @@ import {
  * step, so jobs run independently. It's deprecated in favour of
  * `group.parallel({ mode: "race" })`, but that stops steps running inline and
  * added a 15-20s gap between a job's steps on a real run.
+ *
+ * It also lets a run register a `waitForEvent` beside a `step.run` (the build
+ * lock's wait and look) without the executor holding the look until the wait
+ * ends.
  */
 export const pipelineFunctionOptions = { optimizeParallelism: false } as const;
 
@@ -170,6 +180,7 @@ const flowControl = (config: PipelineConfig) => {
     on: _on,
     check: _check,
     machine: _machine,
+    childRuns: _childRuns,
     repo: _repo,
     commentPermissions: _commentPermissions,
     ...rest
@@ -218,20 +229,23 @@ const newRunScope = ({
       : { checkName: config.check?.name ?? config.id }),
     jobChecks: config.check === false ? false : config.check?.jobs !== false,
     ...(config.machine ? { machine: config.machine } : {}),
+    childRuns: config.childRuns !== false,
     event: ctx.event,
     ...(repo ? { repo } : {}),
-    ...(build ? { build } : {}),
+    ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
     sources: new Map(
       Object.entries(build?.sources ?? {}).map(([key, source]) => {
         return [key, Promise.resolve(source)];
       }),
     ),
+    matrixAxes: new Map(),
+    definedJobs: new Set(),
+    inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
     openChecks: new Map(),
-    deferredChecks: new Map(),
     attempt,
     maxAttempts,
     willRetry: (error) => {
@@ -296,7 +310,7 @@ const runPipelineAttempt = async ({
     config,
     ctx,
     asyncCtx,
-    ...(build ? { build } : {}),
+    ...(build ? { build, request: requestOf(build) } : {}),
   });
   const checks = internals.checks as CheckReporter;
 
@@ -350,23 +364,6 @@ const runPipelineAttempt = async ({
         // progress until an attempt that's final.
         const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
 
-        // One step whatever is held back, because which jobs have a check
-        // deferred depends on how far each sibling got in this request.
-        await checks.retryingAll({
-          run,
-          jobs: () => {
-            return [...run.deferredChecks.entries()].map(
-              ([jobPath, deferred]) => {
-                return {
-                  jobPath,
-                  ...(deferred.name ? { name: deferred.name } : {}),
-                };
-              },
-            );
-          },
-          title,
-        });
-
         await checks.retrying({ run, title });
 
         throw outcome.error;
@@ -379,6 +376,9 @@ const runPipelineAttempt = async ({
     const cleanUp = async () => {
       await destroyRunMachines(run, ctx.attempt ?? 0);
       await deleteRunSnapshots(run, ctx.attempt ?? 0);
+
+      // Last, so the runs it wakes find the lock free.
+      await endBuild(run, outcome);
     };
 
     try {
@@ -705,14 +705,13 @@ const defaultRetries = 4;
 const cancelledTitle = "Cancelled: the pipeline ended first";
 
 /**
- * Complete the job checks the run leaves behind: those held back for a retry
- * that isn't coming, and those of jobs still running.
+ * Complete the job checks the run leaves behind: those of jobs still running.
  *
  * With `Promise.all`, the first failure ends the run while its siblings are
  * mid-flight, so their checks are marked cancelled rather than left in
  * progress, and so are those of jobs left unawaited. The siblings keep going
- * while this runs, and how far each got differs between requests, so both
- * lists are read at once, inside one memoized step.
+ * while this runs, and how far each got differs between requests, so they
+ * are read inside one memoized step.
  */
 const closeJobChecks = async (
   run: CiRunScope,
@@ -721,12 +720,6 @@ const closeJobChecks = async (
   const closed = await checks.jobsComplete({
     run,
     jobs: () => {
-      const deferred = [...run.deferredChecks.entries()].map(
-        ([jobPath, { name, ...result }]) => {
-          return { jobPath, ...(name ? { name } : {}), ...result };
-        },
-      );
-
       const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
         return {
           jobPath,
@@ -736,7 +729,7 @@ const closeJobChecks = async (
         };
       });
 
-      return [...deferred, ...open];
+      return open;
     },
   });
 
@@ -867,8 +860,9 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines of a run of `config.id` that ended permanently, by
- * failure or cancellation, without reaching its own cleanup step.
+ * Destroys the machines and deletes the snapshots of a run of `config.id`
+ * that ended permanently, by failure or cancellation, without reaching its own
+ * cleanup step.
  */
 export const cleanupFunction = ({
   client,
@@ -895,9 +889,44 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(stepOptions(steps.cleanUpEndedRun()), () => {
-        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-      });
+      // A build that others waited on took a lock on its cache entry, whose
+      // name is worked out from the request it failed on.
+      const request = event?.data?.event?.data;
+
+      const lock =
+        request?.locked === true && typeof request.cacheKey === "string"
+          ? lockMachineName(request.cacheKey)
+          : undefined;
+
+      const destroyed = await step.run(
+        stepOptions(steps.cleanUpEndedRun()),
+        async () => {
+          if (!runId) {
+            return { destroyed: 0, lockReleased: false, deleted: 0 };
+          }
+
+          return {
+            ...(await destroyOrphans(client, runId, lock)),
+            ...(await deleteOrphanSnapshots(client, runId)),
+          };
+        },
+      );
+
+      // The runs waiting on it would otherwise wait for a build that is gone.
+      // A build that ended on its own already told them, and one that told them
+      // must not be counted as failing twice.
+      if (lock && destroyed.lockReleased) {
+        await step.sendEvent("announce-lock-released", {
+          name: buildDoneEvent,
+          data: {
+            name: lock,
+            status: "failed",
+            reason: "the build run ended before it finished",
+          } satisfies BuildDone,
+        });
+      }
+
+      return destroyed;
     },
   );
 };
@@ -966,7 +995,7 @@ export const cacheRefreshFunctions = ({
       continue;
     }
 
-    const id = `ci/cache-refresh/${job.id}`;
+    const id = `${cacheRefreshIdPrefix}${job.id}`;
 
     functions.push(
       client.createFunction(

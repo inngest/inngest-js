@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName } from "./cache/names.ts";
+import { formatName, slotOf } from "./cache/names.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -36,6 +36,7 @@ import {
   runPool,
   sameCombo,
 } from "./pipeline/matrix.ts";
+import { temporalDuration } from "./testing/temporal.ts";
 import {
   durationToMs,
   filterPaths,
@@ -176,7 +177,7 @@ describe("matrix", () => {
   };
 
   test("expands every combination in declaration order", () => {
-    expect(expandMatrix({ ...config })).toEqual([
+    expect(expandMatrix({}, config.axes)).toEqual([
       { node: "20", db: "sqlite" },
       { node: "20", db: "postgres" },
       { node: "22", db: "sqlite" },
@@ -186,11 +187,13 @@ describe("matrix", () => {
 
   test("exclude removes combinations and include adds them", () => {
     expect(
-      expandMatrix({
-        ...config,
-        exclude: [{ node: "20", db: "postgres" }],
-        include: [{ node: "24", db: "postgres" }],
-      }),
+      expandMatrix(
+        {
+          exclude: [{ node: "20", db: "postgres" }],
+          include: [{ node: "24", db: "postgres" }],
+        },
+        config.axes,
+      ),
     ).toEqual([
       { node: "20", db: "sqlite" },
       { node: "22", db: "sqlite" },
@@ -375,7 +378,11 @@ describe("webhook transform", () => {
   )() as (
     evt: unknown,
     headers: Record<string, string>,
-  ) => { name: string; data: Record<string, unknown> };
+  ) => {
+    name: string;
+    data: Record<string, unknown>;
+    meta: { sessions: Record<string, string | number> };
+  };
 
   test("names events with their action", () => {
     const result = transform(
@@ -405,6 +412,57 @@ describe("webhook transform", () => {
 
     expect(result.name).toBe("github/issue_comment.created");
     expect(result.data._github).toMatchObject({ installationId: 99 });
+  });
+
+  test.each([
+    {
+      event: "pull_request",
+      payload: {
+        action: "opened",
+        repository: { full_name: "inngest/inngest-js" },
+        pull_request: { number: 7, head: { sha: "abc1234" } },
+      },
+      sessions: { pull_request: "inngest/inngest-js#7", commit: "abc1234" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "def5678",
+      },
+      sessions: { commit: "def5678" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "0000000000000000000000000000000000000000",
+      },
+      sessions: {},
+    },
+    {
+      event: "issue_comment",
+      payload: {
+        action: "created",
+        repository: { full_name: "inngest/inngest-js" },
+        issue: { number: 9, pull_request: {} },
+      },
+      sessions: { pull_request: "inngest/inngest-js#9" },
+    },
+    {
+      event: "check_suite",
+      payload: {
+        action: "rerequested",
+        repository: { full_name: "inngest/inngest-js" },
+        check_suite: { head_sha: "fedcba9" },
+      },
+      sessions: { commit: "fedcba9" },
+    },
+    { event: "ping", payload: {}, sessions: {} },
+  ])("puts a $event in its sessions", ({ event, payload, sessions }) => {
+    expect(
+      transform(payload, { "x-github-event": event }).meta.sessions,
+    ).toEqual(sessions);
   });
 
   test("the helper agrees with the transform", () => {
@@ -630,6 +688,9 @@ describe("formatting", () => {
     expect(formatDuration(500)).toBe("500ms");
     expect(formatDuration(22_000)).toBe("22s");
     expect(formatDuration(65_000)).toBe("1m 05s");
+    expect(formatDuration(1500)).toBe("2s");
+    expect(formatDuration(1500, true)).toBe("1500ms");
+    expect(formatDuration(65_000, true)).toBe("1m 05s");
   });
 
   test("relative times read as check summaries", () => {
@@ -644,24 +705,39 @@ describe("formatting", () => {
     );
   });
 
-  test("durations parse", () => {
-    expect(durationToMs("10m")).toBe(600_000);
-    expect(durationToMs("1h30m")).toBe(5_400_000);
-    expect(durationToMs("250ms")).toBe(250);
-
-    expect(() => {
-      return durationToMs("soon");
-    }).toThrow(CiUsageError);
+  test.each([
+    ["10m", 600_000],
+    ["1h30m", 5_400_000],
+    ["1h 30m", 5_400_000],
+    ["250ms", 250],
+    // A bare number in a string is milliseconds.
+    ["10", 10],
+    [90_000, 90_000],
+    [temporalDuration(5_000), 5_000],
+  ])("the duration %j is %d ms", (duration, expected) => {
+    expect(durationToMs(duration, "timeout")).toBe(expected);
   });
 
-  test("malformed durations are rejected rather than partly read", () => {
-    for (const bad of ["1 month", "1h garbage", "10", "", "m5", "-5m"]) {
-      expect(() => {
-        return durationToMs(bad);
-      }).toThrow(CiUsageError);
-    }
+  test.each([
+    "soon",
+    "1 month",
+    "1h garbage",
+    "",
+    "m5",
+    "-5m",
+    "0s",
+    0,
+    -1,
+    1.5,
+    temporalDuration(5_000, { weeks: 1 }),
+  ])("the duration %j is rejected, naming the field", (bad) => {
+    expect(() => {
+      return durationToMs(bad, "cache.maxAge");
+    }).toThrow(CiUsageError);
 
-    expect(durationToMs("1h 30m")).toBe(5_400_000);
+    expect(() => {
+      return durationToMs(bad, "cache.maxAge");
+    }).toThrow(/cache\.maxAge/);
   });
 
   test("stable strings ignore key order", () => {
@@ -734,7 +810,7 @@ describe("looking a cached snapshot up by name", () => {
     return lookupCache(
       scope,
       { key: "v1", scope: "global" },
-      { ownKey: "k1", name },
+      { ownKey: "k1", key: {}, name },
       exclude,
     );
   };
@@ -838,6 +914,27 @@ describe("snapshot names", () => {
     expect(long).toHaveLength(255);
     expect(long.startsWith("ci/main/jjj")).toBe(true);
     expect(long).not.toBe(other);
+  });
+
+  test("too long a name keeps its slot apart from other slots", () => {
+    const name = (jobId: string, ownKey: string) => {
+      return formatName({
+        kind: "cache",
+        scope: "main",
+        jobId,
+        ownKey: `repo/${ownKey}`,
+      });
+    };
+
+    // Same slot, another key.
+    expect(slotOf(name("j".repeat(300), "a"))).toBe(
+      slotOf(name("j".repeat(300), "b")),
+    );
+
+    // Differing only after the cut-off point of a long name.
+    expect(slotOf(name(`${"j".repeat(300)}1`, "a"))).not.toBe(
+      slotOf(name(`${"j".repeat(300)}2`, "a")),
+    );
   });
 });
 

@@ -11,7 +11,7 @@
  */
 
 import type { CheckConclusion, JobConfig } from "../types.ts";
-import { boundedName, formatDuration } from "../util.ts";
+import { boundedName } from "../util.ts";
 import { version } from "../version.ts";
 import type { StepTag } from "./metadata.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
@@ -76,11 +76,11 @@ export const spans = {
 
     return statement
       ? userSpan(
-          "command",
+          "$",
           joinId(stepId, statement.suffix),
           `${name} (${statement.label})`,
         )
-      : userSpan("command", stepId, name);
+      : userSpan("$", stepId, name);
   },
 
   /** One attempt of a command that has retries. */
@@ -181,6 +181,15 @@ const fixed = (id: string, name: string, extras: StepExtras = {}) => {
  * `unmarked`.
  */
 export const steps = {
+  // Jobs of other apps.
+  buildAppJob: (id: string, name: string): StepSpec => {
+    return { id, name: `Build ${name} in its app` };
+  },
+
+  findDeployedRepo: (): StepSpec => {
+    return { id: joinId("deploy", "repo"), name: "Find deployed repository" };
+  },
+
   // The cache.
   cacheKey: (jobPath: string): StepSpec => {
     return {
@@ -197,6 +206,7 @@ export const steps = {
   resolveCacheName: named("Resolve cache name"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
+  deleteReplacedCache: named("Delete replaced cache"),
 
   // Sandboxes.
   discardMachine: (stepId: string): StepSpec => {
@@ -212,6 +222,39 @@ export const steps = {
       id: joinId(stepId, "exit"),
       name: `Exited with code ${exitCode}`,
     };
+  },
+
+  /**
+   * A managed process's first step. It starts the process and, for a command
+   * that is awaited, follows it for a while and reads its output if it ends.
+   */
+  startProcess: (stepId: string, follows: boolean): StepSpec => {
+    return {
+      id: joinId(stepId, "start"),
+      name: follows ? "Run process" : "Start process",
+    };
+  },
+
+  findStartedProcess: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "reconcile"), name: "Find started process" };
+  },
+
+  /** One more stretch of following a process, with its output once it ends. */
+  pollProcess: (stepId: string, index: number): StepSpec => {
+    return { id: joinId(stepId, `check #${index}`), name: "Poll process" };
+  },
+
+  /** Reading a process's output, which `suffix` tells apart from others. */
+  readOutput: (stepId: string, suffix = "output"): StepSpec => {
+    return { id: joinId(stepId, suffix), name: "Read output" };
+  },
+
+  stopProcess: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "kill"), name: "Stop process" };
+  },
+
+  stopAfterTimeout: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "timeout-kill"), name: "Stop after timeout" };
   },
 
   cleanUpMachines: (attempt: number): StepSpec => {
@@ -243,6 +286,15 @@ export const steps = {
 
   addSummary: named("Add summary", { unmarked: true }),
   addAnnotations: named("Add annotations", { unmarked: true }),
+
+  // Matrices.
+  matrixAxes: (matrixId: string): StepSpec => {
+    return {
+      id: joinId("matrix", matrixId, "axes"),
+      name: `Resolve axes of ${matrixId}`,
+      unmarked: true,
+    };
+  },
 
   // Reading from GitHub.
   resolveRepository: (): StepSpec => {
@@ -324,15 +376,6 @@ export const steps = {
     };
   },
 
-  retryJobChecks: (attempt: number, of: number): StepSpec => {
-    return {
-      id: joinId("github", `check:jobs:retry:${attempt}`),
-      name: report("jobs", retrying(attempt + 2, of)),
-      tag: checkTag(),
-      unmarked: true,
-    };
-  },
-
   failedAttempt: (job: string, attempt: number, of: number): StepSpec => {
     return {
       id: joinId("github", `check:${job}:attempt:${attempt}`),
@@ -363,6 +406,8 @@ export const steps = {
   },
 
   recordRunDetails: named("Record run details"),
+
+  checkBuildLock: named("Check build"),
 };
 
 export const traceName = {
@@ -390,19 +435,29 @@ export const traceName = {
 
   /** A command's span: its `.as()` label, or the command itself. */
   command: (text: string, label?: string): string => {
-    return label ?? `$ ${text}`;
+    return label ?? text;
   },
 
   attempt: (attempt: number): string => {
     return `Attempt ${attempt}`;
   },
 
-  wait: (ms: number): string => {
-    return `Wait ${formatDuration(ms)}`;
-  },
-
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
+  },
+
+  askForBuild: (path: string): string => {
+    return `Ask for a build of ${path}`;
+  },
+
+  waitForBuild: (path: string): string => {
+    return `Wait for a build of ${path}`;
+  },
+
+  announceBuild: "Tell the runs waiting on a build",
+
+  runInOwnRun: (path: string): string => {
+    return `Run ${path} in its own run`;
   },
 
   canUser: (login: string, permission: string): string => {
@@ -425,14 +480,10 @@ export const traceName = {
   retryCreate: "Retry create",
   prepareWorkspace: "Prepare workspace",
   saveMachine: "Save sandbox",
+  saveOutputs: "Save outputs",
   snapshotMachine: "Snapshot sandbox",
+  destroyMachine: "Destroy sandbox",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
-  startProcess: "Start process",
-  pollProcess: "Poll process",
-  readOutput: "Read output",
-  stopProcess: "Stop process",
-  stopAfterTimeout: "Stop after timeout",
-  findStartedProcess: "Find started process",
 };

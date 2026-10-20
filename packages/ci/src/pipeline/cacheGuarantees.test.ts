@@ -3,10 +3,11 @@
  * within a pipeline run each base is built once, a chain of cached parents
  * builds each link without holding back the jobs that need an earlier link, a
  * snapshot about to expire is replaced, and a parent is looked up first and a
- * build invoked only on a miss. Across concurrent runs it is best-effort: runs
- * that miss at the same time may build redundantly, at most one snapshot keeps
- * the name and the others adopt it, so the results are correct. They run
- * against the fake Sandboxes API with snapshot names on.
+ * build asked for only on a miss. Across concurrent runs a job that starts
+ * fresh is built once (see buildLock.test.ts), while one that starts `from`
+ * another is best-effort: runs that miss at the same time may build it
+ * redundantly, at most one snapshot keeps the name and the others adopt it.
+ * They run against the fake Sandboxes API with snapshot names on.
  *
  * `runFunction` runs invokes beside the function. Its `concurrency` key limits
  * steps running at once, as it does on the platform, not runs, so runs that
@@ -23,6 +24,8 @@ import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { temporalDuration } from "../testing/temporal.ts";
+import type { Job, JobConfig } from "../types.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
@@ -89,9 +92,12 @@ describe("a burst of runs that need one cached job", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     return Promise.all(
       Array.from({ length: runs }, (_, i) => {
@@ -114,7 +120,7 @@ describe("a burst of runs that need one cached job", () => {
       });
   };
 
-  test("runs that miss together may each build, and all end on the one snapshot that kept the name", async () => {
+  test("runs that miss together build once, and all end on the one snapshot", async () => {
     const api = createFakeSandboxApi();
 
     // A slow install keeps every run's lookup ahead of any snapshot.
@@ -126,8 +132,9 @@ describe("a burst of runs that need one cached job", () => {
       expect(result.type).toBe("function-resolved");
     }
 
-    // Best-effort across runs: they all missed, so more than one built.
-    expect(count(api, "pnpm install")).toBeGreaterThan(1);
+    // They all missed, and one built: the rest waited for its snapshot (see
+    // buildLock.test.ts).
+    expect(count(api, "pnpm install")).toBe(1);
     expect(count(api, "pnpm lint")).toBe(4);
 
     // Yet one snapshot kept the name, nothing else is left behind, and every
@@ -199,7 +206,7 @@ describe("a chain of cached jobs", () => {
       },
     );
 
-    const startingFrom = (parent: typeof install, name: string) => {
+    const startingFrom = (parent: Job, name: string) => {
       return ci.job({ id: name, from: parent }, async () => {
         await $`echo ${name}`;
       });
@@ -209,13 +216,16 @@ describe("a chain of cached jobs", () => {
     const b = [startingFrom(build, "b1"), startingFrom(build, "b2")];
     const c = [startingFrom(pack, "c1"), startingFrom(pack, "c2")];
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all(
-        [...c, ...b, ...a].map((job) => {
-          return job();
-        }),
-      );
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all(
+          [...c, ...b, ...a].map((job) => {
+            return job();
+          }),
+        );
+      },
+    );
 
     return runFunction(pipeline, { event: prEvent });
   };
@@ -243,7 +253,7 @@ describe("a chain of cached jobs", () => {
    * where events fall in the timeline.
    *
    * Every poll is a step, and every step replays the pipeline, so the cost
-   * grows with the ticks. Five outlast the other jobs' commands and keep the
+   * grows with the ticks. A few ticks outlast the other jobs' commands and keep the
    * run under a second, where forty took over two and hit the 5s timeout
    * under load.
    */
@@ -252,7 +262,7 @@ describe("a chain of cached jobs", () => {
 
     api.script([
       { match: "pnpm build", ticks: 5 },
-      { match: "pnpm pack", ticks: 5 },
+      { match: "pnpm pack", ticks: 8 },
     ]);
 
     const result = await chain(api);
@@ -268,7 +278,11 @@ describe("a chain of cached jobs", () => {
       /** When the snapshot of a job's build run was taken. */
       snapshot: (job: string) => {
         return order.findIndex((event) => {
-          return event.startsWith("snapshot ") && event.endsWith(`-${job}`);
+          return (
+            event.startsWith("snapshot ") &&
+            (event.endsWith(`-${job}`) ||
+              (job === "install" && event.includes("ci-build-")))
+          );
         });
       },
     };
@@ -325,13 +339,19 @@ describe("a warm cache", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     const builds = () => {
       return [...api.sandboxes.values()].filter((machine) => {
-        return machine.name.startsWith("ci-01TESTINVOKED");
+        return (
+          machine.name.startsWith("ci-01TESTINVOKED") ||
+          machine.name.startsWith("ci-build-")
+        );
       }).length;
     };
 
@@ -374,9 +394,12 @@ describe("a snapshot that is about to expire", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     const first = await runFunction(pipeline, {
       event: prEvent,
@@ -440,9 +463,12 @@ describe("jobs that start from one parent", () => {
     const a = startingFrom("a");
     const b = startingFrom("b");
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([a(), b()]);
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all([a(), b()]);
+      },
+    );
   };
 
   const buildSteps = (stepIds: string[]) => {
@@ -503,6 +529,94 @@ describe("jobs that start from one parent", () => {
   });
 });
 
+describe("a snapshot older than the cache's maxAge", () => {
+  const hours = 60 * 60 * 1000;
+
+  /** Run a one-job pipeline, age its snapshot, and run it again. */
+  const rerunAged = async (ageMs: number) => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1", maxAge: "1d" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await install();
+      },
+    );
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [holder] = named(api);
+
+    (holder as { createdAt: string }).createdAt = new Date(
+      Date.now() - ageMs,
+    ).toISOString();
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+
+    return { api, holder };
+  };
+
+  test("is reused while it is younger", async () => {
+    const { api, holder } = await rerunAged(hours);
+
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(true);
+  });
+
+  test("is rebuilt, and the rebuild takes the name", async () => {
+    const { api, holder } = await rerunAged(48 * hours);
+
+    expect(count(api, "pnpm install")).toBe(2);
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(false);
+
+    const [replacement, ...rest] = named(api);
+
+    expect(rest).toEqual([]);
+    expect(replacement?.id).not.toBe(holder?.id);
+    expect(replacement?.name).toBe(holder?.name);
+    expect(replacement?.status).toBe("READY");
+  });
+
+  test.each<[string, Partial<JobConfig>]>([
+    ["cache.maxAge", { cache: { key: "v1", maxAge: "a day" } }],
+    ["cache.maxAge", { cache: { key: "v1", maxAge: "0s" } }],
+    ["cache.maxAge", { cache: { key: "v1", maxAge: 0 } }],
+    ["keepOnFailure", { keepOnFailure: "soon" }],
+  ])("an invalid %s throws when the job is defined", (field, options) => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job({ id: "install", ...options }, async () => {});
+    }).toThrow(field);
+  });
+
+  test.each([
+    { cache: { key: "v1", maxAge: 86_400_000 } },
+    { cache: { key: "v1", maxAge: temporalDuration(86_400_000) } },
+    { keepOnFailure: 0 },
+    { keepOnFailure: "1h" },
+  ])("a valid duration option %j is accepted", (options) => {
+    const { ci } = setup(createFakeSandboxApi());
+
+    expect(() => {
+      return ci.job({ id: "install", ...options }, async () => {});
+    }).not.toThrow();
+  });
+});
+
 describe("a job that starts from a job in its own app", () => {
   /**
    * `test` starts from `build`, which starts from `install`, each keyed on
@@ -529,9 +643,12 @@ describe("a job that starts from a job in its own app", () => {
       await $`pnpm test`;
     });
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
+      },
+    );
   };
 
   /** The steps that invoke the build function. */
@@ -647,9 +764,12 @@ describe("a job that starts from a job in its own app", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
 
@@ -675,6 +795,13 @@ describe("a job that starts from a job in its own app", () => {
 
   test("runs that all miss each invoke, and all end on one snapshot per link", async () => {
     const api = createFakeSandboxApi();
+
+    // Slow builds keep every run looking before any of them has built.
+    api.script([
+      { match: "pnpm install", ticks: 5 },
+      { match: "pnpm build", ticks: 5 },
+    ]);
+
     const pipeline = chain(api);
 
     const results = await Promise.all(
@@ -765,21 +892,24 @@ describe("a parent that several jobs need in one pipeline run", () => {
       }),
     };
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      if (inTurn) {
-        for (const name of order) {
-          await jobs[name]();
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        if (inTurn) {
+          for (const name of order) {
+            await jobs[name]();
+          }
+
+          return;
         }
 
-        return;
-      }
-
-      await Promise.all(
-        order.map((name) => {
-          return jobs[name]();
-        }),
-      );
-    });
+        await Promise.all(
+          order.map((name) => {
+            return jobs[name]();
+          }),
+        );
+      },
+    );
   };
 
   test("a parent that is also a parent's parent is built by one invoke", async () => {
@@ -842,13 +972,16 @@ describe("a parent that several jobs need in one pipeline run", () => {
 
     const children = ["a", "b", "c"].map(startingFrom);
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all(
-        children.map((child) => {
-          return child();
-        }),
-      );
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all(
+          children.map((child) => {
+            return child();
+          }),
+        );
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -889,10 +1022,13 @@ describe("a parent that several jobs need in one pipeline run", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
+        await lint();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 

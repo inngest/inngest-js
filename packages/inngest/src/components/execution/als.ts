@@ -54,6 +54,13 @@ export interface AsyncContext {
     span?: (StepSpan & { name: string })[];
 
     /**
+     * If present, prefixes the ID of every step created within this context,
+     * and stops those steps inheriting their span's origin. Set by
+     * `withStepIdPrefix()`.
+     */
+    stepIdPrefix?: string;
+
+    /**
      * The stream tools instance for this execution context. Used by the
      * `stream` singleton to push/pipe SSE data to the client.
      */

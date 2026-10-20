@@ -4,13 +4,14 @@
  * and the `files()` key helper.
  *
  * A cached job is the snapshot of its machine, named after the job's key. There
- * is no other record of it: whatever a run needs to know about a snapshot is
- * either in its name or in the metadata file inside it.
+ * is no other record of it: a run works out the key and name itself, and what
+ * a job started from it needs to know travels in the build's result.
  *
  * @module
  */
 
 import { NonRetriableError } from "inngest";
+import { CiUsageError } from "../errors.ts";
 import { mapGitHubError, rest } from "../github/rest.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import {
@@ -18,6 +19,7 @@ import {
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
+import { deleteMatching } from "../machine/admin.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -27,11 +29,13 @@ import type {
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  CacheKeyValue,
   FilesOptions,
   JobConfig,
   RepoContext,
 } from "../types.ts";
 import {
+  durationToMs,
   filterPaths,
   formatRelative,
   hash,
@@ -39,7 +43,25 @@ import {
   parseRepo,
   stableStringify,
 } from "../util.ts";
-import { formatName } from "./names.ts";
+import { formatName, slotOf } from "./names.ts";
+
+/**
+ * Check a static `cache` when the job is defined, so a mistake fails
+ * when the app boots rather than mid-pipeline.
+ *
+ * @throws {CiUsageError} When the key is empty or the scope isn't known.
+ */
+export const checkCache = (id: string, cache?: CacheConfig): void => {
+  if (cache?.key === "" || (cache?.key && !keyParts(cache.key).length)) {
+    throw new CiUsageError(`The \`cache.key\` of "${id}" can't be empty.`);
+  }
+
+  if (cache?.scope && !["branch", "global"].includes(cache.scope)) {
+    throw new CiUsageError(
+      `The \`cache.scope\` of "${id}" must be "branch" or "global", but got "${cache.scope}".`,
+    );
+  }
+};
 
 /**
  * Where a job reads and writes its cached snapshots.
@@ -95,43 +117,67 @@ const sharedScopes = (
 };
 
 /**
- * Resolve the parts of a cache key into a single hash.
+ * Resolve the parts of a cache key: a single hash of all of them, and the
+ * named ones as strings, for the job's handler.
  *
  * `files()` parts are resolved against the repository: the git tree for the
  * run's commit on GitHub (or for the commit its `repo` and `ref` resolved to),
  * or the working tree locally, so a key changes exactly when the matched files
- * do.
+ * do. A function part is called once, here, and its value is what the hash and
+ * the handler both get.
  */
 export const resolveCacheKey = async (
   run: CiRunScope,
   key: CacheKey | undefined,
-): Promise<string> => {
-  if (key === undefined) {
-    return "";
-  }
-
-  if (typeof key === "function") {
-    return hash(await key());
-  }
-
+): Promise<{ hash: string; named: Record<string, string> }> => {
   const resolved: string[] = [];
+  const named: Record<string, string> = {};
 
-  for (const part of keyParts(key)) {
-    resolved.push(
-      typeof part === "string" ? part : await resolveFilesPart(run, part),
-    );
+  for (const [name, part] of keyParts(key)) {
+    let value: string;
+
+    if (typeof part === "function") {
+      value = await part();
+    } else if (typeof part === "string") {
+      value = part;
+    } else {
+      value = await resolveFilesPart(run, part);
+    }
+
+    if (name === undefined) {
+      resolved.push(value);
+    } else {
+      resolved.push(`${name}=${value}`);
+      named[name] = value;
+    }
   }
 
-  return hash(resolved.join("\0"));
+  return { hash: hash(resolved.join("\0")), named };
 };
 
-/** The parts of a cache key, which a function key doesn't have. */
-const keyParts = (key: CacheKey | undefined): (CacheKeyPart | string)[] => {
-  if (key === undefined || typeof key === "function") {
+const isFilesPart = (value: object): value is CacheKeyPart => {
+  return (value as CacheKeyPart).kind === "inngest/ci.cacheKeyPart";
+};
+
+/** The parts of a cache key, each with its name if the key is an object of them. */
+const keyParts = (
+  key: CacheKey | undefined,
+): [name: string | undefined, part: CacheKeyValue][] => {
+  if (key === undefined) {
     return [];
   }
 
-  return Array.isArray(key) ? key : [key];
+  if (Array.isArray(key)) {
+    return key.map((part) => {
+      return [undefined, part];
+    });
+  }
+
+  if (typeof key !== "object" || isFilesPart(key)) {
+    return [[undefined, key as CacheKeyValue]];
+  }
+
+  return Object.entries(key);
 };
 
 /**
@@ -143,8 +189,8 @@ export const resolveKeySources = async (
   run: CiRunScope,
   key: CacheKey | undefined,
 ): Promise<void> => {
-  for (const part of keyParts(key)) {
-    if (typeof part !== "string" && !targetsRunRepo(run, part)) {
+  for (const [, part] of keyParts(key)) {
+    if (typeof part === "object" && !targetsRunRepo(run, part)) {
       await resolveSource(run, part);
     }
   }
@@ -256,7 +302,8 @@ const hashTree = (
 /**
  * A job's own cache key: its resolved key, with the repository, the input it
  * was called with and the snapshot it starts from folded in, since any of
- * them changing makes it a different job. The app's ID is always part of it,
+ * them changing makes it a different job. The key's named parts come back
+ * beside it. The app's ID is always part of it,
  * so two apps in one repository never share a snapshot, and the repository
  * is too when the run has one (a cron with no `repo` set has none). Names and
  * lookups both go through this, so they always agree.
@@ -267,15 +314,25 @@ export const jobCacheKey = async (
   input: unknown,
   /** What the job starts from. */
   base?: BaseIdentity,
-): Promise<string> => {
-  const key = await resolveCacheKey(run, cache.key);
+): Promise<{ ownKey: string; key: Record<string, string> }> => {
+  const { hash: resolved, named } = await resolveCacheKey(run, cache.key);
 
   // Repositories and apps can share a Sandbox environment, so the same
   // branch, job and key in two of them are still two names.
   const app = `app:${run.ci.client?.id ?? ""}`;
   const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
-  return identityKey(hash(`${key}\0${owner}`), input, base);
+  // Ahead of the key, so the entries of one app, repository and input share a
+  // name up to it, and a new key can replace the old one among them.
+  const slot = hash(
+    `${owner}\0${input === undefined ? "" : stableStringify(input)}`,
+    8,
+  );
+
+  return {
+    ownKey: `${slot}/${identityKey(hash(`${resolved}\0${owner}`), input, base)}`,
+    key: named,
+  };
 };
 
 /**
@@ -294,20 +351,21 @@ const identityKey = (
   }
 
   if (base) {
-    parts.push(`from:${base.jobId}@${base.snapshotId ?? ""}`);
+    parts.push(`from:${base.from}@${base.snapshotId ?? ""}`);
   }
 
   return parts.length === 1 ? key : hash(parts.join("\0"));
 };
 
 /**
- * The parent a job starts from, as its key sees it: the parent's job and its
- * snapshot, which is missing when there was none to take. A parent rebuilt
- * with any change has a new snapshot, so every job below it gets a new name
- * and misses on lookup, without a machine starting to find out.
+ * The base a job starts from, as its key sees it: what it is and its snapshot,
+ * which is missing when there was none to take. A base rebuilt with any
+ * change has a new snapshot, so every job below it gets a new name and misses
+ * on lookup, without a machine starting to find out.
  */
 export interface BaseIdentity {
-  jobId: string;
+  /** The parent's job ID, or `image:<name>` for an image. */
+  from: string;
   snapshotId?: string;
 }
 
@@ -324,6 +382,8 @@ export interface CachedSnapshot {
 export interface CacheTarget {
   /** The job's resolved key. */
   ownKey: string;
+  /** The named parts of the job's `cache.key`, resolved: what its handler gets as `key`. */
+  key: Record<string, string>;
   /** The name a build gives the snapshot, in the scope the job writes. */
   name: string;
 }
@@ -352,12 +412,13 @@ export const cacheTarget = async (
 
   await resolveKeySources(run, cache.key);
 
-  const ownKey = await ciRun(run, steps.cacheKey(job.path), () => {
+  const { ownKey, key } = await ciRun(run, steps.cacheKey(job.path), () => {
     return jobCacheKey(run, cache, input, base);
   });
 
   return {
     ownKey,
+    key,
     name: formatName({
       kind: "cache",
       scope: cacheScopes(run.repo, cache.scope).write,
@@ -384,11 +445,30 @@ export const runTarget = (
 
   return {
     ownKey,
+    key: {},
     name: formatName({
       kind: "run",
       rootRunId: rootRunIdOf(run),
       jobId,
       ownKey,
+    }),
+  };
+};
+
+/**
+ * The target of a job the pipeline calls itself, which nothing starts from.
+ * It takes no snapshot, so the name only keeps one call's steps from queueing
+ * behind another's in the build function's per-name concurrency.
+ */
+export const directTarget = (run: CiRunScope, path: string): CacheTarget => {
+  return {
+    ownKey: "",
+    key: {},
+    name: formatName({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId: path,
+      ownKey: "direct",
     }),
   };
 };
@@ -408,6 +488,48 @@ const isExpiring = (expiresAt: string | undefined): boolean => {
   const at = Date.parse(expiresAt);
 
   return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
+};
+
+/** The parts of a snapshot that decide whether a job may use it. */
+export interface SnapshotInfo {
+  id: string;
+  status: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/** Whether a job may use a snapshot. */
+export type Usable = (snapshot: SnapshotInfo) => boolean;
+
+/**
+ * What makes a snapshot usable: ready, not the one to avoid, not about to
+ * expire, and not older than the job's `cache.maxAge`. A new freshness rule is
+ * one more clause here. `defineJob` has already checked that `maxAge` parses.
+ */
+export const usableFor = (
+  cache: CacheConfig | undefined,
+  /** A snapshot that must not be used, though it may still hold the name. */
+  exclude?: string,
+): Usable => {
+  const maxAgeMs =
+    cache?.maxAge === undefined
+      ? undefined
+      : durationToMs(cache.maxAge, "cache.maxAge");
+
+  return (snapshot) => {
+    const createdAt = Date.parse(snapshot.createdAt);
+    const tooOld =
+      maxAgeMs !== undefined &&
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt > maxAgeMs;
+
+    return (
+      snapshot.status === "READY" &&
+      snapshot.id !== exclude &&
+      !isExpiring(snapshot.expiresAt) &&
+      !tooOld
+    );
+  };
 };
 
 /** How long a lookup waits for a snapshot another build is still taking. */
@@ -460,7 +582,8 @@ const waitUntilReady = async (
 
 /**
  * The newest snapshot with exactly this name, if it can be used: ready, or
- * ready after waiting for the build taking it, and not about to expire.
+ * ready after waiting for the build taking it, not about to expire, and not
+ * older than the job's max age.
  *
  * Any error is a miss, and only an exact name counts, since a server that
  * doesn't know names ignores the filter and lists every snapshot.
@@ -468,8 +591,7 @@ const waitUntilReady = async (
 const findNamed = async (
   run: CiRunScope,
   name: string,
-  /** A snapshot that must not be used, though it may still hold the name. */
-  exclude?: string,
+  usable: Usable,
 ): Promise<CachedSnapshot | undefined> => {
   try {
     const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
@@ -480,7 +602,8 @@ const findNamed = async (
       return snapshot.name === name;
     });
 
-    if (!newest || newest.id === exclude) {
+    // Waiting is only worth it for a snapshot that would be usable once ready.
+    if (!newest || !usable({ ...newest, status: "READY" })) {
       return undefined;
     }
 
@@ -489,7 +612,7 @@ const findNamed = async (
         ? await waitUntilReady(run, newest.id)
         : newest;
 
-    if (ready?.status !== "READY" || isExpiring(ready.expiresAt)) {
+    if (!ready || !usable(ready)) {
       return undefined;
     }
 
@@ -507,11 +630,13 @@ const findInScopes = async (
   ownKey: string,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
+  const usable = usableFor(cache, exclude);
+
   for (const scope of cacheScopes(run.repo, cache.scope).read) {
     const found = await findNamed(
       run,
       formatName({ kind: "cache", scope, jobId, ownKey }),
-      exclude,
+      usable,
     );
 
     if (found) {
@@ -570,7 +695,7 @@ const findCached = (
 ): Promise<CachedSnapshot | undefined> => {
   return cache
     ? findInScopes(run, jobId, cache, target.ownKey, exclude)
-    : findNamed(run, target.name, exclude);
+    : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
 /**
@@ -606,13 +731,16 @@ export const lookupBeforeBuild = async (
 
 /**
  * Find the snapshot that holds a name a build couldn't take, as a memoized
- * step. If it can't be used, because it is about to expire or is the bad one
- * the build replaces, it is deleted so the build can take the name after all.
+ * step. If it can't be used, because it is about to expire, is older than the
+ * job's max age or is the bad one the build replaces, it is deleted so the
+ * build can take the name after all.
  */
 export const resolveTakenName = async (
   run: CiRunScope,
   stepId: string,
   name: string,
+  /** The job's `cache`, whose `maxAge` a holder may be past. */
+  cache?: CacheConfig,
   exclude?: string,
   /**
    * Whether `exclude` was decided to be broken, which is the only case where
@@ -625,7 +753,7 @@ export const resolveTakenName = async (
     run,
     steps.resolveCacheName(stepId),
     async (): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
-      const winner = await findNamed(run, name, exclude);
+      const winner = await findNamed(run, name, usableFor(cache, exclude));
 
       if (winner) {
         return { winner, cleared: false };
@@ -638,9 +766,10 @@ export const resolveTakenName = async (
           items: SnapshotResource[];
         };
 
+        const usable = usableFor(cache);
+
         for (const holder of page.items) {
-          const unusable =
-            (broken && holder.id === exclude) || isExpiring(holder.expiresAt);
+          const unusable = (broken && holder.id === exclude) || !usable(holder);
 
           if (holder.name !== name || holder.status !== "READY" || !unusable) {
             continue;
@@ -733,6 +862,50 @@ export const deleteSnapshot = async (
     // Best effort only.
     return false;
   }
+};
+
+/**
+ * Delete the entries a new cache snapshot replaces, as a memoized step: those
+ * of the same scope, job, app, repository and input under another key, and
+ * older than it. Their key can't be named again, so nothing else would ever
+ * remove them. Entries of other scopes (such as the base branch's) and of
+ * other inputs stay, and so does a newer one: two builds with different keys
+ * that finish together each leave the later snapshot, never both deleted.
+ *
+ * Best effort: one that can't be deleted is logged and left to expire.
+ */
+export const deleteReplacedCache = async (
+  run: CiRunScope,
+  stepId: string,
+  /** The snapshot just taken under its name. */
+  mine: CachedSnapshot,
+): Promise<void> => {
+  const slot = slotOf(mine.name);
+
+  const warn = (snapshotId: string | undefined, error: unknown) => {
+    run.ci.logger?.warn(
+      { snapshotId, error },
+      "Couldn't delete a replaced cache snapshot; it will expire on its own",
+    );
+  };
+
+  await ciRun(run, steps.deleteReplacedCache(stepId), async () => {
+    try {
+      await deleteMatching(
+        run.ci.client,
+        (other) => {
+          return (
+            slotOf(other.name) === slot &&
+            other.name !== mine.name &&
+            other.createdAt <= mine.createdAt
+          );
+        },
+        warn,
+      );
+    } catch (error) {
+      warn(undefined, error);
+    }
+  });
 };
 
 /**

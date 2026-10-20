@@ -1,6 +1,6 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
- * pipeline, job and matrix definitions to a shared set of internals (checks,
+ * pipeline and job definitions to a shared set of internals (checks,
  * the cache build function, GitHub provider).
  *
  * @module
@@ -21,16 +21,23 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
+  CacheConfig,
+  CacheKey,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
+  From,
   Job,
   JobConfig,
+  JobContext,
+  JobOutput,
   MachineConfig,
-  Matrix,
+  MatrixJob,
   MatrixAxes,
   MatrixCombo,
-  MatrixConfig,
+  MatrixJobConfig,
+  MatrixContext,
+  NoFrom,
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
@@ -86,8 +93,9 @@ export interface Ci {
    *
    * Its input is inferred from the handler. Every call runs the job again, on
    * its own machine and with its own check, named `test (2)` the second time.
-   * A job that starts `from` another runs on a copy of its machine. A job has
-   * no return value, and a handler that returns one is a type error.
+   * A job that starts `from` another runs on a copy of its machine, which is
+   * made before the handler runs because that is where the outputs of the jobs
+   * above it are kept.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -95,8 +103,8 @@ export interface Ci {
    *   await $`pnpm test`;
    * });
    *
-   * const compat = ci.job("compat", async (node: string) => {
-   *   await $`fnm use ${node}`;
+   * const compat = ci.job("compat", async ({ input }: { input: string }) => {
+   *   await $`fnm use ${input}`;
    * });
    * ```
    *
@@ -105,42 +113,125 @@ export interface Ci {
    * ```ts
    * const build = ci.job(
    *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
-   *   async ({ target }) => {
-   *     await $`pnpm build --target ${target}`;
+   *   async ({ input }) => {
+   *     await $`pnpm build --target ${input.target}`;
    *   },
    * );
    * ```
-   */
-  job<TSchema extends StandardSchemaV1>(
-    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>> & {
-      input: TSchema;
-    },
-    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<void>,
-  ): Job<StandardSchemaV1.InferInput<TSchema>>;
-  job<TInput = void>(
-    idOrConfig: string | JobConfig<TInput>,
-    handler: (input: TInput) => Promise<void>,
-  ): Job<TInput>;
-
-  /**
-   * Define a matrix: one job per combination of the axes.
    *
-   * Axis values keep their literal types, so the handler's `combo` is exact
-   * and a typo in `exclude` or in `matrix({ … })` is a type error.
+   * The handler is given the job's `id`, the `key` its cache was made of, its
+   * `input`, and what it started `from`.
+   *
+   * What the handler returns is the job's output: an object of JSON values and
+   * commands. Jobs that start `from` it get the data as `from.output` and the
+   * commands as `from.$`, and an uncached job resolves to its data.
    *
    * ```ts
-   * const compat = ci.matrix(
-   *   { id: "compat", axes: { node: ["20", "22"] } },
-   *   async ({ node }) => {
-   *     await $`pnpm test`.env({ NODE_VERSION: node });
+   * const base = ci.job("base", async () => {
+   *   await $`pnpm install`;
+   *
+   *   return { version: await $`pnpm --version`.text(), dev: $`pnpm dev` };
+   * });
+   *
+   * const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+   *   from.output.version; // "9.1.0"
+   *
+   *   await from.$.dev.background();
+   * });
+   * ```
+   *
+   * A job's output describes its image as it was built, so it doesn't change
+   * when the image is reused, and a command in it is a command rather than a
+   * process: nothing the job started is running in jobs that start from it.
+   * Awaiting a command in the return value runs it while the job builds.
+   * Outputs are stored in the image, with a command's environment, so don't
+   * put secrets in either.
+   *
+   * Give it a `matrix` to get one job per combination of its axes. Axis
+   * values keep their literal types, so the handler's `matrix` is exact and a
+   * typo in `exclude` or in `compat({ … })` is a type error. Call the job to
+   * run every combination, or pass part of one to run only what matches.
+   *
+   * ```ts
+   * const compat = ci.job(
+   *   { id: "compat", matrix: { axes: { node: ["20", "22"] } } },
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ NODE_VERSION: matrix.node });
+   *   },
+   * );
+   * ```
+   *
+   * `matrix.axes` can be an async function of what the run knows, like the commit.
+   * It is called once per run, and the job can still be defined at the top
+   * level.
+   *
+   * ```ts
+   * const examples = ci.job(
+   *   {
+   *     id: "examples",
+   *     matrix: {
+   *       axes: async ({ repo }) => {
+   *         const entries = await github.rest.repos.getContent({
+   *           path: "examples",
+   *           ref: repo?.sha ?? "",
+   *         });
+   *
+   *         const dirs = Array.isArray(entries) ? entries : [];
+   *
+   *         return { example: dirs.map((entry) => entry.name) };
+   *       },
+   *     },
+   *   },
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ EXAMPLE: matrix.example });
    *   },
    * );
    * ```
    */
-  matrix<const TAxes extends MatrixAxes>(
-    config: MatrixConfig<TAxes>,
-    handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
-  ): Matrix<TAxes>;
+  job<
+    const TAxes extends MatrixAxes,
+    TFrom extends From<MatrixCombo<TAxes>> | undefined = NoFrom<
+      MatrixCombo<TAxes>
+    >,
+  >(
+    config: MatrixJobConfig<TAxes, TFrom>,
+    handler: (
+      ctx: MatrixContext<TAxes, Record<string, string>, TFrom>,
+    ) => Promise<void>,
+  ): MatrixJob<TAxes>;
+  job<
+    TSchema extends StandardSchemaV1,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends
+      | From<StandardSchemaV1.InferOutput<TSchema>>
+      | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
+    TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
+  >(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
+      input: TSchema;
+      cache?: TCache;
+    },
+    handler: (
+      ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
+    ) => Promise<TOutput>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom, TOutput, TCache>;
+  job<
+    TInput = void,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends From<TInput> | undefined = NoFrom<TInput>,
+    TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
+  >(
+    idOrConfig: string | (JobConfig<TInput, TKey, TFrom> & { cache?: TCache }),
+    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<TOutput>,
+  ): Job<TInput, TKey, TFrom, TOutput, TCache>;
+  job<TInput>(
+    idOrConfig: string | JobConfig<TInput>,
+    handler: (
+      ctx: JobContext<TInput, CacheKey | undefined, From<TInput> | undefined>,
+    ) => Promise<void>,
+  ): Job<TInput>;
 
   /**
    * A manual trigger with a typed payload, sent as `ci/manual.<pipelineId>`.
@@ -217,7 +308,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
-  const matrices = new Map<string, Matrix<MatrixAxes>>();
+  const matrices = new Map<string, MatrixJob<MatrixAxes>>();
   const hooks = noopHooks;
   let buildFunction: InngestFunction.Any | undefined;
 
@@ -281,25 +372,30 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
     // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     job: ((idOrConfig: any, handler: any) => {
-      return defineJob({ jobs, idOrConfig, handler });
-      // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
-    }) as any,
+      if (typeof idOrConfig === "string" || !("matrix" in idOrConfig)) {
+        return defineJob({ jobs, idOrConfig, handler });
+      }
 
-    matrix: (config, handler) => {
       // Inside a run, a matrix is rebuilt per call, so the same ID again is
       // expected, as it is for jobs.
-      if (matrices.has(config.id) && !getRunScope()) {
+      if (matrices.has(idOrConfig.id) && !getRunScope()) {
         throw new CiUsageError(
-          `Matrix IDs must be unique per app, and "${config.id}" is already defined.`,
+          `Matrix IDs must be unique per app, and "${idOrConfig.id}" is already defined.`,
         );
       }
 
-      const matrix = createMatrix(ci, config, handler);
+      const matrix = createMatrix({
+        ci,
+        jobs,
+        config: idOrConfig,
+        handler,
+      });
 
-      matrices.set(config.id, matrix as Matrix<MatrixAxes>);
+      matrices.set(idOrConfig.id, matrix as MatrixJob<MatrixAxes>);
 
       return matrix;
-    },
+      // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
+    }) as any,
 
     manual: (opts) => {
       return {

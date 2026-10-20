@@ -8,18 +8,21 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
-import type { CachedSnapshot } from "../cache/cache.ts";
+import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { CommandState } from "../machine/command.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
   MachineConfig,
+  MatrixAxes,
   RepoContext,
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import type { CiHooks } from "./hooks.ts";
+import type { RegisteredJob } from "./job.ts";
 import { spans } from "./names.ts";
 import { inSpan } from "./spans.ts";
 
@@ -73,6 +76,47 @@ export const matrixOriginOf = (
 };
 
 /**
+ * Where a job config remembers it was defined while a run was active, so it
+ * exists only in the memory of the worker running that pipeline. A matrix sets
+ * it on its combinations itself, since they are always defined in a run.
+ */
+export const inlineKey = Symbol("inngest/ci.inline");
+
+/** Whether the job was defined inside a pipeline run. */
+export const isInline = (config: JobConfig): boolean => {
+  return (config as unknown as { [inlineKey]?: boolean })[inlineKey] === true;
+};
+
+/**
+ * What a job is asked to build, whether by the build function's run or by the
+ * run that defined it: where its snapshot goes, what to do about the name, what
+ * it starts from, and where it leaves what it ended with.
+ */
+export interface BuildRequest {
+  /** The key and snapshot name to build under. */
+  target: CacheTarget;
+  /** A snapshot that wouldn't start, which the build must not reuse. */
+  exclude?: string;
+  /** Whether `exclude` was decided to be broken, so the build may delete it. */
+  broken?: boolean;
+  /** Whether the build leaves the name alone and takes a snapshot of its own. */
+  unnamed?: boolean;
+  /** Whether nothing starts from the job, so the build takes no snapshot. */
+  direct?: boolean;
+  /** What the job starts from, as a build is handed it. */
+  base?: CacheBuildResult;
+  /** What the job leaves for whoever asked: the job sets it, they read it. */
+  sink: {
+    /** What the job ended with. */
+    outcome?: BuildOutcome;
+    /** The job's line in the summary, for the asker to report. */
+    summary?: JobSummary;
+    /** The data the job returned, which is what a direct call resolves to. */
+    output?: Record<string, unknown>;
+  };
+}
+
+/**
  * A machine held by a job or an extra machine scope. It's a promise so
  * concurrent first commands share one creation.
  */
@@ -89,10 +133,23 @@ export interface MachineHandle {
   claimedProcessIds?: Set<string>;
 }
 
-/**
- * What a build run's job ended with, which the run hands back to the run that
- * invoked it. A build run has one job, so nothing else writes it.
- */
+/** What the ID of a function that refreshes a cached job starts with. */
+export const cacheRefreshIdPrefix = "ci/cache-refresh/";
+
+/** What a build run is asked to build, from the data it was invoked with. */
+export const requestOf = (data: CacheBuildData): BuildRequest => {
+  return {
+    target: { ownKey: data.ownKey, key: data.key ?? {}, name: data.cacheKey },
+    ...(data.exclude ? { exclude: data.exclude } : {}),
+    ...(data.broken ? { broken: data.broken } : {}),
+    ...(data.unnamed ? { unnamed: data.unnamed } : {}),
+    ...(data.direct ? { direct: data.direct } : {}),
+    ...(data.base ? { base: data.base } : {}),
+    sink: {},
+  };
+};
+
+/** What a built job ended with, which the asker takes as its own. */
 export interface BuildOutcome {
   /** The job's snapshot, if it had a machine and snapshots could be taken. */
   snapshotId?: string;
@@ -100,8 +157,6 @@ export interface BuildOutcome {
   cached?: CachedSnapshot;
   /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
-  /** Whether the job ran commands, so it had a machine to snapshot. */
-  hadMachine: boolean;
 }
 
 export interface JobSummary {
@@ -131,7 +186,7 @@ export interface CiInternals {
     {
       config: JobConfig;
       // biome-ignore lint/suspicious/noExplicitAny: user handler
-      handler: (input: any) => Promise<void>;
+      handler: (input: any) => Promise<unknown>;
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
@@ -185,6 +240,8 @@ export interface CiRunScope {
   jobChecks: boolean;
   /** The pipeline's default machine, for jobs that set none. */
   machine?: MachineConfig;
+  /** Whether jobs run in runs of their own, as `PipelineConfig.childRuns` says. */
+  childRuns: boolean;
   event: unknown;
   repo?: RepoContext;
   /**
@@ -201,6 +258,20 @@ export interface CiRunScope {
    * run. It holds promises and nothing else.
    */
   sources: Map<string, Promise<ResolvedSource>>;
+  /**
+   * The axes of the matrices whose `axes` is a function, keyed by matrix ID,
+   * so each is resolved by one step per run. It holds promises and nothing
+   * else.
+   */
+  matrixAxes: Map<string, Promise<MatrixAxes>>;
+  /** The IDs of the jobs defined in this run, which must be unique. */
+  definedJobs: Set<string>;
+  /**
+   * The jobs defined in this run, which no other run can see. The client's
+   * registry is shared by every run on the worker, so two overlapping runs
+   * defining one ID would build each other's job.
+   */
+  inlineJobs: Map<string, RegisteredJob>;
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
@@ -215,8 +286,14 @@ export interface CiRunScope {
    * invoked it. It has no checks of its own and reports to that run.
    */
   build?: CacheBuildData;
-  /** What the build's job ended with, which the build hands back. */
-  outcome?: BuildOutcome;
+  /** What a build run is asked to build, from `build`. */
+  request?: BuildRequest;
+  /**
+   * Set while this build run answers for the lock on its cache entry: the lock
+   * machine's name, and the path of the job that claims it. The run tells the
+   * runs waiting on the lock how it ended. Cleared when another build holds it.
+   */
+  buildLock?: { name: string; path: string };
   /** What the build's job reported, which the build hands back. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */
@@ -226,20 +303,6 @@ export interface CiRunScope {
    * are still going, these are completed rather than left spinning.
    */
   openChecks: Map<string, string | undefined>;
-  /**
-   * Job checks whose job failed with an error Inngest will retry. They stay in
-   * progress with their result held back, because a later attempt may pass.
-   */
-  deferredChecks: Map<
-    string,
-    {
-      name?: string;
-      conclusion: CheckConclusion;
-      title: string;
-      summary: string;
-      annotations: CheckAnnotation[];
-    }
-  >;
   /** This attempt, counting from 0. */
   attempt: number;
   /** How many attempts Inngest makes in all. */
@@ -265,6 +328,18 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
+/** What one job returned: its JSON data, and its commands as their state. */
+export interface StoredOutput {
+  data: Record<string, unknown>;
+  commands: Record<string, CommandState>;
+}
+
+/**
+ * What jobs returned, by their place in the chain and ID. The place keeps two
+ * jobs of the same ID, as when one app's `build` starts from another's, apart.
+ */
+export type StoredOutputs = Record<string, StoredOutput>;
+
 export interface CiJobScope {
   run: CiRunScope;
   /** The job's path, which is its ID for a job and `${job} › ${name}` for an extra machine. */
@@ -273,6 +348,8 @@ export interface CiJobScope {
   jobPath: string;
   config: JobConfig;
   machine?: Promise<MachineHandle>;
+  /** Set when the job builds a snapshot for someone who asked for it. */
+  request?: BuildRequest;
   fromSnapshotId?: string;
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
@@ -307,6 +384,13 @@ export interface CiJobScope {
   cwd?: string;
   /** Secret values to mask in output. */
   secrets: string[];
+  /**
+   * What the jobs on this machine's chain returned, by job ID, as stored: the
+   * machine's outputs file, plus what ran here since.
+   */
+  outputs: StoredOutputs;
+  /** What the outputs file held when it was last read or written. */
+  savedOutputs: string;
   /** Extra machines created in this job with `sandbox()`, keyed by name. */
   extras?: Map<string, CiJobScope>;
 }

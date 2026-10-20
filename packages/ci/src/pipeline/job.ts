@@ -6,11 +6,14 @@
  * @module
  */
 
-import { NonRetriableError } from "inngest";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { NonRetriableError, StepError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
+  checkCache,
   describeCached,
+  directTarget,
   lookupBeforeBuild,
   lookupCache,
   runTarget,
@@ -23,33 +26,71 @@ import {
 import type { CheckReporter } from "../github/checks.ts";
 import { settledSources } from "../github/source.ts";
 import {
-  identityOf,
+  ancestry,
+  buildsInRun,
+  checkStaticFrom,
   ownJob,
   parentBuildOf,
+  registeredJob,
   startFrom,
   withoutUnreusableCache,
 } from "../machine/from.ts";
-import { snapshotMachine } from "../machine/machine.ts";
-import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
-import { errorMessage, formatDuration, shortReason } from "../util.ts";
+import {
+  destroyJobMachines,
+  lockMachineName,
+  saveOutputs,
+  snapshotMachine,
+} from "../machine/machine.ts";
+import { outputsFrom, storeOutput } from "../machine/outputs.ts";
+import type {
+  Ancestor,
+  AnyJob,
+  CacheReason,
+  CheckConclusion,
+  Duration,
+  FromContext,
+  JobConfig,
+  JobContext,
+} from "../types.ts";
+import {
+  durationToMs,
+  errorMessage,
+  formatDuration,
+  isSandboxNameTaken,
+  shortReason,
+} from "../util.ts";
+import { chainOf } from "./appJob.ts";
+import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
-import type { CiJobScope, CiRunScope } from "./scope.ts";
+import type {
+  ApiName,
+  BuildOutcome,
+  BuildRequest,
+  CiJobScope,
+  CiRunScope,
+  JobSummary,
+} from "./scope.ts";
 import {
+  cacheRefreshIdPrefix,
   getRunScope,
   inJobSpan,
+  inlineKey,
+  isInline,
   joinId,
   matrixOriginOf,
   rootRunIdOf,
   runJobBody,
 } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 export interface RegisteredJob {
   id: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<void>;
+  handler: (ctx: any) => Promise<unknown>;
 }
 
 export const defineJob = ({
@@ -64,18 +105,48 @@ export const defineJob = ({
   handler: any;
   // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
 }): any => {
-  const config: JobConfig =
+  const given: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
-  // Inside a run, curried job factories and matrices build a new job object
-  // per call, so the same ID being registered again is expected.
-  if (jobs.has(config.id) && !getRunScope()) {
+  const run = getRunScope();
+
+  // A job defined while a run is active exists only in this worker's memory,
+  // so the build function can't find it. A matrix says so for its own jobs.
+  const config: JobConfig =
+    run && !(inlineKey in given)
+      ? ({ ...given, [inlineKey]: true } as JobConfig)
+      : given;
+
+  checkDurations(config);
+
+  if (!run && jobs.has(config.id)) {
     throw new CiUsageError(
       `Job IDs must be unique per app, and "${config.id}" is already defined.`,
     );
   }
 
-  jobs.set(config.id, { id: config.id, config, handler });
+  // Inside a run, one ID is one job: a second definition would share the first
+  // one's registry entry, snapshot names and checks. A matrix defines its
+  // combinations again on every call, which is expected.
+  if (run && !matrixOriginOf(config)) {
+    if (run.definedJobs.has(config.id)) {
+      throw new CiUsageError(
+        `Job "${config.id}" is defined twice in this run. Jobs made inside a pipeline need an ID of their own: put what varies, like the package name, in the \`id\`.`,
+      );
+    }
+
+    run.definedJobs.add(config.id);
+  }
+
+  checkStaticFrom(jobs, config);
+
+  checkCache(config.id, config.cache);
+
+  (run && isInline(config) ? run.inlineJobs : jobs).set(config.id, {
+    id: config.id,
+    config,
+    handler,
+  });
 
   const job = ((input: unknown) => {
     return runJob({ config, handler, input });
@@ -96,6 +167,34 @@ export const defineJob = ({
   return job;
 };
 
+/**
+ * Fail a malformed or non-positive duration when the job is defined. A zero
+ * `cache.maxAge` would make every snapshot too old, so concurrent builds would
+ * delete each other's. A new duration option is one more row here.
+ */
+const checkDurations = (config: JobConfig): void => {
+  const fields: [string, Duration | undefined][] = [
+    ["cache.maxAge", config.cache?.maxAge],
+    // `0` means don't keep, so it has no duration to check.
+    [
+      "keepOnFailure",
+      config.keepOnFailure === 0 ? undefined : config.keepOnFailure,
+    ],
+  ];
+
+  for (const [field, value] of fields) {
+    if (value === undefined) {
+      continue;
+    }
+
+    try {
+      durationToMs(value, field);
+    } catch (error) {
+      throw new CiUsageError(`Job "${config.id}": ${errorMessage(error)}`);
+    }
+  }
+};
+
 export const conclusionForError = (error: unknown): CheckConclusion => {
   return error instanceof CommandTimeoutError ? "timed_out" : "failure";
 };
@@ -105,7 +204,7 @@ interface RunJobArgs {
   path?: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<void>;
+  handler: (ctx: any) => Promise<unknown>;
   input: unknown;
 }
 
@@ -118,7 +217,7 @@ export const runJob = async ({
   config,
   handler,
   input,
-}: RunJobArgs): Promise<void> => {
+}: RunJobArgs): Promise<unknown> => {
   const run = getRunScope();
 
   if (!run) {
@@ -149,20 +248,46 @@ export const runJob = async ({
  * than starting another. A build that failed fails the job with its reason,
  * and no retry can change that, since the invoke's outcome is memoized.
  */
-export const invokeBuild = async ({
-  run,
-  path,
-  stepPath = path,
-  config,
-  input,
-  target,
-  exclude,
-  broken,
-  unnamed,
-  check,
-  base,
-  lookup = true,
-}: {
+export const invokeBuild = async (
+  args: BuildArgs,
+): Promise<CacheBuildResult> => {
+  const { run, config, input } = args;
+
+  // The build function can't find a job that exists only in this run, nor one
+  // whose parent does, so such a job builds here. Its `from` reads the
+  // validated input, as everywhere else.
+  const above = await ancestry(run, config, await validateInput(config, input));
+
+  if (buildsInRun(config, above)) {
+    return buildInline(args);
+  }
+
+  return invokeBuildRun(args);
+};
+
+/**
+ * Where a build reports to: the pipeline run at the root, and the job there
+ * that waits on it.
+ */
+export const buildParent = (
+  run: CiRunScope,
+  /** The waiting job's path in the root run. */
+  jobPath: string,
+  check?: CacheBuildData["parent"]["check"],
+): CacheBuildData["parent"] => {
+  const asking = run.build?.parent;
+
+  return {
+    runId: rootRunIdOf(run),
+    pipelineId: asking?.pipelineId ?? run.pipelineId,
+    jobPath,
+    trigger:
+      asking?.trigger ?? (run.event as { name?: string })?.name ?? "manual",
+    ...(check ? { check } : {}),
+  };
+};
+
+interface BuildArgs {
   run: CiRunScope;
   /** The job's path here, which is where the build's activity goes. */
   path: string;
@@ -181,44 +306,242 @@ export const invokeBuild = async ({
   broken?: boolean;
   /** Whether the build leaves the name alone and takes a snapshot of its own. */
   unnamed?: boolean;
+  /** Whether nothing starts from the job, so the build takes no snapshot. */
+  direct?: boolean;
   check?: CacheBuildData["parent"]["check"];
   /** What the job starts from, which the build must start from too. */
   base?: CacheBuildResult;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
   lookup?: boolean;
-}): Promise<CacheBuildResult> => {
+}
+
+/** What a build is asked for, from the arguments of the call. */
+const requestFrom = ({
+  target,
+  exclude,
+  broken,
+  unnamed,
+  direct,
+  base,
+}: BuildArgs): BuildRequest => {
+  return {
+    target,
+    ...(exclude ? { exclude } : {}),
+    ...(broken ? { broken } : {}),
+    ...(unnamed ? { unnamed } : {}),
+    ...(direct ? { direct } : {}),
+    ...(base ? { base: baseForBuild(base) } : {}),
+    sink: {},
+  };
+};
+
+/**
+ * What a build gave back, from what its job left in the request's sink. Its
+ * snapshot is the job's own, and what the build left for the run to clean up
+ * is whatever the builds it asked for did.
+ */
+export const builtResult = (
+  { target, sink, base }: BuildRequest,
+  /** The job's ID. */
+  id: string,
+  rest: Pick<
+    CacheBuildResult,
+    "createdSnapshots" | "warnings" | "report" | "apis"
+  >,
+): CacheBuildResult => {
+  const { outcome, summary, output } = sink;
+
+  return {
+    ...(outcome?.snapshotId ? { snapshotId: outcome.snapshotId } : {}),
+    ...(outcome?.cached ? { cached: outcome.cached } : {}),
+    reused: outcome?.reused ?? false,
+    target,
+    ancestry: ancestryOf(id, target, base),
+    ...(summary ? { summary } : {}),
+    ...(output ? { output } : {}),
+    ...rest,
+  };
+};
+
+/**
+ * What a handler is given. The matrix wrapper adds `matrix` to it, and
+ * `from` is the parent's ancestry (its own entry first) made into what the
+ * image was built from.
+ */
+export const handlerContext = ({
+  scope,
+  id,
+  input,
+  key,
+  cache,
+  ancestry,
+}: {
+  scope: CiJobScope;
+  id: string;
+  input: unknown;
+  /** The named parts of the job's own cache key. */
+  key: Record<string, string>;
+  cache: CacheReason | undefined;
+  /** The parent and the jobs above it, nearest first. */
+  ancestry: Ancestor[];
+}): Omit<JobContext<unknown>, "from"> & {
+  from?: FromContext<Record<string, string>, Record<string, unknown>>;
+} => {
+  const { run } = scope;
+  const [parent] = ancestry;
+  const above = outputsFrom(
+    () => {
+      return scope;
+    },
+    ancestry,
+    scope.outputs,
+  );
+
+  return {
+    id,
+    key,
+    cache,
+    input,
+    ...(parent
+      ? {
+          from: {
+            id: parent.id,
+            // Nearest last, so a shared name takes its nearest value.
+            key: Object.assign(
+              {},
+              ...[...ancestry].reverse().map((above) => {
+                return above.key;
+              }),
+            ),
+            output: above.output,
+            $: above.$,
+            ancestry: above.ancestry,
+          },
+        }
+      : {}),
+    repo: run.repo,
+    run: { id: rootRunIdOf(run) },
+  };
+};
+
+/** Why a cached job runs now, if it has a cache. */
+export const cacheReason = (
+  run: CiRunScope,
+  config: JobConfig,
+  request: BuildRequest | undefined,
+): CacheReason | undefined => {
+  if (!config.cache) {
+    return undefined;
+  }
+
+  if (request?.exclude) {
+    return "rebuild";
+  }
+
+  const asking = run.build?.parent.pipelineId ?? run.pipelineId;
+
+  return asking.startsWith(cacheRefreshIdPrefix) ? "refresh" : "miss";
+};
+
+/** A job and the jobs above it, nearest first, as a job that starts from it sees them. */
+const ancestryOf = (
+  id: string,
+  target: CacheTarget,
+  base: CacheBuildResult | undefined,
+): Ancestor[] => {
+  return [{ id, key: target.key }, ...(base?.ancestry ?? [])];
+};
+
+/**
+ * Build a job that exists only in this run, as a job of the run: it looks its
+ * name up, builds on a miss and snapshots under the name. No other run can
+ * build it, so a name two runs race for is settled by whoever takes it first,
+ * and the other adopts that snapshot.
+ */
+const buildInline = async (args: BuildArgs): Promise<CacheBuildResult> => {
+  const { run, path, stepPath = path, config, input } = args;
+  const registered = registeredJob(run, config.id);
+
+  if (!registered) {
+    throw new NonRetriableError(
+      `No job with the ID "${config.id}" is defined, so it can't be built.`,
+    );
+  }
+
+  const request = requestFrom(args);
+
+  await jobBody({
+    run,
+    config: registered.config,
+    handler: registered.handler,
+    input,
+    path: stepPath,
+    number: 1,
+    request,
+  });
+
+  return builtResult(request, config.id, {
+    createdSnapshots: [],
+    warnings: [],
+  });
+};
+
+const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
+  const {
+    run,
+    path,
+    stepPath = path,
+    config,
+    input,
+    check,
+    lookup = true,
+  } = args;
+  const { target, exclude, broken, unnamed, direct, base } = requestFrom(args);
   const origin = matrixOriginOf(config);
-  const parent = run.build?.parent;
-  const rootRunId = rootRunIdOf(run);
+  const chain = chainOf(run);
 
   const data: CacheBuildData = {
     jobId: config.id,
+    slot: `${run.runId}:${joinId(stepPath, "build")}`,
     ...(origin ? { matrix: origin } : {}),
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
     cacheKey: target.name,
+    ...(Object.keys(target.key).length ? { key: target.key } : {}),
+    ...(chain.length ? { chain } : {}),
     ...(exclude ? { exclude } : {}),
     ...(broken ? { broken } : {}),
     ...(unnamed ? { unnamed } : {}),
-    ...(base ? { base: baseForBuild(base) } : {}),
+    ...(direct ? { direct } : {}),
+    ...(base ? { base } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
     sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
-    rootRunId,
-    parent: {
-      runId: rootRunId,
-      pipelineId: parent?.pipelineId ?? run.pipelineId,
-      jobPath: path,
-      trigger:
-        parent?.trigger ?? (run.event as { name?: string })?.name ?? "manual",
-      ...(check ? { check } : {}),
-    },
+    rootRunId: rootRunIdOf(run),
+    parent: buildParent(run, path, check),
   };
+
+  // A job that starts fresh is built once for every run that needs it: this
+  // one listens for the build, looks for the snapshot, and asks for a build if
+  // there is none. See buildLock.ts.
+  if (takesBuildLock(config, { exclude, unnamed })) {
+    return requestBuild({
+      run,
+      path,
+      stepPath,
+      config,
+      target,
+      data,
+      reused: (hit) => {
+        return reusedBuild(config, target, hit);
+      },
+    });
+  }
 
   // A snapshot that is already there needs no build run, and no wait behind
   // the builds that are queued for its name. A caller that has just looked it
   // up itself has no use for a second lookup.
-  if (lookup) {
+  if (lookup && !direct) {
     const hit = await lookupBeforeBuild(
       run,
       { id: config.id, path, stepPath },
@@ -228,7 +551,7 @@ export const invokeBuild = async ({
     );
 
     if (hit) {
-      return reusedBuild(config, target, hit);
+      return reusedBuild(config, target, hit, args.base);
     }
   }
 
@@ -236,11 +559,21 @@ export const invokeBuild = async ({
 
   try {
     output = (await run.step.invoke(
-      ciStep(joinId(stepPath, "build"), traceName.buildInOwnRun(path)),
-      { function: run.ci.cacheBuild(), data },
+      ciStep(
+        joinId(stepPath, "build"),
+        direct ? traceName.runInOwnRun(path) : traceName.buildInOwnRun(path),
+      ),
+      {
+        function: run.ci.cacheBuild(),
+        data,
+        meta: sessionsMeta(run, { jobId: config.id, target }),
+      },
     )) as CacheBuildResult | null;
   } catch (error) {
-    throw new NonRetriableError(errorMessage(error), { cause: error });
+    throw (
+      decodeFailure(error) ??
+      new NonRetriableError(errorMessage(error), { cause: error })
+    );
   }
 
   if (!output) {
@@ -263,7 +596,7 @@ const baseForBuild = (built: CacheBuildResult): CacheBuildResult => {
     ...(built.cached ? { cached: built.cached } : {}),
     reused: built.reused,
     target: built.target,
-    hadMachine: built.hadMachine,
+    ancestry: built.ancestry,
     createdSnapshots: [],
     warnings: [],
   };
@@ -274,13 +607,15 @@ export const reusedBuild = (
   config: JobConfig,
   target: CacheTarget,
   hit: CachedSnapshot,
+  /** What the job starts from. */
+  base?: CacheBuildResult,
 ): CacheBuildResult => {
   return {
     snapshotId: hit.snapshotId,
     ...(config.cache ? { cached: hit } : {}),
     reused: true,
     target,
-    hadMachine: true,
+    ancestry: ancestryOf(config.id, target, base),
     createdSnapshots: [],
     summary: {
       path: config.id,
@@ -294,13 +629,18 @@ export const reusedBuild = (
 };
 
 /**
- * Take what a build ended with as this run's concern: its warnings, and its
+ * Take what a build ended with as this run's concern: its warnings, the APIs
+ * it used, and its
  * snapshot when it isn't one the cache keeps, which the run deletes when it
  * ends. That is a snapshot only this run needs, or the build's unnamed
  * fallback (see createNamedSnapshot), which the build run left for this one.
  */
 export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   run.warnings.push(...built.warnings);
+
+  for (const [name, count] of Object.entries(built.apis ?? {})) {
+    run.apis[name as ApiName] += count;
+  }
 
   for (const id of built.createdSnapshots) {
     run.createdSnapshots.add(id);
@@ -309,35 +649,6 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   if (built.snapshotId && !built.cached) {
     run.createdSnapshots.add(built.snapshotId);
   }
-};
-
-/**
- * What the invoker says a job's snapshot is named, for a build run. It's a
- * claim: `verifyBuildTarget` checks it against the job.
- */
-const buildTarget = (run: CiRunScope): CacheTarget | undefined => {
-  return run.build
-    ? { ownKey: run.build.ownKey, name: run.build.cacheKey }
-    : undefined;
-};
-
-/**
- * Fail a build whose invoker sent a key or name other than the ones the job's
- * registered config, its input and its parent's snapshot give.
- */
-const verifyBuildTarget = (run: CiRunScope, expected: CacheTarget): void => {
-  const claimed = buildTarget(run);
-
-  if (
-    !claimed ||
-    (claimed.ownKey === expected.ownKey && claimed.name === expected.name)
-  ) {
-    return;
-  }
-
-  throw new NonRetriableError(
-    `The build of "${run.build?.jobId}" was asked for under a name that doesn't match the job: it was sent \`${claimed.name}\`, and the job's cache key and input give \`${expected.name}\`.`,
-  );
 };
 
 /**
@@ -356,7 +667,7 @@ const announceBuild = async (run: CiRunScope): Promise<void> => {
   run.ci.hooks.activity(
     run,
     run.build.parent.jobPath,
-    "building in its own run",
+    run.build.direct ? "running in its own run" : "building in its own run",
   );
 
   await (run.ci.checks as CheckReporter).building({ run, detailsUrl: url });
@@ -381,25 +692,46 @@ export const validateInput = async (
     return result.value;
   }
 
-  const problems = result.issues.map((issue) => {
-    const path = (issue.path ?? [])
-      .map((segment) => {
-        return String(typeof segment === "object" ? segment.key : segment);
-      })
-      .join(".");
-
-    return `  - ${path ? `${path}: ` : ""}${issue.message}`;
-  });
-
   throw new CiUsageError(
-    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${problems.join("\n")}`,
+    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${describeIssues(result.issues)}`,
   );
+};
+
+/** A schema's issues, one per line, each with the path it's at. */
+export const describeIssues = (
+  issues: readonly StandardSchemaV1.Issue[],
+): string => {
+  return issues
+    .map((issue) => {
+      const path = (issue.path ?? [])
+        .map((segment) => {
+          return String(typeof segment === "object" ? segment.key : segment);
+        })
+        .join(".");
+
+      return `  - ${path ? `${path}: ` : ""}${issue.message}`;
+    })
+    .join("\n");
+};
+
+/**
+ * Whether a job runs in a run of its own: it is called by name, so the build
+ * function can find it, and it keeps no machine for the pipeline to snapshot.
+ * Jobs defined in the run never get here, since they are built in the run.
+ */
+const ownRun = (run: CiRunScope, config: JobConfig): boolean => {
+  return run.childRuns && !config.keepOnFailure;
 };
 
 /** Everything a job does is in its span. */
 const jobBody = (
-  args: RunJobArgs & { run: CiRunScope; path: string; number: number },
-): Promise<void> => {
+  args: RunJobArgs & {
+    run: CiRunScope;
+    path: string;
+    number: number;
+    request?: BuildRequest;
+  },
+): Promise<unknown> => {
   return inJobSpan(args.run, args.config, args.path, () => {
     return jobSteps(args);
   });
@@ -412,13 +744,16 @@ const jobSteps = async ({
   input: given,
   path,
   number,
+  request: asked,
 }: RunJobArgs & {
   run: CiRunScope;
   /** The job's path: its ID, or `${id} (n)` for a later direct call. */
   path: string;
   /** Which run of this job in the pipeline run this is, counting from 1. */
   number: number;
-}): Promise<void> => {
+  /** Set when the job is built here for a job that starts from it. */
+  request?: BuildRequest;
+}): Promise<unknown> => {
   const input = await validateInput(declared, given);
   const checks = run.ci.checks as CheckReporter;
 
@@ -426,12 +761,11 @@ const jobSteps = async ({
   // plans its first step at once.
   const config =
     declared.cache && declared.from !== undefined
-      ? await withoutUnreusableCache(run, {
-          config: declared,
-          input,
-          raw: given,
-        })
+      ? await withoutUnreusableCache(run, declared, input)
       : declared;
+
+  const isBuild = run.build?.jobId === config.id;
+  const request = asked ?? (isBuild ? run.request : undefined);
 
   const scope: CiJobScope = {
     run,
@@ -443,6 +777,9 @@ const jobSteps = async ({
     summaries: [],
     env: {},
     secrets: [],
+    outputs: {},
+    savedOutputs: "{}",
+    ...(request ? { request } : {}),
   };
 
   const configuredName =
@@ -451,8 +788,8 @@ const jobSteps = async ({
   const checkName = configuredName
     ? `${configuredName}${number > 1 ? ` (${number})` : ""}`
     : undefined;
-  const checked = config.check !== false;
-  const isBuild = run.build?.jobId === config.id;
+  // A job built here for another has no check: the job that needs it has one.
+  const checked = config.check !== false && !asked;
 
   if (isBuild) {
     run.report = {
@@ -489,45 +826,38 @@ const jobSteps = async ({
 
   // A cached job is always asked of its build function, which is the one place
   // that decides to reuse the snapshot or build it. So outside a build run,
-  // only the name is needed here.
-  const asksBuild = Boolean(config.cache) && !isBuild;
+  // only the name is needed here. A job the build function can't find builds
+  // right here, and is its own build.
+  const inRun = !request && (fromParent?.inRun ?? isInline(config));
+  const asksBuild =
+    !request && !inRun && (Boolean(config.cache) || ownRun(run, config));
 
   const cacheAt =
-    config.cache && !parentFailure
+    config.cache && !parentFailure && !request
       ? await cacheTarget(
           run,
           { id: config.id, path: scope.path },
           config.cache,
           input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
+          fromParent?.identity,
         )
       : undefined;
 
-  // The invoker names the snapshot, but the job's own config decides what it
-  // may be called, so no invoker can write under a name of its choosing.
-  if (isBuild && !parentFailure) {
-    verifyBuildTarget(
-      run,
-      cacheAt ??
-        runTarget(
-          run,
-          config.id,
-          input,
-          fromParent
-            ? identityOf(fromParent.parent.config.id, fromParent.built)
-            : undefined,
-        ),
-    );
+  // A build snapshots its job, cached or not, under the name the run that
+  // asked for it chose.
+  const builtAs = request?.direct
+    ? undefined
+    : (request?.target ?? (inRun ? cacheAt : undefined));
+
+  // A build that others wait on answers for the lock on its cache entry: it
+  // claims it with the machine its first command creates, and tells them how
+  // it ended when its run does.
+  if (isBuild && run.build?.locked && takesBuildLock(config, request ?? {})) {
+    run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
   }
 
-  // A build snapshots its job, cached or not, under the name the run that
-  // invoked it asked for.
-  const builtAs = isBuild ? (cacheAt ?? buildTarget(run)) : undefined;
-
   const hit = builtAs
-    ? await lookupCache(scope, config.cache, builtAs, run.build?.exclude)
+    ? await lookupCache(scope, config.cache, builtAs, request?.exclude)
     : undefined;
 
   if (hit) {
@@ -555,26 +885,38 @@ const jobSteps = async ({
 
   try {
     let reusedTitle: string | undefined;
+    let returned: Record<string, unknown> | undefined;
 
     if (parentFailure) {
       throw parentFailure.error;
     }
 
-    if (cacheAt && asksBuild) {
+    if (asksBuild) {
       // The build run looks the snapshot up when it starts, and builds only if
       // it still has to. Runs that miss at the same time may still build
-      // redundantly, and then only one snapshot keeps the name.
+      // redundantly, and then only one snapshot keeps the name. A job without
+      // a cache has none to look up, and takes none.
       const built = await invokeBuild({
         run,
         path: scope.path,
         config,
         input: given,
-        target: cacheAt,
+        target: cacheAt ?? directTarget(run, scope.path),
+        direct: !cacheAt,
         check: checks.target(target),
         ...(fromParent ? { base: fromParent.built } : {}),
+      }).catch((error: unknown) => {
+        const report = failedReport(error);
+
+        scope.summaries.push(...(report?.summaries ?? []));
+        scope.annotations.push(...(report?.annotations ?? []));
+
+        throw error;
       });
 
       adoptBuilt(run, built);
+
+      returned = built.output;
 
       scope.summaries.push(...(built.report?.summaries ?? []));
       scope.annotations.push(...(built.report?.annotations ?? []));
@@ -587,17 +929,63 @@ const jobSteps = async ({
         await announceBuild(run);
       }
 
-      await runJobBody(scope, async () => {
-        if (fromParent) {
-          await startFrom(scope, fromParent);
+      if (builtAs && config.cache && (asked || inRun)) {
+        warnBuiltInRun(run, config.id);
+      }
+
+      try {
+        const output = await runJobBody(scope, async () => {
+          if (fromParent) {
+            await startFrom(scope, fromParent);
+          }
+
+          return handler(
+            handlerContext({
+              scope,
+              id: config.id,
+              input,
+              key: builtAs?.key ?? {},
+              cache: cacheReason(run, config, request),
+              ancestry: fromParent?.built.ancestry ?? [],
+            }),
+          );
+        });
+
+        returned = storeOutput(
+          scope,
+          config.id,
+          fromParent?.built.ancestry ?? [],
+          output,
+        );
+
+        if (scope.request) {
+          scope.request.sink.output = returned;
         }
 
-        return handler(input);
-      });
+        if (builtAs) {
+          await snapshotBuilt(scope, builtAs);
+          await confirmBuilt(scope, builtAs);
+        }
+      } catch (error) {
+        // Another build holds the lock, and whoever holds it tells everyone
+        // how it ended, so this one ends without a word.
+        if (!run.buildLock || !isSandboxNameTaken(error)) {
+          throw error;
+        }
 
-      if (builtAs) {
-        await snapshotBuilt(scope, builtAs);
+        run.buildLock = undefined;
+        scope.machine = undefined;
+
+        run.ci.hooks.activity(
+          run,
+          scope.jobPath,
+          "another run is building this…",
+        );
+
+        setOutcome(scope, { reused: false });
       }
+
+      await destroyJobMachines(scope);
     }
 
     // Replays run this from the top, so the clock here is only right on the
@@ -629,13 +1017,15 @@ const jobSteps = async ({
       (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
     const durationMs = endedAt - startedAt;
 
-    run.summaries.push({
+    recordSummary(scope, {
       path: scope.path,
       conclusion: "success",
       title: reusedTitle ?? `Passed in ${formatDuration(durationMs)}`,
       durationMs: reusedTitle ? 0 : durationMs,
       ...(reusedTitle ? { cached: true } : {}),
     });
+
+    return returned;
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
@@ -644,6 +1034,8 @@ const jobSteps = async ({
     const keptSnapshotId = config.keepOnFailure
       ? (await snapshotMachine(scope))?.snapshotId
       : undefined;
+
+    await destroyJobMachines(scope);
 
     let checkEndedAt: number | undefined;
 
@@ -657,16 +1049,7 @@ const jobSteps = async ({
 
       run.openChecks.delete(scope.path);
 
-      if (run.willRetry(error)) {
-        // A later attempt may pass, and the check's complete step is memoized,
-        // so the result is held back until the run knows it's final.
-        run.deferredChecks.set(scope.path, {
-          ...(checkName ? { name: checkName } : {}),
-          ...result,
-        });
-      } else {
-        checkEndedAt = await checks.jobComplete({ ...target, ...result });
-      }
+      checkEndedAt = await checks.jobComplete({ ...target, ...result });
     }
 
     const endedAt =
@@ -681,8 +1064,28 @@ const jobSteps = async ({
       ...(keptSnapshotId ? { keptSnapshotId } : {}),
     });
 
-    throw error;
+    throw settledError(error);
   }
+};
+
+/**
+ * A failed job's machines are already destroyed, so a retry would replay saved
+ * machine IDs that no longer exist. Its failure ends the run instead, with the
+ * original error as the cause. Errors that never retry keep their type.
+ */
+const settledError = (error: unknown): unknown => {
+  if (
+    error instanceof CommandFailedError ||
+    error instanceof CommandTimeoutError ||
+    error instanceof CiUsageError ||
+    error instanceof AggregateError ||
+    error instanceof StepError ||
+    (error as { name?: unknown } | undefined)?.name === "NonRetriableError"
+  ) {
+    return error;
+  }
+
+  return new NonRetriableError(errorMessage(error), { cause: error });
 };
 
 /**
@@ -712,18 +1115,15 @@ const cachedTitle = (snapshot: CachedSnapshot): string => {
  * and the jobs that start from it clone it. Returns the summary title.
  */
 const restoreFromCache = (scope: CiJobScope, hit: CachedSnapshot): string => {
-  const { run } = scope;
-
-  run.outcome = {
+  setOutcome(scope, {
     snapshotId: hit.snapshotId,
     ...(scope.config.cache ? { cached: hit } : {}),
     reused: true,
-    hadMachine: true,
-  };
+  });
 
   const title = cachedTitle(hit);
 
-  run.summaries.push({
+  recordSummary(scope, {
     path: scope.path,
     conclusion: "success",
     title,
@@ -745,6 +1145,8 @@ const snapshotBuilt = async (
 ): Promise<void> => {
   const { run } = scope;
 
+  await saveOutputs(scope);
+
   if (!scope.machine) {
     if (scope.config.cache) {
       run.warnings.push(
@@ -752,25 +1154,58 @@ const snapshotBuilt = async (
       );
     }
 
-    run.outcome = { reused: false, hadMachine: false };
+    setOutcome(scope, { reused: false });
 
     return;
   }
 
   const taken = await snapshotMachine(scope, {
     target,
-    ...(run.build?.exclude ? { exclude: run.build.exclude } : {}),
-    ...(run.build?.broken ? { broken: true } : {}),
-    ...(run.build?.unnamed ? { unnamed: true } : {}),
+    cache: scope.config.cache,
+    ...(scope.request?.exclude ? { exclude: scope.request.exclude } : {}),
+    ...(scope.request?.broken ? { broken: true } : {}),
+    ...(scope.request?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
 
-  run.outcome = {
+  setOutcome(scope, {
     ...(taken ? { snapshotId: taken.snapshotId } : {}),
     ...(scope.config.cache && taken?.named ? { cached: taken.named } : {}),
     reused: taken?.reused ?? false,
-    hadMachine: true,
-  };
+  });
+};
+
+/**
+ * Record what a build's job ended with, for whoever asked for the build. A job
+ * that isn't a build has nobody to tell.
+ */
+const setOutcome = (scope: CiJobScope, outcome: BuildOutcome): void => {
+  if (scope.request) {
+    scope.request.sink.outcome = outcome;
+  }
+};
+
+/**
+ * Add a job's line to the summary. A job built for another leaves it for the
+ * one who asked to report once, under the job's own ID.
+ */
+const recordSummary = (scope: CiJobScope, summary: JobSummary): void => {
+  if (scope.request) {
+    scope.request.sink.summary = { ...summary, path: scope.config.id };
+
+    return;
+  }
+
+  scope.run.summaries.push(summary);
+};
+
+/** Say a cached job builds in the run, once however many times it does. */
+const warnBuiltInRun = (run: CiRunScope, jobId: string): void => {
+  const warning = `built in this run: \`${jobId}\` is defined inside the pipeline, so concurrent runs aren't deduplicated`;
+
+  if (!run.warnings.includes(warning)) {
+    run.warnings.push(warning);
+  }
 };
 
 const jobErrorTitle = (error: unknown): string => {
