@@ -114,8 +114,11 @@ export type FlowControlOptions = Pick<
  */
 export interface MachineConfig {
   /**
-   * The number of vCPUs the machine gets. Memory is paired with this: 1 vCPU
-   * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB. Defaults to 2.
+   * The number of vCPUs the machine gets. Memory follows vCPU: 1 gets 1 GiB,
+   * 2 gets 2 GiB, 4 gets 4 GiB. Defaults to 4.
+   *
+   * Applies to machines created from scratch. A job that restores a snapshot
+   * from another job runs at that job's size.
    */
   vcpu?: 1 | 2 | 4;
 }
@@ -286,7 +289,11 @@ export interface JobConfig<
   from?: TFrom;
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
-  /** Machine settings for this job, overriding the pipeline's and the client's. */
+  /**
+   * Machine settings for this job, overriding the pipeline's and the client's.
+   * Ignored when the job restores a snapshot from another job, which runs at
+   * that job's size.
+   */
   machine?: MachineConfig;
   /**
    * Snapshot the job's machine when it passes, and reuse that snapshot while
@@ -332,6 +339,73 @@ export interface JobConfig<
   input?: StandardSchemaV1;
 }
 
+/** A JSON value. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/** One entry of a job's output: a JSON value, or a command to run later. */
+export type OutputValue = JsonValue | Command | undefined;
+
+/**
+ * What a job handler can return: nothing, or an object of JSON values and
+ * commands. `exitCode` is left out so that returning a bare command, which is
+ * awaited into its result, is a type error rather than an output.
+ */
+// biome-ignore lint/suspicious/noConfusingVoidType: a handler that returns nothing is `Promise<void>`
+export type JobOutput = void | {
+  [key: string]: OutputValue;
+  exitCode?: never;
+};
+
+/** The entries of an output that are data. */
+export type DataOf<TOutput> = {
+  [K in keyof TOutput as [Exclude<TOutput[K], Command>] extends [never]
+    ? never
+    : K]: Exclude<TOutput[K], Command>;
+};
+
+/**
+ * The entries of an output that are commands. An entry that is only sometimes a
+ * command, as when it can be `undefined`, is optional, because it is left out
+ * of what the job stored when it isn't one.
+ */
+export type CommandsOf<TOutput> = Merged<
+  {
+    [K in keyof TOutput as [TOutput[K]] extends [Command] ? K : never]: Extract<
+      TOutput[K],
+      Command
+    >;
+  } & {
+    [K in keyof TOutput as [Extract<TOutput[K], Command>] extends [never]
+      ? never
+      : [TOutput[K]] extends [Command]
+        ? never
+        : K]?: Extract<TOutput[K], Command>;
+  }
+>;
+
+type Merged<T> = { [K in keyof T]: T[K] };
+
+/**
+ * What awaiting a job gives: the data of its output. A job with a `cache` is
+ * built in a run of its own and may be reused, so it gives nothing.
+ */
+type Returned<TOutput, TCache> = [TCache] extends [undefined]
+  ? DataOrNothing<TOutput>
+  : Nothing;
+
+// biome-ignore lint/suspicious/noConfusingVoidType: a job that returns nothing resolves to `void`
+type Nothing = void;
+
+type DataOrNothing<TOutput> = [TOutput] extends [Nothing]
+  ? Nothing
+  : DataOf<TOutput>;
+
 /**
  * A job: call it like a function.
  *
@@ -339,10 +413,19 @@ export interface JobConfig<
  * the second call in a pipeline run is `test (2)`. To share one run between
  * jobs, start them `from` it, which builds the parent once.
  *
- * A job is called for its side effects, so it resolves to nothing.
+ * A job is called for its side effects, so it resolves to the data its handler
+ * returned, if any. A job with a `cache` is built in a run of its own and may
+ * be reused, so it resolves to nothing: read its output in a job that starts
+ * `from` it.
  */
-export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
-  (input: TInput): Promise<void>;
+export interface Job<
+  TInput = void,
+  TKey = unknown,
+  TFrom = unknown,
+  TOutput = void,
+  TCache = undefined,
+> {
+  (input: TInput): Promise<Returned<TOutput, TCache>>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
@@ -353,7 +436,7 @@ export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
    * ci.job({ id: "web", from: build.with("web") }, …);
    * ```
    */
-  with(input: TInput): JobRef<TInput, TKey, TFrom>;
+  with(input: TInput): JobRef<TInput, TKey, TFrom, TOutput>;
   /**
    * The job's input type, for type checks only: it's never set. It lets a
    * bare `from: job` accept only a job that runs without input.
@@ -375,14 +458,27 @@ export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
    * @internal
    */
   readonly "~from"?: TFrom;
+  /**
+   * What the handler returns, for type checks only: it's never set. It types
+   * the `from.output` and `from.$` of a job that starts from this one.
+   *
+   * @internal
+   */
+  readonly "~output"?: TOutput;
 }
 
 /**
  * A job with the input to run it with, from `job.with(input)`.
  */
-export interface JobRef<TInput = unknown, TKey = unknown, TFrom = unknown> {
+export interface JobRef<
+  TInput = unknown,
+  TKey = unknown,
+  TFrom = unknown,
+  TOutput = void,
+> {
   readonly kind: "inngest/ci.jobRef";
-  readonly job: Job<TInput, TKey, TFrom>;
+  // biome-ignore lint/suspicious/noExplicitAny: a ref reads nothing of its job's cache
+  readonly job: Job<TInput, TKey, TFrom, TOutput, any>;
   readonly input: TInput;
 }
 
@@ -390,7 +486,7 @@ export interface JobRef<TInput = unknown, TKey = unknown, TFrom = unknown> {
  * Any job with input, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
-export type AnyJobRef = JobRef<any, any, any>;
+export type AnyJobRef = JobRef<any, any, any, any>;
 
 /**
  * A job as `from` takes it bare: one that runs without input. A job that
@@ -419,7 +515,7 @@ export type FromTarget = JobLike | AnyJobRef | Image;
  * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any, any, any>;
+export type AnyJob = Job<any, any, any, any, any>;
 
 /** A job above another, with the named parts of its cache key resolved. */
 export interface Ancestor {
@@ -427,12 +523,23 @@ export interface Ancestor {
   key: Record<string, string>;
 }
 
+/** A job above the one running, with what it returned. */
+export interface AncestorContext extends Ancestor {
+  /** The data the job returned, as it was when its image was built. */
+  output: Record<string, unknown>;
+  /** The commands the job returned. */
+  $: Record<string, Command>;
+}
+
 /**
  * What a job starts `from`, resolved: the image its machine is a copy of.
  * Typed when the parent is a job defined in this app, and a record of strings
  * for another app's image or a `from` function that could give either.
  */
-export interface FromContext<TKey = Record<string, string>> {
+export interface FromContext<
+  TKey = Record<string, string>,
+  TOutput = Record<string, OutputValue>,
+> {
   /** The ID of the job it starts from. */
   id: string;
   /**
@@ -440,8 +547,29 @@ export interface FromContext<TKey = Record<string, string>> {
    * through its ancestors. The nearest one wins a shared name.
    */
   key: TKey;
-  /** Each job above, nearest first, with its own key parts, for exact lookups. */
-  ancestry: Ancestor[];
+  /**
+   * The data everything the image was built from returned, flattened through
+   * its ancestors. The nearest one wins a shared name. It describes the image
+   * as it was built, so a cached image gives the same output every time.
+   * Commands are in `$`.
+   */
+  output: DataOf<TOutput>;
+  /**
+   * The commands everything the image was built from returned, flattened like
+   * `output`, to run on this job's machine. They are commands, not processes:
+   * nothing the jobs above started is running here.
+   *
+   * Write `from.$.devServer` rather than destructuring: `const { $ } = from`
+   * would shadow the `$` you import, and `from.$.x` says where a command
+   * comes from.
+   *
+   * ```ts
+   * await from.$.devServer.background();
+   * ```
+   */
+  $: CommandsOf<TOutput>;
+  /** Each job above, nearest first, with its own key parts and output, for exact lookups. */
+  ancestry: AncestorContext[];
 }
 
 /**
@@ -481,9 +609,28 @@ type KeysOfTarget<TTarget> = TTarget extends { kind: "inngest/ci.job" }
     ? KeysOf<TJob>
     : Record<string, string>;
 
+/**
+ * The outputs of everything a `from` names, flattened like `KeysOf`. A job's
+ * output replaces the same name above it, whether it is data or a command.
+ */
+type OutputsOf<TFrom> = [TargetOf<TFrom>] extends [never]
+  ? unknown
+  : OutputsOfTarget<TargetOf<TFrom>>;
+
+type OutputsOfTarget<TTarget> = TTarget extends { kind: "inngest/ci.job" }
+  ? TTarget extends {
+      readonly "~output"?: infer TOutput;
+      readonly "~from"?: infer TUp;
+    }
+    ? Omit<OutputsOf<TUp>, keyof TOutput> & TOutput
+    : unknown
+  : TTarget extends { kind: "inngest/ci.jobRef"; job: infer TJob }
+    ? OutputsOf<TJob>
+    : Record<string, OutputValue>;
+
 type ParentOf<TFrom> = [TargetOf<TFrom>] extends [never]
   ? undefined
-  : FromContext<KeysOf<TFrom>>;
+  : FromContext<KeysOf<TFrom>, OutputsOf<TFrom>>;
 
 /**
  * Why a cached job is running instead of being reused: `"miss"` when no

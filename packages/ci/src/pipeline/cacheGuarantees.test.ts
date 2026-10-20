@@ -25,7 +25,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { temporalDuration } from "../testing/temporal.ts";
-import type { Job } from "../types.ts";
+import type { Job, JobConfig } from "../types.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
@@ -572,7 +572,7 @@ describe("a snapshot older than the cache's maxAge", () => {
     expect(replacement?.status).toBe("READY");
   });
 
-  test.each([
+  test.each<[string, Partial<JobConfig>]>([
     ["cache.maxAge", { cache: { key: "v1", maxAge: "a day" } }],
     ["cache.maxAge", { cache: { key: "v1", maxAge: "0s" } }],
     ["cache.maxAge", { cache: { key: "v1", maxAge: 0 } }],

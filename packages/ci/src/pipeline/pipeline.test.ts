@@ -1960,6 +1960,25 @@ describe("machines", () => {
     ).toBe(true);
   });
 
+  test("machines default to 4 vCPU and 4 GiB", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("plain", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect([...api.sandboxes.values()][0]).toMatchObject({
+      vcpu: 4,
+      memoryMb: 4096,
+    });
+  });
+
   test("vcpu picks the matching memory", async () => {
     const { api, ci } = setup();
 

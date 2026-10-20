@@ -11,6 +11,7 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { CommandState } from "../machine/command.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -179,7 +180,7 @@ export interface CiInternals {
     {
       config: JobConfig;
       // biome-ignore lint/suspicious/noExplicitAny: user handler
-      handler: (input: any) => Promise<void>;
+      handler: (input: any) => Promise<unknown>;
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
@@ -327,6 +328,18 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
+/** What one job returned: its JSON data, and its commands as their state. */
+export interface StoredOutput {
+  data: Record<string, unknown>;
+  commands: Record<string, CommandState>;
+}
+
+/**
+ * What jobs returned, by their place in the chain and ID. The place keeps two
+ * jobs of the same ID, as when one app's `build` starts from another's, apart.
+ */
+export type StoredOutputs = Record<string, StoredOutput>;
+
 export interface CiJobScope {
   run: CiRunScope;
   /** The job's path, which is its ID for a job and `${job} › ${name}` for an extra machine. */
@@ -371,6 +384,13 @@ export interface CiJobScope {
   cwd?: string;
   /** Secret values to mask in output. */
   secrets: string[];
+  /**
+   * What the jobs on this machine's chain returned, by job ID, as stored: the
+   * machine's outputs file, plus what ran here since.
+   */
+  outputs: StoredOutputs;
+  /** What the outputs file held when it was last read or written. */
+  savedOutputs: string;
   /** Extra machines created in this job with `sandbox()`, keyed by name. */
   extras?: Map<string, CiJobScope>;
 }

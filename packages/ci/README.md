@@ -82,7 +82,7 @@ const base = ci.job(
 
 const test = ci.job({ id: "test", from: base }, async ({ from }) => {
   from.key.devServer; // the key parts of everything it started from
-  from.ancestry; // each job above it, nearest first: [{ id, key }, ...]
+  from.ancestry; // each job above it, nearest first: [{ id, key, output, $ }, ...]
 });
 
 ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
@@ -91,6 +91,29 @@ ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => 
 ```
 
 Each part of a key is resolved once, and the same value is used to find the snapshot and to build it. The same goes for a job that starts from another app's `image.job()`.
+
+## What a job returns
+
+Return an object of JSON values and commands. Jobs that start from it get the data as `from.output` and the commands as `from.$`, typed, merged up the chain with the nearest job winning a name.
+
+```ts
+const base = ci.job({ id: "base", cache: { key: files("pnpm-lock.yaml") } }, async () => {
+  await $`pnpm install`;
+
+  return {
+    pnpmVersion: await $`pnpm --version`.text(),
+    devServer: $`inngest-cli dev`,
+  };
+});
+
+const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+  from.output.pnpmVersion;
+
+  await from.$.devServer.background();
+});
+```
+
+Write `from.$.devServer` rather than destructuring `$`, which would shadow the `$` you import and hides where a command comes from. An output describes the image as it was built, so a cached job gives the same output every time without running. A command in an output is a command, not a process: nothing the job started is running in the jobs that start from it, and a command you await in the return value runs while the job builds. Outputs are stored in the image with each command's environment, so don't put secrets in either. An uncached job called from a pipeline resolves to its data.
 
 ## Start from another app's job
 
