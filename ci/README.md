@@ -66,6 +66,23 @@ Sandboxes must be enabled for the environment. The first pull request builds the
 
 Open a draft pull request on inngest-js. The `pr` and `pr / ...` statuses appear on the commit and the Inngest run is linked from them. They are not in the branch ruleset, so a failure blocks nothing, and the GitHub Actions checks stay the required ones. To test verification, replay a delivery from the GitHub webhook page after pushing a newer commit: the run fails with "Event rejected" and posts nothing.
 
+## Try it locally first
+
+Run the app as a Connect worker against the Inngest Cloud environment instead of Vercel. Events from the GitHub webhook reach the worker on this machine, and statuses are written to GitHub for real.
+
+Put `INNGEST_SIGNING_KEY`, `INNGEST_EVENT_KEY`, `INNGEST_ENV`, `GITHUB_TOKEN` and `INNGEST_CI_GITHUB=live` in `~/.config/inngest-ci-dogfood.env` (mode 600), then:
+
+```sh
+cd ci
+pnpm ci:connect
+```
+
+The worker logs `Connected 8 functions ACTIVE` and the app `inngest-js-ci` shows its functions in Inngest Cloud. Sandboxes run in Cloud, authorized by the signing key.
+
+- Open a draft pull request on inngest-js. The `pr` and `pr / <job>` commit statuses appear and link to the Inngest runs.
+- Replay an old delivery from the GitHub webhook page after pushing a newer commit: the run fails with "Event rejected" and posts nothing.
+- Stop the worker with Ctrl+C. It drains in-flight runs and disconnects; events sent while it is down wait for the next connection.
+
 ## Switching to a GitHub App later
 
 Create the App (Checks read and write, Contents read, Pull requests read; events Pull request, Push, Check run, Check suite), install it on `inngest/inngest-js`, and set `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`. In `client.ts` replace `githubToken()` with `githubApp({ appId, privateKey })` and drop `GITHUB_TOKEN`. Checks then appear with summaries and annotations.
