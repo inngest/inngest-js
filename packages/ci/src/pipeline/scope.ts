@@ -11,6 +11,7 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { CommandState } from "../machine/command.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -100,6 +101,8 @@ export interface BuildRequest {
   broken?: boolean;
   /** Whether the build leaves the name alone and takes a snapshot of its own. */
   unnamed?: boolean;
+  /** Whether nothing starts from the job, so the build takes no snapshot. */
+  direct?: boolean;
   /** What the job starts from, as a build is handed it. */
   base?: CacheBuildResult;
   /** What the job leaves for whoever asked: the job sets it, they read it. */
@@ -108,6 +111,8 @@ export interface BuildRequest {
     outcome?: BuildOutcome;
     /** The job's line in the summary, for the asker to report. */
     summary?: JobSummary;
+    /** The data the job returned, which is what a direct call resolves to. */
+    output?: Record<string, unknown>;
   };
 }
 
@@ -138,6 +143,7 @@ export const requestOf = (data: CacheBuildData): BuildRequest => {
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),
+    ...(data.direct ? { direct: data.direct } : {}),
     ...(data.base ? { base: data.base } : {}),
     sink: {},
   };
@@ -151,8 +157,6 @@ export interface BuildOutcome {
   cached?: CachedSnapshot;
   /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
-  /** Whether the job ran commands, so it had a machine to snapshot. */
-  hadMachine: boolean;
 }
 
 export interface JobSummary {
@@ -182,7 +186,7 @@ export interface CiInternals {
     {
       config: JobConfig;
       // biome-ignore lint/suspicious/noExplicitAny: user handler
-      handler: (input: any) => Promise<void>;
+      handler: (input: any) => Promise<unknown>;
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
@@ -236,6 +240,8 @@ export interface CiRunScope {
   jobChecks: boolean;
   /** The pipeline's default machine, for jobs that set none. */
   machine?: MachineConfig;
+  /** Whether jobs run in runs of their own, as `PipelineConfig.childRuns` says. */
+  childRuns: boolean;
   event: unknown;
   repo?: RepoContext;
   /**
@@ -330,6 +336,18 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
+/** What one job returned: its JSON data, and its commands as their state. */
+export interface StoredOutput {
+  data: Record<string, unknown>;
+  commands: Record<string, CommandState>;
+}
+
+/**
+ * What jobs returned, by their place in the chain and ID. The place keeps two
+ * jobs of the same ID, as when one app's `build` starts from another's, apart.
+ */
+export type StoredOutputs = Record<string, StoredOutput>;
+
 export interface CiJobScope {
   run: CiRunScope;
   /** The job's path, which is its ID for a job and `${job} › ${name}` for an extra machine. */
@@ -374,6 +392,13 @@ export interface CiJobScope {
   cwd?: string;
   /** Secret values to mask in output. */
   secrets: string[];
+  /**
+   * What the jobs on this machine's chain returned, by job ID, as stored: the
+   * machine's outputs file, plus what ran here since.
+   */
+  outputs: StoredOutputs;
+  /** What the outputs file held when it was last read or written. */
+  savedOutputs: string;
   /** Extra machines created in this job with `sandbox()`, keyed by name. */
   extras?: Map<string, CiJobScope>;
 }

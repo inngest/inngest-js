@@ -21,6 +21,7 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
+  CacheConfig,
   CacheKey,
   CiSkip,
   CiTrigger,
@@ -29,6 +30,7 @@ import type {
   Job,
   JobConfig,
   JobContext,
+  JobOutput,
   MachineConfig,
   Matrix,
   MatrixAxes,
@@ -91,8 +93,9 @@ export interface Ci {
    *
    * Its input is inferred from the handler. Every call runs the job again, on
    * its own machine and with its own check, named `test (2)` the second time.
-   * A job that starts `from` another runs on a copy of its machine. A job has
-   * no return value, and a handler that returns one is a type error.
+   * A job that starts `from` another runs on a copy of its machine, which is
+   * made before the handler runs because that is where the outputs of the jobs
+   * above it are kept.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -118,6 +121,31 @@ export interface Ci {
    *
    * The handler is given the job's `id`, the `key` its cache was made of, its
    * `input`, and what it started `from`.
+   *
+   * What the handler returns is the job's output: an object of JSON values and
+   * commands. Jobs that start `from` it get the data as `from.output` and the
+   * commands as `from.$`, and an uncached job resolves to its data.
+   *
+   * ```ts
+   * const base = ci.job("base", async () => {
+   *   await $`pnpm install`;
+   *
+   *   return { version: await $`pnpm --version`.text(), dev: $`pnpm dev` };
+   * });
+   *
+   * const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+   *   from.output.version; // "9.1.0"
+   *
+   *   await from.$.dev.background();
+   * });
+   * ```
+   *
+   * A job's output describes its image as it was built, so it doesn't change
+   * when the image is reused, and a command in it is a command rather than a
+   * process: nothing the job started is running in jobs that start from it.
+   * Awaiting a command in the return value runs it while the job builds.
+   * Outputs are stored in the image, with a command's environment, so don't
+   * put secrets in either.
    */
   job<
     TSchema extends StandardSchemaV1,
@@ -125,22 +153,27 @@ export interface Ci {
     TFrom extends
       | From<StandardSchemaV1.InferOutput<TSchema>>
       | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
+    TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
   >(
     config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
       input: TSchema;
+      cache?: TCache;
     },
     handler: (
       ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
-    ) => Promise<void>,
-  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
+    ) => Promise<TOutput>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom, TOutput, TCache>;
   job<
     TInput = void,
     const TKey extends CacheKey | undefined = undefined,
     TFrom extends From<TInput> | undefined = NoFrom<TInput>,
+    TOutput extends JobOutput = void,
+    TCache extends CacheConfig | undefined = undefined,
   >(
-    idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
-    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
-  ): Job<TInput, TKey, TFrom>;
+    idOrConfig: string | (JobConfig<TInput, TKey, TFrom> & { cache?: TCache }),
+    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<TOutput>,
+  ): Job<TInput, TKey, TFrom, TOutput, TCache>;
   job<TInput>(
     idOrConfig: string | JobConfig<TInput>,
     handler: (

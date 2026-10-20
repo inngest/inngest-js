@@ -28,7 +28,7 @@ export interface FakeProcess {
   stderr: string;
   startedAt: string;
   endedAt?: string;
-  /** How many `wait`/`get` calls happen before this process exits. */
+  /** How many `wait` calls time out before this process exits. */
   ticksUntilExit: number;
 }
 
@@ -61,7 +61,7 @@ export interface CommandScript {
   exitCode?: number;
   stdout?: string;
   stderr?: string;
-  /** How many polls before a managed process exits. Defaults to 0. */
+  /** How many waits time out before a managed process exits. Defaults to 0. */
   ticks?: number;
   /**
    * How many starts of this command answer `409 operation_ambiguous` even
@@ -152,6 +152,8 @@ type Body = any;
 interface Req {
   url: URL;
   body: Body;
+  /** The body of a file upload. */
+  upload?: string;
   /** Named captures from the route's path pattern. */
   params: Record<string, string>;
 }
@@ -283,7 +285,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     );
   };
 
-  /** Advance a running process one poll, exiting it once its ticks run out. */
+  /** Advance a running process one wait, exiting it once its ticks run out. */
   const tick = (process: FakeProcess): void => {
     if (process.state !== "RUNNING") {
       return;
@@ -301,6 +303,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     process.ticksUntilExit -= 1;
   };
+
+  /** The files on each sandbox, and in each snapshot of one, by path. */
+  const files = new Map<string, Map<string, string>>();
 
   /** Wrap a handler that needs the sandbox named in the path. */
   const onSandbox = (
@@ -426,6 +431,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     sandboxes.set(sandbox.id, sandbox);
 
+    files.set(sandbox.id, new Map(files.get(body.snapshotId)));
+
     return json(201, sandboxResource(sandbox));
   };
 
@@ -442,9 +449,18 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       return apiError(504, "sandbox_exec_timed_out", "Sandbox exec timed out");
     }
 
+    // A shell isn't run, but a `cat` of a file the sandbox has prints it.
+    const cats = [...(files.get(sandbox.id) ?? [])]
+      .filter(([path]) => {
+        return argv.join(" ").includes(`cat ${path}`);
+      })
+      .map(([, content]) => {
+        return content;
+      });
+
     return json(200, {
       encoding: "base64",
-      stdout: btoa(script.stdout ?? ""),
+      stdout: btoa((script.stdout ?? "") + cats.join("")),
       stderr: btoa(script.stderr ?? ""),
       exitCode: script.exitCode ?? 0,
     });
@@ -464,6 +480,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     snapshots.set(snapshot.id, snapshot);
+    files.set(snapshot.id, new Map(files.get(sandbox.id)));
     timeline.push(`snapshot ${sandbox.name}`);
 
     return snapshot;
@@ -693,9 +710,15 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     {
       method: "*",
       path: new RegExp(`${SANDBOX}/files`),
-      handler: onSandbox(({ url }) => {
+      handler: onSandbox(({ url, upload }, sandbox) => {
+        const path = url.searchParams.get("path") ?? "";
+
+        if (upload !== undefined) {
+          files.get(sandbox.id)?.set(path, upload);
+        }
+
         return json(200, {
-          path: url.searchParams.get("path"),
+          path,
           bytesWritten: 1,
         });
       }),
@@ -722,8 +745,6 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       method: "GET",
       path: new RegExp(`${PROCESS}$`),
       handler: onProcess((_req, process) => {
-        tick(process);
-
         return json(200, processResource(process));
       }),
     },
@@ -815,7 +836,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       const match = route.path.exec(url.pathname);
 
       if (match && (route.method === "*" || route.method === method)) {
-        return route.handler({ url, body, params: { ...match.groups } });
+        return route.handler({
+          url,
+          body,
+          ...(init?.body instanceof Uint8Array
+            ? { upload: new TextDecoder().decode(init.body) }
+            : {}),
+          params: { ...match.groups },
+        });
       }
     }
 

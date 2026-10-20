@@ -222,8 +222,9 @@ describe("the example's pr pipeline", () => {
     expect(seen.testedAgainst).toBe("https://preview.example.dev");
     expect(deploys()).toBe(2);
 
-    // One machine for setup, built in its own run, and one clone each for the
-    // jobs that start from it. `deploy` never gets one.
+    // One machine for setup, and one clone each for the jobs that start from it.
+    // `lint` and `test` are defined at the top and run in their own runs; the
+    // jobs the pipeline makes as it goes run in its own. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
 
     expect(
@@ -232,8 +233,8 @@ describe("the example's pr pipeline", () => {
       }),
     ).toEqual([
       expect.stringMatching(/^ci-01TESTINVOKED\d+-setup$/),
-      "ci-01TESTRUN-lint",
-      "ci-01TESTRUN-test",
+      expect.stringMatching(/^ci-01TESTINVOKED\d+-lint$/),
+      expect.stringMatching(/^ci-01TESTINVOKED\d+-test$/),
       "ci-01TESTRUN-compat-node-20",
       "ci-01TESTRUN-compat-node-22",
       "ci-01TESTRUN-e2e",
@@ -289,6 +290,7 @@ describe("the example's pr pipeline", () => {
     api.script([
       { match: "pnpm install", stdout: "installed" },
       { match: "pnpm test", exitCode: 1, stderr: "1 failing" },
+      { match: "pnpm lint", ticks: 50 },
     ]);
 
     const result = await runFunction(pipeline, {

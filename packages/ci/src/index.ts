@@ -88,6 +88,7 @@ export { report } from "./report.ts";
 // Types
 export type {
   Ancestor,
+  AncestorContext,
   BackgroundProcess,
   CacheConfig,
   CacheKey,
@@ -114,7 +115,9 @@ export type {
   Job,
   JobConfig,
   JobContext,
+  JobOutput,
   JobRef,
+  JsonValue,
   KeyValues,
   MachineConfig,
   Matrix,
@@ -123,6 +126,7 @@ export type {
   MatrixConfig,
   MatrixAxesContext,
   MatrixContext,
+  OutputValue,
   PipelineConfig,
   PipelineContext,
   RepoContext,

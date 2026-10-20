@@ -30,6 +30,7 @@ import {
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
+  deleteOrphanSnapshots,
   deleteRunSnapshots,
   destroyOrphans,
   destroyRunMachines,
@@ -172,6 +173,7 @@ const flowControl = (config: PipelineConfig) => {
     on: _on,
     check: _check,
     machine: _machine,
+    childRuns: _childRuns,
     repo: _repo,
     commentPermissions: _commentPermissions,
     ...rest
@@ -220,6 +222,7 @@ const newRunScope = ({
       : { checkName: config.check?.name ?? config.id }),
     jobChecks: config.check === false ? false : config.check?.jobs !== false,
     ...(config.machine ? { machine: config.machine } : {}),
+    childRuns: config.childRuns !== false,
     event: ctx.event,
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),
@@ -872,8 +875,9 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines of a run of `config.id` that ended permanently, by
- * failure or cancellation, without reaching its own cleanup step.
+ * Destroys the machines and deletes the snapshots of a run of `config.id`
+ * that ended permanently, by failure or cancellation, without reaching its own
+ * cleanup step.
  */
 export const cleanupFunction = ({
   client,
@@ -900,8 +904,15 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      return step.run(stepOptions(steps.cleanUpEndedRun()), () => {
-        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+      return step.run(stepOptions(steps.cleanUpEndedRun()), async () => {
+        if (!runId) {
+          return { destroyed: 0, deleted: 0 };
+        }
+
+        return {
+          ...(await destroyOrphans(client, runId)),
+          ...(await deleteOrphanSnapshots(client, runId)),
+        };
       });
     },
   );
