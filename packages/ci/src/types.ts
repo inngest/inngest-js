@@ -117,8 +117,8 @@ export interface MachineConfig {
    * The number of vCPUs the machine gets. Memory follows vCPU: 1 gets 1 GiB,
    * 2 gets 2 GiB, 4 gets 4 GiB. Defaults to 4.
    *
-   * Applies to machines created from scratch. A job that starts `from`
-   * another job runs at that job's size.
+   * Applies to machines created from scratch. A job that restores a snapshot
+   * from another job runs at that job's size.
    */
   vcpu?: 1 | 2 | 4;
 }
@@ -291,8 +291,8 @@ export interface JobConfig<
   name?: string;
   /**
    * Machine settings for this job, overriding the pipeline's and the client's.
-   * Ignored when the job starts `from` another job, which runs at that job's
-   * size.
+   * Ignored when the job restores a snapshot from another job, which runs at
+   * that job's size.
    */
   machine?: MachineConfig;
   /**
