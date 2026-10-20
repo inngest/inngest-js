@@ -76,11 +76,11 @@ export const spans = {
 
     return statement
       ? userSpan(
-          "command",
+          "$",
           joinId(stepId, statement.suffix),
           `${name} (${statement.label})`,
         )
-      : userSpan("command", stepId, name);
+      : userSpan("$", stepId, name);
   },
 
   /** One attempt of a command that has retries. */
@@ -399,7 +399,7 @@ export const traceName = {
 
   /** A command's span: its `.as()` label, or the command itself. */
   command: (text: string, label?: string): string => {
-    return label ?? `$ ${text}`;
+    return label ?? text;
   },
 
   attempt: (attempt: number): string => {

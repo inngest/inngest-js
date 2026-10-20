@@ -192,7 +192,7 @@ const machine = [
   { ...span("test › machine", "Start sandbox", "sandbox"), origin },
 ];
 const command = (label: string) => {
-  return [job, span(`test › ${label}`, `$ ${label}`, "command")];
+  return [job, span(`test › ${label}`, label, "$")];
 };
 const attempt = (n: number) => {
   return [
@@ -203,10 +203,7 @@ const attempt = (n: number) => {
 
 /** A statement on the background `serve`, a row of its own beside the command's. */
 const statement = (suffix: string, label: string) => {
-  return [
-    job,
-    span(`test › serve › ${suffix}`, `$ serve (${label})`, "command"),
-  ];
+  return [job, span(`test › serve › ${suffix}`, `serve (${label})`, "$")];
 };
 
 describe("spans", () => {
@@ -452,12 +449,12 @@ describe("spans", () => {
         "  Start sandbox from base [sandbox]",
         "    Create sandbox",
         "    Prepare workspace",
-        "  $ pnpm test [command]",
+        "  pnpm test [$]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
         "    Read output",
-        "  lint [command]",
+        "  lint [$]",
         "    Start process",
         "    Wait 1s",
         "    Poll process",
@@ -467,7 +464,7 @@ describe("spans", () => {
         "    Start sandbox [sandbox]",
         "      Create sandbox",
         "      Prepare workspace",
-        "    $ pnpm start [command]",
+        "    pnpm start [$]",
         "      Run and read output",
         "Clean up sandboxes",
         "Clean up snapshots",
@@ -497,12 +494,12 @@ describe("spans", () => {
         "  Start sandbox from base [sandbox] <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
-        "  $ pnpm test [command]",
+        "  pnpm test [$]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
         "    Read output <- ci",
-        "  lint [command]",
+        "  lint [$]",
         "    Start process <- ci",
         "    Wait 1s <- ci",
         "    Poll process <- ci",
@@ -512,7 +509,7 @@ describe("spans", () => {
         "    Start sandbox [sandbox] <- ci",
         "      Create sandbox <- ci",
         "      Prepare workspace <- ci",
-        "    $ pnpm start [command]",
+        "    pnpm start [$]",
         "      Run and read output <- ci",
         "Clean up sandboxes <- ci",
         "Clean up snapshots <- ci",
