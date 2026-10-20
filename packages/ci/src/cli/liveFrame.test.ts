@@ -85,9 +85,9 @@ describe("frame", () => {
 
     expect(lines.join("\n")).toMatchInlineSnapshot(`
       "⠋ pr  http://dev/run?runID=r
-      └─ ✓ base           Cached 14h ago        0s
+      └─ ✓ base           Cached 14h ago        1s
          ├─ ⠋ typecheck   $ npm run typecheck  12s
-         ├─ ✓ lint                              0s
+         ├─ ✓ lint                              1s
          └─ ⠋ compat                           12s
             ├─ ⠋ node:22  $ npm test           12s
             └─ ○ node:24  queued"
@@ -128,8 +128,8 @@ describe("frame", () => {
 
     expect(lines.join("\n")).toMatchInlineSnapshot(`
       "pr  http://dev/run?runID=r
-      └─ ✓ base       0s
-         └─ ✓ lint    0s
+      └─ ✓ base       1s
+         └─ ✓ lint    1s
 
       ✓ pr passed in 1m 1s"
     `);

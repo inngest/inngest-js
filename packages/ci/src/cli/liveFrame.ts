@@ -114,7 +114,7 @@ export const apply = (state: LiveState, message: LocalMessage): void => {
 
 /** Whole seconds up to a minute, then minutes and seconds. */
 export const formatDuration = (ms: number): string => {
-  const seconds = Math.max(0, Math.round(ms / 1000));
+  const seconds = Math.max(1, Math.round(ms / 1000));
 
   return seconds < 60
     ? `${seconds}s`
@@ -139,8 +139,9 @@ const detailOf = (job: JobState): string => {
     return job.doing ?? job.status;
   }
 
-  // The failing command is drawn under the job, so its title would repeat it.
-  return job.failure ? "" : (job.title ?? "");
+  // A passed job's title only repeats its time, and a failed job's title
+  // its failing command, which is drawn under it.
+  return job.status === "passed" || job.failure ? "" : (job.title ?? "");
 };
 
 /** A matrix's node: its status is the most urgent of its cells'. */
