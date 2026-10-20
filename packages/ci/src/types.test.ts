@@ -660,6 +660,15 @@ describe("matrices keep their literal values", () => {
       },
     );
   });
+
+  test("a matrix config kept in a variable is not a plain job", () => {
+    const config = { id: "compat-7", matrix: { axes: { node: ["20", "22"] } } };
+
+    // @ts-expect-error a handler with output is not a matrix handler
+    ci.job(config, async () => {
+      return { version: "x" };
+    });
+  });
 });
 
 describe("a handler's context", () => {

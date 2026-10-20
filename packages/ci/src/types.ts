@@ -316,6 +316,8 @@ export interface JobConfig<
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
+  /** Only a job defined with a `matrix` has one, so it never reaches the plain job types. */
+  matrix?: never;
   /**
    * The shape of the job's input, as any Standard Schema (Zod, Valibot,
    * ArkType, …). The handler gets the validated value.
