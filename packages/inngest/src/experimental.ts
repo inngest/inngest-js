@@ -1,5 +1,6 @@
 // AsyncLocalStorage
 
+export * from "./components/agent/index.ts";
 export {
   createDefer,
   DeferredFunction,
