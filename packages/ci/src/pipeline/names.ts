@@ -11,7 +11,7 @@
  */
 
 import type { CheckConclusion, JobConfig } from "../types.ts";
-import { boundedName, formatDuration } from "../util.ts";
+import { boundedName } from "../util.ts";
 import { version } from "../version.ts";
 import type { StepTag } from "./metadata.ts";
 import { joinId, scopeSeparator } from "./scope.ts";
@@ -224,6 +224,39 @@ export const steps = {
     };
   },
 
+  /**
+   * A managed process's first step. It starts the process and, for a command
+   * that is awaited, follows it for a while and reads its output if it ends.
+   */
+  startProcess: (stepId: string, follows: boolean): StepSpec => {
+    return {
+      id: joinId(stepId, "start"),
+      name: follows ? "Run process" : "Start process",
+    };
+  },
+
+  findStartedProcess: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "reconcile"), name: "Find started process" };
+  },
+
+  /** One more stretch of following a process, with its output once it ends. */
+  pollProcess: (stepId: string, index: number): StepSpec => {
+    return { id: joinId(stepId, `check #${index}`), name: "Poll process" };
+  },
+
+  /** Reading a process's output, which `suffix` tells apart from others. */
+  readOutput: (stepId: string, suffix = "output"): StepSpec => {
+    return { id: joinId(stepId, suffix), name: "Read output" };
+  },
+
+  stopProcess: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "kill"), name: "Stop process" };
+  },
+
+  stopAfterTimeout: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "timeout-kill"), name: "Stop after timeout" };
+  },
+
   cleanUpMachines: (attempt: number): StepSpec => {
     return { id: cleanupId("cleanup", attempt), name: "Clean up sandboxes" };
   },
@@ -409,10 +442,6 @@ export const traceName = {
     return `Attempt ${attempt}`;
   },
 
-  wait: (ms: number): string => {
-    return `Wait ${formatDuration(ms)}`;
-  },
-
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
   },
@@ -451,10 +480,4 @@ export const traceName = {
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
-  startProcess: "Start process",
-  pollProcess: "Poll process",
-  readOutput: "Read output",
-  stopProcess: "Stop process",
-  stopAfterTimeout: "Stop after timeout",
-  findStartedProcess: "Find started process",
 };
