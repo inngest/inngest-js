@@ -126,11 +126,6 @@ export interface RunFunctionOptions {
   functions?: InngestFunction.Any[];
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
-  /**
-   * Rewrites the data of each invoke after it went through JSON and before the
-   * invoked function runs, to play an invoker that is buggy or forged.
-   */
-  rewriteInvoke?: (data: Record<string, unknown>) => Record<string, unknown>;
 }
 
 let invokedRuns = 0;
@@ -233,7 +228,7 @@ const runInvoked = async (
 
   const event: EventPayload = {
     name: "inngest/function.invoked",
-    data: opts.rewriteInvoke ? opts.rewriteInvoke(data) : data,
+    data,
   };
 
   invokedRuns++;

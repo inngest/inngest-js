@@ -1,8 +1,8 @@
 /**
  * Starting a job from its `from` parent's machine: working out what `from`
  * names, asking the parent's build function for a snapshot and starting from
- * it, plus the fallback that re-runs the parent's handler when no snapshot is
- * available.
+ * it, plus the fallback that re-runs the parent's handler when a snapshot
+ * won't start.
  *
  * A job's name includes the snapshot of the parent it starts from, so a
  * parent's own parent is resolved first, and its build is handed that same
@@ -27,7 +27,9 @@ import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
 import type { RegisteredJob } from "../pipeline/job.ts";
 import {
   adoptBuilt,
+  cacheReason,
   describeIssues,
+  handlerContext,
   invokeBuild,
   validateInput,
 } from "../pipeline/job.ts";
@@ -40,7 +42,7 @@ import {
   outsideJobs,
   rebuildSuffix,
 } from "../pipeline/scope.ts";
-import type { AnyJob, JobConfig, JobRef } from "../types.ts";
+import type { Ancestor, AnyJob, JobConfig, JobRef } from "../types.ts";
 import { errorMessage, hash, stableStringify } from "../util.ts";
 
 /** The jobs defined on one CI client, by ID. */
@@ -642,20 +644,8 @@ export const startFrom = async (
     };
 
     scope.rebuildParent = () => {
-      return rerunOnThisMachine(scope, parent);
+      return rerunOnThisMachine(scope, parent, built.ancestry);
     };
-  } else if (built.hadMachine || config.cache) {
-    // A cached job is built in a run of its own, so without a snapshot its
-    // work isn't on any machine here. This job's own parent gave no snapshot:
-    // for a cached job it wasn't found, and for any other the machine
-    // couldn't be snapshotted.
-    const why = config.cache ? " · no cache" : " · no snapshots";
-
-    scope.startNote = `rebuilding ${config.id}${why}`;
-
-    run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
-
-    await rerunOnThisMachine(scope, parent);
   }
 };
 
@@ -823,6 +813,8 @@ const reportBuilt = (
 const rerunOnThisMachine = async (
   scope: CiJobScope,
   parent: Base,
+  /** The parent and the jobs above it, nearest first, as its build saw them. */
+  ancestry: Ancestor[],
 ): Promise<void> => {
   if (isImage(parent)) {
     throw imageNotStarted(parent);
@@ -842,7 +834,7 @@ const rerunOnThisMachine = async (
     // snapshot. After, as when a snapshot wouldn't start, the grandparent has
     // to run here too.
     if (scope.machine) {
-      await rerunOnThisMachine(scope, grandparent);
+      await rerunOnThisMachine(scope, grandparent, ancestry.slice(1));
     } else {
       await startFrom(
         scope,
@@ -851,5 +843,14 @@ const rerunOnThisMachine = async (
     }
   }
 
-  await registered.handler(parent.input);
+  await registered.handler(
+    handlerContext({
+      run,
+      id: parent.config.id,
+      input: parent.input,
+      key: ancestry[0]?.key ?? {},
+      cache: cacheReason(run, parent.config, undefined),
+      ancestry: ancestry.slice(1),
+    }),
+  );
 };

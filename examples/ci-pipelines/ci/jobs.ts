@@ -36,10 +36,10 @@ export const test = ci.job({ id: "test", from: base }, async () => {
 
 export const compat = ci.matrix(
   { id: "compat", axes: { node: ["20", "22"] }, from: base },
-  async ({ node }) => {
+  async ({ matrix }) => {
     await $`node --version`;
 
-    await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
+    await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: matrix.node });
   },
 );
 

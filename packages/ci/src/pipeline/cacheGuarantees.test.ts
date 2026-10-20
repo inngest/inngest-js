@@ -24,6 +24,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { temporalDuration } from "../testing/temporal.ts";
+import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
@@ -200,7 +201,7 @@ describe("a chain of cached jobs", () => {
       },
     );
 
-    const startingFrom = (parent: typeof install, name: string) => {
+    const startingFrom = (parent: Job, name: string) => {
       return ci.job({ id: name, from: parent }, async () => {
         await $`echo ${name}`;
       });
@@ -761,6 +762,13 @@ describe("a job that starts from a job in its own app", () => {
 
   test("runs that all miss each invoke, and all end on one snapshot per link", async () => {
     const api = createFakeSandboxApi();
+
+    // Slow builds keep every run looking before any of them has built.
+    api.script([
+      { match: "pnpm install", ticks: 5 },
+      { match: "pnpm build", ticks: 5 },
+    ]);
+
     const pipeline = chain(api);
 
     const results = await Promise.all(
