@@ -54,7 +54,7 @@ import {
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
-import { decodeFailure } from "./cacheBuild.ts";
+import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
 import type {
@@ -853,6 +853,13 @@ const jobSteps = async ({
         direct: !cacheAt,
         check: checks.target(target),
         ...(fromParent ? { base: fromParent.built } : {}),
+      }).catch((error: unknown) => {
+        const report = failedReport(error);
+
+        scope.summaries.push(...(report?.summaries ?? []));
+        scope.annotations.push(...(report?.annotations ?? []));
+
+        throw error;
       });
 
       adoptBuilt(run, built);

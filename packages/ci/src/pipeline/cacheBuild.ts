@@ -277,7 +277,10 @@ const failureCause = "CiCommandFailure";
  * invoked it can write the job's check from it as it would have inline.
  * Anything else fails the build as it is.
  */
-const encodeFailure = (error: unknown): Error | undefined => {
+const encodeFailure = (
+  error: unknown,
+  report: CacheBuildResult["report"],
+): Error | undefined => {
   const failure =
     error instanceof AggregateError && error.errors.length === 1
       ? error.errors[0]
@@ -290,8 +293,8 @@ const encodeFailure = (error: unknown): Error | undefined => {
     return undefined;
   }
 
-  const { message, name, stack, ...fields } = failure;
-  const cause = new Error(JSON.stringify({ name, ...fields }));
+  const { message, name, stack: _stack, ...fields } = failure;
+  const cause = new Error(JSON.stringify({ name, ...fields, report }));
 
   cause.name = failureCause;
 
@@ -312,14 +315,31 @@ export const decodeFailure = (error: unknown): Error | undefined => {
       continue;
     }
 
-    const { name, ...fields } = JSON.parse(cause.message);
+    const { name, report, ...fields } = JSON.parse(cause.message);
+    const failure =
+      name === "CommandTimeoutError"
+        ? new CommandTimeoutError(fields)
+        : new CommandFailedError(fields);
 
-    return name === "CommandTimeoutError"
-      ? new CommandTimeoutError(fields)
-      : new CommandFailedError(fields);
+    if (report) {
+      failedReports.set(failure, report);
+    }
+
+    return failure;
   }
 
   return undefined;
+};
+
+/** What a failed build run reported, by the error it decoded to. */
+const failedReports = new WeakMap<
+  Error,
+  NonNullable<CacheBuildResult["report"]>
+>();
+
+/** What the build run reported before it failed with `error`, if it did. */
+export const failedReport = (error: unknown) => {
+  return error instanceof Error ? failedReports.get(error) : undefined;
 };
 
 /**
@@ -344,7 +364,7 @@ const buildSnapshot = async ({
   try {
     await runBuilt({ data, jobs, matrices });
   } catch (error) {
-    throw encodeFailure(error) ?? error;
+    throw encodeFailure(error, run?.report) ?? error;
   }
 
   const request = run?.request ?? requestOf(data);

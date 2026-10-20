@@ -583,11 +583,12 @@ export interface PipelineConfig<
   /**
    * Whether each job runs as a run of its own, with its own step budget,
    * retries and trace. Cancelling or ending the pipeline cancels them.
-   * Defaults to `true`; `false` runs every job in the pipeline's run, which
+   * Defaults to `true`; `false` runs jobs in the pipeline's run, which
    * has one step budget for them all.
    *
    * A job defined inside the pipeline, or with `keepOnFailure`, runs in the
-   * pipeline's run either way.
+   * pipeline's run either way. A job with a `cache` always runs as a run of its
+   * own, since that run decides whether to reuse its snapshot or build it.
    */
   childRuns?: boolean;
   /**

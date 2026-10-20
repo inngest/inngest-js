@@ -10,6 +10,7 @@ import { internalEvents } from "inngest";
 import { describe, expect, test } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
+import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -161,6 +162,8 @@ describe("jobs as child runs", () => {
         api.script([script]);
 
         const test = ci.job("test", async () => {
+          await report.summary("reported before failing");
+
           await command();
         });
 
@@ -199,6 +202,7 @@ describe("jobs as child runs", () => {
       expect(child?.completed[0]?.title).toMatch(
         /^`pnpm test` (exited with 1|timed out after 30s)$/,
       );
+      expect(child?.completed[0]?.summary).toContain("reported before failing");
       expect(child?.machines).toEqual(["TERMINATED"]);
     },
   );
