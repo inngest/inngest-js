@@ -17,19 +17,10 @@ import { ci } from "../client.ts";
 const warm = github.push({ branches: ["main"], repo: "inngest/inngest-js" });
 
 const latestDevServer = async (): Promise<string> => {
-  const response = await fetch(
-    "https://api.github.com/repos/inngest/inngest/releases/latest",
-  );
+  const response = await fetch("https://registry.npmjs.org/inngest-cli/latest");
+  const { version } = (await response.json()) as { version: string };
 
-  if (!response.ok) {
-    throw new Error(
-      `Finding the Dev Server release failed: ${response.status}`,
-    );
-  }
-
-  const { tag_name } = (await response.json()) as { tag_name: string };
-
-  return tag_name.replace(/^v/, "");
+  return version;
 };
 
 export const base = ci.job(
@@ -61,13 +52,11 @@ export const base = ci.job(
 
     await $`npm install -g bun`;
 
-    const devServer = (
-      await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`
-        .as("download the Dev Server")
-        .text()
-    ).replace(/^inngest version |-\w+$/g, "");
+    await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`.as(
+      "download the Dev Server",
+    );
 
-    const env = { INNGEST_CLI_VERSION: devServer };
+    const env = { INNGEST_CLI_VERSION: key.devServer };
 
     return {
       /** The integration tests of `PACKAGE` (default `inngest`), in the shard `SHARD` if set. */

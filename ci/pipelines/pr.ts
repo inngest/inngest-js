@@ -8,7 +8,7 @@
 import { github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { examples } from "../jobs/examples.ts";
+import { examples, examplesStreaming } from "../jobs/examples.ts";
 import {
   checks,
   composite,
@@ -38,6 +38,7 @@ export const pr = ci.pipeline(
       middlewareSentry(),
       quality(),
       examples(),
+      examplesStreaming(),
     ]);
 
     const reasons = results.flatMap((result) => {
