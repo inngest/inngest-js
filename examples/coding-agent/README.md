@@ -5,7 +5,7 @@ Send an `agent/task` event with a repository and a task; a branch and a pull req
 - [`agent.ts`](agent.ts) is the whole function. It uses `repo()` to check the code out, `codeTools()` for read, write, edit, search and run, `agent.loop()` for the loop, and its own `openPullRequest` tool.
 - [`model.ts`](model.ts) plugs Claude into the loop with `@anthropic-ai/sdk`. `agent.loop()` has no provider built in: `model` is a function you write that calls whichever SDK you use, so any provider plugs in the same way.
 
-The GitHub token never enters the sandbox. `repo()` passes it only in the environment of the clone and push commands, and `openPullRequest` runs in your app.
+The GitHub token never enters the sandbox. `repo()` passes it only in the environment of the clone and push commands (the model gets a `push` tool, not the token), and `openPullRequest` runs in your app.
 
 ## Run it
 

@@ -5,7 +5,10 @@
  * command that clones or pushes (redacted from traces), and never written to
  * git config or a file, so the model's own commands can't read it.
  */
+import { z } from "zod/v4";
+
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
 
 export interface RepoOptions {
@@ -44,6 +47,12 @@ export interface Repo {
    * Pushes a local branch to the remote under the same name.
    */
   push: (branch: string) => Promise<void>;
+
+  /**
+   * Tools to hand to `agent.loop()`. `push` lets the model push a branch
+   * without ever holding the token: the token is added to the command here.
+   */
+  tools: { push: SandboxTool };
 }
 
 // The token reaches git as configuration in its environment, so it never
@@ -79,8 +88,11 @@ git -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
  *   token: process.env.GITHUB_TOKEN,
  * });
  *
- * // ...the agent commits on a branch...
- * await checkout.push("fix/login");
+ * await agent.loop({
+ *   model,
+ *   prompt: `Fix the login bug in ${checkout.path}, then push a branch`,
+ *   tools: { ...codeTools(sandbox), ...checkout.tools },
+ * });
  * ```
  */
 export const repo = async (
@@ -120,11 +132,24 @@ export const repo = async (
     REF: ref ?? "",
   });
 
+  const push = async (branch: string): Promise<void> => {
+    await git("push", `git push ${branch}`, pushScript, { BRANCH: branch });
+  };
+
   return {
     path,
     sha: stdout.trim().split("\n").pop() ?? "",
-    push: async (branch) => {
-      await git("push", `git push ${branch}`, pushScript, { BRANCH: branch });
+    push,
+    tools: {
+      push: tool.group({
+        description: "Push a local branch to the remote under the same name.",
+        input: z.object({ branch: z.string() }),
+        run: async ({ branch }) => {
+          await push(branch);
+
+          return `pushed ${branch}`;
+        },
+      }),
     },
   };
 };

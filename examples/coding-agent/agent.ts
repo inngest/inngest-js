@@ -34,35 +34,30 @@ export const coder = inngest.createFunction(
       token: process.env.GITHUB_TOKEN,
     });
 
-    const openPullRequest = tool.group({
-      description: "Push a branch and open a pull request for it",
+    const openPullRequest = tool.step({
+      description: "Open a pull request for a branch that has been pushed",
       input: z.object({
         branch: z.string(),
         title: z.string(),
         body: z.string(),
       }),
       run: async ({ branch, title, body }) => {
-        await checkout.push(branch);
-
-        return step.run("pull-request", async () => {
-          const response = await fetch(`${github}/repos/${name}/pulls`, {
-            method: "POST",
-            headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` },
-            body: JSON.stringify({ title, body, head: branch, base: ref }),
-          });
-
-          const pull = (await response.json()) as { html_url: string };
-
-          return { url: pull.html_url };
+        const response = await fetch(`${github}/repos/${name}/pulls`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` },
+          body: JSON.stringify({ title, body, head: branch, base: ref }),
         });
+        const pull = (await response.json()) as { html_url: string };
+
+        return { url: pull.html_url };
       },
     });
 
     const { text, stopped, turns } = await agent.loop({
       model: claude,
-      system: `You are a careful engineer. Work on a new branch named agent/${runId}, run the code to check it works, commit, then open a pull request.`,
+      system: `You are a careful engineer. Work on a new branch named agent/${runId}, run the code to check it works, commit, push the branch, then open a pull request.`,
       prompt: `The repository is in ${checkout.path}. Task: ${task}`,
-      tools: { ...codeTools(sandbox), openPullRequest },
+      tools: { ...codeTools(sandbox), ...checkout.tools, openPullRequest },
     });
 
     return { text, stopped, turns };

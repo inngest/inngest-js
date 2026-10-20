@@ -114,7 +114,9 @@ describe("repo", () => {
     const { steps, execs } = await inSandbox(
       async (sandbox) => {
         checkout = await repo(sandbox, { repo: "acme/web", ref: "dev", token });
-        await checkout.push("fix");
+        await (checkout.tools.push.run as (input: unknown) => unknown)({
+          branch: "fix",
+        });
       },
       { stdout: "noise\nabc123\n" },
     );
