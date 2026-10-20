@@ -91,7 +91,7 @@ describe("jobs as child runs", () => {
     expect(snapshotsTaken(api)).toEqual([]);
   });
 
-  test("the pipeline's run holds three steps per job instead of sixteen", async () => {
+  test("the pipeline's run holds three steps per job instead of seven", async () => {
     const steps: number[] = [];
 
     for (const childRuns of [false, true]) {
@@ -108,13 +108,13 @@ describe("jobs as child runs", () => {
     }
 
     // Five steps are the pipeline's own: its check, the jobs' checks, cleanup.
-    expect(steps).toEqual([3 * 16 + 5, 3 * 3 + 5]);
+    expect(steps).toEqual([3 * 7 + 5, 3 * 3 + 5]);
   });
 
   test("a pipeline that would overflow a step limit in its own run fits as child runs", async () => {
     // The platform's default is 1,000 per run. This is the same shape on a
-    // limit of 100, so the test runs in a moment.
-    const stepLimit = 100;
+    // limit of 50, so the test runs in a moment.
+    const stepLimit = 50;
     const steps: number[] = [];
 
     for (const childRuns of [false, true]) {

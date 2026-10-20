@@ -789,9 +789,12 @@ describe("commands", () => {
       output = await $`quick`.text();
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -813,9 +816,12 @@ describe("commands", () => {
       await $`quick`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -845,9 +851,12 @@ describe("commands", () => {
       await $`slow`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
