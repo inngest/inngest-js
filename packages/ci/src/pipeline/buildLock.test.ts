@@ -454,7 +454,11 @@ describe("a build that died holding the lock", () => {
   });
 
   test.each([
-    ["a lock another run holds now is left alone", "01NEWER", true],
+    [
+      "a lock another run holds now is left alone and tells no one",
+      "01NEWER",
+      true,
+    ],
     [
       "a build nobody else waits on has no lock to release and tells no one",
       "01DEAD",
@@ -477,7 +481,7 @@ describe("a build that died holding the lock", () => {
     });
 
     expect(api.sandboxes.get(id)?.status).toBe("RUNNING");
-    expect(sentOf(bus, buildDoneEvent).length).toBe(locked ? 1 : 0);
+    expect(sentOf(bus, buildDoneEvent)).toEqual([]);
   });
 });
 

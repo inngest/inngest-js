@@ -70,7 +70,7 @@ export class EventBus {
   skipped = 0;
 
   /** Told of every event sent, as the functions an event triggers are. */
-  onSend: ((event: BusEvent) => void) | undefined;
+  readonly listeners: ((event: BusEvent) => void)[] = [];
 
   private spawned = new Set<Promise<unknown>>();
   private pauses = new Set<Pause>();
@@ -134,7 +134,9 @@ export class EventBus {
     };
 
     this.sent.push(sent);
-    this.onSend?.(sent);
+    for (const listener of this.listeners) {
+      listener(sent);
+    }
 
     for (const pause of [...this.pauses]) {
       if (pause.name === sent.name && matches(pause.expression, sent)) {

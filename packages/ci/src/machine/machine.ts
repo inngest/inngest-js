@@ -809,19 +809,21 @@ export const destroyOrphans = async (
   runId: string,
   /** The lock whose machine this run may hold. */
   lock?: string,
-): Promise<{ destroyed: number }> => {
+): Promise<{ destroyed: number; lockReleased: boolean }> => {
   const prefix = `ci-${runId}-`;
   let destroyed = 0;
+  let lockReleased = false;
 
   for await (const sandbox of listSandboxes(client)) {
-    if (
-      sandbox.name.startsWith(prefix) ||
-      (sandbox.name === lock && (await holdsLock(sandbox, runId)))
-    ) {
+    const holdsIt = sandbox.name === lock && (await holdsLock(sandbox, runId));
+
+    if (sandbox.name.startsWith(prefix) || holdsIt) {
       try {
         await sandbox.destroy();
 
         destroyed++;
+
+        lockReleased ||= holdsIt;
       } catch (error) {
         // Anything but "not found" fails the step so it retries.
         if (!isSandboxNotFound(error)) {
@@ -831,7 +833,7 @@ export const destroyOrphans = async (
     }
   }
 
-  return { destroyed };
+  return { destroyed, lockReleased };
 };
 
 /** Whether a machine is still there to hold a name. */
@@ -840,9 +842,9 @@ const isLive = (sandbox: { status: string }): boolean => {
 };
 
 /**
- * Whether a lock's machine is this run's. One that can't be asked is left
- * alone: a lock wrongly kept only waits for the next cleanup, while one wrongly
- * destroyed would break another run's build.
+ * Whether a lock's machine is this run's. A machine that is gone isn't; any
+ * other error fails the cleanup step so it retries, as a lock wrongly kept
+ * would stay taken until its snapshot expires.
  */
 const holdsLock = async (
   // biome-ignore lint/suspicious/noExplicitAny: SDK sandbox
@@ -860,7 +862,11 @@ const holdsLock = async (
     );
 
     return owner.exitCode === 0 && owner.stdout === runId;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isSandboxNotFound(error)) {
+      return false;
+    }
+
+    throw error;
   }
 };

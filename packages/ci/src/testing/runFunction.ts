@@ -336,7 +336,7 @@ const wireEvents = (
 
   const running = new Set<string>();
 
-  bus.onSend = (event: BusEvent) => {
+  bus.listeners.push((event: BusEvent) => {
     // biome-ignore lint/suspicious/noExplicitAny: reading the client's ID
     const appId = (client as any).id as string;
 
@@ -373,7 +373,7 @@ const wireEvents = (
         running.delete(slot);
       }),
     );
-  };
+  });
 };
 
 const driveFunction = async (

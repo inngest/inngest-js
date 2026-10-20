@@ -921,12 +921,16 @@ export const cleanupFunction = ({
       const destroyed = await step.run(
         stepOptions(steps.cleanUpEndedRun()),
         () => {
-          return runId ? destroyOrphans(client, runId, lock) : { destroyed: 0 };
+          return runId
+            ? destroyOrphans(client, runId, lock)
+            : { destroyed: 0, lockReleased: false };
         },
       );
 
       // The runs waiting on it would otherwise wait for a build that is gone.
-      if (lock) {
+      // A build that ended on its own already told them, and one that told them
+      // must not be counted as failing twice.
+      if (lock && destroyed.lockReleased) {
         await step.sendEvent("announce-lock-released", {
           name: buildDoneEvent,
           data: {
