@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx server.ts",
+    "ci:connect": "node --env-file=$HOME/.config/inngest-ci-dogfood.env --import tsx connect.ts",
     "test": "tsx --test webhook-transform.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
