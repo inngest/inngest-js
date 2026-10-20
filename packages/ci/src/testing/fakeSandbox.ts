@@ -109,7 +109,8 @@ export interface FakeSandboxApi {
   /**
    * Make the next starts from a snapshot fail one way, then start normally:
    * `timeout` is `sandbox_start_timed_out`, `failed` is
-   * `sandbox_start_failed`, and `capacity` is a retryable
+   * `sandbox_start_failed`, `launch` is a `sandbox_start_failed` the platform
+   * blames on its own launch, and `capacity` is a retryable
    * `compute_unavailable` (503) that leaves no machine behind.
    */
   failNextSnapshotStarts(
@@ -143,7 +144,7 @@ export interface FakeSandboxApi {
 }
 
 /** How a start from a snapshot can fail. */
-export type StartFault = "timeout" | "failed" | "capacity";
+export type StartFault = "timeout" | "failed" | "launch" | "capacity";
 
 // biome-ignore lint/suspicious/noExplicitAny: request bodies are untyped JSON
 type Body = any;
@@ -416,7 +417,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         : apiError(
             422,
             "sandbox_start_failed",
-            "Sandbox entered FAILED before reaching RUNNING",
+            fault.mode === "launch"
+              ? "Sandbox entered FAILED before reaching RUNNING: sandbox launch failed"
+              : "Sandbox entered FAILED before reaching RUNNING",
           );
     }
 

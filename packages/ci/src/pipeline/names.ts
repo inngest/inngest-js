@@ -367,15 +367,6 @@ export const steps = {
     };
   },
 
-  retryJobChecks: (attempt: number, of: number): StepSpec => {
-    return {
-      id: joinId("github", `check:jobs:retry:${attempt}`),
-      name: report("jobs", retrying(attempt + 2, of)),
-      tag: checkTag(),
-      unmarked: true,
-    };
-  },
-
   failedAttempt: (job: string, attempt: number, of: number): StepSpec => {
     return {
       id: joinId("github", `check:${job}:attempt:${attempt}`),
@@ -470,6 +461,7 @@ export const traceName = {
   saveMachine: "Save sandbox",
   saveOutputs: "Save outputs",
   snapshotMachine: "Snapshot sandbox",
+  destroyMachine: "Destroy sandbox",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",
