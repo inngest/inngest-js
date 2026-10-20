@@ -17,18 +17,20 @@ export const audit = ci.job({ id: "audit", from: build }, async () => {
   await $`pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors`;
 });
 
-export const tests = ci.matrix(
+export const tests = ci.job(
   {
     id: "tests",
     from: build,
-    axes: {
-      package: [
-        "@inngest/eslint-plugin",
-        "@inngest/middleware-encryption",
-        "@inngest/middleware-validation",
-        "@inngest/realtime",
-        "@inngest/test",
-      ],
+    matrix: {
+      axes: {
+        package: [
+          "@inngest/eslint-plugin",
+          "@inngest/middleware-encryption",
+          "@inngest/middleware-validation",
+          "@inngest/realtime",
+          "@inngest/test",
+        ],
+      },
     },
   },
   async ({ matrix }) => {
@@ -47,11 +49,11 @@ export const middlewareSentry = ci.job(
   },
 );
 
-export const quality = ci.matrix(
+export const quality = ci.job(
   {
     id: "quality",
     from: build,
-    axes: { package: ["@inngest/otel", "@inngest/ci"] },
+    matrix: { axes: { package: ["@inngest/otel", "@inngest/ci"] } },
   },
   async ({ matrix }) => {
     await checkout();

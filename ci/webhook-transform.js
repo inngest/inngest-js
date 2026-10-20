@@ -22,6 +22,24 @@ function transform(evt, headers, queryParams, raw) {
       ? evt.installation.id
       : undefined;
 
+  var repo = evt && evt.repository ? evt.repository.full_name : undefined;
+  var pullRequest = evt && evt.pull_request ? evt.pull_request : undefined;
+  var number = pullRequest
+    ? pullRequest.number
+    : evt && evt.issue && evt.issue.pull_request
+      ? evt.issue.number
+      : undefined;
+  var commit =
+    (pullRequest && pullRequest.head && pullRequest.head.sha) ||
+    (evt && evt.merge_group && evt.merge_group.head_sha) ||
+    (evt && evt.check_run && evt.check_run.head_sha) ||
+    (evt && evt.check_suite && evt.check_suite.head_sha) ||
+    (evt && evt.after && !/^0+$/.test(evt.after) ? evt.after : undefined);
+  var sessions = {};
+
+  if (repo && number) sessions.pull_request = repo + "#" + number;
+  if (commit) sessions.commit = commit;
+
   return {
     name: name,
     data: Object.assign({}, evt, {
@@ -31,5 +49,6 @@ function transform(evt, headers, queryParams, raw) {
         installationId: installationId,
       },
     }),
+    meta: { sessions: sessions },
   };
 }

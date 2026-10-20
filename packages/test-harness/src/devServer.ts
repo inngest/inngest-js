@@ -27,7 +27,7 @@ export async function startDevServer(): Promise<void> {
       "npx",
       [
         "--ignore-scripts=false",
-        `inngest-cli@${process.env.INNGEST_CLI_VERSION ?? "latest"}`,
+        "inngest-cli@latest",
         "dev",
         "--no-discovery",
         "--no-poll",

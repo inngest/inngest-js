@@ -19,28 +19,32 @@ const skipped = new Set([
   "bun-sync",
 ]);
 
-export const examples = ci.matrix(
+export const examples = ci.job(
   {
     id: "examples",
     from: pack,
-    axes: async ({ repo }) => {
-      const entries = await github.rest.repos.getContent({
-        path: "examples",
-        ref: repo?.sha ?? "",
-      });
+    matrix: {
+      axes: async ({ repo }) => {
+        const entries = await github.rest.repos.getContent({
+          path: "examples",
+          ref: repo?.sha ?? "",
+        });
 
-      return {
-        example: (Array.isArray(entries) ? entries : [])
-          .filter((entry) => {
-            return entry.type === "dir" && /^(framework-|bun)/.test(entry.name);
-          })
-          .map((entry) => {
-            return entry.name;
-          })
-          .filter((name) => {
-            return !skipped.has(name);
-          }),
-      };
+        return {
+          example: (Array.isArray(entries) ? entries : [])
+            .filter((entry) => {
+              return (
+                entry.type === "dir" && /^(framework-|bun)/.test(entry.name)
+              );
+            })
+            .map((entry) => {
+              return entry.name;
+            })
+            .filter((name) => {
+              return !skipped.has(name);
+            }),
+        };
+      },
     },
   },
   async ({ matrix, from }) => {
@@ -50,17 +54,19 @@ export const examples = ci.matrix(
   },
 );
 
-export const examplesStreaming = ci.matrix(
+export const examplesStreaming = ci.job(
   {
     id: "examples-streaming",
     from: pack,
-    axes: {
-      example: [
-        "framework-express",
-        "framework-nextjs-app-router",
-        "framework-remix",
-        "node",
-      ],
+    matrix: {
+      axes: {
+        example: [
+          "framework-express",
+          "framework-nextjs-app-router",
+          "framework-remix",
+          "node",
+        ],
+      },
     },
   },
   async ({ matrix, from }) => {

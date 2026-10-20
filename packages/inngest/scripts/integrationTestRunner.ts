@@ -96,7 +96,7 @@ async function setupExample(examplePath: string): Promise<void> {
 
   //   const sdkFunctionsPath = path.join(examplePath, "inngest");
   try {
-    await fsPromises.rm(exampleFunctionsPath, { recursive: true, force: true });
+    await fsPromises.rmdir(exampleFunctionsPath, { recursive: true });
   } catch (error) {
     if ((error as { code?: string })?.code !== "ENOENT") throw error;
   }
@@ -176,7 +176,7 @@ async function startDevServer(
     [
       "--yes",
       "--ignore-scripts=false",
-      `inngest-cli@${process.env.INNGEST_CLI_VERSION ?? "latest"}`,
+      "inngest-cli@latest",
       "dev",
       "--port",
       devServerPort.toString(),

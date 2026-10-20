@@ -11,11 +11,11 @@ import { $, checkout } from "@inngest/ci";
 import { ci } from "../client.ts";
 import { build, pack } from "./base.ts";
 
-export const checks = ci.matrix(
+export const checks = ci.job(
   {
     id: "inngest",
     from: build,
-    axes: { script: ["lint", "test:dist", "test:deps"] },
+    matrix: { axes: { script: ["lint", "test:dist", "test:deps"] } },
   },
   async ({ matrix }) => {
     await checkout();
@@ -24,8 +24,12 @@ export const checks = ci.matrix(
   },
 );
 
-export const runtime = ci.matrix(
-  { id: "runtime", from: build, axes: { node: ["20", "22", "24.16.0"] } },
+export const runtime = ci.job(
+  {
+    id: "runtime",
+    from: build,
+    matrix: { axes: { node: ["20", "22", "24.16.0"] } },
+  },
   async ({ matrix }) => {
     await checkout();
 
@@ -37,8 +41,12 @@ export const runtime = ci.matrix(
   },
 );
 
-export const types = ci.matrix(
-  { id: "types", from: build, axes: { typescript: ["~5.9.0", "~5.8.0"] } },
+export const types = ci.job(
+  {
+    id: "types",
+    from: build,
+    matrix: { axes: { typescript: ["~5.9.0", "~5.8.0"] } },
+  },
   async ({ matrix }) => {
     await checkout();
 
@@ -50,11 +58,11 @@ export const types = ci.matrix(
   },
 );
 
-export const integration = ci.matrix(
+export const integration = ci.job(
   {
     id: "integration",
     from: build,
-    axes: { shard: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"] },
+    matrix: { axes: { shard: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"] } },
   },
   async ({ matrix, from }) => {
     await checkout();

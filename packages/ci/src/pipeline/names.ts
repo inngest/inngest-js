@@ -313,14 +313,6 @@ export const steps = {
     };
   },
 
-  verifyEvent: (): StepSpec => {
-    return {
-      id: joinId("github", "event:verify"),
-      name: "Verify event",
-      unmarked: true,
-    };
-  },
-
   resolveRef: (key: string): StepSpec => {
     return {
       id: boundedName(joinId("github", `ref:${key}`)),

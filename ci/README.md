@@ -4,19 +4,12 @@ The pull request checks for inngest-js as `@inngest/ci` pipelines, run by Innges
 
 ## How it works
 
-GitHub posts `pull_request` and `push` webhooks to an Inngest Cloud webhook. Its transform (`webhook-transform.js`) turns each delivery into the event the pipelines trigger on. The pipelines are served from Vercel at `/api/inngest`. Before anything runs, the run asks GitHub whether the event is true, and results are written back as commit statuses.
+GitHub posts `pull_request` and `push` webhooks to an Inngest Cloud webhook. Its transform (`webhook-transform.js`) turns each delivery into the event the pipelines trigger on. The pipelines are served from Vercel at `/api/inngest`. Results are written back as commit statuses.
 
-- `client.ts`: the Inngest app, the GitHub provider (`githubToken()`), and `verifyEvents: true`.
+- `client.ts`: the Inngest app, and the GitHub provider (`githubToken()`).
 - `pipelines/pr.ts`, `jobs/`: the checks.
 - `webhook-transform.js`: pasted into the Inngest webhook. Tested against real payloads in `fixtures/`.
 - `api/inngest.ts`, `vercel.json`: the Vercel endpoint. `server.ts` serves the same app locally for `inngest-ci`.
-
-Inngest webhooks don't verify GitHub's signature, so `verifyEvents` is what keeps a forged event from running:
-
-- A pull request event must name a pull request that exists, with the head commit the event says.
-- A push event must name a commit that is the tip of its ref or an ancestor of it.
-- A repository the token can't see counts as not found.
-- A rejected event fails the run without retrying, before any status or sandbox. Cache refreshes on pushes to main are verified the same way.
 
 ## Set up
 
@@ -64,7 +57,7 @@ Sandboxes must be enabled for the environment. The first pull request builds the
 
 ### 5. Try it safely
 
-Open a draft pull request on inngest-js. The `pr` and `pr / ...` statuses appear on the commit and the Inngest run is linked from them. They are not in the branch ruleset, so a failure blocks nothing, and the GitHub Actions checks stay the required ones. To test verification, replay a delivery from the GitHub webhook page after pushing a newer commit: the run fails with "Event rejected" and posts nothing.
+Open a draft pull request on inngest-js. The `pr` and `pr / ...` statuses appear on the commit and the Inngest run is linked from them. They are not in the branch ruleset, so a failure blocks nothing, and the GitHub Actions checks stay the required ones.
 
 ## Try it locally first
 
