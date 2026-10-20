@@ -3500,39 +3500,26 @@ describe("checks", () => {
     },
   );
 
-  test("a failed job keeps its machine for the retry and destroys it once it passes", async () => {
+  test("a job that fails with a retryable error destroys its machine and is not retried", async () => {
     const { api, ci } = setup();
-
-    let attempt = 0;
-    let statusOnRetry: string | undefined;
 
     const flaky = ci.job("flaky", async () => {
       await $`pnpm setup`;
 
-      if (attempt === 0) {
-        throw new Error("flaky infrastructure");
-      }
-
-      statusOnRetry ??= [...api.sandboxes.values()][0]?.status;
-
-      await $`pnpm test`;
+      throw new Error("flaky infrastructure");
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, retries: 1 },
-      async (ctx) => {
-        attempt = ctx.attempt;
-
+      { id: "pr", on: prTrigger, retries: 2 },
+      async () => {
         await flaky();
       },
     );
 
-    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+    const result = await runFunction(pipeline, { event: prEvent, retries: 2 });
 
-    expect(result.type).toBe("function-resolved");
-
-    expect(statusOnRetry).toBeDefined();
-    expect(statusOnRetry).not.toBe("TERMINATED");
+    expect(result.type).toBe("function-rejected");
+    expect(result.error).toMatchObject({ name: "NonRetriableError" });
 
     expect(
       [...api.sandboxes.values()].map((machine) => {
@@ -4401,24 +4388,18 @@ describe("checks across retries", () => {
       gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
       gh.route("GET /repos/inngest/inngest-js/check-runs/9", { id: 9 });
 
-      // Steps replay within an attempt, so the job fails by attempt rather
-      // than by how many times it has run.
-      let attempt = 0;
-
-      const flaky = ci.job("flaky", async () => {
-        if (attempt === 0) {
-          throw new Error("flaky infrastructure");
-        }
-
+      const test = ci.job("test", async () => {
         await $`pnpm test`;
       });
 
       const pipeline = ci.pipeline(
         { id: "pr", on: prTrigger, retries: 1 },
         async (ctx) => {
-          attempt = ctx.attempt;
+          await test();
 
-          await flaky();
+          if (ctx.attempt === 0) {
+            throw new Error("flaky infrastructure");
+          }
         },
       );
 

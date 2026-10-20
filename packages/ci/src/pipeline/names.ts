@@ -333,15 +333,6 @@ export const steps = {
     };
   },
 
-  retryJobChecks: (attempt: number, of: number): StepSpec => {
-    return {
-      id: joinId("github", `check:jobs:retry:${attempt}`),
-      name: report("jobs", retrying(attempt + 2, of)),
-      tag: checkTag(),
-      unmarked: true,
-    };
-  },
-
   failedAttempt: (job: string, attempt: number, of: number): StepSpec => {
     return {
       id: joinId("github", `check:${job}:attempt:${attempt}`),
