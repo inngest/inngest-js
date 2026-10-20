@@ -65,9 +65,10 @@ const go = async (
   apps: ReturnType<typeof app>[],
   body: () => Promise<unknown>,
   runId: string,
+  childRuns?: boolean,
 ) => {
   const result = await runFunction(
-    asker.pipeline({ id: "pr", on: prTrigger }, body),
+    asker.pipeline({ id: "pr", on: prTrigger, childRuns }, body),
     {
       event: prEvent,
       runId,
@@ -456,6 +457,48 @@ describe("what a job returns", () => {
     );
 
     expect(unique(results)).toEqual([{ count: 3 }]);
+  });
+
+  test("a job gives the same data inline as it does in a child run", async () => {
+    const gave: Record<string, unknown[]> = { inline: [], child: [] };
+
+    for (const [mode, childRuns] of [
+      ["inline", false],
+      ["child", true],
+    ] as const) {
+      const ci = app(createFakeSandboxApi(), "web");
+      const seen: unknown[] = [];
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+
+        return { answer: 42, dev: $`pnpm dev` };
+      });
+
+      const leaf = ci.job({ id: "leaf", from: base }, async ({ from }) => {
+        seen.push({ output: from.output, dev: Object.keys(from.$) });
+
+        return { count: 3, dev: $`pnpm dev` };
+      });
+
+      await go(
+        ci,
+        [ci],
+        async () => {
+          gave[mode]!.push(await leaf());
+        },
+        "01FIRST",
+        childRuns,
+      );
+
+      gave[mode] = unique([...gave[mode]!, ...seen]);
+    }
+
+    expect(gave.child).toEqual(gave.inline);
+    expect(gave.inline).toEqual([
+      { count: 3 },
+      { output: { answer: 42 }, dev: ["dev"] },
+    ]);
   });
 
   test("a job that ran no commands but returned something still gives it", async () => {
