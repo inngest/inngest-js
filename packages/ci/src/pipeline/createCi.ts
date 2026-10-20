@@ -1,6 +1,6 @@
 /**
  * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
- * pipeline, job and matrix definitions to a shared set of internals (checks,
+ * pipeline and job definitions to a shared set of internals (checks,
  * the cache build function, GitHub provider).
  *
  * @module
@@ -32,10 +32,10 @@ import type {
   JobContext,
   JobOutput,
   MachineConfig,
-  Matrix,
+  MatrixJob,
   MatrixAxes,
   MatrixCombo,
-  MatrixConfig,
+  MatrixJobConfig,
   MatrixContext,
   NoFrom,
   PipelineConfig,
@@ -146,7 +146,59 @@ export interface Ci {
    * Awaiting a command in the return value runs it while the job builds.
    * Outputs are stored in the image, with a command's environment, so don't
    * put secrets in either.
+   *
+   * Give it a `matrix` to get one job per combination of its axes. Axis
+   * values keep their literal types, so the handler's `matrix` is exact and a
+   * typo in `exclude` or in `compat({ … })` is a type error. Call the job to
+   * run every combination, or pass part of one to run only what matches.
+   *
+   * ```ts
+   * const compat = ci.job(
+   *   { id: "compat", matrix: { axes: { node: ["20", "22"] } } },
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ NODE_VERSION: matrix.node });
+   *   },
+   * );
+   * ```
+   *
+   * `matrix.axes` can be an async function of what the run knows, like the commit.
+   * It is called once per run, and the job can still be defined at the top
+   * level.
+   *
+   * ```ts
+   * const examples = ci.job(
+   *   {
+   *     id: "examples",
+   *     matrix: {
+   *       axes: async ({ repo }) => {
+   *         const entries = await github.rest.repos.getContent({
+   *           path: "examples",
+   *           ref: repo?.sha ?? "",
+   *         });
+   *
+   *         const dirs = Array.isArray(entries) ? entries : [];
+   *
+   *         return { example: dirs.map((entry) => entry.name) };
+   *       },
+   *     },
+   *   },
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ EXAMPLE: matrix.example });
+   *   },
+   * );
+   * ```
    */
+  job<
+    const TAxes extends MatrixAxes,
+    TFrom extends From<MatrixCombo<TAxes>> | undefined = NoFrom<
+      MatrixCombo<TAxes>
+    >,
+  >(
+    config: MatrixJobConfig<TAxes, TFrom>,
+    handler: (
+      ctx: MatrixContext<TAxes, Record<string, string>, TFrom>,
+    ) => Promise<void>,
+  ): MatrixJob<TAxes>;
   job<
     TSchema extends StandardSchemaV1,
     const TKey extends CacheKey | undefined = undefined,
@@ -180,58 +232,6 @@ export interface Ci {
       ctx: JobContext<TInput, CacheKey | undefined, From<TInput> | undefined>,
     ) => Promise<void>,
   ): Job<TInput>;
-
-  /**
-   * Define a matrix: one job per combination of the axes.
-   *
-   * Axis values keep their literal types, so the handler's `matrix` is exact
-   * and a typo in `exclude` or in `matrix({ … })` is a type error.
-   *
-   * ```ts
-   * const compat = ci.matrix(
-   *   { id: "compat", axes: { node: ["20", "22"] } },
-   *   async ({ matrix }) => {
-   *     await $`pnpm test`.env({ NODE_VERSION: matrix.node });
-   *   },
-   * );
-   * ```
-   *
-   * `axes` can be an async function of what the run knows, like the commit.
-   * It is called once per run, and the matrix can still be defined at the top
-   * level.
-   *
-   * ```ts
-   * const examples = ci.matrix(
-   *   {
-   *     id: "examples",
-   *     axes: async ({ repo }) => {
-   *       const entries = await github.rest.repos.getContent({
-   *         path: "examples",
-   *         ref: repo?.sha ?? "",
-   *       });
-   *
-   *       const dirs = Array.isArray(entries) ? entries : [];
-   *
-   *       return { example: dirs.map((entry) => entry.name) };
-   *     },
-   *   },
-   *   async ({ matrix }) => {
-   *     await $`pnpm test`.env({ EXAMPLE: matrix.example });
-   *   },
-   * );
-   * ```
-   */
-  matrix<
-    const TAxes extends MatrixAxes,
-    TFrom extends From<MatrixCombo<TAxes>> | undefined = NoFrom<
-      MatrixCombo<TAxes>
-    >,
-  >(
-    config: MatrixConfig<TAxes, TFrom>,
-    handler: (
-      ctx: MatrixContext<TAxes, Record<string, string>, TFrom>,
-    ) => Promise<void>,
-  ): Matrix<TAxes>;
 
   /**
    * A manual trigger with a typed payload, sent as `ci/manual.<pipelineId>`.
@@ -308,7 +308,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
-  const matrices = new Map<string, Matrix<MatrixAxes>>();
+  const matrices = new Map<string, MatrixJob<MatrixAxes>>();
   const hooks = noopHooks;
   let buildFunction: InngestFunction.Any | undefined;
 
@@ -372,31 +372,30 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
     // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     job: ((idOrConfig: any, handler: any) => {
-      return defineJob({ jobs, idOrConfig, handler });
-      // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
-    }) as any,
+      if (typeof idOrConfig === "string" || !("matrix" in idOrConfig)) {
+        return defineJob({ jobs, idOrConfig, handler });
+      }
 
-    matrix: (config, handler) => {
       // Inside a run, a matrix is rebuilt per call, so the same ID again is
       // expected, as it is for jobs.
-      if (matrices.has(config.id) && !getRunScope()) {
+      if (matrices.has(idOrConfig.id) && !getRunScope()) {
         throw new CiUsageError(
-          `Matrix IDs must be unique per app, and "${config.id}" is already defined.`,
+          `Matrix IDs must be unique per app, and "${idOrConfig.id}" is already defined.`,
         );
       }
 
       const matrix = createMatrix({
         ci,
         jobs,
-        config,
-        // The context is typed by `from`, which the registry keeps wide.
-        handler: handler as Parameters<typeof createMatrix>[0]["handler"],
+        config: idOrConfig,
+        handler,
       });
 
-      matrices.set(config.id, matrix as Matrix<MatrixAxes>);
+      matrices.set(idOrConfig.id, matrix as MatrixJob<MatrixAxes>);
 
       return matrix;
-    },
+      // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
+    }) as any,
 
     manual: (opts) => {
       return {
