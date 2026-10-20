@@ -114,13 +114,11 @@ export type FlowControlOptions = Pick<
  */
 export interface MachineConfig {
   /**
-   * The number of vCPUs the machine gets. Memory is paired with this: 1 vCPU
-   * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB, because those are the only
-   * sizes the platform offers. Defaults to 4.
+   * The number of vCPUs the machine gets. Memory follows vCPU: 1 gets 1 GiB,
+   * 2 gets 2 GiB, 4 gets 4 GiB. Defaults to 4.
    *
    * Applies to machines created from scratch. A job that starts `from`
-   * another job runs at that job's size, since the platform restores a
-   * snapshot at the size it was taken at.
+   * another job runs at that job's size.
    */
   vcpu?: 1 | 2 | 4;
 }

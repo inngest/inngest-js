@@ -88,9 +88,7 @@ export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
   return inSpan(spans.extraMachine(scope.path, scope.jobPath), fn);
 };
 /**
- * Memory is paired with vCPU count because those are the only sizes the
- * Sandboxes API places: any other combination is refused with "Compute is
- * temporarily unavailable".
+ * Memory is paired with vCPU count, so a job only picks one number.
  */
 const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 
