@@ -83,6 +83,23 @@ export const ensureMachine = async (
 };
 
 /**
+ * A machine as the sandbox API's own client has it, for the steps that do
+ * several things on it at once, which the durable `step.sandbox` calls can't.
+ */
+export const directSandbox = async (
+  run: CiRunScope,
+  machine: MachineHandle,
+) => {
+  const sandbox = await run.ci.client.sandboxes.get(machine.id);
+
+  if (!sandbox) {
+    throw new Error(`Machine ${machine.id} is gone`);
+  }
+
+  return sandbox;
+};
+
+/**
  * Run `fn` in an extra machine's span, so its commands sit apart from the
  * job's own. A job's own machine has none: the job's span is its span.
  */

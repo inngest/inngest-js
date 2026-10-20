@@ -757,6 +757,98 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends in its first window takes one step", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    let output: string | undefined;
+
+    const job = ci.job("quick", async () => {
+      output = await $`quick`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(output).toBe("done");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("quick › quick");
+      }),
+    ).toEqual(["quick › quick › start"]);
+  });
+
+  test("a command's start step carries the sandbox metadata the trace reads", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    const job = ci.job("quick", async () => {
+      await $`quick`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const entry = result.metadata.find((update) => {
+      return (
+        update.step === "quick › quick › start" &&
+        update.kind === "inngest.sandbox"
+      );
+    });
+
+    expect(entry?.values).toMatchObject({
+      version: 1,
+      action: "process.start",
+      method: "processes.start",
+      command: ["quick"],
+      process_state: "EXITED",
+      exit_code: 0,
+    });
+  });
+
+  test("a command that runs on takes a step per window, and starts once", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "slow", ticks: 3, stdout: "eventually" }]);
+
+    const job = ci.job("slow", async () => {
+      await $`slow`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("slow › slow");
+      }),
+    ).toEqual([
+      "slow › slow › start",
+      "slow › slow › check #1",
+      "slow › slow › check #2",
+      "slow › slow › check #3",
+    ]);
+
+    // The handler replays on every step, and none of them starts it again.
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["slow"]);
+  });
+
   test("a command that needs several polls still completes", async () => {
     const { api, ci } = setup();
 
@@ -778,9 +870,9 @@ describe("commands", () => {
 
     expect(
       result.stepIds.filter((id) => {
-        return id.includes("wait #");
+        return id.includes("check #");
       }).length,
-    ).toBe(4);
+    ).toBe(3);
   });
 
   test.each(["30s", 30_000, temporalDuration(30_000)])(
@@ -915,6 +1007,26 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends during its first wait reports its duration", async () => {
+    const { ci } = setup();
+
+    let seen: number | undefined;
+
+    const job = ci.job("timed", async () => {
+      const result = await $`true`;
+
+      seen = result.durationMs;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(typeof seen).toBe("number");
+  });
+
   test("a command with no output reads as empty", async () => {
     const { ci } = setup();
 
@@ -965,7 +1077,8 @@ describe("commands", () => {
 
     expect(seen).toEqual({ first: "one", second: "two", server: "up" });
 
-    // Each start ran once: reconciling never starts the command again.
+    // Each start ran once: reconciling never starts the command again, and is
+    // a step of its own, so a failed lookup never repeats the start.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
@@ -977,6 +1090,59 @@ describe("commands", () => {
         return id.endsWith("reconcile");
       }),
     ).toHaveLength(2);
+  });
+
+  test("a failed lookup after an ambiguous start never starts the command again", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "once", stdout: "done", ambiguousStarts: 1 }]);
+
+    let failedLists = 1;
+
+    const fetch = api.fetch;
+
+    api.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+
+      if (
+        failedLists > 0 &&
+        init?.method === "GET" &&
+        url.endsWith("/processes?limit=250")
+      ) {
+        failedLists--;
+
+        return new Response(
+          JSON.stringify({
+            errors: [{ code: "unavailable", message: "try again" }],
+          }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return fetch(input, init);
+    };
+
+    const { ci } = setup({ api });
+
+    let seen: unknown;
+
+    const job = ci.job("lookup", async () => {
+      seen = await $`once`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(seen).toBe("done");
+    expect(failedLists).toBe(0);
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["once"]);
   });
 
   test("an ambiguous start with nothing to adopt still fails", async () => {
