@@ -172,8 +172,6 @@ export interface SandboxCommandOptions {
   /**
    * Overrides matching sandbox environment values for this command.
    * Omitted or empty inherits the sandbox environment unchanged.
-   * Values are not recorded in durable step traces, but prefer `secrets` on
-   * sandbox creation for tokens.
    */
   environment?: Record<string, string>;
   cwd?: string;

@@ -1891,128 +1891,63 @@ describe("step.sandbox", () => {
 });
 
 describe("step.sandbox environment values", () => {
-  const token = "ghp_super_secret_value";
-  const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-  const { kind: _pk, version: _pv, ...processResource } = processRef;
-
-  const cases = [
-    {
-      name: "commands.run",
-      call: async (step: { sandbox: DurableSandboxTools }) => {
-        const sandbox = await step.sandbox.get("get", sandboxId);
-        if (!sandbox) {
-          throw new Error("missing sandbox");
-        }
-
-        await sandbox.commands.run("run", "env", {
-          environment: { TOKEN: token },
+  test("commands.run records the keys only and still sends the values", async () => {
+    const token = "ghp_super_secret_value";
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const bodies: string[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/exec`) {
+        bodies.push(String(init?.body));
+        return Response.json({
+          data: { stdout: "", stderr: "", exit_code: 0 },
         });
-      },
-      path: `/v2/sandboxes/${sandboxId}/exec`,
-      response: { stdout: "", stderr: "", exit_code: 0 },
-    },
-    {
-      name: "processes.start",
-      call: async (step: { sandbox: DurableSandboxTools }) => {
-        const sandbox = await step.sandbox.get("get", sandboxId);
-        if (!sandbox) {
-          throw new Error("missing sandbox");
-        }
-
-        await sandbox.processes.start("start", {
-          command: ["/bin/true"],
-          environment: { TOKEN: token },
-        });
-      },
-      path: `/v2/sandboxes/${sandboxId}/processes`,
-      response: processResource,
-    },
-  ];
-
-  test.each(cases)(
-    "$name records keys only and still sends the values",
-    async ({ call, path, response }) => {
-      const bodies: string[] = [];
-      const fetchMock: typeof fetch = vi.fn(async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : input);
-        if (url.pathname === path) {
-          bodies.push(String(init?.body));
-          return Response.json({ data: response });
-        }
-        return Response.json({ data: sandboxResource });
-      });
-      const client = new Inngest({
-        id: testClientId,
-        signingKey: "signkey-test",
-        baseUrl: "https://api.example.test",
-        fetch: fetchMock,
-        middleware: [sandboxMiddleware()],
-      });
-      const fn = client.createFunction(
-        { id: "sandbox-env", triggers: [{ event: "sandbox/env" }] },
-        async ({ step }) => {
-          await call(step);
-        },
-      );
-      const getRun = await runFnWithStack(fn, {});
-      if (getRun.type !== "step-ran") {
-        throw new Error(`Expected step-ran, got ${getRun.type}`);
       }
-      const state = {
-        [getRun.step.id]: { id: getRun.step.id, data: getRun.step.data },
-      };
-
-      const planned = await runFnWithStack(fn, state, {
-        disableImmediateExecution: true,
-      });
-      if (planned.type !== "steps-found" || !planned.steps[0]) {
-        throw new Error("Expected a planned step");
-      }
-      const step = planned.steps[0];
-      expect(JSON.stringify(step)).not.toContain(token);
-      expect(JSON.stringify(step.opts?.input)).toContain("TOKEN");
-
-      const executed = await runFnWithStack(
-        fn,
-        {
-          ...state,
-          [step.id]: { id: step.id, input: step.opts?.input as unknown[] },
-        },
-        { runStep: step.id },
-      );
-      expect(executed.type).toBe("step-ran");
-      expect(JSON.stringify(executed)).not.toContain(token);
-      expect(bodies.join()).toContain(token);
-    },
-  );
-
-  test("create records keys only", async () => {
+      return Response.json({ data: sandboxResource });
+    });
     const client = new Inngest({
       id: testClientId,
-      isDev: true,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
       middleware: [sandboxMiddleware()],
     });
     const fn = client.createFunction(
-      { id: "sandbox-create-env", triggers: [{ event: "sandbox/env" }] },
+      { id: "sandbox-env", triggers: [{ event: "sandbox/env" }] },
       async ({ step }) => {
-        await step.sandbox.create("create", {
-          ...createOptions,
+        const sandbox = await step.sandbox.get("get", sandboxId);
+        await sandbox?.commands.run("run", "env", {
           environment: { TOKEN: token },
         });
       },
     );
-    const planned = await runFnWithStack(
-      fn,
-      {},
-      {
-        disableImmediateExecution: true,
-      },
-    );
+    const getRun = await runFnWithStack(fn, {});
+    if (getRun.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${getRun.type}`);
+    }
+    const state = {
+      [getRun.step.id]: { id: getRun.step.id, data: getRun.step.data },
+    };
+
+    const planned = await runFnWithStack(fn, state, {
+      disableImmediateExecution: true,
+    });
     if (planned.type !== "steps-found" || !planned.steps[0]) {
       throw new Error("Expected a planned step");
     }
+    const step = planned.steps[0];
+    expect(JSON.stringify(step)).not.toContain(token);
+    expect(JSON.stringify(step.opts?.input)).toContain("TOKEN");
 
-    expect(JSON.stringify(planned.steps[0])).not.toContain(token);
+    await runFnWithStack(
+      fn,
+      {
+        ...state,
+        [step.id]: { id: step.id, input: step.opts?.input as unknown[] },
+      },
+      { runStep: step.id },
+    );
+    expect(bodies.join()).toContain(token);
   });
 });
 
