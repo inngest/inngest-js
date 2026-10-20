@@ -39,11 +39,6 @@ export const base = ci.job(
   async ({ key }) => {
     await checkout();
 
-    // The sandbox image has no IPv4 localhost entry (reported to the platform team).
-    await $.sh`grep -q "127.0.0.1 localhost" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts`.as(
-      "resolve localhost",
-    );
-
     await $.sh`npm install -g --prefix /usr/local "$(node -p "require('./package.json').packageManager.split('+')[0]")"`.as(
       "install pnpm",
     );
