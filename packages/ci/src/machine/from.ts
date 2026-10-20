@@ -158,7 +158,7 @@ const resolveRef = (
 };
 
 /**
- * Check a static `from` when the job or matrix is defined, so a mistake fails
+ * Check a static `from` when the job is defined, so a mistake fails
  * when the app boots rather than mid-pipeline. A function is left to run time,
  * as is input checked by a schema that validates asynchronously.
  *

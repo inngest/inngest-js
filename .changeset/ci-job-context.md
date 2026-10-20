@@ -2,7 +2,7 @@
 "@inngest/ci": minor
 ---
 
-Job and matrix handlers now get one context object, and a job's cache key parts are readable from it, including by the jobs that start from it, even in another app.
+Job handlers now get one context object, and a job's cache key parts are readable from it, including by the jobs that start from it, even in another app.
 
 ```ts
 const base = ci.job(
@@ -20,10 +20,10 @@ const test = ci.job({ id: "test", from: base }, async ({ from }) => {
 });
 ```
 
-Breaking: a matrix handler reads its combination from `matrix`, and a job handler reads its input from `input`.
+Breaking: a handler reads its matrix combination from `matrix`, and a job handler reads its input from `input`.
 
 ```ts
-ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
   await $`fnm use ${matrix.node}`;
 });
 

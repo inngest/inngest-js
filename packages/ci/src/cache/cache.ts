@@ -46,7 +46,7 @@ import {
 import { formatName, slotOf } from "./names.ts";
 
 /**
- * Check a static `cache` when the job or matrix is defined, so a mistake fails
+ * Check a static `cache` when the job is defined, so a mistake fails
  * when the app boots rather than mid-pipeline.
  *
  * @throws {CiUsageError} When the key is empty or the scope isn't known.

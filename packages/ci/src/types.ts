@@ -678,10 +678,10 @@ export interface JobContext<
 }
 
 /**
- * What a matrix handler is given: a job's context, and the combination.
+ * What the handler of a job with a `matrix` is given: a job's context, and the combination.
  *
  * ```ts
- * ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+ * ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
  *   await $`fnm use ${matrix.node}`;
  * });
  * ```
@@ -968,7 +968,7 @@ export type MatrixAxes = Record<
 >;
 
 /**
- * What a matrix's `axes` function is given: what is known before any job runs.
+ * What a job's `matrix` function is given: what is known before any job runs.
  */
 export interface MatrixAxesContext {
   /** The repository and change this run is for, as the pipeline's `repo`. */
@@ -990,23 +990,26 @@ export type MatrixCombo<TAxes> = {
 };
 
 /**
- * A matrix's options.
+ * The options of a job with a `matrix`.
  *
  * ```ts
- * const compat = ci.matrix(
+ * const compat = ci.job(
  *   {
  *     id: "compat",
- *     axes: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
+ *     matrix: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
  *     exclude: [{ node: "20", db: "postgres" }],
- *     concurrency: 3,
+ *     maxParallel: 3,
  *   },
- *   async ({ node, db }) => {
- *     await $`pnpm test`.env({ NODE_VERSION: node, TEST_DATABASE: db });
+ *   async ({ matrix }) => {
+ *     await $`pnpm test`.env({
+ *       NODE_VERSION: matrix.node,
+ *       TEST_DATABASE: matrix.db,
+ *     });
  *   },
  * );
  * ```
  */
-export interface MatrixConfig<
+export interface MatrixJobConfig<
   TAxes extends MatrixAxes = MatrixAxes,
   TFrom extends From<MatrixCombo<TAxes>> | undefined =
     | From<MatrixCombo<TAxes>>
@@ -1022,13 +1025,13 @@ export interface MatrixConfig<
    * combination starts from, or runs as, is handed the combination and never
    * calls it again.
    */
-  axes: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
+  matrix: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
   /** Combinations to leave out. A partial combination excludes every match. */
   exclude?: readonly Partial<MatrixCombo<TAxes>>[];
   /** Extra combinations to add, beyond the product of the axes. */
   include?: readonly MatrixCombo<TAxes>[];
   /** How many combinations may run at once. Defaults to all of them. */
-  concurrency?: number;
+  maxParallel?: number;
   /**
    * Stop the rest when one fails. Off by default, so one bad combination
    * doesn't hide the others' failures.
@@ -1048,7 +1051,7 @@ export interface MatrixConfig<
 }
 
 /**
- * A matrix: call it to run every combination, or pass part of a combination to
+ * A job with a matrix: call it to run every combination, or pass part of a combination to
  * run only what matches.
  *
  * ```ts
@@ -1057,9 +1060,9 @@ export interface MatrixConfig<
  * await compat({ node: "22", db: "postgres" }); // just the one
  * ```
  */
-export interface Matrix<TAxes extends MatrixAxes> {
+export interface MatrixJob<TAxes extends MatrixAxes> {
   (only?: Partial<MatrixCombo<TAxes>>): Promise<void>;
-  /** The matrix's ID, as given to `ci.matrix()`. */
+  /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
 }
 

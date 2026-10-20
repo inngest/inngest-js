@@ -293,10 +293,10 @@ describe("a matrix job", () => {
     const ci = app(api, "web");
     const seen: unknown[] = [];
 
-    const compat = ci.matrix(
+    const compat = ci.job(
       {
         id: "compat",
-        axes: { node: ["20", "22"] },
+        matrix: { node: ["20", "22"] },
         cache: (combo) => {
           return { key: { node: combo.node } };
         },

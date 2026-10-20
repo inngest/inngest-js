@@ -1,5 +1,5 @@
 /**
- * Tests of a matrix whose `axes` is an async function: it is called once per
+ * Tests of a job whose `matrix` is an async function: it is called once per
  * run, in a step, with what is known before any job runs, and a combination
  * built in a run of its own is handed its values rather than the function.
  *
@@ -43,10 +43,10 @@ describe("a matrix with async axes", () => {
   test("runs a combination for each value the function returns, typed by what it returns", async () => {
     const { api, ci } = setup();
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async () => {
+        matrix: async () => {
           return { example: ["next", "remix"], mode: ["a"] };
         },
       },
@@ -71,10 +71,10 @@ describe("a matrix with async axes", () => {
     const { api, ci } = setup();
     const calls: (string | undefined)[] = [];
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async ({ repo }) => {
+        matrix: async ({ repo }) => {
           calls.push(repo?.sha);
 
           return { example: ["next", "remix"] };
@@ -107,11 +107,11 @@ describe("a matrix with async axes", () => {
     const { api, bus, ci } = setup();
     let calls = 0;
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
         cache: { key: "v1" },
-        axes: async () => {
+        matrix: async () => {
           calls += 1;
 
           return { example: ["next", "remix"] };
@@ -143,10 +143,10 @@ describe("a matrix with async axes", () => {
     const { ci } = setup();
     let calls = 0;
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async () => {
+        matrix: async () => {
           calls += 1;
 
           return { example: [] as string[] };
@@ -190,10 +190,10 @@ describe("a matrix whose axes list a directory at the run's commit", () => {
       { name: "bun-sync", type: "dir" },
     ]);
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async ({ repo }) => {
+        matrix: async ({ repo }) => {
           const entries = await github.rest.repos.getContent({
             path: "examples",
             ref: repo?.sha ?? "",
@@ -238,11 +238,11 @@ describe("a matrix's async axes", () => {
   test("only hold values that are saved as they are", () => {
     const { ci } = setup();
 
-    ci.matrix(
+    ci.job(
       {
         id: "dates",
         // @ts-expect-error a `Date` is saved as a string
-        axes: async () => {
+        matrix: async () => {
           return { day: [new Date()] };
         },
       },

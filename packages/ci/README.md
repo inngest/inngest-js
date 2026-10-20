@@ -67,7 +67,7 @@ const base = ci.job(
 
 ## What a job is given
 
-A handler gets the job's `id`, its `input`, the resolved `key` of its cache, and what it started `from`. Name the parts of a key to read them. A matrix handler also gets its combination as `matrix`.
+A handler gets the job's `id`, its `input`, the resolved `key` of its cache, and what it started `from`. Name the parts of a key to read them. A job with a `matrix` also gets its combination as `matrix`.
 
 ```ts
 const base = ci.job(
@@ -85,7 +85,7 @@ const test = ci.job({ id: "test", from: base }, async ({ from }) => {
   from.ancestry; // each job above it, nearest first: [{ id, key, output, $ }, ...]
 });
 
-ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
   await $`fnm use ${matrix.node}`;
 });
 ```

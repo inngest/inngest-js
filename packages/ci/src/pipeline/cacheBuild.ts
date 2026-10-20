@@ -27,7 +27,7 @@ import type {
   Ancestor,
   CheckAnnotation,
   MachineConfig,
-  Matrix,
+  MatrixJob,
   MatrixAxes,
   RepoContext,
 } from "../types.ts";
@@ -194,7 +194,7 @@ export const cacheBuildFunction = ({
   client: Inngest.Any;
   internals: CiInternals;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes>>;
+  matrices: Map<string, MatrixJob<MatrixAxes>>;
 }): InngestFunction.Any => {
   const id = cacheBuildFunctionId;
 
@@ -259,7 +259,7 @@ const runBuilt = async ({
 }: {
   data: CacheBuildData;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes>>;
+  matrices: Map<string, MatrixJob<MatrixAxes>>;
 }): Promise<void> => {
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
@@ -378,7 +378,7 @@ const buildSnapshot = async ({
 }: {
   data: CacheBuildData;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes>>;
+  matrices: Map<string, MatrixJob<MatrixAxes>>;
 }): Promise<CacheBuildResult> => {
   const run = getRunScope();
 

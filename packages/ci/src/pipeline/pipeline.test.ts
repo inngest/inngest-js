@@ -90,13 +90,10 @@ describe("matrix IDs", () => {
   test("defining the same matrix ID twice is rejected", () => {
     const { ci } = setup();
 
-    ci.matrix({ id: "compat", axes: { node: ["20"] } }, async () => {});
+    ci.job({ id: "compat", matrix: { node: ["20"] } }, async () => {});
 
     expect(() => {
-      return ci.matrix(
-        { id: "compat", axes: { node: ["22"] } },
-        async () => {},
-      );
+      return ci.job({ id: "compat", matrix: { node: ["22"] } }, async () => {});
     }).toThrow(/already defined/);
   });
 });
@@ -1615,8 +1612,8 @@ describe("from", () => {
       await $`pnpm install`;
     });
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] }, from: install },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] }, from: install },
       async ({ matrix: { node } }) => {
         await $`node ${node}`;
       },
@@ -1749,17 +1746,17 @@ describe("from", () => {
     const parent = other.job("parent", async () => {});
 
     expect(() => {
-      ci.matrix(
-        { id: "compat", axes: { node: ["20"] }, from: parent },
+      ci.job(
+        { id: "compat", matrix: { node: ["20"] }, from: parent },
         async () => {},
       );
     }).toThrow("isn't defined on this CI client");
 
     expect(() => {
-      ci.matrix(
+      ci.job(
         {
           id: "compat2",
-          axes: { node: ["20"] },
+          matrix: { node: ["20"] },
           from: "parent" as unknown as Job,
         },
         async () => {},
@@ -1771,7 +1768,7 @@ describe("from", () => {
     {
       name: "an empty matrix axis",
       define: (ci: Ci) => {
-        ci.matrix({ id: "m", axes: { node: [] } }, async () => {});
+        ci.job({ id: "m", matrix: { node: [] } }, async () => {});
       },
       message: 'The `node` axis of matrix "m" has no values',
     },
@@ -1802,10 +1799,10 @@ describe("from", () => {
     {
       name: "an unknown cache scope on a matrix",
       define: (ci: Ci) => {
-        ci.matrix(
+        ci.job(
           {
             id: "m",
-            axes: { node: ["20"] },
+            matrix: { node: ["20"] },
             cache: { scope: "pr" as unknown as "branch" },
           },
           async () => {},
@@ -2129,8 +2126,8 @@ describe("matrix", () => {
   test("every combination runs as its own job", async () => {
     const { api, ci } = setup();
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] } },
       async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -2166,10 +2163,10 @@ describe("matrix", () => {
       await $`pnpm install`;
     });
 
-    const compat = ci.matrix(
+    const compat = ci.job(
       {
         id: "compat",
-        axes: { node: ["20", "22"] },
+        matrix: { node: ["20", "22"] },
         from: ({ input }) => {
           if (input.node === "20") {
             throw new Error("no base for node 20");
@@ -2213,8 +2210,8 @@ describe("matrix", () => {
     const { api, ci } = setup();
     const ran = new Set<string>();
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] } },
       async ({ matrix: { node } }) => {
         ran.add(node);
 
@@ -2235,8 +2232,8 @@ describe("matrix", () => {
   test("a build asked for a combination the matrix lacks fails instead of passing", async () => {
     const { ci } = setup();
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] } },
       async () => {},
     );
 
@@ -4359,8 +4356,8 @@ describe("failures that retrying cannot fix", () => {
 
     api.script([{ match: "pnpm test", exitCode: 1, stderr: "nope" }]);
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] } },
       async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -4963,7 +4960,7 @@ describe("cache builds in their own run", () => {
 
     ci.job({ id: "cached", cache: { key: "v1" } }, async () => {});
 
-    ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async () => {});
+    ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async () => {});
 
     const ids = ci
       .functions()
@@ -5060,8 +5057,8 @@ describe("cache builds in their own run", () => {
   test("a cached matrix combination is built by its matrix's function", async () => {
     const { api, ci } = setup();
 
-    const compat = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] }, cache: { key: "m1" } },
+    const compat = ci.job(
+      { id: "compat", matrix: { node: ["20", "22"] }, cache: { key: "m1" } },
       async ({ matrix: { node } }) => {
         await $`fnm use ${node}`;
       },
