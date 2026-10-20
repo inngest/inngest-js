@@ -1,5 +1,109 @@
 # @inngest/ci
 
+## 0.5.0
+
+### Minor Changes
+
+- [#1817](https://github.com/inngest/inngest-js/pull/1817) [`df1aeac4`](https://github.com/inngest/inngest-js/commit/df1aeac4a0cb2f968878250c89c4cb83cfdaead8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - A matrix's `axes` can now be an async function, so its combinations can come from the commit being tested, such as the examples in the pull request. It runs once per run and is given the repository and commit.
+
+  ```ts
+  const examples = ci.matrix(
+    {
+      id: "examples",
+      axes: async ({ repo }) => {
+        const entries = await github.rest.repos.getContent({
+          path: "examples",
+          ref: repo?.sha ?? "",
+        });
+
+        const dirs = Array.isArray(entries) ? entries : [];
+
+        return { example: dirs.map((entry) => entry.name) };
+      },
+    },
+    async ({ matrix }) => {
+      await # @inngest/cipnpm test`.env({ EXAMPLE: matrix.example });
+    },
+  );
+  ```
+
+- [#1815](https://github.com/inngest/inngest-js/pull/1815) [`87ca3336`](https://github.com/inngest/inngest-js/commit/87ca3336e63ff51d52013c0be1dcdca52ec812d6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - CI machines now default to 4 vCPU and 4 GiB.
+
+- [#1813](https://github.com/inngest/inngest-js/pull/1813) [`32cc4932`](https://github.com/inngest/inngest-js/commit/32cc49325cbf680825bb29b21c3d13100e6d5c0d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Every job now runs as a run of its own, so each has its own step budget and a long pipeline of many jobs no longer hits the step limit. Cancelling a pipeline, or a pipeline ending, cancels the jobs it started.
+
+  Jobs defined inside the pipeline function, and jobs with `keepOnFailure`, still run in the pipeline's run. To run the rest there as well, set `childRuns: false`. Jobs with a `cache` always run as runs of their own.
+
+  ```ts
+  ci.pipeline(
+    { id: "pr", on: github.pullRequest(), childRuns: false },
+    async () => {
+      await Promise.all([lint(), test()]);
+    },
+  );
+  ```
+
+- [#1804](https://github.com/inngest/inngest-js/pull/1804) [`9244e5dd`](https://github.com/inngest/inngest-js/commit/9244e5dde3736e54e2015c9a3244f8af546cfbec) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Job and matrix handlers now get one context object, and a job's cache key parts are readable from it, including by the jobs that start from it, even in another app.
+
+  ```ts
+  const base = ci.job(
+    {
+      id: "base",
+      cache: { key: { deps: files("pnpm-lock.yaml"), devServer: latestDevServer } },
+    },
+    async ({ key }) => {
+      await # @inngest/cipnpm install --dev-server ${key.devServer}`;
+    },
+  );
+
+  const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+    from.key.devServer;
+  });
+  ```
+
+  Breaking: a matrix handler reads its combination from `matrix`, and a job handler reads its input from `input`.
+
+  ```ts
+  ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+    await # @inngest/cifnm use ${matrix.node}`;
+  });
+
+  ci.job({ id: "build", input: schema }, async ({ input }) => {});
+  ```
+
+  A cache key can now mix `files()` with async functions, and a function in it is called once per run.
+
+- [#1806](https://github.com/inngest/inngest-js/pull/1806) [`752da4ab`](https://github.com/inngest/inngest-js/commit/752da4abc2a49aa6ee3634925e677859bce485d3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Jobs can now return an output: an object of JSON values and commands. Jobs that start `from` them read the data as `from.output` and run the commands as `from.$.x`, all typed, merged up the chain with the nearest job winning a name. A cached job gives the same output every time it is reused.
+
+  ```ts
+  const base = ci.job({ id: "base", cache: { key: files("pnpm-lock.yaml") } }, async () => {
+    await # @inngest/cipnpm install`;
+
+    return { version: await # @inngest/cipnpm --version`.text(), devServer: # @inngest/cipnpm dev` };
+  });
+
+  const test = ci.job({ id: "test", from: base }, async ({ from }) => {
+    from.output.version;
+
+    await from.$.devServer.background();
+  });
+  ```
+
+  `from.ancestry[i].output` and `from.ancestry[i].# @inngest/ci give each job's own output, and `job.with(input)`keeps the output types. An uncached job's call resolves to its data; a cached job's call resolves to nothing. Jobs that start`from` another now get their machine before the handler runs.
+
+- [#1814](https://github.com/inngest/inngest-js/pull/1814) [`372ae6eb`](https://github.com/inngest/inngest-js/commit/372ae6ebe14f825822ff43f609db8dc0e9ed7928) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Concurrent runs that miss the same cached job now build it once and share the result, instead of each building their own. Needs `inngest` 4.25.0 or later.
+
+### Patch Changes
+
+- [#1812](https://github.com/inngest/inngest-js/pull/1812) [`568200ff`](https://github.com/inngest/inngest-js/commit/568200ffa04f94b3cdbe616b8f52b94d815c969a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Commands take far fewer steps. A command that ends within a few seconds is one step, and a longer one adds a step per 30 seconds instead of a sleep and a check every few seconds, so pipelines stay well inside a run's step limit.
+
+- [#1811](https://github.com/inngest/inngest-js/pull/1811) [`6b0cc648`](https://github.com/inngest/inngest-js/commit/6b0cc64843c004c97177b59a65446d3a03467316) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Snapshots no longer pile up. A run's own snapshots are deleted however it ends, including when it is cancelled, and a cached job's new key deletes the entry it replaces.
+
+  A snapshot that can't be saved, such as when the environment's snapshot limit is reached, now fails the job with a clear error instead of silently re-running its parent in every job that starts from it.
+
+- [#1810](https://github.com/inngest/inngest-js/pull/1810) [`a967aa47`](https://github.com/inngest/inngest-js/commit/a967aa47910fdc4a20cee785a7e479cc90a2ce15) Thanks [@jpwilliams](https://github.com/jpwilliams)! - A job's machines are now destroyed as soon as the job passes or fails, instead of when the whole pipeline run ends. A cached snapshot is also no longer deleted when a machine fails to launch or times out while starting from it.
+
+- [#1809](https://github.com/inngest/inngest-js/pull/1809) [`ee23544c`](https://github.com/inngest/inngest-js/commit/ee23544c10a796c77617705340e13a16739a2082) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Commands in run traces now read `[$] echo hi` instead of `[COMMAND] $ echo hi`.
+
 ## 0.4.0
 
 ### Minor Changes
