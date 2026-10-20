@@ -234,6 +234,10 @@ export const steps = {
     };
   },
 
+  findStartedProcess: (stepId: string): StepSpec => {
+    return { id: joinId(stepId, "reconcile"), name: "Find started process" };
+  },
+
   /** One more stretch of following a process, with its output once it ends. */
   pollProcess: (stepId: string, index: number): StepSpec => {
     return { id: joinId(stepId, `check #${index}`), name: "Poll process" };

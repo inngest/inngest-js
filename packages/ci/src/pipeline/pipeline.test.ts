@@ -1005,6 +1005,26 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends during its first wait reports its duration", async () => {
+    const { ci } = setup();
+
+    let seen: number | undefined;
+
+    const job = ci.job("timed", async () => {
+      const result = await $`true`;
+
+      seen = result.durationMs;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(typeof seen).toBe("number");
+  });
+
   test("a command with no output reads as empty", async () => {
     const { ci } = setup();
 
@@ -1056,7 +1076,7 @@ describe("commands", () => {
     expect(seen).toEqual({ first: "one", second: "two", server: "up" });
 
     // Each start ran once: reconciling never starts the command again, and is
-    // part of the start's own step.
+    // a step of its own, so a failed lookup never repeats the start.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
@@ -1067,7 +1087,60 @@ describe("commands", () => {
       result.stepIds.filter((id) => {
         return id.endsWith("reconcile");
       }),
-    ).toEqual([]);
+    ).toHaveLength(2);
+  });
+
+  test("a failed lookup after an ambiguous start never starts the command again", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "once", stdout: "done", ambiguousStarts: 1 }]);
+
+    let failedLists = 1;
+
+    const fetch = api.fetch;
+
+    api.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+
+      if (
+        failedLists > 0 &&
+        init?.method === "GET" &&
+        url.endsWith("/processes?limit=250")
+      ) {
+        failedLists--;
+
+        return new Response(
+          JSON.stringify({
+            errors: [{ code: "unavailable", message: "try again" }],
+          }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return fetch(input, init);
+    };
+
+    const { ci } = setup({ api });
+
+    let seen: unknown;
+
+    const job = ci.job("lookup", async () => {
+      seen = await $`once`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(seen).toBe("done");
+    expect(failedLists).toBe(0);
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["once"]);
   });
 
   test("an ambiguous start with nothing to adopt still fails", async () => {

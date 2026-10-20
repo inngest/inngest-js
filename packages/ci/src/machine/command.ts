@@ -831,6 +831,11 @@ const follow = async (
   if (windowMs > 0) {
     try {
       current = await process.wait({ timeout: windowMs });
+
+      // A wait answers with the exit but not the end time.
+      if (terminalStates.has(current.state) && !current.endedAt) {
+        current = (await sandbox.processes.get(process.id)) ?? current;
+      }
     } catch {
       current = (await sandbox.processes.get(process.id)) ?? process;
     }
@@ -868,7 +873,9 @@ const processById = async (
  *
  * The process starts once: its start is a step, so a replay gets the stored
  * result. Once it has started, nothing in the step fails it, since a retry
- * would start the command a second time.
+ * would start the command a second time. An ambiguous start ends the step
+ * early, and a step of its own looks for the process that did start, so only
+ * that lookup is retried.
  */
 const startProcess = async (opts: {
   scope: CiJobScope;
@@ -887,30 +894,68 @@ const startProcess = async (opts: {
 
   const claimed = machine.claimedProcessIds;
 
-  const view = await sandboxStep(
+  const base = {
+    ...commandMetadata(opts.options.command),
+    cwd: opts.options.cwd,
+  };
+
+  const started = await sandboxStep(
     scope,
     steps.startProcess(opts.stepId, opts.windowMs > 0),
     {
       machine,
       action: "process.start",
       method: "processes.start",
-      base: {
-        ...commandMetadata(opts.options.command),
-        cwd: opts.options.cwd,
+      base,
+      of: (result) => {
+        return "ambiguous" in result ? {} : viewMetadata(result);
       },
+    },
+    async (): Promise<ProcessView | AmbiguousStart> => {
+      const sandbox = await directSandbox(scope.run, machine);
+
+      let process: SandboxProcess;
+
+      try {
+        process = await sandbox.processes.start(opts.options);
+      } catch (error) {
+        if (isAmbiguousStart(error)) {
+          return { ambiguous: true };
+        }
+
+        throw error;
+      }
+
+      return followAfterStart(sandbox, process, opts.windowMs);
+    },
+  );
+
+  if (!("ambiguous" in started)) {
+    claimed.add(started.id);
+
+    return started;
+  }
+
+  const view = await sandboxStep(
+    scope,
+    steps.findStartedProcess(opts.stepId),
+    {
+      machine,
+      action: "process.list",
+      method: "processes.list",
+      base,
       of: viewMetadata,
     },
     async () => {
       const sandbox = await directSandbox(scope.run, machine);
 
-      const started = await startOrAdopt(sandbox, opts.options, claimed);
+      const adopted = await findAmbiguousStart(
+        sandbox,
+        opts.options.command,
+        claimed,
+      );
 
-      try {
-        return await follow(sandbox, started, opts.windowMs);
-      } catch {
-        // The next step finds out what is wrong with the process.
-        return viewOf(started);
-      }
+      return followAfterStart(sandbox, adopted, opts.windowMs);
     },
   );
 
@@ -919,24 +964,22 @@ const startProcess = async (opts: {
   return view;
 };
 
-/**
- * Start a process. Cloud can answer a start that succeeded with an ambiguous
- * error, in which case the process that did start is adopted instead of
- * starting the command a second time.
- */
-const startOrAdopt = async (
+/** The result of a start step that can't tell whether the process started. */
+interface AmbiguousStart {
+  ambiguous: true;
+}
+
+/** Follow a process that has just started, whatever goes wrong doing so. */
+const followAfterStart = async (
   sandbox: Awaited<ReturnType<typeof directSandbox>>,
-  options: {
-    command: string[];
-    environment: Record<string, string>;
-    cwd: string;
-  },
-  claimed: ReadonlySet<string>,
-): Promise<SandboxProcess> => {
+  process: SandboxProcess,
+  windowMs: number,
+): Promise<ProcessView> => {
   try {
-    return await sandbox.processes.start(options);
-  } catch (error) {
-    return adoptAmbiguousStart(sandbox, options.command, claimed, error);
+    return await follow(sandbox, process, windowMs);
+  } catch {
+    // The next step finds out what is wrong with the process.
+    return viewOf(process);
   }
 };
 
@@ -946,26 +989,25 @@ const startOrAdopt = async (
  * processes and reconcile before starting another. Delete this, and the
  * `claimedProcessIds` bookkeeping on `MachineHandle`, once starts are no
  * longer ambiguous.
- *
- * This lists processes and returns the newest one running the same command
- * that this run hasn't already claimed. With nothing to adopt, or any other
- * error, the original error is rethrown.
  */
-const adoptAmbiguousStart = async (
+const isAmbiguousStart = (error: unknown): boolean => {
+  const sandboxError = getSandboxError(error);
+
+  return (
+    sandboxError?.code === "operation_ambiguous" &&
+    sandboxError.action === "process.start"
+  );
+};
+
+/**
+ * List processes and return the newest one running the same command that this
+ * run hasn't already claimed.
+ */
+const findAmbiguousStart = async (
   sandbox: Awaited<ReturnType<typeof directSandbox>>,
   command: readonly string[],
   claimed: ReadonlySet<string>,
-  error: unknown,
 ): Promise<SandboxProcess> => {
-  const sandboxError = getSandboxError(error);
-
-  if (
-    sandboxError?.code !== "operation_ambiguous" ||
-    sandboxError.action !== "process.start"
-  ) {
-    throw error;
-  }
-
   const listed = await sandbox.processes.list({ limit: 250 });
 
   const [match] = listed.items
@@ -983,7 +1025,9 @@ const adoptAmbiguousStart = async (
     });
 
   if (!match) {
-    throw error;
+    throw new NonRetriableError(
+      "operation_ambiguous: the command may have started, but no started process was found",
+    );
   }
 
   return match;
