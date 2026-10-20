@@ -134,79 +134,63 @@ interface Node {
 
 const cellOf = /^(.+?) \((.+)\)$/;
 
-const detailOf = (job: JobState): string => {
-  if (isOpen(job.status)) {
-    return job.doing ?? job.status;
-  }
+/** Statuses a matrix shows ahead of the rest: it reads as its worst cell. */
+const urgency: LocalStatus[] = ["failed", "running", "queued", "cancelled"];
 
-  // A passed job's title only repeats its time, and a failed job's title
-  // its failing command, which is drawn under it.
-  return job.status === "passed" || job.failure ? "" : (job.title ?? "");
-};
-
-/** A matrix's node: its status is the most urgent of its cells'. */
 const groupOf = (label: string, cells: Node[]): Node => {
-  const open = cells.some((cell) => {
-    return isOpen(cell.status);
+  const statuses = cells.map((cell) => {
+    return cell.status;
   });
-  const urgent = (["failed", "running", "queued", "cancelled"] as const).find(
-    (status) => {
-      return cells.some((cell) => {
-        return cell.status === status;
-      });
-    },
-  );
+  const ends = cells.map((cell) => {
+    return cell.endedAt ?? 0;
+  });
 
   return {
     label,
-    status: urgent ?? cells[0]?.status ?? "queued",
+    status:
+      urgency.find((status) => {
+        return statuses.includes(status);
+      }) ?? "passed",
     detail: "",
     startedAt: Math.min(
       ...cells.map((cell) => {
         return cell.startedAt;
       }),
     ),
-    endedAt: open
-      ? undefined
-      : Math.max(
-          ...cells.map((cell) => {
-            return cell.endedAt ?? 0;
-          }),
-        ),
+    endedAt: statuses.some(isOpen) ? undefined : Math.max(...ends),
     children: cells,
   };
 };
 
 /** The nodes of the jobs started from `parentId`, with matrix cells grouped. */
 const nodesOf = (jobs: JobState[], parentId?: string): Node[] => {
-  const known = new Set(
-    jobs.map((job) => {
-      return job.id;
-    }),
-  );
-  const siblings = jobs.filter((job) => {
-    if (parentId === undefined) {
-      return !job.parentId || !known.has(job.parentId);
-    }
-
-    return job.parentId === parentId;
+  const ids = jobs.map((job) => {
+    return job.id;
   });
   const nodeOf = (job: JobState, label: string): Node => {
+    // A passed job's title only repeats its time, and a failed job's its
+    // failing command, which is drawn under it.
+    const quiet = job.status === "passed" || job.failure;
+
     return {
+      ...job,
       label,
-      status: job.status,
-      detail: detailOf(job),
-      startedAt: job.startedAt,
-      endedAt: job.endedAt,
-      failure: job.failure,
+      detail: isOpen(job.status)
+        ? (job.doing ?? job.status)
+        : (!quiet && job.title) || "",
       children: nodesOf(jobs, job.id),
     };
   };
-  // A matrix takes the place of its first cell.
-  const slots: (Node | string)[] = [];
   const groups = new Map<string, Node[]>();
+  const slots: (Node | string)[] = [];
 
-  for (const job of siblings) {
+  for (const job of jobs) {
+    const root = !job.parentId || !ids.includes(job.parentId);
+
+    if (parentId === undefined ? !root : job.parentId !== parentId) {
+      continue;
+    }
+
     const [, name, cell] = cellOf.exec(job.id) ?? [];
 
     if (!name || !cell) {
@@ -215,12 +199,12 @@ const nodesOf = (jobs: JobState[], parentId?: string): Node[] => {
       continue;
     }
 
+    // A matrix takes the place of its first cell.
     if (!groups.has(name)) {
-      groups.set(name, []);
       slots.push(name);
     }
 
-    groups.get(name)?.push(nodeOf(job, cell));
+    groups.set(name, [...(groups.get(name) ?? []), nodeOf(job, cell)]);
   }
 
   return slots.map((slot) => {
@@ -246,11 +230,15 @@ const icons: Record<LocalStatus, [string, Style]> = {
 const fit = (text: string, width: number): string => {
   const flat = text.replace(/\s+/g, " ").trim();
 
-  if (flat.length <= width) {
-    return flat;
-  }
+  return flat.length <= width ? flat : `${flat.slice(0, width - 1)}…`;
+};
 
-  return `${flat.slice(0, Math.max(0, width - 1))}…`;
+const widest = (texts: string[]): number => {
+  return Math.max(
+    ...texts.map((text) => {
+      return text.length;
+    }),
+  );
 };
 
 export interface FrameOptions {
@@ -267,24 +255,85 @@ interface Row {
   /** What the tree continues with under this row. */
   below: string;
   node: Node;
-  body: { text: string; style: Style }[];
+  time: string;
 }
 
-const rowsOf = (nodes: Node[], indent: string, width: number): Row[] => {
+const rowsOf = (
+  nodes: Node[],
+  indent: string,
+  took: (node: Node) => string,
+): Row[] => {
   return nodes.flatMap((node, index) => {
     const last = index === nodes.length - 1;
     const below = indent + (last ? "   " : "│  ");
+    const time = node.status === "queued" ? "" : took(node);
+
+    return [
+      { tree: `${indent}${last ? "└─" : "├─"}`, below, node, time },
+      ...rowsOf(node.children, below, took),
+    ];
+  });
+};
+
+/** The lines of one frame. */
+export const frame = (state: LiveState, options: FrameOptions): string[] => {
+  const { now, width, tick, color } = options;
+  const { conclusion } = state;
+  const clock = state.endedAt ?? now;
+  const paint = (style: Style, text: string): string => {
+    return color ? styleText(style, text, { validateStream: false }) : text;
+  };
+  const icon = (status: LocalStatus): string => {
+    const [mark, style] = icons[status];
+
+    return paint(style, mark || (spinnerFrames[tick % 10] as string));
+  };
+  const took = (item: { startedAt: number; endedAt?: number }): string => {
+    return formatDuration((item.endedAt ?? clock) - item.startedAt);
+  };
+  const name = state.name ?? "inngest-ci";
+  const title = [
+    conclusion ? "" : `${icon("running")} `,
+    paint("bold", name),
+    paint("dim", state.url ? `  ${state.url}` : ""),
+  ].join("");
+
+  if (state.jobs.length === 0) {
+    return [title, `  ${paint("dim", state.status)}`];
+  }
+
+  const rows = rowsOf(nodesOf(state.jobs), "", took);
+  const labelWidth = widest(
+    rows.map((row) => {
+      return `${row.tree}   ${row.node.label}`;
+    }),
+  );
+  const timeWidth = widest(
+    rows.map((row) => {
+      return row.time;
+    }),
+  );
+  const detailWidth = Math.min(
+    width - labelWidth - timeWidth - 4,
+    widest(
+      rows.map((row) => {
+        return row.node.detail;
+      }),
+    ),
+  );
+  const lines = rows.flatMap(({ tree, below, node, time }) => {
+    const label = `${tree}   ${node.label}`;
     const room = width - below.length - 4;
     const { failure } = node;
-    const body: Row["body"] = failure
+    const output = failure
       ? [
-          {
-            text: fit(
+          paint(
+            "red",
+            fit(
               `$ ${failure.command} exited with ${failure.exitCode ?? "?"}`,
               room,
             ),
-            style: "red",
-          },
+          ),
           ...failure.tail
             .split("\n")
             .map((line) => {
@@ -292,103 +341,27 @@ const rowsOf = (nodes: Node[], indent: string, width: number): Row[] => {
             })
             .filter(Boolean)
             .slice(-tailLines)
-            .map((text): Row["body"][number] => {
-              return { text, style: "dim" };
+            .map((line) => {
+              return paint("dim", line);
             }),
         ]
       : [];
 
     return [
-      { tree: `${indent}${last ? "└─" : "├─"}`, below, node, body },
-      ...rowsOf(node.children, below, width),
-    ];
-  });
-};
-
-const outcomes = {
-  passed: ["✓", "green"],
-  failed: ["✕", "red"],
-  cancelled: ["⊘", "yellow"],
-} as const;
-
-/** The lines of one frame. */
-export const frame = (state: LiveState, options: FrameOptions): string[] => {
-  const { now, width, tick, color } = options;
-  const clock = state.endedAt ?? now;
-  const spin = spinnerFrames[tick % spinnerFrames.length] as string;
-  const paint = (style: Style, text: string): string => {
-    return color ? styleText(style, text, { validateStream: false }) : text;
-  };
-  const name = state.name ?? "inngest-ci";
-  const title = [
-    state.conclusion ? "" : `${paint("yellow", spin)} `,
-    paint("bold", name),
-    state.url ? paint("dim", `  ${state.url}`) : "",
-  ].join("");
-
-  if (state.jobs.length === 0) {
-    return [title, `  ${paint("dim", state.status)}`];
-  }
-
-  const rows = rowsOf(nodesOf(state.jobs), "", width);
-  const labelWidth = Math.max(
-    ...rows.map((row) => {
-      return row.tree.length + 3 + row.node.label.length;
-    }),
-  );
-  const times = rows.map(({ node }) => {
-    if (node.status === "queued") {
-      return "";
-    }
-
-    return formatDuration((node.endedAt ?? clock) - node.startedAt);
-  });
-  const timeWidth = Math.max(
-    ...times.map((time) => {
-      return time.length;
-    }),
-  );
-  const room = Math.min(
-    width - labelWidth - timeWidth - 4,
-    Math.max(
-      ...rows.map((row) => {
-        return row.node.detail.length;
-      }),
-    ),
-  );
-  const lines = rows.flatMap(({ tree, below, node, body }, index) => {
-    const [mark, style] = icons[node.status];
-    const left = `${tree} ${mark || spin} ${node.label}`;
-    const line = [
-      paint("dim", tree),
-      " ",
-      paint(style, mark || spin),
-      " ",
-      node.label,
-      " ".repeat(labelWidth - left.length + 2),
-      paint("dim", fit(node.detail, room).padEnd(room)),
-      "  ",
-      paint("dim", (times[index] ?? "").padStart(timeWidth)),
-    ].join("");
-
-    return [
-      line.trimEnd(),
-      ...body.map((entry) => {
-        return `${paint("dim", below)} ${paint(entry.style, entry.text)}`;
-      }),
-    ];
-  });
-  const { conclusion } = state;
-  const [mark, tone] = outcomes[conclusion?.status ?? "passed"];
-  const summary = conclusion
-    ? [
-        "",
-        `${paint(tone, mark)} ${name} ${conclusion.status} in ${formatDuration(clock - state.startedAt)}`,
-        ...(conclusion.reason
-          ? [paint("dim", `  ${fit(conclusion.reason, width - 2)}`)]
-          : []),
+      [
+        paint("dim", tree),
+        ` ${icon(node.status)} ${node.label}`,
+        " ".repeat(labelWidth - label.length + 2),
+        paint("dim", fit(node.detail, detailWidth).padEnd(detailWidth)),
+        paint("dim", `  ${time.padStart(timeWidth)}`),
       ]
-    : [];
+        .join("")
+        .trimEnd(),
+      ...output.map((line) => {
+        return `${paint("dim", below)} ${line}`;
+      }),
+    ];
+  });
 
   return [
     title,
@@ -396,6 +369,14 @@ export const frame = (state: LiveState, options: FrameOptions): string[] => {
     ...state.warnings.map((text) => {
       return paint("yellow", `! ${fit(text, width - 2)}`);
     }),
-    ...summary,
+    ...(conclusion
+      ? [
+          "",
+          `${icon(conclusion.status)} ${name} ${conclusion.status} in ${took(state)}`,
+          ...(conclusion.reason
+            ? [paint("dim", `  ${fit(conclusion.reason, width - 2)}`)]
+            : []),
+        ]
+      : []),
   ];
 };
