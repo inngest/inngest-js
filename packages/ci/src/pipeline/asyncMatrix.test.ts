@@ -10,20 +10,22 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
-import { createCiTestClient } from "../testing/client.ts";
+import { busOf, createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import { buildRequestedEvent } from "./buildLock.ts";
 import { createCi } from "./createCi.ts";
 
 const setup = () => {
   const api = createFakeSandboxApi();
-  const ci = createCi(createCiTestClient(api), {
+  const client = createCiTestClient(api);
+  const ci = createCi(client, {
     github: consoleReporter(),
   });
 
-  return { api, ci };
+  return { api, bus: busOf(client), ci };
 };
 
 const commands = (api: ReturnType<typeof setup>["api"]): string[] => {
@@ -102,7 +104,7 @@ describe("a matrix with async axes", () => {
   });
 
   test("a combination built in a run of its own runs with the values it was given, ", async () => {
-    const { api, ci } = setup();
+    const { api, bus, ci } = setup();
     let calls = 0;
 
     const examples = ci.matrix(
@@ -124,11 +126,15 @@ describe("a matrix with async axes", () => {
       await examples();
     });
 
-    const before = invokedRunCount();
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    expect(invokedRunCount() - before).toBe(2);
+
+    expect(
+      bus?.sent.filter((event) => {
+        return event.name === buildRequestedEvent;
+      }),
+    ).toHaveLength(2);
     expect(calls).toBe(1);
     expect(commands(api)).toEqual(["test next", "test remix"]);
   });
