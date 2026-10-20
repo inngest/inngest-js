@@ -378,7 +378,11 @@ describe("webhook transform", () => {
   )() as (
     evt: unknown,
     headers: Record<string, string>,
-  ) => { name: string; data: Record<string, unknown> };
+  ) => {
+    name: string;
+    data: Record<string, unknown>;
+    meta: { sessions: Record<string, string | number> };
+  };
 
   test("names events with their action", () => {
     const result = transform(
@@ -408,6 +412,57 @@ describe("webhook transform", () => {
 
     expect(result.name).toBe("github/issue_comment.created");
     expect(result.data._github).toMatchObject({ installationId: 99 });
+  });
+
+  test.each([
+    {
+      event: "pull_request",
+      payload: {
+        action: "opened",
+        repository: { full_name: "inngest/inngest-js" },
+        pull_request: { number: 7, head: { sha: "abc1234" } },
+      },
+      sessions: { pull_request: "inngest/inngest-js#7", commit: "abc1234" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "def5678",
+      },
+      sessions: { commit: "def5678" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "0000000000000000000000000000000000000000",
+      },
+      sessions: {},
+    },
+    {
+      event: "issue_comment",
+      payload: {
+        action: "created",
+        repository: { full_name: "inngest/inngest-js" },
+        issue: { number: 9, pull_request: {} },
+      },
+      sessions: { pull_request: "inngest/inngest-js#9" },
+    },
+    {
+      event: "check_suite",
+      payload: {
+        action: "rerequested",
+        repository: { full_name: "inngest/inngest-js" },
+        check_suite: { head_sha: "fedcba9" },
+      },
+      sessions: { commit: "fedcba9" },
+    },
+    { event: "ping", payload: {}, sessions: {} },
+  ])("puts a $event in its sessions", ({ event, payload, sessions }) => {
+    expect(
+      transform(payload, { "x-github-event": event }).meta.sessions,
+    ).toEqual(sessions);
   });
 
   test("the helper agrees with the transform", () => {

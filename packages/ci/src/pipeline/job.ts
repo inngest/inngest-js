@@ -84,6 +84,7 @@ import {
   rootRunIdOf,
   runJobBody,
 } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 export interface RegisteredJob {
   id: string;
@@ -562,7 +563,11 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
         joinId(stepPath, "build"),
         direct ? traceName.runInOwnRun(path) : traceName.buildInOwnRun(path),
       ),
-      { function: run.ci.cacheBuild(), data },
+      {
+        function: run.ci.cacheBuild(),
+        data,
+        meta: sessionsMeta(run, { jobId: config.id, target }),
+      },
     )) as CacheBuildResult | null;
   } catch (error) {
     throw (
