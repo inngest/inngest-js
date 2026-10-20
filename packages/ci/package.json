@@ -77,6 +77,7 @@
     "@standard-schema/spec": "^1.0.0",
     "citty": "^0.2.2",
     "get-port": "^7.2.0",
+    "log-update": "^8.0.0",
     "tree-kill": "^1.2.2"
   },
   "devDependencies": {

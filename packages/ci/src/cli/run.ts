@@ -12,16 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import {
-  intro,
-  log,
-  multiselect,
-  note,
-  outro,
-  select,
-  text,
-  isCancel,
-} from "@clack/prompts";
+import { isCancel, log, multiselect, note, select, text } from "@clack/prompts";
 
 import type { LocalMessage, LocalStatus } from "../local/protocol.ts";
 import { runJobFunctionId } from "../local/protocol.ts";
@@ -299,11 +290,7 @@ const watchRun = async (opts: {
     if (!seen) {
       seen = true;
 
-      live.print(() => {
-        log.info(`Run: ${devServerUrl}/run?runID=${runId}`);
-      });
-
-      live.status("Finishing the run");
+      live.link(`${devServerUrl}/run?runID=${runId}`);
     }
   };
 
@@ -372,9 +359,7 @@ const watchRun = async (opts: {
       }
 
       if (reason) {
-        live.print(() => {
-          log.error(reason);
-        });
+        live.fail(reason);
       }
 
       return conclusionOf(status);
@@ -425,8 +410,6 @@ export const runOnce = async (
   opts: RunOptions,
   signal: AbortSignal,
 ): Promise<number> => {
-  intro("inngest-ci");
-
   const live = createLiveView();
   const processes: { name: string; proc: ManagedProcess }[] = [];
   const reported: Reported = {};
@@ -536,6 +519,7 @@ export const runOnce = async (
 
     const { target, event } = await chooseEvent(opts, targetsOf(manifest));
 
+    live.start(target.id);
     live.status(`Starting ${target.id}`);
 
     const eventId = await sendEvent(devServer.url, event);
@@ -560,19 +544,15 @@ export const runOnce = async (
       reported,
     });
 
-    live.stop();
+    live.stop(conclusion);
 
     code = conclusion === "passed" ? 0 : 1;
-
-    outro(`${target.id} ${conclusion}`);
   } catch (error) {
     live.stop();
 
     showError(error);
 
     code = error instanceof Cancelled ? 1 : 2;
-
-    outro("inngest-ci stopped");
   } finally {
     if (devServerUrl && eventIds.length > 0) {
       const url = devServerUrl;

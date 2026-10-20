@@ -1,180 +1,170 @@
 /**
- * The live view of a run: one spinner that says what is running right now,
- * and a line printed above it for each job that ends. Failed commands print
- * the end of their output. `@clack/prompts` falls back to plain lines when
- * there is no terminal, so this is the only renderer.
+ * The live view of a run: a tree of its jobs redrawn in place with
+ * `log-update` while a terminal is attached, one plain line per event
+ * otherwise. What the tree looks like is `liveFrame.ts`.
  *
  * @module
  */
 
-import { log, spinner } from "@clack/prompts";
+import { createLogUpdate } from "log-update";
 
-import type { LocalMessage, LocalStatus } from "../local/protocol.ts";
+import type { LocalMessage } from "../local/protocol.ts";
+import {
+  apply,
+  createState,
+  formatDuration,
+  frame,
+  isOpen,
+  type LiveState,
+} from "./liveFrame.ts";
 
-/** How many running jobs the spinner names before it says "and N more". */
-const namedJobs = 3;
-
-const seconds = (ms: number): string => {
-  return `${Math.max(1, Math.round(ms / 1000))}s`;
-};
-
-/** Print a line for a job that ended. */
-const jobLines: Partial<Record<LocalStatus, (text: string) => void>> = {
-  passed: log.success,
-  cached: log.info,
-  failed: log.error,
-  cancelled: log.warn,
-  skipped: log.warn,
-};
+const redrawMs = 100;
 
 export interface LiveView {
   /** Show what the run is doing. Messages are those of the one run shown. */
   handle(message: LocalMessage): void;
 
-  /** Change what the spinner says while nothing runs. */
+  /** Say what is happening before any job reports. */
   status(text: string): void;
 
-  /** Print a line above the spinner. */
-  print(show: () => void): void;
+  /** Name the run being watched. */
+  start(name: string): void;
 
-  /** Stop the spinner, leaving `text`. */
-  stop(text?: string): void;
+  /** Say where to open the run. */
+  link(url: string): void;
+
+  /** Note why the run failed, for the summary. */
+  fail(reason: string): void;
+
+  /** Stop drawing. With a conclusion, leave the final tree and summary. */
+  stop(conclusion?: NonNullable<LiveState["conclusion"]>["status"]): void;
 }
 
 export const createLiveView = (): LiveView => {
-  const bar = spinner();
+  const out = process.stdout;
+  const tty = Boolean(out.isTTY);
+  const color = tty && !process.env.NO_COLOR;
+  const state = createState(Date.now());
+  const draw = createLogUpdate(out, { showCursor: false });
+  let timer: NodeJS.Timeout | undefined;
+  let tick = 0;
+  let reason: string | undefined;
 
-  /** What each running job is doing, by job ID. */
-  const running = new Map<string, string>();
-  const startedAt = new Map<string, number>();
-  let idle = "Waiting for the run to start";
-  let active = false;
+  const render = (): void => {
+    tick += 1;
 
-  const label = (): string => {
-    const jobs = [...running].map(([id, doing]) => {
-      return `${id}: ${doing}`;
+    draw(
+      frame(state, {
+        now: Date.now(),
+        width: out.columns ?? 80,
+        tick,
+        color,
+      }).join("\n"),
+    );
+  };
+
+  /** Redraw now, and keep redrawing so spinners and timers move. */
+  const show = (): void => {
+    if (!tty) {
+      return;
+    }
+
+    render();
+
+    timer ??= setInterval(render, redrawMs);
+  };
+
+  const plain = (message: LocalMessage): void => {
+    const job = state.jobs.find((candidate) => {
+      return "jobId" in message && candidate.id === message.jobId;
     });
 
-    if (jobs.length === 0) {
-      return idle;
+    if (message.kind === "job" && message.status !== job?.status) {
+      const took = isOpen(message.status)
+        ? ""
+        : ` (${formatDuration(message.at - (job?.startedAt ?? message.at))})`;
+
+      console.log(
+        `${message.jobId}: ${message.status}${took}${message.title ? ` - ${message.title}` : ""}`,
+      );
     }
 
-    const more = jobs.length - namedJobs;
+    if (message.kind === "command" && message.status !== "passed") {
+      console.log(
+        `${message.jobId}: $ ${message.name}${message.status === "failed" ? ` exited with ${message.exitCode}` : ""}`,
+      );
 
-    return [
-      ...jobs.slice(0, namedJobs),
-      ...(more > 0 ? [`and ${more} more`] : []),
-    ].join(", ");
-  };
-
-  const refresh = (): void => {
-    if (active) {
-      bar.message(label());
-    } else {
-      bar.start(label());
-
-      active = true;
-    }
-  };
-
-  const print = (show: () => void): void => {
-    if (active) {
-      bar.clear();
+      if (message.status === "failed" && message.outputTail) {
+        console.log(message.outputTail.replace(/^/gm, "    "));
+      }
     }
 
-    show();
-
-    if (active) {
-      bar.start(label());
+    if (message.kind === "warning") {
+      console.log(`warning: ${message.text}`);
     }
   };
 
   return {
-    print,
-    status: (text) => {
-      idle = text;
-
-      refresh();
-    },
-    stop: (text) => {
-      if (active) {
-        bar.stop(text);
-
-        active = false;
-      }
-    },
     handle: (message) => {
-      if (message.kind === "warning") {
-        print(() => {
-          log.warn(message.text);
-        });
+      if (!tty) {
+        plain(message);
+      }
+
+      apply(state, message);
+
+      show();
+    },
+    status: (text) => {
+      if (state.conclusion) {
+        return;
+      }
+
+      state.status = text;
+
+      if (tty) {
+        show();
+      } else {
+        console.log(text);
+      }
+    },
+    start: (name) => {
+      state.name = name;
+    },
+    link: (url) => {
+      state.url = url;
+
+      if (!tty) {
+        console.log(`Run: ${url}`);
+      }
+
+      show();
+    },
+    fail: (text) => {
+      reason = text;
+    },
+    stop: (conclusion) => {
+      clearInterval(timer);
+
+      timer = undefined;
+
+      if (!conclusion) {
+        draw.clear();
 
         return;
       }
 
-      if (message.kind === "activity") {
-        running.set(message.jobId, message.text);
+      state.endedAt = Date.now();
+      state.conclusion = { status: conclusion, reason };
 
-        refresh();
+      if (tty) {
+        render();
 
-        return;
-      }
-
-      if (message.kind === "command") {
-        if (message.status === "running") {
-          running.set(message.jobId, `$ ${message.name}`);
-
-          refresh();
-        } else if (message.status === "failed") {
-          print(() => {
-            log.error(
-              [
-                `${message.jobId}: $ ${message.name} exited with ${message.exitCode}`,
-                message.outputTail ?? "",
-              ].join("\n"),
-            );
-          });
-        }
-
-        return;
-      }
-
-      if (message.kind !== "job") {
-        return;
-      }
-
-      if (message.status === "running" || message.status === "queued") {
-        startedAt.set(
-          message.jobId,
-          startedAt.get(message.jobId) ?? message.at,
+        draw.done();
+      } else {
+        console.log(
+          `${state.name ?? "run"} ${conclusion} in ${formatDuration(state.endedAt - state.startedAt)}${reason ? `: ${reason}` : ""}`,
         );
-
-        running.set(
-          message.jobId,
-          running.get(message.jobId) ?? message.status,
-        );
-
-        refresh();
-
-        return;
       }
-
-      running.delete(message.jobId);
-
-      const took = seconds(
-        message.at - (startedAt.get(message.jobId) ?? message.at),
-      );
-      // A passing job's title only repeats its duration.
-      const detail =
-        message.title && message.status !== "passed"
-          ? `: ${message.title}`
-          : "";
-
-      print(() => {
-        jobLines[message.status]?.(`${message.jobId} (${took})${detail}`);
-      });
-
-      refresh();
     },
   };
 };
