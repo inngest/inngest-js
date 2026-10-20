@@ -1,5 +1,27 @@
 # @inngest/ci
 
+## 0.6.0
+
+### Minor Changes
+
+- [#1821](https://github.com/inngest/inngest-js/pull/1821) [`0516bc5e`](https://github.com/inngest/inngest-js/commit/0516bc5e089ac466104f03862c5bb40c5418fa4f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `ci.matrix()` is removed; use `ci.job({ matrix })`, which takes `axes` and the same `exclude`, `include`, `concurrency` and `failFast` options.
+
+  ```ts
+  // before
+  ci.matrix(
+    { id: "compat", axes: { node: ["20", "22"] } },
+    async ({ matrix }) => {},
+  );
+
+  // after
+  ci.job(
+    { id: "compat", matrix: { axes: { node: ["20", "22"] } } },
+    async ({ matrix }) => {},
+  );
+  ```
+
+- [#1820](https://github.com/inngest/inngest-js/pull/1820) [`05ba4455`](https://github.com/inngest/inngest-js/commit/05ba4455d8989ccd71fa9f23ca6f101abd941e56) Thanks [@jpwilliams](https://github.com/jpwilliams)! - CI now groups using Sessions.
+
 ## 0.5.0
 
 ### Minor Changes
