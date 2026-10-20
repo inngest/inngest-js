@@ -117,4 +117,24 @@ describe("toolDefinitions", () => {
       });
     }).toThrow('Tool "legacy" has a schema');
   });
+
+  test("rejects a schema that isn't an object", () => {
+    expect(() => {
+      return toolDefinitions({
+        name: tool.step({
+          input: z4.string(),
+          run: async () => {
+            return null;
+          },
+        }),
+      });
+    }).toThrow('Tool "name" has an input schema that isn\'t an object');
+  });
+
+  test("fits Anthropic's tools parameter", () => {
+    const tools: { name: string; input_schema: { type: "object" } }[] =
+      toolDefinitions({ ping: () => "pong" });
+
+    expect(tools).toHaveLength(1);
+  });
 });

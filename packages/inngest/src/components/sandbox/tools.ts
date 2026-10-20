@@ -435,10 +435,10 @@ export interface ToolJsonDefinition {
   description?: string;
 
   /**
-   * JSON Schema of the arguments. A tool without an `input` schema takes any
-   * object.
+   * JSON Schema of the arguments, which always describes an object. A tool
+   * without an `input` schema takes any object.
    */
-  input_schema: Record<string, unknown>;
+  input_schema: { type: "object"; [key: string]: unknown };
 }
 
 type JsonSchemaProvider = {
@@ -450,19 +450,27 @@ type JsonSchemaProvider = {
 const toJsonSchema = (
   name: string,
   schema: StandardSchemaV1,
-): Record<string, unknown> => {
+): ToolJsonDefinition["input_schema"] => {
   const provider = schema["~standard"] as JsonSchemaProvider;
+  let json: Record<string, unknown>;
+
   if (provider.jsonSchema) {
-    return provider.jsonSchema.input({ target: "draft-2020-12" });
+    json = provider.jsonSchema.input({ target: "draft-2020-12" });
+  } else if ("_zod" in schema) {
+    json = z4.toJSONSchema(schema as unknown as z4.ZodType);
+  } else {
+    throw new SandboxValidationError(
+      `Tool "${name}" has a schema that can't be turned into JSON Schema: use Zod 4 or a library that implements Standard JSON Schema`,
+    );
   }
 
-  if ("_zod" in schema) {
-    return z4.toJSONSchema(schema as unknown as z4.ZodType);
+  if (json.type !== "object") {
+    throw new SandboxValidationError(
+      `Tool "${name}" has an input schema that isn't an object: models call tools with named arguments`,
+    );
   }
 
-  throw new SandboxValidationError(
-    `Tool "${name}" has a schema that can't be turned into JSON Schema: use Zod 4 or a library that implements Standard JSON Schema`,
-  );
+  return { ...json, type: "object" };
 };
 
 /**
