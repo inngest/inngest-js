@@ -456,6 +456,10 @@ export const traceName = {
 
   announceBuild: "Tell the runs waiting on a build",
 
+  runInOwnRun: (path: string): string => {
+    return `Run ${path} in its own run`;
+  },
+
   canUser: (login: string, permission: string): string => {
     return `Check ${login} can ${permission}`;
   },

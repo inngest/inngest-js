@@ -100,6 +100,8 @@ export interface BuildRequest {
   broken?: boolean;
   /** Whether the build leaves the name alone and takes a snapshot of its own. */
   unnamed?: boolean;
+  /** Whether nothing starts from the job, so the build takes no snapshot. */
+  direct?: boolean;
   /** What the job starts from, as a build is handed it. */
   base?: CacheBuildResult;
   /** What the job leaves for whoever asked: the job sets it, they read it. */
@@ -138,6 +140,7 @@ export const requestOf = (data: CacheBuildData): BuildRequest => {
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),
+    ...(data.direct ? { direct: data.direct } : {}),
     ...(data.base ? { base: data.base } : {}),
     sink: {},
   };
@@ -234,6 +237,8 @@ export interface CiRunScope {
   jobChecks: boolean;
   /** The pipeline's default machine, for jobs that set none. */
   machine?: MachineConfig;
+  /** Whether jobs run in runs of their own, as `PipelineConfig.childRuns` says. */
+  childRuns: boolean;
   event: unknown;
   repo?: RepoContext;
   /**

@@ -92,9 +92,12 @@ describe("a burst of runs that need one cached job", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     return Promise.all(
       Array.from({ length: runs }, (_, i) => {
@@ -213,13 +216,16 @@ describe("a chain of cached jobs", () => {
     const b = [startingFrom(build, "b1"), startingFrom(build, "b2")];
     const c = [startingFrom(pack, "c1"), startingFrom(pack, "c2")];
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all(
-        [...c, ...b, ...a].map((job) => {
-          return job();
-        }),
-      );
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all(
+          [...c, ...b, ...a].map((job) => {
+            return job();
+          }),
+        );
+      },
+    );
 
     return runFunction(pipeline, { event: prEvent });
   };
@@ -333,9 +339,12 @@ describe("a warm cache", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     const builds = () => {
       return [...api.sandboxes.values()].filter((machine) => {
@@ -385,9 +394,12 @@ describe("a snapshot that is about to expire", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     const first = await runFunction(pipeline, {
       event: prEvent,
@@ -451,9 +463,12 @@ describe("jobs that start from one parent", () => {
     const a = startingFrom("a");
     const b = startingFrom("b");
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([a(), b()]);
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all([a(), b()]);
+      },
+    );
   };
 
   const buildSteps = (stepIds: string[]) => {
@@ -529,9 +544,12 @@ describe("a snapshot older than the cache's maxAge", () => {
       },
     );
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await install();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await install();
+      },
+    );
 
     await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
 
@@ -625,9 +643,12 @@ describe("a job that starts from a job in its own app", () => {
       await $`pnpm test`;
     });
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
+      },
+    );
   };
 
   /** The steps that invoke the build function. */
@@ -743,9 +764,12 @@ describe("a job that starts from a job in its own app", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
 
     await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
 
@@ -868,21 +892,24 @@ describe("a parent that several jobs need in one pipeline run", () => {
       }),
     };
 
-    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      if (inTurn) {
-        for (const name of order) {
-          await jobs[name]();
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        if (inTurn) {
+          for (const name of order) {
+            await jobs[name]();
+          }
+
+          return;
         }
 
-        return;
-      }
-
-      await Promise.all(
-        order.map((name) => {
-          return jobs[name]();
-        }),
-      );
-    });
+        await Promise.all(
+          order.map((name) => {
+            return jobs[name]();
+          }),
+        );
+      },
+    );
   };
 
   test("a parent that is also a parent's parent is built by one invoke", async () => {
@@ -945,13 +972,16 @@ describe("a parent that several jobs need in one pipeline run", () => {
 
     const children = ["a", "b", "c"].map(startingFrom);
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all(
-        children.map((child) => {
-          return child();
-        }),
-      );
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all(
+          children.map((child) => {
+            return child();
+          }),
+        );
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -992,10 +1022,13 @@ describe("a parent that several jobs need in one pipeline run", () => {
       await $`pnpm lint`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await test();
+        await lint();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
