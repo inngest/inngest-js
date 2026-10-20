@@ -560,7 +560,7 @@ describe("matrices keep their literal values", () => {
     ci.job(
       {
         id: "compat-1",
-        matrix: { node: ["20", "22"], db: ["sqlite", "postgres"] },
+        matrix: { axes: { node: ["20", "22"], db: ["sqlite", "postgres"] } },
       },
       async ({ matrix: combo }) => {
         expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
@@ -571,7 +571,7 @@ describe("matrices keep their literal values", () => {
 
   test("the matrix itself is typed", () => {
     const matrix = ci.job(
-      { id: "compat-2", matrix: { node: ["20", "22"] } },
+      { id: "compat-2", matrix: { axes: { node: ["20", "22"] } } },
       async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -585,7 +585,7 @@ describe("matrices keep their literal values", () => {
 
   test("running part of a matrix is checked", () => {
     const matrix = ci.job(
-      { id: "compat-3", matrix: { node: ["20", "22"] } },
+      { id: "compat-3", matrix: { axes: { node: ["20", "22"] } } },
       async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },
@@ -607,9 +607,11 @@ describe("matrices keep their literal values", () => {
     ci.job(
       {
         id: "compat-4",
-        matrix: { node: ["20", "22"], db: ["sqlite", "postgres"] },
-        exclude: [{ node: "20", db: "postgres" }],
-        include: [{ node: "22", db: "sqlite" }],
+        matrix: {
+          axes: { node: ["20", "22"], db: ["sqlite", "postgres"] },
+          exclude: [{ node: "20", db: "postgres" }],
+          include: [{ node: "22", db: "sqlite" }],
+        },
       },
       async ({ matrix: combo }) => {
         await $`pnpm test --node ${combo.node}`;
@@ -620,8 +622,10 @@ describe("matrices keep their literal values", () => {
       {
         id: "typo",
         // @ts-expect-error "21" is not an axis value, so no overload matches
-        matrix: { node: ["20", "22"] },
-        exclude: [{ node: "21" }],
+        matrix: {
+          axes: { node: ["20", "22"] },
+          exclude: [{ node: "21" }],
+        },
       },
       async () => {},
     );
@@ -631,7 +635,7 @@ describe("matrices keep their literal values", () => {
     ci.job(
       {
         id: "compat-5",
-        matrix: { node: ["20", "22"] },
+        matrix: { axes: { node: ["20", "22"] } },
         machine: (combo) => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
 
@@ -650,7 +654,7 @@ describe("matrices keep their literal values", () => {
   test("a matrix handler that returns a value is a type error", () => {
     ci.job(
       // @ts-expect-error matrices have no return value
-      { id: "compat-6", matrix: { node: ["20", "22"] } },
+      { id: "compat-6", matrix: { axes: { node: ["20", "22"] } } },
       async ({ matrix: combo }) => {
         return combo.node;
       },
@@ -836,7 +840,7 @@ describe("a handler's context", () => {
     );
 
     ci.job(
-      { id: "ctx-matrix-from", matrix: { node: ["20"] }, from: base },
+      { id: "ctx-matrix-from", matrix: { axes: { node: ["20"] } }, from: base },
       async ({ from }) => {
         expectTypeOf(from.key.lock).toBeString();
 
@@ -846,7 +850,7 @@ describe("a handler's context", () => {
     );
 
     ci.job(
-      { id: "ctx-matrix-bare", matrix: { node: ["20"] } },
+      { id: "ctx-matrix-bare", matrix: { axes: { node: ["20"] } } },
       async ({ from }) => {
         expectTypeOf(from).toEqualTypeOf<undefined>();
       },
@@ -855,7 +859,7 @@ describe("a handler's context", () => {
 
   test("a matrix handler gets the combination as matrix", () => {
     ci.job(
-      { id: "ctx-matrix", matrix: { node: ["20", "22"] } },
+      { id: "ctx-matrix", matrix: { axes: { node: ["20", "22"] } } },
       async ({ id, matrix, key }) => {
         expectTypeOf(id).toBeString();
         expectTypeOf(matrix.node).toEqualTypeOf<"20" | "22">();

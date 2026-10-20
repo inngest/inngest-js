@@ -28,7 +28,7 @@ export const test = ci.job({ id: "test", from: base }, async () => {
 });
 
 export const compat = ci.job(
-  { id: "compat", matrix: { node: ["20", "22"] }, from: base },
+  { id: "compat", matrix: { axes: { node: ["20", "22"] } }, from: base },
   async ({ matrix }) => {
     await $`node --version`;
 

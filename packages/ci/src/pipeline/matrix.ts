@@ -15,6 +15,7 @@ import type {
   MatrixAxes,
   MatrixCombo,
   MatrixJobConfig,
+  MatrixOptions,
   MatrixContext,
 } from "../types.ts";
 import type { Ci } from "./createCi.ts";
@@ -86,7 +87,9 @@ export const createMatrix = <TAxes extends MatrixAxes>({
 
   checkStaticFrom(jobs, config);
 
-  const given = config.matrix;
+  const options = config.matrix;
+
+  const given = options.axes;
 
   if (typeof given !== "function") {
     checkAxes(config.id, given);
@@ -180,12 +183,12 @@ export const createMatrix = <TAxes extends MatrixAxes>({
       };
     });
 
-    await runPool(tasks, config.maxParallel, config.failFast ?? false);
+    await runPool(tasks, options.concurrency, options.failFast ?? false);
   };
 
   const matrix = ((only?: Partial<MatrixCombo<TAxes>>) => {
     return (async () => {
-      const combos = expandMatrix(config, await axesOf());
+      const combos = expandMatrix(options, await axesOf());
 
       return run(
         combos.filter((combo) => {
@@ -209,7 +212,7 @@ export const createMatrix = <TAxes extends MatrixAxes>({
           return run(combos as MatrixCombo<TAxes>[]);
         }
 
-        const matching = expandMatrix(config, given).filter((combo) => {
+        const matching = expandMatrix(options, given).filter((combo) => {
           return combos.some((wanted) => {
             return sameCombo(wanted, combo);
           });
@@ -256,7 +259,7 @@ export const matrixJobId = (
  * and `include` appended.
  */
 export const expandMatrix = <TAxes extends MatrixAxes>(
-  config: Pick<MatrixJobConfig<TAxes>, "exclude" | "include">,
+  config: Pick<MatrixOptions<TAxes>, "exclude" | "include">,
   axes: TAxes,
 ): MatrixCombo<TAxes>[] => {
   const keys = Object.keys(axes);

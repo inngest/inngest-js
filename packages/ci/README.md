@@ -85,7 +85,7 @@ const test = ci.job({ id: "test", from: base }, async ({ from }) => {
   from.ancestry; // each job above it, nearest first: [{ id, key, output, $ }, ...]
 });
 
-ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
+ci.job({ id: "compat", matrix: { axes: { node: ["20", "22"] } } }, async ({ matrix }) => {
   await $`fnm use ${matrix.node}`;
 });
 ```

@@ -46,8 +46,10 @@ describe("a matrix with async axes", () => {
     const examples = ci.job(
       {
         id: "examples",
-        matrix: async () => {
-          return { example: ["next", "remix"], mode: ["a"] };
+        matrix: {
+          axes: async () => {
+            return { example: ["next", "remix"], mode: ["a"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -74,10 +76,12 @@ describe("a matrix with async axes", () => {
     const examples = ci.job(
       {
         id: "examples",
-        matrix: async ({ repo }) => {
-          calls.push(repo?.sha);
+        matrix: {
+          axes: async ({ repo }) => {
+            calls.push(repo?.sha);
 
-          return { example: ["next", "remix"] };
+            return { example: ["next", "remix"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -111,10 +115,12 @@ describe("a matrix with async axes", () => {
       {
         id: "examples",
         cache: { key: "v1" },
-        matrix: async () => {
-          calls += 1;
+        matrix: {
+          axes: async () => {
+            calls += 1;
 
-          return { example: ["next", "remix"] };
+            return { example: ["next", "remix"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -146,10 +152,12 @@ describe("a matrix with async axes", () => {
     const examples = ci.job(
       {
         id: "examples",
-        matrix: async () => {
-          calls += 1;
+        matrix: {
+          axes: async () => {
+            calls += 1;
 
-          return { example: [] as string[] };
+            return { example: [] as string[] };
+          },
         },
       },
       async () => {},
@@ -193,21 +201,23 @@ describe("a matrix whose axes list a directory at the run's commit", () => {
     const examples = ci.job(
       {
         id: "examples",
-        matrix: async ({ repo }) => {
-          const entries = await github.rest.repos.getContent({
-            path: "examples",
-            ref: repo?.sha ?? "",
-          });
+        matrix: {
+          axes: async ({ repo }) => {
+            const entries = await github.rest.repos.getContent({
+              path: "examples",
+              ref: repo?.sha ?? "",
+            });
 
-          return {
-            example: (Array.isArray(entries) ? entries : [])
-              .filter((entry) => {
-                return entry.type === "dir";
-              })
-              .map((entry) => {
-                return entry.name;
-              }),
-          };
+            return {
+              example: (Array.isArray(entries) ? entries : [])
+                .filter((entry) => {
+                  return entry.type === "dir";
+                })
+                .map((entry) => {
+                  return entry.name;
+                }),
+            };
+          },
         },
       },
       async ({ matrix }) => {
@@ -242,8 +252,10 @@ describe("a matrix's async axes", () => {
       {
         id: "dates",
         // @ts-expect-error a `Date` is saved as a string
-        matrix: async () => {
-          return { day: [new Date()] };
+        matrix: {
+          axes: async () => {
+            return { day: [new Date()] };
+          },
         },
       },
       async () => {},

@@ -124,6 +124,7 @@ export type {
   MatrixAxes,
   MatrixCombo,
   MatrixJobConfig,
+  MatrixOptions,
   MatrixAxesContext,
   MatrixContext,
   OutputValue,

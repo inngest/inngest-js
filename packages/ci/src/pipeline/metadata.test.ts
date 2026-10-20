@@ -70,7 +70,7 @@ describe("run metadata", () => {
     });
 
     const compat = ci.job(
-      { id: "compat", matrix: { node: ["20", "22"] } },
+      { id: "compat", matrix: { axes: { node: ["20", "22"] } } },
       async ({ matrix: { node } }) => {
         await $`pnpm test --node ${node}`;
       },

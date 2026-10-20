@@ -296,7 +296,7 @@ describe("a matrix job", () => {
     const compat = ci.job(
       {
         id: "compat",
-        matrix: { node: ["20", "22"] },
+        matrix: { axes: { node: ["20", "22"] } },
         cache: (combo) => {
           return { key: { node: combo.node } };
         },

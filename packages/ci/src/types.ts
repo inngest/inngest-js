@@ -681,7 +681,7 @@ export interface JobContext<
  * What the handler of a job with a `matrix` is given: a job's context, and the combination.
  *
  * ```ts
- * ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
+ * ci.job({ id: "compat", matrix: { axes: { node: ["20", "22"] } } }, async ({ matrix }) => {
  *   await $`fnm use ${matrix.node}`;
  * });
  * ```
@@ -968,7 +968,7 @@ export type MatrixAxes = Record<
 >;
 
 /**
- * What a job's `matrix` function is given: what is known before any job runs.
+ * What a job's `matrix.axes` function is given: what is known before any job runs.
  */
 export interface MatrixAxesContext {
   /** The repository and change this run is for, as the pipeline's `repo`. */
@@ -990,15 +990,43 @@ export type MatrixCombo<TAxes> = {
 };
 
 /**
+ * A job's `matrix`: the axes to run it over, and how to run the combinations.
+ */
+export interface MatrixOptions<TAxes extends MatrixAxes = MatrixAxes> {
+  /**
+   * The axes to combine, in the order they should appear in job IDs. A function
+   * is called once per run, in a step, and its result is what every
+   * combination is made from, so the axes can depend on the commit being
+   * tested, and its values must be strings, numbers, booleans or null. A job a
+   * combination starts from, or runs as, is handed the combination and never
+   * calls it again.
+   */
+  axes: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
+  /** Combinations to leave out. A partial combination excludes every match. */
+  exclude?: readonly Partial<MatrixCombo<TAxes>>[];
+  /** Extra combinations to add, beyond the product of the axes. */
+  include?: readonly MatrixCombo<TAxes>[];
+  /** How many combinations may run at once. Defaults to all of them. */
+  concurrency?: number;
+  /**
+   * Stop the rest when one fails. Off by default, so one bad combination
+   * doesn't hide the others' failures.
+   */
+  failFast?: boolean;
+}
+
+/**
  * The options of a job with a `matrix`.
  *
  * ```ts
  * const compat = ci.job(
  *   {
  *     id: "compat",
- *     matrix: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
- *     exclude: [{ node: "20", db: "postgres" }],
- *     maxParallel: 3,
+ *     matrix: {
+ *       axes: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
+ *       exclude: [{ node: "20", db: "postgres" }],
+ *       concurrency: 3,
+ *     },
  *   },
  *   async ({ matrix }) => {
  *     await $`pnpm test`.env({
@@ -1017,26 +1045,8 @@ export interface MatrixJobConfig<
 > {
   /** Unique within the CI client. Each combination's job ID starts with it. */
   id: string;
-  /**
-   * The axes to combine, in the order they should appear in job IDs. A function
-   * is called once per run, in a step, and its result is what every
-   * combination is made from, so the axes can depend on the commit being
-   * tested, and its values must be strings, numbers, booleans or null. A job a
-   * combination starts from, or runs as, is handed the combination and never
-   * calls it again.
-   */
-  matrix: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
-  /** Combinations to leave out. A partial combination excludes every match. */
-  exclude?: readonly Partial<MatrixCombo<TAxes>>[];
-  /** Extra combinations to add, beyond the product of the axes. */
-  include?: readonly MatrixCombo<TAxes>[];
-  /** How many combinations may run at once. Defaults to all of them. */
-  maxParallel?: number;
-  /**
-   * Stop the rest when one fails. Off by default, so one bad combination
-   * doesn't hide the others' failures.
-   */
-  failFast?: boolean;
+  /** What to run the job over. Its combinations are each a job. */
+  matrix: MatrixOptions<TAxes>;
   /** Machine settings, per combination if you need them to differ. */
   machine?: MachineConfig | ((combo: MatrixCombo<TAxes>) => MachineConfig);
   /** Cache settings, per combination if you need them to differ. */

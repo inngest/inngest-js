@@ -23,7 +23,7 @@ const test = ci.job({ id: "test", from: base }, async ({ from }) => {
 Breaking: a handler reads its matrix combination from `matrix`, and a job handler reads its input from `input`.
 
 ```ts
-ci.job({ id: "compat", matrix: { node: ["20", "22"] } }, async ({ matrix }) => {
+ci.job({ id: "compat", matrix: { axes: { node: ["20", "22"] } } }, async ({ matrix }) => {
   await $`fnm use ${matrix.node}`;
 });
 
