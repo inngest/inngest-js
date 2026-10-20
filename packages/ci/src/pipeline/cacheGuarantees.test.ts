@@ -786,6 +786,13 @@ describe("a job that starts from a job in its own app", () => {
 
   test("runs that all miss each invoke, and all end on one snapshot per link", async () => {
     const api = createFakeSandboxApi();
+
+    // Slow builds keep every run looking before any of them has built.
+    api.script([
+      { match: "pnpm install", ticks: 5 },
+      { match: "pnpm build", ticks: 5 },
+    ]);
+
     const pipeline = chain(api);
 
     const results = await Promise.all(
