@@ -439,11 +439,6 @@ export interface ToolJsonDefinition {
    * object.
    */
   input_schema: Record<string, unknown>;
-
-  /**
-   * JSON Schema of the result, only for a tool that declares an `output`.
-   */
-  output_schema?: Record<string, unknown>;
 }
 
 type JsonSchemaProvider = {
@@ -476,9 +471,7 @@ const toJsonSchema = (
  * `tools` parameter takes (`{ name, description, input_schema }`).
  *
  * For OpenAI, map each one to
- * `{ type: "function", name, description, parameters: input_schema }`. A tool
- * that declares an `output` also gets an `output_schema`, which model APIs
- * don't accept, so leave it out when sending.
+ * `{ type: "function", name, description, parameters: input_schema }`.
  *
  * Schemas come from Zod 4 or any library that implements Standard JSON
  * Schema. Other Standard Schema libraries throw, since the standard can only
@@ -502,13 +495,12 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
   validateTools(tools);
 
   return Object.entries(tools).map(([name, entry]) => {
-    const { description, input, output } = toTool(entry);
+    const { description, input } = toTool(entry);
 
     return {
       name,
       ...(description !== undefined && { description }),
       input_schema: input ? toJsonSchema(name, input) : { type: "object" },
-      ...(output && { output_schema: toJsonSchema(name, output) }),
     };
   });
 };
