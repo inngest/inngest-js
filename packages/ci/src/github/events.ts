@@ -42,6 +42,10 @@ export const githubEventName = (
  * Source for an Inngest webhook transform. Paste this into the webhook's
  * transform box in the Inngest dashboard.
  *
+ * It also puts the event in the `pull_request` and `commit` Inngest Sessions
+ * when it has them (`owner/repo#number` and the head SHA), so every run for a
+ * pull request or commit is grouped.
+ *
  * It's plain JavaScript because it runs in Inngest's transform sandbox, and it
  * looks headers up case-insensitively because different proxies normalise them
  * differently.
@@ -65,6 +69,24 @@ export const githubWebhookTransform = `function transform(evt, headers, queryPar
   var installationId =
     evt && evt.installation && evt.installation.id ? evt.installation.id : undefined;
 
+  var repo = evt && evt.repository ? evt.repository.full_name : undefined;
+  var pullRequest = evt && evt.pull_request ? evt.pull_request : undefined;
+  var number = pullRequest
+    ? pullRequest.number
+    : evt && evt.issue && evt.issue.pull_request
+      ? evt.issue.number
+      : undefined;
+  var commit =
+    (pullRequest && pullRequest.head && pullRequest.head.sha) ||
+    (evt && evt.merge_group && evt.merge_group.head_sha) ||
+    (evt && evt.check_run && evt.check_run.head_sha) ||
+    (evt && evt.check_suite && evt.check_suite.head_sha) ||
+    (evt && evt.after && !/^0+$/.test(evt.after) ? evt.after : undefined);
+  var sessions = {};
+
+  if (repo && number) sessions.pull_request = repo + "#" + number;
+  if (commit) sessions.commit = commit;
+
   return {
     name: name,
     data: Object.assign({}, evt, {
@@ -74,6 +96,7 @@ export const githubWebhookTransform = `function transform(evt, headers, queryPar
         installationId: installationId,
       },
     }),
+    meta: { sessions: sessions },
   };
 }`;
 

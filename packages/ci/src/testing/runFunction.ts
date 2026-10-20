@@ -599,6 +599,8 @@ const driveFunction = async (
 
         started.add(planned.id);
 
+        inputs[stepId(planned)] = planned.opts;
+
         progressed = true;
 
         inflight.set(

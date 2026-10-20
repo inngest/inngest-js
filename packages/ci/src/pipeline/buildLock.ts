@@ -51,6 +51,7 @@ import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciStep, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { joinId, rootRunIdOf } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 /** The event a run sends to ask for a cache entry to be built. */
 export const buildRequestedEvent = "ci/build.requested";
@@ -207,6 +208,7 @@ export const requestBuild = async ({
           app: run.ci.client.id,
           slot: failures === 0 ? name : `${name}:${failures}`,
         },
+        meta: sessionsMeta(run, { jobId: config.id, target }),
       },
     );
 

@@ -182,6 +182,19 @@ Every pipeline run is tagged with `userland.inngest-ci` metadata, visible on the
 
 See [Run metadata](https://www.inngest.com/docs/labs/ci/reference#run-metadata) for every field.
 
+## Sessions
+
+Runs are grouped into [Inngest Sessions](https://www.inngest.com/docs/agent-evals/sessions), so one session shows every run behind a pull request, commit, pipeline run or image.
+
+| Session key    | ID                                              | Set by                                         |
+| -------------- | ----------------------------------------------- | ---------------------------------------------- |
+| `pull_request` | `owner/repo#number`                             | `githubWebhookTransform`, on the trigger event |
+| `commit`       | The head SHA                                    | `githubWebhookTransform`, on the trigger event |
+| `ci_run`       | The ID of the pipeline run at the root          | Every job run and build request it starts      |
+| `image`        | `<job id>@<cache key hash>`                     | A cached job's build request                   |
+
+The SDK passes a run's sessions on to the events and invokes it creates, so every run in a pipeline carries the first two. An event carries five sessions, with those set explicitly kept first, so these four are never the ones dropped. Set your own sessions on the trigger event or in your transform and they are kept alongside.
+
 ## Example project
 
 [`examples/ci-pipelines`](https://github.com/inngest/inngest-js/tree/main/examples/ci-pipelines) is a runnable example with pipelines, matrices, caching, and GitHub checks.
