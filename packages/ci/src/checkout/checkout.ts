@@ -13,7 +13,7 @@ import {
   targetsRunRepo,
   tokenForSource,
 } from "../github/source.ts";
-import { ensureMachine } from "../machine/machine.ts";
+import { directSandbox, ensureMachine } from "../machine/machine.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
@@ -148,16 +148,6 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   scope.cwd ??= target;
 };
 
-const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
-  const sandbox = await run.ci.client.sandboxes.get(machine.id);
-
-  if (!sandbox) {
-    throw new Error(`Machine ${machine.id} is gone`);
-  }
-
-  return sandbox;
-};
-
 const uploadWorkingTree = async (
   run: CiRunScope,
   machine: MachineHandle,
@@ -172,7 +162,7 @@ const uploadWorkingTree = async (
     );
   }
 
-  const sandbox = await getSandbox(run, machine);
+  const sandbox = await directSandbox(run, machine);
 
   await sandbox.commands.run(["/bin/mkdir", "-p", target]);
 
@@ -262,7 +252,7 @@ const cloneFromGithub = async (
   // the step's input or output. Both of those show in the trace.
   const accessToken = await tokenForSource(run, source);
 
-  const sandbox = await getSandbox(run, machine);
+  const sandbox = await directSandbox(run, machine);
 
   const url = `https://x-access-token:${accessToken}@github.com/${source.fullName}.git`;
 

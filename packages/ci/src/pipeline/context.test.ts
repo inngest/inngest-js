@@ -10,13 +10,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { consoleReporter } from "../github/auth.ts";
 import { deployedRepo } from "../github/deployRepo.ts";
 import { image } from "../image.ts";
-import { $ } from "../machine/command.ts";
+import { $, createRawCommand, stateOfCommand } from "../machine/command.ts";
+import { outputsFrom, storeOutput } from "../machine/outputs.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { RepoContext } from "../types.ts";
 import { createCi } from "./createCi.ts";
+import type { CiJobScope } from "./scope.ts";
 
 vi.mock("../github/deployRepo.ts", () => {
   return { deployedRepo: vi.fn() };
@@ -63,9 +65,10 @@ const go = async (
   apps: ReturnType<typeof app>[],
   body: () => Promise<unknown>,
   runId: string,
+  childRuns?: boolean,
 ) => {
   const result = await runFunction(
-    asker.pipeline({ id: "pr", on: prTrigger }, body),
+    asker.pipeline({ id: "pr", on: prTrigger, childRuns }, body),
     {
       event: prEvent,
       runId,
@@ -355,7 +358,7 @@ describe("what a job returns", () => {
         ancestry: from.ancestry.map((above) => {
           return above.output;
         }),
-        dev: JSON.parse(JSON.stringify(from.$.dev)),
+        dev: stateOfCommand(from.$.dev),
       });
 
       await from.$.dev.env({ MODE: "test" });
@@ -368,12 +371,10 @@ describe("what a job returns", () => {
     output: { version: "", release: { tag: "v9", assets: [1, 2] } },
     ancestry: [{ version: "", release: { tag: "v9", assets: [1, 2] } }],
     dev: {
-      $cmd: {
-        argv: ["pnpm", "dev"],
-        env: { PORT: "3000" },
-        retries: 0,
-        nothrow: false,
-      },
+      argv: ["pnpm", "dev"],
+      env: { PORT: "3000" },
+      retries: 0,
+      nothrow: false,
     },
   };
 
@@ -438,25 +439,6 @@ describe("what a job returns", () => {
     expect(unique(seen)).toEqual([expected]);
   });
 
-  test("without snapshots, the job above runs again on this machine and gives the same output", async () => {
-    const api = createFakeSandboxApi();
-    const seen: unknown[] = [];
-    const { ci, leaf } = chain(api, seen);
-
-    api.disableSnapshots();
-
-    await go(
-      ci,
-      [ci],
-      async () => {
-        await leaf();
-      },
-      "01FIRST",
-    );
-
-    expect(unique(seen)).toEqual([expected]);
-  });
-
   test("an uncached job resolves to its data, without its commands", async () => {
     const ci = app(createFakeSandboxApi(), "web");
     const results: unknown[] = [];
@@ -475,6 +457,48 @@ describe("what a job returns", () => {
     );
 
     expect(unique(results)).toEqual([{ count: 3 }]);
+  });
+
+  test("a job gives the same data inline as it does in a child run", async () => {
+    const gave: Record<string, unknown[]> = { inline: [], child: [] };
+
+    for (const [mode, childRuns] of [
+      ["inline", false],
+      ["child", true],
+    ] as const) {
+      const ci = app(createFakeSandboxApi(), "web");
+      const seen: unknown[] = [];
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+
+        return { answer: 42, dev: $`pnpm dev` };
+      });
+
+      const leaf = ci.job({ id: "leaf", from: base }, async ({ from }) => {
+        seen.push({ output: from.output, dev: Object.keys(from.$) });
+
+        return { count: 3, dev: $`pnpm dev` };
+      });
+
+      await go(
+        ci,
+        [ci],
+        async () => {
+          gave[mode]!.push(await leaf());
+        },
+        "01FIRST",
+        childRuns,
+      );
+
+      gave[mode] = unique([...gave[mode]!, ...seen]);
+    }
+
+    expect(gave.child).toEqual(gave.inline);
+    expect(gave.inline).toEqual([
+      { count: 3 },
+      { output: { answer: 42 }, dev: ["dev"] },
+    ]);
   });
 
   test("a job that ran no commands but returned something still gives it", async () => {
@@ -529,7 +553,7 @@ describe("what a job returns", () => {
         ancestry: from.ancestry.map((above) => {
           return [above.id, above.output, Object.keys(above.$)];
         }),
-        run: JSON.parse(JSON.stringify(from.$.run)).$cmd.argv,
+        run: stateOfCommand(from.$.run).argv,
       });
 
       await $`pnpm test`;
@@ -567,8 +591,8 @@ describe("what a job returns", () => {
     });
 
     const child = ci.job({ id: "child", from: base }, async ({ from }) => {
-      seen.push(JSON.parse(JSON.stringify(from.$.dev.env({ A: "1" }))));
-      seen.push(JSON.parse(JSON.stringify(from.$.dev)));
+      seen.push(stateOfCommand(from.$.dev.env({ A: "1" })));
+      seen.push(stateOfCommand(from.$.dev));
     });
 
     await go(
@@ -580,9 +604,70 @@ describe("what a job returns", () => {
       "01FIRST",
     );
 
-    expect(unique(seen)).toMatchObject([
-      { $cmd: { env: { A: "1" } } },
-      { $cmd: { env: {} } },
+    expect(unique(seen)).toMatchObject([{ env: { A: "1" } }, { env: {} }]);
+  });
+
+  test("data that looks like a stored command stays data", async () => {
+    const seen: unknown[] = [];
+    const ci = app(createFakeSandboxApi(), "web");
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+
+      return { metadata: { $cmd: "literal" }, dev: $`pnpm dev` };
+    });
+
+    const child = ci.job({ id: "child", from: base }, async ({ from }) => {
+      seen.push({ output: from.output, commands: Object.keys(from.$) });
+    });
+
+    await go(
+      ci,
+      [ci],
+      async () => {
+        await child();
+      },
+      "01FIRST",
+    );
+
+    expect(unique(seen)).toEqual([
+      { output: { metadata: { $cmd: "literal" } }, commands: ["dev"] },
+    ]);
+  });
+
+  test("a returned command with an onTimeout callback is refused", () => {
+    const scope = { outputs: {} } as CiJobScope;
+
+    const dev = createRawCommand(() => {
+      return scope;
+    }, ["pnpm", "dev"]).onTimeout(async () => {});
+
+    expect(() => {
+      return storeOutput(scope, "base", [], { dev });
+    }).toThrow(/onTimeout/);
+  });
+
+  test("two jobs with the same ID in a chain keep their own outputs", () => {
+    const scope = { outputs: {} } as CiJobScope;
+    const root = { id: "build", key: {} };
+    const top = { id: "build", key: {} };
+
+    storeOutput(scope, "build", [], { from: "root" });
+
+    storeOutput(scope, "build", [root], { from: "top" });
+
+    const above = outputsFrom(
+      () => {
+        return scope;
+      },
+      [top, root],
+      scope.outputs,
+    );
+
+    expect(above.output).toEqual({ from: "top" });
+    expect(above.ancestry.map((one) => one.output)).toEqual([
+      { from: "top" },
+      { from: "root" },
     ]);
   });
 
@@ -605,7 +690,7 @@ describe("what a job returns", () => {
         async ({ from }) => {
           seen.push({
             output: from.output,
-            dev: JSON.parse(JSON.stringify(from.$.dev)).$cmd.argv,
+            dev: stateOfCommand(from.$.dev!).argv,
           });
 
           await $`pnpm test`;

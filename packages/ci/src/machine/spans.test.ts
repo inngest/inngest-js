@@ -48,7 +48,10 @@ const ciTest = (
     ci,
     /** Run the pipeline whose handler `define` makes from `ci`. */
     run: (define: (ci: Ci) => () => Promise<unknown>): Promise<RunResult> => {
-      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, define(ci));
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        define(ci),
+      );
 
       return runFunction(pipeline, { event: prEvent });
     },
@@ -192,7 +195,7 @@ const machine = [
   { ...span("test › machine", "Start sandbox", "sandbox"), origin },
 ];
 const command = (label: string) => {
-  return [job, span(`test › ${label}`, `$ ${label}`, "command")];
+  return [job, span(`test › ${label}`, label, "$")];
 };
 const attempt = (n: number) => {
   return [
@@ -203,10 +206,7 @@ const attempt = (n: number) => {
 
 /** A statement on the background `serve`, a row of its own beside the command's. */
 const statement = (suffix: string, label: string) => {
-  return [
-    job,
-    span(`test › serve › ${suffix}`, `$ serve (${label})`, "command"),
-  ];
+  return [job, span(`test › serve › ${suffix}`, `serve (${label})`, "$")];
 };
 
 describe("spans", () => {
@@ -224,29 +224,16 @@ describe("spans", () => {
       "test › machine › setup": machine,
       "test › quick": command("quick"),
       "test › slow › start": command("slow"),
-      "test › slow › wait #1": command("slow"),
       "test › slow › check #1": command("slow"),
-      "test › slow › wait #2": command("slow"),
-      "test › slow › check #2": command("slow"),
-      "test › slow › output": command("slow"),
       "test › flaky #attempt-1 › start": attempt(1),
-      "test › flaky #attempt-1 › wait #1": attempt(1),
-      "test › flaky #attempt-1 › check #1": attempt(1),
-      "test › flaky #attempt-1 › output": attempt(1),
       "test › flaky #attempt-1 › exit": attempt(1),
       "github › check:test:attempt:1": github,
       "test › flaky #attempt-2 › start": attempt(2),
-      "test › flaky #attempt-2 › wait #1": attempt(2),
-      "test › flaky #attempt-2 › check #1": attempt(2),
-      "test › flaky #attempt-2 › output": attempt(2),
       "test › flaky #attempt-2 › exit": attempt(2),
       "test › serve › start": command("serve"),
       "test › serve › output #1": statement("output #1", "output"),
-      "test › serve › wait #2": statement("exited #1", "exited"),
       "test › serve › check #2": statement("exited #1", "exited"),
-      "test › serve › wait #3": statement("exited #1", "exited"),
       "test › serve › check #3": statement("exited #1", "exited"),
-      "test › serve › output": statement("exited #1", "exited"),
       "test › serve › kill": statement("kill", "kill"),
       "test › destroy": [job],
       "github › check:test:complete": github,
@@ -255,7 +242,7 @@ describe("spans", () => {
     });
   });
 
-  test("leave step IDs and their order as they were, plus one per failed run", async () => {
+  test("give a command one step to start and follow it, one more per stretch it runs on, plus one per failed run", async () => {
     const result = await run();
 
     expect(result.stepIds).toEqual([
@@ -265,29 +252,16 @@ describe("spans", () => {
       "test › machine › setup",
       "test › quick",
       "test › slow › start",
-      "test › slow › wait #1",
       "test › slow › check #1",
-      "test › slow › wait #2",
-      "test › slow › check #2",
-      "test › slow › output",
       "test › flaky #attempt-1 › start",
-      "test › flaky #attempt-1 › wait #1",
-      "test › flaky #attempt-1 › check #1",
-      "test › flaky #attempt-1 › output",
       "test › flaky #attempt-1 › exit",
       "github › check:test:attempt:1",
       "test › flaky #attempt-2 › start",
-      "test › flaky #attempt-2 › wait #1",
-      "test › flaky #attempt-2 › check #1",
-      "test › flaky #attempt-2 › output",
       "test › flaky #attempt-2 › exit",
       "test › serve › start",
       "test › serve › output #1",
-      "test › serve › wait #2",
       "test › serve › check #2",
-      "test › serve › wait #3",
       "test › serve › check #3",
-      "test › serve › output",
       "test › serve › kill",
       "test › destroy",
       "github › check:test:complete",
@@ -307,11 +281,8 @@ describe("spans", () => {
       "test › machine": "Create sandbox",
       "test › machine › setup": "Prepare workspace",
       "test › quick": "Run and read output",
-      "test › slow › start": "Start process",
-      "test › slow › wait #1": "Wait 1s",
+      "test › slow › start": "Run process",
       "test › slow › check #1": "Poll process",
-      "test › slow › wait #2": "Wait 2s",
-      "test › slow › output": "Read output",
       "github › check:test:attempt:1": "Report test: retrying (attempt 2 of 2)",
       "test › serve › output #1": "Read output",
       "test › serve › kill": "Stop process",
@@ -427,9 +398,6 @@ describe("spans", () => {
       "test › machine": "test",
       "test › machine › setup": "test",
       "test › unit › start": "test",
-      "test › unit › wait #1": "test",
-      "test › unit › check #1": "test",
-      "test › unit › output": "test",
       "github › check:test:complete": "github",
       "github › check:jobs:complete": "github",
       "github › check:pr:complete": "github",
@@ -455,22 +423,16 @@ describe("spans", () => {
         "  Start sandbox from base [sandbox]",
         "    Create sandbox",
         "    Prepare workspace",
-        "  $ pnpm test [command]",
-        "    Start process",
-        "    Wait 1s",
-        "    Poll process",
-        "    Read output",
-        "  lint [command]",
-        "    Start process",
-        "    Wait 1s",
-        "    Poll process",
-        "    Read output",
+        "  pnpm test [$]",
+        "    Run process",
+        "  lint [$]",
+        "    Run process",
         "  my-step",
         "  api [sandbox]",
         "    Start sandbox [sandbox]",
         "      Create sandbox",
         "      Prepare workspace",
-        "    $ pnpm start [command]",
+        "    pnpm start [$]",
         "      Run and read output",
         "    Destroy sandbox",
         "  Destroy sandbox",
@@ -502,22 +464,16 @@ describe("spans", () => {
         "  Start sandbox from base [sandbox] <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
-        "  $ pnpm test [command]",
-        "    Start process <- ci",
-        "    Wait 1s <- ci",
-        "    Poll process <- ci",
-        "    Read output <- ci",
-        "  lint [command]",
-        "    Start process <- ci",
-        "    Wait 1s <- ci",
-        "    Poll process <- ci",
-        "    Read output <- ci",
+        "  pnpm test [$]",
+        "    Run process <- ci",
+        "  lint [$]",
+        "    Run process <- ci",
         "  my-step",
         "  api [sandbox]",
         "    Start sandbox [sandbox] <- ci",
         "      Create sandbox <- ci",
         "      Prepare workspace <- ci",
-        "    $ pnpm start [command]",
+        "    pnpm start [$]",
         "      Run and read output <- ci",
         "    Destroy sandbox <- ci",
         "  Destroy sandbox <- ci",

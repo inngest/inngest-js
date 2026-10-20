@@ -1,8 +1,8 @@
 /**
  * Starting a job from its `from` parent's machine: working out what `from`
  * names, asking the parent's build function for a snapshot and starting from
- * it, plus the fallback that re-runs the parent's handler when no snapshot is
- * available.
+ * it, plus the fallback that re-runs the parent's handler when a snapshot
+ * won't start.
  *
  * A job's name includes the snapshot of the parent it starts from, so a
  * parent's own parent is resolved first, and its build is handed that same
@@ -653,18 +653,6 @@ export const startFrom = async (
     };
 
     await ensureMachine(scope);
-  } else if (built.hadMachine || config.cache) {
-    // A cached job is built in a run of its own, so without a snapshot its
-    // work isn't on any machine here. This job's own parent gave no snapshot:
-    // for a cached job it wasn't found, and for any other the machine
-    // couldn't be snapshotted.
-    const why = config.cache ? " · no cache" : " · no snapshots";
-
-    scope.startNote = `rebuilding ${config.id}${why}`;
-
-    run.ci.hooks.activity(run, scope.jobPath, scope.startNote);
-
-    await rerunOnThisMachine(scope, parent, built.ancestry);
   }
 };
 
@@ -873,5 +861,5 @@ const rerunOnThisMachine = async (
     }),
   );
 
-  storeOutput(scope, parent.config.id, output);
+  storeOutput(scope, parent.config.id, ancestry.slice(1), output);
 };

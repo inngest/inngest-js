@@ -5,25 +5,42 @@
  * @module
  */
 
-import type { CiJobScope, StoredOutputs } from "../pipeline/scope.ts";
+import { CiUsageError } from "../errors.ts";
+import type {
+  CiJobScope,
+  StoredOutput,
+  StoredOutputs,
+} from "../pipeline/scope.ts";
 import type { Ancestor, AncestorContext, Command } from "../types.ts";
-import { type CommandState, commandFromJson } from "./command.ts";
+import {
+  type CommandState,
+  commandFromJson,
+  isCommand,
+  stateOfCommand,
+} from "./command.ts";
 
-type StoredCommand = { $cmd: CommandState };
-
-const isStoredCommand = (value: unknown): value is StoredCommand => {
-  return typeof value === "object" && value !== null && "$cmd" in value;
+/**
+ * Where a job's output is kept: its place in the chain, which is how many jobs
+ * are above it, and its ID. The place keeps two jobs with the same ID apart, as
+ * when one app's `build` starts from another app's `build`.
+ */
+const outputKey = (id: string, above: Ancestor[]): string => {
+  return `${above.length}:${id}`;
 };
 
 /**
- * What a job returned, as it is stored: JSON, with each command as its state.
- * What the job returned is kept for the jobs that start from it, unless it
- * returned nothing.
+ * What a job returned, as it is stored: its data as JSON, and each command as
+ * its state. What the job returned is kept for the jobs that start from it,
+ * unless it returned nothing.
+ *
+ * Returns the data, which is what the job gives to a caller.
  */
 export const storeOutput = (
   scope: CiJobScope,
   /** The ID of the job that returned it. */
   id: string,
+  /** The jobs above it, nearest first. */
+  above: Ancestor[],
   /** What the handler returned. */
   returned: unknown,
 ): Record<string, unknown> | undefined => {
@@ -31,48 +48,59 @@ export const storeOutput = (
     return undefined;
   }
 
-  const stored = JSON.parse(JSON.stringify(returned)) as Record<
-    string,
-    unknown
-  >;
+  const data: Record<string, unknown> = {};
+  const commands: Record<string, CommandState> = {};
 
-  if (Object.keys(stored).length > 0) {
-    scope.outputs[id] = stored;
+  for (const [name, value] of Object.entries(returned)) {
+    if (!isCommand(value)) {
+      data[name] = value;
+
+      continue;
+    }
+
+    const state = stateOfCommand(value);
+
+    if (state.onTimeout) {
+      throw new CiUsageError(
+        `The command returned as "${name}" has an \`onTimeout\` callback, which can't be kept for the jobs that start from this one. Remove it, or run the command in the job.`,
+      );
+    }
+
+    commands[name] = state;
   }
 
-  return stored;
-};
+  const stored: StoredOutput = {
+    data: JSON.parse(JSON.stringify(data)),
+    commands,
+  };
 
-/** The entries of an output that are data: everything but commands. */
-export const dataOf = (
-  stored: Record<string, unknown> | undefined,
-): Record<string, unknown> => {
-  return Object.fromEntries(
-    Object.entries(stored ?? {}).filter(([, value]) => {
-      return !isStoredCommand(value);
-    }),
-  );
+  if (
+    Object.keys(stored.data).length > 0 ||
+    Object.keys(stored.commands).length > 0
+  ) {
+    scope.outputs[outputKey(id, above)] = stored;
+  }
+
+  return stored.data;
 };
 
 /** The commands of an output, each made again on every read. */
 const commandsIn = (
   getScope: () => CiJobScope,
-  stored: Record<string, unknown> | undefined,
+  commands: Record<string, CommandState>,
 ): Record<string, Command> => {
-  const commands: Record<string, Command> = {};
+  const made: Record<string, Command> = {};
 
-  for (const [name, value] of Object.entries(stored ?? {})) {
-    if (isStoredCommand(value)) {
-      Object.defineProperty(commands, name, {
-        enumerable: true,
-        get: () => {
-          return commandFromJson(getScope, value.$cmd);
-        },
-      });
-    }
+  for (const [name, state] of Object.entries(commands)) {
+    Object.defineProperty(made, name, {
+      enumerable: true,
+      get: () => {
+        return commandFromJson(getScope, state);
+      },
+    });
   }
 
-  return commands;
+  return made;
 };
 
 /**
@@ -91,22 +119,44 @@ export const outputsFrom = (
   $: Record<string, Command>;
   ancestry: AncestorContext[];
 } => {
-  // Nearest last, so a shared name takes its nearest value.
-  const merged = Object.assign(
-    {},
-    ...[...ancestry].reverse().map((above) => {
-      return stored[above.id];
-    }),
-  ) as Record<string, unknown>;
+  const storedFor = (index: number): StoredOutput => {
+    return (
+      stored[outputKey(ancestry[index]!.id, ancestry.slice(index + 1))] ?? {
+        data: {},
+        commands: {},
+      }
+    );
+  };
+
+  const data: Record<string, unknown> = {};
+  const commands: Record<string, CommandState> = {};
+
+  // Farthest first, so a shared name takes its nearest value.
+  for (let index = ancestry.length - 1; index >= 0; index--) {
+    const above = storedFor(index);
+
+    for (const name of [
+      ...Object.keys(above.data),
+      ...Object.keys(above.commands),
+    ]) {
+      delete data[name];
+
+      delete commands[name];
+    }
+
+    Object.assign(data, above.data);
+
+    Object.assign(commands, above.commands);
+  }
 
   return {
-    output: dataOf(merged),
-    $: commandsIn(getScope, merged),
-    ancestry: ancestry.map((above) => {
+    output: data,
+    $: commandsIn(getScope, commands),
+    ancestry: ancestry.map((above, index) => {
       return {
         ...above,
-        output: dataOf(stored[above.id]),
-        $: commandsIn(getScope, stored[above.id]),
+        output: storedFor(index).data,
+        $: commandsIn(getScope, storedFor(index).commands),
       };
     }),
   };

@@ -114,8 +114,11 @@ export type FlowControlOptions = Pick<
  */
 export interface MachineConfig {
   /**
-   * The number of vCPUs the machine gets. Memory is paired with this: 1 vCPU
-   * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB. Defaults to 2.
+   * The number of vCPUs the machine gets. Memory follows vCPU: 1 gets 1 GiB,
+   * 2 gets 2 GiB, 4 gets 4 GiB. Defaults to 4.
+   *
+   * Applies to machines created from scratch. A job that restores a snapshot
+   * from another job runs at that job's size.
    */
   vcpu?: 1 | 2 | 4;
 }
@@ -286,7 +289,11 @@ export interface JobConfig<
   from?: TFrom;
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
-  /** Machine settings for this job, overriding the pipeline's and the client's. */
+  /**
+   * Machine settings for this job, overriding the pipeline's and the client's.
+   * Ignored when the job restores a snapshot from another job, which runs at
+   * that job's size.
+   */
   machine?: MachineConfig;
   /**
    * Snapshot the job's machine when it passes, and reuse that snapshot while
@@ -362,12 +369,27 @@ export type DataOf<TOutput> = {
     : K]: Exclude<TOutput[K], Command>;
 };
 
-/** The entries of an output that are commands. */
-export type CommandsOf<TOutput> = {
-  [K in keyof TOutput as [Extract<TOutput[K], Command>] extends [never]
-    ? never
-    : K]: Extract<TOutput[K], Command>;
-};
+/**
+ * The entries of an output that are commands. An entry that is only sometimes a
+ * command, as when it can be `undefined`, is optional, because it is left out
+ * of what the job stored when it isn't one.
+ */
+export type CommandsOf<TOutput> = Merged<
+  {
+    [K in keyof TOutput as [TOutput[K]] extends [Command] ? K : never]: Extract<
+      TOutput[K],
+      Command
+    >;
+  } & {
+    [K in keyof TOutput as [Extract<TOutput[K], Command>] extends [never]
+      ? never
+      : [TOutput[K]] extends [Command]
+        ? never
+        : K]?: Extract<TOutput[K], Command>;
+  }
+>;
+
+type Merged<T> = { [K in keyof T]: T[K] };
 
 /**
  * What awaiting a job gives: the data of its output. A job with a `cache` is
@@ -705,6 +727,17 @@ export interface PipelineConfig<
   check?: false | { name?: string; jobs?: boolean };
   /** Default machine for this pipeline's jobs. */
   machine?: MachineConfig;
+  /**
+   * Whether each job runs as a run of its own, with its own step budget,
+   * retries and trace. Cancelling or ending the pipeline cancels them.
+   * Defaults to `true`; `false` runs jobs in the pipeline's run, which
+   * has one step budget for them all.
+   *
+   * A job defined inside the pipeline, or with `keepOnFailure`, runs in the
+   * pipeline's run either way. A job with a `cache` always runs as a run of its
+   * own, since that run decides whether to reuse its snapshot or build it.
+   */
+  childRuns?: boolean;
   /**
    * For triggers with no repo of their own, like crons, the `owner/repo` to
    * resolve a head commit from.

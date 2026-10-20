@@ -756,6 +756,19 @@ describe("a handler's context", () => {
     });
   });
 
+  test("a command that is only sometimes returned is optional in from.$", () => {
+    const base = ci.job("maybe-command", async () => {
+      const dev: Command | undefined =
+        Math.random() > 0.5 ? $`pnpm dev` : undefined;
+
+      return { dev, always: $`ls` };
+    });
+
+    ci.job({ id: "maybe-leaf", from: base }, async ({ from }) => {
+      expectTypeOf(from.$).toEqualTypeOf<{ always: Command; dev?: Command }>();
+    });
+  });
+
   test("a job below one with no output sees none", () => {
     const base = ci.job("quiet", async () => {});
 

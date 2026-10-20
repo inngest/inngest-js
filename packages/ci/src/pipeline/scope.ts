@@ -11,6 +11,7 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { CommandState } from "../machine/command.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -99,6 +100,8 @@ export interface BuildRequest {
   broken?: boolean;
   /** Whether the build leaves the name alone and takes a snapshot of its own. */
   unnamed?: boolean;
+  /** Whether nothing starts from the job, so the build takes no snapshot. */
+  direct?: boolean;
   /** What the job starts from, as a build is handed it. */
   base?: CacheBuildResult;
   /** What the job leaves for whoever asked: the job sets it, they read it. */
@@ -107,6 +110,8 @@ export interface BuildRequest {
     outcome?: BuildOutcome;
     /** The job's line in the summary, for the asker to report. */
     summary?: JobSummary;
+    /** The data the job returned, which is what a direct call resolves to. */
+    output?: Record<string, unknown>;
   };
 }
 
@@ -137,6 +142,7 @@ export const requestOf = (data: CacheBuildData): BuildRequest => {
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),
+    ...(data.direct ? { direct: data.direct } : {}),
     ...(data.base ? { base: data.base } : {}),
     sink: {},
   };
@@ -150,8 +156,6 @@ export interface BuildOutcome {
   cached?: CachedSnapshot;
   /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
-  /** Whether the job ran commands, so it had a machine to snapshot. */
-  hadMachine: boolean;
 }
 
 export interface JobSummary {
@@ -235,6 +239,8 @@ export interface CiRunScope {
   jobChecks: boolean;
   /** The pipeline's default machine, for jobs that set none. */
   machine?: MachineConfig;
+  /** Whether jobs run in runs of their own, as `PipelineConfig.childRuns` says. */
+  childRuns: boolean;
   event: unknown;
   repo?: RepoContext;
   /**
@@ -284,20 +290,6 @@ export interface CiRunScope {
    * are still going, these are completed rather than left spinning.
    */
   openChecks: Map<string, string | undefined>;
-  /**
-   * Job checks whose job failed with an error Inngest will retry. They stay in
-   * progress with their result held back, because a later attempt may pass.
-   */
-  deferredChecks: Map<
-    string,
-    {
-      name?: string;
-      conclusion: CheckConclusion;
-      title: string;
-      summary: string;
-      annotations: CheckAnnotation[];
-    }
-  >;
   /** This attempt, counting from 0. */
   attempt: number;
   /** How many attempts Inngest makes in all. */
@@ -323,8 +315,17 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
-/** What jobs returned, by job ID: JSON, with a command as `{ "$cmd": … }`. */
-export type StoredOutputs = Record<string, Record<string, unknown>>;
+/** What one job returned: its JSON data, and its commands as their state. */
+export interface StoredOutput {
+  data: Record<string, unknown>;
+  commands: Record<string, CommandState>;
+}
+
+/**
+ * What jobs returned, by their place in the chain and ID. The place keeps two
+ * jobs of the same ID, as when one app's `build` starts from another's, apart.
+ */
+export type StoredOutputs = Record<string, StoredOutput>;
 
 export interface CiJobScope {
   run: CiRunScope;
