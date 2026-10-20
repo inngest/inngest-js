@@ -416,6 +416,27 @@ describe("commandSpan", () => {
     expect(commandSpan(exec(["npm", "test"]), "c")?.name).toBe("npm test");
   });
 
+  test("gives commands that repeat a step ID their own spans", () => {
+    const instance = {};
+    const open = (prefix: string) => {
+      return runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { instance, stepIdPrefix: prefix } as never,
+        },
+        () => {
+          return commandSpan(exec(["ls"]), "run")?.id;
+        },
+      );
+    };
+
+    expect([open(""), open(""), open("turn-2:")]).toEqual([
+      "run",
+      "run:1",
+      "turn-2:run",
+    ]);
+  });
+
   test("is named by the step's name when it has one", () => {
     expect(
       commandSpan(exec(["npm", "test"]), { id: "c", name: "Run tests" })?.name,

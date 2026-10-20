@@ -247,6 +247,31 @@ const defaultNames: Partial<Record<SandboxAction, string>> = {
 const maxNameChars = 100;
 
 /**
+ * How many commands each execution has opened a span for under each ID.
+ */
+const spansOpened = new WeakMap<object, Map<string, number>>();
+
+/**
+ * An ID for a command's span that no other command of the execution has. Step
+ * IDs can repeat (the SDK numbers them), such as a tool's in each turn of an
+ * agent, and a span re-entered by ID would merge those commands into one row.
+ * A replay calls in the same order, so each command gets the same ID again.
+ */
+const uniqueSpanId = (
+  execution: { instance: object; stepIdPrefix?: string },
+  id: string,
+): string => {
+  const key = `${execution.stepIdPrefix ?? ""}${id}`;
+  const opened = spansOpened.get(execution.instance) ?? new Map();
+  const count = opened.get(key) ?? 0;
+
+  opened.set(key, count + 1);
+  spansOpened.set(execution.instance, opened);
+
+  return count ? `${key}:${count}` : key;
+};
+
+/**
  * The step options for an operation: the caller's, with a name that reads as
  * the action if they gave none. IDs never change, for replay.
  */
@@ -281,7 +306,8 @@ export const commandSpan = (
     operation.action === "exec" ||
     operation.action === "process.start" ||
     operation.action in processStatements;
-  const enclosing = getAsyncCtxSync()?.execution?.span?.at(-1);
+  const execution = getAsyncCtxSync()?.execution;
+  const enclosing = execution?.span?.at(-1);
 
   if (
     !isCommand ||
@@ -301,7 +327,7 @@ export const commandSpan = (
   const statement = processStatements[operation.action];
 
   return {
-    id,
+    id: execution ? uniqueSpanId(execution, id) : id,
     name: name ?? (statement ? `${label} (${statement})` : label),
     kind: commandSpanKind,
   };
