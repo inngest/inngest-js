@@ -91,6 +91,7 @@ export type {
   SandboxTools,
   SandboxToolsOptions,
   ToolDefinition,
+  ToolJsonDefinition,
 } from "./components/sandbox/tools.ts";
-export { tool } from "./components/sandbox/tools.ts";
+export { tool, toolDefinitions } from "./components/sandbox/tools.ts";
 export type { ExperimentRef } from "./types.ts";
