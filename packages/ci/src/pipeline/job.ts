@@ -348,7 +348,6 @@ export const builtResult = (
     reused: outcome?.reused ?? false,
     target,
     ancestry: ancestryOf(id, target, base),
-    hadMachine: outcome?.hadMachine ?? false,
     ...(summary ? { summary } : {}),
     ...rest,
   };
@@ -554,7 +553,6 @@ const baseForBuild = (built: CacheBuildResult): CacheBuildResult => {
     reused: built.reused,
     target: built.target,
     ancestry: built.ancestry,
-    hadMachine: built.hadMachine,
     createdSnapshots: [],
     warnings: [],
   };
@@ -574,7 +572,6 @@ export const reusedBuild = (
     reused: true,
     target,
     ancestry: ancestryOf(config.id, target, base),
-    hadMachine: true,
     createdSnapshots: [],
     summary: {
       path: config.id,
@@ -1017,7 +1014,6 @@ const restoreFromCache = (scope: CiJobScope, hit: CachedSnapshot): string => {
     snapshotId: hit.snapshotId,
     ...(scope.config.cache ? { cached: hit } : {}),
     reused: true,
-    hadMachine: true,
   });
 
   const title = cachedTitle(hit);
@@ -1051,7 +1047,7 @@ const snapshotBuilt = async (
       );
     }
 
-    setOutcome(scope, { reused: false, hadMachine: false });
+    setOutcome(scope, { reused: false });
 
     return;
   }
@@ -1069,7 +1065,6 @@ const snapshotBuilt = async (
     ...(taken ? { snapshotId: taken.snapshotId } : {}),
     ...(scope.config.cache && taken?.named ? { cached: taken.named } : {}),
     reused: taken?.reused ?? false,
-    hadMachine: true,
   });
 };
 
