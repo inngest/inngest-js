@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName } from "./cache/names.ts";
+import { formatName, slotOf } from "./cache/names.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -857,6 +857,27 @@ describe("snapshot names", () => {
     expect(long).toHaveLength(255);
     expect(long.startsWith("ci/main/jjj")).toBe(true);
     expect(long).not.toBe(other);
+  });
+
+  test("too long a name keeps its slot apart from other slots", () => {
+    const name = (jobId: string, ownKey: string) => {
+      return formatName({
+        kind: "cache",
+        scope: "main",
+        jobId,
+        ownKey: `repo/${ownKey}`,
+      });
+    };
+
+    // Same slot, another key.
+    expect(slotOf(name("j".repeat(300), "a"))).toBe(
+      slotOf(name("j".repeat(300), "b")),
+    );
+
+    // Differing only after the cut-off point of a long name.
+    expect(slotOf(name(`${"j".repeat(300)}1`, "a"))).not.toBe(
+      slotOf(name(`${"j".repeat(300)}2`, "a")),
+    );
   });
 });
 

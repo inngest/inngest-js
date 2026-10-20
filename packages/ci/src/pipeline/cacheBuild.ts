@@ -149,8 +149,6 @@ export interface CacheBuildResult {
   target: CacheTarget;
   /** The job and the jobs above it, nearest first, with their resolved key parts. */
   ancestry: Ancestor[];
-  /** Whether the job ran commands, so there was a machine to snapshot. */
-  hadMachine: boolean;
   /**
    * Snapshots the build left for the pipeline to delete when it ends: those of
    * the builds it invoked in turn, which other builds in the pipeline share.

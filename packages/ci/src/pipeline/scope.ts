@@ -150,8 +150,6 @@ export interface BuildOutcome {
   cached?: CachedSnapshot;
   /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
-  /** Whether the job ran commands, so it had a machine to snapshot. */
-  hadMachine: boolean;
 }
 
 export interface JobSummary {

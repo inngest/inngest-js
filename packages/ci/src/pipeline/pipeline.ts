@@ -30,6 +30,7 @@ import {
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
+  deleteOrphanSnapshots,
   deleteRunSnapshots,
   destroyOrphans,
   destroyRunMachines,
@@ -881,8 +882,9 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines of a run of `config.id` that ended permanently, by
- * failure or cancellation, without reaching its own cleanup step.
+ * Destroys the machines and deletes the snapshots of a run of `config.id`
+ * that ended permanently, by failure or cancellation, without reaching its own
+ * cleanup step.
  */
 export const cleanupFunction = ({
   client,
@@ -918,14 +920,16 @@ export const cleanupFunction = ({
           ? lockMachineName(request.cacheKey)
           : undefined;
 
-      const destroyed = await step.run(
-        stepOptions(steps.cleanUpEndedRun()),
-        () => {
-          return runId
-            ? destroyOrphans(client, runId, lock)
-            : { destroyed: 0, lockReleased: false };
-        },
-      );
+      const destroyed = await step.run(stepOptions(steps.cleanUpEndedRun()), async () => {
+        if (!runId) {
+          return { destroyed: 0, lockReleased: false, deleted: 0 };
+        }
+
+        return {
+          ...(await destroyOrphans(client, runId, lock)),
+          ...(await deleteOrphanSnapshots(client, runId)),
+        };
+      });
 
       // The runs waiting on it would otherwise wait for a build that is gone.
       // A build that ended on its own already told them, and one that told them
