@@ -13,7 +13,7 @@ import { group } from "inngest";
 export type SpanKind =
   | "job"
   | "sandbox"
-  | "command"
+  | "$"
   | "snapshot"
   | "github"
   | "attempt";

@@ -32,6 +32,7 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
+import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
@@ -40,6 +41,7 @@ import type { Job } from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import { createCi } from "./createCi.ts";
 import { runCombosKey } from "./matrix.ts";
+import { cleanupFunction } from "./pipeline.ts";
 import { getRunScope } from "./scope.ts";
 
 /**
@@ -755,6 +757,98 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends in its first window takes one step", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    let output: string | undefined;
+
+    const job = ci.job("quick", async () => {
+      output = await $`quick`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(output).toBe("done");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("quick › quick");
+      }),
+    ).toEqual(["quick › quick › start"]);
+  });
+
+  test("a command's start step carries the sandbox metadata the trace reads", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "done" }]);
+
+    const job = ci.job("quick", async () => {
+      await $`quick`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const entry = result.metadata.find((update) => {
+      return (
+        update.step === "quick › quick › start" &&
+        update.kind === "inngest.sandbox"
+      );
+    });
+
+    expect(entry?.values).toMatchObject({
+      version: 1,
+      action: "process.start",
+      method: "processes.start",
+      command: ["quick"],
+      process_state: "EXITED",
+      exit_code: 0,
+    });
+  });
+
+  test("a command that runs on takes a step per window, and starts once", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "slow", ticks: 3, stdout: "eventually" }]);
+
+    const job = ci.job("slow", async () => {
+      await $`slow`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id.startsWith("slow › slow");
+      }),
+    ).toEqual([
+      "slow › slow › start",
+      "slow › slow › check #1",
+      "slow › slow › check #2",
+      "slow › slow › check #3",
+    ]);
+
+    // The handler replays on every step, and none of them starts it again.
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["slow"]);
+  });
+
   test("a command that needs several polls still completes", async () => {
     const { api, ci } = setup();
 
@@ -776,9 +870,9 @@ describe("commands", () => {
 
     expect(
       result.stepIds.filter((id) => {
-        return id.includes("wait #");
+        return id.includes("check #");
       }).length,
-    ).toBe(4);
+    ).toBe(3);
   });
 
   test.each(["30s", 30_000, temporalDuration(30_000)])(
@@ -913,6 +1007,26 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a command that ends during its first wait reports its duration", async () => {
+    const { ci } = setup();
+
+    let seen: number | undefined;
+
+    const job = ci.job("timed", async () => {
+      const result = await $`true`;
+
+      seen = result.durationMs;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(typeof seen).toBe("number");
+  });
+
   test("a command with no output reads as empty", async () => {
     const { ci } = setup();
 
@@ -963,7 +1077,8 @@ describe("commands", () => {
 
     expect(seen).toEqual({ first: "one", second: "two", server: "up" });
 
-    // Each start ran once: reconciling never starts the command again.
+    // Each start ran once: reconciling never starts the command again, and is
+    // a step of its own, so a failed lookup never repeats the start.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
@@ -975,6 +1090,59 @@ describe("commands", () => {
         return id.endsWith("reconcile");
       }),
     ).toHaveLength(2);
+  });
+
+  test("a failed lookup after an ambiguous start never starts the command again", async () => {
+    const api = createFakeSandboxApi();
+
+    api.script([{ match: "once", stdout: "done", ambiguousStarts: 1 }]);
+
+    let failedLists = 1;
+
+    const fetch = api.fetch;
+
+    api.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+
+      if (
+        failedLists > 0 &&
+        init?.method === "GET" &&
+        url.endsWith("/processes?limit=250")
+      ) {
+        failedLists--;
+
+        return new Response(
+          JSON.stringify({
+            errors: [{ code: "unavailable", message: "try again" }],
+          }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return fetch(input, init);
+    };
+
+    const { ci } = setup({ api });
+
+    let seen: unknown;
+
+    const job = ci.job("lookup", async () => {
+      seen = await $`once`.text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(seen).toBe("done");
+    expect(failedLists).toBe(0);
+    expect(
+      userCommands(api).map((argv) => {
+        return argv.join(" ");
+      }),
+    ).toEqual(["once"]);
   });
 
   test("an ambiguous start with nothing to adopt still fails", async () => {
@@ -1722,10 +1890,10 @@ describe("from", () => {
     ]);
   });
 
-  const runFromWithoutSnapshots = async ({
-    api,
-    ci,
-  }: ReturnType<typeof setup>) => {
+  const runFromWithFailingSnapshots = async (
+    { api, ci }: ReturnType<typeof setup>,
+    why: string,
+  ) => {
     const install = ci.job("setup", async () => {
       await $`pnpm install`;
     });
@@ -1734,88 +1902,40 @@ describe("from", () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await test();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await test();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(result.type).toBe("function-resolved");
-    expect(api.sandboxes.size).toBe(2);
+    expect(result.type).toBe("function-rejected");
+    expect(JSON.stringify(result.error)).toContain(why);
 
-    expect(
-      [...api.sandboxes.values()].every((sandbox) => {
-        return !sandbox.snapshotId;
-      }),
-    ).toBe(true);
-
-    // The child re-ran the parent on its own machine before its own commands.
+    // The parent ran once, and nothing replayed it on the child's machine.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
       }),
-    ).toEqual(["pnpm install", "pnpm install", "pnpm test"]);
+    ).toEqual(["pnpm install"]);
   };
 
-  test("re-runs the parent when snapshots aren't available", async () => {
-    const ctx = setup();
-
-    ctx.api.disableSnapshots();
-
-    await runFromWithoutSnapshots(ctx);
-  });
-
-  test("re-runs the parent when the snapshot limit is reached", async () => {
+  test("fails when the snapshot limit is reached instead of re-running the parent", async () => {
     const ctx = setup();
 
     ctx.api.exhaustSnapshots();
 
-    await runFromWithoutSnapshots(ctx);
+    await runFromWithFailingSnapshots(ctx, "snapshot limit");
   });
 
-  test("re-runs a chain of parents without snapshots", async () => {
-    const { api, ci } = setup();
+  test("fails when snapshots aren't available instead of re-running the parent", async () => {
+    const ctx = setup();
 
-    api.disableSnapshots();
+    ctx.api.disableSnapshots();
 
-    const install = ci.job("install", async () => {
-      await $`pnpm install`;
-    });
-
-    const build = ci.job({ id: "build", from: install }, async () => {
-      await $`pnpm build`;
-    });
-
-    const test = ci.job({ id: "test", from: build }, async () => {
-      await $`pnpm test`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return test();
-    });
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(result.type).toBe("function-resolved");
-    expect(api.sandboxes.size).toBe(3);
-
-    expect(
-      userCommands(api).map((argv) => {
-        return argv.join(" ");
-      }),
-    ).toEqual([
-      // test's build of `build`: its own build of `install`...
-      "pnpm install",
-      // ...which `build` couldn't copy, so it ran install again, then build
-      "pnpm install",
-      "pnpm build",
-      // test couldn't copy `build` either: `build` ran again on its machine,
-      // which gets `install` from the same shared build (no snapshot, so it
-      // ran install again there), then test
-      "pnpm install",
-      "pnpm build",
-      "pnpm test",
-    ]);
+    await runFromWithFailingSnapshots(ctx, "snapshot");
   });
 });
 
@@ -2101,7 +2221,7 @@ describe("cache", () => {
     expect(ran(api, "pnpm install")).toBe(1);
     expect(api.sandboxes.size).toBe(1);
     expect(namedSnapshots(api)).toEqual([
-      expect.stringMatching(/^ci\/pr:7\/setup\/[0-9a-f]+$/),
+      expect.stringMatching(/^ci\/pr:7\/setup\/[0-9a-f]+\/[0-9a-f]+$/),
     ]);
   });
 
@@ -2151,6 +2271,88 @@ describe("cache", () => {
     }
 
     expect(ran(api, "pnpm install")).toBe(2);
+    // The second key replaced the first, which nothing can name again.
+    expect(namedSnapshots(api)).toHaveLength(1);
+  });
+
+  test("a new key replaces the old entry of its own job and input, and no other", async () => {
+    const api = createFakeSandboxApi();
+
+    const runWithKey = async (key: string, targets: string[]) => {
+      const { ci } = setup({ api });
+
+      const build = ci.job(
+        {
+          id: "build",
+          cache: { key },
+          input: fakeSchema<{ target: string }>({ target: "string" }),
+        },
+        async () => {
+          await $`pnpm build`;
+        },
+      );
+
+      const lint = ci.job({ id: "lint", cache: { key } }, async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await Promise.all([
+            ...targets.map((target) => {
+              return build({ target });
+            }),
+            lint(),
+          ]);
+        }),
+        { event: prEvent },
+      );
+    };
+
+    await runWithKey("v1", ["web", "api"]);
+
+    expect(namedSnapshots(api)).toHaveLength(3);
+
+    // Only `web` is built under the new key.
+    await runWithKey("v2", ["web"]);
+
+    const jobsLeft = namedSnapshots(api).map((name) => {
+      return name.split("/")[2];
+    });
+
+    // `web` and `lint` hold their v2 entries; `api` still has its v1.
+    expect(jobsLeft.sort()).toEqual(["build", "build", "lint"]);
+    expect(ran(api, "pnpm build")).toBe(3);
+    expect(ran(api, "pnpm lint")).toBe(2);
+  });
+
+  test("a build never deletes a newer entry of its slot", async () => {
+    const api = createFakeSandboxApi();
+
+    const runWithKey = async (key: string) => {
+      const { ci } = setup({ api });
+
+      const build = ci.job({ id: "setup", cache: { key } }, async () => {
+        await $`pnpm install`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build();
+        }),
+        { event: prEvent },
+      );
+    };
+
+    await runWithKey("v1");
+
+    // As if a build with another key finished after this one started.
+    for (const snapshot of api.snapshots.values()) {
+      snapshot.createdAt = new Date(Date.now() + 3_600_000).toISOString();
+    }
+
+    await runWithKey("v2");
+
     expect(namedSnapshots(api)).toHaveLength(2);
   });
 
@@ -2194,6 +2396,7 @@ describe("cache", () => {
     await runIn("inngest/inngest");
 
     expect(userCommands(api)).toHaveLength(2);
+    expect(namedSnapshots(api)).toHaveLength(2);
 
     // The first repository still hits its own.
     await runIn("inngest/inngest-js");
@@ -2786,7 +2989,7 @@ describe("cache", () => {
     });
 
     test.each([
-      ["gone", "gone"],
+      ["gone, as when a newer cache key replaced it", "gone"],
       ["deleting", "DELETING"],
     ] as const)(
       "a snapshot that is %s is rebuilt, not deleted",
@@ -4852,6 +5055,73 @@ describe("run snapshot cleanup", () => {
     expect(namedSnapshots(api)).toHaveLength(1);
     expect(deletedBy(result)).toHaveLength(0);
   });
+
+  test.each([
+    ["cancelled", "inngest/function.cancelled"],
+    ["failed or ran out of steps", "inngest/function.failed"],
+  ])(
+    "a run that was %s without reaching its cleanup has its snapshots deleted",
+    async (_how, eventName) => {
+      const { api, client, ci } = setup();
+      const leftBehind = new Map<string, FakeSnapshot>();
+
+      const base = ci.job("base", async () => {
+        await $`pnpm install`;
+      });
+
+      const child = ci.job({ id: "child", from: base }, async () => {
+        await $`pnpm build`;
+
+        for (const snapshot of api.snapshots.values()) {
+          leftBehind.set(snapshot.id, snapshot);
+        }
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await child();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+      expect(leftBehind.size).toBe(1);
+
+      // What the run would have left had it stopped before its cleanup, beside
+      // another run's snapshot and a cache entry, which are not its to delete.
+      const [owned] = [...leftBehind.values()];
+
+      for (const snapshot of [
+        ...leftBehind.values(),
+        {
+          ...owned,
+          id: "00000000-0000-4000-8000-0000000000aa",
+          name: "ci/run:01OTHER/base/k",
+        },
+        {
+          ...owned,
+          id: "00000000-0000-4000-8000-0000000000bb",
+          name: "ci/pr:7/setup/s/k",
+        },
+      ] as FakeSnapshot[]) {
+        api.snapshots.set(snapshot.id, snapshot);
+      }
+
+      expect(api.snapshots.size).toBe(3);
+
+      const ended = await runFunction(
+        cleanupFunction({ client, config: { id: "pr" } }),
+        { event: { name: eventName, data: { run_id: "01TESTRUN" } } },
+      );
+
+      expect(ended.error).toBeUndefined();
+      expect(ended.type).toBe("function-resolved");
+      expect(namedSnapshots(api).sort()).toEqual([
+        "ci/pr:7/setup/s/k",
+        "ci/run:01OTHER/base/k",
+      ]);
+    },
+  );
 
   test("an unnamed fallback snapshot is deleted at the end of the run", async () => {
     const api = createFakeSandboxApi();

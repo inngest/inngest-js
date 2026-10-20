@@ -6,8 +6,14 @@
  */
 
 import type { Inngest } from "inngest";
+import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import {
+  deleteReplacedCache,
+  resolveTakenName,
+  snapshotState,
+} from "../cache/cache.ts";
+import { runNamePrefix } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { spans, steps, traceName } from "../pipeline/names.ts";
@@ -28,7 +34,7 @@ import {
 import { inSpan } from "../pipeline/spans.ts";
 import type { CacheConfig, MachineConfig } from "../types.ts";
 import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
-import { deleteSnapshots, listSandboxes } from "./admin.ts";
+import { deleteMatching, deleteSnapshots, listSandboxes } from "./admin.ts";
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -75,6 +81,23 @@ export const ensureMachine = async (
   }
 
   return handle;
+};
+
+/**
+ * A machine as the sandbox API's own client has it, for the steps that do
+ * several things on it at once, which the durable `step.sandbox` calls can't.
+ */
+export const directSandbox = async (
+  run: CiRunScope,
+  machine: MachineHandle,
+) => {
+  const sandbox = await run.ci.client.sandboxes.get(machine.id);
+
+  if (!sandbox) {
+    throw new Error(`Machine ${machine.id} is gone`);
+  }
+
+  return sandbox;
 };
 
 /**
@@ -549,9 +572,8 @@ export const saveOutputs = async (scope: CiJobScope): Promise<void> => {
  * that keeps its machine. With a cache, the snapshot is named after the job's
  * key.
  *
- * Returns `undefined` when the job had no machine, or when snapshots aren't
- * available in this environment, in which case callers fall back to a fresh
- * machine.
+ * Returns `undefined` when the job had no machine. A snapshot that can't be
+ * taken fails the job: the jobs that start from it have nothing to copy.
  */
 export const snapshotMachine = async (
   scope: CiJobScope,
@@ -579,19 +601,31 @@ const takeSnapshot = async (
   const stepId = joinId(jobPath, "snapshot");
 
   try {
-    return cache && !cache.unnamed
-      ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
-      : await createRunSnapshot(handle, jobPath, stepId);
-  } catch (error) {
-    if (!isSnapshotUnavailable(error)) {
-      throw error;
+    const taken =
+      cache && !cache.unnamed
+        ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
+        : await createRunSnapshot(handle, jobPath, stepId);
+
+    // A new key can't be named again by anything that used the old one, so
+    // the entry it replaces would otherwise stay until it expires.
+    if (taken.named && !taken.reused && !cache?.ephemeral) {
+      await deleteReplacedCache(
+        run,
+        `${stepId}${scopeSeparator}replaced`,
+        taken.named,
+      );
     }
 
-    run.warnings.push(
-      `fell back: snapshots unavailable (\`${jobPath}\`), so jobs started from it re-ran it on their own machines`,
-    );
+    return taken;
+  } catch (error) {
+    if (hasCode(error, "sandbox_snapshot_limit_exceeded")) {
+      throw new NonRetriableError(
+        `Couldn't save the machine of \`${jobPath}\`: the environment has reached its Sandboxes snapshot limit. Delete snapshots that are no longer needed, then run again.`,
+        { cause: error },
+      );
+    }
 
-    return undefined;
+    throw error;
   }
 };
 
@@ -723,47 +757,6 @@ const isNameRefused = (error: unknown): boolean => {
 };
 
 /**
- * Whether a snapshot failed because snapshots can't be had here, as opposed
- * to a real failure. The caller falls back to re-running the parent rather
- * than failing the run.
- *
- * WORKAROUND (Sandboxes API): older Dev Servers have no snapshot endpoints
- * (404, 501 or an "unsupported" message), and an environment can run out of
- * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
- * happens; a real failure should then always surface.
- */
-const isSnapshotUnavailable = (error: unknown): boolean => {
-  const cause = (error as { cause?: { code?: string; status?: number } })
-    ?.cause;
-
-  const limitCode = "sandbox_snapshot_limit_exceeded";
-
-  if (cause?.status === 404 || cause?.status === 501) {
-    return true;
-  }
-
-  if (
-    cause?.code === limitCode ||
-    (error as { code?: string })?.code === limitCode
-  ) {
-    return true;
-  }
-
-  const message = errorMessage(error).toLowerCase();
-
-  return [
-    "not implemented",
-    "unsupported",
-    "not supported",
-    "404",
-    "no route",
-    "unknown action",
-  ].some((text) => {
-    return message.includes(text);
-  });
-};
-
-/**
  * Destroy every machine this run created, which the Sandboxes API lists by the
  * run's name prefix. Tolerates machines that are already gone, because cleanup
  * also runs after failures.
@@ -811,6 +804,27 @@ export const deleteRunSnapshots = async (
       );
     });
   });
+};
+
+/**
+ * A run that ended permanently never reached its own cleanup step, so the
+ * snapshots it owned are found by name, which starts with the run's.
+ *
+ * A snapshot still being taken when this runs is not seen. A cancelled run
+ * can't check for it afterwards, because its code stops running, so such a
+ * snapshot is left to expire.
+ */
+export const deleteOrphanSnapshots = async (
+  client: Inngest.Any,
+  runId: string,
+): Promise<{ deleted: number }> => {
+  const prefix = runNamePrefix(runId);
+
+  const { deleted } = await deleteMatching(client, ({ name }) => {
+    return name.startsWith(prefix);
+  });
+
+  return { deleted: deleted.length };
 };
 
 /**
