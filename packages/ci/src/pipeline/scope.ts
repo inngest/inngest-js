@@ -11,6 +11,7 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
+import type { CommandState } from "../machine/command.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -323,8 +324,17 @@ export interface CiRunScope {
   apis: Record<ApiName, number>;
 }
 
-/** What jobs returned, by job ID: JSON, with a command as `{ "$cmd": … }`. */
-export type StoredOutputs = Record<string, Record<string, unknown>>;
+/** What one job returned: its JSON data, and its commands as their state. */
+export interface StoredOutput {
+  data: Record<string, unknown>;
+  commands: Record<string, CommandState>;
+}
+
+/**
+ * What jobs returned, by their place in the chain and ID. The place keeps two
+ * jobs of the same ID, as when one app's `build` starts from another's, apart.
+ */
+export type StoredOutputs = Record<string, StoredOutput>;
 
 export interface CiJobScope {
   run: CiRunScope;

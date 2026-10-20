@@ -35,7 +35,7 @@ import {
   withoutUnreusableCache,
 } from "../machine/from.ts";
 import { saveOutputs, snapshotMachine } from "../machine/machine.ts";
-import { dataOf, outputsFrom, storeOutput } from "../machine/outputs.ts";
+import { outputsFrom, storeOutput } from "../machine/outputs.ts";
 import type {
   Ancestor,
   AnyJob,
@@ -869,7 +869,12 @@ const jobSteps = async ({
         );
       });
 
-      returned = storeOutput(scope, config.id, output);
+      returned = storeOutput(
+        scope,
+        config.id,
+        fromParent?.built.ancestry ?? [],
+        output,
+      );
 
       if (builtAs) {
         await snapshotBuilt(scope, builtAs);
@@ -913,7 +918,7 @@ const jobSteps = async ({
       ...(reusedTitle ? { cached: true } : {}),
     });
 
-    return returned && dataOf(returned);
+    return returned;
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);

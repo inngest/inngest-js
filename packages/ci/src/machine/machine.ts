@@ -116,6 +116,12 @@ const machineName = (runId: string, path: string): string => {
 const outputsPath = "/var/tmp/.inngest-ci-outputs.json";
 
 /**
+ * The most the outputs file can hold. A machine reads it back in its setup
+ * command, and a command's captured output keeps only its last 2 MiB.
+ */
+const maxOutputsBytes = 1024 * 1024;
+
+/**
  * Run once on every machine before its first command. It also prints the
  * outputs file, which is how a job learns what the jobs above it returned.
  *
@@ -517,6 +523,12 @@ export const saveOutputs = async (scope: CiJobScope): Promise<void> => {
 
   if (data === scope.savedOutputs) {
     return;
+  }
+
+  if (Buffer.byteLength(data) > maxOutputsBytes) {
+    throw new CiUsageError(
+      `What this job and the jobs above it returned is ${Buffer.byteLength(data)} bytes, over the ${maxOutputsBytes} bytes a job's outputs can hold. Return less, or keep the rest in a file on the machine.`,
+    );
   }
 
   const { sandbox } = await ensureMachine(scope);

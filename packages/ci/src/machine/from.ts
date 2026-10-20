@@ -873,5 +873,5 @@ const rerunOnThisMachine = async (
     }),
   );
 
-  storeOutput(scope, parent.config.id, output);
+  storeOutput(scope, parent.config.id, ancestry.slice(1), output);
 };

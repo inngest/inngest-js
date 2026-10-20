@@ -362,12 +362,27 @@ export type DataOf<TOutput> = {
     : K]: Exclude<TOutput[K], Command>;
 };
 
-/** The entries of an output that are commands. */
-export type CommandsOf<TOutput> = {
-  [K in keyof TOutput as [Extract<TOutput[K], Command>] extends [never]
-    ? never
-    : K]: Extract<TOutput[K], Command>;
-};
+/**
+ * The entries of an output that are commands. An entry that is only sometimes a
+ * command, as when it can be `undefined`, is optional, because it is left out
+ * of what the job stored when it isn't one.
+ */
+export type CommandsOf<TOutput> = Merged<
+  {
+    [K in keyof TOutput as [TOutput[K]] extends [Command] ? K : never]: Extract<
+      TOutput[K],
+      Command
+    >;
+  } & {
+    [K in keyof TOutput as [Extract<TOutput[K], Command>] extends [never]
+      ? never
+      : [TOutput[K]] extends [Command]
+        ? never
+        : K]?: Extract<TOutput[K], Command>;
+  }
+>;
+
+type Merged<T> = { [K in keyof T]: T[K] };
 
 /**
  * What awaiting a job gives: the data of its output. A job with a `cache` is

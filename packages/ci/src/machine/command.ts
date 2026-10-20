@@ -193,8 +193,8 @@ class CommandBuilder implements Command {
   }
 
   /** What a job's output stores of a command it returns. */
-  toJSON(): { $cmd: CommandState } {
-    return { $cmd: this.state };
+  toState(): CommandState {
+    return { ...this.state, env: { ...this.state.env } };
   }
 
   env(vars: Record<string, string>): Command {
@@ -890,6 +890,15 @@ export const createRawCommand = (
 /** Whether a value is a command, as `$` makes. */
 export const isCommand = (value: unknown): value is Command => {
   return value instanceof CommandBuilder;
+};
+
+/** What a job's output stores of a command it returns. */
+export const stateOfCommand = (command: Command): CommandState => {
+  if (!(command instanceof CommandBuilder)) {
+    throw new CiUsageError("Only a command made by `$` can be stored.");
+  }
+
+  return command.toState();
 };
 
 /** A command stored in a job's output, made again to run on `getScope`'s machine. */
