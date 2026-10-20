@@ -158,7 +158,348 @@ export interface Ci {
    * const compat = ci.matrix(
    *   { id: "compat", axes: { node: ["20", "22"] } },
    *   async ({ matrix }) => {
-   *     await $`pnpm test`.env({ NODE_VERSION: matrix.node });
+   *     await /**
+ * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
+ * pipeline, job and matrix definitions to a shared set of internals (checks,
+ * the cache build function, GitHub provider).
+ *
+ * @module
+ */
+
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { Inngest, InngestFunction } from "inngest";
+import { CiUsageError } from "../errors.ts";
+import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
+import { consoleReporter } from "../github/auth.ts";
+import type { CheckSink } from "../github/checks.ts";
+import {
+  checksSink,
+  consoleSink,
+  createCheckReporter,
+  noopSink,
+  statusesSink,
+} from "../github/checks.ts";
+import { setFallbackGitHub } from "../github/rest.ts";
+import type {
+  CacheKey,
+  CiSkip,
+  CiTrigger,
+  CiTriggerInput,
+  From,
+  Job,
+  JobConfig,
+  JobContext,
+  MachineConfig,
+  Matrix,
+  MatrixAxes,
+  MatrixCombo,
+  MatrixConfig,
+  MatrixContext,
+  NoFrom,
+  PipelineConfig,
+  PipelineContext,
+} from "../types.ts";
+import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
+import { noopHooks } from "./hooks.ts";
+import type { RegisteredJob } from "./job.ts";
+import { defineJob } from "./job.ts";
+import { createMatrix } from "./matrix.ts";
+import {
+  cacheRefreshFunctions,
+  cleanupFunction,
+  definePipeline,
+} from "./pipeline.ts";
+import type { CiInternals } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
+
+export interface CiOptions {
+  /**
+   * How pipelines talk to GitHub. Defaults to `consoleReporter()`, which
+   * prints checks to the Inngest logger instead of sending them to GitHub.
+   */
+  github?: GitHubProvider;
+  /** Default machine for jobs. */
+  machine?: MachineConfig;
+  /** Builds the link shown on checks. */
+  runUrl?: (ctx: { runId: string; functionId: string }) => string;
+}
+
+export interface Ci {
+  /**
+   * Define a pipeline: what starts it, and what it does.
+   *
+   * A pipeline is one Inngest function run. `event` in the handler is typed by
+   * the triggers you give it.
+   *
+   * ```ts
+   * export const pr = ci.pipeline(
+   *   { id: "pr", on: github.pullRequest() },
+   *   async ({ event }) => {
+   *     await Promise.all([lint(), test()]);
+   *     await deploy(event.data.pull_request.head.sha);
+   *   },
+   * );
+   * ```
+   */
+  pipeline<const TTriggers extends CiTriggerInput>(
+    config: PipelineConfig<TTriggers>,
+    handler: (ctx: PipelineContext<TTriggers>) => Promise<unknown>,
+  ): InngestFunction.Any;
+
+  /**
+   * Define a job: a unit of work with its own machine, called like a function.
+   *
+   * Its input is inferred from the handler. Every call runs the job again, on
+   * its own machine and with its own check, named `test (2)` the second time.
+   * A job that starts `from` another runs on a copy of its machine. A job has
+   * no return value, and a handler that returns one is a type error.
+   *
+   * ```ts
+   * const test = ci.job("test", async () => {
+   *   await checkout();
+   *   await $`pnpm test`;
+   * });
+   *
+   * const compat = ci.job("compat", async ({ input }: { input: string }) => {
+   *   await $`fnm use ${input}`;
+   * });
+   * ```
+   *
+   * Give it an `input` schema to validate the input:
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ input }) => {
+   *     await $`pnpm build --target ${input.target}`;
+   *   },
+   * );
+   * ```
+   *
+   * The handler is given the job's `id`, the `key` its cache was made of, its
+   * `input`, and what it started `from`.
+   */
+  job<
+    TSchema extends StandardSchemaV1,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends
+      | From<StandardSchemaV1.InferOutput<TSchema>>
+      | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
+  >(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
+      input: TSchema;
+    },
+    handler: (
+      ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
+    ) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
+  job<
+    TInput = void,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends From<TInput> | undefined = NoFrom<TInput>,
+  >(
+    idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
+    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
+  ): Job<TInput, TKey, TFrom>;
+  job<TInput>(
+    idOrConfig: string | JobConfig<TInput>,
+    handler: (
+      ctx: JobContext<TInput, CacheKey | undefined, From<TInput> | undefined>,
+    ) => Promise<void>,
+  ): Job<TInput>;
+
+  /**
+   * Define a matrix: one job per combination of the axes.
+   *
+   * Axis values keep their literal types, so the handler's `matrix` is exact
+   * and a typo in `exclude` or in `matrix({ … })` is a type error.
+   *
+   * ```ts
+   * const compat = ci.matrix(
+   *   { id: "compat", axes: { node: ["20", "22"] } },
+pnpm test`.env({ NODE_VERSION: matrix.node });
+   *   },
+   * );
+   * ```
+   *
+   * `axes` can be an async function of what the run knows, like the commit.
+   * It is called once per run, and the matrix can still be defined at the top
+   * level.
+   *
+   * ```ts
+   * const examples = ci.matrix(
+   *   {
+   *     id: "examples",
+   *     axes: async ({ repo }) => {
+   *       const entries = await github.rest.repos.getContent({
+   *         path: "examples",
+   *         ref: repo?.sha ?? "",
+   *       });
+   *
+   *       return { example: entries.map((entry) => entry.name) };
+   *     },
+   *   },
+   *   async ({ matrix }) => {
+   *     await /**
+ * The CI client: `createCi()`, its options and the `Ci` interface. It wires the
+ * pipeline, job and matrix definitions to a shared set of internals (checks,
+ * the cache build function, GitHub provider).
+ *
+ * @module
+ */
+
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { Inngest, InngestFunction } from "inngest";
+import { CiUsageError } from "../errors.ts";
+import type { ConsoleProvider, GitHubProvider } from "../github/auth.ts";
+import { consoleReporter } from "../github/auth.ts";
+import type { CheckSink } from "../github/checks.ts";
+import {
+  checksSink,
+  consoleSink,
+  createCheckReporter,
+  noopSink,
+  statusesSink,
+} from "../github/checks.ts";
+import { setFallbackGitHub } from "../github/rest.ts";
+import type {
+  CacheKey,
+  CiSkip,
+  CiTrigger,
+  CiTriggerInput,
+  From,
+  Job,
+  JobConfig,
+  JobContext,
+  MachineConfig,
+  Matrix,
+  MatrixAxes,
+  MatrixCombo,
+  MatrixConfig,
+  MatrixContext,
+  NoFrom,
+  PipelineConfig,
+  PipelineContext,
+} from "../types.ts";
+import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
+import { noopHooks } from "./hooks.ts";
+import type { RegisteredJob } from "./job.ts";
+import { defineJob } from "./job.ts";
+import { createMatrix } from "./matrix.ts";
+import {
+  cacheRefreshFunctions,
+  cleanupFunction,
+  definePipeline,
+} from "./pipeline.ts";
+import type { CiInternals } from "./scope.ts";
+import { getRunScope } from "./scope.ts";
+
+export interface CiOptions {
+  /**
+   * How pipelines talk to GitHub. Defaults to `consoleReporter()`, which
+   * prints checks to the Inngest logger instead of sending them to GitHub.
+   */
+  github?: GitHubProvider;
+  /** Default machine for jobs. */
+  machine?: MachineConfig;
+  /** Builds the link shown on checks. */
+  runUrl?: (ctx: { runId: string; functionId: string }) => string;
+}
+
+export interface Ci {
+  /**
+   * Define a pipeline: what starts it, and what it does.
+   *
+   * A pipeline is one Inngest function run. `event` in the handler is typed by
+   * the triggers you give it.
+   *
+   * ```ts
+   * export const pr = ci.pipeline(
+   *   { id: "pr", on: github.pullRequest() },
+   *   async ({ event }) => {
+   *     await Promise.all([lint(), test()]);
+   *     await deploy(event.data.pull_request.head.sha);
+   *   },
+   * );
+   * ```
+   */
+  pipeline<const TTriggers extends CiTriggerInput>(
+    config: PipelineConfig<TTriggers>,
+    handler: (ctx: PipelineContext<TTriggers>) => Promise<unknown>,
+  ): InngestFunction.Any;
+
+  /**
+   * Define a job: a unit of work with its own machine, called like a function.
+   *
+   * Its input is inferred from the handler. Every call runs the job again, on
+   * its own machine and with its own check, named `test (2)` the second time.
+   * A job that starts `from` another runs on a copy of its machine. A job has
+   * no return value, and a handler that returns one is a type error.
+   *
+   * ```ts
+   * const test = ci.job("test", async () => {
+   *   await checkout();
+   *   await $`pnpm test`;
+   * });
+   *
+   * const compat = ci.job("compat", async ({ input }: { input: string }) => {
+   *   await $`fnm use ${input}`;
+   * });
+   * ```
+   *
+   * Give it an `input` schema to validate the input:
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ input }) => {
+   *     await $`pnpm build --target ${input.target}`;
+   *   },
+   * );
+   * ```
+   *
+   * The handler is given the job's `id`, the `key` its cache was made of, its
+   * `input`, and what it started `from`.
+   */
+  job<
+    TSchema extends StandardSchemaV1,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends
+      | From<StandardSchemaV1.InferOutput<TSchema>>
+      | undefined = NoFrom<StandardSchemaV1.InferOutput<TSchema>>,
+  >(
+    config: JobConfig<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom> & {
+      input: TSchema;
+    },
+    handler: (
+      ctx: JobContext<StandardSchemaV1.InferOutput<TSchema>, TKey, TFrom>,
+    ) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>, TKey, TFrom>;
+  job<
+    TInput = void,
+    const TKey extends CacheKey | undefined = undefined,
+    TFrom extends From<TInput> | undefined = NoFrom<TInput>,
+  >(
+    idOrConfig: string | JobConfig<TInput, TKey, TFrom>,
+    handler: (ctx: JobContext<TInput, TKey, TFrom>) => Promise<void>,
+  ): Job<TInput, TKey, TFrom>;
+  job<TInput>(
+    idOrConfig: string | JobConfig<TInput>,
+    handler: (
+      ctx: JobContext<TInput, CacheKey | undefined, From<TInput> | undefined>,
+    ) => Promise<void>,
+  ): Job<TInput>;
+
+  /**
+   * Define a matrix: one job per combination of the axes.
+   *
+   * Axis values keep their literal types, so the handler's `matrix` is exact
+   * and a typo in `exclude` or in `matrix({ … })` is a type error.
+   *
+   * ```ts
+   * const compat = ci.matrix(
+   *   { id: "compat", axes: { node: ["20", "22"] } },
+pnpm test`.env({ EXAMPLE: matrix.example });
    *   },
    * );
    * ```

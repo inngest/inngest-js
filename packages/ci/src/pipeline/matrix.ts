@@ -12,13 +12,23 @@ import { checkStaticFrom } from "../machine/from.ts";
 import type {
   JobConfig,
   Matrix,
+  MatrixAxes,
   MatrixCombo,
   MatrixConfig,
   MatrixContext,
 } from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import type { RegisteredJob } from "./job.ts";
-import { countApi, getRunScope, inlineKey, matrixOriginKey } from "./scope.ts";
+import { ciRun } from "./metadata.ts";
+import { steps } from "./names.ts";
+import {
+  countApi,
+  getRunScope,
+  inlineKey,
+  matrixOriginKey,
+  requireRunScope,
+  rootRunIdOf,
+} from "./scope.ts";
 
 /**
  * Where a matrix keeps the function that runs exactly the combinations it's
@@ -76,13 +86,43 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
 
   checkStaticFrom(jobs, config);
 
-  for (const [axis, values] of Object.entries(config.axes)) {
-    if (values.length === 0) {
-      throw new CiUsageError(
-        `The \`${axis}\` axis of matrix "${config.id}" has no values.`,
-      );
-    }
+  const given = config.axes;
+
+  if (typeof given !== "function") {
+    checkAxes(config.id, given);
   }
+
+  /**
+   * The axes to expand: the given ones, or what the `axes` function made of
+   * them, which is the same for every combination of the run.
+   */
+  const axesOf = (): Promise<TAxes> | TAxes => {
+    if (typeof given !== "function") {
+      return given;
+    }
+
+    const run = requireRunScope("matrix");
+    const resolved = run.matrixAxes.get(config.id);
+
+    if (resolved) {
+      return resolved as Promise<TAxes>;
+    }
+
+    const made = ciRun(run, steps.matrixAxes(config.id), async () => {
+      const axes = await given({
+        repo: run.repo,
+        run: { id: rootRunIdOf(run) },
+      });
+
+      checkAxes(config.id, axes);
+
+      return axes;
+    });
+
+    run.matrixAxes.set(config.id, made);
+
+    return made;
+  };
 
   if (typeof config.cache !== "function") {
     checkCache(config.id, config.cache);
@@ -141,22 +181,32 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
   };
 
   const matrix = ((only?: Partial<MatrixCombo<TAxes>>) => {
-    return run(
-      expandMatrix(config).filter((combo) => {
-        return only
-          ? Object.entries(only).every(([key, value]) => {
-              return combo[key as keyof MatrixCombo<TAxes>] === value;
-            })
-          : true;
-      }),
-    );
+    return (async () => {
+      const combos = expandMatrix(config, await axesOf());
+
+      return run(
+        combos.filter((combo) => {
+          return only
+            ? Object.entries(only).every(([key, value]) => {
+                return combo[key as keyof MatrixCombo<TAxes>] === value;
+              })
+            : true;
+        }),
+      );
+    })();
   }) as Matrix<TAxes>;
 
   Object.defineProperties(matrix, {
     id: { value: config.id, enumerable: true },
     [runCombosKey]: {
       value: async (combos: Record<string, unknown>[]) => {
-        const matching = expandMatrix(config).filter((combo) => {
+        // The combinations come from the run that resolved the axes, so a
+        // function is not called again.
+        if (typeof given === "function") {
+          return run(combos as MatrixCombo<TAxes>[]);
+        }
+
+        const matching = expandMatrix(config, given).filter((combo) => {
           return combos.some((wanted) => {
             return sameCombo(wanted, combo);
           });
@@ -176,6 +226,17 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
   return matrix;
 };
 
+/** Fail an axis with no values, since a matrix over it would run nothing. */
+const checkAxes = (id: string, axes: MatrixAxes): void => {
+  for (const [axis, values] of Object.entries(axes)) {
+    if (values.length === 0) {
+      throw new CiUsageError(
+        `The \`${axis}\` axis of matrix "${id}" has no values.`,
+      );
+    }
+  }
+};
+
 export const matrixJobId = (
   id: string,
   combo: Record<string, unknown>,
@@ -192,14 +253,15 @@ export const matrixJobId = (
  * and `include` appended.
  */
 export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
-  config: MatrixConfig<TAxes>,
+  config: Pick<MatrixConfig<TAxes>, "exclude" | "include">,
+  axes: TAxes,
 ): MatrixCombo<TAxes>[] => {
-  const keys = Object.keys(config.axes);
+  const keys = Object.keys(axes);
 
   let combos: Record<string, unknown>[] = [{}];
 
   for (const key of keys) {
-    const values = config.axes[key] ?? [];
+    const values = axes[key] ?? [];
 
     combos = combos.flatMap((combo) => {
       return values.map((value) => {

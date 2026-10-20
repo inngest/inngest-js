@@ -253,6 +253,15 @@ export const steps = {
   addSummary: named("Add summary", { unmarked: true }),
   addAnnotations: named("Add annotations", { unmarked: true }),
 
+  // Matrices.
+  matrixAxes: (matrixId: string): StepSpec => {
+    return {
+      id: joinId("matrix", matrixId, "axes"),
+      name: `Resolve axes of ${matrixId}`,
+      unmarked: true,
+    };
+  },
+
   // Reading from GitHub.
   resolveRepository: (): StepSpec => {
     return {

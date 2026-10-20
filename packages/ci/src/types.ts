@@ -807,6 +807,16 @@ export interface ExtraMachine {
 export type MatrixAxes = Record<string, readonly unknown[]>;
 
 /**
+ * What a matrix's `axes` function is given: what is known before any job runs.
+ */
+export interface MatrixAxesContext {
+  /** The repository and change this run is for, as the pipeline's `repo`. */
+  repo: RepoContext | undefined;
+  /** The Inngest run the matrix is in. */
+  run: { id: string };
+}
+
+/**
  * One combination of a matrix's axes.
  *
  * Values keep their literal types, so a handler's `combo.node` is
@@ -843,8 +853,14 @@ export interface MatrixConfig<
 > {
   /** Unique within the CI client. Each combination's job ID starts with it. */
   id: string;
-  /** The axes to combine, in the order they should appear in job IDs. */
-  axes: TAxes;
+  /**
+   * The axes to combine, in the order they should appear in job IDs. A function
+   * is called once per run, in a step, and its result is what every
+   * combination is made from, so the axes can depend on the commit being
+   * tested. A job a combination starts from, or runs as, is handed the
+   * combination and never calls it again.
+   */
+  axes: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
   /** Combinations to leave out. A partial combination excludes every match. */
   exclude?: readonly Partial<MatrixCombo<TAxes>>[];
   /** Extra combinations to add, beyond the product of the axes. */
