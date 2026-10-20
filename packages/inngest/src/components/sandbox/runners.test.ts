@@ -364,7 +364,7 @@ describe.each(languages)("step.sandbox.$language", ({ language }) => {
     expect(steps[0]?.opts?.input).toMatchObject([
       {
         action: "create",
-        input: [{ vcpu: 1, memoryMb: 2048, environment: { A: "b" } }],
+        input: [{ vcpu: 1, memoryMb: 2048, environment: { A: "[redacted]" } }],
       },
     ]);
   });

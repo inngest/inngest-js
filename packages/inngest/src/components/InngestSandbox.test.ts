@@ -1889,6 +1889,67 @@ describe("step.sandbox", () => {
   });
 });
 
+describe("step.sandbox environment values", () => {
+  test("commands.run records the keys only and still sends the values", async () => {
+    const token = "ghp_super_secret_value";
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const bodies: string[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/exec`) {
+        bodies.push(String(init?.body));
+        return Response.json({
+          data: { stdout: "", stderr: "", exit_code: 0 },
+        });
+      }
+      return Response.json({ data: sandboxResource });
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-env", triggers: [{ event: "sandbox/env" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get", sandboxId);
+        await sandbox?.commands.run("run", "env", {
+          environment: { TOKEN: token },
+        });
+      },
+    );
+    const getRun = await runFnWithStack(fn, {});
+    if (getRun.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${getRun.type}`);
+    }
+    const state = {
+      [getRun.step.id]: { id: getRun.step.id, data: getRun.step.data },
+    };
+
+    const planned = await runFnWithStack(fn, state, {
+      disableImmediateExecution: true,
+    });
+    if (planned.type !== "steps-found" || !planned.steps[0]) {
+      throw new Error("Expected a planned step");
+    }
+    const step = planned.steps[0];
+    expect(JSON.stringify(step)).not.toContain(token);
+    expect(JSON.stringify(step.opts?.input)).toContain("TOKEN");
+
+    await runFnWithStack(
+      fn,
+      {
+        ...state,
+        [step.id]: { id: step.id, input: step.opts?.input as unknown[] },
+      },
+      { runStep: step.id },
+    );
+    expect(bodies.join()).toContain(token);
+  });
+});
+
 describe("inngest.sandboxes", () => {
   test.each([
     undefined,
