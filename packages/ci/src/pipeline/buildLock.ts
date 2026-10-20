@@ -151,7 +151,6 @@ export const requestBuild = async ({
       reused: false,
       target,
       ancestry: result.ancestry,
-      hadMachine: result.hadMachine,
       createdSnapshots: [],
       warnings: [],
       summary: {

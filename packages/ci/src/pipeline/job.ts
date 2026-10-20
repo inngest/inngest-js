@@ -898,7 +898,7 @@ const jobSteps = async ({
           "another run is building this…",
         );
 
-        setOutcome(scope, { reused: false, hadMachine: false });
+        setOutcome(scope, { reused: false });
       }
     }
 
