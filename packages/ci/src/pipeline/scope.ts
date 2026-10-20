@@ -17,6 +17,7 @@ import type {
   CheckConclusion,
   JobConfig,
   MachineConfig,
+  MatrixAxes,
   RepoContext,
 } from "../types.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
@@ -257,6 +258,12 @@ export interface CiRunScope {
    * run. It holds promises and nothing else.
    */
   sources: Map<string, Promise<ResolvedSource>>;
+  /**
+   * The axes of the matrices whose `axes` is a function, keyed by matrix ID,
+   * so each is resolved by one step per run. It holds promises and nothing
+   * else.
+   */
+  matrixAxes: Map<string, Promise<MatrixAxes>>;
   /** The IDs of the jobs defined in this run, which must be unique. */
   definedJobs: Set<string>;
   /**

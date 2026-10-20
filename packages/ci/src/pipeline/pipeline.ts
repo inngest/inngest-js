@@ -232,6 +232,7 @@ const newRunScope = ({
         return [key, Promise.resolve(source)];
       }),
     ),
+    matrixAxes: new Map(),
     definedJobs: new Set(),
     inlineJobs: new Map(),
     jobCalls: new Map(),

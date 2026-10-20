@@ -195,6 +195,31 @@ export interface Ci {
    *   },
    * );
    * ```
+   *
+   * `axes` can be an async function of what the run knows, like the commit.
+   * It is called once per run, and the matrix can still be defined at the top
+   * level.
+   *
+   * ```ts
+   * const examples = ci.matrix(
+   *   {
+   *     id: "examples",
+   *     axes: async ({ repo }) => {
+   *       const entries = await github.rest.repos.getContent({
+   *         path: "examples",
+   *         ref: repo?.sha ?? "",
+   *       });
+   *
+   *       const dirs = Array.isArray(entries) ? entries : [];
+   *
+   *       return { example: dirs.map((entry) => entry.name) };
+   *     },
+   *   },
+   *   async ({ matrix }) => {
+   *     await $`pnpm test`.env({ EXAMPLE: matrix.example });
+   *   },
+   * );
+   * ```
    */
   matrix<
     const TAxes extends MatrixAxes,
