@@ -475,7 +475,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return;
       }
 
-      const { parent } = run.build;
+      const { parent, direct } = run.build;
 
       const step = steps.buildingCheck(parent.jobPath);
 
@@ -484,7 +484,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           // The check belongs to the pipeline that invoked this run.
           run: { ...run, pipelineId: parent.pipelineId },
           name: check.name,
-          title: "Building in its own run",
+          title: direct ? "Running in its own run" : "Building in its own run",
           detailsUrl,
           ...(check.checkRunId === undefined
             ? {}

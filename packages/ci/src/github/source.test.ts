@@ -117,7 +117,7 @@ const checkingOut = (
           on: [{ event: "test/nightly" }],
           check: false as const,
         }
-      : { id: "pr", on: prTrigger };
+      : { id: "pr", on: prTrigger, childRuns: false };
 
   return runFunction(
     ci.pipeline(options, async () => {
@@ -598,7 +598,7 @@ describe("files() of another repository or ref", () => {
     });
 
     return runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
         return image();
       }),
       { event: prEvent },
@@ -751,7 +751,7 @@ describe("a local run", () => {
     });
 
     return runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
         return build();
       }),
       { event: localEvent() },
@@ -837,7 +837,7 @@ describe("the sources handed to a build run", () => {
     });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
         const image = ci.job(
           {
             id: "image",

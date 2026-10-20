@@ -63,7 +63,7 @@ describe("github.rest", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, check: false },
+      { id: "pr", on: prTrigger, childRuns: false, check: false },
       async () => {
         await job();
       },
@@ -96,7 +96,7 @@ describe("github.rest", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, check: false },
+      { id: "pr", on: prTrigger, childRuns: false, check: false },
       async () => {
         return job();
       },
@@ -129,7 +129,7 @@ describe("github.rest", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, check: false },
+      { id: "pr", on: prTrigger, childRuns: false, check: false },
       async () => {
         return job();
       },
@@ -161,7 +161,7 @@ describe("github.rest", () => {
     void client;
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, check: false },
+      { id: "pr", on: prTrigger, childRuns: false, check: false },
       async () => {
         await job();
       },

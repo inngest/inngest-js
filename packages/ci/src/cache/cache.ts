@@ -456,6 +456,24 @@ export const runTarget = (
 };
 
 /**
+ * The target of a job the pipeline calls itself, which nothing starts from.
+ * It takes no snapshot, so the name only keeps one call's steps from queueing
+ * behind another's in the build function's per-name concurrency.
+ */
+export const directTarget = (run: CiRunScope, path: string): CacheTarget => {
+  return {
+    ownKey: "",
+    key: {},
+    name: formatName({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId: path,
+      ownKey: "direct",
+    }),
+  };
+};
+
+/**
  * How long before its `expiresAt` a snapshot stops being reused: long enough
  * for the jobs that start from it to get their machines.
  */
