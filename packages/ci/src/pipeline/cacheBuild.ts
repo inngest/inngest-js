@@ -23,6 +23,7 @@ import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import { cycleMessage } from "../machine/from.ts";
 import type {
+  Ancestor,
   CheckAnnotation,
   MachineConfig,
   Matrix,
@@ -66,6 +67,8 @@ export interface CacheBuildData extends Record<string, unknown> {
    * scope of a job without a `cache` is the pipeline run.
    */
   cacheKey: string;
+  /** The named parts of the job's `cache.key` as the invoking run resolved them. */
+  key?: Record<string, string>;
   /**
    * The `app/job`s whose builds led to this one, outermost first. A build
    * asked for a job that is already here is a cycle.
@@ -144,6 +147,8 @@ export interface CacheBuildResult {
   reused: boolean;
   /** The key and name the build was asked for, for asking again. */
   target: CacheTarget;
+  /** The job and the jobs above it, nearest first, with their resolved key parts. */
+  ancestry: Ancestor[];
   /** Whether the job ran commands, so there was a machine to snapshot. */
   hadMachine: boolean;
   /**
@@ -280,7 +285,7 @@ const buildSnapshot = async ({
     run.summaries.push(request.sink.summary);
   }
 
-  return builtResult(request, {
+  return builtResult(request, data.jobId, {
     createdSnapshots: [...(run?.createdSnapshots ?? [])],
     warnings: run?.warnings ?? [],
     ...(run?.report ? { report: run.report } : {}),

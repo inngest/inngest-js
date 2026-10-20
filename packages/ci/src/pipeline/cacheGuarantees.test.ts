@@ -25,6 +25,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { temporalDuration } from "../testing/temporal.ts";
+import type { Job } from "../types.ts";
 import { createCi } from "./createCi.ts";
 
 type Api = ReturnType<typeof createFakeSandboxApi>;
@@ -202,7 +203,7 @@ describe("a chain of cached jobs", () => {
       },
     );
 
-    const startingFrom = (parent: typeof install, name: string) => {
+    const startingFrom = (parent: Job, name: string) => {
       return ci.job({ id: name, from: parent }, async () => {
         await $`echo ${name}`;
       });

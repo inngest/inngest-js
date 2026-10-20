@@ -10,7 +10,12 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot, resolveTakenName, usableFor } from "./cache.ts";
+import {
+  deleteSnapshot,
+  resolveCacheKey,
+  resolveTakenName,
+  usableFor,
+} from "./cache.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -215,5 +220,22 @@ describe("usableFor", () => {
         ...overrides,
       }),
     ).toBe(expected);
+  });
+});
+
+describe("resolveCacheKey", () => {
+  const run = {} as CiRunScope;
+
+  test("the names of a key's parts are part of its hash", async () => {
+    const a = await resolveCacheKey(run, { node: "20", pnpm: "9" });
+    const b = await resolveCacheKey(run, { pnpm: "20", node: "9" });
+
+    expect(a.hash).not.toBe(b.hash);
+  });
+
+  test("a named part called kind is a part, not a files() selector", async () => {
+    const { named } = await resolveCacheKey(run, { kind: "release" });
+
+    expect(named).toEqual({ kind: "release" });
   });
 });

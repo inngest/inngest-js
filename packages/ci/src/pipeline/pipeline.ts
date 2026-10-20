@@ -61,6 +61,7 @@ import { stepOptions, steps } from "./names.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
+  cacheRefreshIdPrefix,
   countApi,
   inGitHubSpan,
   initCiAls,
@@ -1005,7 +1006,7 @@ export const cacheRefreshFunctions = ({
       continue;
     }
 
-    const id = `ci/cache-refresh/${job.id}`;
+    const id = `${cacheRefreshIdPrefix}${job.id}`;
 
     functions.push(
       client.createFunction(

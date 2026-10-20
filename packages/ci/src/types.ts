@@ -169,25 +169,43 @@ export interface FilesOptions {
 }
 
 /**
- * What a job's cache is keyed on: a string, a `files()` part, a list of those
- * joined together, or a function that computes the key when the job runs.
+ * One piece of a cache key: a string, a `files()` part, or a function that
+ * computes a string when the job runs.
+ */
+export type CacheKeyValue = CacheKeyPart | string | (() => Promise<string>);
+
+/**
+ * What a job's cache is keyed on: one piece, a list of pieces joined together,
+ * or an object of named pieces. The handler gets the named ones, resolved to
+ * strings, as `key`.
+ *
+ * ```ts
+ * key: [files("pnpm-lock.yaml"), async () => latestRelease("inngest/inngest")]
+ * key: { deps: files("pnpm-lock.yaml"), release: latestRelease }
+ * ```
  */
 export type CacheKey =
-  | CacheKeyPart
-  | string
-  | (CacheKeyPart | string)[]
-  | (() => Promise<string>);
+  | CacheKeyValue
+  | readonly CacheKeyValue[]
+  | { readonly [name: string]: CacheKeyValue };
+
+/** The named pieces of a cache key, resolved to strings: a handler's `key`. */
+export type KeyValues<TKey> = TKey extends CacheKeyValue | readonly unknown[]
+  ? Record<never, never>
+  : TKey extends object
+    ? { [K in keyof TKey]: string }
+    : Record<never, never>;
 
 /**
  * A job's cache settings. `from` shares a job's machine within one run, and
  * only a `cache` key reuses it across runs.
  */
-export interface CacheConfig {
+export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
   /**
    * What the job depends on. If nothing in the key changed since the last
    * successful run, the job is reused.
    */
-  key?: CacheKey;
+  key?: TKey;
 
   /**
    * Triggers that rebuild the cache ahead of time, like a nightly cron, so
@@ -218,12 +236,16 @@ export interface CacheConfig {
  * written without any generics:
  *
  * ```ts
- * const compat = ci.job("compat", async (node: string) => {
- *   await $`fnm use ${node}`;
+ * const compat = ci.job("compat", async ({ input }: { input: string }) => {
+ *   await $`fnm use ${input}`;
  * });
  * ```
  */
-export interface JobConfig<TInput = void> {
+export interface JobConfig<
+  TInput = void,
+  TKey extends CacheKey | undefined = CacheKey,
+  TFrom extends From<TInput> | undefined = From<TInput> | undefined,
+> {
   /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
   /**
@@ -261,7 +283,7 @@ export interface JobConfig<TInput = void> {
    * To choose a parent from facts only known at run time, define two jobs and
    * choose between them in the pipeline.
    */
-  from?: From<TInput>;
+  from?: TFrom;
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
@@ -272,7 +294,7 @@ export interface JobConfig<TInput = void> {
    * start `from` it start from the snapshot. A job that runs no commands has
    * no machine, so it isn't cached.
    */
-  cache?: CacheConfig;
+  cache?: CacheConfig<TKey>;
   /** Check settings for this job. `false` means no job check. */
   check?: false | { name?: string };
   /**
@@ -301,8 +323,8 @@ export interface JobConfig<TInput = void> {
    * ```ts
    * const build = ci.job(
    *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
-   *   async ({ target }) => {
-   *     await $`pnpm build --target ${target}`;
+   *   async ({ input }) => {
+   *     await $`pnpm build --target ${input.target}`;
    *   },
    * );
    * ```
@@ -319,7 +341,7 @@ export interface JobConfig<TInput = void> {
  *
  * A job is called for its side effects, so it resolves to nothing.
  */
-export interface Job<TInput = void> {
+export interface Job<TInput = void, TKey = unknown, TFrom = unknown> {
   (input: TInput): Promise<void>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
@@ -331,7 +353,7 @@ export interface Job<TInput = void> {
    * ci.job({ id: "web", from: build.with("web") }, …);
    * ```
    */
-  with(input: TInput): JobRef<TInput>;
+  with(input: TInput): JobRef<TInput, TKey, TFrom>;
   /**
    * The job's input type, for type checks only: it's never set. It lets a
    * bare `from: job` accept only a job that runs without input.
@@ -339,14 +361,28 @@ export interface Job<TInput = void> {
    * @internal
    */
   readonly "~input"?: (input: TInput) => void;
+  /**
+   * The job's cache key, for type checks only: it's never set. It types the
+   * `from` and `image` of a job that starts from this one.
+   *
+   * @internal
+   */
+  readonly "~key"?: TKey;
+  /**
+   * What the job starts from, for type checks only: it's never set. It lets
+   * the `from.key` of a job below this one include the keys above it.
+   *
+   * @internal
+   */
+  readonly "~from"?: TFrom;
 }
 
 /**
  * A job with the input to run it with, from `job.with(input)`.
  */
-export interface JobRef<TInput = unknown> {
+export interface JobRef<TInput = unknown, TKey = unknown, TFrom = unknown> {
   readonly kind: "inngest/ci.jobRef";
-  readonly job: Job<TInput>;
+  readonly job: Job<TInput, TKey, TFrom>;
   readonly input: TInput;
 }
 
@@ -354,7 +390,7 @@ export interface JobRef<TInput = unknown> {
  * Any job with input, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job's ref
-export type AnyJobRef = JobRef<any>;
+export type AnyJobRef = JobRef<any, any, any>;
 
 /**
  * A job as `from` takes it bare: one that runs without input. A job that
@@ -370,19 +406,147 @@ type JobLike = Pick<AnyJob, "id" | "kind" | "with"> & {
  * function of the starting job's own input that gives any of them.
  */
 export type From<TInput = void> =
-  | JobLike
-  | AnyJobRef
-  | Image
+  | FromTarget
   | ((ctx: {
       /** The starting job's input. */
       input: TInput;
-    }) => JobLike | AnyJobRef | Image);
+    }) => FromTarget);
+
+/** What `from` names: a job, a job with input, or an `image`. */
+export type FromTarget = JobLike | AnyJobRef | Image;
 
 /**
  * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any>;
+export type AnyJob = Job<any, any, any>;
+
+/** A job above another, with the named parts of its cache key resolved. */
+export interface Ancestor {
+  id: string;
+  key: Record<string, string>;
+}
+
+/**
+ * What a job starts `from`, resolved: the image its machine is a copy of.
+ * Typed when the parent is a job defined in this app, and a record of strings
+ * for another app's image or a `from` function that could give either.
+ */
+export interface FromContext<TKey = Record<string, string>> {
+  /** The ID of the job it starts from. */
+  id: string;
+  /**
+   * The named key parts of everything the image was built from, flattened
+   * through its ancestors. The nearest one wins a shared name.
+   */
+  key: TKey;
+  /** Each job above, nearest first, with its own key parts, for exact lookups. */
+  ancestry: Ancestor[];
+}
+
+/**
+ * What a job without a `from` has as its `TFrom`: a function that gives
+ * nothing. It is a function so that a `from` function written in the config is
+ * typed by its parameter, and it gives `never` so that no parent is named.
+ */
+export type NoFrom<TInput> = (ctx: { input: TInput }) => never;
+
+/** What `from` names, with a function replaced by what it gives. */
+type TargetOf<TFrom> = TFrom extends {
+  kind: "inngest/ci.job" | "inngest/ci.jobRef" | "inngest/ci.image";
+}
+  ? TFrom
+  : TFrom extends (ctx: never) => infer TResult
+    ? Exclude<TResult, undefined>
+    : Exclude<TFrom, undefined>;
+
+/**
+ * The named key parts of everything a `from` names, flattened up the chain
+ * with the nearest job winning a shared name. Omitting the shadowed names from
+ * the parents' keys, rather than intersecting, keeps each part's own type and
+ * the JSDoc on its declaration.
+ */
+type KeysOf<TFrom> = [TargetOf<TFrom>] extends [never]
+  ? unknown
+  : KeysOfTarget<TargetOf<TFrom>>;
+
+type KeysOfTarget<TTarget> = TTarget extends { kind: "inngest/ci.job" }
+  ? TTarget extends {
+      readonly "~key"?: infer TKey;
+      readonly "~from"?: infer TUp;
+    }
+    ? Omit<KeysOf<TUp>, keyof KeyValues<TKey>> & KeyValues<TKey>
+    : unknown
+  : TTarget extends { kind: "inngest/ci.jobRef"; job: infer TJob }
+    ? KeysOf<TJob>
+    : Record<string, string>;
+
+type ParentOf<TFrom> = [TargetOf<TFrom>] extends [never]
+  ? undefined
+  : FromContext<KeysOf<TFrom>>;
+
+/**
+ * Why a cached job is running instead of being reused: `"miss"` when no
+ * usable snapshot was found, `"refresh"` when its `cache.refresh` trigger
+ * started it, and `"rebuild"` when it replaces a snapshot that wouldn't
+ * start. A job without a `cache` has none.
+ */
+export type CacheReason = "miss" | "refresh" | "rebuild";
+
+/**
+ * What a job handler is given.
+ *
+ * ```ts
+ * ci.job(
+ *   { id: "test", from: base, cache: { key: { deps: files("pnpm-lock.yaml") } } },
+ *   async ({ key, from }) => {
+ *     key.deps; // what this job's cache key was made of
+ *     from.key; // the named key parts of the image it started from
+ *   },
+ * );
+ * ```
+ */
+export interface JobContext<
+  TInput = void,
+  TKey = undefined,
+  TFrom = undefined,
+> {
+  /** The job's ID, with the combination for a matrix job. */
+  id: string;
+  /** The named parts of the job's `cache.key`, resolved to strings. */
+  key: KeyValues<TKey>;
+  /** Why the job is running, when it has a `cache`. */
+  cache: CacheReason | undefined;
+  /** The job's input, validated by its `input` schema. */
+  input: TInput;
+  /** The job it starts `from`, resolved. `undefined` without a `from`. */
+  from: ParentOf<TFrom>;
+  /** The repository and change this run is for, as the pipeline's `repo`. */
+  repo: RepoContext | undefined;
+  /** The Inngest run the job is in. */
+  run: {
+    /** The pipeline run's ID, as it appears in the trace. */
+    id: string;
+  };
+}
+
+/**
+ * What a matrix handler is given: a job's context, and the combination.
+ *
+ * ```ts
+ * ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+ *   await $`fnm use ${matrix.node}`;
+ * });
+ * ```
+ */
+export interface MatrixContext<
+  TAxes extends MatrixAxes = MatrixAxes,
+  TKey = Record<string, string>,
+  TFrom = FromTarget | undefined,
+> extends JobContext<void, TKey, TFrom> {
+  /** This job's combination of the axes. */
+  matrix: MatrixCombo<TAxes>;
+}
 
 /**
  * A pipeline's options. Every flow control option `createFunction` takes works
@@ -671,7 +835,12 @@ export type MatrixCombo<TAxes> = {
  * );
  * ```
  */
-export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
+export interface MatrixConfig<
+  TAxes extends MatrixAxes = MatrixAxes,
+  TFrom extends From<MatrixCombo<TAxes>> | undefined =
+    | From<MatrixCombo<TAxes>>
+    | undefined,
+> {
   /** Unique within the CI client. Each combination's job ID starts with it. */
   id: string;
   /** The axes to combine, in the order they should appear in job IDs. */
@@ -695,7 +864,7 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
    * The job each combination starts `from`. A function is given the
    * combination as its `input`.
    */
-  from?: From<MatrixCombo<TAxes>>;
+  from?: TFrom;
   /** Check settings for each combination's job. `false` means no job checks. */
   check?: false | { name?: string };
 }

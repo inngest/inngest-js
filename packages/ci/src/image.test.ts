@@ -199,7 +199,7 @@ describe("image.job", () => {
         input: fakeSchema<{ target: string }>({ target: "string" }),
         cache: { key: "v1" },
       },
-      async ({ target }) => {
+      async ({ input: { target } }) => {
         seen.add(`${target} ${getRunScope()?.repo?.fullName}`);
 
         await $`pnpm build ${target}`;
