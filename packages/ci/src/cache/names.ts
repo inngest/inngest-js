@@ -16,10 +16,29 @@ export type SnapshotName =
 /**
  * The name a snapshot has: `ci/<scope>/<job>/<key>`, where a run's own
  * snapshots have the scope `run:<root run>`. A name too long for a snapshot
- * keeps its start and gains a hash of the whole, so it stays unique.
+ * has its slot shortened (see `slotOf`), keeping its start and gaining a hash
+ * of the slot, so the last part stays whole and no two slots share a name.
  */
 export const formatName = (name: SnapshotName): string => {
   const scope = name.kind === "cache" ? name.scope : `run:${name.rootRunId}`;
+  const full = `ci/${scope}/${name.jobId}/${name.ownKey}`;
+  const split = full.lastIndexOf("/");
+  const last = full.slice(split + 1);
 
-  return boundedName(`ci/${scope}/${name.jobId}/${name.ownKey}`);
+  return `${boundedName(full.slice(0, split), 255 - 1 - last.length)}/${last}`;
+};
+
+/** What every snapshot a run owns starts with. */
+export const runNamePrefix = (rootRunId: string): string => {
+  return `ci/run:${rootRunId}/`;
+};
+
+/**
+ * Everything of a name but its last part: the scope, the job and what its
+ * entries are told apart by (the app, repository and input), without the key
+ * itself. Names with the same slot are versions of one entry, and a newer one
+ * replaces the others.
+ */
+export const slotOf = (name: string): string => {
+  return name.slice(0, name.lastIndexOf("/"));
 };

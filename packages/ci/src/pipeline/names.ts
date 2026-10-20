@@ -206,6 +206,7 @@ export const steps = {
   resolveCacheName: named("Resolve cache name"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
+  deleteReplacedCache: named("Delete replaced cache"),
 
   // Sandboxes.
   discardMachine: (stepId: string): StepSpec => {
