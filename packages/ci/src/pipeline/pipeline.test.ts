@@ -29,7 +29,7 @@ import {
 } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { report } from "../report.ts";
-import { createCiTestClient } from "../testing/client.ts";
+import { busOf, createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
@@ -4056,7 +4056,10 @@ describe("cleanup", () => {
     // Which machines exist depends on how far each sibling got in a request,
     // so the step can't be left out for a request that sees none.
     expect(result.stepIds).toContain("pipeline › cleanup");
-    expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: 0 });
+    expect(result.steps["pipeline › cleanup"]).toEqual({
+      destroyed: 0,
+      lockReleased: false,
+    });
   });
 
   test("a machine that is already gone is not an error", async () => {
@@ -4123,7 +4126,7 @@ describe("cleanup", () => {
         }),
         "run1",
       ),
-    ).resolves.toEqual({ destroyed: 0 });
+    ).resolves.toEqual({ destroyed: 0, lockReleased: false });
 
     await expect(
       destroyOrphans(
@@ -4133,6 +4136,34 @@ describe("cleanup", () => {
         "run1",
       ),
     ).rejects.toThrow("503");
+  });
+
+  test("a lock machine that can't be asked who owns it fails the step to retry", async () => {
+    const client = {
+      sandboxes: {
+        list: async () => {
+          return {
+            items: [
+              {
+                name: "ci-lock",
+                status: "RUNNING",
+                destroy: async () => {},
+                commands: {
+                  run: async () => {
+                    throw new Error("503 service unavailable");
+                  },
+                },
+              },
+            ],
+          };
+        },
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: a partial client is enough here
+    } as any;
+
+    await expect(destroyOrphans(client, "run1", "ci-lock")).rejects.toThrow(
+      "503",
+    );
   });
 
   test("a run that will be retried keeps its machines for the retry", async () => {
@@ -4760,7 +4791,7 @@ describe("cache builds in their own run", () => {
     const machines = [...api.sandboxes.values()];
 
     // The build's machine belongs to the build's run, not the pipeline's.
-    expect(machines[0]?.name).toMatch(/^ci-01TESTINVOKED\d+-base$/);
+    expect(machines[0]?.name).toMatch(/^ci-build-[0-9a-f]{32}$/);
 
     const child = machines.find((machine) => {
       return machine.name === "ci-01TESTRUN-lint";
@@ -4919,7 +4950,7 @@ describe("cache builds in their own run", () => {
         return (
           line.includes("pr / base") &&
           line.includes("Building in its own run") &&
-          /localhost:8288\/run\?runID=01TESTINVOKED\d+/.test(line)
+          /localhost:8288\/run\?runID=01(TESTINVOKED|BUILD)\d+/.test(line)
         );
       }),
     ).toBe(true);

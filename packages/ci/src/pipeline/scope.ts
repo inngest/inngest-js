@@ -288,6 +288,12 @@ export interface CiRunScope {
   build?: CacheBuildData;
   /** What a build run is asked to build, from `build`. */
   request?: BuildRequest;
+  /**
+   * Set while this build run answers for the lock on its cache entry: the lock
+   * machine's name, and the path of the job that claims it. The run tells the
+   * runs waiting on the lock how it ended. Cleared when another build holds it.
+   */
+  buildLock?: { name: string; path: string };
   /** What the build's job reported, which the build hands back. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
   /** Job results in call order, for the pipeline check summary. */

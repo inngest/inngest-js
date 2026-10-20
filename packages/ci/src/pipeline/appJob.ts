@@ -62,6 +62,7 @@ export const requestAppJob = async (
 
   const data: CacheBuildData = {
     jobId: job,
+    slot: `${run.runId}:${stepId}`,
     ...(input === undefined ? {} : { input }),
     ownKey: "",
     // One request per job and input at a time, so apps that ask together
