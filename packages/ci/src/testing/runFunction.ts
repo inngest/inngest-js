@@ -192,7 +192,7 @@ const runInvoked = async (
 ): Promise<{ data?: unknown; error?: unknown }> => {
   const call = planned.opts as {
     function_id: string;
-    payload: { data?: unknown };
+    payload: { data?: unknown; meta?: EventPayload["meta"] };
   };
 
   const functions =
@@ -234,6 +234,7 @@ const runInvoked = async (
   const event: EventPayload = {
     name: "inngest/function.invoked",
     data,
+    ...(call.payload.meta ? { meta: call.payload.meta } : {}),
   };
 
   invokedRuns++;

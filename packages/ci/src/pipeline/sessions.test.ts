@@ -14,6 +14,8 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { buildRequestedEvent } from "./buildLock.ts";
 import { createCi } from "./createCi.ts";
+import type { CiRunScope } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 const setup = () => {
   const client = createCiTestClient(createFakeSandboxApi());
@@ -107,5 +109,49 @@ describe("sessions", () => {
         },
       },
     });
+  });
+
+  test("the trigger's sessions are carried to the job's run beside ci_run", async () => {
+    const { ci } = setup();
+
+    const lint = ci.job("lint", async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+    });
+
+    const sessions = {
+      pull_request: "inngest/inngest-js#7",
+      commit: "abc1234",
+    };
+
+    const result = await runFunction(pipeline, {
+      event: { ...prEvent, meta: { sessions } },
+      runId: "01ROOT",
+    });
+
+    expect(result.inputs["lint › build"]).toMatchObject({
+      payload: {
+        meta: {
+          sessions: { ci_run: "01ROOT" },
+          propagated_sessions: sessions,
+        },
+      },
+    });
+  });
+
+  test("an image ID too long in bytes is shortened with its key kept whole", () => {
+    const run = { runId: "01ROOT" } as CiRunScope;
+    const ownKey = "b472eb37/187f51802a0f760c";
+
+    const { image } = sessionsMeta(run, {
+      jobId: "ビルド".repeat(100),
+      target: { ownKey, key: {}, name: "ci/x" },
+    }).sessions;
+
+    expect(Buffer.byteLength(image as string)).toBeLessThanOrEqual(512);
+    expect(image).toMatch(/^ビルド.*-[0-9a-f]{8}@b472eb37\/187f51802a0f760c$/);
   });
 });

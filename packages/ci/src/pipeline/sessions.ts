@@ -14,12 +14,37 @@
  */
 
 import type { CacheTarget } from "../cache/cache.ts";
-import { boundedName } from "../util.ts";
+import { hash } from "../util.ts";
 import type { CiRunScope } from "./scope.ts";
 import { rootRunIdOf } from "./scope.ts";
 
 /** Session IDs are limited to 512 bytes. */
-const maxSessionId = 512;
+const maxSessionIdBytes = 512;
+
+/**
+ * An image's session ID: the job and its key. A job ID too long for the limit
+ * is shortened by bytes and gains a hash of itself, so the key stays whole.
+ */
+const imageId = (jobId: string, ownKey: string): string => {
+  const tail = `@${ownKey}`;
+  const full = `${jobId}${tail}`;
+
+  if (Buffer.byteLength(full) <= maxSessionIdBytes) {
+    return full;
+  }
+
+  const suffix = `-${hash(jobId, 8)}`;
+  const head = Array.from(jobId);
+
+  while (
+    head.length > 0 &&
+    Buffer.byteLength(head.join("") + suffix + tail) > maxSessionIdBytes
+  ) {
+    head.pop();
+  }
+
+  return head.join("") + suffix + tail;
+};
 
 /**
  * The `meta` of an event or invoke CI starts for a run: the run's root
@@ -34,12 +59,7 @@ export const sessionsMeta = (
     sessions: {
       ci_run: rootRunIdOf(run),
       ...(image?.target.ownKey
-        ? {
-            image: boundedName(
-              `${image.jobId}@${image.target.ownKey}`,
-              maxSessionId,
-            ),
-          }
+        ? { image: imageId(image.jobId, image.target.ownKey) }
         : {}),
     },
   };
