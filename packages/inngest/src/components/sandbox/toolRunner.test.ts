@@ -914,7 +914,7 @@ describe("tool.step", () => {
   });
 });
 
-describe("commands.run with tools trace group", () => {
+describe("commands.run with tools trace rows", () => {
   const inExecution = <T>(fn: () => T): T => {
     return runWithAsyncCtx({ app: {} as never, execution: {} as never }, fn);
   };
@@ -951,9 +951,9 @@ describe("commands.run with tools trace group", () => {
       wait: "Waiting for tool calls",
     },
     { command: ["bash", "x.sh"], kind: "sh", wait: "Waiting for tool calls" },
-  ])("$command runs in a $kind group", async ({ command, kind, wait }) => {
+  ])("$command waits as '$wait'", async ({ command, wait }) => {
     const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
-    const { host, spans, names } = createHost(sandbox);
+    const { host, names } = createHost(sandbox);
 
     await inExecution(() => {
       return runCommandWithTools(
@@ -967,19 +967,20 @@ describe("commands.run with tools trace group", () => {
       );
     });
 
-    expect(spans.get("exec")).toEqual([{ id: "exec", name: "Analyse", kind }]);
     expect(names.get("exec:wait:1")).toBe(wait);
   });
 
-  test("tool calls are tool rows in the group, and waits stay in the group", async () => {
+  test("tool calls are tool rows in the command's row, and waits stay in it", async () => {
     const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
     const { host, spans } = createHost(sandbox);
+    const group = { id: "exec", name: "exec", kind: "$" };
 
     await inExecution(() => {
-      return run(host, { getCustomer: async () => ({ id: "cus_1" }) });
+      return withSpan(group, () => {
+        return run(host, { getCustomer: async () => ({ id: "cus_1" }) });
+      });
     });
 
-    const group = { id: "exec", name: "exec", kind: "python" };
     expect(Object.fromEntries(spans)).toEqual({
       exec: [group],
       "exec:tool:getCustomer:1": [

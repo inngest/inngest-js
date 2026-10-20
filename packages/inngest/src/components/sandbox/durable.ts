@@ -27,7 +27,7 @@ import {
   validateSandboxResult,
 } from "./protocol.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
-import { sdkOrigin } from "./trace.ts";
+import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -489,22 +489,35 @@ const callRawTool = async <
 ): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
+    const step = namedStep(operation, idOrOptions);
+    const span = commandSpan(operation, step);
+    // A command is one row, however many steps it takes
+    const inSpan = <R>(fn: () => R): R => {
+      return span ? withSpan(span, fn) : fn();
+    };
+
     if (tools) {
       return validateSandboxResult(
         operation,
-        await rawTool(idOrOptions, operation, undefined, tools),
+        await inSpan(() => {
+          return rawTool(step, operation, undefined, tools);
+        }),
       ) as T;
     }
 
     if (finish) {
-      return (await rawTool(idOrOptions, operation, (result) => {
-        return finish(validateSandboxResult(operation, result));
+      return (await inSpan(() => {
+        return rawTool(step, operation, (result) => {
+          return finish(validateSandboxResult(operation, result));
+        });
       })) as T;
     }
 
     return validateSandboxResult(
       operation,
-      await rawTool(idOrOptions, operation),
+      await inSpan(() => {
+        return rawTool(step, operation);
+      }),
     ) as T;
   } catch (error) {
     if (error instanceof SandboxValidationError) {
