@@ -455,6 +455,7 @@ export const traceName = {
   retryCreate: "Retry create",
   prepareWorkspace: "Prepare workspace",
   saveMachine: "Save sandbox",
+  saveOutputs: "Save outputs",
   snapshotMachine: "Snapshot sandbox",
   destroyMachine: "Destroy sandbox",
 
