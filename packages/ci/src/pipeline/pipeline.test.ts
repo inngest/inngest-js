@@ -3500,6 +3500,47 @@ describe("checks", () => {
     },
   );
 
+  test("a failed job keeps its machine for the retry and destroys it once it passes", async () => {
+    const { api, ci } = setup();
+
+    let attempt = 0;
+    let statusOnRetry: string | undefined;
+
+    const flaky = ci.job("flaky", async () => {
+      await $`pnpm setup`;
+
+      if (attempt === 0) {
+        throw new Error("flaky infrastructure");
+      }
+
+      statusOnRetry ??= [...api.sandboxes.values()][0]?.status;
+
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async (ctx) => {
+        attempt = ctx.attempt;
+
+        await flaky();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(statusOnRetry).toBeDefined();
+    expect(statusOnRetry).not.toBe("TERMINATED");
+
+    expect(
+      [...api.sandboxes.values()].map((machine) => {
+        return machine.status;
+      }),
+    ).toEqual(["TERMINATED"]);
+  });
+
   test("a job's failure title is one short line", async () => {
     const { ci, reporter } = setup();
 

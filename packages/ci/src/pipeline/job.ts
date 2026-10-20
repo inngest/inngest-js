@@ -826,7 +826,11 @@ const jobSteps = async ({
       ? (await snapshotMachine(scope))?.snapshotId
       : undefined;
 
-    await destroyJobMachines(scope);
+    // A retry replays this job's saved machine IDs, so the machines have to
+    // outlive the failed attempt. The attempt that settles the job destroys them.
+    if (!run.willRetry(error)) {
+      await destroyJobMachines(scope);
+    }
 
     let checkEndedAt: number | undefined;
 
