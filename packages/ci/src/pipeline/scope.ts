@@ -189,6 +189,8 @@ export interface CiInternals {
     }
   >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
+  /** Whether a run checks its GitHub event against GitHub before it starts. */
+  verifyEvents: boolean;
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   /** What the run tells a tool that watches it. Does nothing by default. */
   hooks: CiHooks;

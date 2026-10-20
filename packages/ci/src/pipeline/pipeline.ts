@@ -28,6 +28,7 @@ import {
   repoContextFromEvent,
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
+import { eventRejection } from "../github/verify.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
   deleteOrphanSnapshots,
@@ -317,6 +318,11 @@ const runPipelineAttempt = async ({
     // A comment trigger knows its pull request but not the commit it's for.
     if (run.repo?.pullRequest && !run.repo.sha && !run.repo.local) {
       run.repo = await resolvePullRequestHead(run, run.repo);
+    }
+
+    // Nothing is reported or run for an event GitHub doesn't stand behind.
+    if (run.ci.verifyEvents && run.repo && !run.repo.local && !build) {
+      await verifyEvent(run, run.repo);
     }
 
     // The check's step carries the run's metadata. With checks off there's no
@@ -638,6 +644,34 @@ const resolvePullRequestHead = (
       };
     },
   );
+};
+
+/**
+ * Ask GitHub whether the event is true, in a step so every replay agrees. A
+ * rejection is returned from the step and thrown here, so it isn't retried.
+ */
+const verifyEvent = async (
+  run: CiRunScope,
+  repo: RepoContext,
+): Promise<void> => {
+  const provider = run.ci.github as GitHubProvider;
+
+  if (provider.kind === "console") {
+    return;
+  }
+
+  const rejection = await ciRun(run, steps.verifyEvent(), async () => {
+    const octokit = await provider.octokit({
+      owner: repo.owner,
+      repo: repo.name,
+    });
+
+    return (await eventRejection({ octokit, repo })) ?? null;
+  });
+
+  if (rejection) {
+    throw new NonRetriableError(`Event rejected: ${rejection}`);
+  }
 };
 
 /** Errors that replaying the run would only reproduce. */

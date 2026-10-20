@@ -60,6 +60,13 @@ export interface CiOptions {
    * prints checks to the Inngest logger instead of sending them to GitHub.
    */
   github?: GitHubProvider;
+  /**
+   * Check every pull request and push event against GitHub before a run does
+   * anything, and fail the run without retrying when GitHub disagrees. Use it
+   * when the events come from a webhook that can't verify who sent them, like
+   * an Inngest webhook. Needs a provider that can read the repository.
+   */
+  verifyEvents?: boolean;
   /** Default machine for jobs. */
   machine?: MachineConfig;
   /** Builds the link shown on checks. */
@@ -308,6 +315,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
       return buildFunction;
     },
+    verifyEvents: options.verifyEvents ?? false,
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (

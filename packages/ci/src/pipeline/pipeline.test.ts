@@ -5571,3 +5571,161 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 });
+
+describe("verifyEvents", () => {
+  const pr = (number: number, sha: string) => {
+    return {
+      ...prEvent,
+      data: {
+        ...prEvent.data,
+        number,
+        pull_request: {
+          ...prEvent.data.pull_request,
+          number,
+          head: { ...prEvent.data.pull_request.head, sha },
+        },
+      },
+    };
+  };
+
+  const push = (ref: string, sha: string) => {
+    return {
+      name: "github/push",
+      data: {
+        ref,
+        after: sha,
+        before: "0".repeat(40),
+        repository: { full_name: "inngest/inngest-js" },
+        _github: { event: "push" },
+      },
+    };
+  };
+
+  const run = async (
+    event: { name: string; data: unknown },
+    routes: Array<[string, unknown, number?]>,
+  ) => {
+    const gh = createFakeGitHub();
+
+    for (const [pattern, body, status] of routes) {
+      gh.route(pattern, body, status);
+    }
+
+    const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
+      github: githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+      verifyEvents: true,
+    });
+
+    const handler = vi.fn(async () => {
+      return "ran";
+    });
+
+    const pipeline = ci.pipeline(
+      {
+        id: "verified",
+        on: [{ event: event.name }],
+        check: false,
+      },
+      handler,
+    );
+
+    const result = await runFunction(pipeline, { event, retries: 1 });
+
+    return { result, handler, gh };
+  };
+
+  const head = (sha: string) => {
+    return [
+      ["GET /repos/inngest/inngest-js/pulls/7", { head: { sha } }],
+    ] as Array<[string, unknown]>;
+  };
+
+  const tip = (sha: string) => {
+    return [
+      "GET /repos/inngest/inngest-js/git/ref/heads%2Fmain",
+      { object: { sha } },
+    ] as [string, unknown];
+  };
+
+  const compare = (status: string) => {
+    return ["GET /repos/inngest/inngest-js/compare/*", { status }] as [
+      string,
+      unknown,
+    ];
+  };
+
+  test.each([
+    {
+      name: "a pull request at the head GitHub reports",
+      event: pr(7, "abc1234"),
+      routes: head("abc1234"),
+      runs: true,
+    },
+    {
+      name: "a pull request whose head has moved on",
+      event: pr(7, "abc1234"),
+      routes: head("9999999"),
+      runs: false,
+    },
+    {
+      name: "a pull request that does not exist",
+      event: pr(8, "abc1234"),
+      routes: [
+        [
+          "GET /repos/inngest/inngest-js/pulls/8",
+          { message: "Not Found" },
+          404,
+        ],
+      ] as Array<[string, unknown, number]>,
+      runs: false,
+    },
+    {
+      name: "a push at the tip of its ref",
+      event: push("refs/heads/main", "abc1234"),
+      routes: [tip("abc1234")],
+      runs: true,
+    },
+    {
+      name: "a push of a commit behind the tip",
+      event: push("refs/heads/main", "abc1234"),
+      routes: [tip("9999999"), compare("ahead")],
+      runs: true,
+    },
+    {
+      name: "a push of a commit that is not on the ref",
+      event: push("refs/heads/main", "abc1234"),
+      routes: [tip("9999999"), compare("diverged")],
+      runs: false,
+    },
+    {
+      name: "a push to a ref that does not exist",
+      event: push("refs/heads/main", "abc1234"),
+      routes: [
+        [
+          "GET /repos/inngest/inngest-js/git/ref/heads%2Fmain",
+          { message: "Not Found" },
+          404,
+        ] as [string, unknown, number],
+      ],
+      runs: false,
+    },
+  ])("$name", async ({ event, routes, runs }) => {
+    const { result, handler } = await run(event, routes);
+
+    expect(result.type).toBe(runs ? "function-resolved" : "function-rejected");
+    expect(handler.mock.calls.length > 0).toBe(runs);
+  });
+
+  test("a rejected event is not retried and reports nothing", async () => {
+    const { result, gh } = await run(pr(7, "abc1234"), head("9999999"));
+
+    expect(
+      result.stepIds.filter((id) => id === "github › event:verify"),
+    ).toHaveLength(1);
+    expect(gh.requests.map((request) => request.method)).toEqual(["GET"]);
+  });
+});
