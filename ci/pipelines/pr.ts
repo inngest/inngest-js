@@ -22,7 +22,7 @@ import { audit, middlewareSentry, quality, tests } from "../jobs/packages.ts";
 export const pr = ci.pipeline(
   {
     id: "pr",
-    on: github.pullRequest(),
+    on: github.pullRequest({ repo: "inngest/inngest-js" }),
     singleton: { key: "event.data.pull_request.number", mode: "cancel" },
   },
   async () => {

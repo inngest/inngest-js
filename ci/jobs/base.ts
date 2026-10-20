@@ -14,7 +14,7 @@ import { $, checkout, files, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
 
-const warm = github.push({ branches: ["main"] });
+const warm = github.push({ branches: ["main"], repo: "inngest/inngest-js" });
 
 const latestDevServer = async (): Promise<string> => {
   const response = await fetch(

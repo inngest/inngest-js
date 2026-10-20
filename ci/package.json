@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx server.ts",
+    "test": "tsx --test webhook-transform.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

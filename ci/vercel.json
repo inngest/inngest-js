@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm -C .. install --frozen-lockfile && pnpm -C ../packages/inngest run build && pnpm -C ../packages/ci run build && pnpm install --ignore-workspace --frozen-lockfile",
+  "functions": {
+    "api/inngest.ts": {
+      "maxDuration": 300
+    }
+  }
+}
