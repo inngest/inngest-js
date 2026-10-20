@@ -177,7 +177,7 @@ describe("matrix", () => {
   };
 
   test("expands every combination in declaration order", () => {
-    expect(expandMatrix({ ...config })).toEqual([
+    expect(expandMatrix({}, config.axes)).toEqual([
       { node: "20", db: "sqlite" },
       { node: "20", db: "postgres" },
       { node: "22", db: "sqlite" },
@@ -187,11 +187,13 @@ describe("matrix", () => {
 
   test("exclude removes combinations and include adds them", () => {
     expect(
-      expandMatrix({
-        ...config,
-        exclude: [{ node: "20", db: "postgres" }],
-        include: [{ node: "24", db: "postgres" }],
-      }),
+      expandMatrix(
+        {
+          exclude: [{ node: "20", db: "postgres" }],
+          include: [{ node: "24", db: "postgres" }],
+        },
+        config.axes,
+      ),
     ).toEqual([
       { node: "20", db: "sqlite" },
       { node: "22", db: "sqlite" },

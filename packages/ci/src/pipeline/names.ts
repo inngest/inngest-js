@@ -287,6 +287,15 @@ export const steps = {
   addSummary: named("Add summary", { unmarked: true }),
   addAnnotations: named("Add annotations", { unmarked: true }),
 
+  // Matrices.
+  matrixAxes: (matrixId: string): StepSpec => {
+    return {
+      id: joinId("matrix", matrixId, "axes"),
+      name: `Resolve axes of ${matrixId}`,
+      unmarked: true,
+    };
+  },
+
   // Reading from GitHub.
   resolveRepository: (): StepSpec => {
     return {
@@ -405,6 +414,8 @@ export const steps = {
   },
 
   recordRunDetails: named("Record run details"),
+
+  checkBuildLock: named("Check build"),
 };
 
 export const traceName = {
@@ -442,6 +453,16 @@ export const traceName = {
   buildInOwnRun: (path: string): string => {
     return `Build ${path} in its own run`;
   },
+
+  askForBuild: (path: string): string => {
+    return `Ask for a build of ${path}`;
+  },
+
+  waitForBuild: (path: string): string => {
+    return `Wait for a build of ${path}`;
+  },
+
+  announceBuild: "Tell the runs waiting on a build",
 
   runInOwnRun: (path: string): string => {
     return `Run ${path} in its own run`;

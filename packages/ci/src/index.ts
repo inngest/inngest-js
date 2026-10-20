@@ -124,6 +124,7 @@ export type {
   MatrixAxes,
   MatrixCombo,
   MatrixConfig,
+  MatrixAxesContext,
   MatrixContext,
   OutputValue,
   PipelineConfig,

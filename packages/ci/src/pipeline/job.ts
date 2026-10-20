@@ -37,6 +37,7 @@ import {
 } from "../machine/from.ts";
 import {
   destroyJobMachines,
+  lockMachineName,
   saveOutputs,
   snapshotMachine,
 } from "../machine/machine.ts";
@@ -55,9 +56,11 @@ import {
   durationToMs,
   errorMessage,
   formatDuration,
+  isSandboxNameTaken,
   shortReason,
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
+import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
@@ -498,6 +501,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
 
   const data: CacheBuildData = {
     jobId: config.id,
+    slot: `${run.runId}:${joinId(stepPath, "build")}`,
     ...(origin ? { matrix: origin } : {}),
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
@@ -515,6 +519,23 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     rootRunId: rootRunIdOf(run),
     parent: buildParent(run, path, check),
   };
+
+  // A job that starts fresh is built once for every run that needs it: this
+  // one listens for the build, looks for the snapshot, and asks for a build if
+  // there is none. See buildLock.ts.
+  if (takesBuildLock(config, { exclude, unnamed })) {
+    return requestBuild({
+      run,
+      path,
+      stepPath,
+      config,
+      target,
+      data,
+      reused: (hit) => {
+        return reusedBuild(config, target, hit);
+      },
+    });
+  }
 
   // A snapshot that is already there needs no build run, and no wait behind
   // the builds that are queued for its name. A caller that has just looked it
@@ -822,6 +843,14 @@ const jobSteps = async ({
   const builtAs = request?.direct
     ? undefined
     : (request?.target ?? (inRun ? cacheAt : undefined));
+
+  // A build that others wait on answers for the lock on its cache entry: it
+  // claims it with the machine its first command creates, and tells them how
+  // it ended when its run does.
+  if (isBuild && run.build?.locked && takesBuildLock(config, request ?? {})) {
+    run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
+  }
+
   const hit = builtAs
     ? await lookupCache(scope, config.cache, builtAs, request?.exclude)
     : undefined;
@@ -899,36 +928,56 @@ const jobSteps = async ({
         warnBuiltInRun(run, config.id);
       }
 
-      const output = await runJobBody(scope, async () => {
-        if (fromParent) {
-          await startFrom(scope, fromParent);
+      try {
+        const output = await runJobBody(scope, async () => {
+          if (fromParent) {
+            await startFrom(scope, fromParent);
+          }
+
+          return handler(
+            handlerContext({
+              scope,
+              id: config.id,
+              input,
+              key: builtAs?.key ?? {},
+              cache: cacheReason(run, config, request),
+              ancestry: fromParent?.built.ancestry ?? [],
+            }),
+          );
+        });
+
+        returned = storeOutput(
+          scope,
+          config.id,
+          fromParent?.built.ancestry ?? [],
+          output,
+        );
+
+        if (scope.request) {
+          scope.request.sink.output = returned;
         }
 
-        return handler(
-          handlerContext({
-            scope,
-            id: config.id,
-            input,
-            key: builtAs?.key ?? {},
-            cache: cacheReason(run, config, request),
-            ancestry: fromParent?.built.ancestry ?? [],
-          }),
+        if (builtAs) {
+          await snapshotBuilt(scope, builtAs);
+          await confirmBuilt(scope, builtAs);
+        }
+      } catch (error) {
+        // Another build holds the lock, and whoever holds it tells everyone
+        // how it ended, so this one ends without a word.
+        if (!run.buildLock || !isSandboxNameTaken(error)) {
+          throw error;
+        }
+
+        run.buildLock = undefined;
+        scope.machine = undefined;
+
+        run.ci.hooks.activity(
+          run,
+          scope.jobPath,
+          "another run is building this…",
         );
-      });
 
-      returned = storeOutput(
-        scope,
-        config.id,
-        fromParent?.built.ancestry ?? [],
-        output,
-      );
-
-      if (scope.request) {
-        scope.request.sink.output = returned;
-      }
-
-      if (builtAs) {
-        await snapshotBuilt(scope, builtAs);
+        setOutcome(scope, { reused: false });
       }
 
       await destroyJobMachines(scope);
