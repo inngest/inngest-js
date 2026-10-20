@@ -920,16 +920,19 @@ export const cleanupFunction = ({
           ? lockMachineName(request.cacheKey)
           : undefined;
 
-      const destroyed = await step.run(stepOptions(steps.cleanUpEndedRun()), async () => {
-        if (!runId) {
-          return { destroyed: 0, lockReleased: false, deleted: 0 };
-        }
+      const destroyed = await step.run(
+        stepOptions(steps.cleanUpEndedRun()),
+        async () => {
+          if (!runId) {
+            return { destroyed: 0, lockReleased: false, deleted: 0 };
+          }
 
-        return {
-          ...(await destroyOrphans(client, runId, lock)),
-          ...(await deleteOrphanSnapshots(client, runId)),
-        };
-      });
+          return {
+            ...(await destroyOrphans(client, runId, lock)),
+            ...(await deleteOrphanSnapshots(client, runId)),
+          };
+        },
+      );
 
       // The runs waiting on it would otherwise wait for a build that is gone.
       // A build that ended on its own already told them, and one that told them
