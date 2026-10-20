@@ -118,7 +118,7 @@ const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 const resolveMachineConfig = (
   config: MachineConfig | undefined,
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
-  const vcpu = config?.vcpu ?? 2;
+  const vcpu = config?.vcpu ?? 4;
 
   return { vcpu, memoryMb: memoryForVcpu[vcpu] };
 };
