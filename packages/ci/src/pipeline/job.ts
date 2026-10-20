@@ -7,7 +7,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { NonRetriableError } from "inngest";
+import { NonRetriableError, StepError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
@@ -36,6 +36,7 @@ import {
   withoutUnreusableCache,
 } from "../machine/from.ts";
 import {
+  destroyJobMachines,
   lockMachineName,
   saveOutputs,
   snapshotMachine,
@@ -978,6 +979,8 @@ const jobSteps = async ({
 
         setOutcome(scope, { reused: false });
       }
+
+      await destroyJobMachines(scope);
     }
 
     // Replays run this from the top, so the clock here is only right on the
@@ -1027,6 +1030,8 @@ const jobSteps = async ({
       ? (await snapshotMachine(scope))?.snapshotId
       : undefined;
 
+    await destroyJobMachines(scope);
+
     let checkEndedAt: number | undefined;
 
     if (checked) {
@@ -1039,16 +1044,7 @@ const jobSteps = async ({
 
       run.openChecks.delete(scope.path);
 
-      if (run.willRetry(error)) {
-        // A later attempt may pass, and the check's complete step is memoized,
-        // so the result is held back until the run knows it's final.
-        run.deferredChecks.set(scope.path, {
-          ...(checkName ? { name: checkName } : {}),
-          ...result,
-        });
-      } else {
-        checkEndedAt = await checks.jobComplete({ ...target, ...result });
-      }
+      checkEndedAt = await checks.jobComplete({ ...target, ...result });
     }
 
     const endedAt =
@@ -1063,8 +1059,28 @@ const jobSteps = async ({
       ...(keptSnapshotId ? { keptSnapshotId } : {}),
     });
 
-    throw error;
+    throw settledError(error);
   }
+};
+
+/**
+ * A failed job's machines are already destroyed, so a retry would replay saved
+ * machine IDs that no longer exist. Its failure ends the run instead, with the
+ * original error as the cause. Errors that never retry keep their type.
+ */
+const settledError = (error: unknown): unknown => {
+  if (
+    error instanceof CommandFailedError ||
+    error instanceof CommandTimeoutError ||
+    error instanceof CiUsageError ||
+    error instanceof AggregateError ||
+    error instanceof StepError ||
+    (error as { name?: unknown } | undefined)?.name === "NonRetriableError"
+  ) {
+    return error;
+  }
+
+  return new NonRetriableError(errorMessage(error), { cause: error });
 };
 
 /**

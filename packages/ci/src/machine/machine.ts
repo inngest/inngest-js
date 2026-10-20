@@ -16,7 +16,7 @@ import {
 import { runNamePrefix } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
-import { spans, steps, traceName } from "../pipeline/names.ts";
+import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
   CiRunScope,
@@ -88,6 +88,36 @@ export const ensureMachine = async (
   }
 
   return handle;
+};
+
+/**
+ * Destroy a job's machines, its own and its extras', as soon as the job has
+ * settled, so a failed job doesn't hold its machine until the run ends. The
+ * destroy is a step of its own, and best effort: a machine that can't be
+ * destroyed here is found by the run's cleanup.
+ */
+export const destroyJobMachines = async (scope: CiJobScope): Promise<void> => {
+  const owners = [scope, ...(scope.extras?.values() ?? [])];
+
+  await Promise.all(
+    owners.map(async (owner) => {
+      if (!owner.machine) {
+        return;
+      }
+
+      try {
+        const handle = await owner.machine;
+
+        await inMachineSpan(owner, () => {
+          return handle.sandbox.destroy(
+            ciStep(joinId(owner.path, "destroy"), traceName.destroyMachine),
+          );
+        });
+      } catch {
+        // A machine that never started has nothing to destroy.
+      }
+    }),
+  );
 };
 
 /**
@@ -357,8 +387,10 @@ const startSandbox = async (
   // destroy a cache that is shared, since a pull request restores its
   // base branch's snapshots, and every run after it would build again. So
   // only a snapshot that fails to start a second time is broken enough to
-  // delete. Capacity errors (`compute_unavailable`, 429 and 503) are not
-  // start failures at all, and fail the job as any other would.
+  // delete, and never because of timeouts, which are rebuilt around.
+  // Capacity errors (`compute_unavailable`, 429 and 503) and launch
+  // failures, which the platform reports for its own trouble, are not start
+  // failures at all, and fail the job as any other would.
   const state = await snapshotState(
     run,
     joinId(stepId, "snapshot-state"),
@@ -385,7 +417,10 @@ const startSandbox = async (
 
     bad = `wouldn't start twice (${errorMessage(second.failure)})`;
 
-    rebuild = { broken: true, unnamed: false };
+    // A timeout leaves the snapshot alone: it is rebuilt without a name.
+    rebuild = hasCode(second.failure, "sandbox_start_timed_out")
+      ? { broken: false, unnamed: true }
+      : { broken: true, unnamed: false };
   }
 
   run.warnings.push(
@@ -479,8 +514,9 @@ const discardFailedStart = async (
 export const isStartFailure = (error: unknown): boolean => {
   const codes = ["sandbox_start_timed_out", "sandbox_start_failed"];
 
-  // No capacity, or too many requests, says nothing about the snapshot.
-  if (isRetryable(error)) {
+  // No capacity, too many requests or a failed launch says nothing about the
+  // snapshot.
+  if (isRetryable(error) || isLaunchFailure(error)) {
     return false;
   }
 
@@ -489,6 +525,24 @@ export const isStartFailure = (error: unknown): boolean => {
       return hasCode(error, code);
     }) || /did not reach RUNNING/i.test(errorMessage(error))
   );
+};
+
+/**
+ * Whether the platform itself couldn't launch the machine, whatever it was
+ * asked to start from. It reports `sandbox launch failed` and `sandbox launch
+ * result is unknown`, in the error's message or its details.
+ */
+const isLaunchFailure = (error: unknown): boolean => {
+  const seen = error as
+    | { details?: unknown; cause?: { details?: unknown } }
+    | undefined;
+
+  const text = [
+    errorMessage(error),
+    JSON.stringify(seen?.details ?? seen?.cause?.details ?? ""),
+  ].join(" ");
+
+  return /launch (failed|result is unknown)/i.test(text);
 };
 
 /**

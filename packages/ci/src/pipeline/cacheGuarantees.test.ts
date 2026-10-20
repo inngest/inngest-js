@@ -253,7 +253,7 @@ describe("a chain of cached jobs", () => {
    * where events fall in the timeline.
    *
    * Every poll is a step, and every step replays the pipeline, so the cost
-   * grows with the ticks. Five outlast the other jobs' commands and keep the
+   * grows with the ticks. A few ticks outlast the other jobs' commands and keep the
    * run under a second, where forty took over two and hit the 5s timeout
    * under load.
    */
@@ -262,7 +262,7 @@ describe("a chain of cached jobs", () => {
 
     api.script([
       { match: "pnpm build", ticks: 5 },
-      { match: "pnpm pack", ticks: 5 },
+      { match: "pnpm pack", ticks: 8 },
     ]);
 
     const result = await chain(api);

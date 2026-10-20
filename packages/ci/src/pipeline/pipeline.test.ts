@@ -3183,41 +3183,64 @@ describe("cache", () => {
       );
     });
 
-    test.each([
-      ["timeouts", "timeoutSnapshotStarts"],
-      ["failures", "failSnapshotStarts"],
-    ] as const)(
-      "when the retry fails too, the snapshot is deleted and rebuilt (%s)",
-      async (_label, method) => {
-        const { api, snapshot } = await built();
+    test("when the retry fails too, the snapshot is deleted and rebuilt", async () => {
+      const { api, snapshot } = await built();
 
-        api[method]();
+      api.failSnapshotStarts();
 
-        const second = await runPipeline(api);
+      const second = await runPipeline(api);
 
-        expect(second.type).toBe("function-resolved");
-        expect(second.data).toEqual([
-          expect.stringContaining(
-            "fell back: snapshot of `base` wouldn't start",
-          ),
-        ]);
-        expect(deletesOf(api, snapshot?.id)).toBe(1);
-        expect(api.snapshots.has(snapshot?.id ?? "")).toBe(false);
-        expect(ran(api, "pnpm install")).toBe(2);
-        expect(ran(api, "pnpm lint")).toBe(2);
+      expect(second.type).toBe("function-resolved");
+      expect(second.data).toEqual([
+        expect.stringContaining("fell back: snapshot of `base` wouldn't start"),
+      ]);
+      expect(deletesOf(api, snapshot?.id)).toBe(1);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(false);
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
 
-        // The rebuild is cached under the freed name for the next run.
-        expect(namedSnapshots(api)).toEqual([
-          expect.stringMatching(/^ci\/pr:7\/base\//),
-        ]);
-        expect(leftoverMachines(api)).toEqual([]);
-      },
-    );
+      // The rebuild is cached under the freed name for the next run.
+      expect(namedSnapshots(api)).toEqual([
+        expect.stringMatching(/^ci\/pr:7\/base\//),
+      ]);
+      expect(leftoverMachines(api)).toEqual([]);
+    });
+
+    test("a snapshot that times out twice is rebuilt unnamed, and never deleted", async () => {
+      const { api, snapshot } = await built();
+
+      api.timeoutSnapshotStarts();
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-resolved");
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm lint")).toBe(2);
+      expect(leftoverMachines(api)).toEqual([]);
+    });
+
+    test("a launch failure fails the job and leaves the snapshot alone, whatever the number of tries", async () => {
+      const { api, snapshot } = await built();
+
+      api.failNextSnapshotStarts("launch", { count: 50 });
+
+      const second = await runPipeline(api);
+
+      expect(second.type).toBe("function-rejected");
+      expect(deletesOf(api, snapshot?.id)).toBe(0);
+      expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
+      expect(ran(api, "pnpm install")).toBe(1);
+
+      // No second try at the snapshot: the launch is not the snapshot's fault.
+      expect(second.stepIds.filter((id) => id.includes("restart"))).toEqual([]);
+    });
 
     test("when the snapshot can't be deleted, the rebuild is unnamed and the broken one is never reused", async () => {
       const { api, snapshot } = await built();
 
-      api.timeoutSnapshotStarts();
+      api.failSnapshotStarts();
       api.refuseSnapshotDeletes();
       const startsBefore = api.snapshotStarts.length;
 
@@ -3280,7 +3303,7 @@ describe("cache", () => {
 
       const [snapshot] = [...api.snapshots.values()];
 
-      api.timeoutSnapshotStarts();
+      api.failSnapshotStarts();
 
       const second = await runPipeline(api, {
         children: ["lint", "test", "build"],
@@ -3641,6 +3664,86 @@ describe("checks", () => {
       expect.objectContaining({ name: "pr", conclusion: "failure" }),
     ]);
   });
+
+  test.each([
+    ["passes", 0],
+    ["fails", 1],
+  ] as const)(
+    "a job that %s destroys its machines before it is reported, not when the run ends",
+    async (_label, exitCode) => {
+      const { api, ci } = setup();
+
+      api.script([{ match: "pnpm test", exitCode }]);
+
+      const test = ci.job("test", async () => {
+        const extra = await sandbox("extra");
+
+        await extra.$`pnpm extra`;
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        async () => {
+          return test();
+        },
+      );
+
+      const result = await runFunction(pipeline, { event: prEvent });
+
+      const at = (id: string) => {
+        return result.stepIds.indexOf(id);
+      };
+
+      expect(at("test › destroy")).toBeGreaterThan(-1);
+      expect(at("test › extra › destroy")).toBeGreaterThan(-1);
+      expect(at("test › destroy")).toBeLessThan(
+        at("github › check:test:complete"),
+      );
+      expect(at("test › destroy")).toBeLessThan(at("pipeline › cleanup"));
+
+      expect(
+        [...api.sandboxes.values()].map((machine) => {
+          return machine.status;
+        }),
+      ).toEqual(["TERMINATED", "TERMINATED"]);
+    },
+  );
+
+  test.each([false, true])(
+    "a job that fails with a retryable error destroys its machine and is not retried (childRuns: %s)",
+    async (childRuns) => {
+      const { api, ci } = setup();
+
+      const flaky = ci.job("flaky", async () => {
+        await $`pnpm setup`;
+
+        throw new Error("flaky infrastructure");
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 2, childRuns },
+        async () => {
+          await flaky();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        retries: 2,
+        maxRequests: 400,
+      });
+
+      expect(result.type).toBe("function-rejected");
+      expect(result.error).toMatchObject({ name: "NonRetriableError" });
+
+      expect(
+        [...api.sandboxes.values()].map((machine) => {
+          return machine.status;
+        }),
+      ).toEqual(["TERMINATED"]);
+    },
+  );
 
   test("a job's failure title is one short line", async () => {
     const { ci, reporter } = setup();
@@ -4539,24 +4642,18 @@ describe("checks across retries", () => {
       gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
       gh.route("GET /repos/inngest/inngest-js/check-runs/9", { id: 9 });
 
-      // Steps replay within an attempt, so the job fails by attempt rather
-      // than by how many times it has run.
-      let attempt = 0;
-
-      const flaky = ci.job("flaky", async () => {
-        if (attempt === 0) {
-          throw new Error("flaky infrastructure");
-        }
-
+      const test = ci.job("test", async () => {
         await $`pnpm test`;
       });
 
       const pipeline = ci.pipeline(
         { id: "pr", on: prTrigger, childRuns: false, retries: 1 },
         async (ctx) => {
-          attempt = ctx.attempt;
+          await test();
 
-          await flaky();
+          if (ctx.attempt === 0) {
+            throw new Error("flaky infrastructure");
+          }
         },
       );
 

@@ -245,7 +245,6 @@ const newRunScope = ({
     createdSnapshots: new Set(),
     summaries: [],
     openChecks: new Map(),
-    deferredChecks: new Map(),
     attempt,
     maxAttempts,
     willRetry: (error) => {
@@ -363,23 +362,6 @@ const runPipelineAttempt = async ({
         // would leave it failed even if the retry passes. They stay in
         // progress until an attempt that's final.
         const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
-
-        // One step whatever is held back, because which jobs have a check
-        // deferred depends on how far each sibling got in this request.
-        await checks.retryingAll({
-          run,
-          jobs: () => {
-            return [...run.deferredChecks.entries()].map(
-              ([jobPath, deferred]) => {
-                return {
-                  jobPath,
-                  ...(deferred.name ? { name: deferred.name } : {}),
-                };
-              },
-            );
-          },
-          title,
-        });
 
         await checks.retrying({ run, title });
 
@@ -722,14 +704,13 @@ const defaultRetries = 4;
 const cancelledTitle = "Cancelled: the pipeline ended first";
 
 /**
- * Complete the job checks the run leaves behind: those held back for a retry
- * that isn't coming, and those of jobs still running.
+ * Complete the job checks the run leaves behind: those of jobs still running.
  *
  * With `Promise.all`, the first failure ends the run while its siblings are
  * mid-flight, so their checks are marked cancelled rather than left in
  * progress, and so are those of jobs left unawaited. The siblings keep going
- * while this runs, and how far each got differs between requests, so both
- * lists are read at once, inside one memoized step.
+ * while this runs, and how far each got differs between requests, so they
+ * are read inside one memoized step.
  */
 const closeJobChecks = async (
   run: CiRunScope,
@@ -738,12 +719,6 @@ const closeJobChecks = async (
   const closed = await checks.jobsComplete({
     run,
     jobs: () => {
-      const deferred = [...run.deferredChecks.entries()].map(
-        ([jobPath, { name, ...result }]) => {
-          return { jobPath, ...(name ? { name } : {}), ...result };
-        },
-      );
-
       const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
         return {
           jobPath,
@@ -753,7 +728,7 @@ const closeJobChecks = async (
         };
       });
 
-      return [...deferred, ...open];
+      return open;
     },
   });
 
