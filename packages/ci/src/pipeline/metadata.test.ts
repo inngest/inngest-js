@@ -80,9 +80,12 @@ describe("run metadata", () => {
       await $`pnpm build`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([test(), compat(), built()]);
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await Promise.all([test(), compat(), built()]);
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
@@ -135,7 +138,7 @@ describe("run metadata", () => {
         waitForChecks: 0,
         waitForWorkflow: 0,
         waitFor: 0,
-        commands: 4,
+        commands: 6,
         background: 0,
         shard: 0,
         skip: 0,
@@ -153,7 +156,7 @@ describe("run metadata", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: prTrigger, retries: 0 },
+      { id: "pr", on: prTrigger, childRuns: false, retries: 0 },
       async () => {
         await lint();
       },
