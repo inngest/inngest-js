@@ -12,6 +12,7 @@ import {
   operationSandboxId,
   parseSandboxOperation,
   redactOperation,
+  restoreEnvironment,
   type SandboxOperationResultV1,
   type SandboxOperationV1,
   type SandboxRawTool,
@@ -218,12 +219,15 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         );
       }
 
-      // The recorded input is redacted, and a replayed step receives that
-      // back as its argument, so the step runs the original operation instead.
+      // The recorded input is redacted, and a replayed step receives that back as
+      // its argument, so the real environment is restored before running it.
       return step.run(
         idOrOptions,
-        async (_redacted: SandboxOperationV1) => {
-          const result = await executeAsStep(this.client, operation);
+        async (recorded: SandboxOperationV1) => {
+          const result = await executeAsStep(
+            this.client,
+            restoreEnvironment(recorded, operation),
+          );
 
           return finish ? finish(result) : result;
         },

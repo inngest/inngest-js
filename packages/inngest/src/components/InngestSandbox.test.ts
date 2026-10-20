@@ -14,7 +14,6 @@ import { Inngest } from "./Inngest.ts";
 import {
   createSandboxClient,
   createSandboxTools,
-  type DurableSandboxTools,
   encodeBase64,
   getSandboxError,
   parseSandboxOperation,
