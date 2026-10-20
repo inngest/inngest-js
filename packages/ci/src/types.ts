@@ -115,7 +115,13 @@ export type FlowControlOptions = Pick<
 export interface MachineConfig {
   /**
    * The number of vCPUs the machine gets. Memory is paired with this: 1 vCPU
-   * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB. Defaults to 2.
+   * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB, because those are the only
+   * sizes the platform offers. Defaults to 4, the closest to a GitHub-hosted
+   * runner (4 vCPU, 16 GB).
+   *
+   * Applies to machines created from scratch. A job that starts `from`
+   * another job runs at that job's size, since the platform restores a
+   * snapshot at the size it was taken at.
    */
   vcpu?: 1 | 2 | 4;
 }
@@ -286,7 +292,11 @@ export interface JobConfig<
   from?: TFrom;
   /** What the trace calls the job. Defaults to `id`. */
   name?: string;
-  /** Machine settings for this job, overriding the pipeline's and the client's. */
+  /**
+   * Machine settings for this job, overriding the pipeline's and the client's.
+   * Ignored when the job starts `from` another job, which runs at that job's
+   * size.
+   */
   machine?: MachineConfig;
   /**
    * Snapshot the job's machine when it passes, and reuse that snapshot while

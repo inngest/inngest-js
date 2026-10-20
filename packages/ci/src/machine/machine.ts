@@ -88,14 +88,16 @@ export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
   return inSpan(spans.extraMachine(scope.path, scope.jobPath), fn);
 };
 /**
- * Memory is paired with vCPU count, so a job only picks one number.
+ * Memory is paired with vCPU count because those are the only sizes the
+ * Sandboxes API places: any other combination is refused with "Compute is
+ * temporarily unavailable".
  */
 const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 
 const resolveMachineConfig = (
   config: MachineConfig | undefined,
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
-  const vcpu = config?.vcpu ?? 2;
+  const vcpu = config?.vcpu ?? 4;
 
   return { vcpu, memoryMb: memoryForVcpu[vcpu] };
 };
