@@ -18,6 +18,7 @@ import type { EventPayload } from "inngest";
 export interface BusEvent {
   name: string;
   data: Record<string, unknown>;
+  meta?: { sessions?: Record<string, string> };
 }
 
 interface Pause {
@@ -131,6 +132,7 @@ export class EventBus {
     const sent = {
       name: event.name,
       data: (event.data ?? {}) as BusEvent["data"],
+      ...(event.meta ? { meta: event.meta as BusEvent["meta"] } : {}),
     };
 
     this.sent.push(sent);

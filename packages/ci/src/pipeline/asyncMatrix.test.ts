@@ -1,5 +1,5 @@
 /**
- * Tests of a matrix whose `axes` is an async function: it is called once per
+ * Tests of a job whose `matrix` is an async function: it is called once per
  * run, in a step, with what is known before any job runs, and a combination
  * built in a run of its own is handed its values rather than the function.
  *
@@ -10,20 +10,22 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
-import { createCiTestClient } from "../testing/client.ts";
+import { busOf, createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import { buildRequestedEvent } from "./buildLock.ts";
 import { createCi } from "./createCi.ts";
 
 const setup = () => {
   const api = createFakeSandboxApi();
-  const ci = createCi(createCiTestClient(api), {
+  const client = createCiTestClient(api);
+  const ci = createCi(client, {
     github: consoleReporter(),
   });
 
-  return { api, ci };
+  return { api, bus: busOf(client), ci };
 };
 
 const commands = (api: ReturnType<typeof setup>["api"]): string[] => {
@@ -41,11 +43,13 @@ describe("a matrix with async axes", () => {
   test("runs a combination for each value the function returns, typed by what it returns", async () => {
     const { api, ci } = setup();
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async () => {
-          return { example: ["next", "remix"], mode: ["a"] };
+        matrix: {
+          axes: async () => {
+            return { example: ["next", "remix"], mode: ["a"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -69,13 +73,15 @@ describe("a matrix with async axes", () => {
     const { api, ci } = setup();
     const calls: (string | undefined)[] = [];
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async ({ repo }) => {
-          calls.push(repo?.sha);
+        matrix: {
+          axes: async ({ repo }) => {
+            calls.push(repo?.sha);
 
-          return { example: ["next", "remix"] };
+            return { example: ["next", "remix"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -102,17 +108,19 @@ describe("a matrix with async axes", () => {
   });
 
   test("a combination built in a run of its own runs with the values it was given, ", async () => {
-    const { api, ci } = setup();
+    const { api, bus, ci } = setup();
     let calls = 0;
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
         cache: { key: "v1" },
-        axes: async () => {
-          calls += 1;
+        matrix: {
+          axes: async () => {
+            calls += 1;
 
-          return { example: ["next", "remix"] };
+            return { example: ["next", "remix"] };
+          },
         },
       },
       async ({ matrix }) => {
@@ -124,11 +132,15 @@ describe("a matrix with async axes", () => {
       await examples();
     });
 
-    const before = invokedRunCount();
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    expect(invokedRunCount() - before).toBe(2);
+
+    expect(
+      bus?.sent.filter((event) => {
+        return event.name === buildRequestedEvent;
+      }),
+    ).toHaveLength(2);
     expect(calls).toBe(1);
     expect(commands(api)).toEqual(["test next", "test remix"]);
   });
@@ -137,13 +149,15 @@ describe("a matrix with async axes", () => {
     const { ci } = setup();
     let calls = 0;
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async () => {
-          calls += 1;
+        matrix: {
+          axes: async () => {
+            calls += 1;
 
-          return { example: [] as string[] };
+            return { example: [] as string[] };
+          },
         },
       },
       async () => {},
@@ -184,24 +198,26 @@ describe("a matrix whose axes list a directory at the run's commit", () => {
       { name: "bun-sync", type: "dir" },
     ]);
 
-    const examples = ci.matrix(
+    const examples = ci.job(
       {
         id: "examples",
-        axes: async ({ repo }) => {
-          const entries = await github.rest.repos.getContent({
-            path: "examples",
-            ref: repo?.sha ?? "",
-          });
+        matrix: {
+          axes: async ({ repo }) => {
+            const entries = await github.rest.repos.getContent({
+              path: "examples",
+              ref: repo?.sha ?? "",
+            });
 
-          return {
-            example: (Array.isArray(entries) ? entries : [])
-              .filter((entry) => {
-                return entry.type === "dir";
-              })
-              .map((entry) => {
-                return entry.name;
-              }),
-          };
+            return {
+              example: (Array.isArray(entries) ? entries : [])
+                .filter((entry) => {
+                  return entry.type === "dir";
+                })
+                .map((entry) => {
+                  return entry.name;
+                }),
+            };
+          },
         },
       },
       async ({ matrix }) => {
@@ -232,12 +248,14 @@ describe("a matrix's async axes", () => {
   test("only hold values that are saved as they are", () => {
     const { ci } = setup();
 
-    ci.matrix(
+    ci.job(
       {
         id: "dates",
         // @ts-expect-error a `Date` is saved as a string
-        axes: async () => {
-          return { day: [new Date()] };
+        matrix: {
+          axes: async () => {
+            return { day: [new Date()] };
+          },
         },
       },
       async () => {},

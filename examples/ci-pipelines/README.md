@@ -82,7 +82,7 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 | --- | --- |
 | `ci/jobs.ts` `base` | A cached job with a nightly refresh |
 | `ci/jobs.ts` `lint`, `test` | `from: base` starts on a copy of the `base` machine |
-| `ci/jobs.ts` `compat` | `ci.matrix`, one job per Node version |
+| `ci/jobs.ts` `compat` | `matrix`, one job per Node version |
 | `ci/jobs.ts` `e2e` | `.background()` and `waitForHttp()` |
 | `ci/jobs.ts` `two-machines` | `sandbox()` for a second machine |
 | `ci/jobs.ts` `release` | `step.waitForEvent` and `github.rest` |

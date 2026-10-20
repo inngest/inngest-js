@@ -1,6 +1,6 @@
 /**
- * Matrix jobs: `ci.matrix()`, expanding axes into combinations, and running
- * them with an optional concurrency limit.
+ * Matrix jobs: a `ci.job()` with a `matrix`, expanding its axes into combinations,
+ * and running them with an optional limit on how many run at once.
  *
  * @module
  */
@@ -11,10 +11,11 @@ import { CiUsageError } from "../errors.ts";
 import { checkStaticFrom } from "../machine/from.ts";
 import type {
   JobConfig,
-  Matrix,
+  MatrixJob,
   MatrixAxes,
   MatrixCombo,
-  MatrixConfig,
+  MatrixJobConfig,
+  MatrixOptions,
   MatrixContext,
 } from "../types.ts";
 import type { Ci } from "./createCi.ts";
@@ -67,7 +68,7 @@ export const sameCombo = (
 };
 
 /**
- * Expand a matrix into its combinations and run them as jobs.
+ * Expand a job's matrix into its combinations and run them as jobs.
  */
 export const createMatrix = <TAxes extends MatrixAxes>({
   ci,
@@ -78,22 +79,24 @@ export const createMatrix = <TAxes extends MatrixAxes>({
   ci: Ci;
   /** The client's job registry, which a static `from` is checked against. */
   jobs: Map<string, RegisteredJob>;
-  config: MatrixConfig<TAxes>;
+  config: MatrixJobConfig<TAxes>;
   handler: (ctx: MatrixContext<TAxes>) => Promise<void>;
-}): Matrix<TAxes> => {
+}): MatrixJob<TAxes> => {
   // A matrix made inside a run is gone with it, and so are its combinations.
   const inline = Boolean(getRunScope());
 
   checkStaticFrom(jobs, config);
 
-  const given = config.axes;
+  const options = config.matrix;
+
+  const given = options.axes;
 
   if (typeof given !== "function") {
     checkAxes(config.id, given);
   }
 
   /**
-   * The axes to expand: the given ones, or what the `axes` function made of
+   * The axes to expand: the given ones, or what the `matrix` function made of
    * them, which is the same for every combination of the run.
    */
   /** Checked outside the step, so a bad result isn't retried as a step error. */
@@ -180,12 +183,12 @@ export const createMatrix = <TAxes extends MatrixAxes>({
       };
     });
 
-    await runPool(tasks, config.concurrency, config.failFast ?? false);
+    await runPool(tasks, options.concurrency, options.failFast ?? false);
   };
 
   const matrix = ((only?: Partial<MatrixCombo<TAxes>>) => {
     return (async () => {
-      const combos = expandMatrix(config, await axesOf());
+      const combos = expandMatrix(options, await axesOf());
 
       return run(
         combos.filter((combo) => {
@@ -197,7 +200,7 @@ export const createMatrix = <TAxes extends MatrixAxes>({
         }),
       );
     })();
-  }) as Matrix<TAxes>;
+  }) as MatrixJob<TAxes>;
 
   Object.defineProperties(matrix, {
     id: { value: config.id, enumerable: true },
@@ -209,7 +212,7 @@ export const createMatrix = <TAxes extends MatrixAxes>({
           return run(combos as MatrixCombo<TAxes>[]);
         }
 
-        const matching = expandMatrix(config, given).filter((combo) => {
+        const matching = expandMatrix(options, given).filter((combo) => {
           return combos.some((wanted) => {
             return sameCombo(wanted, combo);
           });
@@ -256,7 +259,7 @@ export const matrixJobId = (
  * and `include` appended.
  */
 export const expandMatrix = <TAxes extends MatrixAxes>(
-  config: Pick<MatrixConfig<TAxes>, "exclude" | "include">,
+  config: Pick<MatrixOptions<TAxes>, "exclude" | "include">,
   axes: TAxes,
 ): MatrixCombo<TAxes>[] => {
   const keys = Object.keys(axes);

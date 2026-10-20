@@ -25,6 +25,7 @@ import { ciRun } from "./metadata.ts";
 import { stepOptions, steps } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 import { rootRunIdOf } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 /** The `app/job`s whose builds led to this run, outermost first. */
 export const chainOf = (run: CiRunScope): string[] => {
@@ -85,6 +86,7 @@ export const requestAppJob = async (
           functionId: cacheBuildFunctionId,
         }),
         data,
+        meta: sessionsMeta(run),
       },
     )) as CacheBuildResult | null;
   } catch (error) {
