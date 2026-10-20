@@ -848,19 +848,21 @@ export const deleteSnapshot = async (
 
 /**
  * Delete the entries a new cache snapshot replaces, as a memoized step: those
- * of the same scope, job, app, repository and input under another key. Their
- * key can't be named again, so nothing else would ever remove them. Entries
- * of other scopes (such as the base branch's) and of other inputs stay.
+ * of the same scope, job, app, repository and input under another key, and
+ * older than it. Their key can't be named again, so nothing else would ever
+ * remove them. Entries of other scopes (such as the base branch's) and of
+ * other inputs stay, and so does a newer one: two builds with different keys
+ * that finish together each leave the later snapshot, never both deleted.
  *
  * Best effort: one that can't be deleted is logged and left to expire.
  */
 export const deleteReplacedCache = async (
   run: CiRunScope,
   stepId: string,
-  /** The name the new snapshot was taken under. */
-  name: string,
+  /** The snapshot just taken under its name. */
+  mine: CachedSnapshot,
 ): Promise<void> => {
-  const slot = slotOf(name);
+  const slot = slotOf(mine.name);
 
   const warn = (snapshotId: string | undefined, error: unknown) => {
     run.ci.logger?.warn(
@@ -874,7 +876,11 @@ export const deleteReplacedCache = async (
       await deleteMatching(
         run.ci.client,
         (other) => {
-          return other !== name && slotOf(other) === slot;
+          return (
+            slotOf(other.name) === slot &&
+            other.name !== mine.name &&
+            other.createdAt <= mine.createdAt
+          );
         },
         warn,
       );

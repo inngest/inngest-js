@@ -2160,6 +2160,36 @@ describe("cache", () => {
     expect(ran(api, "pnpm lint")).toBe(2);
   });
 
+  test("a build never deletes a newer entry of its slot", async () => {
+    const api = createFakeSandboxApi();
+
+    const runWithKey = async (key: string) => {
+      const { ci } = setup({ api });
+
+      const build = ci.job({ id: "setup", cache: { key } }, async () => {
+        await $`pnpm install`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build();
+        }),
+        { event: prEvent },
+      );
+    };
+
+    await runWithKey("v1");
+
+    // As if a build with another key finished after this one started.
+    for (const snapshot of api.snapshots.values()) {
+      snapshot.createdAt = new Date(Date.now() + 3_600_000).toISOString();
+    }
+
+    await runWithKey("v2");
+
+    expect(namedSnapshots(api)).toHaveLength(2);
+  });
+
   test("the same branch, job and key in another repository misses", async () => {
     // Two repositories sharing one Sandbox environment.
     const api = createFakeSandboxApi();

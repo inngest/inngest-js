@@ -543,7 +543,7 @@ const takeSnapshot = async (
       await deleteReplacedCache(
         run,
         `${stepId}${scopeSeparator}replaced`,
-        taken.named.name,
+        taken.named,
       );
     }
 
@@ -751,7 +751,7 @@ export const deleteOrphanSnapshots = async (
 ): Promise<{ deleted: number }> => {
   const prefix = runNamePrefix(runId);
 
-  const { deleted } = await deleteMatching(client, (name) => {
+  const { deleted } = await deleteMatching(client, ({ name }) => {
     return name.startsWith(prefix);
   });
 

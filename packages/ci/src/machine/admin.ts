@@ -63,13 +63,13 @@ export async function* listSnapshots(client: Inngest.Any) {
  */
 export const deleteMatching = async (
   client: Inngest.Any,
-  matches: (name: string) => boolean,
+  matches: (snapshot: { name: string; createdAt: string }) => boolean,
   onFailure?: (id: string, error: unknown) => void,
 ): Promise<{ deleted: string[]; failed: string[] }> => {
   const ids: string[] = [];
 
   for await (const snapshot of listSnapshots(client)) {
-    if (snapshot.name && matches(snapshot.name)) {
+    if (snapshot.name && matches({ ...snapshot, name: snapshot.name })) {
       ids.push(snapshot.id);
     }
   }
