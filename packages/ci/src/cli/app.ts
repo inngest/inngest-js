@@ -5,7 +5,7 @@
  * @module
  */
 
-import { dirname, delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { LocalManifest } from "../local/protocol.ts";
