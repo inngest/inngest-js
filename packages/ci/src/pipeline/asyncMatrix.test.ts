@@ -101,7 +101,7 @@ describe("a matrix with async axes", () => {
     expect(commands(api)).toEqual(["test next", "test next", "test remix"]);
   });
 
-  test("a combination built in a run of its own runs with the values it was given, without calling the function", async () => {
+  test("a combination built in a run of its own runs with the values it was given, ", async () => {
     const { api, ci } = setup();
     let calls = 0;
 
@@ -135,11 +135,14 @@ describe("a matrix with async axes", () => {
 
   test("an axis with no values fails the run without retrying", async () => {
     const { ci } = setup();
+    let calls = 0;
 
     const examples = ci.matrix(
       {
         id: "examples",
         axes: async () => {
+          calls += 1;
+
           return { example: [] as string[] };
         },
       },
@@ -150,10 +153,11 @@ describe("a matrix with async axes", () => {
       await examples();
     });
 
-    const result = await runFunction(pipeline, { event: prEvent });
+    const result = await runFunction(pipeline, { event: prEvent, retries: 3 });
 
     expect(result.type).toBe("function-rejected");
     expect(result.retriable).toBe(false);
+    expect(calls).toBe(1);
 
     expect((result.error as Error).message).toContain(
       'The `example` axis of matrix "examples" has no values.',
@@ -220,6 +224,23 @@ describe("a matrix whose axes list a directory at the run's commit", () => {
     expect(gh.requests).toHaveLength(1);
     expect(gh.requests[0]?.path).toBe(
       "/repos/inngest/inngest-js/contents/examples",
+    );
+  });
+});
+
+describe("a matrix's async axes", () => {
+  test("only hold values that are saved as they are", () => {
+    const { ci } = setup();
+
+    ci.matrix(
+      {
+        id: "dates",
+        // @ts-expect-error a `Date` is saved as a string
+        axes: async () => {
+          return { day: [new Date()] };
+        },
+      },
+      async () => {},
     );
   });
 });

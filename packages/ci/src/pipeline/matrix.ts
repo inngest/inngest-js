@@ -69,7 +69,7 @@ export const sameCombo = (
 /**
  * Expand a matrix into its combinations and run them as jobs.
  */
-export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
+export const createMatrix = <TAxes extends MatrixAxes>({
   ci,
   jobs,
   config,
@@ -96,6 +96,13 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
    * The axes to expand: the given ones, or what the `axes` function made of
    * them, which is the same for every combination of the run.
    */
+  /** Checked outside the step, so a bad result isn't retried as a step error. */
+  const checkedAxes = (axes: MatrixAxes): MatrixAxes => {
+    checkAxes(config.id, axes);
+
+    return axes;
+  };
+
   const axesOf = (): Promise<TAxes> | TAxes => {
     if (typeof given !== "function") {
       return given;
@@ -105,23 +112,19 @@ export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>({
     const resolved = run.matrixAxes.get(config.id);
 
     if (resolved) {
-      return resolved as Promise<TAxes>;
+      return resolved.then(checkedAxes) as Promise<TAxes>;
     }
 
     const made = ciRun(run, steps.matrixAxes(config.id), async () => {
-      const axes = await given({
+      return given({
         repo: run.repo,
         run: { id: rootRunIdOf(run) },
       });
-
-      checkAxes(config.id, axes);
-
-      return axes;
     });
 
     run.matrixAxes.set(config.id, made);
 
-    return made;
+    return made.then(checkedAxes) as Promise<TAxes>;
   };
 
   if (typeof config.cache !== "function") {
@@ -252,7 +255,7 @@ export const matrixJobId = (
  * Every combination of the axes, in declaration order, with `exclude` removed
  * and `include` appended.
  */
-export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
+export const expandMatrix = <TAxes extends MatrixAxes>(
   config: Pick<MatrixConfig<TAxes>, "exclude" | "include">,
   axes: TAxes,
 ): MatrixCombo<TAxes>[] => {

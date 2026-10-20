@@ -210,7 +210,9 @@ export interface Ci {
    *         ref: repo?.sha ?? "",
    *       });
    *
-   *       return { example: entries.map((entry) => entry.name) };
+   *       const dirs = Array.isArray(entries) ? entries : [];
+   *
+   *       return { example: dirs.map((entry) => entry.name) };
    *     },
    *   },
    *   async ({ matrix }) => {

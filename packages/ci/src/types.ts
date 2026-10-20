@@ -962,7 +962,10 @@ export interface ExtraMachine {
 /**
  * The axes a matrix runs over: a name, and the values to try.
  */
-export type MatrixAxes = Record<string, readonly unknown[]>;
+export type MatrixAxes = Record<
+  string,
+  readonly (string | number | boolean | null)[]
+>;
 
 /**
  * What a matrix's `axes` function is given: what is known before any job runs.
@@ -1015,8 +1018,9 @@ export interface MatrixConfig<
    * The axes to combine, in the order they should appear in job IDs. A function
    * is called once per run, in a step, and its result is what every
    * combination is made from, so the axes can depend on the commit being
-   * tested. A job a combination starts from, or runs as, is handed the
-   * combination and never calls it again.
+   * tested, and its values must be strings, numbers, booleans or null. A job a
+   * combination starts from, or runs as, is handed the combination and never
+   * calls it again.
    */
   axes: TAxes | ((ctx: MatrixAxesContext) => TAxes | Promise<TAxes>);
   /** Combinations to leave out. A partial combination excludes every match. */
