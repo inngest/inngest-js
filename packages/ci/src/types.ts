@@ -316,6 +316,8 @@ export interface JobConfig<
    * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
+  /** Only a job defined with a `matrix` has one, so it never reaches the plain job types. */
+  matrix?: never;
   /**
    * The shape of the job's input, as any Standard Schema (Zod, Valibot,
    * ArkType, …). The handler gets the validated value.
@@ -678,10 +680,10 @@ export interface JobContext<
 }
 
 /**
- * What a matrix handler is given: a job's context, and the combination.
+ * What the handler of a job with a `matrix` is given: a job's context, and the combination.
  *
  * ```ts
- * ci.matrix({ id: "compat", axes: { node: ["20", "22"] } }, async ({ matrix }) => {
+ * ci.job({ id: "compat", matrix: { axes: { node: ["20", "22"] } } }, async ({ matrix }) => {
  *   await $`fnm use ${matrix.node}`;
  * });
  * ```
@@ -968,7 +970,7 @@ export type MatrixAxes = Record<
 >;
 
 /**
- * What a matrix's `axes` function is given: what is known before any job runs.
+ * What a job's `matrix.axes` function is given: what is known before any job runs.
  */
 export interface MatrixAxesContext {
   /** The repository and change this run is for, as the pipeline's `repo`. */
@@ -990,30 +992,9 @@ export type MatrixCombo<TAxes> = {
 };
 
 /**
- * A matrix's options.
- *
- * ```ts
- * const compat = ci.matrix(
- *   {
- *     id: "compat",
- *     axes: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
- *     exclude: [{ node: "20", db: "postgres" }],
- *     concurrency: 3,
- *   },
- *   async ({ node, db }) => {
- *     await $`pnpm test`.env({ NODE_VERSION: node, TEST_DATABASE: db });
- *   },
- * );
- * ```
+ * A job's `matrix`: the axes to run it over, and how to run the combinations.
  */
-export interface MatrixConfig<
-  TAxes extends MatrixAxes = MatrixAxes,
-  TFrom extends From<MatrixCombo<TAxes>> | undefined =
-    | From<MatrixCombo<TAxes>>
-    | undefined,
-> {
-  /** Unique within the CI client. Each combination's job ID starts with it. */
-  id: string;
+export interface MatrixOptions<TAxes extends MatrixAxes = MatrixAxes> {
   /**
    * The axes to combine, in the order they should appear in job IDs. A function
    * is called once per run, in a step, and its result is what every
@@ -1034,6 +1015,40 @@ export interface MatrixConfig<
    * doesn't hide the others' failures.
    */
   failFast?: boolean;
+}
+
+/**
+ * The options of a job with a `matrix`.
+ *
+ * ```ts
+ * const compat = ci.job(
+ *   {
+ *     id: "compat",
+ *     matrix: {
+ *       axes: { node: ["20", "22", "24"], db: ["sqlite", "postgres"] },
+ *       exclude: [{ node: "20", db: "postgres" }],
+ *       concurrency: 3,
+ *     },
+ *   },
+ *   async ({ matrix }) => {
+ *     await $`pnpm test`.env({
+ *       NODE_VERSION: matrix.node,
+ *       TEST_DATABASE: matrix.db,
+ *     });
+ *   },
+ * );
+ * ```
+ */
+export interface MatrixJobConfig<
+  TAxes extends MatrixAxes = MatrixAxes,
+  TFrom extends From<MatrixCombo<TAxes>> | undefined =
+    | From<MatrixCombo<TAxes>>
+    | undefined,
+> {
+  /** Unique within the CI client. Each combination's job ID starts with it. */
+  id: string;
+  /** What to run the job over. Its combinations are each a job. */
+  matrix: MatrixOptions<TAxes>;
   /** Machine settings, per combination if you need them to differ. */
   machine?: MachineConfig | ((combo: MatrixCombo<TAxes>) => MachineConfig);
   /** Cache settings, per combination if you need them to differ. */
@@ -1048,7 +1063,7 @@ export interface MatrixConfig<
 }
 
 /**
- * A matrix: call it to run every combination, or pass part of a combination to
+ * A job with a matrix: call it to run every combination, or pass part of a combination to
  * run only what matches.
  *
  * ```ts
@@ -1057,9 +1072,9 @@ export interface MatrixConfig<
  * await compat({ node: "22", db: "postgres" }); // just the one
  * ```
  */
-export interface Matrix<TAxes extends MatrixAxes> {
+export interface MatrixJob<TAxes extends MatrixAxes> {
   (only?: Partial<MatrixCombo<TAxes>>): Promise<void>;
-  /** The matrix's ID, as given to `ci.matrix()`. */
+  /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
 }
 

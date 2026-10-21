@@ -46,7 +46,7 @@ describe("group.sandbox", () => {
     expect(calls.destroys).toBe(1);
     expect(steps.map((step) => step.opts?.span)).toEqual([
       [group],
-      [group],
+      [group, { id: "run", name: "echo hi", kind: "$" }],
       [group],
       undefined,
     ]);
@@ -181,7 +181,7 @@ describe("group.sandbox", () => {
     expect(destroy?.metadata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "inngest.warnings",
+          kind: "inngest.warning.sdk.sandbox.destroy",
           values: {
             "sdk.sandbox.destroy": expect.stringContaining(
               `Sandbox ${sandboxId} couldn't be destroyed: `,

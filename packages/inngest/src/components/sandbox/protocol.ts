@@ -712,6 +712,59 @@ export const parseSandboxOperationForAction = <A extends SandboxAction>(
   return operation as SandboxOperationForAction<A>;
 };
 
+const redactedEnvironmentValue = "[redacted]";
+
+const environmentOf = (
+  operation: SandboxOperationV1,
+): Record<string, string> | undefined => {
+  const [input] = operation.input;
+
+  return input && "environment" in input ? input.environment : undefined;
+};
+
+const withEnvironment = (
+  operation: SandboxOperationV1,
+  environment: Record<string, string>,
+): SandboxOperationV1 => {
+  return {
+    ...operation,
+    input: [{ ...operation.input[0], environment }],
+  } as typeof operation;
+};
+
+/**
+ * The operation as it is recorded in the run: environment values are replaced
+ * by a marker so tokens passed to a command never reach the trace.
+ */
+export const redactOperation = (
+  operation: SandboxOperationV1,
+): SandboxOperationV1 => {
+  const environment = environmentOf(operation);
+
+  return environment
+    ? withEnvironment(
+        operation,
+        Object.fromEntries(
+          Object.keys(environment).map((key) => {
+            return [key, redactedEnvironmentValue];
+          }),
+        ),
+      )
+    : operation;
+};
+
+/**
+ * The recorded operation, with the environment values it was redacted from.
+ */
+export const restoreEnvironment = (
+  recorded: SandboxOperationV1,
+  original: SandboxOperationV1,
+): SandboxOperationV1 => {
+  const environment = environmentOf(original);
+
+  return environment ? withEnvironment(recorded, environment) : recorded;
+};
+
 export const findSandboxErrorOptions = (
   error: unknown,
 ): SandboxErrorOptions | undefined => {

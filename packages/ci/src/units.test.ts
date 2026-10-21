@@ -5,10 +5,14 @@
  * @module
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
 import { formatName, slotOf } from "./cache/names.ts";
-import { CiUsageError } from "./errors.ts";
+import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
   normaliseAnnotation,
@@ -29,6 +33,7 @@ import {
   push,
 } from "./github/triggers.ts";
 import { buildArgv, buildShellString } from "./machine/command.ts";
+import { machineSetupScript } from "./machine/machine.ts";
 import { behaviourFor } from "./pipeline/durable.ts";
 import {
   expandMatrix,
@@ -378,7 +383,11 @@ describe("webhook transform", () => {
   )() as (
     evt: unknown,
     headers: Record<string, string>,
-  ) => { name: string; data: Record<string, unknown> };
+  ) => {
+    name: string;
+    data: Record<string, unknown>;
+    meta: { sessions: Record<string, string | number> };
+  };
 
   test("names events with their action", () => {
     const result = transform(
@@ -408,6 +417,57 @@ describe("webhook transform", () => {
 
     expect(result.name).toBe("github/issue_comment.created");
     expect(result.data._github).toMatchObject({ installationId: 99 });
+  });
+
+  test.each([
+    {
+      event: "pull_request",
+      payload: {
+        action: "opened",
+        repository: { full_name: "inngest/inngest-js" },
+        pull_request: { number: 7, head: { sha: "abc1234" } },
+      },
+      sessions: { pull_request: "inngest/inngest-js#7", commit: "abc1234" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "def5678",
+      },
+      sessions: { commit: "def5678" },
+    },
+    {
+      event: "push",
+      payload: {
+        repository: { full_name: "inngest/inngest-js" },
+        after: "0000000000000000000000000000000000000000",
+      },
+      sessions: {},
+    },
+    {
+      event: "issue_comment",
+      payload: {
+        action: "created",
+        repository: { full_name: "inngest/inngest-js" },
+        issue: { number: 9, pull_request: {} },
+      },
+      sessions: { pull_request: "inngest/inngest-js#9" },
+    },
+    {
+      event: "check_suite",
+      payload: {
+        action: "rerequested",
+        repository: { full_name: "inngest/inngest-js" },
+        check_suite: { head_sha: "fedcba9" },
+      },
+      sessions: { commit: "fedcba9" },
+    },
+    { event: "ping", payload: {}, sessions: {} },
+  ])("puts a $event in its sessions", ({ event, payload, sessions }) => {
+    expect(
+      transform(payload, { "x-github-event": event }).meta.sessions,
+    ).toEqual(sessions);
   });
 
   test("the helper agrees with the transform", () => {
@@ -918,5 +978,66 @@ describe("shortReason", () => {
     expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
 
     expect(shortReason(undefined)).toBe("");
+  });
+});
+
+describe("localhost setup in /etc/hosts", () => {
+  const hostsAfterSetup = (initial: string): string => {
+    const file = join(mkdtempSync(join(tmpdir(), "hosts-")), "hosts");
+
+    writeFileSync(file, initial);
+
+    const lines = machineSetupScript
+      .split(" && ")
+      .filter((line) => {
+        return line.includes("/etc/hosts");
+      })
+      .map((line) => {
+        return line.replaceAll("/etc/hosts", file);
+      });
+
+    execFileSync("bash", ["-c", lines.join(" && ")]);
+
+    return readFileSync(file, "utf8");
+  };
+
+  test("adds both loopback lines when missing", () => {
+    expect(hostsAfterSetup("")).toBe("127.0.0.1 localhost\n::1 localhost\n");
+  });
+
+  test("leaves an existing localhost entry alone", () => {
+    const hosts = "127.0.0.1 localhost\n::1 ip6-localhost localhost\n";
+
+    expect(hostsAfterSetup(hosts)).toBe(hosts);
+  });
+
+  test("an alias such as localhost.localdomain does not count", () => {
+    const hosts = hostsAfterSetup(
+      "127.0.0.1 localhost.localdomain # localhost\n",
+    );
+
+    expect(hosts).toContain("\n127.0.0.1 localhost\n");
+  });
+});
+
+describe("CommandFailedError message", () => {
+  const failure = (stdoutTail: string, stderrTail: string) => {
+    return new CommandFailedError({
+      command: ["pnpm", "test"],
+      exitCode: 1,
+      stdoutTail,
+      stderrTail,
+      jobPath: "a",
+    });
+  };
+
+  test("prefers stderr", () => {
+    expect(failure("out", "err").message).toBe(
+      "`pnpm test` exited with 1\nerr",
+    );
+  });
+
+  test("falls back to stdout when stderr is empty", () => {
+    expect(failure("out", "").message).toBe("`pnpm test` exited with 1\nout");
   });
 });

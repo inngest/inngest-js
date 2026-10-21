@@ -84,6 +84,7 @@ import {
   rootRunIdOf,
   runJobBody,
 } from "./scope.ts";
+import { sessionsMeta } from "./sessions.ts";
 
 export interface RegisteredJob {
   id: string;
@@ -562,7 +563,11 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
         joinId(stepPath, "build"),
         direct ? traceName.runInOwnRun(path) : traceName.buildInOwnRun(path),
       ),
-      { function: run.ci.cacheBuild(), data },
+      {
+        function: run.ci.cacheBuild(),
+        data,
+        meta: sessionsMeta(run, { jobId: config.id, target }),
+      },
     )) as CacheBuildResult | null;
   } catch (error) {
     throw (
@@ -1038,6 +1043,7 @@ const jobSteps = async ({
       const result = {
         conclusion,
         title,
+        ...jobErrorDetail(error),
         summary: jobFailureSummary(error, scope),
         annotations: scope.annotations,
       };
@@ -1213,6 +1219,23 @@ const jobErrorTitle = (error: unknown): string => {
   }
 
   return shortReason(error) || "Failed";
+};
+
+/** A failed command's last line of error output, which is the usual reason. */
+const jobErrorDetail = (error: unknown): { detail?: string } => {
+  if (!(error instanceof CommandFailedError)) {
+    return {};
+  }
+
+  const detail = (error.stderrTail || error.stdoutTail)
+    .split("\n")
+    .map((line) => {
+      return line.trim();
+    })
+    .filter(Boolean)
+    .at(-1);
+
+  return detail ? { detail } : {};
 };
 
 const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {
