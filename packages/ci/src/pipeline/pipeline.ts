@@ -382,9 +382,19 @@ const runPipelineAttempt = async ({
     };
 
     try {
-      await closeJobChecks(run, checks);
+      try {
+        await closeJobChecks(run, checks);
 
-      run.ci.hooks.warnings(run);
+        run.ci.hooks.warnings(run);
+      } catch (error) {
+        // However the run ended, its status says so, unless another attempt
+        // will.
+        if (!run.willRetry(error)) {
+          await completePipeline(run, checks, outcome);
+        }
+
+        throw error;
+      }
 
       await completePipeline(run, checks, outcome);
     } catch (error) {
@@ -749,17 +759,21 @@ const pipelineSummaryWithReports = (run: CiRunScope): string => {
   return [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
 };
 
-const summaryTitle = (run: CiRunScope): string => {
+const failedJobsTitle = (run: CiRunScope): string | undefined => {
   const failed = run.summaries.filter((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed.length > 0) {
-    return `${failed
-      .map((summary) => {
-        return summary.path;
-      })
-      .join(", ")} failed`;
+  return failed.length === 0
+    ? undefined
+    : `${failed.length} of ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} failed`;
+};
+
+const summaryTitle = (run: CiRunScope): string => {
+  const failed = failedJobsTitle(run);
+
+  if (failed) {
+    return failed;
   }
 
   const total = run.summaries.reduce((sum, summary) => {
@@ -772,12 +786,13 @@ const summaryTitle = (run: CiRunScope): string => {
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {
-  const failed = run.summaries.find((summary) => {
+  const count = failedJobsTitle(run);
+  const first = run.summaries.find((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed) {
-    return `${failed.path}: ${failed.title}`;
+  if (count && first) {
+    return `${count}: ${first.path}: ${first.title}`;
   }
 
   return error instanceof Error
