@@ -4841,6 +4841,144 @@ describe("what the cache saved", () => {
   });
 });
 
+describe("the Cancel button", () => {
+  const click = async (
+    checkName: string,
+    permission: string,
+  ): Promise<string[]> => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route(
+        "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+        {
+          permission,
+        },
+      );
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const fn = ci.functions().find((candidate) => {
+        return candidate.opts.id === "pr/check-rerequested";
+      });
+
+      if (!fn) {
+        throw new Error("no check-rerequested function");
+      }
+
+      const result = await runFunction(fn, {
+        event: {
+          name: "github/check_run.requested_action",
+          data: {
+            action: "requested_action",
+            requested_action: { identifier: "cancel" },
+            sender: { login: "octocat" },
+            check_run: {
+              name: checkName,
+              external_id: "01RUN:lint",
+              head_sha: "abc1234",
+            },
+            repository: { full_name: "inngest/inngest-js" },
+          },
+        },
+      });
+
+      return result.stepIds;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  test("sends the cancel event for a check of the pipeline, from someone who can write", async () => {
+    expect(await click("pr / lint", "write")).toContain("cancel");
+  });
+
+  test.each([
+    ["someone who can only read", "pr / lint", "read"],
+    ["another pipeline's check", "other / lint", "write"],
+  ])("does nothing for %s", async (_who, name, permission) => {
+    expect(await click(name, permission)).not.toContain("cancel");
+  });
+
+  test("a pipeline's runs end on the cancel event", () => {
+    const { ci } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+    expect(
+      (pipeline.opts as { cancelOn?: Array<{ event: string }> }).cancelOn?.[0]
+        ?.event,
+    ).toBe("ci/run.cancel");
+  });
+
+  test("waiting and running checks carry the button, and finishing takes it away", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const actionsOf = (status: string) => {
+        return gh.requests
+          .filter((request) => {
+            return (
+              request.method !== "GET" &&
+              (request.body as { status?: string }).status === status
+            );
+          })
+          .map((request) => {
+            return (request.body as { actions?: Array<{ identifier: string }> })
+              .actions;
+          });
+      };
+
+      for (const actions of [
+        ...actionsOf("queued"),
+        ...actionsOf("in_progress"),
+      ]) {
+        expect(actions?.map((action) => action.identifier)).toEqual(["cancel"]);
+      }
+
+      for (const actions of actionsOf("completed")) {
+        expect(actions).toEqual([]);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("re-running from a check", () => {
   const rerunEvent = (ci: Record<string, unknown>) => {
     return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
