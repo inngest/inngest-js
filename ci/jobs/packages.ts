@@ -9,7 +9,7 @@
 import { $, checkout } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { build } from "./base.ts";
+import { build, runWithDevServer } from "./base.ts";
 
 export const audit = ci.job({ id: "audit", from: build }, async () => {
   await checkout();
@@ -45,7 +45,10 @@ export const middlewareSentry = ci.job(
   async ({ from }) => {
     await checkout();
 
-    await from.$.integration.env({ PACKAGE: "@inngest/middleware-sentry" });
+    await runWithDevServer(
+      from,
+      from.$.integration.env({ PACKAGE: "@inngest/middleware-sentry" }),
+    );
   },
 );
 

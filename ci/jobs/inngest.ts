@@ -9,7 +9,7 @@
 import { $, checkout } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { build, pack, startDevServer } from "./base.ts";
+import { build, pack, runWithDevServer } from "./base.ts";
 
 export const checks = ci.job(
   {
@@ -67,12 +67,13 @@ export const integration = ci.job(
   async ({ matrix, from }) => {
     await checkout();
 
-    await startDevServer(from.$.devServer);
-
-    await from.$.integration.env({
-      SHARD: matrix.shard,
-      DEBUG_DEV_SERVER: "1",
-    });
+    await runWithDevServer(
+      from,
+      from.$.integration.env({
+        SHARD: matrix.shard,
+        DEBUG_DEV_SERVER: "1",
+      }),
+    );
   },
 );
 

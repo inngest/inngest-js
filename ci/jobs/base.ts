@@ -54,11 +54,20 @@ const recipe = async (): Promise<string> => {
   return createHash("sha256").update(source).digest("hex");
 };
 
-/** Starts the Dev Server from `base` in the background and waits until it answers. */
-export const startDevServer = async (devServer: Command): Promise<void> => {
-  await devServer.background();
+/**
+ * Runs a test command from `base` against the Dev Server from `base`, which
+ * is started in the background first and waited for until it answers. Tests
+ * that need a Dev Server run through this, so none can start without one.
+ */
+export const runWithDevServer = async (
+  from: { $: { devServer: Command } },
+  tests: Command,
+): Promise<void> => {
+  await from.$.devServer.background();
 
   await waitForHttp(`http://localhost:${devServerPort}/dev`);
+
+  await tests;
 };
 
 export const base = ci.job(
