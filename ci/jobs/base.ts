@@ -45,7 +45,7 @@ export const base = ci.job(
 
     await $`pnpm install --frozen-lockfile`;
 
-    await $`npm install -g bun`;
+    await $`npm install -g --prefix /usr/local bun`;
 
     await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`.as(
       "download the Dev Server",
