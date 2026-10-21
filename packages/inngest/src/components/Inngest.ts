@@ -71,7 +71,6 @@ import {
   UnscopedMetadataBuilder,
   warningMetadataKind,
 } from "./InngestMetadata.ts";
-import { createSandboxClient, type SandboxClient } from "./InngestSandbox.ts";
 import {
   type ClientScore,
   type ScoreExperimentOptions,
@@ -87,6 +86,8 @@ import {
   subscribe as realtimeSubscribe,
 } from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
+import { createSandboxClient } from "./sandbox/client.ts";
+import type { SandboxClient } from "./sandbox/types.ts";
 import {
   collectFeatureObservations,
   type FeatureObservationState,

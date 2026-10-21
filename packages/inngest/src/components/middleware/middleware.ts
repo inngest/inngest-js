@@ -105,6 +105,11 @@ export namespace Middleware {
   }>;
 
   /**
+   * The argument passed to the static `functions` hook.
+   */
+  export type FunctionsArgs = Readonly<{ client: Inngest.Any }>;
+
+  /**
    * Information about the incoming HTTP request that triggered this execution.
    */
   export type Request = {
@@ -355,6 +360,13 @@ export namespace Middleware {
     static onRegister?(args: Middleware.OnRegisterArgs): void;
 
     /**
+     * Functions the middleware needs served alongside the app's own, such as
+     * one that cleans up after runs. `serve()` and `connect()` add them to
+     * the app's functions.
+     */
+    static functions?(args: Middleware.FunctionsArgs): InngestFunction.Any[];
+
+    /**
      * Called 1 time per request, after memoization completes.
      *
      * If all memoized steps have been resolved/rejected, then this hook calls.
@@ -564,6 +576,7 @@ export namespace Middleware {
   }) => BaseMiddleware) & {
     // Static methods aren't captured by `new () => ...`, so we repeat it here.
     onRegister?(arg: OnRegisterArgs): void;
+    functions?(arg: FunctionsArgs): InngestFunction.Any[];
   };
 }
 

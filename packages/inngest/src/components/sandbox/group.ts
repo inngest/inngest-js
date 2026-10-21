@@ -4,10 +4,11 @@
  * as one `sandbox` group in the trace.
  */
 
-import type { StepOptions, StepOptionsOrId } from "../../types.ts";
+import type { DeferHandle, StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
+import { cleanupRegistrarOf } from "./cleanup.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -33,13 +34,18 @@ export type GroupSandbox = <T>(
  *
  * A retry of the function couldn't use the destroyed sandbox, so after this an
  * error the function goes on to throw is final.
+ *
+ * The scope's cleanup defer is aborted once the destroy has succeeded.
  */
 export const destroyQuietly = async (
   sandbox: DurableSandbox,
   idOrOptions: StepOptionsOrId,
+  cleanup?: DeferHandle,
 ): Promise<void> => {
   try {
     await sandbox.destroy(idOrOptions);
+
+    cleanup?.abort();
   } catch (error) {
     if (!(error instanceof StepError)) {
       throw error;
@@ -90,15 +96,20 @@ export const withSandbox = <T>(
       kind: span.kind,
     },
     async () => {
+      const cleanup = cleanupRegistrarOf(tools)?.(id, { name: options.name });
       const sandbox = await tools.create({ ...steps.create, id }, options);
 
       try {
         return await callback(sandbox);
       } finally {
-        await destroyQuietly(sandbox, {
-          ...steps.destroy,
-          id: `${id}:destroy`,
-        });
+        await destroyQuietly(
+          sandbox,
+          {
+            ...steps.destroy,
+            id: `${id}:destroy`,
+          },
+          cleanup,
+        );
       }
     },
   );

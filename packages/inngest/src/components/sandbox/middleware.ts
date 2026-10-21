@@ -8,6 +8,7 @@ import {
 } from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { createSandboxCleanup } from "./cleanup.ts";
 import { sandboxForOperation } from "./client.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
 import { createGroupSandbox, type GroupSandbox } from "./group.ts";
@@ -169,6 +170,14 @@ const executeAsStep = async (
 export class SandboxMiddleware extends Middleware.BaseMiddleware {
   readonly id = "inngest:sandbox";
 
+  /**
+   * Serving an app that uses this middleware serves the function that destroys
+   * the sandboxes of scopes whose run ended early.
+   */
+  static override functions({ client }: Middleware.FunctionsArgs) {
+    return [createSandboxCleanup(client)];
+  }
+
   override transformFunctionInput(
     arg: Middleware.TransformFunctionInputArgs,
   ): Middleware.TransformFunctionInputArgs & {
@@ -179,7 +188,7 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxGroupExtension;
     };
   } {
-    const { step, runId } = arg.ctx;
+    const { step, runId, defer } = arg.ctx;
     const rawTool: SandboxRawTool = (idOrOptions, operation, finish, tools) => {
       if (tools && operation.action === "exec") {
         return runCommandWithTools(
@@ -240,7 +249,17 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
       );
     };
 
-    const sandbox = createSandboxTools(() => rawTool);
+    const sandbox = createSandboxTools(
+      () => {
+        return rawTool;
+      },
+      (stepId, target) => {
+        return defer(`${stepId}:cleanup`, {
+          function: createSandboxCleanup(this.client),
+          data: target,
+        });
+      },
+    );
 
     return {
       ...arg,
