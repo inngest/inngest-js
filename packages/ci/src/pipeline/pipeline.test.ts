@@ -5132,6 +5132,88 @@ describe("what a check shows", () => {
   });
 });
 
+describe("re-running one job", () => {
+  const rerunEvent = (ci: Record<string, unknown>) => {
+    return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
+  };
+
+  test("a job that's skipped gives back something to read from", async () => {
+    const { ci } = setup();
+
+    let read: unknown = "unset";
+
+    const first = ci.job("first", async () => {
+      await $`pnpm first`;
+
+      return { target: "x" };
+    });
+
+    const second = ci.job("second", async () => {
+      await $`pnpm second`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      const result = (await first()) as { target?: string };
+
+      read = result.target;
+
+      await second();
+    });
+
+    const result = await runFunction(pipeline, {
+      event: rerunEvent({ job: "second", pipeline: "pr" }),
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(read).toBeUndefined();
+  });
+
+  test("another pipeline on the same trigger does nothing, and reports nothing", async () => {
+    const { ci, reporter } = setup();
+
+    const pipeline = ci.pipeline({ id: "lint", on: prTrigger }, async () => {});
+
+    const result = await runFunction(pipeline, {
+      event: rerunEvent({ job: "test", pipeline: "pr" }),
+    });
+
+    expect(result.data).toEqual({ skipped: "another pipeline's re-run" });
+    expect(reporter.history).toHaveLength(0);
+  });
+
+  test("a re-run without the cache builds a cached job defined in the pipeline again", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (event: typeof prEvent) => {
+      const { ci } = setup({ api });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          const install = ci.job(
+            { id: "install", cache: { key: "v1" } },
+            async () => {
+              await $`pnpm install`;
+            },
+          );
+
+          await install();
+        }),
+        { event },
+      );
+    };
+
+    await run(prEvent);
+    await run(prEvent);
+
+    expect(userCommands(api)).toHaveLength(1);
+
+    const fresh = await run(rerunEvent({ noCache: true, pipeline: "pr" }));
+
+    expect(fresh.type).toBe("function-resolved");
+    expect(userCommands(api)).toHaveLength(2);
+  });
+});
+
 describe("the Cancel button", () => {
   const click = async (
     checkName: string,
@@ -5198,10 +5280,16 @@ describe("the Cancel button", () => {
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
 
-    expect(
-      (pipeline.opts as { cancelOn?: Array<{ event: string }> }).cancelOn?.[0]
-        ?.event,
-    ).toBe("ci/run.cancel");
+    const [cancel] =
+      (pipeline.opts as { cancelOn?: Array<{ event: string; if: string }> })
+        .cancelOn ?? [];
+
+    expect(cancel?.event).toBe("ci/run.cancel");
+
+    // A fork can have the same commit, so the repository is part of the match.
+    expect(cancel?.if).toContain(
+      "async.data.repo == event.data.repository.full_name",
+    );
   });
 
   test("waiting and running checks carry the button, and finishing takes it away", async () => {
@@ -5427,6 +5515,119 @@ describe("re-running from a check", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("closing what a cancelled run left open", () => {
+  const cancelFor = async (
+    reporter: "checks" | "statuses",
+    seed: (gh: ReturnType<typeof setupGitHub>["gh"]) => void,
+  ) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub(reporter);
+
+      seed(gh);
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      return gh.requests;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  test("check runs that are still queued are closed as well as running ones", async () => {
+    const requests = await cancelFor("checks", (gh) => {
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        (request) => {
+          return {
+            body: {
+              total_count: 1,
+              check_runs:
+                request.query.status === "queued"
+                  ? [
+                      {
+                        id: 8,
+                        name: "pr / test",
+                        external_id: "01TESTRUN:test",
+                      },
+                    ]
+                  : [],
+            },
+          };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/8", { id: 8 });
+    });
+
+    expect(
+      requests.filter((request) => {
+        return request.method === "PATCH";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("statuses past the first page are closed too", async () => {
+    const url = "http://localhost:8288/run?runID=01TESTRUN";
+
+    const requests = await cancelFor("statuses", (gh) => {
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/status",
+        (request) => {
+          return {
+            body: {
+              statuses:
+                request.query.page === "2"
+                  ? [
+                      {
+                        context: "pr / late",
+                        state: "pending",
+                        target_url: url,
+                      },
+                    ]
+                  : Array.from({ length: 100 }, (_, index) => {
+                      return {
+                        context: `other ${index}`,
+                        state: "success",
+                        target_url: "http://elsewhere",
+                      };
+                    }),
+            },
+          };
+        },
+      );
+    });
+
+    expect(
+      requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          return (request.body as { context: string }).context;
+        }),
+    ).toEqual(["pr / late"]);
   });
 });
 

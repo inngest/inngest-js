@@ -1148,16 +1148,30 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      // Every check a run starts has its ID in its external ID. All of them are
-      // read, finished ones too, because the pipeline's check draws the run.
-      const listed = await octokit.rest.checks.listForRef({
-        owner: repo.owner,
-        repo: repo.name,
-        ref: repo.sha,
-        per_page: 100,
-      });
+      // Every check a run starts has its ID in its external ID. All are read
+      // before any is closed, since closing one moves the pages, and finished
+      // ones too, because the pipeline's check draws the run.
+      type Listed = Awaited<
+        ReturnType<typeof octokit.rest.checks.listForRef>
+      >["data"]["check_runs"][number];
 
-      const mine = listed.data.check_runs.filter((checkRun) => {
+      const listed = new Map<number, Listed>();
+
+      for (const status of ["queued", "in_progress", "completed"] as const) {
+        const found = await octokit.paginate(octokit.rest.checks.listForRef, {
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          status,
+          per_page: 100,
+        });
+
+        for (const checkRun of found) {
+          listed.set(checkRun.id, checkRun);
+        }
+      }
+
+      const mine = [...listed.values()].filter((checkRun) => {
         return checkRun.external_id?.startsWith(`${run.runId}:`);
       });
 
@@ -1358,28 +1372,45 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      const { data } = await octokit.rest.repos.getCombinedStatusForRef({
-        owner: repo.owner,
-        repo: repo.name,
-        ref: repo.sha,
-        per_page: 100,
-      });
-
       // Each status links to its run, which is the only thing tying it to one.
-      for (const status of data.statuses) {
-        if (
-          status.state === "pending" &&
-          status.context &&
-          status.target_url?.includes(run.runId)
-        ) {
-          await post(
-            { repo },
-            status.context,
-            status.target_url,
-            statusFor("cancelled"),
-            title,
-          );
+      // Every page is read before any status is closed.
+      const mine = new Map<
+        string,
+        { context: string; target_url: string | null }
+      >();
+
+      for (let page = 1; ; page++) {
+        const { data } = await octokit.rest.repos.getCombinedStatusForRef({
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          per_page: 100,
+          page,
+        });
+
+        for (const status of data.statuses) {
+          if (
+            status.state === "pending" &&
+            status.context &&
+            status.target_url?.includes(run.runId)
+          ) {
+            mine.set(status.context, status);
+          }
         }
+
+        if (data.statuses.length < 100) {
+          break;
+        }
+      }
+
+      for (const status of mine.values()) {
+        await post(
+          { repo },
+          status.context,
+          status.target_url ?? "",
+          statusFor("cancelled"),
+          title,
+        );
       }
     },
   };

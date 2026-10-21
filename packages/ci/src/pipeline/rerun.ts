@@ -14,6 +14,23 @@ import type { PipelineConfig } from "../types.ts";
  * here.
  */
 /**
+ * The repository an event is about and the installation that delivered it, for
+ * a client built outside any run. An event with no installation leaves the
+ * provider to find the repository's own.
+ */
+const repositoryOf = (
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any,
+  owner: string,
+  repo: string,
+) => {
+  const installationId =
+    event?.data?._github?.installationId ?? event?.data?.installation?.id;
+
+  return { owner, repo, ...(installationId ? { installationId } : {}) };
+};
+
+/**
  * Whether a check's event is for this pipeline: a check run is only ours if it
  * carries our check name, since external IDs are not unique to a pipeline. A
  * suite has no name, and every pipeline on the commit is meant.
@@ -62,7 +79,7 @@ export const mayRerun = async ({
     ) as [string, string];
 
     try {
-      const octokit = await octokitForRun();
+      const octokit = await octokitForRun(repositoryOf(event, owner, repo));
       const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
         owner,
         repo,
@@ -105,6 +122,7 @@ export const rerunEventFor = async ({
 }): Promise<{ rerun: boolean; reason?: string }> => {
   const checkRun = event?.data?.check_run ?? event?.data?.check_suite;
   const externalId: string | undefined = checkRun?.external_id;
+
   if (!isOurCheck(event, config)) {
     return { rerun: false, reason: "not this pipeline's check" };
   }
@@ -153,7 +171,7 @@ export const rerunEventFor = async ({
     let branchVerified = false;
 
     try {
-      const octokit = await octokitForRun();
+      const octokit = await octokitForRun(repositoryOf(event, owner, repo));
 
       if (payloadPullRequest?.number) {
         const { data } = await octokit.rest.pulls.get({
@@ -221,9 +239,9 @@ export const rerunEventFor = async ({
         _github: event?.data?._github,
         _ci: {
           ...(rerunOf ? { rerunOf } : {}),
-          ...(job && job !== "pipeline" ? { job } : {}),
-          ...(failed.length > 0 ? { jobs: failed } : {}),
-          ...(noCache ? { noCache } : {}),
+          ...(job && job !== "pipeline" ? { job, pipeline: config.id } : {}),
+          ...(failed.length > 0 ? { jobs: failed, pipeline: config.id } : {}),
+          ...(noCache ? { noCache, pipeline: config.id } : {}),
         },
       },
     });

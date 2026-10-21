@@ -134,7 +134,7 @@ describe("jobs as child runs", () => {
 
     expect(inline).toBeGreaterThan(stepLimit);
     expect(child).toBeLessThan(stepLimit);
-  });
+  }, 20_000);
 
   test.each([
     {

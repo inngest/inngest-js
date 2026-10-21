@@ -251,7 +251,9 @@ export const runJob = async ({
   if (
     rerunSkips(run.rerun, number === 1 ? config.id : `${config.id} (${number})`)
   ) {
-    return undefined;
+    // It returns nothing, but something to read from: a pipeline that uses
+    // what an earlier job returned gets no data from it, not an error.
+    return {};
   }
 
   return jobBody({
@@ -923,9 +925,14 @@ const jobSteps = async ({
     run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
   }
 
-  const hit = builtAs
+  const found = builtAs
     ? await lookupCache(scope, config.cache, builtAs, request?.exclude)
     : undefined;
+
+  // A re-run without the cache builds again, and treats the snapshot that's
+  // there as broken, so the new one replaces it under the name.
+  const stale = run.rerun?.noCache && found ? found.snapshotId : undefined;
+  const hit = stale ? undefined : found;
 
   if (hit) {
     restoreFromCache(scope, hit);
@@ -1050,7 +1057,7 @@ const jobSteps = async ({
         }
 
         if (builtAs) {
-          await snapshotBuilt(scope, builtAs, startedAt);
+          await snapshotBuilt(scope, builtAs, startedAt, stale);
           await confirmBuilt(scope, builtAs);
         }
       } catch (error) {
@@ -1256,6 +1263,8 @@ const snapshotBuilt = async (
   target: CacheTarget,
   /** When the job started, so the snapshot can say how long it took. */
   startedAt: number,
+  /** A snapshot a re-run without the cache replaces. */
+  stale?: string,
 ): Promise<void> => {
   const { run } = scope;
 
@@ -1284,8 +1293,10 @@ const snapshotBuilt = async (
   const taken = await snapshotMachine(scope, {
     target,
     cache: scope.config.cache,
-    ...(scope.request?.exclude ? { exclude: scope.request.exclude } : {}),
-    ...(scope.request?.broken ? { broken: true } : {}),
+    ...((scope.request?.exclude ?? stale)
+      ? { exclude: scope.request?.exclude ?? stale }
+      : {}),
+    ...(scope.request?.broken || stale ? { broken: true } : {}),
     ...(scope.request?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
