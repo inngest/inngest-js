@@ -10,7 +10,7 @@
 import { checkout, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
-import { pack } from "./base.ts";
+import { pack, startDevServer } from "./base.ts";
 
 const skipped = new Set([
   "framework-hono",
@@ -57,6 +57,8 @@ export const examples = ci.job(
   async ({ matrix, from }) => {
     await checkout();
 
+    await startDevServer(from.$.devServer);
+
     await from.$.itest.env({ EXAMPLE: matrix.example });
   },
 );
@@ -78,6 +80,8 @@ export const examplesStreaming = ci.job(
   },
   async ({ matrix, from }) => {
     await checkout();
+
+    await startDevServer(from.$.devServer);
 
     await from.$.itest.env({
       EXAMPLE: matrix.example,

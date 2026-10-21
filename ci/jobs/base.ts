@@ -13,7 +13,14 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { $, checkout, files, github } from "@inngest/ci";
+import {
+  $,
+  type Command,
+  checkout,
+  files,
+  github,
+  waitForHttp,
+} from "@inngest/ci";
 
 import { ci } from "../client.ts";
 
@@ -29,6 +36,9 @@ const latestDevServer = async (): Promise<string> => {
 /** The binary that the package's postinstall downloads over its own wrapper script. */
 const devServerBin = "/usr/local/lib/node_modules/inngest-cli/bin/inngest";
 
+/** The port the Dev Server listens on, which the tests expect. */
+export const devServerPort = 8288;
+
 const thisFile = new URL(import.meta.url);
 
 /**
@@ -39,6 +49,13 @@ const recipe = async (): Promise<string> => {
   const source = await readFile(thisFile);
 
   return createHash("sha256").update(source).digest("hex");
+};
+
+/** Starts the Dev Server from `base` in the background and waits until it answers. */
+export const startDevServer = async (devServer: Command): Promise<void> => {
+  await devServer.background();
+
+  await waitForHttp(`http://localhost:${devServerPort}/dev`);
 };
 
 export const base = ci.job(
@@ -73,19 +90,13 @@ export const base = ci.job(
 
     await $`${devServerBin} --version`;
 
-    const env = {
-      INNGEST_CLI_VERSION: key.devServer,
-      INNGEST_DEV_SERVER_BIN: devServerBin,
-    };
-
     return {
+      /** The Dev Server on port 8288, for the tests to find already listening. */
+      devServer: $`${devServerBin} dev --port ${devServerPort} --no-discovery --no-poll --retry-interval 1 --tick 10`,
       /** The integration tests of `PACKAGE` (default `inngest`), in the shard `SHARD` if set. */
-      integration:
-        $.sh`pnpm --filter "\${PACKAGE:-inngest}" run test:integration \${SHARD:+--shard="$SHARD"}`.env(
-          env,
-        ),
+      integration: $.sh`pnpm --filter "\${PACKAGE:-inngest}" run test:integration \${SHARD:+--shard="$SHARD"}`,
       /** The integration test of the example `EXAMPLE`, with streaming forced when `INNGEST_STREAMING` is `force`. */
-      itest: $.sh`pnpm --filter inngest run itest "$EXAMPLE"`.env(env),
+      itest: $.sh`pnpm --filter inngest run itest "$EXAMPLE"`,
     };
   },
 );
