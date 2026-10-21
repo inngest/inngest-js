@@ -120,12 +120,55 @@ export const githubApp = (
     });
   };
 
+  const installationFor = async (
+    owner: string,
+    repo: string,
+  ): Promise<number | undefined> => {
+    try {
+      // Asked as the App itself, since an installation is what's being found.
+      const { data } = await appOctokit().rest.apps.getRepoInstallation({
+        owner,
+        repo,
+      });
+
+      return data.id;
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+
+      if (status === 404) {
+        return undefined;
+      }
+
+      const mapped = mapGitHubError(error);
+
+      if (status === 401 || status === 403) {
+        // A rate limit is a 403 too, and retries.
+        if (mapped && !(mapped instanceof NonRetriableError)) {
+          throw mapped;
+        }
+
+        throw new NonRetriableError(
+          "GitHub rejected the GitHub App's credentials. The App may be suspended, or `appId` and `privateKey` may be wrong.",
+          { cause: error },
+        );
+      }
+
+      throw mapped ?? error;
+    }
+  };
+
   /** A client for the installation, which can reach all of it. */
-  const installationOctokit = (ctx?: AuthContext): Octokit => {
+  const installationOctokit = async (ctx?: AuthContext): Promise<Octokit> => {
+    // The event, then the environment, then the repository itself: a run that
+    // starts from an event with no installation, like a cancelled run's, asks
+    // GitHub which installation the repository has.
     const installationId =
       ctx?.installationId ??
       (process.env.GITHUB_INSTALLATION_ID
         ? Number(process.env.GITHUB_INSTALLATION_ID)
+        : undefined) ??
+      (ctx?.owner && ctx.repo
+        ? await installationFor(ctx.owner, ctx.repo)
         : undefined);
 
     if (!installationId) {
@@ -139,7 +182,9 @@ export const githubApp = (
 
   /** A token for the installation, narrowed to `repositoryNames` when given. */
   const installationToken = async (ctx?: AuthContext): Promise<string> => {
-    const auth = (await installationOctokit(ctx).auth({
+    const auth = (await (
+      await installationOctokit(ctx)
+    ).auth({
       type: "installation",
       ...(ctx?.repositoryNames ? { repositoryNames: ctx.repositoryNames } : {}),
     })) as { token: string };
@@ -161,39 +206,7 @@ export const githubApp = (
     kind: "app",
     reporter: "checks",
     octokit: octokitFor,
-    installationFor: async (owner, repo) => {
-      try {
-        // Asked as the App itself, since an installation is what's being found.
-        const { data } = await appOctokit().rest.apps.getRepoInstallation({
-          owner,
-          repo,
-        });
-
-        return data.id;
-      } catch (error) {
-        const status = (error as { status?: number }).status;
-
-        if (status === 404) {
-          return undefined;
-        }
-
-        const mapped = mapGitHubError(error);
-
-        if (status === 401 || status === 403) {
-          // A rate limit is a 403 too, and retries.
-          if (mapped && !(mapped instanceof NonRetriableError)) {
-            throw mapped;
-          }
-
-          throw new NonRetriableError(
-            "GitHub rejected the GitHub App's credentials. The App may be suspended, or `appId` and `privateKey` may be wrong.",
-            { cause: error },
-          );
-        }
-
-        throw mapped ?? error;
-      }
-    },
+    installationFor,
     token: installationToken,
   };
 };

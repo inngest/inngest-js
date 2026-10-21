@@ -675,11 +675,13 @@ export const consoleSink = (
 type Repo = NonNullable<CiRunScope["repo"]>;
 
 const clientFor = (provider: GitHubProvider, repo: Repo) => {
-  return provider.octokit(
-    repo.installationId === undefined
+  return provider.octokit({
+    owner: repo.owner,
+    repo: repo.name,
+    ...(repo.installationId === undefined
       ? {}
-      : { installationId: repo.installationId },
-  );
+      : { installationId: repo.installationId }),
+  });
 };
 
 /**
