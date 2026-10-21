@@ -233,6 +233,15 @@ export const runJob = async ({
 
   run.jobCalls.set(config.id, number);
 
+  // A re-run of one job leaves every other job alone: its check from the first
+  // run still stands.
+  if (
+    run.rerun?.job !== undefined &&
+    run.rerun.job !== (number === 1 ? config.id : `${config.id} (${number})`)
+  ) {
+    return undefined;
+  }
+
   return jobBody({
     run,
     config,
@@ -499,7 +508,25 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     check,
     lookup = true,
   } = args;
-  const { target, exclude, broken, unnamed, direct, base } = requestFrom(args);
+  const requested = requestFrom(args);
+  const { target, unnamed, direct, base } = requested;
+
+  // A re-run without the cache treats the snapshot that's there as broken, so
+  // the build replaces it rather than finding it again.
+  const bust = lookup && !direct && run.rerun?.noCache === true;
+
+  const stale = bust
+    ? await lookupBeforeBuild(
+        run,
+        { id: config.id, path, stepPath },
+        config.cache,
+        target,
+        requested.exclude,
+      )
+    : undefined;
+
+  const exclude = stale?.snapshotId ?? requested.exclude;
+  const broken = stale ? true : requested.broken;
   const origin = matrixOriginOf(config);
   const chain = chainOf(run);
 
@@ -544,7 +571,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
   // A snapshot that is already there needs no build run, and no wait behind
   // the builds that are queued for its name. A caller that has just looked it
   // up itself has no use for a second lookup.
-  if (lookup && !direct) {
+  if (lookup && !direct && !bust) {
     const hit = await lookupBeforeBuild(
       run,
       { id: config.id, path, stepPath },

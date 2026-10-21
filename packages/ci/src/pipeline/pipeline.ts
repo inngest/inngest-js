@@ -231,6 +231,7 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     childRuns: config.childRuns !== false,
     event: ctx.event,
+    ...rerunOf(ctx.event),
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
@@ -427,6 +428,21 @@ const runPipelineAttempt = async ({
       ? { skipped: "not permitted" }
       : outcome.result;
   });
+};
+
+/** What a re-run from a GitHub check asked for, from its event's `_ci`. */
+const rerunOf = (event: unknown): Pick<CiRunScope, "rerun"> => {
+  const ci = (event as { data?: { _ci?: { job?: string; noCache?: boolean } } })
+    ?.data?._ci;
+
+  return ci?.job || ci?.noCache
+    ? {
+        rerun: {
+          ...(ci.job ? { job: ci.job } : {}),
+          ...(ci.noCache ? { noCache: true } : {}),
+        },
+      }
+    : {};
 };
 
 /** How the handler ended, caught rather than thrown. */
@@ -995,11 +1011,18 @@ const generatedFunctions = ({
         triggers: [
           { event: "github/check_run.rerequested" },
           { event: "github/check_suite.rerequested" },
+          { event: "github/check_run.requested_action" },
         ],
       },
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
       async ({ event, step }: any) => {
-        const { rerunEventFor } = await import("./rerun.ts");
+        const { rerunEventFor, mayRerun } = await import("./rerun.ts");
+
+        // A button anyone who can see the check could click, so it needs the
+        // same permission as pushing to the repository.
+        if (!(await mayRerun({ event, step }))) {
+          return { rerun: false, reason: "not permitted" };
+        }
 
         return rerunEventFor({ event, step, client, config });
       },

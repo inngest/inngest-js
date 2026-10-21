@@ -8,6 +8,60 @@ import type { Inngest } from "inngest";
 import type { PipelineConfig } from "../types.ts";
 
 /**
+ * Whether a check's event may start a re-run. Re-requesting from GitHub's own
+ * button is already limited to people who can write to the repository; a
+ * button of ours (`requested_action`) carries the clicker, so it is checked
+ * here.
+ */
+export const mayRerun = async ({
+  event,
+  step,
+}: {
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any;
+  // biome-ignore lint/suspicious/noExplicitAny: SDK step tools
+  step: any;
+}): Promise<boolean> => {
+  const login: string | undefined = event?.data?.sender?.login;
+
+  if (!event?.data?.requested_action) {
+    return true;
+  }
+
+  if (!login || !event?.data?.repository?.full_name) {
+    return false;
+  }
+
+  return step.run("check-permission", async () => {
+    const { octokitForRun } = await import("../github/rest.ts");
+    const { hasPermission } = await import("../github/triggers.ts");
+    const [owner, repo] = String(event.data.repository.full_name).split(
+      "/",
+    ) as [string, string];
+
+    try {
+      const octokit = await octokitForRun();
+      const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+        owner,
+        repo,
+        username: login,
+      });
+
+      return hasPermission(data.permission, "write");
+    } catch (error) {
+      // Not being able to see the permission means no.
+      const status = (error as { status?: number }).status;
+
+      if (status === 403 || status === 404) {
+        return false;
+      }
+
+      throw error;
+    }
+  });
+};
+
+/**
  * Re-run a pipeline from a GitHub check's "Re-run" button.
  *
  * The original event isn't available from the SDK, so a minimal pull request
@@ -64,6 +118,14 @@ export const rerunEventFor = async ({
     suite?.head_branch ?? checkRun?.head_branch;
 
   const rerunOf = externalId?.split(":")[0];
+
+  // A job's check re-runs that job alone; the pipeline's and the suite's
+  // re-run everything.
+  const job = externalId?.includes(":")
+    ? externalId.split(":").slice(1).join(":")
+    : undefined;
+
+  const noCache = event?.data?.requested_action?.identifier === "rerun-fresh";
 
   // Every pipeline hears the same webhook, so they all send the same ID and
   // the copies collapse into one event.
@@ -143,9 +205,8 @@ export const rerunEventFor = async ({
         _github: event?.data?._github,
         _ci: {
           ...(rerunOf ? { rerunOf } : {}),
-          ...(externalId?.includes(":")
-            ? { fromJob: externalId.split(":").slice(1).join(":") }
-            : {}),
+          ...(job && job !== "pipeline" ? { job } : {}),
+          ...(noCache ? { noCache } : {}),
         },
       },
     });
