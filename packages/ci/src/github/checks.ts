@@ -569,8 +569,8 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       await githubStep(run, step, async () => {
         await sink.update?.({
-          // The check belongs to the pipeline that invoked this run.
-          run: { ...run, pipelineId: parent.pipelineId },
+          // The check belongs to the pipeline run that invoked this one.
+          run: { ...run, runId: parent.runId, pipelineId: parent.pipelineId },
           name: check.name,
           title: direct ? "Running in its own run" : "Building in its own run",
           detailsUrl,
@@ -937,12 +937,13 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
 
       return {};
     },
-    update: async ({ run, name, title, detailsUrl }) => {
+    update: async ({ run, name, title }) => {
+      // The status links to the run that owns it, which is how a run that ends
+      // finds it again, even when a job's own run is the one updating it.
       await post(
         run,
         name,
-        detailsUrl ??
-          run.ci.runUrl({ runId: run.runId, functionId: run.functionId }),
+        run.ci.runUrl({ runId: run.runId, functionId: run.functionId }),
         "pending",
         truncateLabel(title, maxStatusDescription),
       );
