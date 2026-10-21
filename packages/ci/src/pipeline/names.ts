@@ -356,6 +356,15 @@ export const steps = {
     };
   },
 
+  annotateCheck: (check: string, batch: number, job?: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? "pipeline"}:annotations:${batch}`),
+      name: report(job ?? check, `annotations ${batch}`),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
   completeCheck: (
     check: string,
     job?: { path: string; conclusion: CheckConclusion },

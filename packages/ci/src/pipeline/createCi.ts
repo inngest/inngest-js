@@ -484,6 +484,9 @@ const sinkFor = (
     closeOpen: async (args) => {
       await pick().closeOpen?.(args);
     },
+    annotate: async (args) => {
+      await pick().annotate?.(args);
+    },
   };
 };
 

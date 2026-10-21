@@ -56,10 +56,12 @@ import {
   durationToMs,
   errorMessage,
   failureLine,
+  fenceFor,
   formatDuration,
   isSandboxNameTaken,
   maxStatusDescription,
   shortReason,
+  stripAnsi,
   truncateLabel,
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
@@ -1282,12 +1284,14 @@ const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {
   const parts: string[] = [];
 
   if (error instanceof CommandFailedError) {
-    const output = `${error.stdoutTail}\n${error.stderrTail}`
+    const output = stripAnsi(`${error.stdoutTail}\n${error.stderrTail}`)
       .split("\n")
       .slice(-60)
       .join("\n");
 
-    parts.push(`\`\`\`\n${output}\n\`\`\``);
+    const fence = fenceFor(output);
+
+    parts.push(`${fence}\n${output}\n${fence}`);
   } else if (error instanceof Error) {
     parts.push(error.message);
   }

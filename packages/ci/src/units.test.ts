@@ -45,6 +45,7 @@ import { temporalDuration } from "./testing/temporal.ts";
 import {
   durationToMs,
   failureLine,
+  fenceFor,
   filterPaths,
   formatDuration,
   formatRelative,
@@ -53,6 +54,7 @@ import {
   shellEscape,
   shortReason,
   stableStringify,
+  stripAnsi,
   truncateLabel,
 } from "./util.ts";
 
@@ -982,7 +984,45 @@ describe("shortReason", () => {
   });
 });
 
+const dogfoodRun5 = {
+  stderr: [
+    "Testing types with tsc and vue-tsc is an experimental feature.",
+    "(node:605) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities",
+    "No test files found, exiting with code 1",
+    "",
+    "\u23af\u23af\u23af\u23af\u23af\u23af Unhandled Error \u23af\u23af\u23af\u23af\u23af\u23af\u23af",
+    "Error: Dev Server startup timed out after 60 seconds",
+    " \u276f Timeout._onTimeout ../test-harness/src/devServer.ts:75:16",
+    "",
+    "close timed out after 10000ms",
+    "Tests closed successfully but something prevents Vite server from exiting",
+    'You can try to identify the cause by enabling "hanging-process" reporter.',
+  ].join("\n"),
+  stdout: [
+    "Starting Inngest Dev Server...",
+    "Stopping Inngest Dev Server...",
+    "/work/packages/inngest:",
+    " ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  inngest@4.25.0 test:integration: `vitest run`",
+    "Exit status 1",
+  ].join("\n"),
+};
+
 describe("failureLine", () => {
+  test("the first strong error wins over teardown noise that follows it", () => {
+    expect(failureLine(dogfoodRun5.stderr, dogfoodRun5.stdout)).toBe(
+      "Error: Dev Server startup timed out after 60 seconds",
+    );
+  });
+
+  test("a runner's shutdown chatter is never the reason", () => {
+    expect(
+      failureLine(
+        "close timed out after 10000ms\nTests closed successfully but something prevents Vite server from exiting",
+        " ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  x: `vitest`\nExit status 1",
+      ),
+    ).toBe("");
+  });
+
   const vitestOutput = [
     "FAIL  src/a.test.ts > adds",
     "AssertionError: expected 1 to be 2",
@@ -994,12 +1034,7 @@ describe("failureLine", () => {
 
   test.each([
     ["a closing brace", "ran 3 tests\n}\n", "", "ran 3 tests"],
-    [
-      "a vitest separator",
-      "",
-      vitestOutput,
-      "AssertionError: expected 1 to be 2",
-    ],
+    ["a vitest separator", "", vitestOutput, "FAIL  src/a.test.ts > adds"],
     [
       "the rmdir TypeError",
       'TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined\n    at rmdir\n}\nExit status 1',
@@ -1041,6 +1076,37 @@ describe("failureLine", () => {
 
   test("is cut to a status description", () => {
     expect(failureLine("Error: " + "a".repeat(200), "")).toHaveLength(140);
+  });
+});
+
+describe("stripAnsi", () => {
+  test.each([
+    ["colour codes", "\u001b[31mred\u001b[39m text", "red text"],
+    [
+      "an escape byte that became U+FFFD",
+      "\uFFFD[1m\uFFFD[32mok\uFFFD[0m",
+      "ok",
+    ],
+    ["a tail cut inside a sequence at its start", "[39m done", " done"],
+    ["a tail cut inside a sequence at its end", "done \u001b[3", "done "],
+    ["a tail cut right after the escape", "done \u001b", "done "],
+    [
+      "text that only looks like a code",
+      "[1/2] built 5m ago",
+      "[1/2] built 5m ago",
+    ],
+  ])("%s", (_name, input, expected) => {
+    expect(stripAnsi(input)).toBe(expected);
+  });
+});
+
+describe("fenceFor", () => {
+  test.each([
+    ["none inside", "plain", "```"],
+    ["a fence inside", "a\n```\nb", "````"],
+    ["a longer run inside", "`````", "``````"],
+  ])("%s", (_name, text, fence) => {
+    expect(fenceFor(text)).toBe(fence);
   });
 });
 
