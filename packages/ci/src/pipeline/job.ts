@@ -1043,6 +1043,7 @@ const jobSteps = async ({
       const result = {
         conclusion,
         title,
+        ...jobErrorDetail(error),
         summary: jobFailureSummary(error, scope),
         annotations: scope.annotations,
       };
@@ -1218,6 +1219,23 @@ const jobErrorTitle = (error: unknown): string => {
   }
 
   return shortReason(error) || "Failed";
+};
+
+/** A failed command's last line of error output, which is the usual reason. */
+const jobErrorDetail = (error: unknown): { detail?: string } => {
+  if (!(error instanceof CommandFailedError)) {
+    return {};
+  }
+
+  const detail = (error.stderrTail || error.stdoutTail)
+    .split("\n")
+    .map((line) => {
+      return line.trim();
+    })
+    .filter(Boolean)
+    .at(-1);
+
+  return detail ? { detail } : {};
 };
 
 const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {

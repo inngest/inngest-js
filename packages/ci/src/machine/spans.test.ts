@@ -310,7 +310,7 @@ describe("spans", () => {
 
     expect(result.steps["test › flaky #attempt-1 › exit"]).toMatchObject({
       name: "NonRetriableError",
-      message: "exit 1",
+      message: expect.stringContaining("exited with 1"),
     });
   });
 

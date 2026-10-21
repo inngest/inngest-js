@@ -42,9 +42,11 @@ export class CommandFailedError extends Error {
     stderrTail: string;
     jobPath: string;
   }) {
+    const detail = options.stderrTail || options.stdoutTail;
+
     super(
       `\`${options.command.join(" ")}\` exited with ${options.exitCode}${
-        options.stderrTail ? `\n${options.stderrTail}` : ""
+        detail ? `\n${detail}` : ""
       }`,
     );
 
