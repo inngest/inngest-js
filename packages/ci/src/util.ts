@@ -7,7 +7,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { durationToMs as sdkDurationToMs } from "inngest";
 import { CiUsageError } from "./errors.ts";
 import type { Duration } from "./types.ts";
@@ -65,6 +65,47 @@ export const tail = (
   }
 
   return { text: input.slice(input.length - bytes), truncated: true };
+};
+
+/** GitHub's limit on a commit status description. */
+export const maxStatusDescription = 140;
+
+/** Lines that say a command failed, whatever it was. */
+const errorLine = /Error|\bFAIL\b|not found|timed out/;
+
+/** Lines that say nothing: bare exit codes, lone brackets and rules. */
+const noiseLine = /^(?:Exit status \d+|[)\]}>,;]+|[-=_*~⎯─━═]{3,}.*)$/i;
+
+/**
+ * The line of a failed command's output that says why it failed: the last one
+ * that reads as an error, else the last one with any words in it. Cut to fit
+ * a commit status.
+ */
+export const failureLine = (stderrTail: string, stdoutTail: string): string => {
+  const outputs = [stderrTail, stdoutTail].map((output) => {
+    return stripVTControlCharacters(output)
+      .split("\n")
+      .map((line) => {
+        return line.trim();
+      })
+      .filter((line) => {
+        return /\p{L}/u.test(line) && !noiseLine.test(line);
+      });
+  });
+
+  const errors = outputs.map((lines) => {
+    return [...lines].reverse().find((line) => {
+      return errorLine.test(line);
+    });
+  });
+
+  const lasts = outputs.map((lines) => {
+    return lines.at(-1);
+  });
+
+  const line = [...errors, ...lasts].find(Boolean) ?? "";
+
+  return truncateLabel(line, maxStatusDescription);
 };
 
 /**

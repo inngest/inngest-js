@@ -10,7 +10,7 @@ import { type StepSpec, steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
-import { errorMessage, formatDuration } from "../util.ts";
+import { errorMessage, formatDuration, maxStatusDescription } from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
 
 /**
@@ -754,8 +754,6 @@ const statusFor = (conclusion: CheckConclusion): StatusState => {
       return "error";
   }
 };
-
-const maxStatusDescription = 140;
 
 /** The title and its detail, cutting the detail to fit GitHub's limit. */
 const statusDescription = (title: string, detail?: string): string => {

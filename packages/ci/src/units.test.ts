@@ -44,6 +44,7 @@ import {
 import { temporalDuration } from "./testing/temporal.ts";
 import {
   durationToMs,
+  failureLine,
   filterPaths,
   formatDuration,
   formatRelative,
@@ -978,6 +979,68 @@ describe("shortReason", () => {
     expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
 
     expect(shortReason(undefined)).toBe("");
+  });
+});
+
+describe("failureLine", () => {
+  const vitestOutput = [
+    "FAIL  src/a.test.ts > adds",
+    "AssertionError: expected 1 to be 2",
+    "",
+    "\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af",
+    "}",
+    "Exit status 1",
+  ].join("\n");
+
+  test.each([
+    ["a closing brace", "ran 3 tests\n}\n", "", "ran 3 tests"],
+    [
+      "a vitest separator",
+      "",
+      vitestOutput,
+      "AssertionError: expected 1 to be 2",
+    ],
+    [
+      "the rmdir TypeError",
+      'TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined\n    at rmdir\n}\nExit status 1',
+      "",
+      'TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined',
+    ],
+    [
+      "a missing binary",
+      "bun: not found\nExit status 127",
+      "",
+      "bun: not found",
+    ],
+    [
+      "a startup timeout",
+      "",
+      "starting\nDev Server startup timed out after 60 seconds\n]",
+      "Dev Server startup timed out after 60 seconds",
+    ],
+    [
+      "ANSI codes",
+      "\u001b[31mError: red\u001b[39m\nExit status 1",
+      "",
+      "Error: red",
+    ],
+    [
+      "stdout when stderr is empty",
+      "",
+      "all quiet\nbuilt nothing",
+      "built nothing",
+    ],
+    ["no output", "", "", ""],
+  ])("%s", (_name, stderr, stdout, expected) => {
+    expect(failureLine(stderr, stdout)).toBe(expected);
+  });
+
+  test("an error in stdout beats a plain last line of stderr", () => {
+    expect(failureLine("done", "Error: boom")).toBe("Error: boom");
+  });
+
+  test("is cut to a status description", () => {
+    expect(failureLine("Error: " + "a".repeat(200), "")).toHaveLength(140);
   });
 });
 
