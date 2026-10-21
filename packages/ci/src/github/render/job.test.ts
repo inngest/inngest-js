@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { CommandRow } from "./commands.ts";
 import { links } from "./fixtures.ts";
 import { type JobFailure, type JobInput, jobCheck } from "./job.ts";
-import type { CommandRow } from "./commands.ts";
 
 const commands: CommandRow[] = [
   { state: "done", command: "pnpm install --offline", ms: 6000 },

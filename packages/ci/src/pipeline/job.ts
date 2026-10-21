@@ -68,6 +68,14 @@ import { chainOf } from "./appJob.ts";
 import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
+import {
+  cacheHitPayload,
+  failedPayload,
+  passedPayload,
+  queuedPayload,
+  runningPayload,
+  withReports,
+} from "./jobReport.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
 import type {
@@ -86,6 +94,7 @@ import {
   isInline,
   joinId,
   matrixOriginOf,
+  rerunSkips,
   rootRunIdOf,
   runJobBody,
 } from "./scope.ts";
@@ -238,8 +247,7 @@ export const runJob = async ({
   // A re-run of one job leaves every other job alone: its check from the first
   // run still stands.
   if (
-    run.rerun?.job !== undefined &&
-    run.rerun.job !== (number === 1 ? config.id : `${config.id} (${number})`)
+    rerunSkips(run.rerun, number === 1 ? config.id : `${config.id} (${number})`)
   ) {
     return undefined;
   }
@@ -809,6 +817,7 @@ const jobSteps = async ({
     jobPath: path,
     config,
     fromJobIds: [],
+    commands: [],
     annotations: [],
     summaries: [],
     env: {},
@@ -831,6 +840,7 @@ const jobSteps = async ({
     run.report = {
       summaries: scope.summaries,
       annotations: scope.annotations,
+      commands: scope.commands,
     };
   }
 
@@ -847,7 +857,7 @@ const jobSteps = async ({
   }
 
   if (checked && !matrixOriginOf(config)) {
-    await checks.jobQueued(target);
+    await checks.jobQueued({ ...target, payload: queuedPayload(scope) });
   }
 
   // A job's name includes the snapshot of the parent it starts from, so the
@@ -907,13 +917,17 @@ const jobSteps = async ({
     : undefined;
 
   if (hit) {
-    const title = restoreFromCache(scope, hit);
+    restoreFromCache(scope, hit);
 
     if (checked) {
       run.openChecks.delete(scope.path);
 
       await checks.jobStart(target);
-      await checks.jobComplete({ ...target, conclusion: "success", title });
+      await checks.jobComplete({
+        ...target,
+        conclusion: "success",
+        ...withReports(cacheHitPayload(scope, hit), scope),
+      });
     }
 
     return;
@@ -922,13 +936,18 @@ const jobSteps = async ({
   // Handlers replay from the top on every step, so reading the clock here
   // would time the last replay. The start comes from the check's step, which
   // memoizes it, or from a step of its own when there's no check.
-  const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
+  const checkStartedAt = checked
+    ? await checks.jobStart({ ...target, payload: runningPayload(scope) })
+    : undefined;
   const startedAt =
     checkStartedAt ??
     (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
 
+  scope.startedAt = startedAt;
+
   try {
     let reusedTitle: string | undefined;
+    let reusedSnapshot: CachedSnapshot | undefined;
     let returned: Record<string, unknown> | undefined;
 
     if (parentFailure) {
@@ -954,6 +973,7 @@ const jobSteps = async ({
 
         scope.summaries.push(...(report?.summaries ?? []));
         scope.annotations.push(...(report?.annotations ?? []));
+        scope.commands.push(...(report?.commands ?? []));
 
         throw error;
       });
@@ -964,9 +984,11 @@ const jobSteps = async ({
 
       scope.summaries.push(...(built.report?.summaries ?? []));
       scope.annotations.push(...(built.report?.annotations ?? []));
+      scope.commands.push(...(built.report?.commands ?? []));
 
       if (built.reused && built.cached) {
         reusedTitle = cachedTitle(built.cached);
+        reusedSnapshot = built.cached;
       }
     } else {
       if (isBuild) {
@@ -1045,11 +1067,12 @@ const jobSteps = async ({
       checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
-        title:
-          reusedTitle ?? `Passed in ${formatDuration(Date.now() - startedAt)}`,
-        ...(scope.summaries.length > 0
-          ? { summary: scope.summaries.join("\n\n") }
-          : {}),
+        ...withReports(
+          reusedSnapshot
+            ? cacheHitPayload(scope, reusedSnapshot, savedBuild(run, config.id))
+            : passedPayload(scope, Date.now() - startedAt),
+          scope,
+        ),
         ...(scope.annotations.length > 0
           ? { annotations: scope.annotations }
           : {}),
@@ -1072,7 +1095,12 @@ const jobSteps = async ({
     return returned;
   } catch (error) {
     const conclusion = conclusionForError(error);
-    const title = jobErrorTitle(error);
+    const { payload, failure } = failedPayload(
+      scope,
+      error,
+      Date.now() - startedAt,
+    );
+    const title = failure.title;
 
     // Kept on purpose, so the run's cleanup leaves it alone.
     const keptSnapshotId = config.keepOnFailure
@@ -1086,8 +1114,7 @@ const jobSteps = async ({
     if (checked) {
       const result = {
         conclusion,
-        title,
-        summary: jobFailureSummary(error, scope),
+        ...withReports(payload, scope),
         annotations: scope.annotations,
       };
 
@@ -1262,46 +1289,12 @@ const warnBuiltInRun = (run: CiRunScope, jobId: string): void => {
   }
 };
 
-const jobErrorTitle = (error: unknown): string => {
-  if (error instanceof CommandFailedError) {
-    const suffix = ` (exit ${error.exitCode})`;
-    const reason = failureLine(error.stderrTail, error.stdoutTail);
+/** How long the build of a job took, when this run reused it. */
+const savedBuild = (
+  run: CiRunScope,
+  jobId: string,
+): { durationMs: number } | undefined => {
+  const ms = run.cacheSaved.get(jobId);
 
-    // The reason is why the job failed; the command is only there without one.
-    return reason
-      ? `${truncateLabel(reason, maxStatusDescription - suffix.length)}${suffix}`
-      : `\`${error.command.join(" ")}\` exited with ${error.exitCode}`;
-  }
-
-  if (error instanceof CommandTimeoutError) {
-    return `\`${error.command.join(" ")}\` timed out after ${error.timeout}`;
-  }
-
-  return shortReason(error) || "Failed";
-};
-
-const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {
-  const parts: string[] = [];
-
-  if (error instanceof CommandFailedError) {
-    const output = stripAnsi(`${error.stdoutTail}\n${error.stderrTail}`)
-      .split("\n")
-      .slice(-60)
-      .join("\n");
-
-    const fence = fenceFor(output);
-
-    parts.push(`${fence}\n${output}\n${fence}`);
-  } else if (error instanceof Error) {
-    parts.push(error.message);
-  }
-
-  parts.push(
-    `[View the trace](${scope.run.ci.runUrl({
-      runId: scope.run.runId,
-      functionId: scope.run.functionId,
-    })})`,
-  );
-
-  return [...parts, ...scope.summaries].join("\n\n");
+  return ms === undefined ? undefined : { durationMs: ms };
 };

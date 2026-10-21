@@ -3666,7 +3666,7 @@ describe("checks", () => {
       expect.objectContaining({
         name: "pr / test",
         conclusion: "failure",
-        title: "boom (exit 1)",
+        title: "❌ boom (exit 1)",
       }),
       expect.objectContaining({ name: "pr", conclusion: "failure" }),
     ]);
@@ -3775,7 +3775,7 @@ describe("checks", () => {
 
     expect(failed).toMatchObject({
       conclusion: "failure",
-      title: "machine didn't start in 2m",
+      title: "❌ machine didn't start in 2m",
     });
   });
 
@@ -3873,7 +3873,7 @@ describe("checks", () => {
     });
 
     expect(restored?.conclusion).toBe("success");
-    expect(restored?.title).toMatch(/^Cached (just now|.+ ago)$/);
+    expect(restored?.title).toMatch(/^⚡ Cache hit, built (just now|.+ ago)$/);
   });
 
   test("job checks can be turned off for the whole pipeline", async () => {
@@ -3977,7 +3977,7 @@ describe("job durations", () => {
       return entry.status === "completed" && entry.name === "pr / test";
     });
 
-    expect(completed?.title).toMatch(/^Passed in (\d+m )?\d+s$/);
+    expect(completed?.title).toMatch(/^✅ Passed in (\d+m )?\d+s$/);
     expect(completed?.title).not.toMatch(/ms$/);
   });
 
@@ -4421,7 +4421,7 @@ describe("failures that retrying cannot fix", () => {
         return [entry.name, entry.conclusion, entry.title];
       }),
     ).toEqual([
-      ["pr / build", "failure", "machine didn't start in 2m"],
+      ["pr / build", "failure", "❌ machine didn't start in 2m"],
       ["pr", "failure", "1 of 1 job failed: build: machine didn't start in 2m"],
     ]);
   });
@@ -4516,7 +4516,7 @@ describe("commit statuses", () => {
         return (request.body as { description: string }).description;
       });
 
-      expect(descriptions).toContain("ENOTFOUND localhost (exit 1)");
+      expect(descriptions).toContain("❌ ENOTFOUND localhost (exit 1)");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -5082,7 +5082,7 @@ describe("what a check shows", () => {
 
       expect(
         summaries.some((summary) => {
-          return summary.startsWith("````\n");
+          return summary.includes("````");
         }),
       ).toBe(true);
     } finally {
@@ -5263,6 +5263,31 @@ describe("re-running from a check", () => {
     expect(commandsRun(api)).toEqual(["pnpm test"]);
   });
 
+  test("a re-run of a few jobs runs those and leaves the rest", async () => {
+    const { api, ci } = setup();
+
+    const jobs = ["lint", "test", "build"].map((id) => {
+      return ci.job(id, async () => {
+        await $`pnpm ${id}`;
+      });
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all(
+        jobs.map((job) => {
+          return job();
+        }),
+      );
+    });
+
+    const result = await runFunction(pipeline, {
+      event: rerunEvent({ jobs: ["test", "build"] }),
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(commandsRun(api).sort()).toEqual(["pnpm build", "pnpm test"]);
+  });
+
   test("a re-run without the cache builds a cached job again", async () => {
     const api = createFakeSandboxApi();
 
@@ -5338,14 +5363,18 @@ describe("re-running from a check", () => {
 
       expect(completed.length).toBeGreaterThan(0);
 
+      const noCache = {
+        label: "Re-run, no cache",
+        description: "Run again from scratch",
+        identifier: "rerun-fresh",
+      };
+
       for (const request of completed) {
-        expect((request.body as { actions: unknown[] }).actions).toEqual([
-          {
-            label: "Re-run, no cache",
-            description: "Run again from scratch",
-            identifier: "rerun-fresh",
-          },
-        ]);
+        const body = request.body as { name: string; actions: unknown[] };
+
+        // A job's check can also re-run just that job.
+        expect(body.actions.at(-1)).toEqual(noCache);
+        expect(body.actions.length).toBe(body.name === "pr" ? 1 : 2);
       }
     } finally {
       vi.unstubAllEnvs();
@@ -5802,7 +5831,7 @@ describe("cache builds in their own run", () => {
       reporter.history.find((entry) => {
         return entry.name === "pr / base" && entry.status === "completed";
       })?.title,
-    ).toMatch(/^Passed in /);
+    ).toMatch(/^✅ Passed in /);
   });
 
   test("a hit builds nothing", async () => {

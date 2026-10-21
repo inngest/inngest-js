@@ -28,6 +28,7 @@ import {
   repoContextFromEvent,
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
+import { jobCheck } from "../github/render/job.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
   deleteOrphanSnapshots,
@@ -52,6 +53,7 @@ import { buildDoneEvent, endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
+import { runLinks } from "./jobReport.ts";
 import {
   ciRun,
   metadataStep,
@@ -448,13 +450,17 @@ const runPipelineAttempt = async ({
 
 /** What a re-run from a GitHub check asked for, from its event's `_ci`. */
 const rerunOf = (event: unknown): Pick<CiRunScope, "rerun"> => {
-  const ci = (event as { data?: { _ci?: { job?: string; noCache?: boolean } } })
-    ?.data?._ci;
+  const ci = (
+    event as {
+      data?: { _ci?: { job?: string; jobs?: string[]; noCache?: boolean } };
+    }
+  )?.data?._ci;
 
-  return ci?.job || ci?.noCache
+  return ci?.job || ci?.jobs || ci?.noCache
     ? {
         rerun: {
           ...(ci.job ? { job: ci.job } : {}),
+          ...(ci.jobs ? { jobs: ci.jobs } : {}),
           ...(ci.noCache ? { noCache: true } : {}),
         },
       }
@@ -744,7 +750,7 @@ const willRetry = (
 /** How many times Inngest retries a function that sets no `retries`. */
 const defaultRetries = 4;
 
-const cancelledTitle = "Cancelled: the pipeline ended first";
+const cancelledTitle = "🛑 Cancelled: the pipeline ended first";
 
 /**
  * Complete the job checks the run leaves behind: those of jobs still running.
@@ -763,11 +769,19 @@ const closeJobChecks = async (
     run,
     jobs: () => {
       const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
+        const shown = jobCheck({
+          ...runLinks(run),
+          name: jobPath,
+          state: { kind: "cancelled", reason: "the pipeline ended first" },
+        });
+
         return {
           jobPath,
           ...(name ? { name } : {}),
           conclusion: "cancelled" as const,
           title: cancelledTitle,
+          summary: shown.summary,
+          actions: shown.actions,
         };
       });
 

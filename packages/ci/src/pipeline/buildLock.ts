@@ -44,10 +44,11 @@
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { lookupBeforeBuild } from "../cache/cache.ts";
-import { lockMachineName } from "../machine/machine.ts";
+import { findLockHolder, lockMachineName } from "../machine/machine.ts";
 import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import { reportProgress, waitingBuildPayload } from "./jobReport.ts";
 import { ciStep, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { joinId, rootRunIdOf } from "./scope.ts";
@@ -196,6 +197,10 @@ export const requestBuild = async ({
 
     run.ci.hooks.activity(run, path, "asking for a build…");
 
+    if (round === 0) {
+      await showBuilder(run, path, config.id, name);
+    }
+
     // A request for a build that is still going is skipped, so asking again
     // after a wait that ran out is how a lost build is noticed.
     await run.step.sendEvent(
@@ -233,6 +238,31 @@ export const requestBuild = async ({
     }
 
     run.ci.hooks.activity(run, path, "the build failed, asking again…");
+  }
+};
+
+/**
+ * Say on the job's check that another run is building what it needs, when one
+ * is: the lock's machine is there, and says whose it is. A request while a
+ * build runs is skipped, so this is how a waiting job knows it is not stuck.
+ */
+const showBuilder = async (
+  run: CiRunScope,
+  path: string,
+  build: string,
+  lock: string,
+): Promise<void> => {
+  const holder = await run.step.run(
+    ciStep(joinId(path, "build:holder"), traceName.checkBuildLock),
+    () => {
+      return findLockHolder(run.ci.client, lock);
+    },
+  );
+
+  if (holder) {
+    await reportProgress(run, path, () => {
+      return waitingBuildPayload(run, path, build, holder, lock);
+    });
   }
 };
 

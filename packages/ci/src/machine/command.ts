@@ -13,6 +13,8 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
+import type { CommandRow } from "../github/render/commands.ts";
+import { reportProgress, runningPayload } from "../pipeline/jobReport.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
@@ -438,6 +440,9 @@ class CommandBuilder implements Command {
     const scope = this.getScope();
     const stepId = this.stepId(scope);
     const attempts = Math.max(0, this.state.retries) + 1;
+    const row: CommandRow = { state: "running", command: this.commandText() };
+
+    scope.commands.push(row);
 
     for (let attempt = 1; ; attempt++) {
       const attemptId =
@@ -446,6 +451,10 @@ class CommandBuilder implements Command {
       const attemptInfo = { id: stepId, name: this.labelText(), attempt };
 
       scope.run.ci.hooks.commandStarted(scope, attemptInfo);
+
+      row.state = "running";
+
+      await showProgress(scope);
 
       const runAttempt = async () => {
         const result = await this.runOnce(scope, attemptId);
@@ -461,7 +470,18 @@ class CommandBuilder implements Command {
         return attempts === 1
           ? runAttempt()
           : inSpan(spans.attempt(attempt), runAttempt);
+      }).catch((error: unknown) => {
+        row.state = "failed";
+
+        throw error;
       });
+
+      row.state =
+        result.exitCode === 0 || this.state.nothrow ? "done" : "failed";
+
+      if (result.durationMs !== undefined) {
+        row.ms = result.durationMs;
+      }
 
       scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);
 
@@ -1235,6 +1255,19 @@ const publishOutput = async (
   } catch {
     // Best effort.
   }
+};
+
+/**
+ * Show the job's check as it stands, when a command starts and never
+ * more often, so it stays within GitHub's rate limits.
+ */
+const showProgress = async (scope: CiJobScope): Promise<void> => {
+  await reportProgress(scope.run, scope.jobPath, () => {
+    return runningPayload(
+      scope,
+      scope.startedAt === undefined ? 0 : Date.now() - scope.startedAt,
+    );
+  });
 };
 
 const decoder = new TextDecoder();

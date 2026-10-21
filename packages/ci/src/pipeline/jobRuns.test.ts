@@ -91,7 +91,7 @@ describe("jobs as child runs", () => {
     expect(snapshotsTaken(api)).toEqual([]);
   });
 
-  test("the pipeline's run holds four steps per job instead of nine", async () => {
+  test("the pipeline's run holds four steps per job instead of twelve", async () => {
     const steps: number[] = [];
 
     for (const childRuns of [false, true]) {
@@ -108,7 +108,7 @@ describe("jobs as child runs", () => {
     }
 
     // Five steps are the pipeline's own: its check, the jobs' checks, cleanup.
-    expect(steps).toEqual([3 * 9 + 5, 3 * 4 + 5]);
+    expect(steps).toEqual([3 * 12 + 5, 3 * 4 + 5]);
   });
 
   test("a pipeline that would overflow a step limit in its own run fits as child runs", async () => {
@@ -186,7 +186,7 @@ describe("jobs as child runs", () => {
             .map(({ at: _at, summary, ...entry }) => {
               return {
                 ...entry,
-                summary: summary?.replace(/\d+ms/g, "<duration>"),
+                summary: summary?.replace(/(?:\d+m )?\d+m?s/g, "<duration>"),
               };
             }),
           machines: [...api.sandboxes.values()].map((machine) => {
@@ -200,7 +200,7 @@ describe("jobs as child runs", () => {
       expect(child).toEqual(inline);
       expect(child?.type).toBe("function-rejected");
       expect(child?.completed[0]?.title).toMatch(
-        /^(.+ \(exit 1\)|`pnpm test` timed out after 30s)$/,
+        /^(❌ .+|⏱️ Timed out: `pnpm test` ran past its 30s limit)$/,
       );
       expect(child?.completed[0]?.summary).toContain("reported before failing");
       expect(child?.machines).toEqual(["TERMINATED"]);

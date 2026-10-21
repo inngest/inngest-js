@@ -989,6 +989,43 @@ export const destroyOrphans = async (
   return { destroyed, lockReleased };
 };
 
+/**
+ * The run that holds a build lock right now, if one does: the lock machine's
+ * name is derived from the cache entry, and the machine says who owns it in its
+ * environment. Costs one list and one short command, so it is for the first
+ * look of a job that is about to wait.
+ */
+export const findLockHolder = async (
+  client: Inngest.Any,
+  lock: string,
+): Promise<{ runId: string; startedAt: string } | undefined> => {
+  for await (const sandbox of listSandboxes(client)) {
+    if (sandbox.name !== lock || !isLive(sandbox)) {
+      continue;
+    }
+
+    try {
+      const owner = await sandbox.commands.run(
+        ["/bin/sh", "-c", `printf %s "$${lockOwnerKey}"`],
+        { timeout: "10s" },
+      );
+
+      if (owner.exitCode === 0 && owner.stdout) {
+        return {
+          runId: owner.stdout,
+          startedAt: String(sandbox.startedAt ?? sandbox.createdAt),
+        };
+      }
+    } catch (error) {
+      if (!isSandboxNotFound(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return undefined;
+};
+
 /** Whether a machine is still there to hold a name. */
 const isLive = (sandbox: { status: string }): boolean => {
   return !["TERMINATING", "TERMINATED", "FAILED"].includes(sandbox.status);

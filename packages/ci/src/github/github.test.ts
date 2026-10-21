@@ -1121,6 +1121,78 @@ describe("re-running from buttons and suites", () => {
     );
   });
 
+  test("the pipeline's Re-run failed jobs button re-runs the jobs whose checks failed", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", { number: 7 });
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      total_count: 4,
+      check_runs: [
+        { external_id: "01RUN:lint", conclusion: "success" },
+        { external_id: "01RUN:test", conclusion: "failure" },
+        { external_id: "01RUN:e2e (1)", conclusion: "timed_out" },
+        { external_id: "01RUN:pipeline", conclusion: "failure" },
+        { external_id: "01OTHER:build", conclusion: "failure" },
+      ],
+    });
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const event = action("rerun-failed");
+
+    event.data.check_run.external_id = "01RUN:pipeline";
+
+    await rerunEventFor({
+      event,
+      step,
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          _ci: { rerunOf: "01RUN", jobs: ["test", "e2e (1)"] },
+        }),
+      }),
+    );
+  });
+
+  test("Re-run failed jobs with no failed check re-runs everything", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", { number: 7 });
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      total_count: 0,
+      check_runs: [],
+    });
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const event = action("rerun-failed");
+
+    event.data.check_run.external_id = "01RUN:pipeline";
+
+    await rerunEventFor({
+      event,
+      step,
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ _ci: { rerunOf: "01RUN" } }),
+      }),
+    );
+  });
+
   test.each([
     ["write", true],
     ["read", false],

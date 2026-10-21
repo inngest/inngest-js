@@ -577,3 +577,71 @@ test("the fake's name rules: the same name and settings give the same machine ba
 
   expect((await create({ LOCK: "b" })).status).toBe(201);
 });
+
+describe("a job waiting on another run's build", () => {
+  const waiting = async (planted: boolean) => {
+    const api = createFakeSandboxApi();
+    const { snapshot, done, lock } = await learn(api);
+
+    if (planted) {
+      plantLock(api, lock, "01OTHER");
+    }
+
+    const client = createCiTestClient(api);
+    const bus = busOf(client);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+    let woken = false;
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await install();
+    });
+
+    await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01WAIT",
+      beforeRequest: () => {
+        // The look has missed and the request has gone: the build ends later.
+        if (!woken && bus && sentOf(bus, buildRequestedEvent).length > 0) {
+          woken = true;
+          api.snapshots.set(snapshot.id, snapshot);
+          bus.send({ name: buildDoneEvent, data: done.data });
+        }
+      },
+    });
+
+    return reporter.history.filter((entry) => {
+      return entry.status === "updated";
+    });
+  };
+
+  test("says it is not stuck, and whose build it waits for", async () => {
+    const updates = await waiting(true);
+
+    const shown = updates.find((entry) => {
+      return entry.summary?.includes("**Not stuck.**");
+    });
+
+    expect(shown?.name).toBe("pr / install");
+    expect(shown?.summary).toContain("> [!IMPORTANT]");
+    expect(shown?.summary).toContain("localhost:8288/run?runID=01OTHER");
+    expect(shown?.summary).toMatch(/🔒 Lock `ci-build-[0-9a-f]+`/);
+  });
+
+  test("says nothing of the kind when no one else is building", async () => {
+    const updates = await waiting(false);
+
+    expect(
+      updates.some((entry) => {
+        return entry.summary?.includes("**Not stuck.**");
+      }),
+    ).toBe(false);
+  });
+});

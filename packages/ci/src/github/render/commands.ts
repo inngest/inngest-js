@@ -63,13 +63,13 @@ export const commandsTable = (rows: CommandRow[]): string => {
     return "";
   }
 
-  const longest = Math.max(1, ...rows.map((row) => row.ms ?? 0));
+  const longest = Math.max(0, ...rows.map((row) => row.ms ?? 0));
 
   const lines = rows.map((row) => {
     const bar =
       row.ms === undefined
         ? ""
-        : colorBar(row.ms / longest, squares[row.state], 8);
+        : colorBar(longest > 0 ? row.ms / longest : 1, squares[row.state], 8);
 
     return `| ${icons[row.state]} | \`${row.command.replaceAll("`", "'")}\` | ${timeOf(row)} | ${bar} |`;
   });

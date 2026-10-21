@@ -21,6 +21,7 @@ import { internalEvents, NonRetriableError } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
+import type { CommandRow } from "../github/render/commands.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import { cycleMessage } from "../machine/from.ts";
 import type {
@@ -171,7 +172,11 @@ export interface CacheBuildResult {
   /** How long the reused snapshots it started from took to build, by job ID. */
   cacheSaved?: Record<string, number>;
   /** What the job reported while it ran, for the invoking job's check. */
-  report?: { summaries: string[]; annotations: CheckAnnotation[] };
+  report?: {
+    summaries: string[];
+    annotations: CheckAnnotation[];
+    commands: CommandRow[];
+  };
 }
 
 /** A matrix as the build runs it: exactly one combination. */

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { callout } from "./callout.ts";
 import { colorBar, commandsTable } from "./commands.ts";
 import { mermaidGraph } from "./dag.ts";
+import { passedJobs } from "./fixtures.ts";
 import { chartRows, gantt } from "./gantt.ts";
 import { criticalPath } from "./graph.ts";
 import { link, linksRow } from "./links.ts";
-import { passedJobs } from "./fixtures.ts";
 import { jobTree } from "./tree.ts";
 
 describe("callout", () => {

@@ -99,7 +99,8 @@ export type JobState =
   | {
       kind: "building";
       reason?: string;
-      waiting: number;
+      /** How many jobs here wait on the build, when known. */
+      waiting?: number;
       otherRuns?: Array<{ label: string; url: string }>;
       restoreMs?: number;
       usualMs?: number;
@@ -123,7 +124,13 @@ export type JobState =
       notice?: { label: string; url: string };
     }
   | { kind: "failed"; failure: JobFailure }
-  | { kind: "cancelled"; by?: string; during?: string }
+  | {
+      kind: "cancelled";
+      by?: string;
+      during?: string;
+      /** Why, when it was not a person: such as the pipeline ending first. */
+      reason?: string;
+    }
   | {
       kind: "skipped";
       paths?: string[];
@@ -132,6 +139,10 @@ export type JobState =
     };
 
 export type JobInput = JobContext & { state: JobState };
+
+const plural = (count: number, word: string): string => {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+};
 
 const commitLink = (context: CheckLinks): string | undefined => {
   return context.commit
@@ -352,17 +363,19 @@ export const jobCheck = (input: JobInput): CheckPayload => {
         return link(other.label, other.url);
       });
 
+      const waiting = state.waiting ?? 0;
+
       const waiters =
         others.length > 0
-          ? `**${state.waiting} jobs** here and ${others.length} other run${others.length === 1 ? "" : "s"} (${others.join(", ")}) are waiting on it.`
-          : `**${state.waiting} job${state.waiting === 1 ? "" : "s"}** here ${state.waiting === 1 ? "is" : "are"} waiting on it.`;
+          ? `**${plural(waiting, "job")}** here and ${others.length} other run${others.length === 1 ? "" : "s"} (${others.join(", ")}) are waiting on it.`
+          : `**${plural(waiting, "job")}** here ${waiting === 1 ? "is" : "are"} waiting on it.`;
 
       return {
         title: `🧱 Building cache for \`${input.name}\`${input.elapsedMs === undefined ? "" : ` (${formatDuration(input.elapsedMs)})`}`,
         summary: sections(
           callout(
             "note",
-            `🧱 **Building a new cache entry.** ${state.reason ? `${state.reason} ` : ""}${state.waiting > 0 ? waiters : ""}`.trim(),
+            `🧱 **Building a new cache entry.** ${state.reason ? `${state.reason} ` : ""}${waiting > 0 || others.length > 0 ? waiters : ""}`.trim(),
           ),
           row("🔗", [link("Watch the build", input.run)]),
           commandsTable(input.commands ?? []),
@@ -436,11 +449,15 @@ export const jobCheck = (input: JobInput): CheckPayload => {
           : ` instead of building for ${formatDuration(state.builtMs)}`;
 
       return {
-        title: `⚡ Cache hit: ${formatDuration(input.savedMs ?? 0)} saved`,
+        title: input.savedMs
+          ? `⚡ Cache hit: ${formatDuration(input.savedMs)} saved`
+          : `⚡ Cache hit${state.builtAgo ? `, built ${state.builtAgo}` : ""}`,
         summary: sections(
           callout(
             "tip",
-            `⚡ **Cache hit. ${formatDuration(input.savedMs ?? 0)} saved.**\nRestored in **${formatDuration(state.restoredMs)}**${instead}.`,
+            input.savedMs
+              ? `⚡ **Cache hit. ${formatDuration(input.savedMs)} saved.**\nRestored in **${formatDuration(state.restoredMs)}**${instead}.`
+              : "⚡ **Cache hit.** Restored from the cache instead of building.",
           ),
           row("🔗", [
             link("Run", input.run),
@@ -517,7 +534,7 @@ export const jobCheck = (input: JobInput): CheckPayload => {
         summary: sections(
           callout(
             "note",
-            `🛑 **Cancelled**${state.by ? ` by **${state.by}**` : ""}${state.during ? ` while \`${state.during}\` was running` : ""}.`,
+            `🛑 **Cancelled**${state.by ? ` by **${state.by}**` : ""}${state.during ? ` while \`${state.during}\` was running` : ""}${state.reason ? `: ${state.reason}` : ""}.`,
           ),
           row("🔗", [link("Trace", input.run)]),
           commandsTable(input.commands ?? []),
