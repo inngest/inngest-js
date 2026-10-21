@@ -32,11 +32,11 @@ import type {
   JobContext,
   JobOutput,
   MachineConfig,
-  MatrixJob,
   MatrixAxes,
   MatrixCombo,
-  MatrixJobConfig,
   MatrixContext,
+  MatrixJob,
+  MatrixJobConfig,
   NoFrom,
   PipelineConfig,
   PipelineContext,
@@ -480,6 +480,9 @@ const sinkFor = (
     },
     update: async (args) => {
       await pick().update?.(args);
+    },
+    closeOpen: async (args) => {
+      await pick().closeOpen?.(args);
     },
   };
 };

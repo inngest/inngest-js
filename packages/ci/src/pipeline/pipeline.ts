@@ -944,17 +944,8 @@ export const cleanupFunction = ({
         repo?.sha
       ) {
         await step.run(stepOptions(steps.endCancelledCheck()), async () => {
-          await (internals.checks as CheckReporter).pipelineEnded({
-            run: {
-              ci: internals,
-              runId,
-              functionId: config.id,
-              pipelineId: config.id,
-              checkName,
-              repo,
-            },
-            conclusion: "cancelled",
-            title: "Cancelled",
+          await (internals.checks as CheckReporter).runCancelled({
+            run: { runId, checkName, repo },
           });
 
           return null;

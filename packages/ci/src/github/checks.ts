@@ -62,19 +62,15 @@ export interface CheckReporter {
       },
   ): Promise<void>;
   /**
-   * Complete the pipeline's check for a run that ended without reaching its
-   * own completion, such as a cancelled one. It isn't a step: the caller is
-   * the one that makes it durable, and there is no run to read it from, so
-   * the run is only what the sinks read.
+   * Complete every check a cancelled run left in progress, its jobs' as well
+   * as the pipeline's. Jobs run inside the run, so nothing of theirs runs when
+   * it's cancelled; the checks are found on GitHub instead. It isn't a step:
+   * the caller makes it durable, and there is no run to read, so the run is
+   * only what the sinks read.
    */
-  pipelineEnded(
-    args: {
-      run: Pick<
-        CiRunScope,
-        "ci" | "runId" | "functionId" | "pipelineId" | "checkName" | "repo"
-      >;
-    } & Pick<CheckResult, "conclusion" | "title">,
-  ): Promise<void>;
+  runCancelled(args: {
+    run: Pick<CiRunScope, "runId" | "checkName" | "repo">;
+  }): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.
@@ -160,6 +156,11 @@ export interface CheckSink {
     summary: string;
     annotations: NormalisedAnnotation[];
     checkRunId?: number;
+  }): Promise<void>;
+  /** Complete the run's checks that are still in progress, as cancelled. */
+  closeOpen?(args: {
+    run: Pick<CiRunScope, "runId" | "repo">;
+    title: string;
   }): Promise<void>;
   update?(args: {
     run: CiRunScope;
@@ -366,17 +367,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       await complete(run, run.checkName, result, undefined, metadata);
     },
 
-    pipelineEnded: async ({ run, conclusion, title }) => {
-      if (!run.checkName) {
-        return;
+    runCancelled: async ({ run }) => {
+      if (run.checkName) {
+        await sink.closeOpen?.({ run, title: "Cancelled" });
       }
-
-      await sink.complete(
-        completeArgs(run as CiRunScope, "pipeline", run.checkName, {
-          conclusion,
-          title,
-        }),
-      );
     },
 
     jobStart: async ({ run, jobPath, name }) => {
@@ -738,6 +732,42 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       }
     },
 
+    closeOpen: async ({ run, title }) => {
+      const repo = run.repo;
+
+      if (!repo?.sha) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      const open = await octokit.rest.checks.listForRef({
+        owner: repo.owner,
+        repo: repo.name,
+        ref: repo.sha,
+        status: "in_progress",
+        per_page: 100,
+      });
+
+      // Every check a run starts has its ID in its external ID.
+      for (const checkRun of open.data.check_runs) {
+        if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
+          await octokit.rest.checks.update({
+            owner: repo.owner,
+            repo: repo.name,
+            check_run_id: checkRun.id,
+            status: "completed",
+            conclusion: "cancelled",
+            completed_at: new Date().toISOString(),
+            output: {
+              title,
+              summary: checkRun.output?.summary || checkRun.name,
+            },
+          });
+        }
+      }
+    },
+
     update: async ({ run, name, title, checkRunId, detailsUrl }) => {
       const repo = run.repo;
 
@@ -801,7 +831,7 @@ const statusDescription = (title: string, detail?: string): string => {
  */
 export const statusesSink = (provider: GitHubProvider): CheckSink => {
   const post = async (
-    run: CiRunScope,
+    run: Pick<CiRunScope, "repo">,
     name: string,
     detailsUrl: string,
     state: StatusState,
@@ -840,6 +870,39 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
         statusFor(conclusion),
         statusDescription(title, detail),
       );
+    },
+    closeOpen: async ({ run, title }) => {
+      const repo = run.repo;
+
+      if (!repo?.sha) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      const { data } = await octokit.rest.repos.getCombinedStatusForRef({
+        owner: repo.owner,
+        repo: repo.name,
+        ref: repo.sha,
+        per_page: 100,
+      });
+
+      // Each status links to its run, which is the only thing tying it to one.
+      for (const status of data.statuses) {
+        if (
+          status.state === "pending" &&
+          status.context &&
+          status.target_url?.includes(run.runId)
+        ) {
+          await post(
+            { repo },
+            status.context,
+            status.target_url,
+            statusFor("cancelled"),
+            title,
+          );
+        }
+      }
     },
   };
 };
