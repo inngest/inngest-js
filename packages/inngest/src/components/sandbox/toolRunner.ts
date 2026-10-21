@@ -174,9 +174,10 @@ const resultLine = (id: number, name: string, value: unknown): string => {
 
 /**
  * Runs `operation` (a `commands.run` call) with `request.tools` available to
- * the code it runs.
+ * the code it runs. Its steps are in the command's one `$` row, and each tool
+ * call is a `tool` row inside it.
  */
-const followCommand = async (
+export const runCommandWithTools = async (
   host: ToolsHost,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<"exec">,
@@ -470,27 +471,4 @@ export const commandKind = ([
   }
 
   return tsPrograms.has(name) ? "typescript" : "sh";
-};
-
-/**
- * Runs `operation` (a `commands.run` call) with `request.tools` available to
- * the code it runs. All its steps share one trace group, kinded by what the
- * command runs, and each tool call is a `tool` row inside it.
- */
-export const runCommandWithTools = (
-  host: ToolsHost,
-  idOrOptions: StepOptionsOrId,
-  operation: SandboxOperationForAction<"exec">,
-  request: SandboxToolsRequest,
-): Promise<SandboxOperationResultV1> => {
-  const { id, name } = getStepOptions(idOrOptions);
-  const kind = commandKind(operation.input[0].command);
-  const run = () => {
-    return followCommand(host, idOrOptions, operation, request);
-  };
-
-  // A runner's own group of this kind already holds the command's steps.
-  const group = getAsyncCtxSync()?.execution?.span?.at(-1);
-
-  return group?.kind === kind ? run() : withSpan({ id, name, kind }, run);
 };
