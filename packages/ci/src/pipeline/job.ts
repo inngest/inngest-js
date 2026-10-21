@@ -358,7 +358,7 @@ export const builtResult = (
   id: string,
   rest: Pick<
     CacheBuildResult,
-    "createdSnapshots" | "warnings" | "report" | "apis"
+    "createdSnapshots" | "warnings" | "report" | "apis" | "cacheSaved"
   >,
 ): CacheBuildResult => {
   const { outcome, summary, output } = sink;
@@ -670,6 +670,10 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
 
   for (const [name, count] of Object.entries(built.apis ?? {})) {
     run.apis[name as ApiName] += count;
+  }
+
+  for (const [id, ms] of Object.entries(built.cacheSaved ?? {})) {
+    run.cacheSaved.set(id, ms);
   }
 
   for (const id of built.createdSnapshots) {
@@ -1001,7 +1005,7 @@ const jobSteps = async ({
         }
 
         if (builtAs) {
-          await snapshotBuilt(scope, builtAs);
+          await snapshotBuilt(scope, builtAs, startedAt);
           await confirmBuilt(scope, builtAs);
         }
       } catch (error) {
@@ -1180,10 +1184,20 @@ const restoreFromCache = (scope: CiJobScope, hit: CachedSnapshot): string => {
 const snapshotBuilt = async (
   scope: CiJobScope,
   target: CacheTarget,
+  /** When the job started, so the snapshot can say how long it took. */
+  startedAt: number,
 ): Promise<void> => {
   const { run } = scope;
 
-  await saveOutputs(scope);
+  await saveOutputs(
+    scope,
+    scope.machine && scope.config.cache
+      ? {
+          durationMs: Date.now() - startedAt,
+          createdAt: new Date().toISOString(),
+        }
+      : undefined,
+  );
 
   if (!scope.machine) {
     if (scope.config.cache) {

@@ -21,7 +21,7 @@ import {
 } from "../errors.ts";
 import type { GitHubProvider } from "../github/auth.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { pipelineSummary } from "../github/checks.ts";
+import { pipelineSummary, savedFromCache } from "../github/checks.ts";
 import {
   commentAuthor,
   commentBody,
@@ -247,6 +247,7 @@ const newRunScope = ({
     createdSnapshots: new Set(),
     summaries: [],
     openChecks: new Map(),
+    cacheSaved: new Map(),
     attempt,
     maxAttempts,
     willRetry: (error) => {
@@ -796,9 +797,11 @@ const summaryTitle = (run: CiRunScope): string => {
     return sum + summary.durationMs;
   }, 0);
 
+  const saved = savedFromCache(run);
+
   return run.summaries.length === 0
     ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed in ${formatDuration(total)}`;
+    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed in ${formatDuration(total)}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {

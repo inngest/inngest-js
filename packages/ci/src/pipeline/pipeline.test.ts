@@ -4792,6 +4792,55 @@ describe("the lifecycle of a check", () => {
   });
 });
 
+describe("what the cache saved", () => {
+  test("a job that starts from a reused snapshot says how long it took to build", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci, reporter } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const test = ci.job({ id: "test", from: base }, async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await test();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      return reporter.history.filter((entry) => {
+        return entry.name === "pr" && entry.status === "completed";
+      });
+    };
+
+    // Every clock read is a second later than the last, so the build takes time.
+    const realNow = Date.now.bind(Date);
+    let reads = 0;
+
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+
+      return realNow() + reads * 1000;
+    });
+
+    const first = await run().finally(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    expect(first[0]?.title).not.toContain("saved");
+
+    const second = await run();
+
+    expect(second[0]?.title).toMatch(/\(saved \d+s from cache\)$/);
+    expect(second[0]?.summary).toContain("| base |");
+  });
+});
+
 describe("re-running from a check", () => {
   const rerunEvent = (ci: Record<string, unknown>) => {
     return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
