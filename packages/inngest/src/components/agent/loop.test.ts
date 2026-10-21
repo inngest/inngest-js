@@ -167,6 +167,51 @@ describe("agent.loop", () => {
     ]);
   });
 
+  test("dryRun simulates tools that are not reads, in the same step", async () => {
+    const spent: string[] = [];
+    const charge = tool.step({
+      input: z.object({ amount: z.number() }),
+      effect: "write",
+      run: ({ amount }) => {
+        spent.push(String(amount));
+
+        return "charged";
+      },
+    });
+    const { ran, steps, requests } = await run(
+      [call("charge", { amount: 5 }), call("add", { a: 1, b: 2 }), say("ok")],
+      { tools: { charge, add: { ...add, effect: "read" } }, dryRun: true },
+    );
+
+    expect(spent).toEqual([]);
+    expect(ran).toEqual([
+      "agent:model:1",
+      "agent:1.0:charge",
+      "agent:model:2",
+      "agent:2.0:add",
+      "agent:model:3",
+    ]);
+    expect(
+      steps.find((op) => {
+        return op.userland?.id === "agent:1.0:charge";
+      })?.displayName,
+    ).toBe("Would call: charge");
+    expect(requests[1]?.messages.at(-1)).toMatchObject({
+      results: [
+        {
+          content: JSON.stringify({
+            dryRun: true,
+            wouldCall: "charge",
+            args: { amount: 5 },
+          }),
+        },
+      ],
+    });
+    expect(requests[2]?.messages.at(-1)).toMatchObject({
+      results: [{ content: "3" }],
+    });
+  });
+
   test("stops at maxTurns", async () => {
     const { requests, result } = await run(
       [call("add", { a: 1, b: 1 }), call("add", { a: 2, b: 2 })],

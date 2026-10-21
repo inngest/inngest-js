@@ -14,7 +14,10 @@ import {
   type ToolJsonDefinition,
   toolDefinitions,
 } from "../sandbox/tools.ts";
+import { anthropic } from "./anthropic.ts";
 import { clipContext } from "./context.ts";
+import { dryRun as simulateTools } from "./dryRun.ts";
+import { openai } from "./openai.ts";
 
 /**
  * One message of the conversation. The loop keeps the `content` of an
@@ -152,6 +155,14 @@ export interface AgentLoopOptions {
    * result to react to.
    */
   tools: SandboxTools;
+
+  /**
+   * Run for real only the tools whose `effect` is `"read"`; every other
+   * tool answers with what it would have done (see `dryRun()`). Set it from
+   * the trigger, such as `event.name === "refund/preview"`, so it is the same
+   * on every execution of the run.
+   */
+  dryRun?: boolean;
 
   /**
    * The most characters of one tool result the model sees; longer ones keep
@@ -360,6 +371,7 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
     system,
     tools,
     maxTurns = 40,
+    dryRun = false,
     maxToolOutput = 8_000,
     parallelTools = true,
     context = { maxChars: 200_000 },
@@ -426,7 +438,11 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
 
     const run = (call: AgentToolCall, index: number) => {
       return runTool(
-        { ...options, maxToolOutput },
+        {
+          ...options,
+          tools: dryRun ? simulateTools(tools) : tools,
+          maxToolOutput,
+        },
         turn,
         `${id}:${turn}.${index}:${call.name}`,
         call,
@@ -532,4 +548,4 @@ const model = (fn: AgentModel): AgentModel => {
   return fn;
 };
 
-export const agent = { loop, model, toolError };
+export const agent = { loop, model, toolError, anthropic, openai };

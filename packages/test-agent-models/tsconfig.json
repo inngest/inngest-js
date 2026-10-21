@@ -1,0 +1,5 @@
+{
+  "extends": "../inngest/tsconfig.json",
+  "compilerOptions": { "rootDir": "../", "types": ["node", "vitest/globals"] },
+  "include": ["./*.ts"]
+}

@@ -1,10 +1,11 @@
 /**
  * @module
  * EXPERIMENTAL: The coding-agent primitives exported from `inngest/experimental`:
- * `agent.loop()`, `codeTools()` and `repo()`.
+ * `agent.loop()`, `agent.anthropic()`, `agent.openai()`, `codeTools()`, `dryRun()` and `repo()`.
  */
 export type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 export { codeTools } from "./codeTools.ts";
+export { dryRun } from "./dryRun.ts";
 export type {
   AgentLoopOptions,
   AgentLoopResult,

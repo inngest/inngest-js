@@ -86,6 +86,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
   const tools: Record<CodeToolName, SandboxTool> = {
     read: tool.group({
+      effect: "read",
       description:
         "Read a file with line numbers. Use from and to to read a range.",
       input: z.object({
@@ -156,6 +157,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
     }),
 
     search: tool.group({
+      effect: "read",
       description: "Search file contents with a regular expression.",
       input: z.object({ pattern: z.string(), path: z.string().optional() }),
       run: ({ pattern, path = "." }) => {

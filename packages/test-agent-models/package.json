@@ -1,0 +1,17 @@
+{
+  "name": "@inngest/test-agent-models",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Checks agent.anthropic() and agent.openai() against the real vendor SDKs, which only this package installs",
+  "scripts": {
+    "test": "vitest run",
+    "test:types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
+    "@types/node": "^22.0.0",
+    "openai": "^7.41.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.0.8"
+  }
+}

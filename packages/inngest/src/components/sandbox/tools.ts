@@ -82,10 +82,18 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
+ * What a tool does to the world: `"read"` changes nothing, `"write"` changes
+ * something, `"destructive"` changes something that can't be undone.
+ */
+export type ToolEffect = "read" | "write" | "destructive";
+
+/**
  * A tool declared with `tool.step()` or `tool.group()`.
  */
 export interface SandboxTool {
   readonly description?: string;
+  readonly effect?: ToolEffect | ((input: never) => ToolEffect);
+  readonly simulate?: (input: never) => unknown;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
   readonly input?: ToolInput;
@@ -155,6 +163,19 @@ export interface ToolDefinition<
    * What the tool does, for the people reading the code.
    */
   description?: string;
+
+  /**
+   * What the tool does to the world, or a function of the call's arguments
+   * (a generic HTTP tool is a read for GET). A dry run runs only `"read"`
+   * tools; a tool with no `effect` counts as `"write"`.
+   */
+  effect?: ToolEffect | ((input: ToolInputOf<TInput>) => ToolEffect);
+
+  /**
+   * What a dry run gives back instead of running the tool. Default
+   * `{ dryRun: true, wouldCall: name, args }`.
+   */
+  simulate?: (input: ToolInputOf<TInput>) => unknown;
 
   /**
    * What the tool's step is called in a trace, such as `Look up: cus_1`. A
@@ -299,7 +320,7 @@ const functionTool = (
   } as SandboxTool;
 };
 
-const toTool = (entry: SandboxToolEntry): SandboxTool => {
+export const toTool = (entry: SandboxToolEntry): SandboxTool => {
   if (typeof entry === "function") {
     return { run: entry };
   }
