@@ -4792,6 +4792,36 @@ describe("the lifecycle of a check", () => {
   });
 });
 
+describe("how long a pipeline took", () => {
+  test("the title is the clock time, not the sum of the jobs' times", async () => {
+    const { ci, reporter } = setup();
+
+    const jobs = ["a", "b", "c"].map((id) => {
+      return ci.job(id, async () => {
+        await $`pnpm ${id}`;
+      });
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all(
+          jobs.map((job) => {
+            return job();
+          }),
+        );
+      }),
+      { event: prEvent },
+    );
+
+    const done = reporter.history.find((entry) => {
+      return entry.name === "pr" && entry.status === "completed";
+    });
+
+    expect(done?.title).toMatch(/^3 jobs passed in \d+(ms|s)$/);
+    expect(done?.summary).toMatch(/^\*\*Took \d+(ms|s)\*\*/);
+  });
+});
+
 describe("what the cache saved", () => {
   test("a job that starts from a reused snapshot says how long it took to build", async () => {
     const api = createFakeSandboxApi();
