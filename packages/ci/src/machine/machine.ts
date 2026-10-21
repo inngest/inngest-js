@@ -199,7 +199,7 @@ const maxOutputsBytes = 1024 * 1024;
 
 /** A shell command that adds `<ip> localhost` to `/etc/hosts` unless it's there. */
 const ensureLocalhost = (ip: string): string => {
-  return `((grep -q "^${ip}[[:space:]].*localhost" /etc/hosts || echo "${ip} localhost" >> /etc/hosts) 2>/dev/null || true)`;
+  return `((grep -Eq "^${ip}[[:space:]]+([^#]*[[:space:]])?localhost([[:space:]]|$)" /etc/hosts || echo "${ip} localhost" >> /etc/hosts) 2>/dev/null || true)`;
 };
 
 /**
