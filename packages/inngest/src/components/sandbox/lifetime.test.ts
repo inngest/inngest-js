@@ -165,6 +165,38 @@ describe("await using a sandbox", () => {
     expect(calls.destroys).toBe(1);
   });
 
+  test("retries a later step that fails after the scope ended", async () => {
+    const { client } = createScopeClient();
+    const fn = client.createFunction(
+      { id: "sandbox-later-step", triggers: [{ event: "sandbox/using" }] },
+      async ({ step }) => {
+        {
+          await using _sandbox = await step.sandbox.create(
+            "box",
+            createOptions,
+          );
+        }
+
+        await step.run("after", () => {
+          throw new Error("temporary");
+        });
+      },
+    );
+
+    const [box, destroy] = await runSteps(fn, 2);
+    const result = await runFnWithStack(
+      fn,
+      {
+        [box!.id]: { id: box!.id, data: box!.data },
+        [destroy!.id]: { id: destroy!.id, data: destroy!.data },
+      },
+      { attempt: 0, maxAttempts: 5 },
+    );
+
+    assert(result.type === "step-ran");
+    expect(result.step.op).toBe("StepError");
+  });
+
   test("leaves an error thrown with no scope retriable", async () => {
     const { client, calls } = createScopeClient();
     const fn = client.createFunction(
