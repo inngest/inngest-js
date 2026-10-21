@@ -184,6 +184,7 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private failuresAreFinal = false;
   private middlewareManager: MiddlewareManager;
   /**
    * Close the stream via {@link streamCloseSucceeded}, {@link streamCloseFailed},
@@ -380,6 +381,10 @@ class InngestExecutionEngine
     }
 
     return this.execution;
+  }
+
+  public failFinally(): void {
+    this.failuresAreFinal = true;
   }
 
   public addMetadata(
@@ -1940,7 +1945,7 @@ class InngestExecutionEngine
     const areRetriesExhausted =
       this.fnArg.maxAttempts &&
       this.fnArg.maxAttempts - 1 === this.fnArg.attempt;
-    if (areRetriesExhausted) {
+    if (areRetriesExhausted || this.failuresAreFinal) {
       return false;
     }
 

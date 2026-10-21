@@ -7,7 +7,6 @@
 import type { StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
-import { NonRetriableError } from "../NonRetriableError.ts";
 import { StepError } from "../StepError.ts";
 import type {
   DurableSandbox,
@@ -28,28 +27,12 @@ export type GroupSandbox = <T>(
   callback: (sandbox: DurableSandbox) => Promise<T>,
 ) => Promise<T>;
 
-const retriesRemain = (): boolean => {
-  const ctx = getAsyncCtxSync()?.execution?.ctx;
-
-  return !ctx?.maxAttempts || ctx.attempt < ctx.maxAttempts - 1;
-};
-
-/**
- * Whether an error ends the sandbox. A final error, or any error on the last
- * attempt, does. Any other error is about to be retried, and the retry replays
- * the memoized creation, so the sandbox must stay alive for it.
- */
-const isFinal = (error: unknown): boolean => {
-  return (
-    error instanceof StepError ||
-    error instanceof NonRetriableError ||
-    !retriesRemain()
-  );
-};
-
 /**
  * Destroy a sandbox in a step. A destroy that failed for good is on the trace
  * as a warning, and must not change the outcome of the run.
+ *
+ * A retry of the function couldn't use the destroyed sandbox, so after this an
+ * error the function goes on to throw is final.
  */
 export const destroyQuietly = async (
   sandbox: DurableSandbox,
@@ -62,6 +45,8 @@ export const destroyQuietly = async (
       throw error;
     }
   }
+
+  getAsyncCtxSync()?.execution?.instance.failFinally();
 };
 
 /**
@@ -106,21 +91,14 @@ export const withSandbox = <T>(
     },
     async () => {
       const sandbox = await tools.create({ ...steps.create, id }, options);
-      let failure: { error: unknown } | undefined;
 
       try {
         return await callback(sandbox);
-      } catch (error) {
-        failure = { error };
-
-        throw error;
       } finally {
-        if (!failure || isFinal(failure.error)) {
-          await destroyQuietly(sandbox, {
-            ...steps.destroy,
-            id: `${id}:destroy`,
-          });
-        }
+        await destroyQuietly(sandbox, {
+          ...steps.destroy,
+          id: `${id}:destroy`,
+        });
       }
     },
   );

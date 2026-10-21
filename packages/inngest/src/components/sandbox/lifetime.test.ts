@@ -155,11 +155,30 @@ describe("await using a sandbox", () => {
       },
     );
 
-    expect(await runToEnd(fn)).toMatchObject({
+    expect(await runToEnd(fn, { attempt: 0, maxAttempts: 5 })).toMatchObject({
       type: "function-rejected",
       ran: ["box", "box:destroy"],
+      retriable: false,
     });
     expect(calls.destroys).toBe(1);
+  });
+
+  test("leaves an error thrown with no scope retriable", async () => {
+    const { client, calls } = createScopeClient();
+    const fn = client.createFunction(
+      { id: "sandbox-no-scope", triggers: [{ event: "sandbox/using" }] },
+      async ({ step }) => {
+        await step.sandbox.create("box", createOptions);
+        throw new Error("boom");
+      },
+    );
+
+    expect(await runToEnd(fn, { attempt: 0, maxAttempts: 5 })).toMatchObject({
+      type: "function-rejected",
+      ran: ["box"],
+      retriable: true,
+    });
+    expect(calls.destroys).toBe(0);
   });
 });
 

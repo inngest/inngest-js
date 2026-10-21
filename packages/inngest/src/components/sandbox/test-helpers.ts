@@ -150,7 +150,12 @@ export const runToEnd = async (
     const result = await runFnWithStack(fn, stepState, opts);
 
     if (result.type !== "step-ran") {
-      return { type: result.type, ran, steps };
+      return {
+        type: result.type,
+        ran,
+        steps,
+        retriable: result.type === "function-rejected" && result.retriable,
+      };
     }
 
     const { id, data, error } = result.step;
