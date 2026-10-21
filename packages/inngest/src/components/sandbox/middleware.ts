@@ -1,7 +1,12 @@
 import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
-import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
+import {
+  type MetadataKind,
+  type MetadataOpcode,
+  metadataDisplay,
+  metadataDisplayKind,
+} from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
@@ -21,6 +26,7 @@ import { createOneShotRunner, type OneShotRunner } from "./runners.ts";
 import { runCommandWithTools } from "./toolRunner.ts";
 import {
   type SandboxTraceMetadata,
+  sandboxDisplayHints,
   sandboxMetadataKind,
   sandboxTraceMetadata,
 } from "./trace.ts";
@@ -72,10 +78,21 @@ const describeStep = (
   operation: unknown,
   outcome: { result: SandboxOperationResultV1 } | { error: unknown },
 ): void => {
+  let metadata: SandboxTraceMetadata | undefined;
+
   addStepMetadata(sandboxMetadataKind, () => {
-    return sandboxTraceMetadata(
+    metadata = sandboxTraceMetadata(
       parseSandboxOperation(operation),
       "result" in outcome ? outcome : { error: getSandboxError(outcome.error) },
+    );
+
+    return metadata;
+  });
+
+  addStepMetadata(metadataDisplayKind, () => {
+    return (
+      metadata &&
+      metadataDisplay(sandboxMetadataKind, metadata, sandboxDisplayHints)
     );
   });
 

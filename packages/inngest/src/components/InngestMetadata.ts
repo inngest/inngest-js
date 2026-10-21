@@ -493,3 +493,40 @@ export const metadataMiddleware = () => {
 
   return MetadataMiddleware;
 };
+
+/**
+ * Metadata kind that carries display hints for other metadata. It is ordinary
+ * userland metadata, so the server needs no knowledge of it.
+ */
+export const metadataDisplayKind = "userland.display";
+
+/**
+ * How the dashboard shows one metadata value: a bare format, or a format with
+ * a `description` shown as a tooltip on the key.
+ */
+export type MetadataDisplayHint =
+  | MetadataDisplayFormat
+  | { format?: MetadataDisplayFormat; description?: string };
+
+export type MetadataDisplayFormat = "text" | "mono" | "link" | "code";
+
+/**
+ * Flat `display.<kind>.<key>` entries for the keys of `values` that have a
+ * hint. Hints are flat because the server replaces a kind's values on every
+ * write, so every update has to send all of its own.
+ */
+export const metadataDisplay = (
+  kind: MetadataKind,
+  values: MetadataValues,
+  hints: Record<string, MetadataDisplayHint>,
+): Record<string, MetadataDisplayHint> => {
+  return Object.fromEntries(
+    Object.entries(hints)
+      .filter(([key]) => {
+        return key in values;
+      })
+      .map(([key, hint]) => {
+        return [`display.${kind}.${key}`, hint];
+      }),
+  );
+};

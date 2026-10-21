@@ -1,6 +1,7 @@
 import type { StepOptionsOrId, StepSpan } from "../../types.ts";
 import { version } from "../../version.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
+import type { MetadataDisplayHint } from "../InngestMetadata.ts";
 import { getStepOptions } from "../InngestStepTools.ts";
 import {
   operationProcessId,
@@ -10,6 +11,7 @@ import {
   type SandboxOperationV1,
 } from "./protocol.ts";
 import type { SandboxAction, SandboxError } from "./types.ts";
+import { decodeOutputData } from "./validation.ts";
 
 /**
  * The metadata kind attached to every step behind `step.sandbox`.
@@ -73,6 +75,8 @@ export type SandboxTraceMetadata = {
   exit_code?: number;
   termination_signal?: number;
   output_truncated?: boolean;
+  stdout_tail?: string;
+  stderr_tail?: string;
   snapshot_id?: string;
   snapshot_status?: string;
   error_code?: string;
@@ -142,6 +146,31 @@ const targetMetadata = (
   };
 };
 
+const maxOutputTailChars = 2_048;
+
+const outputTail = (
+  data: string,
+  encoding: "utf8" | "base64",
+): string | undefined => {
+  const text = new TextDecoder().decode(
+    decodeOutputData(data, encoding, "sandbox exec output"),
+  );
+
+  return text.slice(-maxOutputTailChars) || undefined;
+};
+
+/**
+ * How the dashboard shows `inngest.sandbox` values; see
+ * `metadataDisplay`.
+ */
+export const sandboxDisplayHints: Record<string, MetadataDisplayHint> = {
+  command_display: { format: "code", description: "What the statement ran" },
+  exit_code: { format: "mono", description: "The command's exit status" },
+  sandbox_id: "mono",
+  stdout_tail: { format: "code", description: "The end of stdout" },
+  stderr_tail: { format: "code", description: "The end of stderr" },
+};
+
 const resultMetadata = (
   result: SandboxOperationResultV1,
 ): Partial<SandboxTraceMetadata> => {
@@ -158,6 +187,8 @@ const resultMetadata = (
       return {
         exit_code: result.result.exitCode,
         output_truncated: result.result.output.truncated || undefined,
+        stdout_tail: outputTail(result.result.stdout, result.result.encoding),
+        stderr_tail: outputTail(result.result.stderr, result.result.encoding),
       };
     case "process.start":
     case "process.wait":

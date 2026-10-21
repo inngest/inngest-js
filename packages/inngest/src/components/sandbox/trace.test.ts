@@ -216,7 +216,29 @@ describe("step.sandbox trace metadata", () => {
           sandbox_name: "ci-box",
         },
       },
+      {
+        kind: "userland.display",
+        scope: "step",
+        op: "merge",
+        values: { "display.inngest.sandbox.sandbox_id": "mono" },
+      },
     ]);
+    expect(exec?.metadata).toContainEqual({
+      kind: "userland.display",
+      scope: "step",
+      op: "merge",
+      values: {
+        "display.inngest.sandbox.command_display": {
+          format: "code",
+          description: "What the statement ran",
+        },
+        "display.inngest.sandbox.exit_code": {
+          format: "mono",
+          description: "The command's exit status",
+        },
+        "display.inngest.sandbox.sandbox_id": "mono",
+      },
+    });
     expect(sandboxEntries(exec)).toEqual([
       expect.objectContaining({
         action: "exec",
