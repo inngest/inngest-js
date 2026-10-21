@@ -261,10 +261,13 @@ const run = (
 };
 
 const stdoutOf = (result: Awaited<ReturnType<typeof run>>): string => {
-  return Buffer.from(
-    (result as { result: { stdout: string } }).result.stdout,
-    "base64",
-  ).toString();
+  const { stdout, encoding } = (
+    result as { result: { stdout: string; encoding: "utf8" | "base64" } }
+  ).result;
+
+  return encoding === "utf8"
+    ? stdout
+    : Buffer.from(stdout, "base64").toString();
 };
 
 /**
