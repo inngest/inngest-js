@@ -4578,19 +4578,56 @@ describe("the pipeline's commit status", () => {
       vi.unstubAllEnvs();
     }
   });
-});
 
-describe("a cancelled run's commit status", () => {
-  test.each([
-    ["cancelled", "inngest/function.cancelled", ["pr"]],
-    ["failed", "inngest/function.failed", []],
-  ])("a run that was %s", async (_how, eventName, expected) => {
+  test("a handler that resolves is a success, however many jobs failed", async () => {
     vi.stubEnv("INNGEST_CI_GITHUB", "live");
 
     try {
-      const { ci, gh } = setupGitHub();
+      const { api, ci, gh } = setupGitHub();
 
       gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.allSettled([lint()]);
+      });
+
+      const result = await runFunction(pipeline, { event: prEvent });
+
+      expect(result.type).toBe("function-resolved");
+
+      const statuses = gh.requests
+        .map((request) => {
+          return request.body as { context: string; state: string };
+        })
+        .filter((status) => {
+          return status.context === "pr";
+        });
+
+      expect(statuses.at(-1)).toMatchObject({ state: "success" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("a cancelled run's checks", () => {
+  const cancelWith = async (
+    reporter: "checks" | "statuses",
+    eventName: string,
+    seed: (gh: ReturnType<typeof setupGitHub>["gh"]) => void,
+  ) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub(reporter);
+
+      seed(gh);
 
       ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
 
@@ -4611,23 +4648,84 @@ describe("a cancelled run's commit status", () => {
 
       expect(ended.type).toBe("function-resolved");
 
-      expect(
-        gh.requests.map((request) => {
-          const status = request.body as {
-            context: string;
-            description: string;
-          };
-
-          return [status.context, status.description];
-        }),
-      ).toEqual(
-        expected.map((context) => {
-          return [context, "Cancelled"];
-        }),
-      );
+      return gh.requests.filter((request) => {
+        return request.method !== "GET";
+      });
     } finally {
       vi.unstubAllEnvs();
     }
+  };
+
+  const url = (runId: string) => {
+    return `http://localhost:8288/run?runID=${runId}`;
+  };
+
+  test.each([
+    ["cancelled", "inngest/function.cancelled", ["pr", "pr / lint"]],
+    ["failed", "inngest/function.failed", []],
+  ])("statuses of a run that was %s", async (_how, eventName, expected) => {
+    const posts = await cancelWith("statuses", eventName, (gh) => {
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/status", {
+        statuses: [
+          { context: "pr", state: "pending", target_url: url("01TESTRUN") },
+          {
+            context: "pr / lint",
+            state: "pending",
+            target_url: url("01TESTRUN"),
+          },
+          {
+            context: "pr / test",
+            state: "success",
+            target_url: url("01TESTRUN"),
+          },
+          { context: "other", state: "pending", target_url: url("01OTHER") },
+        ],
+      });
+    });
+
+    expect(
+      posts.map((request) => {
+        const status = request.body as { context: string; description: string };
+
+        expect(status.description).toBe("Cancelled");
+
+        return status.context;
+      }),
+    ).toEqual(expected);
+  });
+
+  test("check runs of a cancelled run, jobs included, are completed as cancelled", async () => {
+    const posts = await cancelWith(
+      "checks",
+      "inngest/function.cancelled",
+      (gh) => {
+        gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+          total_count: 3,
+          check_runs: [
+            { id: 1, name: "pr", external_id: "01TESTRUN:pipeline" },
+            { id: 2, name: "pr / lint", external_id: "01TESTRUN:lint" },
+            { id: 3, name: "other", external_id: "01OTHER:pipeline" },
+          ],
+        });
+
+        gh.route("PATCH /repos/inngest/inngest-js/check-runs/1", { id: 1 });
+        gh.route("PATCH /repos/inngest/inngest-js/check-runs/2", { id: 2 });
+      },
+    );
+
+    expect(
+      posts.map((request) => {
+        return [
+          request.path,
+          (request.body as { conclusion: string }).conclusion,
+        ];
+      }),
+    ).toEqual([
+      [expect.stringContaining("/check-runs/1"), "cancelled"],
+      [expect.stringContaining("/check-runs/2"), "cancelled"],
+    ]);
   });
 });
 
