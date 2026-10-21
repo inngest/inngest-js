@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { ErrorClass } from "../../errors.ts";
 import { fenceFor, formatDuration } from "../../util.ts";
 import { type CalloutKind, callout } from "./callout.ts";
 import { type CommandRow, commandsTable } from "./commands.ts";
@@ -18,16 +19,7 @@ import {
   rerunJobAction,
 } from "./types.ts";
 
-/** What went wrong, which decides the wording and the first button. */
-export type ErrorClass =
-  | "sandbox"
-  | "timeout"
-  | "oom"
-  | "signal"
-  | "test"
-  | "code"
-  | "infra"
-  | "failure";
+export type { ErrorClass };
 
 /** A line of an excerpt, marked when it is the error itself. */
 export interface ExcerptLine {
@@ -48,6 +40,8 @@ export interface JobFailure {
   errorClass: ErrorClass;
   /** The reason, for the title. */
   title: string;
+  /** The failing command's step, which is where to look in the trace. */
+  stepId?: string;
   /** The callout's text, in markdown, without a leading symbol. */
   headline: string;
   /** Files and lines to open first. */
@@ -257,7 +251,13 @@ const failed = (input: JobInput, failure: JobFailure): CheckPayload => {
             : link(target.label, target.url);
         })),
     input.step ? link("Failing step", input.step) : undefined,
-    link("Trace", input.run),
+    // There is no link to a step in the trace, so the run's link says which.
+    link(
+      failure.stepId && !input.step
+        ? `Trace, failing step \`${failure.stepId}\``
+        : "Trace",
+      input.run,
+    ),
     parentLink(input),
     commitLink(input),
     prLink(input),

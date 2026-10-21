@@ -283,11 +283,13 @@ const commandFailure = (
   error: CommandFailedError,
 ): JobFailure => {
   const output = stripAnsi(`${error.stderrTail}\n${error.stdoutTail}`);
-  const errorClass = classifyCommand({
-    exitCode: error.exitCode,
-    stdout: error.stdoutTail,
-    stderr: error.stderrTail,
-  });
+  const errorClass =
+    error.errorClass ??
+    classifyCommand({
+      exitCode: error.exitCode,
+      stdout: error.stdoutTail,
+      stderr: error.stderrTail,
+    });
 
   const command = commandText(error.command);
   const exit = `(exit ${error.exitCode})`;
@@ -390,7 +392,10 @@ const failureReason = (error: CommandFailedError): string => {
 /** How a job's error is told on its check. */
 export const failureOf = (error: unknown, scope: CiJobScope): JobFailure => {
   if (error instanceof CommandFailedError) {
-    return commandFailure(scope, error);
+    return {
+      ...commandFailure(scope, error),
+      ...(error.stepId ? { stepId: error.stepId } : {}),
+    };
   }
 
   if (error instanceof CommandTimeoutError) {
@@ -400,6 +405,7 @@ export const failureOf = (error: unknown, scope: CiJobScope): JobFailure => {
       errorClass: "timeout",
       title: `Timed out: \`${command}\` ran past its ${error.timeout} limit`,
       headline: `**Timed out.** \`${command}\` was stopped after ${error.timeout}.`,
+      ...(error.stepId ? { stepId: error.stepId } : {}),
     };
   }
 

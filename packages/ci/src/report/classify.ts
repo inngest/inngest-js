@@ -6,7 +6,7 @@
  * @module
  */
 
-import type { ErrorClass } from "../github/render/job.ts";
+import type { ErrorClass } from "../errors.ts";
 import { stripAnsi } from "../util.ts";
 
 /**

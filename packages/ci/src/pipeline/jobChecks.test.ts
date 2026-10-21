@@ -163,4 +163,80 @@ describe("a job's check", () => {
     );
     expect(failed?.summary).toContain("👉 Press **Re-run job**");
   });
+
+  test("a failure names its step, since the trace has no link to a step", async () => {
+    const { api, ci, reporter } = setup();
+
+    api.script([{ match: "pnpm test", exitCode: 1, stderr: "boom" }]);
+
+    const test_ = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await test_();
+      }),
+      { event: prEvent },
+    );
+
+    const failed = entries(reporter, "pr / test", "completed")[0];
+
+    expect(failed?.summary).toContain(
+      "[Trace, failing step `test › pnpm test`](http://localhost:8288/run?runID=",
+    );
+  });
+
+  test.each([
+    {
+      why: "a process that was killed",
+      script: { match: "pnpm test", exitCode: 137, stderr: "Killed" },
+      callout: "> [!WARNING]",
+      says: "**Killed, probably out of memory.**",
+      command: () => {
+        return $`pnpm test`;
+      },
+    },
+    {
+      why: "a process stopped by SIGTERM",
+      script: { match: "pnpm test", exitCode: 143 },
+      callout: "> [!CAUTION]",
+      says: "**Stopped by a signal.**",
+      command: () => {
+        return $`pnpm test`;
+      },
+    },
+    {
+      why: "a command that passes its timeout",
+      script: { match: "pnpm test", execTimesOut: true },
+      callout: "> [!CAUTION]",
+      says: "**Timed out.** `pnpm test` was stopped after 30s.",
+      command: () => {
+        return $`pnpm test`.timeout("30s");
+      },
+    },
+  ])(
+    "tells $why in its own words",
+    async ({ script, callout, says, command }) => {
+      const { api, ci, reporter } = setup();
+
+      api.script([script]);
+
+      const test_ = ci.job("test", async () => {
+        await command();
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await test_();
+        }),
+        { event: prEvent },
+      );
+
+      const failed = entries(reporter, "pr / test", "completed")[0];
+
+      expect(failed?.summary).toContain(callout);
+      expect(failed?.summary).toContain(says);
+    },
+  );
 });

@@ -27,6 +27,7 @@ import {
   requireJobScope,
 } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
+import { classifyCommand } from "../report/classify.ts";
 import type {
   BackgroundProcess,
   Command,
@@ -401,11 +402,12 @@ class CommandBuilder implements Command {
     };
   }
 
-  private timeoutError(scope: CiJobScope): CommandTimeoutError {
+  private timeoutError(scope: CiJobScope, stepId: string): CommandTimeoutError {
     return new CommandTimeoutError({
       command: this.state.argv,
       timeout: formatDuration(this.state.timeoutMs ?? 0, true),
       jobPath: scope.path,
+      stepId,
     });
   }
 
@@ -460,7 +462,11 @@ class CommandBuilder implements Command {
         const result = await this.runOnce(scope, attemptId);
 
         if (result.exitCode !== 0 && !this.state.nothrow) {
-          await recordFailure(scope, attemptId, this.failure(scope, result));
+          await recordFailure(
+            scope,
+            attemptId,
+            this.failure(scope, result, stepId),
+          );
         }
 
         return result;
@@ -489,7 +495,7 @@ class CommandBuilder implements Command {
         return result;
       }
 
-      const error = this.failure(scope, result);
+      const error = this.failure(scope, result, stepId);
 
       if (attempt >= attempts) {
         throw error;
@@ -508,8 +514,11 @@ class CommandBuilder implements Command {
   private failure(
     scope: CiJobScope,
     result: CommandResult,
+    stepId: string,
   ): CommandFailedError {
     return new CommandFailedError({
+      errorClass: classifyCommand(result),
+      stepId,
       command: this.state.argv,
       exitCode: result.exitCode,
       stdoutTail: result.stdout,
@@ -570,7 +579,7 @@ class CommandBuilder implements Command {
 
       await this.state.onTimeout?.();
 
-      throw this.timeoutError(scope);
+      throw this.timeoutError(scope, stepId);
     }
   }
 
@@ -613,7 +622,7 @@ class CommandBuilder implements Command {
         signal: 9,
       });
 
-      throw this.timeoutError(scope);
+      throw this.timeoutError(scope, stepId);
     }
 
     const result = await readResult({
