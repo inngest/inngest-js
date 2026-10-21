@@ -29,6 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { jobCheck } from "../github/render/job.ts";
+import type { CheckAction, CheckPayload } from "../github/render/types.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
 import {
   deleteOrphanSnapshots,
@@ -47,7 +48,7 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration, parseRepo } from "../util.ts";
+import { errorMessage, formatDuration, parseRepo } from "../util.ts";
 import type { BuildDone } from "./buildLock.ts";
 import { buildDoneEvent, endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
@@ -61,6 +62,7 @@ import {
   runStartMetadata,
 } from "./metadata.ts";
 import { stepOptions, steps } from "./names.ts";
+import { markJob, pipelinePayload } from "./pipelineReport.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -259,6 +261,7 @@ const newRunScope = ({
     jobCalls: new Map(),
     createdSnapshots: new Set(),
     summaries: [],
+    jobGraph: new Map(),
     openChecks: new Map(),
     cacheSaved: new Map(),
     attempt,
@@ -541,14 +544,30 @@ const conclusionOf = (outcome: Outcome): CheckConclusion => {
 const describeOutcome = (
   run: CiRunScope,
   outcome: Outcome,
-): { title: string; summary: string; annotations: CheckAnnotation[] } => {
+): {
+  title: string;
+  summary: string;
+  text?: string;
+  actions?: CheckAction[];
+  annotations: CheckAnnotation[];
+} => {
   switch (outcome.kind) {
     case "ran": {
       const skip = asSkip(outcome.result);
 
+      if (skip) {
+        return {
+          title: `Nothing to do: ${skip.reason}`,
+          summary: pipelineSummaryWithReports(run),
+          annotations: run.pipelineAnnotations,
+        };
+      }
+
       return {
-        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
-        summary: pipelineSummaryWithReports(run),
+        ...withPipelineReports(
+          run,
+          pipelinePayload(run, "passed", pipelineNotes(run)),
+        ),
         annotations: run.pipelineAnnotations,
       };
     }
@@ -562,9 +581,24 @@ const describeOutcome = (
     }
 
     case "failed": {
+      const jobFailed = [...run.jobGraph.values()].some((node) => {
+        return node.state === "failed";
+      });
+
+      const payload = pipelinePayload(run, "failed", {
+        ...pipelineNotes(run),
+        ...(jobFailed
+          ? {}
+          : {
+              error: {
+                title: errorTitle(outcome.error, run),
+                message: errorMessage(outcome.error).split("\n")[0] ?? "",
+              },
+            }),
+      });
+
       return {
-        title: errorTitle(outcome.error, run),
-        summary: pipelineSummaryWithReports(run),
+        ...withPipelineReports(run, payload),
         annotations: run.pipelineAnnotations,
       };
     }
@@ -790,6 +824,8 @@ const closeJobChecks = async (
   });
 
   for (const job of closed) {
+    markJob(run, job.jobPath, { state: "stopped" });
+
     if (job.conclusion === "cancelled" && job.title === cancelledTitle) {
       run.summaries.push({
         path: job.jobPath,
@@ -799,6 +835,34 @@ const closeJobChecks = async (
       });
     }
   }
+};
+
+/** What the run has to say beside its jobs: its warnings and kept machines. */
+const pipelineNotes = (run: CiRunScope): { notes: string[] } => {
+  return {
+    notes: [
+      ...run.warnings.map((warning) => {
+        return `📝 ${warning}`;
+      }),
+      ...run.summaries
+        .filter((summary) => {
+          return summary.keptSnapshotId;
+        })
+        .map((summary) => {
+          return `📌 \`${summary.path}\` kept as snapshot \`${summary.keptSnapshotId}\``;
+        }),
+    ],
+  };
+};
+
+/** The payload, with what the pipeline's own code reported below it. */
+const withPipelineReports = (run: CiRunScope, payload: CheckPayload) => {
+  return {
+    title: payload.title,
+    summary: [payload.summary, ...run.pipelineSummaries].join("\n\n"),
+    ...(payload.text === undefined ? {} : { text: payload.text }),
+    actions: payload.actions,
+  };
 };
 
 const pipelineSummaryWithReports = (run: CiRunScope): string => {
@@ -813,21 +877,6 @@ const failedJobsTitle = (run: CiRunScope): string | undefined => {
   return failed.length === 0
     ? undefined
     : `${failed.length} of ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} failed`;
-};
-
-const summaryTitle = (run: CiRunScope): string => {
-  const failed = failedJobsTitle(run);
-
-  if (failed) {
-    return failed;
-  }
-
-  const saved = savedFromCache(run);
-  const wall = wallTime(run);
-
-  return run.summaries.length === 0
-    ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed${wall === undefined ? "" : ` in ${formatDuration(wall)}`}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {

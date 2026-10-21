@@ -4422,7 +4422,11 @@ describe("failures that retrying cannot fix", () => {
       }),
     ).toEqual([
       ["pr / build", "failure", "❌ machine didn't start in 2m"],
-      ["pr", "failure", "1 of 1 job failed: build: machine didn't start in 2m"],
+      [
+        "pr",
+        "failure",
+        "❌ 1 of 1 job failed: build: machine didn't start in 2m",
+      ],
     ]);
   });
 
@@ -4570,7 +4574,7 @@ describe("the pipeline's commit status", () => {
       expect(statuses.at(0)).toMatchObject({ state: "pending" });
       expect(statuses.at(-1)).toMatchObject({
         state: "failure",
-        description: "1 of 2 jobs failed: lint: Error: bad (exit 1)",
+        description: "❌ 1 of 2 jobs failed: lint: Error: bad (exit 1)",
       });
     } finally {
       vi.unstubAllEnvs();
@@ -4817,8 +4821,10 @@ describe("how long a pipeline took", () => {
       return entry.name === "pr" && entry.status === "completed";
     });
 
-    expect(done?.title).toMatch(/^3 jobs passed in \d+(ms|s)$/);
-    expect(done?.summary).toMatch(/^\*\*Took \d+(ms|s)\*\*/);
+    expect(done?.title).toMatch(/^✅ Passed: 3 jobs in \d+(ms|s)$/);
+    expect(done?.summary).toMatch(
+      /^> \[!NOTE\]\n> ✅ \*\*3 jobs passed\*\* in \*\*\d+(ms|s)\*\*/,
+    );
   });
 });
 
@@ -4866,8 +4872,8 @@ describe("what the cache saved", () => {
 
     const second = await run();
 
-    expect(second[0]?.title).toMatch(/\(saved \d+s from cache\)$/);
-    expect(second[0]?.summary).toContain("| base |");
+    expect(second[0]?.title).toMatch(/ · ⚡ \d+s saved by cache$/);
+    expect(second[0]?.summary).toContain("| `base` |");
   });
 });
 
@@ -5370,11 +5376,18 @@ describe("re-running from a check", () => {
       };
 
       for (const request of completed) {
-        const body = request.body as { name: string; actions: unknown[] };
+        const body = request.body as {
+          name: string;
+          actions: Array<{ identifier: string }>;
+        };
 
         // A job's check can also re-run just that job.
         expect(body.actions.at(-1)).toEqual(noCache);
-        expect(body.actions.length).toBe(body.name === "pr" ? 1 : 2);
+        expect(body.actions.map((action) => action.identifier)).toEqual(
+          body.name === "pr"
+            ? ["rerun-failed", "rerun-fresh"]
+            : ["rerun", "rerun-fresh"],
+        );
       }
     } finally {
       vi.unstubAllEnvs();
@@ -5492,6 +5505,107 @@ describe("a cancelled run's checks", () => {
       [expect.stringContaining("/check-runs/1"), "cancelled"],
       [expect.stringContaining("/check-runs/2"), "cancelled"],
     ]);
+  });
+});
+
+describe("a cancelled run's pipeline check", () => {
+  test("says what finished, what was stopped and what never started, and offers a re-run", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        total_count: 4,
+        check_runs: [
+          {
+            id: 1,
+            name: "pr",
+            external_id: "01TESTRUN:pipeline",
+            status: "in_progress",
+            started_at: "2026-10-21T09:12:00Z",
+            details_url: "http://localhost:8288/run?runID=01TESTRUN",
+          },
+          {
+            id: 2,
+            name: "pr / lint",
+            external_id: "01TESTRUN:lint",
+            status: "completed",
+            conclusion: "success",
+            started_at: "2026-10-21T09:12:01Z",
+            completed_at: "2026-10-21T09:12:31Z",
+          },
+          {
+            id: 3,
+            name: "pr / test",
+            external_id: "01TESTRUN:test",
+            status: "in_progress",
+            started_at: "2026-10-21T09:12:02Z",
+          },
+          {
+            id: 4,
+            name: "pr / e2e",
+            external_id: "01TESTRUN:e2e",
+            status: "queued",
+          },
+        ],
+      });
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/1", { id: 1 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/3", { id: 3 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/4", { id: 4 });
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      const patched = (id: number) => {
+        return gh.requests.find((request) => {
+          return (
+            request.method === "PATCH" &&
+            request.path.endsWith(`/check-runs/${id}`)
+          );
+        })?.body as {
+          conclusion: string;
+          actions: Array<{ identifier: string }>;
+          output: { title: string; summary: string };
+        };
+      };
+
+      const pipeline = patched(1);
+
+      expect(pipeline.conclusion).toBe("cancelled");
+      expect(pipeline.output.title).toMatch(
+        /^🛑 Cancelled after .+: 1 passed, 2 not finished$/,
+      );
+      expect(pipeline.output.summary).toContain("> [!NOTE]");
+      expect(pipeline.output.summary).toContain(
+        "✅ 1 passed · 🛑 1 stopped mid-run · ⬜ 1 never started",
+      );
+      expect(pipeline.actions.map((action) => action.identifier)).toEqual([
+        "rerun-all",
+      ]);
+
+      // The finished job's check is left alone; the others are cancelled.
+      expect(patched(2)).toBeUndefined();
+      expect(patched(3).output.summary).toContain("**Cancelled**");
+      expect(patched(4).output.title).toBe("🛑 Cancelled");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

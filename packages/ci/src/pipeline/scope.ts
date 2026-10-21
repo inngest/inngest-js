@@ -183,6 +183,27 @@ export interface BuildInfo {
   createdAt: string;
 }
 
+/** What a job records about itself in the run, for the pipeline's check. */
+export interface JobNode {
+  /** The job's path, which is its ID for the first call of a job. */
+  path: string;
+  /** The jobs it starts from. */
+  parents: string[];
+  state: "queued" | "running" | "ok" | "cached" | "failed" | "stopped";
+  /** When it started and ended, as the clock read inside its check's steps. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Whether it is making a cache entry, or made one. */
+  building?: boolean;
+  built?: boolean;
+  /** The ID of its check on GitHub. */
+  checkRunId?: number;
+  /** Why it failed, when it did. */
+  failure?: { why: string; infra: boolean; stepUrl?: string };
+  /** How many annotations its check carries. */
+  annotations?: number;
+}
+
 export interface JobSummary {
   path: string;
   conclusion: CheckConclusion;
@@ -331,6 +352,11 @@ export interface CiRunScope {
   };
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
+  /**
+   * What each job has recorded about itself, by path, for the pipeline's check.
+   * Jobs write it as they go; only the check's steps read it.
+   */
+  jobGraph: Map<string, JobNode>;
   /**
    * Job checks that have started and not finished. When a run ends while jobs
    * are still going, these are completed rather than left spinning.

@@ -78,6 +78,7 @@ import {
 } from "./jobReport.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
+import { markJob } from "./pipelineReport.ts";
 import type {
   ApiName,
   BuildOutcome,
@@ -854,6 +855,13 @@ const jobSteps = async ({
   // matrix queues all its combinations at once, when its axes are known.
   if (checked) {
     run.openChecks.set(scope.path, checkName);
+
+    const from = (config.from as { id?: unknown } | undefined)?.id;
+
+    markJob(run, scope.path, {
+      state: "queued",
+      ...(typeof from === "string" ? { parents: [from] } : {}),
+    });
   }
 
   if (checked && !matrixOriginOf(config)) {
@@ -922,6 +930,12 @@ const jobSteps = async ({
     if (checked) {
       run.openChecks.delete(scope.path);
 
+      markJob(run, scope.path, {
+        state: "cached",
+        startedAt: Date.now(),
+        endedAt: Date.now(),
+      });
+
       await checks.jobStart(target);
       await checks.jobComplete({
         ...target,
@@ -942,6 +956,8 @@ const jobSteps = async ({
   const startedAt =
     checkStartedAt ??
     (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
+
+  markJob(run, scope.path, { state: "running", startedAt });
 
   scope.startedAt = startedAt;
 
@@ -1064,6 +1080,15 @@ const jobSteps = async ({
       // it's in flight, and a job that passed must not be cancelled for it.
       run.openChecks.delete(scope.path);
 
+      // The pipeline's check is updated with the job's, so it reads this.
+      markJob(run, scope.path, {
+        state: reusedSnapshot ? "cached" : "ok",
+        endedAt: Date.now(),
+        ...(asksBuild && config.cache && !reusedSnapshot
+          ? { built: true }
+          : {}),
+      });
+
       checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
@@ -1083,6 +1108,8 @@ const jobSteps = async ({
       checkEndedAt ??
       (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
     const durationMs = endedAt - startedAt;
+
+    markJob(run, scope.path, { endedAt });
 
     recordSummary(scope, {
       path: scope.path,
@@ -1120,12 +1147,24 @@ const jobSteps = async ({
 
       run.openChecks.delete(scope.path);
 
+      markJob(run, scope.path, {
+        state: "failed",
+        endedAt: Date.now(),
+        failure: {
+          why: failure.title,
+          infra: ["infra", "sandbox", "oom"].includes(failure.errorClass),
+        },
+        annotations: scope.annotations.length,
+      });
+
       checkEndedAt = await checks.jobComplete({ ...target, ...result });
     }
 
     const endedAt =
       checkEndedAt ??
       (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
+
+    markJob(run, scope.path, { state: "failed", endedAt });
 
     run.summaries.push({
       path: scope.path,

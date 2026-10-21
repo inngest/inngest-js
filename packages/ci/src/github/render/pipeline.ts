@@ -57,7 +57,10 @@ export interface PipelineInput extends CheckLinks {
   /** How many builds the run needed, cached or not. */
   buildCount?: number;
   /** How much faster the critical path is for the cache. */
+  /** How much faster the critical path is for the cache. Worked out when left out. */
   criticalSavedMs?: number;
+  /** Set when the pipeline itself failed, not a job: what to say. */
+  error?: { title: string; message: string };
   failures?: FailedJob[];
   running?: RunningJob[];
   /** Who cancelled, and when, as it should read. */
@@ -203,6 +206,24 @@ const pathLine = (
   return `🧭 **Critical path:** ${names.join(", ")}, ${formatDuration(last?.endMs ?? input.elapsedMs)}. Making any other job faster will not make CI faster.`;
 };
 
+/**
+ * Who failed, for a title: the reason too when it is one job, since that is
+ * what the title is for, and the names when it is several.
+ */
+const failedNames = (failures: FailedJob[]): string => {
+  const [only] = failures;
+
+  if (failures.length === 1 && only) {
+    return `${only.name}: ${only.why}`;
+  }
+
+  const names = failures.slice(0, 2).map((failure) => {
+    return failure.name;
+  });
+
+  return `${names.join(", ")}${failures.length > 2 ? ` and ${failures.length - 2} more` : ""}`;
+};
+
 const slowestTable = (
   input: PipelineInput,
   critical: string[],
@@ -270,14 +291,7 @@ const runningTable = (running: RunningJob[]): string | undefined => {
 
 const notesCallout = (notes: string[] | undefined): string | undefined => {
   return notes && notes.length > 0
-    ? callout(
-        "note",
-        notes
-          .map((note) => {
-            return `🧩 ${note}`;
-          })
-          .join("\n"),
-      )
+    ? callout("note", notes.join("\n"))
     : undefined;
 };
 
@@ -298,6 +312,17 @@ const closingRow = (
   ]);
 };
 
+/** What the cache saved on the critical path: its cached jobs' saved time. */
+const criticalSaved = (input: PipelineInput, critical: string[]): number => {
+  return input.jobs
+    .filter((job) => {
+      return job.state === "cached" && critical.includes(job.id);
+    })
+    .reduce((sum, job) => {
+      return sum + (job.savedMs ?? 0);
+    }, 0);
+};
+
 /** What the pipeline's check shows in its state. */
 export const pipelineCheck = (input: PipelineInput): CheckPayload => {
   const counts = countJobs(input.jobs);
@@ -308,6 +333,17 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
 
   switch (input.state) {
     case "running": {
+      if (counts.total === 0) {
+        return {
+          title: "🔄 Running",
+          summary: sections(
+            callout("note", `🔄 **Running** for ${time}. No job has started.`),
+            closingRow(input, "🔗", link("Run and cancel", input.run)),
+          ),
+          actions: [cancelAction],
+        };
+      }
+
       const done = counts.passed + counts.failed;
       const fraction = counts.total === 0 ? 0 : done / counts.total;
 
@@ -318,7 +354,7 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
       }).length;
 
       return {
-        title: `🔄 Running: ${done} of ${counts.total} jobs done, ${counts.failed} failed`,
+        title: `🔄 Running: ${done} of ${plural(counts.total, "job")} done, ${counts.failed} failed`,
         summary: sections(
           callout(
             "note",
@@ -342,6 +378,19 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
 
     case "passed": {
       const builds = input.buildCount ?? savedBuilds;
+      const onPath = input.criticalSavedMs ?? criticalSaved(input, critical);
+
+      if (counts.total === 0) {
+        return {
+          title: `✅ Passed in ${time}`,
+          summary: sections(
+            callout("note", `✅ **Passed** in **${time}**. No jobs ran.`),
+            closingRow(input, "🔗"),
+            notesCallout(input.notes),
+          ),
+          actions: [],
+        };
+      }
 
       return {
         title: `✅ Passed: ${plural(counts.total, "job")} in ${time}${saved > 0 ? ` · ⚡ ${formatDuration(saved)} saved by cache` : ""}`,
@@ -349,7 +398,7 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
           saved > 0
             ? callout(
                 "tip",
-                `⚡ **${formatDuration(saved)} of build time skipped by caching.** ${savedBuilds} of ${builds} builds restored.${input.criticalSavedMs ? `\nOn the critical path that is **${formatDuration(input.criticalSavedMs)}** faster.` : ""}`,
+                `⚡ **${formatDuration(saved)} of build time skipped by caching.** ${savedBuilds} of ${builds} builds restored.${onPath > 0 ? `\nOn the critical path that is **${formatDuration(onPath)}** faster.` : ""}`,
               )
             : callout(
                 "note",
@@ -371,19 +420,32 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
 
     case "failed": {
       const failures = input.failures ?? [];
+
+      if (failures.length === 0 && input.error) {
+        return {
+          title: `❌ ${input.error.title}`,
+          summary: sections(
+            callout(
+              "caution",
+              `❌ **The pipeline failed.** ${input.error.message}`,
+            ),
+            closingRow(
+              input,
+              "👉",
+              "Press **Re-run, no cache** to start again",
+            ),
+            notesCallout(input.notes),
+          ),
+          actions: [rerunAllAction, rerunFreshAction],
+        };
+      }
+
       const anyInfra = failures.some((failure) => {
         return failure.infra;
       });
 
       return {
-        title: `❌ ${counts.failed} of ${counts.total} jobs failed: ${failures
-          .slice(0, 2)
-          .map((failure) => {
-            return failure.name;
-          })
-          .join(
-            ", ",
-          )}${failures.length > 2 ? ` and ${failures.length - 2} more` : ""}`,
+        title: `❌ ${counts.failed} of ${plural(counts.total, "job")} failed: ${failedNames(failures)}`,
         summary: sections(
           callout(
             "caution",

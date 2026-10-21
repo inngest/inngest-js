@@ -8,6 +8,7 @@
 import { runLinks } from "../pipeline/jobReport.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { type StepSpec, steps } from "../pipeline/names.ts";
+import { markJob, pipelinePayload } from "../pipeline/pipelineReport.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
@@ -19,7 +20,9 @@ import {
   truncateLabel,
 } from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
+import type { GraphJob } from "./render/graph.ts";
 import { jobCheck } from "./render/job.ts";
+import { pipelineCheck } from "./render/pipeline.ts";
 import {
   type CheckAction,
   type CheckPayload,
@@ -390,6 +393,32 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     };
   };
 
+  /**
+   * Bring the pipeline's check up to date when a job's check completes, in the
+   * same step: it is a request, not a step. It never fails the job's.
+   */
+  const showPipelineProgress = async (run: CiRunScope) => {
+    if (!run.checkName) {
+      return;
+    }
+
+    try {
+      const shown = pipelinePayload(run, "running");
+
+      await sink.update?.({
+        run,
+        name: run.checkName,
+        title: shown.title,
+        summary: shown.summary,
+        ...(shown.text === undefined ? {} : { text: shown.text }),
+        actions: shown.actions,
+        ...idFor(run, "pipeline"),
+      });
+    } catch {
+      // The pipeline's check says the same at the end.
+    }
+  };
+
   /** A job's check, or the pipeline's when there's no `job`. */
   const start = async (
     run: CiRunScope,
@@ -404,7 +433,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     const shown =
       payload ??
       (job === undefined
-        ? undefined
+        ? pipelinePayload(run, "running")
         : jobCheck({
             ...runLinks(run),
             name: job,
@@ -433,6 +462,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
     if (result?.id) {
       checkRunIds.set(idKey(run, key), result.id);
+
+      if (job !== undefined) {
+        markJob(run, job, { checkRunId: result.id });
+      }
     }
 
     return result?.startedAt;
@@ -455,6 +488,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         const args = completeArgs(run, key, name, read);
 
         await sink.complete(args);
+
+        if (job) {
+          await showPipelineProgress(run);
+        }
 
         // What is past the first batch comes out of the step, so it is the
         // same on every replay.
@@ -860,6 +897,71 @@ const clientFor = (provider: GitHubProvider, repo: Repo) => {
 };
 
 /**
+ * The jobs of a run as their checks show them, for drawing a run whose own
+ * state is gone. A job's check does not say what it started from, so none is
+ * drawn as the child of another.
+ */
+const jobsFromChecks = (
+  checkRuns: Array<{
+    name: string;
+    status: string;
+    conclusion?: string | null;
+    external_id?: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+    output?: { title?: string | null };
+  }>,
+  runId: string,
+  startedAt: string | null | undefined,
+): GraphJob[] => {
+  const origin = new Date(startedAt ?? Date.now()).getTime();
+
+  return checkRuns
+    .filter((checkRun) => {
+      return (
+        checkRun.external_id?.startsWith(`${runId}:`) &&
+        checkRun.external_id !== `${runId}:pipeline`
+      );
+    })
+    .map((checkRun) => {
+      const id = String(checkRun.external_id).slice(runId.length + 1);
+
+      const state: GraphJob["state"] =
+        checkRun.status === "queued"
+          ? "queued"
+          : checkRun.status !== "completed"
+            ? "stopped"
+            : checkRun.conclusion === "success"
+              ? checkRun.output?.title?.includes("Cache hit")
+                ? "cached"
+                : "ok"
+              : checkRun.conclusion === "cancelled"
+                ? "stopped"
+                : "failed";
+
+      const startMs = checkRun.started_at
+        ? Math.max(0, new Date(checkRun.started_at).getTime() - origin)
+        : Math.max(0, Date.now() - origin);
+
+      return {
+        id,
+        name: id,
+        parents: [],
+        state,
+        startMs,
+        ...(checkRun.completed_at
+          ? {
+              endMs: Math.max(
+                startMs,
+                new Date(checkRun.completed_at).getTime() - origin,
+              ),
+            }
+          : {}),
+      };
+    });
+};
+
+/**
  * Real GitHub checks, through the Checks API.
  */
 export const checksSink = (provider: GitHubProvider): CheckSink => {
@@ -1021,7 +1123,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       });
     },
 
-    closeOpen: async ({ run, title }) => {
+    closeOpen: async ({ run }) => {
       const repo = run.repo;
 
       if (!repo?.sha) {
@@ -1030,50 +1132,76 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      const open = await octokit.rest.checks.listForRef({
+      // Every check a run starts has its ID in its external ID. All of them are
+      // read, finished ones too, because the pipeline's check draws the run.
+      const listed = await octokit.rest.checks.listForRef({
         owner: repo.owner,
         repo: repo.name,
         ref: repo.sha,
-        status: "in_progress",
         per_page: 100,
       });
 
-      // Every check a run starts has its ID in its external ID.
-      for (const checkRun of open.data.check_runs) {
-        if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
-          const isPipeline = checkRun.external_id === `${run.runId}:pipeline`;
+      const mine = listed.data.check_runs.filter((checkRun) => {
+        return checkRun.external_id?.startsWith(`${run.runId}:`);
+      });
 
-          const shown = jobCheck({
-            run: checkRun.details_url ?? "",
-            ...(repo.sha
-              ? {
-                  commit: {
-                    sha: repo.sha.slice(0, 7),
-                    url: `https://github.com/${repo.fullName}/commit/${repo.sha}`,
-                  },
-                }
-              : {}),
-            name: checkRun.name,
-            state: {
-              kind: "cancelled",
-              reason: "the run was cancelled before it finished",
-            },
-          });
+      const links = {
+        ...(repo.sha
+          ? {
+              commit: {
+                sha: repo.sha.slice(0, 7),
+                url: `https://github.com/${repo.fullName}/commit/${repo.sha}`,
+              },
+            }
+          : {}),
+      };
 
-          await octokit.rest.checks.update({
-            owner: repo.owner,
-            repo: repo.name,
-            check_run_id: checkRun.id,
-            status: "completed",
-            conclusion: "cancelled",
-            completed_at: new Date().toISOString(),
-            actions: isPipeline ? [rerunAllAction] : shown.actions,
-            output: {
-              title: shown.title,
-              summary: shown.summary,
-            },
-          });
+      const pipeline = mine.find((checkRun) => {
+        return checkRun.external_id === `${run.runId}:pipeline`;
+      });
+
+      for (const checkRun of mine) {
+        if (checkRun.status === "completed") {
+          continue;
         }
+
+        const isPipeline = checkRun === pipeline;
+
+        const shown = isPipeline
+          ? pipelineCheck({
+              ...links,
+              run: checkRun.details_url ?? "",
+              state: "cancelled",
+              elapsedMs: Math.max(
+                0,
+                Date.now() -
+                  new Date(checkRun.started_at ?? Date.now()).getTime(),
+              ),
+              jobs: jobsFromChecks(mine, run.runId, checkRun.started_at),
+            })
+          : jobCheck({
+              ...links,
+              run: checkRun.details_url ?? "",
+              name: checkRun.name,
+              state: {
+                kind: "cancelled",
+                reason: "the run was cancelled before it finished",
+              },
+            });
+
+        await octokit.rest.checks.update({
+          owner: repo.owner,
+          repo: repo.name,
+          check_run_id: checkRun.id,
+          status: "completed",
+          conclusion: "cancelled",
+          completed_at: new Date().toISOString(),
+          actions: shown.actions,
+          output: {
+            title: shown.title,
+            summary: truncateSummary(shown.summary),
+          },
+        });
       }
     },
 
