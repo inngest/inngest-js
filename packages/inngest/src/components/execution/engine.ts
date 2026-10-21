@@ -1940,12 +1940,18 @@ class InngestExecutionEngine
    * Determine whether the given error is retriable. Returns `false` when the
    * run should not be retried, a duration string for `RetryAfterError`, or
    * `true` for normal retry behavior.
+   *
+   * A step's own failure is retried even after `failFinally()`, which only
+   * ends the retries of the function body.
    */
-  private retriability(error: unknown): boolean | string {
+  private retriability(
+    error: unknown,
+    { step = false }: { step?: boolean } = {},
+  ): boolean | string {
     const areRetriesExhausted =
       this.fnArg.maxAttempts &&
       this.fnArg.maxAttempts - 1 === this.fnArg.attempt;
-    if (areRetriesExhausted || this.failuresAreFinal) {
+    if (areRetriesExhausted || (this.failuresAreFinal && !step)) {
       return false;
     }
 
@@ -1997,7 +2003,7 @@ class InngestExecutionEngine
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
-    const isFinal = !this.retriability(error);
+    const isFinal = !this.retriability(error, { step: true });
     const metadata = this.state.metadata?.get(id);
 
     await this.middlewareManager.onStepError(
