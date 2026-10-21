@@ -24,7 +24,17 @@ import {
 export type AgentMessage =
   | { role: "user"; content: string }
   | { role: "assistant"; content: unknown }
-  | { role: "tool"; toolCallId: string; content: string; isError?: boolean };
+  | { role: "tool"; results: AgentToolResult[] };
+
+/**
+ * What one tool call gave back. `content` is the result as text, and
+ * `isError` is set when the tool failed.
+ */
+export interface AgentToolResult {
+  toolCallId: string;
+  content: string;
+  isError?: boolean;
+}
 
 export interface AgentToolCall {
   id: string;
@@ -42,9 +52,17 @@ export interface AgentModelRequest {
 
   /**
    * The whole conversation so far. Map each message to your provider's
-   * format; a `tool` message is the result of the call with `toolCallId`.
+   * format; a `tool` message holds the results of all the calls the
+   * previous reply made, in one message.
    */
   messages: AgentMessage[];
+
+  /**
+   * This call's number, from 1, and the most calls the loop will make. On
+   * `turn === maxTurns` you can tell the model to wrap up.
+   */
+  turn: number;
+  maxTurns: number;
 
   /**
    * The tools in the shape model APIs take. Pass them straight to your SDK.
@@ -102,7 +120,8 @@ export interface AgentLoopOptions {
 
   /**
    * Tools the model can call, declared like sandbox tools. A tool that
-   * throws gives the model an error result to react to.
+   * throws, or returns an object with an `error` key, gives the model an error
+   * result to react to.
    */
   tools: SandboxTools;
 
@@ -124,8 +143,9 @@ export interface AgentLoopOptions {
   steer?: (turn: number) => Promise<string[] | undefined>;
 
   /**
-   * Called inside each model step as it finishes, for progress. Errors are
-   * ignored.
+   * Called after each model call, for progress. It runs in your function, so
+   * it can use steps (with IDs that include `turn`) to post to Slack or a
+   * database, and they are not repeated on replay. An error fails the run.
    */
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
 }
@@ -157,14 +177,21 @@ const clip = (text: string): string => {
   return `${text.slice(0, half)}\n... clipped ${text.length - maxToolOutput} characters ...\n${text.slice(-half)}`;
 };
 
+/**
+ * A tool reports a failure it expects by returning `{ error }`, which the
+ * model sees as an error with the whole result as its body.
+ */
+const isErrorResult = (output: unknown): boolean => {
+  return typeof output === "object" && output !== null && "error" in output;
+};
+
 const runTool = async (
   stepId: string,
   tools: SandboxTools,
   call: AgentToolCall,
-): Promise<Extract<AgentMessage, { role: "tool" }>> => {
+): Promise<AgentToolResult> => {
   const result = (content: string, isError?: boolean) => {
     return {
-      role: "tool" as const,
       toolCallId: call.id,
       content: clip(content),
       ...(isError && { isError }),
@@ -189,12 +216,20 @@ const runTool = async (
     };
     const output = resolved.group
       ? await resolved.invoke(context)
-      : await step.run({ id: stepId, name: call.name }, () => {
-          return resolved.invoke(context);
-        });
+      : await step.run(
+          {
+            id: stepId,
+            name: call.name,
+            "~span": { id: stepId, name: call.name, kind: "tool" },
+          },
+          () => {
+            return resolved.invoke(context);
+          },
+        );
 
     return result(
       typeof output === "string" ? output : (JSON.stringify(output) ?? ""),
+      isErrorResult(output),
     );
   } catch (error) {
     return result(error instanceof Error ? error.message : String(error), true);
@@ -231,23 +266,15 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
   let text = "";
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
+    const modelStep = `${id}:model:${turn}`;
     const reply = (await step.run(
-      { id: `${id}:model:${turn}`, name: "Thinking" },
-      async () => {
-        const response = await model({ system, messages, tools: definitions });
-
-        try {
-          await options.onTurn?.({
-            turn,
-            text: response.text ?? "",
-            toolCalls: response.toolCalls,
-            usage: response.usage ?? { input: 0, output: 0 },
-          });
-        } catch {
-          // Progress reporting never fails the turn.
-        }
-
-        return response;
+      {
+        id: modelStep,
+        name: "Thinking",
+        "~span": { id: modelStep, name: "Thinking", kind: "llm" },
+      },
+      () => {
+        return model({ system, messages, tools: definitions, turn, maxTurns });
       },
     )) as AgentModelResponse;
 
@@ -256,15 +283,26 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
     text = reply.text ?? "";
     messages.push(reply.message);
 
+    await options.onTurn?.({
+      turn,
+      text,
+      toolCalls: reply.toolCalls,
+      usage: reply.usage ?? { input: 0, output: 0 },
+    });
+
     if (reply.done || reply.toolCalls.length === 0) {
       return { text, stopped: "done", turns: turn, history: messages, usage };
     }
 
+    const results: AgentToolResult[] = [];
+
     for (const [index, call] of reply.toolCalls.entries()) {
-      messages.push(
+      results.push(
         await runTool(`${id}:${turn}.${index}:${call.name}`, tools, call),
       );
     }
+
+    messages.push({ role: "tool", results });
 
     for (const content of (await options.steer?.(turn)) ?? []) {
       messages.push({ role: "user", content });
@@ -288,9 +326,10 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
  * - `system`: the system prompt, if you passed one.
  * - `messages`: the conversation so far. `user` messages are text. An
  *   `assistant` message is what you returned earlier, as you returned it. A
- *   `tool` message is the result of the call with `toolCallId`, and has
- *   `isError` when the tool failed; map consecutive ones to your provider's
- *   tool-result format.
+ *   `tool` message holds one `results` entry per call of the reply before
+ *   it (`toolCallId`, `content`, and `isError` when the tool failed), ready
+ *   to become one provider message.
+ * - `turn` and `maxTurns`: which call this is and how many the loop allows.
  * - `tools`: the tool definitions (`name`, `description`, `input_schema`) to
  *   hand to your SDK.
  *
@@ -320,14 +359,14 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
  *       if (message.role === "tool") {
  *         return {
  *           role: "user",
- *           content: [
- *             {
+ *           content: message.results.map((result) => {
+ *             return {
  *               type: "tool_result",
- *               tool_use_id: message.toolCallId,
- *               content: message.content,
- *               is_error: message.isError,
- *             },
- *           ],
+ *               tool_use_id: result.toolCallId,
+ *               content: result.content,
+ *               is_error: result.isError,
+ *             };
+ *           }),
  *         };
  *       }
  *

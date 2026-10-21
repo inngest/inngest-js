@@ -18,14 +18,14 @@ export const claude = agent.model(async ({ system, messages, tools }) => {
 
         return {
           role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: message.toolCallId,
-              content: message.content,
-              is_error: message.isError,
-            },
-          ],
+          content: message.results.map((result) => {
+            return {
+              type: "tool_result" as const,
+              tool_use_id: result.toolCallId,
+              content: result.content,
+              is_error: result.isError,
+            };
+          }),
         };
       }),
     });

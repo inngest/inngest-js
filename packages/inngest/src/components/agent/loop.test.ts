@@ -5,6 +5,7 @@
 import { z } from "zod/v4";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
 import { tool } from "../sandbox/tools.ts";
@@ -77,9 +78,9 @@ const run = async (
       });
     },
   );
-  const { type, ran } = await runToEnd(fn);
+  const { type, ran, steps } = await runToEnd(fn);
 
-  return { type, ran, requests, result };
+  return { type, ran, steps, requests, result };
 };
 
 describe("agent.loop", () => {
@@ -96,9 +97,14 @@ describe("agent.loop", () => {
     ]);
     expect(requests[1]?.messages.at(-1)).toEqual({
       role: "tool",
-      toolCallId: "id-add",
-      content: "3",
+      results: [{ toolCallId: "id-add", content: "3" }],
     });
+    expect(requests.map((request) => [request.turn, request.maxTurns])).toEqual(
+      [
+        [1, 40],
+        [2, 40],
+      ],
+    );
     expect(result).toMatchObject({
       text: "It is 3",
       stopped: "done",
@@ -138,6 +144,19 @@ describe("agent.loop", () => {
       error: "db is down",
     },
     {
+      name: "a tool that returns an error",
+      tools: {
+        add: tool.step({
+          input: z.object({}),
+          run: () => {
+            return { error: "no such ticket", id: 7 };
+          },
+        }),
+      },
+      input: {},
+      error: '{"error":"no such ticket","id":7}',
+    },
+    {
       name: "an unknown tool",
       tools: { add },
       input: {},
@@ -157,8 +176,10 @@ describe("agent.loop", () => {
     );
     const sent = requests[1]?.messages.at(-1);
 
-    expect(sent).toMatchObject({ role: "tool", isError: true });
-    expect(sent?.content).toContain(scenario.error);
+    expect(sent).toMatchObject({ role: "tool", results: [{ isError: true }] });
+    expect(sent).toMatchObject({
+      results: [{ content: expect.stringContaining(scenario.error) }],
+    });
     expect(result?.stopped).toBe("done");
   });
 
@@ -196,22 +217,92 @@ describe("agent.loop", () => {
       "tool",
       "user",
     ]);
-    expect(requests[1]?.messages.at(-1)?.content).toBe("use bigger numbers");
+    expect(requests[1]?.messages.at(-1)).toEqual({
+      role: "user",
+      content: "use bigger numbers",
+    });
     expect(requests[2]?.messages.at(-1)?.role).toBe("tool");
   });
 
-  test("calls onTurn once per model call, and ignores its errors", async () => {
-    const turns: number[] = [];
-    const { result } = await run([call("add", { a: 1, b: 2 }), say("ok")], {
-      onTurn: ({ turn }) => {
-        turns.push(turn);
+  test("runs onTurn after each model call, and it can use steps", async () => {
+    const { ran, result } = await run(
+      [call("add", { a: 1, b: 2 }), say("ok")],
+      {
+        onTurn: async ({ turn }) => {
+          await step.run(`post:${turn}`, () => {
+            return turn;
+          });
+        },
+      },
+    );
 
-        throw new Error("sink is down");
+    expect(ran).toEqual([
+      "agent:model:1",
+      "post:1",
+      "agent:1.0:add",
+      "agent:model:2",
+      "post:2",
+    ]);
+    expect(result?.stopped).toBe("done");
+  });
+
+  test("gives the results of one reply's calls in one message", async () => {
+    const two: AgentModelResponse = {
+      message: { role: "assistant", content: "two calls" },
+      toolCalls: [
+        { id: "a", name: "add", input: { a: 1, b: 1 } },
+        { id: "b", name: "add", input: { a: 2, b: 2 } },
+      ],
+      done: false,
+    };
+    const { requests } = await run([two, say("ok")]);
+
+    expect(requests[1]?.messages.at(-1)).toEqual({
+      role: "tool",
+      results: [
+        { toolCallId: "a", content: "2" },
+        { toolCallId: "b", content: "4" },
+      ],
+    });
+  });
+
+  test("runs a tool with a JSON Schema, and hands the schema to the model", async () => {
+    const schema = {
+      type: "object" as const,
+      properties: { n: { type: "number" } },
+      required: ["n"],
+    };
+    const { requests } = await run([call("double", { n: 4 }), say("ok")], {
+      tools: {
+        double: tool.step({
+          input: schema,
+          run: ({ n }) => {
+            return (n as number) * 2;
+          },
+        }),
       },
     });
 
-    expect(turns).toEqual([1, 2]);
-    expect(result?.stopped).toBe("done");
+    expect(requests[0]?.tools).toEqual([
+      { name: "double", input_schema: schema },
+    ]);
+    expect(requests[1]?.messages.at(-1)).toMatchObject({
+      results: [{ content: "8" }],
+    });
+  });
+
+  test("tags model and tool steps with their span kinds", async () => {
+    const { steps } = await run([call("add", { a: 1, b: 2 }), say("ok")]);
+
+    expect(
+      steps.map((op) => {
+        return op.opts?.span;
+      }),
+    ).toEqual([
+      [{ id: "agent:model:1", name: "Thinking", kind: "llm" }],
+      [{ id: "agent:1.0:add", name: "add", kind: "tool" }],
+      [{ id: "agent:model:2", name: "Thinking", kind: "llm" }],
+    ]);
   });
 
   test("continues from an earlier history", async () => {
@@ -221,10 +312,10 @@ describe("agent.loop", () => {
       prompt: "again",
     });
 
-    expect(requests[0]?.messages.map((m) => m.content)).toEqual([
-      "go",
-      [{ type: "text", text: "first" }],
-      "again",
-    ]);
+    expect(
+      requests[0]?.messages.map((m) => {
+        return (m as { content: unknown }).content;
+      }),
+    ).toEqual(["go", [{ type: "text", text: "first" }], "again"]);
   });
 });

@@ -56,10 +56,25 @@ export interface SandboxToolContext {
   idempotencyKey: string;
 }
 
-type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
+/**
+ * A JSON Schema written out by hand, for a tool whose schema you already have
+ * as JSON (such as one a user defines). It describes an object. The tool gets
+ * the model's arguments as they come, without them being checked against it.
+ */
+export type JsonSchemaObject = { type: "object"; [key: string]: unknown };
+
+type ToolInput = StandardSchemaV1 | JsonSchemaObject;
+
+const isStandardSchema = (input: ToolInput): input is StandardSchemaV1 => {
+  return "~standard" in input;
+};
+
+type ToolInputOf<TInput extends ToolInput | undefined> =
   TInput extends StandardSchemaV1
     ? StandardSchemaV1.InferOutput<TInput>
-    : never;
+    : TInput extends JsonSchemaObject
+      ? Record<string, unknown>
+      : never;
 
 type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
   TOutput extends StandardSchemaV1
@@ -72,7 +87,7 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
 export interface SandboxTool {
   readonly description?: string;
   readonly group?: boolean;
-  readonly input?: StandardSchemaV1;
+  readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
 }
@@ -132,7 +147,7 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
 };
 
 export interface ToolDefinition<
-  TInput extends StandardSchemaV1 | undefined,
+  TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
 > {
   /**
@@ -141,10 +156,10 @@ export interface ToolDefinition<
   description?: string;
 
   /**
-   * Any Standard Schema. With it, sandbox code calls the tool with named
-   * arguments (`tools.getCustomer(id="cus_1")`) and a bad call gets a
-   * `ToolError` back without running anything. Without it the tool takes
-   * positional JSON values.
+   * Any Standard Schema, or a JSON Schema object. With it, sandbox code calls
+   * the tool with named arguments (`tools.getCustomer(id="cus_1")`) and, with
+   * a Standard Schema, a bad call gets a `ToolError` back without running
+   * anything. Without it the tool takes positional JSON values.
    */
   input?: TInput;
 
@@ -153,7 +168,7 @@ export interface ToolDefinition<
    */
   output?: TOutput;
 
-  run: TInput extends StandardSchemaV1
+  run: TInput extends ToolInput
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
@@ -186,7 +201,7 @@ export interface ToolDefinition<
  */
 export const tool = {
   step: <
-    TInput extends StandardSchemaV1 | undefined = undefined,
+    TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
     definition: ToolDefinition<TInput, TOutput>,
@@ -218,7 +233,7 @@ export const tool = {
    * ```
    */
   group: <
-    TInput extends StandardSchemaV1 | undefined = undefined,
+    TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
     definition: ToolDefinition<TInput, TOutput>,
@@ -389,16 +404,20 @@ export const resolveToolCall = async (
     }
 
     // A call with nothing passed is an empty set of named arguments.
-    const result = await definition.input["~standard"].validate(
-      kwargs ?? (args.length ? args[0] : {}),
-    );
-    if (result.issues) {
-      return {
-        error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
-      };
-    }
+    const named = kwargs ?? (args.length ? args[0] : {});
 
-    values = [result.value];
+    if (isStandardSchema(definition.input)) {
+      const result = await definition.input["~standard"].validate(named);
+      if (result.issues) {
+        return {
+          error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
+        };
+      }
+
+      values = [result.value];
+    } else {
+      values = [named];
+    }
   } else if (kwargs) {
     return { error: `${name} takes positional arguments only` };
   }
@@ -508,7 +527,11 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
     return {
       name,
       ...(description !== undefined && { description }),
-      input_schema: input ? toJsonSchema(name, input) : { type: "object" },
+      input_schema: !input
+        ? { type: "object" }
+        : isStandardSchema(input)
+          ? toJsonSchema(name, input)
+          : input,
     };
   });
 };

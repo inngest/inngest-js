@@ -13,6 +13,7 @@ export type {
   AgentModelRequest,
   AgentModelResponse,
   AgentToolCall,
+  AgentToolResult,
   AgentTurn,
   AgentUsage,
 } from "./loop.ts";
