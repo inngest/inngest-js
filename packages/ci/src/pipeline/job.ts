@@ -807,6 +807,16 @@ const jobSteps = async ({
     ...(checkName ? { name: checkName } : {}),
   };
 
+  // Open from the moment it's shown, so a run that ends first closes it. A
+  // matrix queues all its combinations at once, when its axes are known.
+  if (checked) {
+    run.openChecks.set(scope.path, checkName);
+  }
+
+  if (checked && !matrixOriginOf(config)) {
+    await checks.jobQueued(target);
+  }
+
   // A job's name includes the snapshot of the parent it starts from, so the
   // parent comes first: a parent that changed gives this job a new name. A
   // parent that failed fails this job too, once its check has started.
@@ -867,6 +877,8 @@ const jobSteps = async ({
     const title = restoreFromCache(scope, hit);
 
     if (checked) {
+      run.openChecks.delete(scope.path);
+
       await checks.jobStart(target);
       await checks.jobComplete({ ...target, conclusion: "success", title });
     }
@@ -881,10 +893,6 @@ const jobSteps = async ({
   const startedAt =
     checkStartedAt ??
     (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
-
-  if (checked) {
-    run.openChecks.set(scope.path, checkName);
-  }
 
   try {
     let reusedTitle: string | undefined;

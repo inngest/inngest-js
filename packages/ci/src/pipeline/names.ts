@@ -347,6 +347,15 @@ export const steps = {
     };
   },
 
+  queueCheck: (check: string, job?: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? check}:queued`),
+      name: report(job ?? check, "queued"),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
   completeCheck: (
     check: string,
     job?: { path: string; conclusion: CheckConclusion },

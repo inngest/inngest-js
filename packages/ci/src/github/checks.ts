@@ -75,6 +75,15 @@ export interface CheckReporter {
     run: Pick<CiRunScope, "runId" | "checkName" | "repo">;
   }): Promise<void>;
   /**
+   * Show a job's check as queued: the job is known but hasn't started. Its
+   * start later moves the same check to in progress.
+   */
+  jobQueued(args: {
+    run: CiRunScope;
+    jobPath: string;
+    name?: string;
+  }): Promise<void>;
+  /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.
    */
@@ -141,8 +150,13 @@ export interface CheckReporter {
  * shared: step wrapping, naming, truncation, and batching.
  */
 export interface CheckSink {
+  /**
+   * Show a check as `queued` or `in_progress`. A check already shown moves
+   * to the state asked for rather than being made again.
+   */
   start(args: {
     run: CiRunScope;
+    state: "queued" | "in_progress";
     name: string;
     externalId: string;
     detailsUrl: string;
@@ -305,14 +319,22 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     name: string,
     job?: string,
     metadata?: () => Record<string, unknown>,
+    state: "queued" | "in_progress" = "in_progress",
   ) => {
     const key = job ?? "pipeline";
 
     const result = await githubStep(
       run,
-      steps.startCheck(name, job),
+      state === "queued"
+        ? steps.queueCheck(name, job)
+        : steps.startCheck(name, job),
       async () => {
-        const started = await sink.start({ run, name, ...identity(run, key) });
+        const started = await sink.start({
+          run,
+          state,
+          name,
+          ...identity(run, key),
+        });
 
         return { ...started, startedAt: Date.now() };
       },
@@ -372,6 +394,20 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       if (run.checkName) {
         await sink.closeOpen?.({ run, title: "Cancelled" });
       }
+    },
+
+    jobQueued: async ({ run, jobPath, name }) => {
+      if (!run.checkName || !run.jobChecks) {
+        return;
+      }
+
+      await start(
+        run,
+        jobCheckName(run, jobPath, name),
+        jobPath,
+        undefined,
+        "queued",
+      );
     },
 
     jobStart: async ({ run, jobPath, name }) => {
@@ -556,7 +592,7 @@ export const consoleSink = (
     at: string;
     pipeline: string;
     name: string;
-    status: "in_progress" | "completed";
+    status: "queued" | "in_progress" | "completed";
     conclusion?: string;
     title?: string;
     summary?: string;
@@ -568,16 +604,19 @@ export const consoleSink = (
   };
 
   return {
-    start: async ({ run, name, detailsUrl }) => {
+    start: async ({ run, state, name, detailsUrl }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
         name,
-        status: "in_progress",
+        status: state,
         url: detailsUrl,
       });
 
-      write(`[${run.pipelineId}] … ${name}`, { check: name, url: detailsUrl });
+      write(`[${run.pipelineId}] ${state === "queued" ? "·" : "…"} ${name}`, {
+        check: name,
+        url: detailsUrl,
+      });
 
       return {};
     },
@@ -642,7 +681,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
   };
 
   return {
-    start: async ({ run, name, externalId, detailsUrl }) => {
+    start: async ({ run, state, name, externalId, detailsUrl }) => {
       const repo = run.repo;
 
       if (!repo?.sha) {
@@ -651,8 +690,19 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
       const existingId = await findCheckRun(octokit, repo, name, externalId);
+      const startedAt = new Date().toISOString();
 
       if (existingId !== undefined) {
+        if (state === "in_progress") {
+          await octokit.rest.checks.update({
+            owner: repo.owner,
+            repo: repo.name,
+            check_run_id: existingId,
+            status: "in_progress",
+            started_at: startedAt,
+          });
+        }
+
         return { id: existingId };
       }
 
@@ -661,10 +711,10 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         repo: repo.name,
         name,
         head_sha: repo.sha,
-        status: "in_progress",
+        status: state,
         external_id: externalId,
         details_url: detailsUrl,
-        started_at: new Date().toISOString(),
+        ...(state === "in_progress" ? { started_at: startedAt } : {}),
       });
 
       return { id: created.data.id };
@@ -845,10 +895,26 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
   };
 
   return {
-    start: async ({ run, name, detailsUrl }) => {
-      await post(run, name, detailsUrl, "pending", "Running");
+    start: async ({ run, state, name, detailsUrl }) => {
+      await post(
+        run,
+        name,
+        detailsUrl,
+        "pending",
+        state === "queued" ? "Queued" : "Running",
+      );
 
       return {};
+    },
+    update: async ({ run, name, title, detailsUrl }) => {
+      await post(
+        run,
+        name,
+        detailsUrl ??
+          run.ci.runUrl({ runId: run.runId, functionId: run.functionId }),
+        "pending",
+        truncateLabel(title, maxStatusDescription),
+      );
     },
     complete: async ({ run, name, detailsUrl, conclusion, title }) => {
       await post(
