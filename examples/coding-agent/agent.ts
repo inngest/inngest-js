@@ -1,7 +1,6 @@
 import { Inngest } from "inngest";
 import {
   agent,
-  codeTools,
   repo,
   sandboxMiddleware,
   tool,
@@ -57,7 +56,7 @@ export const coder = inngest.createFunction(
       model: claude,
       system: `You are a careful engineer. Work on a new branch named agent/${runId}, run the code to check it works, commit, push the branch, then open a pull request.`,
       prompt: `The repository is in ${checkout.path}. Task: ${task}`,
-      tools: { ...codeTools(sandbox), ...checkout.tools, openPullRequest },
+      tools: { ...checkout.tools, openPullRequest },
     });
 
     return { text, stopped, turns };

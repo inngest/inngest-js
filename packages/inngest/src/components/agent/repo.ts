@@ -10,6 +10,7 @@ import { z } from "zod/v4";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
+import { type CodeToolName, codeTools } from "./codeTools.ts";
 
 export interface RepoOptions {
   /**
@@ -49,10 +50,12 @@ export interface Repo {
   push: (branch: string) => Promise<void>;
 
   /**
-   * Tools to hand to `agent.loop()`. `push` lets the model push a branch
-   * without ever holding the token: the token is added to the command here.
+   * Everything a model needs to work on this repository, for `agent.loop()`:
+   * the code tools (`read`, `write`, `edit`, `search`, `run`) working in
+   * `path`, and `push`. `push` lets the model push a branch without ever
+   * holding the token: the token is added to the command here.
    */
-  tools: { push: SandboxTool };
+  tools: Record<CodeToolName | "push", SandboxTool>;
 }
 
 // The token reaches git as configuration in its environment, so it never
@@ -91,7 +94,7 @@ git -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
  * await agent.loop({
  *   model,
  *   prompt: `Fix the login bug in ${checkout.path}, then push a branch`,
- *   tools: { ...codeTools(sandbox), ...checkout.tools },
+ *   tools: checkout.tools,
  * });
  * ```
  */
@@ -141,6 +144,7 @@ export const repo = async (
     sha: stdout.trim().split("\n").pop() ?? "",
     push,
     tools: {
+      ...codeTools(sandbox, { cwd: path }),
       push: tool.group({
         description: "Push a local branch to the remote under the same name.",
         input: z.object({ branch: z.string() }),

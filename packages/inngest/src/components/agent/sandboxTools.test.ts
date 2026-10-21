@@ -25,10 +25,24 @@ type Exec = {
  */
 const inSandbox = async (
   body: (sandbox: DurableSandbox) => Promise<unknown>,
-  { stdout = "", stderr = "", exitCode = 0 } = {},
+  { stdout = "", stderr = "", exitCode = 0, file = "" } = {},
 ) => {
   const execs: Exec[] = [];
-  const client = createClient((path, method, { body: request }) => {
+  const uploads: { path: string; body: string }[] = [];
+  const client = createClient((path, method, { query, body: request }) => {
+    if (path.endsWith("/files")) {
+      if (method === "PUT") {
+        const body = new TextDecoder().decode(request as Uint8Array);
+        uploads.push({ path: query.get("path") ?? "", body });
+
+        return Response.json({
+          data: { path: query.get("path"), bytesWritten: body.length },
+        });
+      }
+
+      return new Response(file);
+    }
+
     if (path === "/v2/sandboxes" && method === "POST") {
       return Response.json({ data: sandboxResource }, { status: 201 });
     }
@@ -56,8 +70,96 @@ const inSandbox = async (
   );
   const { type, ran, steps } = await runToEnd(fn);
 
-  return { type, ran, steps, execs };
+  return { type, ran, steps, execs, uploads };
 };
+
+type Call = (input: unknown) => Promise<unknown>;
+
+describe("codeTools edit", () => {
+  const edit = async (
+    file: string,
+    input: { path: string; edits: Record<string, unknown>[] },
+  ) => {
+    let result: unknown;
+    let error: unknown;
+    const run = await inSandbox(
+      async (sandbox) => {
+        try {
+          result = await (
+            codeTools(sandbox, { cwd: "/repo" }).edit.run as Call
+          )(input);
+        } catch (caught) {
+          error = caught;
+        }
+      },
+      { file },
+    );
+
+    return { ...run, result, error };
+  };
+
+  test("reads, edits and writes the file in the app, relative to cwd", async () => {
+    const { result, uploads, execs } = await edit("a\nb\nc\n", {
+      path: "src/a.ts",
+      edits: [
+        { old_string: "b", new_string: "B" },
+        { old_string: "B\nc", new_string: "bc" },
+      ],
+    });
+
+    expect(result).toBe("edited src/a.ts");
+    expect(uploads).toEqual([{ path: "/repo/src/a.ts", body: "a\nbc\n" }]);
+    expect(execs).toEqual([]);
+  });
+
+  test("replace_all changes every match", async () => {
+    const { uploads } = await edit("x x x", {
+      path: "/a",
+      edits: [{ old_string: "x", new_string: "y", replace_all: true }],
+    });
+
+    expect(uploads[0]?.body).toBe("y y y");
+  });
+
+  test.each([
+    {
+      name: "no match",
+      edits: [{ old_string: "zzz", new_string: "y" }],
+      message: "old_string was not found in f.ts",
+    },
+    {
+      name: "several matches",
+      edits: [{ old_string: "x", new_string: "y" }],
+      message: "matches 3 times in f.ts (lines 1, 2, 4)",
+    },
+    {
+      name: "an empty old_string",
+      edits: [{ old_string: "", new_string: "y" }],
+      message: "old_string is empty",
+    },
+    {
+      name: "identical strings",
+      edits: [{ old_string: "x", new_string: "x" }],
+      message: "identical",
+    },
+    {
+      name: "a later edit that fails",
+      edits: [
+        { old_string: "w", new_string: "W" },
+        { old_string: "zzz", new_string: "y" },
+      ],
+      message: "Edit 2 of 2: old_string was not found",
+    },
+  ])("writes nothing on $name", async ({ edits, message }) => {
+    const { uploads, error } = await edit("x\nx w\n\nx", {
+      path: "f.ts",
+      edits,
+    });
+
+    expect((error as Error).message).toContain(message);
+    expect(uploads).toEqual([]);
+  });
+});
 
 describe("codeTools", () => {
   test("names each step after its command and runs it in cwd", async () => {
@@ -69,16 +171,11 @@ describe("codeTools", () => {
         { command: "npm test" },
         ctx,
       );
-      await (tools.edit.run as (input: unknown, ctx: unknown) => unknown)(
-        { path: "a.ts", old: "x", new: "y" },
-        ctx,
-      );
     });
 
-    expect(ran).toEqual(["box", "run", "edit", "box:destroy"]);
-    expect(execs.map((exec) => exec.cwd)).toEqual(["/repo", "/repo"]);
+    expect(ran).toEqual(["box", "run", "box:destroy"]);
+    expect(execs.map((exec) => exec.cwd)).toEqual(["/repo"]);
     expect(execs[0]?.command).toEqual(["/bin/sh", "-c", "npm test"]);
-    expect(execs[1]?.environment).toEqual({ P: "a.ts", OLD: "x", NEW: "y" });
   });
 
   test("returns the exit code with the output", async () => {
@@ -122,6 +219,14 @@ describe("repo", () => {
     );
 
     expect(checkout).toMatchObject({ path: "/work", sha: "abc123" });
+    expect(Object.keys(checkout?.tools ?? {})).toEqual([
+      "read",
+      "write",
+      "edit",
+      "search",
+      "run",
+      "push",
+    ]);
     expect(execs.map((exec) => exec.environment?.GIT_TOKEN)).toEqual([
       token,
       token,

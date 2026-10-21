@@ -7,6 +7,7 @@
 import { z } from "zod/v4";
 import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
+import { editText } from "./editText.ts";
 
 export type CodeToolName = "read" | "write" | "edit" | "search" | "run";
 
@@ -27,17 +28,6 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
   only?: TName[];
 }
 
-const editScript = `
-import os, sys
-path, old, new = os.environ["P"], os.environ["OLD"], os.environ["NEW"]
-text = open(path).read()
-count = text.count(old)
-if count != 1:
-    sys.exit(f"old text matched {count} times in {path}; it must match exactly once")
-open(path, "w").write(text.replace(old, new))
-print("edited " + path)
-`;
-
 const searchScript = `
 if command -v rg >/dev/null 2>&1; then
   rg --line-number --max-count 20 -e "$PAT" -- "$P"
@@ -50,8 +40,10 @@ fi | head -100
  * EXPERIMENTAL: Tools for a model to work on code in `sandbox`: `read`,
  * `write`, `edit`, `search` and `run`. Hand them to `agent.loop()`.
  *
- * `edit` needs `python3` in the sandbox image. A command that exits non-zero
- * is a result the model sees, not an error.
+ * `edit` replaces exact text, like the text editor tools models are trained
+ * on, and runs in your app: it reads the file, changes it and writes it back,
+ * so the sandbox needs nothing installed. A command that exits non-zero is a
+ * result the model sees, not an error.
  *
  * @example
  * ```ts
@@ -122,14 +114,39 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
     edit: tool.group({
       description:
-        "Replace one exact piece of text in a file. The old text must appear exactly once.",
-      input: z.object({ path: z.string(), old: z.string(), new: z.string() }),
-      run: ({ path, old, new: replacement }) => {
-        return exec("edit", `edit ${path}`, ["python3", "-c", editScript], {
-          P: path,
-          OLD: old,
-          NEW: replacement,
-        });
+        "Replace exact text in a file. Each old_string must match exactly once (or set replace_all). Several edits apply in order and either all succeed or the file is left unchanged.",
+      input: z.object({
+        path: z.string(),
+        edits: z
+          .array(
+            z.object({
+              old_string: z.string(),
+              new_string: z.string(),
+              replace_all: z.boolean().optional(),
+            }),
+          )
+          .min(1),
+      }),
+      run: async ({ path, edits }) => {
+        const file = path.startsWith("/") ? path : `${cwd}/${path}`;
+        const bytes = await sandbox.files.read(
+          { id: "edit:read", name: `read ${path}` },
+          file,
+        );
+        let text: string;
+
+        try {
+          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch {
+          throw new Error(`${path} is not a UTF-8 text file`);
+        }
+
+        await sandbox.files.write(
+          { id: "edit:write", name: `edit ${path}` },
+          { path: file, data: editText(path, text, edits) },
+        );
+
+        return `edited ${path}`;
       },
     }),
 
