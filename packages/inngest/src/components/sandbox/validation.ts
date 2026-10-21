@@ -970,27 +970,30 @@ const dropLeadingContinuationBytes = (bytes: Uint8Array): Uint8Array => {
 };
 
 const jsonSize = (values: string[]): number => {
+  const encoder = new TextEncoder();
+
   return values.reduce((sum, value) => {
-    return sum + JSON.stringify(value).length;
+    return sum + encoder.encode(JSON.stringify(value)).byteLength;
   }, 0);
 };
 
 /**
  * Encode captured output for a step result: readable text when every value is
  * valid UTF-8 and no larger as JSON than base64 would be (control characters
- * escape to six bytes), otherwise base64 for all of them.
+ * escape to six bytes), otherwise base64 for all of them. `truncated[i]` marks
+ * values whose start was cut off by a tail truncation.
  */
 export const encodeOutput = (
   values: Uint8Array[],
-  { truncated = false }: { truncated?: boolean } = {},
+  { truncated = [] }: { truncated?: boolean[] } = {},
 ): { encoding: SandboxOutputEncoding; values: string[] } => {
   const base64 = values.map(encodeBase64);
-  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
   try {
-    const text = values.map((value) => {
+    const text = values.map((value, i) => {
       return decoder.decode(
-        truncated ? dropLeadingContinuationBytes(value) : value,
+        truncated[i] ? dropLeadingContinuationBytes(value) : value,
       );
     });
     if (jsonSize(text) <= jsonSize(base64)) {

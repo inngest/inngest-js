@@ -54,11 +54,31 @@ describe("exec output in a step result", () => {
     });
   });
 
+  test("only a cut stream drops its leading continuation bytes", () => {
+    const orphan = new Uint8Array([0x80, 0x41]);
+
+    expect(
+      encodeOutput([orphan, orphan], { truncated: [true, false] }),
+    ).toEqual({
+      encoding: "base64",
+      values: [encodeBase64(orphan), encodeBase64(orphan)],
+    });
+  });
+
+  test("text is chosen by encoded JSON bytes, not string length", () => {
+    const mixed = new Uint8Array([
+      ...bytes("漢".repeat(30)),
+      ...new Uint8Array(15),
+    ]);
+
+    expect(encodeOutput([mixed]).encoding).toBe("base64");
+  });
+
   test("a tail cut inside a character stays text", () => {
     const euro = bytes("€");
     const tail = new Uint8Array([...euro.subarray(1), ...bytes("tail")]);
 
-    expect(encodeOutput([tail], { truncated: true })).toEqual({
+    expect(encodeOutput([tail], { truncated: [true] })).toEqual({
       encoding: "utf8",
       values: ["tail"],
     });
@@ -118,6 +138,15 @@ describe("process output chunks", () => {
     expect(
       decodeOutputChunk({ stream: "STDOUT", data, encoding }).data,
     ).toEqual(bytes("hi π"));
+  });
+
+  test("a leading byte order mark survives the round trip", () => {
+    const data = new Uint8Array([0xef, 0xbb, 0xbf, 0x41]);
+    const { encoding, values } = encodeOutput([data]);
+
+    expect(
+      decodeOutputChunk({ stream: "STDOUT", data: values[0], encoding }).data,
+    ).toEqual(data);
   });
 
   test("a chunk split inside a character falls back to base64", () => {

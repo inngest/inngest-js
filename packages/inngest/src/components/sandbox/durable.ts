@@ -208,7 +208,14 @@ export const execOperationResult = (result: {
     encoding,
     values: [stdout, stderr],
   } = encodeOutput([output.stdout, output.stderr], {
-    truncated: output.output.truncated,
+    truncated: output.output.truncated
+      ? [
+          output.output.retainedBytes.stdout <
+            output.output.originalBytes.stdout,
+          output.output.retainedBytes.stderr <
+            output.output.originalBytes.stderr,
+        ]
+      : [],
   });
 
   return {
