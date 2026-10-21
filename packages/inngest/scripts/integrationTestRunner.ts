@@ -167,12 +167,14 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string,
 ): Promise<void> {
+  const devServerBin = process.env.INNGEST_DEV_SERVER_BIN;
+
   const serverProcess = startProcess(
-    "npx",
+    devServerBin ?? "npx",
     [
-      "--yes",
-      "--ignore-scripts=false",
-      "inngest-cli@latest",
+      ...(devServerBin
+        ? []
+        : ["--yes", "--ignore-scripts=false", "inngest-cli@latest"]),
       "dev",
       "--port",
       devServerPort.toString(),
