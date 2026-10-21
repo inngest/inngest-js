@@ -4481,6 +4481,46 @@ describe("pipeline check annotations", () => {
   });
 });
 
+describe("commit statuses", () => {
+  test("a failing job's status says why it failed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub();
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      api.script([
+        {
+          match: "pnpm test",
+          exitCode: 1,
+          stderr: "warming up\nENOTFOUND localhost\n",
+        },
+      ]);
+
+      const test = ci.job("test", async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return test();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const descriptions = gh.requests.map((request) => {
+        return (request.body as { description: string }).description;
+      });
+
+      expect(descriptions).toContain(
+        "`pnpm test` exited with 1: ENOTFOUND localhost",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("comment permissions", () => {
   const commentEvent = (body: string) => {
     return {
