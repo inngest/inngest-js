@@ -167,6 +167,19 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string,
 ): Promise<void> {
+  const running = await fetch(`http://localhost:${devServerPort}/dev`)
+    .then((response) => {
+      return response.ok;
+    })
+    .catch(() => {
+      return false;
+    });
+
+  if (running) {
+    console.log(`Dev Server already running on port ${devServerPort}`);
+    return;
+  }
+
   const serverProcess = startProcess(
     "npx",
     [
