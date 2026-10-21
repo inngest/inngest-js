@@ -62,7 +62,7 @@ export interface ConsoleCheckRecord {
   at: string;
   pipeline: string;
   name: string;
-  status: "in_progress" | "completed";
+  status: "queued" | "in_progress" | "completed";
   conclusion?: string;
   title?: string;
   summary?: string;

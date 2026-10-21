@@ -78,6 +78,7 @@ describe("check idempotency", () => {
 
     const result = await sink.start({
       run: fakeRun(),
+      state: "in_progress",
       name: "pr",
       externalId: "01TESTRUN:pipeline",
       detailsUrl: "http://trace/01TESTRUN",
@@ -111,6 +112,7 @@ describe("check idempotency", () => {
 
     const result = await sink.start({
       run: fakeRun(),
+      state: "in_progress",
       name: "pr",
       externalId: "01TESTRUN:pipeline",
       detailsUrl: "http://trace/01TESTRUN",

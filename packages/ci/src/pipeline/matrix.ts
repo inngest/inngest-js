@@ -8,6 +8,7 @@
 import { NonRetriableError } from "inngest";
 import { checkCache } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { CheckReporter } from "../github/checks.ts";
 import { checkStaticFrom } from "../machine/from.ts";
 import type {
   JobConfig,
@@ -182,6 +183,28 @@ export const createMatrix = <TAxes extends MatrixAxes>({
         await job();
       };
     });
+
+    // Every combination shows as queued now, not once the pool reaches it.
+    if (config.check !== false) {
+      const checks = requireRunScope("matrix").ci.checks as CheckReporter;
+
+      const name = config.check ? config.check.name : undefined;
+      const scope = requireRunScope("matrix");
+
+      await Promise.all(
+        combos.map((combo) => {
+          const jobPath = matrixJobId(config.id, combo);
+
+          scope.openChecks.set(jobPath, name);
+
+          return checks.jobQueued({
+            run: scope,
+            jobPath,
+            ...(name ? { name } : {}),
+          });
+        }),
+      );
+    }
 
     await runPool(tasks, options.concurrency, options.failFast ?? false);
   };

@@ -219,6 +219,7 @@ describe("spans", () => {
     // updates are in the run's GitHub span, and cleanup is in none.
     expect(result.spans).toEqual({
       "github › check:pr:start": github,
+      "github › check:test:queued": github,
       "github › check:test:start": github,
       "test › machine": machine,
       "test › machine › setup": machine,
@@ -247,6 +248,7 @@ describe("spans", () => {
 
     expect(result.stepIds).toEqual([
       "github › check:pr:start",
+      "github › check:test:queued",
       "github › check:test:start",
       "test › machine",
       "test › machine › setup",
@@ -277,6 +279,7 @@ describe("spans", () => {
 
     expect(result.names).toMatchObject({
       "github › check:pr:start": "Create check: pr",
+      "github › check:test:queued": "Report test: queued",
       "github › check:test:start": "Report test: started",
       "test › machine": "Create sandbox",
       "test › machine › setup": "Prepare workspace",
@@ -393,6 +396,7 @@ describe("spans", () => {
     expect(result.stepIds).toContain("base (from) › build");
     expect(jobOf).toEqual({
       "github › check:pr:start": "github",
+      "github › check:test:queued": "github",
       "github › check:test:start": "github",
       "test › destroy": "test",
       "test › machine": "test",
@@ -413,6 +417,7 @@ describe("spans", () => {
       [
         "GitHub [github]",
         "  Create check: pr",
+        "  Report test: queued",
         "  Report test: started",
         "  Report test: passed",
         "  Report jobs: ended with the run",
@@ -454,6 +459,7 @@ describe("spans", () => {
       [
         "GitHub [github] <- ci",
         "  Create check: pr <- ci",
+        "  Report test: queued <- ci",
         "  Report test: started <- ci",
         "  Report test: passed <- ci",
         "  Report jobs: ended with the run <- ci",

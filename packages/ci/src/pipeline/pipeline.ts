@@ -482,7 +482,7 @@ const settle = async ({
 const conclusionOf = (outcome: Outcome): CheckConclusion => {
   switch (outcome.kind) {
     case "ran": {
-      return "success";
+      return asSkip(outcome.result) ? "skipped" : "success";
     }
 
     case "denied": {

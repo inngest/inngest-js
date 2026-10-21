@@ -3638,7 +3638,7 @@ describe("checks", () => {
 
     expect(completed[0]).toMatchObject({
       name: "pr",
-      conclusion: "success",
+      conclusion: "skipped",
       title: "Nothing to do: no relevant changes",
     });
   });
@@ -4611,6 +4611,184 @@ describe("the pipeline's commit status", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("the lifecycle of a check", () => {
+  const statusesOf = (
+    gh: ReturnType<typeof setupGitHub>["gh"],
+    context: string,
+  ) => {
+    return gh.requests
+      .filter((request) => {
+        return (
+          (request.body as { context?: string } | undefined)?.context ===
+          context
+        );
+      })
+      .map((request) => {
+        const status = request.body as { state: string; description: string };
+
+        return [status.state, status.description];
+      });
+  };
+
+  test("statuses go from queued to running to the result", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const lifecycle = statusesOf(gh, "pr / lint");
+
+      expect(lifecycle.slice(0, 2)).toEqual([
+        ["pending", "Queued"],
+        ["pending", "Running"],
+      ]);
+
+      expect(lifecycle.at(-1)?.[0]).toBe("success");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("every matrix combination is queued before any starts", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const compat = ci.job(
+        {
+          id: "compat",
+          matrix: { axes: { node: ["20", "22"] }, concurrency: 1 },
+        },
+        async () => {},
+      );
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await compat();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const posts = gh.requests.map((request) => {
+        const status = request.body as { context: string; description: string };
+
+        return `${status.context}: ${status.description}`;
+      });
+
+      const firstRunning = posts.findIndex((post) => {
+        return post.startsWith("pr / compat") && post.endsWith("Running");
+      });
+
+      const queued = posts.filter((post) => {
+        return post.startsWith("pr / compat") && post.endsWith("Queued");
+      });
+
+      expect(queued).toHaveLength(2);
+      expect(
+        posts.slice(0, firstRunning).filter((post) => {
+          return post.endsWith("Queued");
+        }),
+      ).toHaveLength(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("checks go from queued to in progress to completed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const lintId = made.find((check) => {
+        return check.name === "pr / lint";
+      })?.id;
+
+      const states = gh.requests
+        .filter((request) => {
+          const body = request.body as
+            | { name?: string; status?: string }
+            | undefined;
+
+          return (
+            request.method !== "GET" &&
+            body?.status !== undefined &&
+            (body.name === "pr / lint" ||
+              request.path.endsWith(`/check-runs/${lintId}`))
+          );
+        })
+        .map((request) => {
+          const body = request.body as { status: string; conclusion?: string };
+
+          return [request.method, body.status, body.conclusion];
+        });
+
+      expect(states).toEqual([
+        ["POST", "queued", undefined],
+        ["PATCH", "in_progress", undefined],
+        ["PATCH", "completed", "success"],
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("a pipeline that skips ends as skipped", async () => {
+    const { ci, reporter } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return ci.skip("nothing changed");
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(reporter.history.at(-1)).toMatchObject({ conclusion: "skipped" });
   });
 });
 
