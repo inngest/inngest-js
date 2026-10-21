@@ -515,6 +515,47 @@ describe("agent.loop", () => {
     });
   });
 
+  test("indexes an ID a tool uses twice within its own call", async () => {
+    const twice = tool.group({
+      input: z.object({}),
+      run: async () => {
+        await step.run("t", () => {
+          return 1;
+        });
+
+        return step.run("t", () => {
+          return 2;
+        });
+      },
+    });
+    const { steps } = await run(
+      [
+        {
+          message: { role: "assistant", content: "two calls" },
+          toolCalls: [
+            { id: "a", name: "twice", input: {} },
+            { id: "b", name: "twice", input: {} },
+          ],
+        },
+        say("ok"),
+      ],
+      { tools: { twice } },
+      true,
+    );
+
+    const calls = steps.filter((op) => {
+      return op.userland?.id?.includes("twice");
+    });
+
+    expect(calls.map((op) => op.userland?.id).sort()).toEqual([
+      "agent:1.0:twice:t",
+      "agent:1.0:twice:t",
+      "agent:1.1:twice:t",
+      "agent:1.1:twice:t",
+    ]);
+    expect(new Set(calls.map((op) => op.id)).size).toBe(4);
+  });
+
   test.each([
     {
       name: "a string",
