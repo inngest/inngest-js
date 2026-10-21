@@ -14,10 +14,12 @@ import { pack } from "./base.ts";
 
 const skipped = new Set([
   "framework-hono",
-  "framework-nestjs",
   "framework-nextjs-starter",
   "bun-sync",
 ]);
+
+/** Like `examples/.inngestignore`, which GitHub matches as a substring, so it skips `framework-nestjs-fastify` too. */
+const ignored = ["framework-nestjs"];
 
 export const examples = ci.job(
   {
@@ -41,7 +43,12 @@ export const examples = ci.job(
               return entry.name;
             })
             .filter((name) => {
-              return !skipped.has(name);
+              return (
+                !skipped.has(name) &&
+                !ignored.some((part) => {
+                  return name.includes(part);
+                })
+              );
             }),
         };
       },

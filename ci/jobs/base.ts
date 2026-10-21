@@ -10,6 +10,9 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+
 import { $, checkout, files, github } from "@inngest/ci";
 
 import { ci } from "../client.ts";
@@ -23,13 +26,27 @@ const latestDevServer = async (): Promise<string> => {
   return version;
 };
 
+const thisFile = new URL(import.meta.url);
+
+/**
+ * The hash of this file. The pull request's checkout has no `ci/` directory,
+ * so a `files()` key on this file can't notice an edit to the image's recipe.
+ */
+const recipe = async (): Promise<string> => {
+  const source = await readFile(thisFile);
+
+  return createHash("sha256").update(source).digest("hex");
+};
+
 export const base = ci.job(
   {
     id: "base",
     cache: {
       key: {
-        /** The dependencies, and the code of this image. */
-        deps: files("pnpm-lock.yaml", "package.json", "ci/jobs/base.ts"),
+        /** The dependencies. */
+        deps: files("pnpm-lock.yaml", "package.json"),
+        /** The code of this image, so a changed recipe rebuilds it. */
+        recipe,
         /** The latest Dev Server release, so a new one rebuilds the image. */
         devServer: latestDevServer,
       },
