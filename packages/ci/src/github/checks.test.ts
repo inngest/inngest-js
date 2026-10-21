@@ -203,7 +203,7 @@ describe("commit statuses", () => {
 });
 
 describe("commit status descriptions", () => {
-  const descriptionFor = async (title: string, detail?: string) => {
+  const descriptionFor = async (title: string) => {
     const gh = createFakeGitHub();
 
     gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
@@ -223,7 +223,6 @@ describe("commit status descriptions", () => {
       detailsUrl: "http://trace/01TESTRUN",
       conclusion: "failure",
       title,
-      ...(detail ? { detail } : {}),
       summary: "",
       annotations: [],
     });
@@ -231,31 +230,17 @@ describe("commit status descriptions", () => {
     return (gh.requests[0]?.body as { description: string }).description;
   };
 
-  test.each([
-    [
-      "no detail",
-      "`pnpm test` exited with 1",
-      undefined,
-      "`pnpm test` exited with 1",
-    ],
-    [
-      "a detail that fits",
-      "`pnpm test` exited with 1",
-      "ENOTFOUND localhost",
-      "`pnpm test` exited with 1: ENOTFOUND localhost",
-    ],
-    [
-      "a detail that is too long",
-      "`pnpm test` exited with 1",
-      "x".repeat(300),
-      `\`pnpm test\` exited with 1: ${"x".repeat(112)}…`,
-    ],
-  ])("%s", async (_name, title, detail, expected) => {
-    const description = await descriptionFor(title, detail);
+  test("a title that fits is the description", async () => {
+    expect(await descriptionFor("ENOTFOUND localhost (exit 1)")).toBe(
+      "ENOTFOUND localhost (exit 1)",
+    );
+  });
 
-    expect(description).toBe(expected);
+  test("a title that is too long is cut to GitHub's limit", async () => {
+    const description = await descriptionFor("x".repeat(300));
 
-    expect(description.length).toBeLessThanOrEqual(140);
+    expect(description).toBe(`${"x".repeat(139)}…`);
+    expect(description.length).toBe(140);
   });
 });
 

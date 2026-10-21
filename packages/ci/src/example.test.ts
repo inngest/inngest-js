@@ -314,7 +314,7 @@ describe("the example's pr pipeline", () => {
 
     expect(
       failed.every((entry) => {
-        return entry.title === "`pnpm test` exited with 1";
+        return entry.title?.endsWith("(exit 1)");
       }),
     ).toBe(true);
 
@@ -349,6 +349,6 @@ describe("the example's pr pipeline", () => {
     });
 
     expect(pipelineCheck?.conclusion).toBe("failure");
-    expect(pipelineCheck?.title).toContain("exited with 1");
+    expect(pipelineCheck?.title).toContain("(exit 1)");
   });
 });

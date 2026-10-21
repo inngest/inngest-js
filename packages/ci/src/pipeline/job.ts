@@ -58,7 +58,9 @@ import {
   failureLine,
   formatDuration,
   isSandboxNameTaken,
+  maxStatusDescription,
   shortReason,
+  truncateLabel,
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
@@ -1044,7 +1046,6 @@ const jobSteps = async ({
       const result = {
         conclusion,
         title,
-        ...jobErrorDetail(error),
         summary: jobFailureSummary(error, scope),
         annotations: scope.annotations,
       };
@@ -1212,7 +1213,13 @@ const warnBuiltInRun = (run: CiRunScope, jobId: string): void => {
 
 const jobErrorTitle = (error: unknown): string => {
   if (error instanceof CommandFailedError) {
-    return `\`${error.command.join(" ")}\` exited with ${error.exitCode}`;
+    const suffix = ` (exit ${error.exitCode})`;
+    const reason = failureLine(error.stderrTail, error.stdoutTail);
+
+    // The reason is why the job failed; the command is only there without one.
+    return reason
+      ? `${truncateLabel(reason, maxStatusDescription - suffix.length)}${suffix}`
+      : `\`${error.command.join(" ")}\` exited with ${error.exitCode}`;
   }
 
   if (error instanceof CommandTimeoutError) {
@@ -1220,17 +1227,6 @@ const jobErrorTitle = (error: unknown): string => {
   }
 
   return shortReason(error) || "Failed";
-};
-
-/** Why a failed command failed, from its error output. */
-const jobErrorDetail = (error: unknown): { detail?: string } => {
-  if (!(error instanceof CommandFailedError)) {
-    return {};
-  }
-
-  const detail = failureLine(error.stderrTail, error.stdoutTail);
-
-  return detail ? { detail } : {};
 };
 
 const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {

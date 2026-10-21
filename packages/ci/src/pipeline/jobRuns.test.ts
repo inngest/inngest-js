@@ -200,7 +200,7 @@ describe("jobs as child runs", () => {
       expect(child).toEqual(inline);
       expect(child?.type).toBe("function-rejected");
       expect(child?.completed[0]?.title).toMatch(
-        /^`pnpm test` (exited with 1|timed out after 30s)$/,
+        /^(.+ \(exit 1\)|`pnpm test` timed out after 30s)$/,
       );
       expect(child?.completed[0]?.summary).toContain("reported before failing");
       expect(child?.machines).toEqual(["TERMINATED"]);

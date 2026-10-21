@@ -10,7 +10,12 @@ import { type StepSpec, steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
-import { errorMessage, formatDuration, maxStatusDescription } from "../util.ts";
+import {
+  errorMessage,
+  formatDuration,
+  maxStatusDescription,
+  truncateLabel,
+} from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
 
 /**
@@ -26,8 +31,6 @@ export const annotationBatchSize = 50;
 interface CheckResult {
   conclusion: CheckConclusion;
   title: string;
-  /** One line on why it failed, for sinks that can't show a summary. */
-  detail?: string | undefined;
   summary?: string | undefined;
   annotations?: CheckAnnotation[] | undefined;
 }
@@ -152,7 +155,6 @@ export interface CheckSink {
     detailsUrl: string;
     conclusion: CheckConclusion;
     title: string;
-    detail?: string;
     summary: string;
     annotations: NormalisedAnnotation[];
     checkRunId?: number;
@@ -291,7 +293,6 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       ...identity(run, key),
       conclusion: read.conclusion,
       title: read.title,
-      ...(read.detail ? { detail: read.detail } : {}),
       summary: truncateSummary(read.summary ?? ""),
       annotations: (read.annotations ?? []).map(normaliseAnnotation),
       ...idFor(run, key),
@@ -812,22 +813,9 @@ const statusFor = (conclusion: CheckConclusion): StatusState => {
   }
 };
 
-/** The title and its detail, cutting the detail to fit GitHub's limit. */
-const statusDescription = (title: string, detail?: string): string => {
-  if (!detail) {
-    return title.slice(0, maxStatusDescription);
-  }
-
-  const text = `${title}: ${detail}`;
-
-  return text.length <= maxStatusDescription
-    ? text
-    : `${text.slice(0, maxStatusDescription - 1)}…`;
-};
-
 /**
  * Commit statuses, for token auth. There are no summaries or annotations, so
- * the description carries the failure's detail.
+ * the description carries the failure's reason.
  */
 export const statusesSink = (provider: GitHubProvider): CheckSink => {
   const post = async (
@@ -862,13 +850,13 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
 
       return {};
     },
-    complete: async ({ run, name, detailsUrl, conclusion, title, detail }) => {
+    complete: async ({ run, name, detailsUrl, conclusion, title }) => {
       await post(
         run,
         name,
         detailsUrl,
         statusFor(conclusion),
-        statusDescription(title, detail),
+        truncateLabel(title, maxStatusDescription),
       );
     },
     closeOpen: async ({ run, title }) => {
