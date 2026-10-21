@@ -23,14 +23,11 @@ export async function startDevServer(): Promise<void> {
 
   return new Promise((resolve, reject) => {
     // npx inngest-cli@latest dev --no-discovery --port 8288
-    const devServerBin = process.env.INNGEST_DEV_SERVER_BIN;
-
     devServerProcess = spawn(
-      devServerBin ?? "npx",
+      "npx",
       [
-        ...(devServerBin
-          ? []
-          : ["--ignore-scripts=false", "inngest-cli@latest"]),
+        "--ignore-scripts=false",
+        "inngest-cli@latest",
         "dev",
         "--no-discovery",
         "--no-poll",
