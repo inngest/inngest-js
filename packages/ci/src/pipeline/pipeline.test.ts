@@ -4898,6 +4898,169 @@ describe("a cancelled pipeline's job runs", () => {
   });
 });
 
+describe("what a check shows", () => {
+  const checksSetup = () => {
+    const { api, ci, gh } = setupGitHub("checks");
+    const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+    gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+      const body = request.body as { name: string; external_id: string };
+      const created = { id: made.length + 1, ...body };
+
+      made.push(created);
+
+      return { body: created };
+    });
+
+    gh.handle(
+      "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+      () => {
+        return { body: { total_count: made.length, check_runs: made } };
+      },
+    );
+
+    gh.route("GET /repos/inngest/inngest-js/check-runs/*", {
+      output: { summary: "before" },
+    });
+
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+    return { api, ci, gh };
+  };
+
+  const patches = (gh: ReturnType<typeof setupGitHub>["gh"]) => {
+    return gh.requests
+      .filter((request) => {
+        return request.method === "PATCH";
+      })
+      .map((request) => {
+        return request.body as {
+          actions?: Array<{ identifier: string }>;
+          output?: {
+            title?: string;
+            summary?: string;
+            annotations?: unknown[];
+          };
+        };
+      });
+  };
+
+  test("Cancel stays on a check while its job runs in its own run", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = checksSetup();
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const building = patches(gh).filter((body) => {
+        return body.output?.title === "Running in its own run";
+      });
+
+      expect(building).toHaveLength(1);
+      expect(building[0]?.actions?.map((action) => action.identifier)).toEqual([
+        "cancel",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("annotations past the first 50 are steps of their own", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = checksSetup();
+
+      const lint = ci.job("lint", async () => {
+        await report.annotate(
+          Array.from({ length: 120 }, (_, index) => {
+            return { path: "a.ts", line: index + 1, message: "boom" };
+          }),
+        );
+
+        await $`pnpm lint`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const sizes = patches(gh)
+        .filter((body) => {
+          return body.output?.annotations !== undefined;
+        })
+        .map((body) => {
+          return body.output?.annotations?.length;
+        });
+
+      expect(sizes).toEqual([50, 50, 20]);
+
+      expect(
+        result.stepIds.filter((id) => {
+          return id.includes("annotations");
+        }),
+      ).toEqual([
+        "github › check:lint:annotations:2",
+        "github › check:lint:annotations:3",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("a log that holds a code fence is shown in a longer one", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = checksSetup();
+
+      api.script([
+        {
+          match: "pnpm lint",
+          exitCode: 1,
+          stderr: "Error: see\n```ts\ncode\n```\n",
+        },
+      ]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const summaries = patches(gh).map((body) => {
+        return body.output?.summary ?? "";
+      });
+
+      expect(
+        summaries.some((summary) => {
+          return summary.startsWith("````\n");
+        }),
+      ).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("the Cancel button", () => {
   const click = async (
     checkName: string,

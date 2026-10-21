@@ -14,6 +14,7 @@ import {
   errorMessage,
   formatDuration,
   maxStatusDescription,
+  stripAnsi,
   truncateLabel,
 } from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
@@ -191,6 +192,7 @@ export interface CheckSink {
     conclusion: CheckConclusion;
     title: string;
     summary: string;
+    /** At most the first batch: the reporter sends the rest through `annotate`. */
     annotations: NormalisedAnnotation[];
     actions?: CheckAction[];
     checkRunId?: number;
@@ -200,10 +202,30 @@ export interface CheckSink {
     run: Pick<CiRunScope, "runId" | "repo">;
     title: string;
   }): Promise<void>;
+  /**
+   * Add a batch of annotations to a completed check. GitHub takes 50 a
+   * request and appends them, so the reporter sends each batch past the first
+   * as a step of its own.
+   */
+  annotate?(args: {
+    run: CiRunScope;
+    name: string;
+    externalId: string;
+    detailsUrl: string;
+    title: string;
+    summary: string;
+    annotations: NormalisedAnnotation[];
+    checkRunId?: number;
+  }): Promise<void>;
   update?(args: {
     run: CiRunScope;
     name: string;
     title: string;
+    /** What the check shows below its title. Without it the check keeps its own. */
+    summary?: string;
+    text?: string;
+    /** The buttons the check shows, which an update would otherwise clear. */
+    actions?: CheckAction[];
     checkRunId?: number;
     /** Points the check's link at another run. */
     detailsUrl?: string;
@@ -262,12 +284,14 @@ export const normaliseAnnotation = (
 
   return {
     path: annotation.path,
-    message: annotation.message,
+    message: stripAnsi(annotation.message),
     start_line: start,
     end_line: annotation.end_line ?? start,
     annotation_level: annotation.annotation_level ?? "failure",
-    ...(annotation.title ? { title: annotation.title } : {}),
-    ...(annotation.raw_details ? { raw_details: annotation.raw_details } : {}),
+    ...(annotation.title ? { title: stripAnsi(annotation.title) } : {}),
+    ...(annotation.raw_details
+      ? { raw_details: stripAnsi(annotation.raw_details) }
+      : {}),
   };
 };
 
@@ -328,9 +352,12 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       name,
       ...identity(run, key),
       conclusion: read.conclusion,
-      title: read.title,
-      summary: truncateSummary(read.summary ?? ""),
-      annotations: (read.annotations ?? []).map(normaliseAnnotation),
+      title: stripAnsi(read.title),
+      summary: truncateSummary(stripAnsi(read.summary ?? "")),
+      annotations:
+        batchAnnotations(
+          (read.annotations ?? []).map(normaliseAnnotation),
+        )[0] ?? [],
       actions:
         read.conclusion === "failure" || read.conclusion === "timed_out"
           ? failedActions
@@ -383,20 +410,53 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
   ): Promise<number> => {
     const key = job?.path ?? "pipeline";
 
-    const endedAt = await githubStep(
+    const done = await githubStep(
       run,
       steps.completeCheck(name, job),
       async () => {
-        await sink.complete(completeArgs(run, key, name, result()));
+        const read = result();
+        const args = completeArgs(run, key, name, read);
 
-        return Date.now();
+        await sink.complete(args);
+
+        // What is past the first batch comes out of the step, so it is the
+        // same on every replay.
+        return {
+          endedAt: Date.now(),
+          rest: batchAnnotations(
+            (read.annotations ?? []).map(normaliseAnnotation),
+          ).slice(1),
+          title: args.title,
+          summary: args.summary,
+        };
       },
       metadata,
     );
 
+    // Each batch is a step of its own, so a retry can't add one twice.
+    for (const [index, batch] of done.rest.entries()) {
+      await githubStep(
+        run,
+        steps.annotateCheck(name, index + 2, job?.path),
+        async () => {
+          await sink.annotate?.({
+            run,
+            name,
+            ...identity(run, key),
+            title: done.title,
+            summary: done.summary,
+            annotations: batch,
+            ...idFor(run, key),
+          });
+
+          return null;
+        },
+      );
+    }
+
     checkRunIds.delete(idKey(run, key));
 
-    return endedAt;
+    return done.endedAt;
   };
 
   return {
@@ -517,6 +577,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: checkName,
           title,
+          actions: runningActions,
           ...idFor(run, key),
         });
 
@@ -538,6 +599,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: jobCheckName(run, jobPath),
           title: `Attempt ${attempt} of ${of}: ${message}`,
+          actions: runningActions,
           ...idFor(run, jobPath),
         });
 
@@ -573,6 +635,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run: { ...run, runId: parent.runId, pipelineId: parent.pipelineId },
           name: check.name,
           title: direct ? "Running in its own run" : "Building in its own run",
+          actions: runningActions,
           detailsUrl,
           ...(check.checkRunId === undefined
             ? {}
@@ -773,46 +836,62 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       const id =
         checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
 
-      const [firstBatch, ...otherBatches] = batchAnnotations(annotations);
-
-      const base = {
+      const completed = {
         owner: repo.owner,
         repo: repo.name,
         name,
         head_sha: repo.sha,
         details_url: detailsUrl,
         external_id: externalId,
-      };
-
-      const completed = {
-        ...base,
         status: "completed" as const,
         conclusion,
         completed_at: new Date().toISOString(),
         output: {
           title,
           summary,
-          ...(firstBatch ? { annotations: firstBatch } : {}),
+          ...(annotations.length > 0 ? { annotations } : {}),
         },
         ...(actions ? { actions } : {}),
       };
 
-      const checkRun =
-        id === undefined
-          ? await octokit.rest.checks.create(completed)
-          : await octokit.rest.checks.update({
-              ...completed,
-              check_run_id: id,
-            });
-
-      // GitHub appends annotations, so the rest go up in further updates.
-      for (const batch of otherBatches) {
-        await octokit.rest.checks.update({
-          ...base,
-          check_run_id: checkRun.data.id,
-          output: { title, summary, annotations: batch },
-        });
+      if (id === undefined) {
+        await octokit.rest.checks.create(completed);
+      } else {
+        await octokit.rest.checks.update({ ...completed, check_run_id: id });
       }
+    },
+
+    annotate: async ({
+      run,
+      name,
+      externalId,
+      title,
+      summary,
+      annotations,
+      checkRunId,
+    }) => {
+      const repo = run.repo;
+
+      if (!repo?.sha) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      const id =
+        checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
+
+      if (id === undefined) {
+        return;
+      }
+
+      // GitHub appends annotations, so each batch is an update of its own.
+      await octokit.rest.checks.update({
+        owner: repo.owner,
+        repo: repo.name,
+        check_run_id: id,
+        output: { title, summary, annotations },
+      });
     },
 
     closeOpen: async ({ run, title }) => {
@@ -852,7 +931,16 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       }
     },
 
-    update: async ({ run, name, title, checkRunId, detailsUrl }) => {
+    update: async ({
+      run,
+      name,
+      title,
+      summary,
+      text,
+      actions,
+      checkRunId,
+      detailsUrl,
+    }) => {
       const repo = run.repo;
 
       if (!repo?.sha || checkRunId === undefined) {
@@ -862,19 +950,31 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       const octokit = await clientFor(provider, repo);
 
       // `output.summary` is required on every update and replaces what's
-      // there, so send back what the check already shows.
-      const current = await octokit.rest.checks.get({
-        owner: repo.owner,
-        repo: repo.name,
-        check_run_id: checkRunId,
-      });
+      // there, so without a new one, send back what the check already shows.
+      const current =
+        summary === undefined
+          ? await octokit.rest.checks.get({
+              owner: repo.owner,
+              repo: repo.name,
+              check_run_id: checkRunId,
+            })
+          : undefined;
 
       await octokit.rest.checks.update({
         owner: repo.owner,
         repo: repo.name,
         check_run_id: checkRunId,
         ...(detailsUrl ? { details_url: detailsUrl } : {}),
-        output: { title, summary: current.data.output?.summary || name },
+        ...(actions ? { actions } : {}),
+        output: {
+          title: stripAnsi(title),
+          summary: truncateSummary(
+            stripAnsi(summary ?? current?.data.output?.summary ?? name),
+          ),
+          ...(text === undefined
+            ? {}
+            : { text: truncateSummary(stripAnsi(text)) }),
+        },
       });
     },
   };
@@ -923,7 +1023,7 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
       state,
       context: name,
       target_url: detailsUrl,
-      description,
+      description: stripAnsi(description),
     });
   };
 

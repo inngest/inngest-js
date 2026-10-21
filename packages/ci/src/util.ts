@@ -70,20 +70,56 @@ export const tail = (
 /** GitHub's limit on a commit status description. */
 export const maxStatusDescription = 140;
 
+const esc = "\u001b";
+
+/** An escape sequence that lost its escape byte, or was cut at the edge of a tail. */
+const brokenAnsi = new RegExp(
+  `\\uFFFD\\[[0-9;?]*[A-Za-z]|(?:${esc}|\\uFFFD)\\[?[0-9;?]*$|^\\[[0-9;]*m`,
+  "g",
+);
+
+/**
+ * Text without terminal colour and cursor codes: whole sequences, ones whose
+ * escape byte was replaced on its way here, and ones cut off by the edge of a
+ * tail. What GitHub shows is plain text.
+ */
+export const stripAnsi = (text: string): string => {
+  return stripVTControlCharacters(text).replace(brokenAnsi, "");
+};
+
+/**
+ * The code fence for a block of text: three backticks, or more than any run
+ * inside it, so the text can't end the block early.
+ */
+export const fenceFor = (text: string): string => {
+  const longest = Math.max(
+    0,
+    ...(text.match(/`+/g) ?? []).map((run) => {
+      return run.length;
+    }),
+  );
+
+  return "`".repeat(Math.max(3, longest + 1));
+};
+
 /** Lines that say a command failed, whatever it was. */
 const errorLine = /Error|\bFAIL\b|not found|timed out/;
 
-/** Lines that say nothing: bare exit codes, lone brackets and rules. */
-const noiseLine = /^(?:Exit status \d+|[)\]}>,;]+|[-=_*~⎯─━═]{3,}.*)$/i;
+/**
+ * Lines that say nothing: bare exit codes, lone brackets and rules, and what a
+ * test runner or package manager prints while shutting down after a failure.
+ */
+const noiseLine =
+  /^(?:Exit status \d+|[)\]}>,;]+|[-=_*~⎯─━═]{3,}.*|.*(?:close timed out|hanging-process|Tests closed successfully|ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL).*)$/i;
 
 /**
- * The line of a failed command's output that says why it failed: the last one
- * that reads as an error, else the last one with any words in it. Cut to fit
- * a commit status.
+ * The line of a failed command's output that says why it failed: the first one
+ * that reads as an error, since what comes after is usually fallout, else the
+ * last one with any words in it. Cut to fit a commit status.
  */
 export const failureLine = (stderrTail: string, stdoutTail: string): string => {
   const outputs = [stderrTail, stdoutTail].map((output) => {
-    return stripVTControlCharacters(output)
+    return stripAnsi(output)
       .split("\n")
       .map((line) => {
         return line.trim();
@@ -94,7 +130,7 @@ export const failureLine = (stderrTail: string, stdoutTail: string): string => {
   });
 
   const errors = outputs.map((lines) => {
-    return [...lines].reverse().find((line) => {
+    return lines.find((line) => {
       return errorLine.test(line);
     });
   });

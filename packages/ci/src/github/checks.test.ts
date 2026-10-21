@@ -122,7 +122,7 @@ describe("check idempotency", () => {
     expect(result).toEqual({ id: 77 });
   });
 
-  test("annotations past the first batch go up as further updates", async () => {
+  test("each batch past the first is its own update", async () => {
     const gh = createFakeGitHub();
 
     gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
@@ -135,6 +135,16 @@ describe("check idempotency", () => {
       }),
     );
 
+    const annotations = (count: number) => {
+      return Array.from({ length: count }, (_, index) => {
+        return normaliseAnnotation({
+          path: "app/src/sum.ts",
+          line: index + 1,
+          message: "boom",
+        });
+      });
+    };
+
     await sink.complete({
       run: fakeRun(),
       name: "pr / test",
@@ -143,28 +153,103 @@ describe("check idempotency", () => {
       conclusion: "failure",
       title: "failed",
       summary: "…",
-      annotations: Array.from({ length: 120 }, (_, index) => {
-        return normaliseAnnotation({
-          path: "app/src/sum.ts",
-          line: index + 1,
-          message: "boom",
-        });
-      }),
+      annotations: annotations(50),
       checkRunId: 55,
     });
 
-    const updates = gh.requests.filter((request) => {
-      return request.method === "PATCH";
+    await sink.annotate?.({
+      run: fakeRun(),
+      name: "pr / test",
+      externalId: "01TESTRUN:test",
+      detailsUrl: "http://trace/01TESTRUN",
+      title: "failed",
+      summary: "…",
+      annotations: annotations(20),
+      checkRunId: 55,
     });
 
-    expect(updates).toHaveLength(3);
+    expect(
+      gh.requests
+        .filter((request) => {
+          return request.method === "PATCH";
+        })
+        .map((request) => {
+          return (request.body as { output: { annotations: unknown[] } }).output
+            .annotations.length;
+        }),
+    ).toEqual([50, 20]);
+  });
+});
+
+describe("updating a running check", () => {
+  const checkRun = (gh: ReturnType<typeof createFakeGitHub>) => {
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
+
+    gh.route("GET /repos/inngest/inngest-js/check-runs/55", {
+      output: { summary: "what it showed before" },
+    });
+
+    return checksSink(
+      githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    );
+  };
+
+  const bodyOf = (gh: ReturnType<typeof createFakeGitHub>) => {
+    return gh.requests.find((request) => {
+      return request.method === "PATCH";
+    })?.body as {
+      actions?: unknown[];
+      output: { title: string; summary: string; text?: string };
+    };
+  };
+
+  test("keeps the buttons it is given and the summary it had", async () => {
+    const gh = createFakeGitHub();
+    const sink = checkRun(gh);
+
+    await sink.update?.({
+      run: fakeRun(),
+      name: "pr / test",
+      title: "Retrying",
+      actions: [{ label: "Cancel", description: "Stop", identifier: "cancel" }],
+      checkRunId: 55,
+    });
+
+    expect(bodyOf(gh).actions).toEqual([
+      { label: "Cancel", description: "Stop", identifier: "cancel" },
+    ]);
+
+    expect(bodyOf(gh).output.summary).toBe("what it showed before");
+  });
+
+  test("shows a new summary and text instead of the old summary", async () => {
+    const gh = createFakeGitHub();
+    const sink = checkRun(gh);
+
+    await sink.update?.({
+      run: fakeRun(),
+      name: "pr / test",
+      title: "\u001b[1mBuilding\u001b[0m",
+      summary: "2 of 5 steps done",
+      text: "log",
+      checkRunId: 55,
+    });
+
+    expect(bodyOf(gh).output).toEqual({
+      title: "Building",
+      summary: "2 of 5 steps done",
+      text: "log",
+    });
 
     expect(
-      updates.map((request) => {
-        return (request.body as { output: { annotations: unknown[] } }).output
-          .annotations.length;
+      gh.requests.filter((request) => {
+        return request.method === "GET";
       }),
-    ).toEqual([50, 50, 20]);
+    ).toHaveLength(0);
   });
 });
 

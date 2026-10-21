@@ -7,3 +7,5 @@ Pipeline and job statuses on GitHub now update live: every job shows as queued a
 Queued and running checks on GitHub now have a "Cancel" button. Failed checks have a "Re-run, no cache" button, and re-running a job's check re-runs just that job.
 
 When a run starts from a cached build, the pipeline's status and check summary say how much time the cache saved, such as "Passed in 4m (saved 11m from cache)".
+
+A failed job's status now names the first real error in its output rather than shutdown noise after it, and checks no longer show raw terminal colour codes. Long annotation lists and logs that contain code fences display correctly, and the Cancel button stays on a check while it retries or builds.
