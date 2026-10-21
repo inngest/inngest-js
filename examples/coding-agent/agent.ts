@@ -1,10 +1,5 @@
 import { Inngest } from "inngest";
-import {
-  agent,
-  repo,
-  sandboxMiddleware,
-  tool,
-} from "inngest/experimental";
+import { agent, repo, sandboxMiddleware, tool } from "inngest/experimental";
 import { z } from "zod";
 
 import { claude } from "./model.ts";
@@ -54,7 +49,7 @@ export const coder = inngest.createFunction(
 
     const { text, stopped, turns } = await agent.loop({
       model: claude,
-      system: `You are a careful engineer. Work on a new branch named agent/${runId}. Use read, search and edit for files; use run only for building, testing and git. Run the code to check it works, commit, push the branch, then open a pull request.`,
+      system: `You are a careful engineer. Work on a new branch named agent/${runId}. Run the code to check it works, commit, push the branch, then open a pull request.`,
       prompt: `The repository is in ${checkout.path}. Task: ${task}`,
       tools: { ...checkout.tools, openPullRequest },
     });

@@ -8,7 +8,6 @@ import {
   runToEnd,
   sandboxResource,
 } from "../sandbox/test-helpers.ts";
-import { toolDefinitions } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
 import { codeTools } from "./codeTools.ts";
 import { repo } from "./repo.ts";
@@ -26,7 +25,12 @@ type Exec = {
  */
 const inSandbox = async (
   body: (sandbox: DurableSandbox) => Promise<unknown>,
-  { stdout = "", stderr = "", exitCode = 0, file = "" as string | null } = {},
+  {
+    stdout = "",
+    stderr = "",
+    exitCode = 0,
+    file = "" as string | Uint8Array | null,
+  } = {},
 ) => {
   const execs: Exec[] = [];
   const uploads: { path: string; body: string }[] = [];
@@ -46,7 +50,7 @@ const inSandbox = async (
             { errors: [{ code: "file_not_found", message: "no such file" }] },
             { status: 404 },
           )
-        : new Response(file);
+        : new Response(file as BodyInit);
     }
 
     if (path === "/v2/sandboxes" && method === "POST") {
@@ -82,7 +86,10 @@ const inSandbox = async (
 type Call = (input: unknown) => Promise<unknown>;
 
 describe("codeTools edit", () => {
-  const edit = async (file: string | null, input: Record<string, unknown>) => {
+  const edit = async (
+    file: string | Uint8Array | null,
+    input: Record<string, unknown>,
+  ) => {
     let result: unknown;
     let error: unknown;
     const run = await inSandbox(
@@ -102,25 +109,22 @@ describe("codeTools edit", () => {
   };
 
   test("reads, edits and writes the file in the app, relative to cwd", async () => {
-    const { result, uploads, execs } = await edit("a\nb\nc\n", {
+    const { result, uploads, execs } = await edit("a\nb\n", {
       path: "src/a.ts",
-      old_string: "a",
-      new_string: "A",
-      edits: [
-        { old_string: "b", new_string: "B" },
-        { old_string: "B\nc", new_string: "bc" },
-      ],
+      old_string: "b",
+      new_string: "B",
     });
 
     expect(result).toBe("edited src/a.ts");
-    expect(uploads).toEqual([{ path: "/repo/src/a.ts", body: "A\nbc\n" }]);
+    expect(uploads).toEqual([{ path: "/repo/src/a.ts", body: "a\nB\n" }]);
     expect(execs).toEqual([]);
   });
 
   test("tells the model a missing file isn't there, without retrying", async () => {
     const { error, ran, uploads } = await edit(null, {
       path: "gone.ts",
-      edits: [{ old_string: "a", new_string: "b" }],
+      old_string: "a",
+      new_string: "b",
     });
 
     expect((error as Error).message).toBe("File not found: gone.ts");
@@ -128,34 +132,12 @@ describe("codeTools edit", () => {
     expect(uploads).toEqual([]);
   });
 
-  test("accepts edits sent as a JSON string", async () => {
-    const { edit: tool } = codeTools({} as DurableSandbox, { only: ["edit"] });
-    const result = await tool.input?.["~standard"].validate({
-      path: "/a",
-      edits: '[{"old_string":"a","new_string":"A"}]',
-    });
-
-    expect(result).toEqual({
-      value: {
-        path: "/a",
-        edits: [{ old_string: "a", new_string: "A" }],
-      },
-    });
-  });
-
-  test("describes edits as an array to the model", () => {
-    const { edit: tool } = codeTools({} as DurableSandbox, { only: ["edit"] });
-    const [definition] = toolDefinitions({ edit: tool });
-
-    expect(definition?.input_schema.properties).toMatchObject({
-      edits: { type: "array" },
-    });
-  });
-
   test("replace_all changes every match", async () => {
     const { uploads } = await edit("x x x", {
       path: "/a",
-      edits: [{ old_string: "x", new_string: "y", replace_all: true }],
+      old_string: "x",
+      new_string: "y",
+      replace_all: true,
     });
 
     expect(uploads[0]?.body).toBe("y y y");
@@ -164,45 +146,43 @@ describe("codeTools edit", () => {
   test.each([
     {
       name: "no match",
-      edits: [{ old_string: "zzz", new_string: "y" }],
+      edit: { old_string: "zzz", new_string: "y" },
       message: "old_string was not found in f.ts",
     },
     {
       name: "several matches",
-      edits: [{ old_string: "x", new_string: "y" }],
+      edit: { old_string: "x", new_string: "y" },
       message: "matches 3 times in f.ts (lines 1, 2, 4)",
     },
     {
       name: "an empty old_string",
-      edits: [{ old_string: "", new_string: "y" }],
+      edit: { old_string: "", new_string: "y" },
       message: "old_string is empty",
     },
     {
       name: "identical strings",
-      edits: [{ old_string: "x", new_string: "x" }],
+      edit: { old_string: "x", new_string: "x" },
       message: "identical",
     },
-    {
-      name: "nothing to change",
-      edits: [],
-      message: "Give old_string and new_string, or edits",
-    },
-    {
-      name: "a later edit that fails",
-      edits: [
-        { old_string: "w", new_string: "W" },
-        { old_string: "zzz", new_string: "y" },
-      ],
-      message: "Edit 2 of 2: old_string was not found",
-    },
-  ])("writes nothing on $name", async ({ edits, message }) => {
+  ])("writes nothing on $name", async ({ edit: change, message }) => {
     const { uploads, error } = await edit("x\nx w\n\nx", {
       path: "f.ts",
-      edits,
+      ...change,
     });
 
     expect((error as Error).message).toContain(message);
     expect(uploads).toEqual([]);
+  });
+
+  test("refuses a file that isn't UTF-8 text", async () => {
+    const { error, uploads } = await edit(new Uint8Array([0xff, 0xfe]), {
+      path: "f.bin",
+      old_string: "a",
+      new_string: "b",
+    });
+
+    expect(uploads).toEqual([]);
+    expect((error as Error).message).toBe("f.bin is not a UTF-8 text file");
   });
 });
 

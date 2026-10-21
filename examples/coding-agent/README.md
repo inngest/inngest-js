@@ -47,3 +47,13 @@ for (let round = 0; ; round += 1) {
 ```
 
 `steer` runs between model calls, so a message sent mid-task reaches the model on its next turn. Read it from a durable log: an event alone can be missed.
+
+## Choosing tools for a model
+
+`checkout.tools` is a plain object, so swap any tool for one tuned to your model. Model-specific tuning (tool shapes, prompts, message mapping) lives next to the model callback in `model.ts`.
+
+```ts
+const { edit, ...tools } = checkout.tools;
+
+await agent.loop({ model: gpt, tools: { ...tools, apply_patch, openPullRequest }, ... });
+```
