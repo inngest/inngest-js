@@ -3,11 +3,12 @@
  * Tests for `agent.loop()`, with a scripted function standing in for the model.
  */
 import { z } from "zod/v4";
-import { testClientId } from "../../test/helpers.ts";
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import { runToEnd } from "../sandbox/test-helpers.ts";
 import { tool } from "../sandbox/tools.ts";
 import {
   type AgentLoopOptions,
@@ -22,7 +23,6 @@ const say = (text: string): AgentModelResponse => {
     message: { role: "assistant", content: [{ type: "text", text }] },
     text,
     toolCalls: [],
-    done: true,
     usage: { input: 10, output: 5 },
   };
 };
@@ -38,7 +38,6 @@ const call = (
       content: [...extra, { type: "tool_use", id: `id-${name}`, name, input }],
     },
     toolCalls: [{ id: `id-${name}`, name, input }],
-    done: false,
     usage: { input: 10, output: 5 },
   };
 };
@@ -52,12 +51,54 @@ const add = tool.step({
 });
 
 /**
+ * Plays the executor: runs a function until it resolves, running the steps it
+ * finds one request at a time, or all at once when they are parallel, in the
+ * order they were found (or reversed, to make later steps finish first).
+ */
+const drive = async (fn: InngestFunction.Any, reverse: boolean) => {
+  const ran: string[] = [];
+  const steps: OutgoingOp[] = [];
+  let state: Parameters<typeof runFnWithStack>[1] = {};
+
+  for (let request = 0; request < 40; request++) {
+    const result = await runFnWithStack(fn, state);
+
+    if (result.type !== "steps-found" && result.type !== "step-ran") {
+      return { type: result.type, ran, steps };
+    }
+
+    const found = result.type === "step-ran" ? [result.step] : result.steps;
+
+    for (const op of reverse ? [...found].reverse() : found) {
+      const { step: done } =
+        result.type === "step-ran"
+          ? result
+          : ((await runFnWithStack(fn, state, { runStep: op.id })) as {
+              step: OutgoingOp;
+            });
+
+      steps.push(done);
+      ran.push(done.userland?.id ?? done.id);
+      state = {
+        ...state,
+        [done.id]: done.error
+          ? { id: done.id, error: done.error }
+          : { id: done.id, data: done.data },
+      };
+    }
+  }
+
+  throw new Error("The function did not finish");
+};
+
+/**
  * Runs the loop to the end with a model that answers from `script`, in order,
  * and returns what the model was asked and what the loop returned.
  */
 const run = async (
   script: AgentModelResponse[],
   options: Partial<AgentLoopOptions> = {},
+  reverse = false,
 ) => {
   const requests: AgentModelRequest[] = [];
   const client = new Inngest({ id: testClientId });
@@ -78,7 +119,7 @@ const run = async (
       });
     },
   );
-  const { type, ran, steps } = await runToEnd(fn);
+  const { type, ran, steps } = await drive(fn, reverse);
 
   return { type, ran, steps, requests, result };
 };
@@ -282,23 +323,69 @@ describe("agent.loop", () => {
     });
   });
 
-  test("gives the results of one reply's calls in one message", async () => {
+  describe("a reply with several calls", () => {
     const two: AgentModelResponse = {
       message: { role: "assistant", content: "two calls" },
       toolCalls: [
         { id: "a", name: "add", input: { a: 1, b: 1 } },
         { id: "b", name: "add", input: { a: 2, b: 2 } },
       ],
-      done: false,
     };
-    const { requests } = await run([two, say("ok")]);
 
-    expect(requests[1]?.messages.at(-1)).toEqual({
-      role: "tool",
-      results: [
-        { toolCallId: "a", content: "2" },
-        { toolCallId: "b", content: "4" },
-      ],
+    test.each([
+      { name: "in call order", reverse: false },
+      {
+        name: "in call order when the last call finishes first",
+        reverse: true,
+      },
+    ])("gives the results in one message, $name", async ({ reverse }) => {
+      const { requests, ran } = await run([two, say("ok")], {}, reverse);
+
+      expect(ran[1]).toBe(reverse ? "agent:1.1:add" : "agent:1.0:add");
+      expect(ran).toHaveLength(4);
+      expect(requests[1]?.messages.at(-1)).toEqual({
+        role: "tool",
+        results: [
+          { toolCallId: "a", content: "2" },
+          { toolCallId: "b", content: "4" },
+        ],
+      });
+    });
+
+    test("keeps going when one call fails", async () => {
+      const { requests, result } = await run([two, say("ok")], {
+        tools: {
+          add: tool.step({
+            input: z.object({ a: z.number(), b: z.number() }),
+            run: ({ a, b }) => {
+              if (a === 1) {
+                throw new NonRetriableError("first is down");
+              }
+
+              return a + b;
+            },
+          }),
+        },
+      });
+
+      expect(requests[1]?.messages.at(-1)).toMatchObject({
+        results: [
+          { toolCallId: "a", isError: true },
+          { toolCallId: "b", content: "4" },
+        ],
+      });
+      expect(result?.stopped).toBe("done");
+    });
+
+    test("runs the calls one after another with parallelTools: false", async () => {
+      const { ran } = await run([two, say("ok")], { parallelTools: false });
+
+      expect(ran).toEqual([
+        "agent:model:1",
+        "agent:1.0:add",
+        "agent:1.1:add",
+        "agent:model:2",
+      ]);
     });
   });
 

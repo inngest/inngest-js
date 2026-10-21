@@ -80,13 +80,11 @@ export interface AgentModelResponse {
    * The reply's text, for the final result and `onTurn`.
    */
   text?: string;
-  toolCalls: AgentToolCall[];
 
   /**
-   * Whether the model has finished. The loop also stops when there are no
-   * tool calls.
+   * The calls the reply asks for. A reply with none is the final one.
    */
-  done: boolean;
+  toolCalls: AgentToolCall[];
   usage?: AgentUsage;
 }
 
@@ -130,6 +128,14 @@ export interface AgentLoopOptions {
    * their start and end. Default 8000.
    */
   maxToolOutput?: number;
+
+  /**
+   * Run the tool calls of one reply at the same time, and give the model
+   * their results in the order it called them. A failure is only that call's
+   * result. Set `false` to run them one after another, for tools that touch
+   * the same state. Default `true`.
+   */
+  parallelTools?: boolean;
 
   /**
    * The most model calls to make. Default 40.
@@ -266,7 +272,7 @@ const runTool = async (
  * `tool.group()`).
  *
  * `model` is any function that calls a model and answers with the reply, its
- * tool calls and whether it is done, so any provider's SDK works.
+ * tool calls, so any provider's SDK works.
  *
  * @example
  * ```ts
@@ -287,6 +293,7 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
     tools,
     maxTurns = 40,
     maxToolOutput = 8_000,
+    parallelTools = true,
   } = options;
   const definitions = toolDefinitions(tools);
   const messages: AgentMessage[] = [
@@ -321,21 +328,28 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
       usage: reply.usage ?? { input: 0, output: 0 },
     });
 
-    if (reply.done || reply.toolCalls.length === 0) {
+    if (reply.toolCalls.length === 0) {
       return { text, stopped: "done", turns: turn, history: messages, usage };
     }
 
-    const results: AgentToolResult[] = [];
-
-    for (const [index, call] of reply.toolCalls.entries()) {
-      results.push(
-        await runTool(
-          `${id}:${turn}.${index}:${call.name}`,
-          tools,
-          call,
-          maxToolOutput,
-        ),
+    const run = (call: AgentToolCall, index: number) => {
+      return runTool(
+        `${id}:${turn}.${index}:${call.name}`,
+        tools,
+        call,
+        maxToolOutput,
       );
+    };
+    let results: AgentToolResult[];
+
+    if (parallelTools) {
+      results = await Promise.all(reply.toolCalls.map(run));
+    } else {
+      results = [];
+
+      for (const [index, call] of reply.toolCalls.entries()) {
+        results.push(await run(call, index));
+      }
     }
 
     messages.push({ role: "tool", results });
@@ -374,7 +388,6 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
  *   back on every later turn, so provider-specific parts such as thinking
  *   blocks and their signatures round-trip untouched. It must be JSON.
  * - `toolCalls`: the calls the reply asks for, as `{ id, name, input }`.
- * - `done`: whether the model has finished.
  * - `text`: the reply's text, for the result and `onTurn`.
  * - `usage`: tokens, which the loop adds up.
  *
@@ -414,7 +427,6 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
  *     message: { role: "assistant", content: reply.content },
  *     text: reply.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
  *     toolCalls: reply.content.flatMap((b) => (b.type === "tool_use" ? [b] : [])),
- *     done: reply.stop_reason !== "tool_use",
  *     usage: { input: reply.usage.input_tokens, output: reply.usage.output_tokens },
  *   };
  * });

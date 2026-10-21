@@ -41,7 +41,6 @@ export const claude = agent.model(async ({ system, messages, tools }) => {
       message: { role: "assistant", content: reply.content },
       text: text.join("\n"),
       toolCalls,
-      done: reply.stop_reason !== "tool_use",
       usage: {
         input: reply.usage.input_tokens,
         output: reply.usage.output_tokens,
