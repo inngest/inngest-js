@@ -157,6 +157,10 @@ describe("pipelines and jobs", () => {
 
     expect(machineSetupScript).toContain("mkdir -p /work");
     expect(machineSetupScript).toContain("ip link set lo up");
+
+    expect(machineSetupScript).toContain('echo "127.0.0.1 localhost"');
+
+    expect(machineSetupScript).toContain('echo "::1 localhost"');
   });
 
   test("a job with no commands never creates a machine", async () => {
