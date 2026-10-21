@@ -823,6 +823,13 @@ export const consoleSink = (
     conclusion?: string;
     title?: string;
     summary?: string;
+    annotations?: Array<{
+      path: string;
+      start_line: number;
+      annotation_level: string;
+      title?: string;
+      message: string;
+    }>;
     url?: string;
   }>,
 ): CheckSink => {
@@ -848,7 +855,15 @@ export const consoleSink = (
 
       return {};
     },
-    complete: async ({ run, name, conclusion, title, summary, detailsUrl }) => {
+    complete: async ({
+      run,
+      name,
+      conclusion,
+      title,
+      summary,
+      annotations,
+      detailsUrl,
+    }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
@@ -857,6 +872,7 @@ export const consoleSink = (
         conclusion,
         title,
         summary,
+        annotations,
         url: detailsUrl,
       });
 

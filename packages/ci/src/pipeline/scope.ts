@@ -13,6 +13,7 @@ import { CiUsageError } from "../errors.ts";
 import type { CommandRow } from "../github/render/commands.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import type { CommandState } from "../machine/command.ts";
+import type { Found } from "../report/found.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -349,6 +350,7 @@ export interface CiRunScope {
     summaries: string[];
     annotations: CheckAnnotation[];
     commands: CommandRow[];
+    found: Found[];
   };
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
@@ -455,6 +457,8 @@ export interface CiJobScope {
    * started, for its check. An extra machine shares its job's list.
    */
   commands: CommandRow[];
+  /** What tools reported about the code, as paths in the repository. */
+  found: Found[];
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];

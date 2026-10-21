@@ -24,6 +24,7 @@ import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
 import type { CommandRow } from "../github/render/commands.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import { cycleMessage } from "../machine/from.ts";
+import type { Found } from "../report/found.ts";
 import type {
   Ancestor,
   CheckAnnotation,
@@ -176,6 +177,7 @@ export interface CacheBuildResult {
     summaries: string[];
     annotations: CheckAnnotation[];
     commands: CommandRow[];
+    found: Found[];
   };
 }
 

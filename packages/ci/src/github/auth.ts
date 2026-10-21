@@ -66,6 +66,14 @@ export interface ConsoleCheckRecord {
   conclusion?: string;
   title?: string;
   summary?: string;
+  /** What a completed check carried, in GitHub's shape. */
+  annotations?: Array<{
+    path: string;
+    start_line: number;
+    annotation_level: string;
+    title?: string;
+    message: string;
+  }>;
   url?: string;
 }
 

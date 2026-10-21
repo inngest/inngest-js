@@ -15,12 +15,14 @@ import type {
 } from "../github/render/job.ts";
 import { jobCheck } from "../github/render/job.ts";
 import type { CheckLinks, CheckPayload } from "../github/render/types.ts";
+import { omittedNote, shapeAnnotations } from "../report/annotations.ts";
 import {
   classifyCommand,
   infraSignal,
   testCounts,
   tscDiagnostic,
 } from "../report/classify.ts";
+import type { CheckAnnotation } from "../types.ts";
 import {
   errorMessage,
   failureLine,
@@ -469,11 +471,20 @@ export const withReports = (
   summary: string;
   text?: string;
   actions: CheckPayload["actions"];
+  annotations: CheckAnnotation[];
 } => {
+  const shaped = shapeAnnotations(scope.annotations, scope.found);
+  const left = omittedNote(shaped);
+
   return {
     title: payload.title,
-    summary: [payload.summary, ...scope.summaries].join("\n\n"),
+    summary: [
+      payload.summary,
+      ...(left ? [left] : []),
+      ...scope.summaries,
+    ].join("\n\n"),
     ...(payload.text === undefined ? {} : { text: payload.text }),
     actions: payload.actions,
+    annotations: shaped.annotations,
   };
 };

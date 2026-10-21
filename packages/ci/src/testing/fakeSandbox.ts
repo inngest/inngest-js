@@ -67,6 +67,8 @@ export interface CommandScript {
   stderr?: string;
   /** What a managed process writes, in order, in place of `stdout` and `stderr`. */
   chunks?: Array<{ stream: "STDOUT" | "STDERR"; text: string }>;
+  /** Files the command leaves on the machine, by path. */
+  writes?: Record<string, string>;
   /** How many waits time out before a managed process exits. Defaults to 0. */
   ticks?: number;
   /**
@@ -453,6 +455,13 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     return json(201, sandboxResource(sandbox));
   };
 
+  /** Put the files a scripted command writes on the machine. */
+  const leaveFiles = (sandbox: FakeSandbox, script: CommandScript) => {
+    for (const [path, content] of Object.entries(script.writes ?? {})) {
+      files.get(sandbox.id)?.set(path, content);
+    }
+  };
+
   const execInSandbox: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
 
@@ -471,6 +480,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
+
+    leaveFiles(sandbox, script);
 
     // Cloud answers an exec that runs past its timeout with a 504.
     if (script.execTimesOut) {
@@ -606,6 +617,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
+
+    leaveFiles(sandbox, script);
 
     const process: FakeProcess = {
       id: nextId(),
@@ -752,6 +765,13 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
         if (upload !== undefined) {
           files.get(sandbox.id)?.set(path, upload);
+        }
+
+        // A download is the file's bytes, not an envelope.
+        const content = files.get(sandbox.id)?.get(path);
+
+        if (upload === undefined && content !== undefined) {
+          return new Response(content);
         }
 
         return json(200, {

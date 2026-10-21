@@ -42,6 +42,7 @@ import {
   snapshotMachine,
 } from "../machine/machine.ts";
 import { outputsFrom, storeOutput } from "../machine/outputs.ts";
+import { shapeAnnotations } from "../report/annotations.ts";
 import type {
   Ancestor,
   AnyJob,
@@ -819,6 +820,7 @@ const jobSteps = async ({
     config,
     fromJobIds: [],
     commands: [],
+    found: [],
     annotations: [],
     summaries: [],
     env: {},
@@ -842,6 +844,7 @@ const jobSteps = async ({
       summaries: scope.summaries,
       annotations: scope.annotations,
       commands: scope.commands,
+      found: scope.found,
     };
   }
 
@@ -990,6 +993,7 @@ const jobSteps = async ({
         scope.summaries.push(...(report?.summaries ?? []));
         scope.annotations.push(...(report?.annotations ?? []));
         scope.commands.push(...(report?.commands ?? []));
+        scope.found.push(...(report?.found ?? []));
 
         throw error;
       });
@@ -1001,6 +1005,7 @@ const jobSteps = async ({
       scope.summaries.push(...(built.report?.summaries ?? []));
       scope.annotations.push(...(built.report?.annotations ?? []));
       scope.commands.push(...(built.report?.commands ?? []));
+      scope.found.push(...(built.report?.found ?? []));
 
       if (built.reused && built.cached) {
         reusedTitle = cachedTitle(built.cached);
@@ -1098,9 +1103,6 @@ const jobSteps = async ({
             : passedPayload(scope, Date.now() - startedAt),
           scope,
         ),
-        ...(scope.annotations.length > 0
-          ? { annotations: scope.annotations }
-          : {}),
       });
     }
 
@@ -1142,7 +1144,6 @@ const jobSteps = async ({
       const result = {
         conclusion,
         ...withReports(payload, scope),
-        annotations: scope.annotations,
       };
 
       run.openChecks.delete(scope.path);
@@ -1154,7 +1155,8 @@ const jobSteps = async ({
           why: failure.title,
           infra: ["infra", "sandbox", "oom"].includes(failure.errorClass),
         },
-        annotations: scope.annotations.length,
+        annotations: shapeAnnotations(scope.annotations, scope.found)
+          .annotations.length,
       });
 
       checkEndedAt = await checks.jobComplete({ ...target, ...result });

@@ -45,6 +45,7 @@ import {
   truncateLabel,
 } from "../util.ts";
 import { directSandbox, ensureMachine, inMachineSpan } from "./machine.ts";
+import { collectReports } from "./reports.ts";
 
 /**
  * Captured `commands.run` is capped at five minutes, so anything longer runs
@@ -484,6 +485,16 @@ class CommandBuilder implements Command {
 
         throw error;
       });
+
+      await collectReports(
+        scope,
+        {
+          argv: this.state.argv,
+          stepId: attemptId,
+          ...(this.state.cwd ? { cwd: this.state.cwd } : {}),
+        },
+        result,
+      );
 
       row.state =
         result.exitCode === 0 || this.state.nothrow ? "done" : "failed";

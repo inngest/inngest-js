@@ -273,4 +273,172 @@ describe("a job's check", () => {
       "- Error: first\n  cleaning up\n- Error: second",
     );
   });
+
+  describe("annotations", () => {
+    const annotated = async (
+      script: Parameters<ReturnType<typeof setup>["api"]["script"]>[0][number],
+      body: () => Promise<unknown>,
+    ) => {
+      const { api, ci, reporter } = setup();
+
+      api.script([script]);
+
+      const job = ci.job("check", async () => {
+        await body();
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await job();
+        }),
+        { event: prEvent },
+      );
+
+      return entries(reporter, "pr / check", "completed")[0];
+    };
+
+    test("type errors in a failed command's output are annotated at the repository's paths", async () => {
+      const completed = await annotated(
+        {
+          match: "tsc",
+          exitCode: 2,
+          stdout:
+            "packages/ci/src/a.ts(311,52): error TS2345: Argument of type 'a' is not assignable.\nsrc/outside.ts(1,1): error TS1: also here",
+        },
+        async () => {
+          await $`pnpm exec tsc --noEmit --pretty false`;
+        },
+      );
+
+      expect(completed?.annotations).toEqual([
+        {
+          path: "packages/ci/src/a.ts",
+          start_line: 311,
+          end_line: 311,
+          annotation_level: "failure",
+          title: "tsc TS2345",
+          message: "Argument of type 'a' is not assignable.",
+        },
+        {
+          path: "src/outside.ts",
+          start_line: 1,
+          end_line: 1,
+          annotation_level: "failure",
+          title: "tsc TS1",
+          message: "also here",
+        },
+      ]);
+    });
+
+    test("a report file the command asked for is read, even when the command fails", async () => {
+      const results = JSON.stringify({
+        testResults: [
+          {
+            name: "/work/src/a.test.ts",
+            status: "failed",
+            assertionResults: [
+              {
+                status: "failed",
+                fullName: "tags the run id",
+                failureMessages: [
+                  "AssertionError: nope\n at /work/src/a.test.ts:42:3",
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const completed = await annotated(
+        {
+          match: "vitest",
+          exitCode: 1,
+          writes: { "/work/test-results.json": results },
+        },
+        async () => {
+          await $`pnpm exec vitest run --reporter=json --outputFile=test-results.json`;
+        },
+      );
+
+      expect(completed?.annotations).toEqual([
+        expect.objectContaining({
+          path: "src/a.test.ts",
+          start_line: 42,
+          annotation_level: "failure",
+          title: "tags the run id",
+          message: "AssertionError: nope",
+        }),
+      ]);
+    });
+
+    test("report.results reads a file for a tool the job runs through a script", async () => {
+      const lint = JSON.stringify([
+        {
+          filePath: "/work/src/b.ts",
+          messages: [
+            {
+              ruleId: "no-undef",
+              severity: 2,
+              message: "x is not defined",
+              line: 8,
+            },
+          ],
+        },
+      ]);
+
+      const completed = await annotated(
+        {
+          match: "pnpm lint:ci",
+          exitCode: 1,
+          writes: { "/work/lint.json": lint },
+        },
+        async () => {
+          await $`pnpm lint:ci`.nothrow();
+
+          await report.results("eslint", "lint.json");
+        },
+      );
+
+      expect(completed?.annotations).toEqual([
+        expect.objectContaining({
+          path: "src/b.ts",
+          start_line: 8,
+          title: "eslint no-undef",
+        }),
+      ]);
+    });
+
+    test("the job's own annotations come before what tools found at the same level", async () => {
+      const completed = await annotated(
+        {
+          match: "tsc",
+          exitCode: 2,
+          stdout: "src/z.ts(1,1): error TS1: from tsc",
+        },
+        async () => {
+          await report.annotate([
+            { path: "src/own.ts", line: 5, message: "mine" },
+          ]);
+
+          await $`pnpm exec tsc --pretty false`;
+        },
+      );
+
+      expect(
+        completed?.annotations?.map((annotation) => annotation.path),
+      ).toEqual(["src/own.ts", "src/z.ts"]);
+    });
+
+    test("a missing report adds nothing and does not fail the job", async () => {
+      const completed = await annotated(
+        { match: "vitest", exitCode: 0 },
+        async () => {
+          await $`pnpm exec vitest run --reporter=json --outputFile=nowhere.json`;
+        },
+      );
+
+      expect(completed?.conclusion).toBe("success");
+      expect(completed?.annotations ?? []).toEqual([]);
+    });
+  });
 });
