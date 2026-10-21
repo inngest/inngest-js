@@ -3666,7 +3666,7 @@ describe("checks", () => {
       expect.objectContaining({
         name: "pr / test",
         conclusion: "failure",
-        title: "`pnpm test` exited with 1",
+        title: "boom (exit 1)",
       }),
       expect.objectContaining({ name: "pr", conclusion: "failure" }),
     ]);
@@ -4516,9 +4516,7 @@ describe("commit statuses", () => {
         return (request.body as { description: string }).description;
       });
 
-      expect(descriptions).toContain(
-        "`pnpm test` exited with 1: ENOTFOUND localhost",
-      );
+      expect(descriptions).toContain("ENOTFOUND localhost (exit 1)");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -4572,7 +4570,7 @@ describe("the pipeline's commit status", () => {
       expect(statuses.at(0)).toMatchObject({ state: "pending" });
       expect(statuses.at(-1)).toMatchObject({
         state: "failure",
-        description: "1 of 2 jobs failed: lint: `pnpm lint` exited with 1",
+        description: "1 of 2 jobs failed: lint: Error: bad (exit 1)",
       });
     } finally {
       vi.unstubAllEnvs();
