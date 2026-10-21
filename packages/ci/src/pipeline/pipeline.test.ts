@@ -1047,6 +1047,41 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a background process's output keeps stdout and stderr in the order they were written", async () => {
+    const { api, ci } = setup();
+
+    api.script([
+      {
+        match: "serve",
+        ticks: 1,
+        chunks: [
+          { stream: "STDOUT", text: "one\n" },
+          { stream: "STDERR", text: "two\n" },
+          { stream: "STDOUT", text: "three\n" },
+        ],
+      },
+    ]);
+
+    let output: string | undefined;
+
+    const job = ci.job("e2e", async () => {
+      const server = await $`serve`.background();
+
+      output = await server.output();
+
+      await server.kill();
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(output).toBe("one\ntwo\nthree\n");
+  });
+
   test("a command that ends during its first wait reports its duration", async () => {
     const { ci } = setup();
 

@@ -47,6 +47,8 @@ export class CommandFailedError extends Error {
   public readonly exitCode: number;
   public readonly stdoutTail: string;
   public readonly stderrTail: string;
+  /** Both streams in the order they were written, when the command reported it. */
+  public readonly mergedTail?: string;
   public readonly jobPath: string;
   /** What kind of failure it was, worked out from its exit code and output. */
   public readonly errorClass?: ErrorClass;
@@ -58,6 +60,7 @@ export class CommandFailedError extends Error {
     exitCode: number;
     stdoutTail: string;
     stderrTail: string;
+    mergedTail?: string;
     jobPath: string;
     errorClass?: ErrorClass;
     stepId?: string;
@@ -79,6 +82,10 @@ export class CommandFailedError extends Error {
     this.stdoutTail = options.stdoutTail;
 
     this.stderrTail = options.stderrTail;
+
+    if (options.mergedTail) {
+      this.mergedTail = options.mergedTail;
+    }
 
     this.jobPath = options.jobPath;
 

@@ -239,4 +239,38 @@ describe("a job's check", () => {
       expect(failed?.summary).toContain(says);
     },
   );
+
+  test("shows a failing command's output in the order it was written", async () => {
+    const { api, ci, reporter } = setup();
+
+    api.script([
+      {
+        match: "pnpm test",
+        exitCode: 1,
+        chunks: [
+          { stream: "STDOUT", text: "starting\n" },
+          { stream: "STDERR", text: "Error: first\n" },
+          { stream: "STDOUT", text: "cleaning up\n" },
+          { stream: "STDERR", text: "Error: second\n" },
+        ],
+      },
+    ]);
+
+    const test_ = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await test_();
+      }),
+      { event: prEvent },
+    );
+
+    const failed = entries(reporter, "pr / test", "completed")[0];
+
+    expect(failed?.summary).toContain(
+      "- Error: first\n  cleaning up\n- Error: second",
+    );
+  });
 });

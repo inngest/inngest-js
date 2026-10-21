@@ -26,6 +26,8 @@ export interface FakeProcess {
   terminationSignal?: number;
   stdout: string;
   stderr: string;
+  /** What it wrote, in order, when a script said so. */
+  chunks?: Array<{ stream: "STDOUT" | "STDERR"; text: string }>;
   startedAt: string;
   endedAt?: string;
   /** How many `wait` calls time out before this process exits. */
@@ -63,6 +65,8 @@ export interface CommandScript {
   exitCode?: number;
   stdout?: string;
   stderr?: string;
+  /** What a managed process writes, in order, in place of `stdout` and `stderr`. */
+  chunks?: Array<{ stream: "STDOUT" | "STDERR"; text: string }>;
   /** How many waits time out before a managed process exits. Defaults to 0. */
   ticks?: number;
   /**
@@ -611,6 +615,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       state: "RUNNING",
       stdout: script.stdout ?? "",
       stderr: script.stderr ?? "",
+      ...(script.chunks ? { chunks: script.chunks } : {}),
       startedAt: now(),
       ticksUntilExit: script.ticks ?? 0,
     };
@@ -647,13 +652,21 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
   const processOutput: Handler = onProcess((_req, process) => {
     // Like Cloud, protobuf JSON omits `chunks` when there's no output.
-    if (!process.stdout && !process.stderr) {
+    if (!process.chunks && !process.stdout && !process.stderr) {
       return json(200, {});
     }
 
     const chunk = (stream: string, text: string) => {
       return { stream, data: btoa(text), encoding: "base64", at: now() };
     };
+
+    if (process.chunks) {
+      return json(200, {
+        chunks: process.chunks.map(({ stream, text }) => {
+          return chunk(stream, text);
+        }),
+      });
+    }
 
     return json(200, {
       chunks: [

@@ -282,7 +282,10 @@ const commandFailure = (
   scope: CiJobScope,
   error: CommandFailedError,
 ): JobFailure => {
-  const output = stripAnsi(`${error.stderrTail}\n${error.stdoutTail}`);
+  const output = stripAnsi(
+    error.mergedTail ?? `${error.stderrTail}\n${error.stdoutTail}`,
+  );
+
   const errorClass =
     error.errorClass ??
     classifyCommand({

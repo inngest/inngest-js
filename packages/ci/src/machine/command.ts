@@ -353,7 +353,10 @@ class CommandBuilder implements Command {
           { suffix, label: "output" },
         );
 
-        return maskSecrets(`${output.stdout}${output.stderr}`, secrets);
+        return maskSecrets(
+          output.merged ?? `${output.stdout}${output.stderr}`,
+          secrets,
+        );
       },
     };
   }
@@ -523,6 +526,7 @@ class CommandBuilder implements Command {
       exitCode: result.exitCode,
       stdoutTail: result.stdout,
       stderrTail: result.stderr,
+      ...(result.merged ? { mergedTail: result.merged } : {}),
       jobPath: scope.path,
     });
   }
@@ -818,6 +822,8 @@ const sandboxStep = <T>(
 interface ProcessOutput {
   stdout: string;
   stderr: string;
+  /** Both streams in the order they were written. */
+  merged?: string;
   truncated: boolean;
 }
 
@@ -852,10 +858,12 @@ const readProcessOutput = async (
   const decoded = decodeChunks(await process.getOutput({ tailBytes }));
   const stdout = tail(decoded.stdout, tailBytes);
   const stderr = tail(decoded.stderr, tailBytes);
+  const merged = tail(decoded.merged, tailBytes);
 
   return {
     stdout: stdout.text,
     stderr: stderr.text,
+    merged: merged.text,
     truncated: stdout.truncated || stderr.truncated,
   };
 };
@@ -1209,6 +1217,9 @@ const readResult = async (opts: {
     exitCode: process.exitCode ?? (process.state === "EXITED" ? 0 : 1),
     stdout: maskSecrets(output.stdout, opts.secrets),
     stderr: maskSecrets(output.stderr, opts.secrets),
+    ...(output.merged
+      ? { merged: maskSecrets(output.merged, opts.secrets) }
+      : {}),
     truncated: output.truncated,
     ...processDuration(process),
   };
@@ -1283,15 +1294,18 @@ const decoder = new TextDecoder();
 
 const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
-}): { stdout: string; stderr: string } => {
+}): { stdout: string; stderr: string; merged: string } => {
   let stdout = "";
   let stderr = "";
+  let merged = "";
 
   for (const chunk of output?.chunks ?? []) {
     const text =
       typeof chunk.data === "string"
         ? chunk.data
         : decoder.decode(chunk.data as Uint8Array);
+
+    merged += text;
 
     if (chunk.stream === "STDERR") {
       stderr += text;
@@ -1300,7 +1314,7 @@ const decodeChunks = (output: {
     }
   }
 
-  return { stdout, stderr };
+  return { stdout, stderr, merged };
 };
 
 /**
