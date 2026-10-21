@@ -881,7 +881,7 @@ describe("group.experiment() metadata", () => {
     expect(experimentCall![4]).not.toHaveProperty("variant_weights");
   });
 
-  test("attaches inngest.warning metadata for nullish bucket", async () => {
+  test("attaches inngest.warning.<code> metadata for nullish bucket", async () => {
     const { group, run, exec, HASHED_STEP_ID } = createHarness();
 
     await run(() =>
@@ -902,13 +902,13 @@ describe("group.experiment() metadata", () => {
 
     expect(exec.addMetadata).toHaveBeenCalledWith(
       HASHED_STEP_ID,
-      "inngest.warnings",
+      "inngest.warning.sdk.group.experiment.nullishBucket",
       "step",
       "set",
-      expect.objectContaining({
+      {
         "sdk.group.experiment.nullishBucket":
           expect.stringContaining("null/undefined"),
-      }),
+      },
     );
   });
 
@@ -934,7 +934,7 @@ describe("group.experiment() metadata", () => {
     );
 
     const warningCalls = (exec.addMetadata as Mock).mock.calls.filter(
-      (call: unknown[]) => call[1] === "inngest.warnings",
+      (call: unknown[]) => String(call[1]).startsWith("inngest.warning."),
     );
     expect(warningCalls).toHaveLength(0);
   });

@@ -4422,7 +4422,7 @@ describe("failures that retrying cannot fix", () => {
       }),
     ).toEqual([
       ["pr / build", "failure", "machine didn't start in 2m"],
-      ["pr", "failure", "build: machine didn't start in 2m"],
+      ["pr", "failure", "1 of 1 job failed: build: machine didn't start in 2m"],
     ]);
   });
 
@@ -4519,6 +4519,61 @@ describe("commit statuses", () => {
       expect(descriptions).toContain(
         "`pnpm test` exited with 1: ENOTFOUND localhost",
       );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("the pipeline's commit status", () => {
+  test("ends with how many jobs failed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub();
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const test = ci.job("test", async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        const results = await Promise.allSettled([lint(), test()]);
+        const errors = results.flatMap((result) => {
+          return result.status === "rejected" ? [result.reason] : [];
+        });
+
+        if (errors.length > 0) {
+          throw new AggregateError(errors, "jobs failed");
+        }
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const statuses = gh.requests
+        .map((request) => {
+          return request.body as {
+            context: string;
+            state: string;
+            description: string;
+          };
+        })
+        .filter((status) => {
+          return status.context === "pr";
+        });
+
+      expect(statuses.at(0)).toMatchObject({ state: "pending" });
+      expect(statuses.at(-1)).toMatchObject({
+        state: "failure",
+        description: "1 of 2 jobs failed: lint: `pnpm lint` exited with 1",
+      });
     } finally {
       vi.unstubAllEnvs();
     }

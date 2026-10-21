@@ -55,6 +55,7 @@ import type {
 import {
   durationToMs,
   errorMessage,
+  failureLine,
   formatDuration,
   isSandboxNameTaken,
   shortReason,
@@ -1221,19 +1222,13 @@ const jobErrorTitle = (error: unknown): string => {
   return shortReason(error) || "Failed";
 };
 
-/** A failed command's last line of error output, which is the usual reason. */
+/** Why a failed command failed, from its error output. */
 const jobErrorDetail = (error: unknown): { detail?: string } => {
   if (!(error instanceof CommandFailedError)) {
     return {};
   }
 
-  const detail = (error.stderrTail || error.stdoutTail)
-    .split("\n")
-    .map((line) => {
-      return line.trim();
-    })
-    .filter(Boolean)
-    .at(-1);
+  const detail = failureLine(error.stderrTail, error.stdoutTail);
 
   return detail ? { detail } : {};
 };
