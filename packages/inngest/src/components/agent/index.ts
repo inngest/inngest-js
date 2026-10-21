@@ -14,6 +14,7 @@ export type {
   AgentModelResponse,
   AgentToolCall,
   AgentToolResult,
+  AgentToolRun,
   AgentTurn,
   AgentUsage,
 } from "./loop.ts";

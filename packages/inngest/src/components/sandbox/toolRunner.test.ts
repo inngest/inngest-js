@@ -996,6 +996,33 @@ describe("commands.run with tools trace rows", () => {
     });
   });
 
+  test("a tool's displayName names its step and row", async () => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return run(host, {
+        getCustomer: tool.step({
+          input: z.object({}),
+          displayName: () => {
+            return "Look up customer";
+          },
+          run: () => {
+            return { id: "cus_1" };
+          },
+        }),
+      });
+    });
+
+    expect(spans.get("exec:tool:getCustomer:1")).toEqual([
+      expect.objectContaining({
+        id: "exec:tool:getCustomer:1",
+        name: "Look up customer",
+        kind: "tool",
+      }),
+    ]);
+  });
+
   test("a runner's group of the same kind holds the steps, without another", async () => {
     const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
     const { host, spans } = createHost(sandbox);

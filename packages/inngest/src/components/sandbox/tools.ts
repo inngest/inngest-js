@@ -86,6 +86,7 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
  */
 export interface SandboxTool {
   readonly description?: string;
+  readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
@@ -154,6 +155,12 @@ export interface ToolDefinition<
    * What the tool does, for the people reading the code.
    */
   description?: string;
+
+  /**
+   * What the tool's step is called in a trace, such as `Look up: cus_1`. A
+   * function gets the call's arguments. Default: the tool's name.
+   */
+  displayName?: string | ((input: ToolInputOf<TInput>) => string);
 
   /**
    * Any Standard Schema, or a JSON Schema object. With it, sandbox code calls
@@ -422,8 +429,14 @@ export const resolveToolCall = async (
     return { error: `${name} takes positional arguments only` };
   }
 
+  const { displayName } = definition;
+
   return {
     group: definition.group === true,
+    displayName:
+      typeof displayName === "function"
+        ? (displayName as (input: unknown) => string)(values[0])
+        : displayName,
     invoke: async (ctx: SandboxToolContext) => {
       // A plain function takes positional values and no context.
       const value = await run(

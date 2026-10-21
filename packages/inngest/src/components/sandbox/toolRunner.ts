@@ -324,7 +324,10 @@ export const runCommandWithTools = async (
       if (resolved.group) {
         // The body's own steps are the durable part, so there is no step here.
         const value = await withSpan(
-          { ...toolSpan(stepId, call.tool), origin: undefined },
+          {
+            ...toolSpan(stepId, resolved.displayName ?? call.tool),
+            origin: undefined,
+          },
           () => {
             return withStepIdPrefix(`${stepId}:`, () => {
               return resolved.invoke({
@@ -341,9 +344,9 @@ export const runCommandWithTools = async (
       return await host.run(
         {
           id: stepId,
-          name: call.tool,
+          name: resolved.displayName ?? call.tool,
           "~origin": sdkOrigin,
-          "~span": toolSpan(stepId, call.tool),
+          "~span": toolSpan(stepId, resolved.displayName ?? call.tool),
         },
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);

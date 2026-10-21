@@ -138,7 +138,14 @@ describe("agent.loop", () => {
     ]);
     expect(requests[1]?.messages.at(-1)).toEqual({
       role: "tool",
-      results: [{ toolCallId: "id-add", content: "3" }],
+      results: [
+        {
+          toolCallId: "id-add",
+          name: "add",
+          input: { a: 1, b: 2 },
+          content: "3",
+        },
+      ],
     });
     expect(requests.map((request) => [request.turn, request.maxTurns])).toEqual(
       [
@@ -301,7 +308,14 @@ describe("agent.loop", () => {
 
     expect(requests[1]?.messages.at(-1)).toEqual({
       role: "tool",
-      results: [{ toolCallId: "id-add", content: '{"error":null,"value":1}' }],
+      results: [
+        {
+          toolCallId: "id-add",
+          name: "add",
+          input: {},
+          content: '{"error":null,"value":1}',
+        },
+      ],
     });
   });
 
@@ -346,8 +360,8 @@ describe("agent.loop", () => {
       expect(requests[1]?.messages.at(-1)).toEqual({
         role: "tool",
         results: [
-          { toolCallId: "a", content: "2" },
-          { toolCallId: "b", content: "4" },
+          { toolCallId: "a", name: "add", input: { a: 1, b: 1 }, content: "2" },
+          { toolCallId: "b", name: "add", input: { a: 2, b: 2 }, content: "4" },
         ],
       });
     });
@@ -371,7 +385,7 @@ describe("agent.loop", () => {
       expect(requests[1]?.messages.at(-1)).toMatchObject({
         results: [
           { toolCallId: "a", isError: true },
-          { toolCallId: "b", content: "4" },
+          { toolCallId: "b", name: "add", input: { a: 2, b: 2 }, content: "4" },
         ],
       });
       expect(result?.stopped).toBe("done");
@@ -426,6 +440,234 @@ describe("agent.loop", () => {
       [{ id: "agent:1.0:add", name: "add", kind: "tool" }],
       [{ id: "agent:model:2", name: "Thinking", kind: "llm" }],
     ]);
+  });
+
+  describe("steps inside a tool.group", () => {
+    const fetchTwice = tool.group({
+      input: z.object({ n: z.number() }),
+      displayName: ({ n }) => {
+        return `Fetch ${n}`;
+      },
+      run: async ({ n }) => {
+        const first = await step.run("fetch", () => {
+          return n;
+        });
+
+        // A tool in the middle of a nested scope keeps scoping by its call.
+        return step.run("double", () => {
+          return first * 2;
+        });
+      },
+    });
+    const two: AgentModelResponse = {
+      message: { role: "assistant", content: "two calls" },
+      toolCalls: [
+        { id: "a", name: "fetchTwice", input: { n: 1 } },
+        { id: "b", name: "fetchTwice", input: { n: 2 } },
+      ],
+    };
+
+    test.each([
+      { name: "in order", reverse: false },
+      { name: "finishing in the other order", reverse: true },
+    ])(
+      "get the call's ID without the tool asking, $name",
+      async ({ reverse }) => {
+        const { ran, steps, requests } = await run(
+          [two, say("ok")],
+          { tools: { fetchTwice } },
+          reverse,
+        );
+
+        expect([...ran].sort()).toEqual([
+          "agent:1.0:fetchTwice:double",
+          "agent:1.0:fetchTwice:fetch",
+          "agent:1.1:fetchTwice:double",
+          "agent:1.1:fetchTwice:fetch",
+          "agent:model:1",
+          "agent:model:2",
+        ]);
+        expect(
+          steps.find((op) => {
+            return op.userland?.id === "agent:1.1:fetchTwice:fetch";
+          })?.displayName,
+        ).toBe("fetch");
+        expect(requests[1]?.messages.at(-1)).toMatchObject({
+          results: [{ content: "2" }, { content: "4" }],
+        });
+      },
+    );
+
+    test("work the same one call at a time", async () => {
+      const { ran } = await run([two, say("ok")], {
+        tools: { fetchTwice },
+        parallelTools: false,
+      });
+
+      expect(ran).toEqual([
+        "agent:model:1",
+        "agent:1.0:fetchTwice:fetch",
+        "agent:1.0:fetchTwice:double",
+        "agent:1.1:fetchTwice:fetch",
+        "agent:1.1:fetchTwice:double",
+        "agent:model:2",
+      ]);
+    });
+  });
+
+  test.each([
+    {
+      name: "a string",
+      displayName: "Look up",
+      expected: "Look up",
+    },
+    {
+      name: "a function of the input",
+      displayName: ({ a }: { a: number }) => {
+        return `Add ${a}`;
+      },
+      expected: "Add 1",
+    },
+  ])("names a tool's step with displayName as $name", async (scenario) => {
+    const { steps } = await run([call("add", { a: 1, b: 2 }), say("ok")], {
+      tools: {
+        add: tool.step({
+          input: z.object({ a: z.number(), b: z.number() }),
+          displayName: scenario.displayName,
+          run: ({ a, b }) => {
+            return a + b;
+          },
+        }),
+      },
+    });
+    const toolStep = steps.find((op) => {
+      return op.userland?.id === "agent:1.0:add";
+    });
+
+    expect(toolStep?.displayName).toBe(scenario.expected);
+    expect(toolStep?.opts?.span).toEqual([
+      { id: "agent:1.0:add", name: scenario.expected, kind: "tool" },
+    ]);
+  });
+
+  test("reports each tool call, and the model step's ID", async () => {
+    const posted: string[] = [];
+    const { ran, result } = await run(
+      [call("add", { a: 1, b: 2 }), say("ok")],
+      {
+        onToolResult: async ({ stepId }) => {
+          await step.run(`record`, () => {
+            posted.push(stepId);
+          });
+        },
+        onTurn: ({ turn, stepId }) => {
+          posted.push(`${turn}=${stepId}`);
+        },
+      },
+    );
+
+    expect(ran).toContain("agent:1.0:add:record");
+    expect(posted).toEqual(expect.arrayContaining(["1=agent:model:1"]));
+    expect(result?.toolCalls).toEqual([
+      {
+        turn: 1,
+        call: { id: "id-add", name: "add", input: { a: 1, b: 2 } },
+        output: 3,
+        isError: false,
+        stepId: "agent:1.0:add",
+        ms: expect.any(Number),
+      },
+    ]);
+  });
+
+  test("gives onToolResult the body of an error result", async () => {
+    const { result } = await run([call("add", {}), say("ok")], {
+      tools: {
+        add: tool.step({
+          input: z.object({}),
+          run: () => {
+            return agent.toolError({ message: "no such ticket" });
+          },
+        }),
+      },
+    });
+
+    expect(result?.toolCalls[0]).toMatchObject({
+      output: { message: "no such ticket" },
+      isError: true,
+    });
+  });
+
+  test("sends the wrap-up text with no tool use on the last turn", async () => {
+    const { requests, result } = await run(
+      [call("add", { a: 1, b: 2 }), say("final answer")],
+      { maxTurns: 2, wrapUp: "Write the answer now." },
+    );
+
+    expect(requests[0]).not.toHaveProperty("toolChoice");
+    expect(requests[1]).toMatchObject({
+      toolChoice: "none",
+      tools: [expect.objectContaining({ name: "add" })],
+    });
+    expect(requests[1]?.messages.at(-1)).toEqual({
+      role: "user",
+      content: "Write the answer now.",
+    });
+    expect(result).toMatchObject({ stopped: "done", text: "final answer" });
+  });
+
+  describe("context", () => {
+    const big = tool.step({
+      input: z.object({}),
+      run: () => {
+        return "x".repeat(5_000);
+      },
+    });
+    const script = [
+      call("big", {}),
+      call("big", {}),
+      call("big", {}),
+      call("big", {}),
+      say("ok"),
+    ];
+
+    test("shortens old tool results by default and keeps the history whole", async () => {
+      const { requests, result } = await run(script, {
+        tools: { big },
+        context: { maxChars: 8_000 },
+      });
+      const lengths = (index: number) => {
+        return requests[index]?.messages.flatMap((message) => {
+          return message.role === "tool"
+            ? message.results.map((r) => r.content.length)
+            : [];
+        });
+      };
+
+      expect(lengths(4)?.[0]).toBeLessThan(300);
+      expect(lengths(4)?.at(-1)).toBe(5_000);
+      expect(
+        result?.history.flatMap((message) => {
+          return message.role === "tool"
+            ? message.results.map((r) => r.content.length)
+            : [];
+        }),
+      ).toEqual([5_000, 5_000, 5_000, 5_000]);
+    });
+
+    test("sends everything when it is off or under the budget", async () => {
+      for (const context of [false as const, { maxChars: 1_000_000 }]) {
+        const { requests } = await run(script, { tools: { big }, context });
+
+        expect(
+          requests[4]?.messages.flatMap((message) => {
+            return message.role === "tool"
+              ? message.results.map((r) => r.content.length)
+              : [];
+          }),
+        ).toEqual([5_000, 5_000, 5_000, 5_000]);
+      }
+    });
   });
 
   test("continues from an earlier history", async () => {
