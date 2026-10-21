@@ -489,8 +489,12 @@ const callRawTool = async <
 ): Promise<T> => {
   try {
     const rawTool = await rawToolResolver();
-    const step = namedStep(operation, idOrOptions);
-    const span = commandSpan(operation, step);
+    const named = namedStep(operation, idOrOptions);
+    // A command with tools takes several steps, so a caller's own span goes
+    // around all of them, not just the first
+    const { "~span": toolsSpan, ...ungrouped } = getStepOptions(named);
+    const step = tools && toolsSpan ? ungrouped : named;
+    const span = (tools && toolsSpan) || commandSpan(operation, step);
     // A command is one row, however many steps it takes
     const inSpan = <R>(fn: () => R): R => {
       return span ? withSpan(span, fn) : fn();

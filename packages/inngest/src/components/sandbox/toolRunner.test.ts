@@ -1302,6 +1302,47 @@ describe("durable commands.run routing", () => {
   });
 });
 
+describe("a caller's span on a command with tools", () => {
+  test("is around every step, not on the first", async () => {
+    const callerSpan = { id: "mine", name: "Mine", kind: "job" };
+    const seen: unknown[] = [];
+    const rawTool: SandboxRawTool = vi.fn(async (idOrOptions) => {
+      seen.push(idOrOptions, getAsyncCtxSync()?.execution?.span);
+
+      return {
+        protocolVersion: 1,
+        action: "exec",
+        result: {
+          stdout: "",
+          stderr: "",
+          encoding: "base64",
+          exitCode: 0,
+          output: { truncated: false },
+        },
+      };
+    });
+    const sandbox = createDurableSandboxFacade(sandboxRef, () => {
+      return rawTool;
+    });
+
+    await runWithAsyncCtx(
+      { app: {} as never, execution: { instance: {} } as never },
+      () => {
+        return sandbox.commands.run(
+          { id: "exec", "~span": callerSpan },
+          "true",
+          { tools: { a: async () => 1 } },
+        );
+      },
+    );
+
+    expect(seen).toEqual([
+      expect.not.objectContaining({ "~span": expect.anything() }),
+      [expect.objectContaining(callerSpan)],
+    ]);
+  });
+});
+
 describe("commands.run with tools in a function", () => {
   test("starts the command, follows it and returns its output", async () => {
     const wrapped: string[][] = [];

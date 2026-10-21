@@ -247,9 +247,9 @@ const defaultNames: Partial<Record<SandboxAction, string>> = {
 const maxNameChars = 100;
 
 /**
- * How many commands each execution has opened a span for under each ID.
+ * The span IDs each execution has opened for commands.
  */
-const spansOpened = new WeakMap<object, Map<string, number>>();
+const spansOpened = new WeakMap<object, Set<string>>();
 
 /**
  * An ID for a command's span that no other command of the execution has. Step
@@ -262,13 +262,17 @@ const uniqueSpanId = (
   id: string,
 ): string => {
   const key = `${execution.stepIdPrefix ?? ""}${id}`;
-  const opened = spansOpened.get(execution.instance) ?? new Map();
-  const count = opened.get(key) ?? 0;
+  const opened = spansOpened.get(execution.instance) ?? new Set<string>();
+  let unique = key;
 
-  opened.set(key, count + 1);
+  for (let count = 1; opened.has(unique); count++) {
+    unique = `${key}:${count}`;
+  }
+
+  opened.add(unique);
   spansOpened.set(execution.instance, opened);
 
-  return count ? `${key}:${count}` : key;
+  return unique;
 };
 
 /**

@@ -437,6 +437,20 @@ describe("commandSpan", () => {
     ]);
   });
 
+  test("never reuses a span ID, even one a caller's ID spells", () => {
+    const instance = {};
+    const ids = ["run", "run", "run:1"].map((id) => {
+      return runWithAsyncCtx(
+        { app: {} as never, execution: { instance } as never },
+        () => {
+          return commandSpan(exec(["ls"]), id)?.id;
+        },
+      );
+    });
+
+    expect(new Set(ids).size).toBe(3);
+  });
+
   test("is named by the step's name when it has one", () => {
     expect(
       commandSpan(exec(["npm", "test"]), { id: "c", name: "Run tests" })?.name,
