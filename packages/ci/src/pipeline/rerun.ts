@@ -13,6 +13,28 @@ import type { PipelineConfig } from "../types.ts";
  * button of ours (`requested_action`) carries the clicker, so it is checked
  * here.
  */
+/**
+ * Whether a check's event is for this pipeline: a check run is only ours if it
+ * carries our check name, since external IDs are not unique to a pipeline. A
+ * suite has no name, and every pipeline on the commit is meant.
+ */
+export const isOurCheck = (
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any,
+  config: PipelineConfig,
+): boolean => {
+  const checkName =
+    config.check === false ? config.id : (config.check?.name ?? config.id);
+
+  const name: string | undefined = event?.data?.check_run?.name;
+
+  return (
+    !event?.data?.check_run ||
+    name === checkName ||
+    Boolean(name?.startsWith(`${checkName} / `))
+  );
+};
+
 export const mayRerun = async ({
   event,
   step,
@@ -85,19 +107,7 @@ export const rerunEventFor = async ({
   const externalId: string | undefined = checkRun?.external_id;
   const name: string | undefined = checkRun?.name;
 
-  const checkName =
-    config.check === false ? config.id : (config.check?.name ?? config.id);
-
-  // A suite has no name or external_id, and only the app that owns it hears
-  // about its re-request, so re-run for the suite's commit. A check run is
-  // only ours if it carries our check name: external IDs are not unique to
-  // this pipeline, so they say nothing about who owns the check.
-  const mine =
-    !event?.data?.check_run ||
-    name === checkName ||
-    name?.startsWith(`${checkName} / `);
-
-  if (!mine) {
+  if (!isOurCheck(event, config)) {
     return { rerun: false, reason: "not this pipeline's check" };
   }
 

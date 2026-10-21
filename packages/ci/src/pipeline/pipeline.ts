@@ -71,6 +71,9 @@ import {
   withScopePreserved,
 } from "./scope.ts";
 
+/** Sent by a check's Cancel button, to end the runs of a pipeline for a commit. */
+export const cancelRunEvent = "ci/run.cancel";
+
 /**
  * Options for every function that runs a pipeline: pipelines, cache builds and
  * refreshes.
@@ -140,6 +143,14 @@ export const definePipeline = ({
       id: config.id,
       triggers,
       ...pipelineFunctionOptions,
+      // The Cancel button on a check ends this pipeline's runs for the commit.
+      // A trigger's commit is where its event keeps it.
+      cancelOn: [
+        {
+          event: cancelRunEvent,
+          if: `async.data.app == "${client.id}" && async.data.pipeline == "${config.id}" && (async.data.sha == event.data.pull_request.head.sha || async.data.sha == event.data.after || async.data.sha == event.data.merge_group.head_sha)`,
+        },
+      ],
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
@@ -1019,12 +1030,31 @@ const generatedFunctions = ({
       },
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
       async ({ event, step }: any) => {
-        const { rerunEventFor, mayRerun } = await import("./rerun.ts");
+        const { isOurCheck, rerunEventFor, mayRerun } = await import(
+          "./rerun.ts"
+        );
 
         // A button anyone who can see the check could click, so it needs the
         // same permission as pushing to the repository.
         if (!(await mayRerun({ event, step }))) {
           return { rerun: false, reason: "not permitted" };
+        }
+
+        if (event?.data?.requested_action?.identifier === "cancel") {
+          if (!isOurCheck(event, config)) {
+            return { rerun: false, reason: "not this pipeline's check" };
+          }
+
+          await step.sendEvent("cancel", {
+            name: cancelRunEvent,
+            data: {
+              app: client.id,
+              pipeline: config.id,
+              sha: event.data.check_run?.head_sha,
+            },
+          });
+
+          return { rerun: false, reason: "cancelled" };
         }
 
         return rerunEventFor({ event, step, client, config });

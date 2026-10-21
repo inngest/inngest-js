@@ -42,6 +42,11 @@ interface CheckAction {
   identifier: string;
 }
 
+/** What a check that is waiting or running offers: ending the run. */
+const runningActions: CheckAction[] = [
+  { label: "Cancel", description: "Stop this run", identifier: "cancel" },
+];
+
 /** What a failed check offers: running again without the cache. */
 const failedActions: CheckAction[] = [
   {
@@ -326,9 +331,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       title: read.title,
       summary: truncateSummary(read.summary ?? ""),
       annotations: (read.annotations ?? []).map(normaliseAnnotation),
-      ...(read.conclusion === "failure" || read.conclusion === "timed_out"
-        ? { actions: failedActions }
-        : {}),
+      actions:
+        read.conclusion === "failure" || read.conclusion === "timed_out"
+          ? failedActions
+          : [],
       ...idFor(run, key),
     };
   };
@@ -720,6 +726,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
             check_run_id: existingId,
             status: "in_progress",
             started_at: startedAt,
+            actions: runningActions,
           });
         }
 
@@ -735,6 +742,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         external_id: externalId,
         details_url: detailsUrl,
         ...(state === "in_progress" ? { started_at: startedAt } : {}),
+        actions: runningActions,
       });
 
       return { id: created.data.id };
@@ -832,6 +840,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
             status: "completed",
             conclusion: "cancelled",
             completed_at: new Date().toISOString(),
+            actions: [],
             output: {
               title,
               summary: checkRun.output?.summary || checkRun.name,
