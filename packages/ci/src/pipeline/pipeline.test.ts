@@ -4841,6 +4841,63 @@ describe("what the cache saved", () => {
   });
 });
 
+describe("a job's status while it runs in its own run", () => {
+  test("links to the pipeline run, so a cancel of that run can find it", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const own = gh.requests
+        .map((request) => {
+          return request.body as { description: string; target_url: string };
+        })
+        .filter((status) => {
+          return status.description === "Running in its own run";
+        });
+
+      expect(own).toHaveLength(1);
+      expect(own[0]?.target_url).toContain("01TESTRUN");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("a cancelled pipeline's job runs", () => {
+  test("the build function ends its runs when the pipeline run that called them is cancelled", () => {
+    const { ci } = setup();
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const cancelOn = (
+      build?.opts as {
+        cancelOn?: Array<{ event: string; if?: string }>;
+      }
+    )?.cancelOn;
+
+    expect(cancelOn).toContainEqual({
+      event: "inngest/function.cancelled",
+      if: "async.data.run_id == event.data.rootRunId",
+    });
+  });
+});
+
 describe("the Cancel button", () => {
   const click = async (
     checkName: string,
