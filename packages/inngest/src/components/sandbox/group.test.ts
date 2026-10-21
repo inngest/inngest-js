@@ -181,7 +181,7 @@ describe("group.sandbox", () => {
     expect(destroy?.metadata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "inngest.warnings",
+          kind: "inngest.warning.sdk.sandbox.destroy",
           values: {
             "sdk.sandbox.destroy": expect.stringContaining(
               `Sandbox ${sandboxId} couldn't be destroyed: `,

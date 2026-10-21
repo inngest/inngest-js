@@ -1,7 +1,11 @@
 import type { StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
-import type { MetadataKind, MetadataOpcode } from "../InngestMetadata.ts";
+import {
+  type MetadataKind,
+  type MetadataOpcode,
+  warningMetadataKind,
+} from "../InngestMetadata.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { sandboxForOperation } from "./client.ts";
@@ -80,8 +84,9 @@ const describeStep = (
   });
 
   if ("error" in outcome) {
+    const code = "sdk.sandbox.destroy";
     addStepMetadata(
-      "inngest.warnings",
+      warningMetadataKind(code),
       () => {
         const parsed = parseSandboxOperation(operation);
 
@@ -90,7 +95,7 @@ const describeStep = (
         }
 
         return {
-          "sdk.sandbox.destroy": `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
+          [code]: `Sandbox ${operationSandboxId(parsed)} couldn't be destroyed: ${
             outcome.error instanceof Error
               ? outcome.error.message
               : String(outcome.error)
