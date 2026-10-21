@@ -51,8 +51,10 @@ import {
   canonicalUuidSchema,
   decodeBase64,
   decodeOutputChunk,
+  decodeOutputData,
   decodeUtf8,
   encodeBase64,
+  encodeOutput,
   maxSandboxProcessTimeoutMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
@@ -67,6 +69,7 @@ import {
   normalizeSandboxSnapshotWaitOptions,
   normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
+  type SandboxOutputEncoding,
   sandboxProcessRefSchema,
   sandboxRefSchema,
   sandboxSnapshotRefSchema,
@@ -136,14 +139,21 @@ const encodeOutputChunk = (
 ): {
   stream: "STDOUT" | "STDERR";
   data: string;
-  encoding: "base64";
+  encoding: SandboxOutputEncoding;
   at?: string;
-} => ({
-  stream: chunk.stream,
-  data: encodeBase64(chunk.data),
-  encoding: "base64",
-  ...(chunk.at !== undefined && { at: chunk.at }),
-});
+} => {
+  const {
+    encoding,
+    values: [data],
+  } = encodeOutput([chunk.data]);
+
+  return {
+    stream: chunk.stream,
+    data: data!,
+    encoding,
+    ...(chunk.at !== undefined && { at: chunk.at }),
+  };
+};
 
 const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
   kind: sandbox.kind,
@@ -194,14 +204,27 @@ export const execOperationResult = (result: {
   exitCode: number;
 }): SandboxOperationResultV1 => {
   const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const {
+    encoding,
+    values: [stdout, stderr],
+  } = encodeOutput([output.stdout, output.stderr], {
+    truncated: output.output.truncated
+      ? [
+          output.output.retainedBytes.stdout <
+            output.output.originalBytes.stdout,
+          output.output.retainedBytes.stderr <
+            output.output.originalBytes.stderr,
+        ]
+      : [],
+  });
 
   return {
     protocolVersion: sandboxProtocolVersion,
     action: "exec",
     result: {
-      stdout: encodeBase64(output.stdout),
-      stderr: encodeBase64(output.stderr),
-      encoding: "base64",
+      stdout: stdout!,
+      stderr: stderr!,
+      encoding,
       exitCode: result.exitCode,
       output: output.output,
     },
@@ -808,10 +831,18 @@ export const createDurableSandboxFacade = (
         );
         return {
           stdout: decodeUtf8(
-            decodeBase64(result.result.stdout, "sandbox exec stdout"),
+            decodeOutputData(
+              result.result.stdout,
+              result.result.encoding,
+              "sandbox exec stdout",
+            ),
           ),
           stderr: decodeUtf8(
-            decodeBase64(result.result.stderr, "sandbox exec stderr"),
+            decodeOutputData(
+              result.result.stderr,
+              result.result.encoding,
+              "sandbox exec stderr",
+            ),
           ),
           exitCode: result.result.exitCode,
           output: result.result.output,
