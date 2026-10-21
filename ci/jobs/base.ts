@@ -26,6 +26,9 @@ const latestDevServer = async (): Promise<string> => {
   return version;
 };
 
+/** The binary that the package's postinstall downloads over its own wrapper script. */
+const devServerBin = "/usr/local/lib/node_modules/inngest-cli/bin/inngest";
+
 const thisFile = new URL(import.meta.url);
 
 /**
@@ -64,11 +67,16 @@ export const base = ci.job(
 
     await $`npm install -g --prefix /usr/local bun`;
 
-    await $`npx --yes --ignore-scripts=false inngest-cli@${key.devServer} --version`.as(
+    await $`npm install -g --prefix /usr/local --ignore-scripts=false inngest-cli@${key.devServer}`.as(
       "download the Dev Server",
     );
 
-    const env = { INNGEST_CLI_VERSION: key.devServer };
+    await $`${devServerBin} --version`;
+
+    const env = {
+      INNGEST_CLI_VERSION: key.devServer,
+      INNGEST_DEV_SERVER_BIN: devServerBin,
+    };
 
     return {
       /** The integration tests of `PACKAGE` (default `inngest`), in the shard `SHARD` if set. */
