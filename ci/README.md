@@ -1,41 +1,50 @@
 # inngest-js CI
 
-The pull request checks for inngest-js as `@inngest/ci` pipelines, run by Inngest on Sandboxes.
+The pull request checks for inngest-js as `@inngest/ci` pipelines, run by Inngest on Sandboxes. Every job shows up as a check from a GitHub App, with a summary, the failing line, and "Re-run, no cache" and Cancel buttons.
 
 ## How it works
 
-GitHub posts `pull_request` and `push` webhooks to an Inngest Cloud webhook. Its transform (`webhook-transform.js`) turns each delivery into the event the pipelines trigger on. The pipelines are served from Vercel at `/api/inngest`. Results are written back as commit statuses.
+GitHub posts `pull_request`, `push`, `check_run` and `check_suite` webhooks to an Inngest Cloud webhook. Its transform (`webhook-transform.js`) turns each delivery into the event the pipelines trigger on, with the App's installation in `_github.installationId`. The pipelines are served from Vercel at `/api/inngest`.
 
-- `client.ts`: the Inngest app, and the GitHub provider (`githubToken()`).
+- `client.ts`: the Inngest app, and the GitHub provider.
 - `pipelines/pr.ts`, `jobs/`: the checks.
 - `webhook-transform.js`: pasted into the Inngest webhook. Tested against real payloads in `fixtures/`.
 - `api/inngest.ts`, `vercel.json`: the Vercel endpoint. `server.ts` serves the same app locally for `inngest-ci`.
 
+```ts
+export const ci = createCi(inngest, { github: githubApp() });
+```
+
+`githubApp()` reads `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`, and finds the installation of a repository when an event doesn't carry one.
+
+## Jobs
+
+`jobs/base.ts` is the image every job starts from. It installs the dependencies and the Dev Server, and returns the Dev Server as a command. Jobs that need one run their tests through `runWithDevServer`, which starts it in the background, waits until it answers, then runs the tests:
+
+```ts
+export const integration = ci.job(
+  { id: "integration", from: build, matrix: { axes: { shard: ["1/6", "2/6"] } } },
+  async ({ matrix, from }) => {
+    await checkout();
+
+    await runWithDevServer(from, from.$.integration.env({ SHARD: matrix.shard }));
+  },
+);
+```
+
+The test harness reuses a Dev Server that is already listening, so nothing downloads one at test time.
+
 ## Set up
 
-### 1. Create the token
+### 1. Create the GitHub App
 
-GitHub, Settings, Developer settings, Fine-grained personal access tokens, Generate new token.
-
-- Resource owner: `inngest`. Repository access: only `inngest/inngest-js`.
-- Permissions: Commit statuses: Read and write. Contents: Read. Pull requests: Read. Metadata: Read.
-
-Keep it for step 4 as `GITHUB_TOKEN`.
+GitHub, Settings, Developer settings, GitHub Apps, New GitHub App. Repository permissions: Checks read and write, Contents read, Pull requests read. Events: Pull request, Push, Check run, Check suite. Webhook URL: the one from step 2. Install it on `inngest/inngest-js`. Keep the App ID and a generated private key for step 3.
 
 ### 2. Create the Inngest webhook
 
-Inngest Cloud, the environment that will run CI, Manage, Webhooks, Create webhook. Paste the contents of `webhook-transform.js` into the transform box and save. Copy the webhook URL.
+Inngest Cloud, the environment that will run CI, Manage, Webhooks, Create webhook. Paste the contents of `webhook-transform.js` into the transform box and save. Copy the webhook URL into the App's webhook settings.
 
-### 3. Add the GitHub webhook
-
-`inngest/inngest-js`, Settings, Webhooks, Add webhook.
-
-- Payload URL: the webhook URL from step 2.
-- Content type: `application/json`.
-- Secret: leave empty (Inngest doesn't check it).
-- Events: "Let me select individual events", then Pull requests and Pushes only.
-
-### 4. Deploy to Vercel
+### 3. Deploy to Vercel
 
 In Inngest's Vercel account, add a project from the `inngest/inngest-js` repository.
 
@@ -47,35 +56,23 @@ In Inngest's Vercel account, add a project from the `inngest/inngest-js` reposit
 | --- | --- |
 | `INNGEST_SIGNING_KEY` | The signing key of the Inngest environment. Also authorizes Sandboxes. |
 | `INNGEST_EVENT_KEY` | The environment's event key. |
-| `GITHUB_TOKEN` | The token from step 1. |
 | `INNGEST_ENV` | The environment's slug, so check links open the right runs. |
-| `INNGEST_CI_GITHUB` | `live` |
+| `GITHUB_APP_ID` | The App's ID. |
+| `GITHUB_APP_PRIVATE_KEY` | The App's private key, on one line with `\n` for newlines. |
 
-Deploy, then in Inngest Cloud go to Apps, Sync new app, and enter `https://<project>.vercel.app/api/inngest`. The app `inngest-js-ci` and its functions should appear.
+Deploy, then in Inngest Cloud go to Apps, Sync new app, and enter `https://<project>.vercel.app/api/inngest`. The app `inngest-js-ci` and its functions should appear. Stop any local worker first, so only one host serves the app.
 
-Sandboxes must be enabled for the environment. The first pull request builds the cached images, so warm them by merging to main or expect the first run to be slow.
-
-### 5. Try it safely
-
-Open a draft pull request on inngest-js. The `pr` and `pr / ...` statuses appear on the commit and the Inngest run is linked from them. They are not in the branch ruleset, so a failure blocks nothing, and the GitHub Actions checks stay the required ones.
+Sandboxes must be enabled for the environment. Pushes to main keep the cached images warm for pull requests, so the first run is slow.
 
 ## Try it locally first
 
-Run the app as a Connect worker against the Inngest Cloud environment instead of Vercel. Events from the GitHub webhook reach the worker on this machine, and statuses are written to GitHub for real.
+Run the app as a Connect worker against the Inngest Cloud environment instead of Vercel. Events from the webhook reach the worker on this machine.
 
-Put `INNGEST_SIGNING_KEY`, `INNGEST_EVENT_KEY`, `INNGEST_ENV`, `GITHUB_TOKEN` and `INNGEST_CI_GITHUB=live` in `~/.config/inngest-ci-dogfood.env` (mode 600), then:
+Put the five variables above and `INNGEST_CI_GITHUB=live` in `~/.config/inngest-ci-dogfood.env` (mode 600), then:
 
 ```sh
 cd ci
 pnpm ci:connect
 ```
 
-The worker logs `Connected 8 functions ACTIVE` and the app `inngest-js-ci` shows its functions in Inngest Cloud. Sandboxes run in Cloud, authorized by the signing key.
-
-- Open a draft pull request on inngest-js. The `pr` and `pr / <job>` commit statuses appear and link to the Inngest runs.
-- Replay an old delivery from the GitHub webhook page after pushing a newer commit: the run fails with "Event rejected" and posts nothing.
-- Stop the worker with Ctrl+C. It drains in-flight runs and disconnects; events sent while it is down wait for the next connection.
-
-## Switching to a GitHub App later
-
-Create the App (Checks read and write, Contents read, Pull requests read; events Pull request, Push, Check run, Check suite), install it on `inngest/inngest-js`, and set `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`. In `client.ts` replace `githubToken()` with `githubApp({ appId, privateKey })` and drop `GITHUB_TOKEN`. Checks then appear with summaries and annotations.
+The worker logs `Connected 8 functions ACTIVE`. Stop it with Ctrl+C: it drains in-flight runs and disconnects, and events sent while it is down wait for the next connection.
