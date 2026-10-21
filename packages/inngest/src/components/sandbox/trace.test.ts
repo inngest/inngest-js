@@ -1,9 +1,15 @@
 import { runSteps } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { version } from "../../version.ts";
+import { runWithAsyncCtx } from "../execution/als.ts";
 import { parseSandboxOperation } from "./protocol.ts";
 import { createClient, now, sandboxId, sandboxRef } from "./test-helpers.ts";
-import { sandboxTraceMetadata } from "./trace.ts";
+import {
+  commandSpan,
+  namedStep,
+  sandboxTraceMetadata,
+  sdkOrigin,
+} from "./trace.ts";
 
 const snapshotId = "44444444-4444-4444-8444-444444444444";
 
@@ -238,9 +244,13 @@ describe("step.sandbox trace metadata", () => {
     ]);
 
     // Only the SDK's own steps inside `snapshot()` are marked, not the
-    // user's calls or the snapshot span itself
+    // user's calls or the command span
+    expect(get?.opts ?? {}).not.toHaveProperty("span");
+    expect(exec?.opts?.span).toStrictEqual([
+      { id: "test", name: "npm test", kind: "$" },
+    ]);
+
     for (const step of [get, exec]) {
-      expect(step?.opts ?? {}).not.toHaveProperty("span");
       expect(step?.opts ?? {}).not.toHaveProperty("origin");
     }
 
@@ -359,6 +369,173 @@ describe("step.sandbox trace metadata", () => {
     expect(sandboxEntries(succeeded)[0]).toMatchObject({
       action: "exec",
       exit_code: 0,
+    });
+  });
+});
+
+describe("commandSpan", () => {
+  const exec = (command: string[]) => {
+    return parseSandboxOperation({
+      protocolVersion: 1,
+      action: "exec",
+      target: { sandbox: sandboxRef },
+      input: [{ command, timeoutMs: 1 }],
+    });
+  };
+  const processAction = (action: "process.wait" | "process.signal") => {
+    return parseSandboxOperation({
+      protocolVersion: 1,
+      action,
+      target: {
+        sandbox: sandboxRef,
+        process: {
+          kind: "inngest/sandbox.process",
+          version: 1,
+          sandboxId,
+          id: "55555555-5555-4555-8555-555555555555",
+          command: ["npm", "run", "dev"],
+          state: "RUNNING",
+        },
+      },
+      input: [
+        action === "process.wait"
+          ? { timeoutMs: 1 }
+          : { signal: 15, includeChildren: false },
+      ],
+    });
+  };
+
+  test("is a `$` row named by the command the user wrote", () => {
+    expect(
+      commandSpan(exec(["/bin/sh", "-c", "git clone x\nls"]), "c"),
+    ).toEqual({
+      id: "c",
+      name: "git clone x",
+      kind: "$",
+    });
+    expect(commandSpan(exec(["npm", "test"]), "c")?.name).toBe("npm test");
+  });
+
+  test("gives commands that repeat a step ID their own spans", () => {
+    const instance = {};
+    const open = (prefix: string) => {
+      return runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { instance, stepIdPrefix: prefix } as never,
+        },
+        () => {
+          return commandSpan(exec(["ls"]), "run")?.id;
+        },
+      );
+    };
+
+    expect([open(""), open(""), open("turn-2:")]).toEqual([
+      "run",
+      "run:1",
+      "turn-2:run",
+    ]);
+  });
+
+  test("never reuses a span ID, even one a caller's ID spells", () => {
+    const instance = {};
+    const ids = ["run", "run", "run:1"].map((id) => {
+      return runWithAsyncCtx(
+        { app: {} as never, execution: { instance } as never },
+        () => {
+          return commandSpan(exec(["ls"]), id)?.id;
+        },
+      );
+    });
+
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  test("is named by the step's name when it has one", () => {
+    expect(
+      commandSpan(exec(["npm", "test"]), { id: "c", name: "Run tests" })?.name,
+    ).toBe("Run tests");
+  });
+
+  test("keeps a long command short", () => {
+    expect(
+      commandSpan(exec(["echo", "x".repeat(500)]), "c")?.name,
+    ).toHaveLength(101);
+  });
+
+  test("names a statement on a process after the command", () => {
+    expect(commandSpan(processAction("process.wait"), "w")?.name).toBe(
+      "npm run dev (wait)",
+    );
+    expect(commandSpan(processAction("process.signal"), "k")?.name).toBe(
+      "npm run dev (signal)",
+    );
+  });
+
+  test("leaves other operations to their steps", () => {
+    const get = parseSandboxOperation({
+      protocolVersion: 1,
+      action: "get",
+      input: [{ sandboxId }],
+    });
+
+    expect(commandSpan(get, "g")).toBeUndefined();
+  });
+
+  test("doesn't group what something else already groups", () => {
+    const operation = exec(["npm", "test"]);
+    const span = { id: "mine", kind: "job" };
+
+    expect(commandSpan(operation, { id: "c", "~span": span })).toBeUndefined();
+    expect(
+      commandSpan(operation, { id: "c", "~origin": sdkOrigin }),
+    ).toBeUndefined();
+    expect(
+      runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: {
+            span: [{ id: "g", name: "g", kind: "job", origin: "lib@1" }],
+          } as never,
+        },
+        () => {
+          return commandSpan(operation, "c");
+        },
+      ),
+    ).toBeUndefined();
+    expect(
+      runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { span: [{ id: "c", name: "c", kind: "$" }] } as never,
+        },
+        () => {
+          return commandSpan(operation, "c");
+        },
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("namedStep", () => {
+  const destroy = parseSandboxOperation({
+    protocolVersion: 1,
+    action: "destroy",
+    target: { sandbox: sandboxRef },
+    input: [],
+  });
+
+  test("names an unnamed create or destroy for what it does", () => {
+    expect(namedStep(destroy, "box:destroy")).toEqual({
+      id: "box:destroy",
+      name: "Destroy sandbox",
+    });
+  });
+
+  test("keeps the caller's name", () => {
+    expect(namedStep(destroy, { id: "d", name: "Tear down" })).toEqual({
+      id: "d",
+      name: "Tear down",
     });
   });
 });
