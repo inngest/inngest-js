@@ -25,7 +25,7 @@ export const pr = ci.pipeline(
     on: ["opened", "synchronize", "reopened"].map((action) => {
       return {
         event: `github/pull_request.${action}`,
-        if: '(event.data.repository.full_name == "inngest/inngest-js") && (event.data.pull_request.head.ref == "jack/ci-dogfood-smoke")',
+        if: 'event.data.repository.full_name == "inngest/inngest-js"',
       };
     }),
     singleton: { key: "event.data.pull_request.number", mode: "cancel" },
