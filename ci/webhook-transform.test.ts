@@ -89,6 +89,40 @@ describe("webhook-transform.js", () => {
     assert.equal(event.data.deleted, false);
   });
 
+  test("a check suite re-request becomes the event the pipelines re-run on", () => {
+    const payload = fixture("check_suite.rerequested");
+    const event = deliver("check_suite", payload) as unknown as {
+      name: string;
+      data: {
+        check_suite: { head_sha: string };
+        _github: { installationId: number };
+      };
+      meta: { sessions: { commit: string } };
+    };
+
+    assert.equal(event.name, "github/check_suite.rerequested");
+    assert.equal(event.data.check_suite.head_sha, payload.check_suite.head_sha);
+    assert.equal(event.data._github.installationId, 424242);
+    assert.equal(event.meta.sessions.commit, payload.check_suite.head_sha);
+  });
+
+  test("a check run button keeps what was asked for and who asked", () => {
+    const payload = fixture("check_run.requested_action");
+    const event = deliver("check_run", payload) as unknown as {
+      name: string;
+      data: {
+        requested_action: { identifier: string };
+        sender: { login: string };
+        check_run: { external_id: string };
+      };
+    };
+
+    assert.equal(event.name, "github/check_run.requested_action");
+    assert.equal(event.data.requested_action.identifier, "rerun-fresh");
+    assert.equal(event.data.sender.login, "jpwilliams");
+    assert.equal(event.data.check_run.external_id, "01K9RUNID:lint");
+  });
+
   test("header names are matched in any case", () => {
     const event = transform(
       { action: "opened" },

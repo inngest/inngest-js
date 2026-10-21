@@ -1,0 +1,20 @@
+{
+  "action": "rerequested",
+  "check_suite": {
+    "id": 9001,
+    "head_branch": "jack/ci-status-reporting",
+    "head_sha": "fefd424521d2ba9713b563d917e5f205381d69aa",
+    "status": "completed",
+    "conclusion": "failure",
+    "pull_requests": [
+      {
+        "number": 1819,
+        "head": { "ref": "jack/ci-status-reporting", "sha": "fefd424521d2ba9713b563d917e5f205381d69aa" },
+        "base": { "ref": "main", "sha": "372ae6ebe14f825822ff43f609db8dc0e9ed7928" }
+      }
+    ]
+  },
+  "repository": { "full_name": "inngest/inngest-js", "default_branch": "main" },
+  "installation": { "id": 424242 },
+  "sender": { "login": "jpwilliams" }
+}

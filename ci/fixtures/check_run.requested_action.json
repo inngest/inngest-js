@@ -1,0 +1,17 @@
+{
+  "action": "requested_action",
+  "check_run": {
+    "id": 5150,
+    "name": "pr / lint",
+    "external_id": "01K9RUNID:lint",
+    "head_sha": "fefd424521d2ba9713b563d917e5f205381d69aa",
+    "status": "completed",
+    "conclusion": "failure",
+    "check_suite": { "id": 9001, "head_branch": "jack/ci-status-reporting" },
+    "pull_requests": [{ "number": 1819 }]
+  },
+  "requested_action": { "identifier": "rerun-fresh" },
+  "repository": { "full_name": "inngest/inngest-js", "default_branch": "main" },
+  "installation": { "id": 424242 },
+  "sender": { "login": "jpwilliams" }
+}
