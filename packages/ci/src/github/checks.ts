@@ -62,6 +62,20 @@ export interface CheckReporter {
       },
   ): Promise<void>;
   /**
+   * Complete the pipeline's check for a run that ended without reaching its
+   * own completion, such as a cancelled one. It isn't a step: the caller is
+   * the one that makes it durable, and there is no run to read it from, so
+   * the run is only what the sinks read.
+   */
+  pipelineEnded(
+    args: {
+      run: Pick<
+        CiRunScope,
+        "ci" | "runId" | "functionId" | "pipelineId" | "checkName" | "repo"
+      >;
+    } & Pick<CheckResult, "conclusion" | "title">,
+  ): Promise<void>;
+  /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.
    */
@@ -350,6 +364,19 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       }
 
       await complete(run, run.checkName, result, undefined, metadata);
+    },
+
+    pipelineEnded: async ({ run, conclusion, title }) => {
+      if (!run.checkName) {
+        return;
+      }
+
+      await sink.complete(
+        completeArgs(run as CiRunScope, "pipeline", run.checkName, {
+          conclusion,
+          title,
+        }),
+      );
     },
 
     jobStart: async ({ run, jobPath, name }) => {

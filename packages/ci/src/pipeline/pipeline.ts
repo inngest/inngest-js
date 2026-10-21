@@ -156,7 +156,7 @@ export const definePipeline = ({
   return {
     fn,
     config,
-    generated: generatedFunctions({ client, config }),
+    generated: generatedFunctions({ client, config, internals }),
   };
 };
 
@@ -882,9 +882,12 @@ const permissionForComment = (
 export const cleanupFunction = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
-  config: Pick<PipelineConfig, "id">;
+  config: Pick<PipelineConfig, "id" | "check">;
+  /** Given, a cancelled run's pipeline check is completed as cancelled. */
+  internals?: CiInternals;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
@@ -927,6 +930,37 @@ export const cleanupFunction = ({
         },
       );
 
+      // A cancelled run never reaches its own completion, so its check would
+      // stay in progress. What it needs comes from the run's trigger event.
+      const repo = repoContextFromEvent(event?.data?.event);
+      const checkName =
+        config.check === false ? undefined : (config.check?.name ?? config.id);
+
+      if (
+        internals &&
+        runId &&
+        event?.name === internalEvents.FunctionCancelled &&
+        checkName &&
+        repo?.sha
+      ) {
+        await step.run(stepOptions(steps.endCancelledCheck()), async () => {
+          await (internals.checks as CheckReporter).pipelineEnded({
+            run: {
+              ci: internals,
+              runId,
+              functionId: config.id,
+              pipelineId: config.id,
+              checkName,
+              repo,
+            },
+            conclusion: "cancelled",
+            title: "Cancelled",
+          });
+
+          return null;
+        });
+      }
+
       // The runs waiting on it would otherwise wait for a build that is gone.
       // A build that ended on its own already told them, and one that told them
       // must not be counted as failing twice.
@@ -953,12 +987,14 @@ export const cleanupFunction = ({
 const generatedFunctions = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
   config: PipelineConfig;
+  internals: CiInternals;
 }): InngestFunction.Any[] => {
   const functions: InngestFunction.Any[] = [
-    cleanupFunction({ client, config }),
+    cleanupFunction({ client, config, internals }),
   ];
 
   functions.push(

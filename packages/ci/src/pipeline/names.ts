@@ -263,6 +263,14 @@ export const steps = {
 
   cleanUpEndedRun: fixed("destroy-orphans", "Clean up sandboxes"),
 
+  endCancelledCheck: fixed(
+    "github-check-cancelled",
+    "Complete check: cancelled",
+    {
+      unmarked: true,
+    },
+  ),
+
   cleanUpSnapshots: (attempt: number): StepSpec => {
     return {
       id: cleanupId("cleanup:snapshots", attempt),

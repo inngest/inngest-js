@@ -4580,6 +4580,57 @@ describe("the pipeline's commit status", () => {
   });
 });
 
+describe("a cancelled run's commit status", () => {
+  test.each([
+    ["cancelled", "inngest/function.cancelled", ["pr"]],
+    ["failed", "inngest/function.failed", []],
+  ])("a run that was %s", async (_how, eventName, expected) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub();
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      const ended = await runFunction(cleanup, {
+        event: {
+          name: eventName,
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      expect(ended.type).toBe("function-resolved");
+
+      expect(
+        gh.requests.map((request) => {
+          const status = request.body as {
+            context: string;
+            description: string;
+          };
+
+          return [status.context, status.description];
+        }),
+      ).toEqual(
+        expected.map((context) => {
+          return [context, "Cancelled"];
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("comment permissions", () => {
   const commentEvent = (body: string) => {
     return {
