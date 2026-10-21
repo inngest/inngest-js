@@ -33,8 +33,11 @@ const latestDevServer = async (): Promise<string> => {
   return version;
 };
 
+/** Where global tools are installed, which is on the `PATH`. */
+const installPrefix = "/usr/local";
+
 /** The binary that the package's postinstall downloads over its own wrapper script. */
-const devServerBin = "/usr/local/lib/node_modules/inngest-cli/bin/inngest";
+const devServerBin = `${installPrefix}/lib/node_modules/inngest-cli/bin/inngest`;
 
 /** The port the Dev Server listens on, which the tests expect. */
 export const devServerPort = 8288;
@@ -76,15 +79,15 @@ export const base = ci.job(
   async ({ key }) => {
     await checkout();
 
-    await $.sh`npm install -g --prefix /usr/local "$(node -p "require('./package.json').packageManager.split('+')[0]")"`.as(
+    await $.sh`npm install -g --prefix ${installPrefix} "$(node -p "require('./package.json').packageManager.split('+')[0]")"`.as(
       "install pnpm",
     );
 
     await $`pnpm install --frozen-lockfile`;
 
-    await $`npm install -g --prefix /usr/local bun`;
+    await $`npm install -g --prefix ${installPrefix} bun`;
 
-    await $`npm install -g --prefix /usr/local --ignore-scripts=false inngest-cli@${key.devServer}`.as(
+    await $`npm install -g --prefix ${installPrefix} --ignore-scripts=false inngest-cli@${key.devServer}`.as(
       "download the Dev Server",
     );
 
