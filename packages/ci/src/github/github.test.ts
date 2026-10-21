@@ -4,6 +4,7 @@
  * @module
  */
 
+import { generateKeyPairSync } from "node:crypto";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { shard } from "../checkout/shard.ts";
 import { CiUsageError } from "../errors.ts";
@@ -15,7 +16,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { consoleReporter, githubToken } from "./auth.ts";
+import { consoleReporter, githubApp, githubToken } from "./auth.ts";
 import { github } from "./index.ts";
 
 const setup = (gh: FakeGitHub) => {
@@ -1200,5 +1201,82 @@ describe("re-running from buttons and suites", () => {
     });
 
     expect(new Set(ids)).toEqual(new Set(["ci-rerun-delivery-2"]));
+  });
+});
+
+describe("a run whose event has no installation", () => {
+  const privateKey = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  }).privateKey;
+
+  test("the repository's own installation is found, so a cancelled run's checks are still closed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const client = createCiTestClient(createFakeSandboxApi());
+
+      const ci = createCi(client, {
+        github: githubApp({
+          appId: "123",
+          privateKey,
+          baseUrl: "https://api.github.test",
+          fetch: gh.fetch,
+        }),
+      });
+
+      gh.route("GET /repos/inngest/inngest-js/installation", { id: 77 });
+
+      gh.route("POST /app/installations/77/access_tokens", {
+        token: "tok",
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      });
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        total_count: 1,
+        check_runs: [{ id: 5, name: "pr", external_id: "01RUN:pipeline" }],
+      });
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/5", { id: 5 });
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      // The event of a cancelled run: the trigger's payload, with no
+      // `_github` and so no installation.
+      const ended = await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: {
+            run_id: "01RUN",
+            event: {
+              ...prEvent,
+              data: { ...prEvent.data, _github: undefined },
+            },
+          },
+        },
+      });
+
+      expect(ended.type).toBe("function-resolved");
+
+      const requests = gh.requests.map((request) => {
+        return `${request.method} ${request.path}`;
+      });
+
+      expect(requests).toContain("GET /repos/inngest/inngest-js/installation");
+      expect(requests).toContain(
+        "PATCH /repos/inngest/inngest-js/check-runs/5",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
