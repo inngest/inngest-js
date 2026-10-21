@@ -149,7 +149,7 @@ describe("agent.loop", () => {
         add: tool.step({
           input: z.object({}),
           run: () => {
-            return { error: "no such ticket", id: 7 };
+            return agent.toolError({ error: "no such ticket", id: 7 });
           },
         }),
       },
@@ -244,6 +244,42 @@ describe("agent.loop", () => {
       "post:2",
     ]);
     expect(result?.stopped).toBe("done");
+  });
+
+  test("keeps a result with an error field of its own as a success", async () => {
+    const { requests } = await run([call("add", {}), say("ok")], {
+      tools: {
+        add: tool.step({
+          input: z.object({}),
+          run: () => {
+            return { error: null, value: 1 };
+          },
+        }),
+      },
+    });
+
+    expect(requests[1]?.messages.at(-1)).toEqual({
+      role: "tool",
+      results: [{ toolCallId: "id-add", content: '{"error":null,"value":1}' }],
+    });
+  });
+
+  test("clips a tool result at maxToolOutput", async () => {
+    const { requests } = await run([call("add", { a: 1, b: 2 }), say("ok")], {
+      maxToolOutput: 1,
+      tools: {
+        add: tool.step({
+          input: z.object({ a: z.number(), b: z.number() }),
+          run: () => {
+            return "abcdef";
+          },
+        }),
+      },
+    });
+
+    expect(requests[1]?.messages.at(-1)).toMatchObject({
+      results: [{ content: expect.stringContaining("clipped 5 characters") }],
+    });
   });
 
   test("gives the results of one reply's calls in one message", async () => {

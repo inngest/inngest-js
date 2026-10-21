@@ -120,10 +120,16 @@ export interface AgentLoopOptions {
 
   /**
    * Tools the model can call, declared like sandbox tools. A tool that
-   * throws, or returns an object with an `error` key, gives the model an error
+   * throws, or returns `agent.toolError(body)`, gives the model an error
    * result to react to.
    */
   tools: SandboxTools;
+
+  /**
+   * The most characters of one tool result the model sees; longer ones keep
+   * their start and end. Default 8000.
+   */
+  maxToolOutput?: number;
 
   /**
    * The most model calls to make. Default 40.
@@ -165,35 +171,51 @@ export interface AgentLoopResult {
   usage: AgentUsage;
 }
 
-const maxToolOutput = 8_000;
-
-const clip = (text: string): string => {
-  if (text.length <= maxToolOutput) {
+const clip = (text: string, max: number): string => {
+  if (text.length <= max) {
     return text;
   }
 
-  const half = maxToolOutput / 2;
+  const half = max / 2;
 
-  return `${text.slice(0, half)}\n... clipped ${text.length - maxToolOutput} characters ...\n${text.slice(-half)}`;
+  return `${text.slice(0, half)}\n... clipped ${text.length - max} characters ...\n${text.slice(-half)}`;
 };
 
+const errorKey = "~error";
+
 /**
- * A tool reports a failure it expects by returning `{ error }`, which the
- * model sees as an error with the whole result as its body.
+ * EXPERIMENTAL: Returns a failure from a tool without throwing, so the model
+ * sees an error result whose body is `body` as it is. Use it for failures the
+ * model can act on; a tool that returns data with an `error` field of its own
+ * is not affected.
+ *
+ * @example
+ * ```ts
+ * run: async ({ id }) => {
+ *   const ticket = await db.tickets.find(id);
+ *
+ *   return ticket ?? agent.toolError({ message: "No such ticket", id });
+ * },
+ * ```
  */
-const isErrorResult = (output: unknown): boolean => {
-  return typeof output === "object" && output !== null && "error" in output;
+const toolError = (body: unknown): { "~error": unknown } => {
+  return { [errorKey]: body };
+};
+
+const isToolError = (output: unknown): output is { "~error": unknown } => {
+  return typeof output === "object" && output !== null && errorKey in output;
 };
 
 const runTool = async (
   stepId: string,
   tools: SandboxTools,
   call: AgentToolCall,
+  maxOutput: number,
 ): Promise<AgentToolResult> => {
   const result = (content: string, isError?: boolean) => {
     return {
       toolCallId: call.id,
-      content: clip(content),
+      content: clip(content, maxOutput),
       ...(isError && { isError }),
     };
   };
@@ -227,9 +249,11 @@ const runTool = async (
           },
         );
 
+    const body = isToolError(output) ? output[errorKey] : output;
+
     return result(
-      typeof output === "string" ? output : (JSON.stringify(output) ?? ""),
-      isErrorResult(output),
+      typeof body === "string" ? body : (JSON.stringify(body) ?? ""),
+      isToolError(output),
     );
   } catch (error) {
     return result(error instanceof Error ? error.message : String(error), true);
@@ -256,7 +280,14 @@ const runTool = async (
  * ```
  */
 const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
-  const { id = "agent", model, system, tools, maxTurns = 40 } = options;
+  const {
+    id = "agent",
+    model,
+    system,
+    tools,
+    maxTurns = 40,
+    maxToolOutput = 8_000,
+  } = options;
   const definitions = toolDefinitions(tools);
   const messages: AgentMessage[] = [
     ...(options.history ?? []),
@@ -298,7 +329,12 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
 
     for (const [index, call] of reply.toolCalls.entries()) {
       results.push(
-        await runTool(`${id}:${turn}.${index}:${call.name}`, tools, call),
+        await runTool(
+          `${id}:${turn}.${index}:${call.name}`,
+          tools,
+          call,
+          maxToolOutput,
+        ),
       );
     }
 
@@ -388,4 +424,4 @@ const model = (fn: AgentModel): AgentModel => {
   return fn;
 };
 
-export const agent = { loop, model };
+export const agent = { loop, model, toolError };
