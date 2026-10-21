@@ -183,18 +183,16 @@ describe("await using a sandbox", () => {
       },
     );
 
-    const [box, destroy] = await runSteps(fn, 2);
+    const [box] = await runSteps(fn, 1);
+    const stepState = { [box!.id]: { id: box!.id, data: box!.data } };
+    const destroy = ranStep(await runFnWithStack(fn, stepState));
     const result = await runFnWithStack(
       fn,
-      {
-        [box!.id]: { id: box!.id, data: box!.data },
-        [destroy!.id]: { id: destroy!.id, data: destroy!.data },
-      },
+      { ...stepState, [destroy!.id]: { id: destroy!.id, data: destroy!.data } },
       { attempt: 0, maxAttempts: 5 },
     );
 
-    assert(result.type === "step-ran");
-    expect(result.step.op).toBe("StepError");
+    expect(ranStep(result)?.op).toBe("StepError");
   });
 
   test("leaves an error thrown with no scope retriable", async () => {
