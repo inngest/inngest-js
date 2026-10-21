@@ -202,6 +202,63 @@ describe("commit statuses", () => {
   });
 });
 
+describe("commit status descriptions", () => {
+  const descriptionFor = async (title: string, detail?: string) => {
+    const gh = createFakeGitHub();
+
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+    const sink = statusesSink(
+      githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    );
+
+    await sink.complete({
+      run: fakeRun(),
+      name: "pr",
+      externalId: "01TESTRUN:pipeline",
+      detailsUrl: "http://trace/01TESTRUN",
+      conclusion: "failure",
+      title,
+      ...(detail ? { detail } : {}),
+      summary: "",
+      annotations: [],
+    });
+
+    return (gh.requests[0]?.body as { description: string }).description;
+  };
+
+  test.each([
+    [
+      "no detail",
+      "`pnpm test` exited with 1",
+      undefined,
+      "`pnpm test` exited with 1",
+    ],
+    [
+      "a detail that fits",
+      "`pnpm test` exited with 1",
+      "ENOTFOUND localhost",
+      "`pnpm test` exited with 1: ENOTFOUND localhost",
+    ],
+    [
+      "a detail that is too long",
+      "`pnpm test` exited with 1",
+      "x".repeat(300),
+      `\`pnpm test\` exited with 1: ${"x".repeat(112)}…`,
+    ],
+  ])("%s", async (_name, title, detail, expected) => {
+    const description = await descriptionFor(title, detail);
+
+    expect(description).toBe(expected);
+
+    expect(description.length).toBeLessThanOrEqual(140);
+  });
+});
+
 describe("attempt reporting", () => {
   test("a retry updates the job check with the attempt and the error", async () => {
     const updates: Array<{ name: string; title: string }> = [];

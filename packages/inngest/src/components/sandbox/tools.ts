@@ -14,6 +14,7 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
+import * as z4 from "zod/v4";
 
 import { internalEvents } from "../../helpers/consts.ts";
 import { InngestFunction } from "../InngestFunction.ts";
@@ -69,6 +70,7 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
  * A tool declared with `tool.step()` or `tool.group()`.
  */
 export interface SandboxTool {
+  readonly description?: string;
   readonly group?: boolean;
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
@@ -268,7 +270,7 @@ const functionTool = (
     group: true,
     input:
       (fn instanceof InngestFunction ? triggerSchema(fn) : undefined) ??
-      z.record(z.unknown()),
+      z4.record(z4.string(), z4.unknown()),
     run: (data: Record<string, unknown>) => {
       return step.invoke("invoke", { function: fn, data });
     },
@@ -423,4 +425,90 @@ export const resolveToolCall = async (
       return result.value;
     },
   };
+};
+
+/**
+ * A tool in the shape model APIs take.
+ */
+export interface ToolJsonDefinition {
+  name: string;
+  description?: string;
+
+  /**
+   * JSON Schema of the arguments, which always describes an object. A tool
+   * without an `input` schema takes any object.
+   */
+  input_schema: { type: "object"; [key: string]: unknown };
+}
+
+type JsonSchemaProvider = {
+  jsonSchema?: {
+    input: (options: { target: string }) => Record<string, unknown>;
+  };
+};
+
+const toJsonSchema = (
+  name: string,
+  schema: StandardSchemaV1,
+): ToolJsonDefinition["input_schema"] => {
+  const provider = schema["~standard"] as JsonSchemaProvider;
+  let json: Record<string, unknown>;
+
+  if (provider.jsonSchema) {
+    json = provider.jsonSchema.input({ target: "draft-2020-12" });
+  } else if ("_zod" in schema) {
+    json = z4.toJSONSchema(schema as unknown as z4.ZodType);
+  } else {
+    throw new SandboxValidationError(
+      `Tool "${name}" has a schema that can't be turned into JSON Schema: use Zod 4 or a library that implements Standard JSON Schema`,
+    );
+  }
+
+  if (json.type !== "object") {
+    throw new SandboxValidationError(
+      `Tool "${name}" has an input schema that isn't an object: models call tools with named arguments`,
+    );
+  }
+
+  return { ...json, type: "object" };
+};
+
+/**
+ * EXPERIMENTAL: The definitions to hand to a model so it can call `tools`:
+ * each tool's name, description and JSON Schema, in the shape Anthropic's
+ * `tools` parameter takes (`{ name, description, input_schema }`).
+ *
+ * For OpenAI, map each one to
+ * `{ type: "function", name, description, parameters: input_schema }`.
+ *
+ * Schemas come from Zod 4 or any library that implements Standard JSON
+ * Schema. Other Standard Schema libraries throw, since the standard can only
+ * validate.
+ *
+ * @example
+ * ```ts
+ * import { toolDefinitions } from "inngest/experimental";
+ *
+ * const tools = { getCustomer };
+ *
+ * await anthropic.messages.create({
+ *   model,
+ *   max_tokens: 1024,
+ *   messages,
+ *   tools: toolDefinitions(tools),
+ * });
+ * ```
+ */
+export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
+  validateTools(tools);
+
+  return Object.entries(tools).map(([name, entry]) => {
+    const { description, input } = toTool(entry);
+
+    return {
+      name,
+      ...(description !== undefined && { description }),
+      input_schema: input ? toJsonSchema(name, input) : { type: "object" },
+    };
+  });
 };

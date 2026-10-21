@@ -1,4 +1,7 @@
+import type { StepOptionsOrId, StepSpan } from "../../types.ts";
 import { version } from "../../version.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
+import { getStepOptions } from "../InngestStepTools.ts";
 import {
   operationProcessId,
   operationSandboxId,
@@ -6,7 +9,7 @@ import {
   type SandboxOperationResultV1,
   type SandboxOperationV1,
 } from "./protocol.ts";
-import type { SandboxError } from "./types.ts";
+import type { SandboxAction, SandboxError } from "./types.ts";
 
 /**
  * The metadata kind attached to every step behind `step.sandbox`.
@@ -212,4 +215,124 @@ export const sandboxTraceMetadata = (
   }
 
   return metadata;
+};
+
+/**
+ * The kind of the span around each command, as `@inngest/ci` calls its own.
+ */
+export const commandSpanKind = "$";
+
+/**
+ * What each statement on a process is called after the command, where the
+ * process's first statement, `processes.start`, is the command itself.
+ */
+const processStatements: Partial<Record<SandboxAction, string>> = {
+  "process.wait": "wait",
+  "process.signal": "signal",
+  "process.output": "output",
+};
+
+/**
+ * How a step reads in the trace when its caller didn't name it.
+ */
+const defaultNames: Partial<Record<SandboxAction, string>> = {
+  create: "Create sandbox",
+  waitUntilRunning: "Wait for sandbox",
+  pause: "Pause sandbox",
+  resume: "Resume sandbox",
+  destroy: "Destroy sandbox",
+  "snapshot.delete": "Delete snapshot",
+};
+
+const maxNameChars = 100;
+
+/**
+ * The span IDs each execution has opened for commands.
+ */
+const spansOpened = new WeakMap<object, Set<string>>();
+
+/**
+ * An ID for a command's span that no other command of the execution has. Step
+ * IDs can repeat (the SDK numbers them), such as a tool's in each turn of an
+ * agent, and a span re-entered by ID would merge those commands into one row.
+ * A replay calls in the same order, so each command gets the same ID again.
+ */
+const uniqueSpanId = (
+  execution: { instance: object; stepIdPrefix?: string },
+  id: string,
+): string => {
+  const key = `${execution.stepIdPrefix ?? ""}${id}`;
+  const opened = spansOpened.get(execution.instance) ?? new Set<string>();
+  let unique = key;
+
+  for (let count = 1; opened.has(unique); count++) {
+    unique = `${key}:${count}`;
+  }
+
+  opened.add(unique);
+  spansOpened.set(execution.instance, opened);
+
+  return unique;
+};
+
+/**
+ * The step options for an operation: the caller's, with a name that reads as
+ * the action if they gave none. IDs never change, for replay.
+ */
+export const namedStep = (
+  operation: SandboxOperationV1,
+  idOrOptions: StepOptionsOrId,
+): StepOptionsOrId => {
+  const options = getStepOptions(idOrOptions);
+  const name = defaultNames[operation.action];
+
+  return name && !options.name ? { ...options, name } : idOrOptions;
+};
+
+/**
+ * The span that makes a command, or a statement on a process, one `$` row in
+ * the trace, named by the command, whatever steps it takes. Undefined where
+ * something else already groups the statement: a caller's own span, such as
+ * `@inngest/ci`'s, or where a library runs it on the user's behalf, such as
+ * the SDK's runners.
+ */
+export const commandSpan = (
+  operation: SandboxOperationV1,
+  idOrOptions: StepOptionsOrId,
+): StepSpan | undefined => {
+  const {
+    id,
+    name,
+    "~span": callerSpan,
+    "~origin": origin,
+  } = getStepOptions(idOrOptions);
+  const isCommand =
+    operation.action === "exec" ||
+    operation.action === "process.start" ||
+    operation.action in processStatements;
+  const execution = getAsyncCtxSync()?.execution;
+  const enclosing = execution?.span?.at(-1);
+
+  if (
+    !isCommand ||
+    callerSpan ||
+    (origin ?? enclosing?.origin) ||
+    enclosing?.kind === commandSpanKind
+  ) {
+    return undefined;
+  }
+
+  const { command_display, command } = sandboxTraceMetadata(operation, {
+    error: undefined,
+  });
+  const [text = ""] = (command_display ?? command?.join(" ") ?? "").split("\n");
+  const label =
+    text.length > maxNameChars ? `${text.slice(0, maxNameChars)}…` : text;
+  const statement = processStatements[operation.action];
+
+  return {
+    id: execution ? uniqueSpanId(execution, id) : id,
+    name: name ?? (statement ? `${label} (${statement})` : label),
+    kind: commandSpanKind,
+  };
 };

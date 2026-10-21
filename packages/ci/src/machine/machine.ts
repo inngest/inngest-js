@@ -197,6 +197,11 @@ const outputsPath = "/var/tmp/.inngest-ci-outputs.json";
  */
 const maxOutputsBytes = 1024 * 1024;
 
+/** A shell command that adds `<ip> localhost` to `/etc/hosts` unless it's there. */
+const ensureLocalhost = (ip: string): string => {
+  return `((grep -Eq "^${ip}[[:space:]]+([^#]*[[:space:]])?localhost([[:space:]]|$)" /etc/hosts || echo "${ip} localhost" >> /etc/hosts) 2>/dev/null || true)`;
+};
+
 /**
  * Run once on every machine before its first command. It also prints the
  * outputs file, which is how a job learns what the jobs above it returned.
@@ -209,8 +214,17 @@ const maxOutputsBytes = 1024 * 1024;
  *   or reach `127.0.0.1`, which breaks services started with `.background()`
  *   and `waitForHttp`/`waitForPort`. Bringing it up is a no-op once the
  *   platform does it itself.
+ * - Sandboxes' `/etc/hosts` has no `localhost` entry, and tools that read it
+ *   directly (vitest, Go programs) fail with "no such host". Both loopback
+ *   lines are added when missing.
  */
-export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true) && (cat ${outputsPath} 2>/dev/null || true)`;
+export const machineSetupScript = [
+  `mkdir -p ${defaultCwd}`,
+  "(ip link set lo up 2>/dev/null || true)",
+  ensureLocalhost("127.0.0.1"),
+  ensureLocalhost("::1"),
+  `(cat ${outputsPath} 2>/dev/null || true)`,
+].join(" && ");
 
 /**
  * The stages a machine is started in. Only the first is tried every time:

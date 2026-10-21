@@ -46,7 +46,7 @@ describe("group.sandbox", () => {
     expect(calls.destroys).toBe(1);
     expect(steps.map((step) => step.opts?.span)).toEqual([
       [group],
-      [group],
+      [group, { id: "run", name: "echo hi", kind: "$" }],
       [group],
       undefined,
     ]);

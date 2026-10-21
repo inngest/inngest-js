@@ -5,10 +5,14 @@
  * @module
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
 import { formatName, slotOf } from "./cache/names.ts";
-import { CiUsageError } from "./errors.ts";
+import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
   normaliseAnnotation,
@@ -29,6 +33,7 @@ import {
   push,
 } from "./github/triggers.ts";
 import { buildArgv, buildShellString } from "./machine/command.ts";
+import { machineSetupScript } from "./machine/machine.ts";
 import { behaviourFor } from "./pipeline/durable.ts";
 import {
   expandMatrix,
@@ -973,5 +978,66 @@ describe("shortReason", () => {
     expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
 
     expect(shortReason(undefined)).toBe("");
+  });
+});
+
+describe("localhost setup in /etc/hosts", () => {
+  const hostsAfterSetup = (initial: string): string => {
+    const file = join(mkdtempSync(join(tmpdir(), "hosts-")), "hosts");
+
+    writeFileSync(file, initial);
+
+    const lines = machineSetupScript
+      .split(" && ")
+      .filter((line) => {
+        return line.includes("/etc/hosts");
+      })
+      .map((line) => {
+        return line.replaceAll("/etc/hosts", file);
+      });
+
+    execFileSync("bash", ["-c", lines.join(" && ")]);
+
+    return readFileSync(file, "utf8");
+  };
+
+  test("adds both loopback lines when missing", () => {
+    expect(hostsAfterSetup("")).toBe("127.0.0.1 localhost\n::1 localhost\n");
+  });
+
+  test("leaves an existing localhost entry alone", () => {
+    const hosts = "127.0.0.1 localhost\n::1 ip6-localhost localhost\n";
+
+    expect(hostsAfterSetup(hosts)).toBe(hosts);
+  });
+
+  test("an alias such as localhost.localdomain does not count", () => {
+    const hosts = hostsAfterSetup(
+      "127.0.0.1 localhost.localdomain # localhost\n",
+    );
+
+    expect(hosts).toContain("\n127.0.0.1 localhost\n");
+  });
+});
+
+describe("CommandFailedError message", () => {
+  const failure = (stdoutTail: string, stderrTail: string) => {
+    return new CommandFailedError({
+      command: ["pnpm", "test"],
+      exitCode: 1,
+      stdoutTail,
+      stderrTail,
+      jobPath: "a",
+    });
+  };
+
+  test("prefers stderr", () => {
+    expect(failure("out", "err").message).toBe(
+      "`pnpm test` exited with 1\nerr",
+    );
+  });
+
+  test("falls back to stdout when stderr is empty", () => {
+    expect(failure("out", "").message).toBe("`pnpm test` exited with 1\nout");
   });
 });
