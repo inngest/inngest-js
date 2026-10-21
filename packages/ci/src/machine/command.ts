@@ -451,7 +451,7 @@ class CommandBuilder implements Command {
         const result = await this.runOnce(scope, attemptId);
 
         if (result.exitCode !== 0 && !this.state.nothrow) {
-          await recordFailure(scope, attemptId, result.exitCode);
+          await recordFailure(scope, attemptId, this.failure(scope, result));
         }
 
         return result;
@@ -469,13 +469,7 @@ class CommandBuilder implements Command {
         return result;
       }
 
-      const error = new CommandFailedError({
-        command: this.state.argv,
-        exitCode: result.exitCode,
-        stdoutTail: result.stdout,
-        stderrTail: result.stderr,
-        jobPath: scope.path,
-      });
+      const error = this.failure(scope, result);
 
       if (attempt >= attempts) {
         throw error;
@@ -489,6 +483,19 @@ class CommandBuilder implements Command {
         error,
       });
     }
+  }
+
+  private failure(
+    scope: CiJobScope,
+    result: CommandResult,
+  ): CommandFailedError {
+    return new CommandFailedError({
+      command: this.state.argv,
+      exitCode: result.exitCode,
+      stdoutTail: result.stdout,
+      stderrTail: result.stderr,
+      jobPath: scope.path,
+    });
   }
 
   /** One attempt, which never throws for a non-zero exit. */
@@ -621,12 +628,16 @@ const counter = (): (() => number) => {
 const recordFailure = async (
   scope: CiJobScope,
   stepId: string,
-  exitCode: number,
+  failure: CommandFailedError,
 ): Promise<void> => {
   try {
-    await ciRun(scope.run, steps.recordCommandFailure(stepId, exitCode), () => {
-      throw new NonRetriableError(`exit ${exitCode}`);
-    });
+    await ciRun(
+      scope.run,
+      steps.recordCommandFailure(stepId, failure.exitCode),
+      () => {
+        throw new NonRetriableError(failure.message);
+      },
+    );
   } catch (error) {
     if (!(error instanceof StepError)) {
       throw error;
