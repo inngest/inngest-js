@@ -67,7 +67,10 @@ export const integration = ci.job(
   async ({ matrix, from }) => {
     await checkout();
 
-    await from.$.integration.env({ SHARD: matrix.shard });
+    await from.$.integration.env({
+      SHARD: matrix.shard,
+      DEBUG_DEV_SERVER: "1",
+    });
   },
 );
 
