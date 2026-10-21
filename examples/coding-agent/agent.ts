@@ -54,7 +54,7 @@ export const coder = inngest.createFunction(
 
     const { text, stopped, turns } = await agent.loop({
       model: claude,
-      system: `You are a careful engineer. Work on a new branch named agent/${runId}, run the code to check it works, commit, push the branch, then open a pull request.`,
+      system: `You are a careful engineer. Work on a new branch named agent/${runId}. Use read, search and edit for files; use run only for building, testing and git. Run the code to check it works, commit, push the branch, then open a pull request.`,
       prompt: `The repository is in ${checkout.path}. Task: ${task}`,
       tools: { ...checkout.tools, openPullRequest },
     });
