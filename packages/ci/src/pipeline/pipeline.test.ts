@@ -4792,6 +4792,179 @@ describe("the lifecycle of a check", () => {
   });
 });
 
+describe("what the cache saved", () => {
+  test("a job that starts from a reused snapshot says how long it took to build", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci, reporter } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const test = ci.job({ id: "test", from: base }, async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await test();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      return reporter.history.filter((entry) => {
+        return entry.name === "pr" && entry.status === "completed";
+      });
+    };
+
+    // Every clock read is a second later than the last, so the build takes time.
+    const realNow = Date.now.bind(Date);
+    let reads = 0;
+
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+
+      return realNow() + reads * 1000;
+    });
+
+    const first = await run().finally(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    expect(first[0]?.title).not.toContain("saved");
+
+    const second = await run();
+
+    expect(second[0]?.title).toMatch(/\(saved \d+s from cache\)$/);
+    expect(second[0]?.summary).toContain("| base |");
+  });
+});
+
+describe("re-running from a check", () => {
+  const rerunEvent = (ci: Record<string, unknown>) => {
+    return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
+  };
+
+  const commandsRun = (api: ReturnType<typeof createFakeSandboxApi>) => {
+    return userCommands(api).map((argv) => {
+      return argv.join(" ");
+    });
+  };
+
+  test("a job's re-run runs that job alone", async () => {
+    const { api, ci } = setup();
+
+    const lint = ci.job("lint", async () => {
+      await $`pnpm lint`;
+    });
+
+    const test = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([lint(), test()]);
+    });
+
+    const result = await runFunction(pipeline, {
+      event: rerunEvent({ job: "test" }),
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(commandsRun(api)).toEqual(["pnpm test"]);
+  });
+
+  test("a re-run without the cache builds a cached job again", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (event: typeof prEvent) => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await base();
+      });
+
+      return runFunction(pipeline, { event });
+    };
+
+    await run(prEvent);
+    await run(prEvent);
+
+    expect(commandsRun(api)).toEqual(["pnpm install"]);
+
+    const fresh = await run(rerunEvent({ noCache: true }));
+
+    expect(fresh.type).toBe("function-resolved");
+    expect(commandsRun(api)).toEqual(["pnpm install", "pnpm install"]);
+  });
+
+  test("a failed check offers a re-run without the cache", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const completed = gh.requests.filter((request) => {
+        return (
+          request.method === "PATCH" &&
+          (request.body as { conclusion?: string }).conclusion === "failure"
+        );
+      });
+
+      expect(completed.length).toBeGreaterThan(0);
+
+      for (const request of completed) {
+        expect((request.body as { actions: unknown[] }).actions).toEqual([
+          {
+            label: "Re-run, no cache",
+            description: "Run again from scratch",
+            identifier: "rerun-fresh",
+          },
+        ]);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("a cancelled run's checks", () => {
   const cancelWith = async (
     reporter: "checks" | "statuses",

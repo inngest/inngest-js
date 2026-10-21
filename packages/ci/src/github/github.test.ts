@@ -9,7 +9,7 @@ import { shard } from "../checkout/shard.ts";
 import { CiUsageError } from "../errors.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
-import { rerunEventFor } from "../pipeline/rerun.ts";
+import { mayRerun, rerunEventFor } from "../pipeline/rerun.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
@@ -1065,5 +1065,140 @@ describe("re-running a check whose branch moved or is not ours", () => {
 
     expect(result).toMatchObject({ rerun: false });
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("re-running from buttons and suites", () => {
+  const step = {
+    run: async (_id: string, fn: () => Promise<unknown>) => {
+      return fn();
+    },
+  };
+
+  const action = (identifier: string, login = "octocat") => {
+    return {
+      id: "evt-9",
+      name: "github/check_run.requested_action",
+      data: {
+        action: "requested_action",
+        requested_action: { identifier },
+        sender: { login },
+        check_run: {
+          head_sha: "abc1234",
+          name: "pr / lint",
+          external_id: "01RUN:lint",
+          pull_requests: [{ number: 7 }],
+          check_suite: { head_branch: "feature" },
+        },
+        repository: { full_name: "inngest/inngest-js", default_branch: "main" },
+      },
+    };
+  };
+
+  test("a job's button re-runs that job, without the cache for the fresh one", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", { number: 7 });
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    await rerunEventFor({
+      event: action("rerun-fresh"),
+      step,
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          _ci: { rerunOf: "01RUN", job: "lint", noCache: true },
+        }),
+      }),
+    );
+  });
+
+  test.each([
+    ["write", true],
+    ["read", false],
+  ])(
+    "a click from someone with %s access is allowed: %s",
+    async (permission, allowed) => {
+      setup(gh);
+
+      gh.route(
+        "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+        {
+          permission,
+        },
+      );
+
+      expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(
+        allowed,
+      );
+    },
+  );
+
+  test("a click from someone who can't be found is refused", async () => {
+    setup(gh);
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+      { message: "Not Found" },
+      404,
+    );
+
+    expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(false);
+  });
+
+  test("GitHub's own re-request needs no check", async () => {
+    expect(
+      await mayRerun({
+        event: { name: "github/check_run.rerequested", data: {} },
+        step,
+      }),
+    ).toBe(true);
+  });
+
+  test("several pipelines on one commit all re-run from one suite re-request, as one event", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/pulls", [
+      { number: 7, state: "open", head: { sha: "abc1234" } },
+    ]);
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const suite = {
+      id: "evt-suite",
+      name: "github/check_suite.rerequested",
+      data: {
+        action: "rerequested",
+        check_suite: { id: 9, head_sha: "abc1234", head_branch: "feature" },
+        repository: { full_name: "inngest/inngest-js", default_branch: "main" },
+        _github: { delivery: "delivery-2" },
+      },
+    };
+
+    for (const id of ["pr", "lint"]) {
+      await rerunEventFor({
+        event: suite,
+        step,
+        client: { send } as never,
+        config: { id } as never,
+      });
+    }
+
+    expect(send).toHaveBeenCalledTimes(2);
+
+    const ids = send.mock.calls.map((call) => {
+      return (call as unknown as [{ id: string }])[0].id;
+    });
+
+    expect(new Set(ids)).toEqual(new Set(["ci-rerun-delivery-2"]));
   });
 });

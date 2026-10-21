@@ -35,6 +35,22 @@ interface CheckResult {
   annotations?: CheckAnnotation[] | undefined;
 }
 
+/** A button on a failed check, which GitHub sends back as `requested_action`. */
+interface CheckAction {
+  label: string;
+  description: string;
+  identifier: string;
+}
+
+/** What a failed check offers: running again without the cache. */
+const failedActions: CheckAction[] = [
+  {
+    label: "Re-run, no cache",
+    description: "Run again from scratch",
+    identifier: "rerun-fresh",
+  },
+];
+
 /** A job whose check is completed when the run ends. */
 export interface ClosingJob extends CheckResult {
   jobPath: string;
@@ -171,6 +187,7 @@ export interface CheckSink {
     title: string;
     summary: string;
     annotations: NormalisedAnnotation[];
+    actions?: CheckAction[];
     checkRunId?: number;
   }): Promise<void>;
   /** Complete the run's checks that are still in progress, as cancelled. */
@@ -309,6 +326,9 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       title: read.title,
       summary: truncateSummary(read.summary ?? ""),
       annotations: (read.annotations ?? []).map(normaliseAnnotation),
+      ...(read.conclusion === "failure" || read.conclusion === "timed_out"
+        ? { actions: failedActions }
+        : {}),
       ...idFor(run, key),
     };
   };
@@ -729,6 +749,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       title,
       summary,
       annotations,
+      actions,
       checkRunId,
     }) => {
       const repo = run.repo;
@@ -763,6 +784,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
           summary,
           ...(firstBatch ? { annotations: firstBatch } : {}),
         },
+        ...(actions ? { actions } : {}),
       };
 
       const checkRun =
@@ -965,6 +987,13 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
  * The markdown summary on the pipeline check: a table of jobs, a trace link,
  * and any snapshots kept for debugging.
  */
+/** How long the run saved by starting from snapshots it didn't have to build. */
+export const savedFromCache = (run: CiRunScope): number => {
+  return [...run.cacheSaved.values()].reduce((sum, ms) => {
+    return sum + ms;
+  }, 0);
+};
+
 export const pipelineSummary = (run: CiRunScope): string => {
   const rows = run.summaries.map((summary) => {
     return `| ${summary.path} | ${summary.conclusion} | ${summary.title} | ${formatDuration(summary.durationMs)} |`;
@@ -984,6 +1013,17 @@ export const pipelineSummary = (run: CiRunScope): string => {
     ...(rows.length > 0 ? rows : ["| _no jobs ran_ |  |  |  |"]),
     "",
     `[View the trace](${run.ci.runUrl({ runId: run.runId, functionId: run.functionId })})`,
+    ...(run.cacheSaved.size > 0
+      ? [
+          "",
+          "| Cached build | Time saved |",
+          "| --- | --- |",
+          ...[...run.cacheSaved].map(([job, ms]) => {
+            return `| ${job} | ${formatDuration(ms)} |`;
+          }),
+          `| **Total** | **${formatDuration(savedFromCache(run))}** |`,
+        ]
+      : []),
     ...(kept.length > 0 ? ["", "**Kept machines**", ...kept] : []),
     ...(run.warnings.length > 0
       ? [

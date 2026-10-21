@@ -44,6 +44,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     snapshots: new Map(),
     cached: new Map(),
     createdSnapshots: new Set(),
+    cacheSaved: new Map(),
     sandboxes: new Set(),
     summaries: [],
     counters: new Map(),
@@ -336,6 +337,20 @@ describe("live updates", () => {
 });
 
 describe("pipeline summary", () => {
+  test("a table says how long the cache saved", () => {
+    const summary = pipelineSummary(
+      fakeRun({
+        cacheSaved: new Map([
+          ["install", 180_000],
+          ["build", 60_000],
+        ]),
+      }),
+    );
+
+    expect(summary).toContain("| install | 3m 00s |");
+    expect(summary).toContain("| **Total** | **4m 00s** |");
+  });
+
   test("lists jobs, links the trace, and names kept machines", () => {
     const summary = pipelineSummary(
       fakeRun({
