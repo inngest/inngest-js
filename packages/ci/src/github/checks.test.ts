@@ -422,6 +422,32 @@ describe("live updates", () => {
 });
 
 describe("pipeline summary", () => {
+  test("says how long the run took by the clock, and the compute time apart", () => {
+    const summary = pipelineSummary(
+      fakeRun({
+        startedAt: Date.now() - 585_000,
+        summaries: [
+          {
+            path: "a",
+            conclusion: "success",
+            title: "ok",
+            durationMs: 600_000,
+          },
+          {
+            path: "b",
+            conclusion: "success",
+            title: "ok",
+            durationMs: 600_000,
+          },
+        ],
+      }),
+    );
+
+    expect(summary).toMatch(
+      /^\*\*Took 9m 4\ds\*\* \(20m 00s of compute across 2 jobs\)/,
+    );
+  });
+
   test("a table says how long the cache saved", () => {
     const summary = pipelineSummary(
       fakeRun({

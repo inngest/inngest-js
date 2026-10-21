@@ -1106,7 +1106,21 @@ export const savedFromCache = (run: CiRunScope): number => {
   }, 0);
 };
 
+/**
+ * How long the run has taken by the clock, from its start. Read it inside the
+ * step that completes the pipeline, so it is the time when the run ended.
+ */
+export const wallTime = (run: CiRunScope): number | undefined => {
+  return run.startedAt === undefined ? undefined : Date.now() - run.startedAt;
+};
+
 export const pipelineSummary = (run: CiRunScope): string => {
+  const wall = wallTime(run);
+
+  const compute = run.summaries.reduce((sum, summary) => {
+    return sum + summary.durationMs;
+  }, 0);
+
   const rows = run.summaries.map((summary) => {
     return `| ${summary.path} | ${summary.conclusion} | ${summary.title} | ${formatDuration(summary.durationMs)} |`;
   });
@@ -1120,6 +1134,12 @@ export const pipelineSummary = (run: CiRunScope): string => {
     });
 
   return [
+    ...(wall === undefined
+      ? []
+      : [
+          `**Took ${formatDuration(wall)}**${compute > 0 ? ` (${formatDuration(compute)} of compute across ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"})` : ""}`,
+          "",
+        ]),
     "| Job | Result | Detail | Duration |",
     "| --- | --- | --- | --- |",
     ...(rows.length > 0 ? rows : ["| _no jobs ran_ |  |  |  |"]),

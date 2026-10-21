@@ -21,7 +21,7 @@ import {
 } from "../errors.ts";
 import type { GitHubProvider } from "../github/auth.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { pipelineSummary, savedFromCache } from "../github/checks.ts";
+import { pipelineSummary, savedFromCache, wallTime } from "../github/checks.ts";
 import {
   commentAuthor,
   commentBody,
@@ -348,6 +348,10 @@ const runPipelineAttempt = async ({
         return runStartMetadata(run);
       },
     });
+
+    if (checkStarted !== undefined) {
+      run.startedAt = checkStarted;
+    }
 
     if (checkStarted === undefined) {
       await metadataStep(run, "ci › metadata:start", () => {
@@ -804,15 +808,12 @@ const summaryTitle = (run: CiRunScope): string => {
     return failed;
   }
 
-  const total = run.summaries.reduce((sum, summary) => {
-    return sum + summary.durationMs;
-  }, 0);
-
   const saved = savedFromCache(run);
+  const wall = wallTime(run);
 
   return run.summaries.length === 0
     ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed in ${formatDuration(total)}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
+    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed${wall === undefined ? "" : ` in ${formatDuration(wall)}`}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {

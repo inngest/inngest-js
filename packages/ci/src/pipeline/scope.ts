@@ -322,6 +322,11 @@ export interface CiRunScope {
    * run is over.
    */
   cacheSaved: Map<string, number>;
+  /**
+   * When the run started, for how long it took by the clock. Write-once, and
+   * only read inside the step that completes the pipeline.
+   */
+  startedAt?: number;
   /** This attempt, counting from 0. */
   attempt: number;
   /** How many attempts Inngest makes in all. */
