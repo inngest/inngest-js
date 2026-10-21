@@ -1115,7 +1115,12 @@ describe("re-running from buttons and suites", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          _ci: { rerunOf: "01RUN", job: "lint", noCache: true },
+          _ci: {
+            rerunOf: "01RUN",
+            job: "lint",
+            pipeline: "pr",
+            noCache: true,
+          },
         }),
       }),
     );
@@ -1152,6 +1157,36 @@ describe("re-running from buttons and suites", () => {
     );
 
     expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(false);
+  });
+
+  test("a click is checked for an App with no installation in the event, outside any run", async () => {
+    const privateKey = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    }).privateKey;
+
+    createCi(createCiTestClient(createFakeSandboxApi()), {
+      github: githubApp({
+        appId: "123",
+        privateKey,
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/installation", { id: 77 });
+
+    gh.route("POST /app/installations/77/access_tokens", {
+      token: "tok",
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/collaborators/octocat/permission", {
+      permission: "write",
+    });
+
+    expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(true);
   });
 
   test("GitHub's own re-request needs no check", async () => {

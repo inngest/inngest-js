@@ -7,6 +7,8 @@
 export interface FakeGitHubRequest {
   method: string;
   path: string;
+  /** The query string's parameters. */
+  query: Record<string, string>;
   body?: unknown;
   /** The request's `Authorization` header, if it had one. */
   authorization?: string;
@@ -53,6 +55,7 @@ export const createFakeGitHub = (): FakeGitHub => {
     const request: FakeGitHubRequest = {
       method,
       path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
       ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
       ...(authorization ? { authorization } : {}),
     };
