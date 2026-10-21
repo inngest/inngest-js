@@ -903,31 +903,43 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      const open = await octokit.rest.checks.listForRef({
-        owner: repo.owner,
-        repo: repo.name,
-        ref: repo.sha,
-        status: "in_progress",
-        per_page: 100,
-      });
+      // Every check a run starts has its ID in its external ID. All are read
+      // before any is closed, since closing one moves the pages.
+      const mine = new Map<
+        number,
+        { id: number; name: string; output?: { summary?: string | null } }
+      >();
 
-      // Every check a run starts has its ID in its external ID.
-      for (const checkRun of open.data.check_runs) {
-        if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
-          await octokit.rest.checks.update({
-            owner: repo.owner,
-            repo: repo.name,
-            check_run_id: checkRun.id,
-            status: "completed",
-            conclusion: "cancelled",
-            completed_at: new Date().toISOString(),
-            actions: [],
-            output: {
-              title,
-              summary: checkRun.output?.summary || checkRun.name,
-            },
-          });
+      for (const status of ["queued", "in_progress"] as const) {
+        const found = await octokit.paginate(octokit.rest.checks.listForRef, {
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          status,
+          per_page: 100,
+        });
+
+        for (const checkRun of found) {
+          if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
+            mine.set(checkRun.id, checkRun);
+          }
         }
+      }
+
+      for (const checkRun of mine.values()) {
+        await octokit.rest.checks.update({
+          owner: repo.owner,
+          repo: repo.name,
+          check_run_id: checkRun.id,
+          status: "completed",
+          conclusion: "cancelled",
+          completed_at: new Date().toISOString(),
+          actions: [],
+          output: {
+            title,
+            summary: checkRun.output?.summary || checkRun.name,
+          },
+        });
       }
     },
 
@@ -1068,28 +1080,45 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      const { data } = await octokit.rest.repos.getCombinedStatusForRef({
-        owner: repo.owner,
-        repo: repo.name,
-        ref: repo.sha,
-        per_page: 100,
-      });
-
       // Each status links to its run, which is the only thing tying it to one.
-      for (const status of data.statuses) {
-        if (
-          status.state === "pending" &&
-          status.context &&
-          status.target_url?.includes(run.runId)
-        ) {
-          await post(
-            { repo },
-            status.context,
-            status.target_url,
-            statusFor("cancelled"),
-            title,
-          );
+      // Every page is read before any status is closed.
+      const mine = new Map<
+        string,
+        { context: string; target_url: string | null }
+      >();
+
+      for (let page = 1; ; page++) {
+        const { data } = await octokit.rest.repos.getCombinedStatusForRef({
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          per_page: 100,
+          page,
+        });
+
+        for (const status of data.statuses) {
+          if (
+            status.state === "pending" &&
+            status.context &&
+            status.target_url?.includes(run.runId)
+          ) {
+            mine.set(status.context, status);
+          }
         }
+
+        if (data.statuses.length < 100) {
+          break;
+        }
+      }
+
+      for (const status of mine.values()) {
+        await post(
+          { repo },
+          status.context,
+          status.target_url ?? "",
+          statusFor("cancelled"),
+          title,
+        );
       }
     },
   };

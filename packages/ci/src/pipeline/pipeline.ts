@@ -148,7 +148,7 @@ export const definePipeline = ({
       cancelOn: [
         {
           event: cancelRunEvent,
-          if: `async.data.app == "${client.id}" && async.data.pipeline == "${config.id}" && (async.data.sha == event.data.pull_request.head.sha || async.data.sha == event.data.after || async.data.sha == event.data.merge_group.head_sha)`,
+          if: `async.data.app == "${client.id}" && async.data.pipeline == "${config.id}" && async.data.repo == event.data.repository.full_name && (async.data.sha == event.data.pull_request.head.sha || async.data.sha == event.data.after || async.data.sha == event.data.merge_group.head_sha)`,
         },
       ],
       middleware: [sandboxMiddleware(), metadataMiddleware()],
@@ -316,6 +316,17 @@ const runPipelineAttempt = async ({
     throw new CiUsageError(
       "A pipeline ran without an Inngest execution context. Pipelines must be served through `serve()` with `ci.functions()`.",
     );
+  }
+
+  // A re-run of one pipeline's check goes out as an event every pipeline on
+  // the trigger hears. The others have nothing to re-run, and a run that did
+  // nothing must not report success over the result they already have.
+  const rerunPipeline = (
+    ctx.event as { data?: { _ci?: { pipeline?: string } } } | undefined
+  )?.data?._ci?.pipeline;
+
+  if (!build && rerunPipeline !== undefined && rerunPipeline !== config.id) {
+    return { skipped: "another pipeline's re-run" };
   }
 
   const run = newRunScope({
@@ -1051,6 +1062,7 @@ const generatedFunctions = ({
             data: {
               app: client.id,
               pipeline: config.id,
+              repo: event.data.repository?.full_name,
               sha: event.data.check_run?.head_sha,
             },
           });
