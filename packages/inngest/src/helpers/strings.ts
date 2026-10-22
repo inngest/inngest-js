@@ -135,6 +135,10 @@ export const timeStr = (
     milliseconds = input as number;
   }
 
+  if (typeof milliseconds !== "number" || Number.isNaN(milliseconds) || milliseconds <= 0) {
+    return "";
+  }
+
   // Purely sub-second durations round up to 1s: the round-trip latency of a
   // durable wait dwarfs them, and flooring would serialize to "", which the
   // server treats as a 0-duration wait.
@@ -149,6 +153,8 @@ export const timeStr = (
     }
     milliseconds = second;
   }
+
+  milliseconds = Math.floor(milliseconds);
 
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
