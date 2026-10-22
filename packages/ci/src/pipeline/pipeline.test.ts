@@ -5137,10 +5137,8 @@ describe("re-running one job", () => {
     return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
   };
 
-  test("a job that's skipped gives back something to read from", async () => {
+  const skippedPipeline = (read: boolean) => {
     const { ci } = setup();
-
-    let read: unknown = "unset";
 
     const first = ci.job("first", async () => {
       await $`pnpm first`;
@@ -5152,20 +5150,36 @@ describe("re-running one job", () => {
       await $`pnpm second`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+    return ci.pipeline({ id: "pr", on: prTrigger, retries: 0 }, async () => {
       const result = (await first()) as { target?: string };
 
-      read = result.target;
+      if (read) {
+        return result.target;
+      }
 
       await second();
-    });
 
-    const result = await runFunction(pipeline, {
+      return undefined;
+    });
+  };
+
+  test("a job that's skipped can be awaited, and the target still runs", async () => {
+    const result = await runFunction(skippedPipeline(false), {
       event: rerunEvent({ job: "second", pipeline: "pr" }),
     });
 
     expect(result.type).toBe("function-resolved");
-    expect(read).toBeUndefined();
+  });
+
+  test("reading what a skipped job returned fails and says to re-run all", async () => {
+    const result = await runFunction(skippedPipeline(true), {
+      event: rerunEvent({ job: "second", pipeline: "pr" }),
+    });
+
+    expect(result.type).toBe("function-rejected");
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      'Use "Re-run all"',
+    );
   });
 
   test("another pipeline on the same trigger does nothing, and reports nothing", async () => {
