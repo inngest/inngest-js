@@ -49,6 +49,9 @@ export enum envKeys {
   InngestTapSticky = "INNGEST_TAP_STICKY",
   InngestTapLabel = "INNGEST_TAP_LABEL",
   InngestTapOutput = "INNGEST_TAP_OUTPUT",
+  InngestTapPull = "INNGEST_TAP_PULL",
+  InngestTapPullStep = "INNGEST_TAP_PULL_STEP",
+  InngestTapPullTest = "INNGEST_TAP_PULL_TEST",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not

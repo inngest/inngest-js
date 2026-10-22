@@ -2,6 +2,7 @@ import { envKeys } from "../../helpers/consts.ts";
 import { getProcessEnv } from "../../helpers/env.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
+import { readPullSettings, runPull } from "./pull.ts";
 import { type ConnectionStrategy, createStrategy } from "./strategies/index.ts";
 import {
   type ConnectApp,
@@ -183,11 +184,43 @@ export {
   type WorkerConnection,
 };
 
+/**
+ * What `connect()` returns in Pull mode, where no connection is opened.
+ */
+const pulledConnection: WorkerConnection = {
+  get connectionId(): string {
+    throw new Error("Pull mode does not open a connection");
+  },
+  closed: Promise.resolve(),
+  close: async () => {},
+  state: ConnectionState.CLOSED,
+  getDebugState: () => {
+    return {
+      state: ConnectionState.CLOSED,
+      activeConnectionId: undefined,
+      drainingConnectionId: undefined,
+      lastHeartbeatSentAt: undefined,
+      lastHeartbeatReceivedAt: undefined,
+      lastMessageReceivedAt: undefined,
+      shutdownRequested: false,
+      inFlightRequestCount: 0,
+      inFlightRequests: [],
+    };
+  },
+};
+
 export const connect = async (
   options: ConnectHandlerOptions,
 ): Promise<WorkerConnection> => {
   if (options.apps.length === 0) {
     throw new Error("No apps provided");
+  }
+
+  const pull = readPullSettings();
+  if (pull) {
+    await runPull(pull, options.apps, options.apps[0]!.client as Inngest.Any);
+
+    return pulledConnection;
   }
 
   const conn = new WebSocketWorkerConnection(options);

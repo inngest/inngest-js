@@ -61,7 +61,9 @@ interface TapOptions {
 
 type TapEvent = "taken" | "nacked" | "done" | "error";
 
-const detectOutput = (env: Record<string, string | undefined>): TapOutput => {
+export const detectOutput = (
+  env: Record<string, string | undefined>,
+): TapOutput => {
   const given = env[envKeys.InngestTapOutput];
   if (given === "json" || given === "human" || given === "agent") {
     return given;
