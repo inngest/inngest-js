@@ -80,7 +80,7 @@ import {
   sendScoreExperiment,
 } from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-import { step } from "./InngestStepTools.ts";
+import { group, step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
 import {
   getSubscriptionToken as realtimeGetSubscriptionToken,
@@ -1201,6 +1201,35 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return (await wrappedHandler()) as SendEventOutput<TClientOpts>;
   }
 
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * The global `step` and `group` tools, typed with this client's middleware,
+   * so helpers can use them without being passed `step` or `group`.
+   *
+   * They find the tools of the function run they're called in, so
+   * middleware-added tools like `step.sandbox` and `group.sandbox` work, and
+   * they reject with an error when called outside a function run.
+   *
+   * @example
+   * ```ts
+   * // inngest.ts
+   * export const inngest = new Inngest({ id: "app", middleware: [sandboxMiddleware()] });
+   * export const { step, group } = inngest.globals();
+   *
+   * // helper.ts
+   * import { step } from "./inngest";
+   *
+   * export const build = () => step.sandbox.create("box");
+   * ```
+   *
+   * @experimental
+   */
+  public globals(): GlobalTools<this> {
+    return { step, group } as unknown as GlobalTools<this>;
+  }
+
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     handler,
@@ -1462,6 +1491,21 @@ export namespace Inngest {
     ResolveTriggers<TTriggers>
   >;
 }
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * The global `step` and `group` tools typed for a given Inngest client, as
+ * returned by `inngest.globals()`.
+ *
+ * @public
+ * @experimental
+ */
+export type GlobalTools<TInngest extends Inngest.Any> = {
+  step: GetStepTools<TInngest>;
+  group: GetFunctionInput<TInngest>["group"];
+};
 
 /**
  * A helper type to extract the type of a set of event tooling from a given
