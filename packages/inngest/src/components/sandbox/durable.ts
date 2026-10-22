@@ -1076,7 +1076,11 @@ export const createSandboxTools = (
           return (await ensure()).waitUntilRunning(...args);
         },
         destroy: async (...args) => {
-          return (await ensure()).destroy(...args);
+          if (!created) {
+            return { status: "TERMINATED", sandbox: null };
+          }
+
+          return (await created).destroy(...args);
         },
         tools: { code: (codeOptions) => codeTools(handle, codeOptions) },
         ready: ensure,

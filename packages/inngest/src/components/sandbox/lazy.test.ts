@@ -78,6 +78,40 @@ describe("step.sandbox.lazy", () => {
     expect(calls.creates).toBe(1);
   });
 
+  test("destroying a sandbox that was never used does nothing", async () => {
+    const { client, calls } = createScopeClient();
+    let result: unknown;
+    const fn = client.createFunction(
+      { id: "lazy-destroy-unused", triggers: [{ event: "lazy/run" }] },
+      async ({ step }) => {
+        result = await step.sandbox.lazy("box", createOptions).destroy("gone");
+      },
+    );
+
+    expect(await runToEnd(fn)).toMatchObject({
+      type: "function-resolved",
+      ran: [],
+    });
+    expect(result).toEqual({ status: "TERMINATED", sandbox: null });
+    expect(calls).toMatchObject({ creates: 0, destroys: 0 });
+  });
+
+  test("destroying a sandbox that was used destroys it", async () => {
+    const { client, calls } = createScopeClient();
+    const fn = client.createFunction(
+      { id: "lazy-destroy-used", triggers: [{ event: "lazy/run" }] },
+      async ({ step }) => {
+        const sandbox = step.sandbox.lazy("box", createOptions);
+
+        await sandbox.commands.run("one", "echo 1");
+        await sandbox.destroy("gone");
+      },
+    );
+
+    expect(await runToEnd(fn)).toMatchObject({ ran: ["box", "one", "gone"] });
+    expect(calls).toMatchObject({ creates: 1, destroys: 1 });
+  });
+
   test("gives a model the code tools, which create it on first use", async () => {
     const { client, calls } = createScopeClient();
     const fn = client.createFunction(
