@@ -1,5 +1,6 @@
 // AsyncLocalStorage
 
+export * from "./components/agent/index.ts";
 export {
   createDefer,
   DeferredFunction,
@@ -84,6 +85,7 @@ export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
+  JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,
   SandboxToolEntry,
