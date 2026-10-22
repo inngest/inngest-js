@@ -351,13 +351,6 @@ const runPipelineAttempt = async ({
       run.repo = await resolvePullRequestHead(run, run.repo);
     }
 
-    // A pull request is tested as it would be merged, as GitHub's own checks
-    // are, so the commit of its test merge is looked up before anything is
-    // cloned or hashed.
-    if (run.repo?.pullRequest && run.repo.sha && !run.repo.local) {
-      run.repo = await resolveMergeCommit(run, run.repo);
-    }
-
     // The check's step carries the run's metadata. With checks off there's no
     // such step, so one of its own does.
     const checkStarted = await checks.pipelineStart({
@@ -498,6 +491,20 @@ const settle = async ({
 
     if (!permitted) {
       return { kind: "denied" };
+    }
+
+    // A pull request is tested as it would be merged, as GitHub's own checks
+    // are, so the commit of its test merge is looked up before anything is
+    // cloned or hashed. A conflict ends the run like any other failure, so its
+    // check says why. A build run is told its parent's, which its cache key
+    // was worked out from.
+    if (
+      !run.build &&
+      run.repo?.pullRequest &&
+      run.repo.sha &&
+      !run.repo.local
+    ) {
+      run.repo = await resolveMergeCommit(run, run.repo);
     }
 
     const result = await handler({

@@ -6877,13 +6877,27 @@ describe("a pull request's test merge", () => {
       "GET /repos/inngest/inngest-js/pulls/7",
       pull({ mergeable: false, merge_commit_sha: null }),
     );
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
 
     const result = await runFunction(
       ci.pipeline(
-        { id: "pr", on: prTrigger, check: false, childRuns: false },
+        { id: "pr", on: prTrigger, childRuns: false },
         async () => {},
       ),
       { event: prEvent },
+    );
+
+    const statuses = gh.requests
+      .filter((request) => {
+        return request.method === "POST";
+      })
+      .map((request) => {
+        return request.body as { state: string; description: string };
+      });
+
+    expect(statuses.at(-1)).toMatchObject({ state: "failure" });
+    expect(statuses.at(-1)?.description).toContain(
+      "PR has conflicts with main",
     );
 
     expect(result.type).toBe("function-rejected");
@@ -6915,6 +6929,37 @@ describe("a pull request's test merge", () => {
 
     expect(result.data).toMatchObject({ sha: "abc1234" });
     expect(result.data).not.toHaveProperty("mergeSha");
+  });
+
+  test("a build run keeps the merge its parent chose", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    let asked = 0;
+
+    gh.handle("GET /repos/inngest/inngest-js/pulls/7", () => {
+      asked += 1;
+
+      return { body: pull({ merge_commit_sha: `mergee${asked}` }) };
+    });
+
+    const setupJob = ci.job(
+      { id: "setup", cache: { key: "s" } },
+      async () => {},
+    );
+
+    const test = ci.job({ id: "test", from: setupJob }, async () => {});
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        await test();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(asked).toBe(1);
   });
 
   test("a pushed commit has no merge to test", async () => {

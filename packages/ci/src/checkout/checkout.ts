@@ -230,14 +230,17 @@ export const cloneScript = (args: {
       ? `git -C ${target} fetch ${filter} origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/merge`)}`
       : null;
 
+  // What a clone and an update both fetch first: the test merge, which brings
+  // its head along as a parent, or else a fork's head.
+  const pullRequest = merge ?? fork;
+
   const submodules = opts.submodules
     ? [`git -C ${target} submodule update --init --recursive`]
     : [];
 
   const clone = [
     `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
-    ...(fork ? [fork] : []),
-    ...(merge ? [merge] : []),
+    ...(pullRequest ? [pullRequest] : []),
     `git -C ${target} checkout ${shellEscape(sha)}`,
     ...submodules,
   ].join(" && ");
@@ -248,8 +251,9 @@ export const cloneScript = (args: {
   // build output stay.
   const update = [
     `git -C ${target} remote set-url origin "$CI_REPO_URL"`,
-    fork ?? `git -C ${target} fetch ${filter} origin ${shellEscape(sha)}`,
-    fork
+    pullRequest ??
+      `git -C ${target} fetch ${filter} origin ${shellEscape(sha)}`,
+    pullRequest
       ? `git -C ${target} checkout --force --detach ${shellEscape(sha)}`
       : `git -C ${target} checkout --force --detach FETCH_HEAD`,
     ...submodules,
