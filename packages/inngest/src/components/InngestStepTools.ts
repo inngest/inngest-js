@@ -1217,7 +1217,9 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
  * `base` holds what works outside a function run. Every other key is read from
  * the tools of the run it's used in, synchronously, so steps are still found in
  * the tick they're called. Outside a run, a key's value is a stand-in that
- * rejects with a clear error when called.
+ * looks the tool up when it's called, so references saved at module scope
+ * (`const { run } = step`) still work inside a run, and reject with a clear
+ * error when called outside one.
  */
 const createDeferredTools = <T extends object>(
   name: "step" | "group",
@@ -1237,17 +1239,41 @@ const createDeferredTools = <T extends object>(
     return getTools(als.execution.ctx) as Record<PropertyKey, unknown>;
   };
 
-  const createStandIn = (error: Error): unknown => {
+  const tryGetCurrentTools = (): Record<PropertyKey, unknown> | undefined => {
+    try {
+      return getCurrentTools();
+    } catch {
+      return undefined;
+    }
+  };
+
+  const createStandIn = (path: string[]): unknown => {
     return new Proxy(() => undefined, {
       get: (_target, prop) => {
         if (prop === "then" || typeof prop === "symbol") {
           return undefined;
         }
 
-        return createStandIn(error);
+        return createStandIn([...path, prop]);
       },
-      apply: () => {
-        return Promise.reject(error);
+      apply: (_target, _this, args) => {
+        try {
+          let parent: unknown = getCurrentTools();
+          for (const key of path.slice(0, -1)) {
+            parent = (parent as Record<string, unknown>)[key];
+          }
+
+          const tool = (parent as Record<string, unknown>)[path.at(-1) ?? ""];
+          if (typeof tool !== "function") {
+            throw new TypeError(
+              `\`${name}.${path.join(".")}\` is not a function`,
+            );
+          }
+
+          return tool.apply(parent, args);
+        } catch (error) {
+          return Promise.reject(error);
+        }
       },
     });
   };
@@ -1262,11 +1288,18 @@ const createDeferredTools = <T extends object>(
         return Reflect.get(target, prop, receiver);
       }
 
-      try {
-        return getCurrentTools()[prop];
-      } catch (error) {
-        return createStandIn(error as Error);
+      const tools = tryGetCurrentTools();
+
+      return tools ? tools[prop] : createStandIn([prop]);
+    },
+    has: (target, prop) => {
+      if (Reflect.has(target, prop)) {
+        return true;
       }
+
+      const tools = tryGetCurrentTools();
+
+      return tools ? prop in tools : false;
     },
   }) as T;
 };

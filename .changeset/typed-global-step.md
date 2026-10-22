@@ -2,4 +2,14 @@
 "inngest": minor
 ---
 
-The global `step` and `group` now include tools added by middleware, like `step.sandbox` and `group.sandbox`, and `step.fetch` works through the global `step`. Use `export const { step, group } = inngest.globals()` to get them typed for your client, so helpers don't need `step` passed in. Global tools now find steps in the same tick as the function's own.
+Added an experimental `inngest.globals()`, which returns a typed `step` and `group` you can import anywhere instead of passing them around. They include sandbox, fetch and middleware-added tools.
+
+```ts
+// inngest.ts
+export const { step, group } = inngest.globals();
+
+// helper.ts
+import { step } from "./inngest";
+
+export const build = () => step.sandbox.create("box");
+```

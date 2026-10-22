@@ -1202,6 +1202,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
    * The global `step` and `group` tools, typed with this client's middleware,
    * so helpers can use them without being passed `step` or `group`.
    *
@@ -1220,6 +1223,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    *
    * export const build = () => step.sandbox.create("box");
    * ```
+   *
+   * @experimental
    */
   public globals(): GlobalTools<this> {
     return { step, group } as unknown as GlobalTools<this>;
@@ -1488,10 +1493,14 @@ export namespace Inngest {
 }
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * The global `step` and `group` tools typed for a given Inngest client, as
  * returned by `inngest.globals()`.
  *
  * @public
+ * @experimental
  */
 export type GlobalTools<TInngest extends Inngest.Any> = {
   step: GetStepTools<TInngest>;
