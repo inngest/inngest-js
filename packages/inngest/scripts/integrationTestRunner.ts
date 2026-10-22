@@ -167,7 +167,9 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string,
 ): Promise<void> {
-  const running = await fetch(`http://localhost:${devServerPort}/dev`)
+  const running = await fetch(`http://localhost:${devServerPort}/dev`, {
+    signal: AbortSignal.timeout(2000),
+  })
     .then((response) => {
       return response.ok;
     })
