@@ -161,7 +161,7 @@ describe("a job's check", () => {
     expect(failed?.summary).toContain(
       "**Probably infrastructure, not your change.**",
     );
-    expect(failed?.summary).toContain("👉 Press **Re-run job**");
+    expect(failed?.summary).toContain("👉 Re-run the pipeline");
   });
 
   test("a failure names its step, since the trace has no link to a step", async () => {

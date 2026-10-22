@@ -283,7 +283,7 @@ describe("job check", () => {
 
     expect(check.summary).toContain("> [!WARNING]");
     expect(check.summary).toContain("⚠️ **Probably infrastructure");
-    expect(check.summary).toContain("👉 Press **Re-run job** · [Failing step]");
+    expect(check.summary).toContain("👉 Re-run the pipeline · [Failing step]");
   });
 
   it("failed sandbox: says no command ran", () => {

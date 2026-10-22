@@ -243,7 +243,7 @@ const failed = (input: JobInput, failure: JobFailure): CheckPayload => {
 
   const row = linksRow("👉", [
     ...(rerunFirst
-      ? ["Press **Re-run job**"]
+      ? ["Re-run the pipeline"]
       : (failure.open ?? []).map((target, index) => {
           return index === 0
             ? `**Open** ${link(target.label, target.url)}`
