@@ -38,26 +38,14 @@ export const cancelAction: CheckAction = {
   identifier: "cancel",
 };
 
-export const rerunJobAction: CheckAction = {
-  label: "Re-run job",
-  description: "Run only this job again",
-  identifier: "rerun",
-};
-
 export const rerunFreshAction: CheckAction = {
   label: "Re-run, no cache",
   description: "Run again from scratch",
   identifier: "rerun-fresh",
 };
 
-export const rerunFailedAction: CheckAction = {
-  label: "Re-run failed jobs",
-  description: "Run only the failed jobs",
-  identifier: "rerun-failed",
-};
-
 export const rerunAllAction: CheckAction = {
-  label: "Re-run all jobs",
+  label: "Re-run all",
   description: "Start the whole pipeline again",
   identifier: "rerun-all",
 };

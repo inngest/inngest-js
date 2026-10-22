@@ -29,7 +29,6 @@ import {
   inlineKey,
   matrixOriginKey,
   requireRunScope,
-  rerunSkips,
   rootRunIdOf,
 } from "./scope.ts";
 
@@ -193,12 +192,13 @@ export const createMatrix = <TAxes extends MatrixAxes>({
       const scope = requireRunScope("matrix");
 
       // A re-run of one job queues only that one.
+      const only = scope.rerun?.job;
 
       await Promise.all(
         combos.map((combo) => {
           const jobPath = matrixJobId(config.id, combo);
 
-          if (rerunSkips(scope.rerun, jobPath)) {
+          if (only !== undefined && jobPath !== only) {
             return undefined;
           }
 

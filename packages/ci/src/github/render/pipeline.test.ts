@@ -115,14 +115,14 @@ describe("pipeline check", () => {
     );
     expect(check.summary).toContain("> [!CAUTION]");
     expect(check.summary).toContain(
-      "Press **Re-run failed jobs** if these look like flakes",
+      "Press **Re-run all** if these look like flakes",
     );
     expect(check.summary).toContain(
       "| ⚠️ middleware-sentry | Dev Server startup timed out \\| 60s (probably infra) | [open](https://c/1) | [open](https://s/1) |",
     );
     expect(check.summary).toContain("1 annotation");
     expect(check.actions.map((a) => a.identifier)).toEqual([
-      "rerun-failed",
+      "rerun-all",
       "rerun-fresh",
     ]);
   });

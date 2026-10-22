@@ -151,8 +151,7 @@ export const rerunEventFor = async ({
     ? externalId.split(":").slice(1).join(":")
     : undefined;
 
-  const action: string | undefined = event?.data?.requested_action?.identifier;
-  const noCache = action === "rerun-fresh";
+  const noCache = event?.data?.requested_action?.identifier === "rerun-fresh";
 
   // Every pipeline hears the same webhook, so they all send the same ID and
   // the copies collapse into one event.
@@ -217,13 +216,6 @@ export const rerunEventFor = async ({
       };
     }
 
-    // The jobs that failed in the run being re-run, found from their checks:
-    // each has the run's ID in its external ID.
-    const failed =
-      action === "rerun-failed" && rerunOf
-        ? await failedJobs({ owner, repo, sha, rerunOf })
-        : [];
-
     await client.send({
       ...(delivery ? { id: `ci-rerun-${delivery}` } : {}),
       name: pullRequest ? "github/pull_request.synchronize" : "github/push",
@@ -240,7 +232,6 @@ export const rerunEventFor = async ({
         _ci: {
           ...(rerunOf ? { rerunOf } : {}),
           ...(job && job !== "pipeline" ? { job, pipeline: config.id } : {}),
-          ...(failed.length > 0 ? { jobs: failed, pipeline: config.id } : {}),
           ...(noCache ? { noCache, pipeline: config.id } : {}),
         },
       },
@@ -248,48 +239,4 @@ export const rerunEventFor = async ({
 
     return { rerun: true, sha };
   });
-};
-
-/**
- * The jobs whose checks failed or timed out in a run, from the checks on its
- * commit. A run whose failures can't be found re-runs everything.
- */
-const failedJobs = async ({
-  owner,
-  repo,
-  sha,
-  rerunOf,
-}: {
-  owner: string;
-  repo: string;
-  sha: string;
-  rerunOf: string;
-}): Promise<string[]> => {
-  const { octokitForRun } = await import("../github/rest.ts");
-
-  try {
-    const octokit = await octokitForRun();
-
-    const { data } = await octokit.rest.checks.listForRef({
-      owner,
-      repo,
-      ref: sha,
-      per_page: 100,
-    });
-
-    return data.check_runs
-      .filter((checkRun) => {
-        return (
-          checkRun.external_id?.startsWith(`${rerunOf}:`) &&
-          !checkRun.external_id.endsWith(":pipeline") &&
-          (checkRun.conclusion === "failure" ||
-            checkRun.conclusion === "timed_out")
-        );
-      })
-      .map((checkRun) => {
-        return String(checkRun.external_id).slice(rerunOf.length + 1);
-      });
-  } catch {
-    return [];
-  }
 };

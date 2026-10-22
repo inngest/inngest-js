@@ -466,15 +466,14 @@ const runPipelineAttempt = async ({
 const rerunOf = (event: unknown): Pick<CiRunScope, "rerun"> => {
   const ci = (
     event as {
-      data?: { _ci?: { job?: string; jobs?: string[]; noCache?: boolean } };
+      data?: { _ci?: { job?: string; noCache?: boolean } };
     }
   )?.data?._ci;
 
-  return ci?.job || ci?.jobs || ci?.noCache
+  return ci?.job || ci?.noCache
     ? {
         rerun: {
           ...(ci.job ? { job: ci.job } : {}),
-          ...(ci.jobs ? { jobs: ci.jobs } : {}),
           ...(ci.noCache ? { noCache: true } : {}),
         },
       }

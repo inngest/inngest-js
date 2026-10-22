@@ -229,7 +229,7 @@ describe("job check", () => {
     expect(check.summary).not.toContain("| Command |");
   });
 
-  it("failed test: opens the file first and offers both re-runs", () => {
+  it("failed test: opens the file first and offers a re-run without the cache", () => {
     const check = render({
       elapsedMs: 157_000,
       savedMs: 41_000,
@@ -265,10 +265,7 @@ describe("job check", () => {
       "```diff\n- AssertionError: expected undefined\n     42|",
     );
     expect(check.text).toContain("<details>");
-    expect(check.actions.map((a) => a.identifier)).toEqual([
-      "rerun",
-      "rerun-fresh",
-    ]);
+    expect(check.actions.map((a) => a.identifier)).toEqual(["rerun-fresh"]);
   });
 
   it("failed infra: leads with the verdict and the re-run", () => {
@@ -343,13 +340,10 @@ describe("job check", () => {
 
     expect(check.title.startsWith("⏱️ Timed out")).toBe(true);
     expect(check.summary).toContain("> [!CAUTION]\n> ⏱️ **Timed out.**");
-    expect(check.actions.map((a) => a.identifier)).toEqual([
-      "rerun",
-      "rerun-fresh",
-    ]);
+    expect(check.actions.map((a) => a.identifier)).toEqual(["rerun-fresh"]);
   });
 
-  it("cancelled: says who, and offers one button", () => {
+  it("cancelled: says who, and offers no button", () => {
     const check = render({
       elapsedMs: 72_000,
       commands: [{ state: "stopped", command: "pnpm test", ms: 45_000 }],
@@ -359,7 +353,7 @@ describe("job check", () => {
     expect(check.title).toBe("🛑 Cancelled by jpwilliams after 1m 12s");
     expect(check.summary).toContain("while `pnpm test` was running");
     expect(check.summary).toContain("45s when stopped");
-    expect(check.actions.map((a) => a.identifier)).toEqual(["rerun"]);
+    expect(check.actions.map((a) => a.identifier)).toEqual([]);
   });
 
   it("cancelled by nobody known does not name anyone", () => {

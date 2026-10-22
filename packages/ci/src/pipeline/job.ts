@@ -96,7 +96,6 @@ import {
   isInline,
   joinId,
   matrixOriginOf,
-  rerunSkips,
   rootRunIdOf,
   runJobBody,
 } from "./scope.ts";
@@ -249,7 +248,8 @@ export const runJob = async ({
   // A re-run of one job leaves every other job alone: its check from the first
   // run still stands.
   if (
-    rerunSkips(run.rerun, number === 1 ? config.id : `${config.id} (${number})`)
+    run.rerun?.job !== undefined &&
+    run.rerun.job !== (number === 1 ? config.id : `${config.id} (${number})`)
   ) {
     // It returns nothing, but something to read from: a pipeline that uses
     // what an earlier job returned gets no data from it, not an error.

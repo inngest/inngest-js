@@ -179,7 +179,7 @@ describe("a job's payloads", () => {
     expect(payload.title).toBe("✅ Passed in 1s");
   });
 
-  it("a failed job carries both re-run buttons", () => {
+  it("a failed job carries the re-run without the cache", () => {
     const { payload, failure: told } = failedPayload(
       scope(),
       failure("boom"),
@@ -188,7 +188,6 @@ describe("a job's payloads", () => {
 
     expect(told.errorClass).toBe("failure");
     expect(payload.actions.map((action) => action.identifier)).toEqual([
-      "rerun",
       "rerun-fresh",
     ]);
   });

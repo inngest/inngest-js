@@ -43,21 +43,6 @@ export const joinId = (...parts: string[]): string => {
 /** What a rebuilt job's path adds to its ID, as in `base (rebuild)`. */
 export const rebuildSuffix = " (rebuild)";
 
-/**
- * Whether a re-run leaves a job alone: it asked for one job or a few, and this
- * is not one of them. A job left alone keeps the check from the first run.
- */
-export const rerunSkips = (
-  rerun: CiRunScope["rerun"],
-  jobPath: string,
-): boolean => {
-  if (rerun?.job === undefined && rerun?.jobs === undefined) {
-    return false;
-  }
-
-  return rerun.job !== jobPath && !rerun.jobs?.includes(jobPath);
-};
-
 /** The default working directory, which is where `checkout()` puts the repo. */
 export const defaultCwd = "/work";
 
@@ -293,7 +278,7 @@ export interface CiRunScope {
    * What a re-run from a GitHub check asked for: a single job, and no cache.
    * Read from the trigger event, so it is the same on every request.
    */
-  rerun?: { job?: string; jobs?: string[]; noCache?: boolean };
+  rerun?: { job?: string; noCache?: boolean };
   repo?: RepoContext;
   /**
    * The builds `from` has asked for, keyed by request: the parent's job ID

@@ -16,7 +16,6 @@ import {
   type CheckPayload,
   cancelAction,
   rerunFreshAction,
-  rerunJobAction,
 } from "./types.ts";
 
 export type { ErrorClass };
@@ -285,7 +284,7 @@ const failed = (input: JobInput, failure: JobFailure): CheckPayload => {
     title: `${prefix} ${failure.title}`,
     summary,
     ...(failure.log ? { text: logBlock(failure.log) } : {}),
-    actions: [rerunJobAction, rerunFreshAction],
+    actions: [rerunFreshAction],
   };
 };
 
@@ -539,7 +538,7 @@ export const jobCheck = (input: JobInput): CheckPayload => {
           row("🔗", [link("Trace", input.run)]),
           commandsTable(input.commands ?? []),
         ),
-        actions: [rerunJobAction],
+        actions: [],
       };
     }
 

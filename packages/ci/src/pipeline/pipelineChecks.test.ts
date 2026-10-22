@@ -91,7 +91,7 @@ describe("the pipeline's check", () => {
     expect(done?.summary).not.toMatch(/Next:/);
   });
 
-  test("failed: failures first with the reason, and both re-run buttons", async () => {
+  test("failed: failures first with the reason, and the re-run buttons", async () => {
     const { api, ci, reporter } = setup();
 
     api.script([
@@ -127,7 +127,7 @@ describe("the pipeline's check", () => {
     );
     expect(done?.summary).toContain("> [!CAUTION]");
     expect(done?.summary).toContain(
-      "Press **Re-run failed jobs** if these look like flakes",
+      "Press **Re-run all** if these look like flakes",
     );
     expect(done?.summary).toContain("| ⚠️ test |");
     expect(done?.summary).toContain("(probably infra)");

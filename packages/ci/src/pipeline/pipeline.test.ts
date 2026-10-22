@@ -5392,31 +5392,6 @@ describe("re-running from a check", () => {
     expect(commandsRun(api)).toEqual(["pnpm test"]);
   });
 
-  test("a re-run of a few jobs runs those and leaves the rest", async () => {
-    const { api, ci } = setup();
-
-    const jobs = ["lint", "test", "build"].map((id) => {
-      return ci.job(id, async () => {
-        await $`pnpm ${id}`;
-      });
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all(
-        jobs.map((job) => {
-          return job();
-        }),
-      );
-    });
-
-    const result = await runFunction(pipeline, {
-      event: rerunEvent({ jobs: ["test", "build"] }),
-    });
-
-    expect(result.type).toBe("function-resolved");
-    expect(commandsRun(api).sort()).toEqual(["pnpm build", "pnpm test"]);
-  });
-
   test("a re-run without the cache builds a cached job again", async () => {
     const api = createFakeSandboxApi();
 
@@ -5504,12 +5479,9 @@ describe("re-running from a check", () => {
           actions: Array<{ identifier: string }>;
         };
 
-        // A job's check can also re-run just that job.
         expect(body.actions.at(-1)).toEqual(noCache);
         expect(body.actions.map((action) => action.identifier)).toEqual(
-          body.name === "pr"
-            ? ["rerun-failed", "rerun-fresh"]
-            : ["rerun", "rerun-fresh"],
+          body.name === "pr" ? ["rerun-all", "rerun-fresh"] : ["rerun-fresh"],
         );
       }
     } finally {

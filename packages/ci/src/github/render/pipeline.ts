@@ -20,7 +20,6 @@ import {
   cancelAction,
   cell,
   rerunAllAction,
-  rerunFailedAction,
   rerunFreshAction,
 } from "./types.ts";
 
@@ -454,7 +453,7 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
           closingRow(
             input,
             "👉",
-            `Press **Re-run failed jobs**${anyInfra ? " if these look like flakes" : ""}`,
+            `Press **Re-run all**${anyInfra ? " if these look like flakes" : ""}`,
           ),
           failuresTable(failures),
           saved > 0
@@ -467,7 +466,7 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
           notesCallout(input.notes),
         ),
         text: timeline({ ...input, state: "failed" }, critical),
-        actions: [rerunFailedAction, rerunFreshAction],
+        actions: [rerunAllAction, rerunFreshAction],
       };
     }
 
