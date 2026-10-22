@@ -61,6 +61,10 @@ interface TapOptions {
 
 type TapEvent = "taken" | "nacked" | "done" | "error";
 
+const isOn = (value: string | undefined): boolean => {
+  return value === "1" || value === "true";
+};
+
 export const detectOutput = (
   env: Record<string, string | undefined>,
 ): TapOutput => {
@@ -69,16 +73,42 @@ export const detectOutput = (
     return given;
   }
 
-  if (env.CLAUDECODE || isOn(env.INNGEST_AGENT)) {
+  if (env[envKeys.ClaudeCode] || isOn(env[envKeys.InngestAgent])) {
     return "agent";
   }
 
   return process.stderr.isTTY ? "human" : "json";
 };
 
-const isOn = (value: string | undefined): boolean => {
-  return value === "1" || value === "true";
+const GUIDE = [
+  "tap: this connects your code to real Inngest runs. Flow: pull a failing run, write a failing test, fix it, see it pass, tap it (shadow and once first), then ship.",
+  "tap: every line is one request or step. Open its link to see the run. Shadow mode runs your code for real, side effects included.",
+];
+
+/**
+ * Print events as JSON lines or as human text, plus the guide for agents. Used
+ * by tap and pull so both read the same.
+ */
+export const createReporter = (
+  output: TapOutput,
+  write: (line: string) => void = (line) => {
+    process.stderr.write(`${line}\n`);
+  },
+) => {
+  return {
+    emit(event: string, human: string, fields: Json = {}): void {
+      write(output === "json" ? JSON.stringify({ event, ...fields }) : human);
+    },
+
+    guide(): void {
+      if (output === "agent") {
+        GUIDE.forEach(write);
+      }
+    },
+  };
 };
+
+type Json = Record<string, unknown>;
 
 /**
  * Read the tap settings from the environment. Returns `undefined` when tap mode
@@ -153,29 +183,19 @@ const endsRun = (response: SDKResponse): boolean => {
   );
 };
 
-const GUIDE_START = [
-  "tap: this worker now takes real production requests for the chosen functions.",
-  "tap: recommended flow: pull a failing run, write a failing test, fix, see it pass, tap (shadow --once, or take the next retry if prod is already failing), then ship.",
-  "tap: each line below is one request: taken/done, or nacked (handed back to production, no retry spent). Open the link to see the run.",
-  "tap: shadow mode runs your code for real (side effects included) and discards the result.",
-  "tap: learn more: https://www.inngest.com/docs (Live Tap)",
-];
-
-const GUIDE_FINISH = [
-  "tap: draining. No new requests; runs held sticky are released on their next reply. Press Ctrl-C again to drop everything.",
-  "tap: check the trace links above to confirm the result, then ship the fix.",
-];
-
 export class Tap {
   private readonly settings: TapSettings;
   private readonly slugs = new Set<string>();
+  private readonly found = new Set<string>();
   private readonly options: TapOptions;
+  private readonly reporter;
   private stopping = false;
   private close: (() => Promise<void>) | undefined;
 
   constructor(options: TapOptions) {
     this.options = options;
     this.settings = options.settings;
+    this.reporter = createReporter(options.settings.output, options.write);
   }
 
   /** What the gateway needs to know at handshake. */
@@ -195,26 +215,23 @@ export class Tap {
    */
   select(appId: string, configs: FunctionConfig[]): FunctionConfig[] {
     return configs.filter((config) => {
-      const wanted = this.settings.functions.some((fn) => {
+      const wanted = this.settings.functions.find((fn) => {
         return config.id === fn || config.id === `${appId}-${fn}`;
       });
 
       if (wanted) {
         this.slugs.add(config.id);
+        this.found.add(wanted);
       }
 
-      return wanted;
+      return Boolean(wanted);
     });
   }
 
   /** Fail early if a requested function exists in none of the apps. */
   assertAllFound(): void {
     for (const fn of this.settings.functions) {
-      const found = [...this.slugs].some((slug) => {
-        return slug === fn || slug.endsWith(`-${fn}`);
-      });
-
-      if (!found) {
+      if (!this.found.has(fn)) {
         throw new Error(`Tap function "${fn}" not found in the connected apps`);
       }
     }
@@ -223,7 +240,7 @@ export class Tap {
   /** Give the tap a way to close the connection (used by `once`). */
   bind(close: () => Promise<void>): void {
     this.close = close;
-    this.guide(GUIDE_START);
+    this.reporter.guide();
   }
 
   /**
@@ -235,12 +252,16 @@ export class Tap {
    */
   drain(): () => void {
     this.stopping = true;
-    this.guide(GUIDE_FINISH);
+    this.reporter.emit(
+      "draining",
+      "tap: draining, no new requests. Ctrl-C again to drop everything.",
+    );
 
     return onShutdown(["SIGINT", "SIGTERM"], () => {
-      if (this.settings.output !== "json") {
-        this.write("tap dropped: second signal, exiting without draining");
-      }
+      this.reporter.emit(
+        "dropped",
+        "tap: second signal, exiting without draining",
+      );
 
       (this.options.exit ?? process.exit)(130);
     });
@@ -266,16 +287,15 @@ export class Tap {
         response = await handler(msg);
       } catch (err) {
         this.report("error", msg, String(err));
-        this.finishOnce();
 
         if (this.settings.shadow) {
           return this.nack(msg);
         }
 
         throw err;
+      } finally {
+        this.finishOnce();
       }
-
-      this.finishOnce();
 
       if (this.settings.shadow) {
         this.report("done", msg, "shadow, result discarded");
@@ -363,41 +383,19 @@ export class Tap {
       mode: this.options.mode,
       env: this.options.env,
     });
-
-    if (this.settings.output === "json") {
-      this.write(
-        JSON.stringify({
-          event,
-          runId: msg.runId,
-          fn: msg.functionSlug,
-          step: msg.stepId ?? null,
-          traceUrl,
-          detail,
-        }),
-      );
-
-      return;
-    }
-
     const step = msg.stepId ? ` step=${msg.stepId}` : "";
     const note = detail ? ` (${detail})` : "";
-    this.write(`tap ${event} ${msg.functionSlug}${step} ${traceUrl}${note}`);
-  }
 
-  private guide(lines: string[]): void {
-    if (this.settings.output === "agent") {
-      for (const line of lines) {
-        this.write(line);
-      }
-    }
-  }
-
-  private write(line: string): void {
-    (
-      this.options.write ??
-      ((l: string) => {
-        process.stderr.write(`${l}\n`);
-      })
-    )(line);
+    this.reporter.emit(
+      event,
+      `tap ${event} ${msg.functionSlug}${step} ${traceUrl}${note}`,
+      {
+        runId: msg.runId,
+        fn: msg.functionSlug,
+        step: msg.stepId ?? null,
+        traceUrl,
+        detail,
+      },
+    );
   }
 }

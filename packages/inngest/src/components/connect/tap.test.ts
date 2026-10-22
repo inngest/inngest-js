@@ -329,7 +329,7 @@ describe("tap over the mock gateway", () => {
     expect(replies()[1]?.sticky).toBe(false);
   });
 
-  it("refuses to stick when the step graph differs, and NACKs", async () => {
+  it("refuses to stick when the reply reports a missing step, and NACKs", async () => {
     await start({ sticky: true }, async (msg) => {
       return response(
         msg,

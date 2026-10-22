@@ -3,7 +3,7 @@
  * production.
  *
  * Both modes read the same data (the run, its trace with step outputs, and its
- * events) and commit nothing:
+ * events) and commit nothing to production:
  *
  * - replay: run the function on the current code with the recorded events and
  *   step results, and print which step results differ from what was recorded.
@@ -15,6 +15,14 @@
  * server did not keep the outputs, Pull says so and stops; it never invents
  * data.
  *
+ * Replay runs every step that was not recorded for real on this machine, with
+ * your credentials, so it stops at the first such step. Use test mode when
+ * even that is not safe.
+ *
+ * UNVERIFIED: the shape of the v2 run and trace responses comes from
+ * `proto/api/v2/service.proto` (camelCase JSON), not from a live server. A
+ * response that does not match fails loudly instead of being guessed at.
+ *
  * @module
  */
 
@@ -24,14 +32,13 @@ import { hashSigningKey } from "../../helpers/strings.ts";
 import { resolveApiBaseUrl } from "../../helpers/url.ts";
 import {
   GatewayExecutorRequestData,
-  type SDKResponse,
   SDKResponseStatus,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { _internals } from "../execution/engine.ts";
 import type { Inngest } from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import type { RequestHandler } from "./strategies/index.ts";
-import { detectOutput, type TapOutput } from "./tap.ts";
+import { createReporter, detectOutput } from "./tap.ts";
 import type { ConnectApp } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -56,14 +63,18 @@ interface RecordedStep {
 interface RecordedRun {
   runId: string;
   functionSlug: string;
-  appId: string;
   events: Json[];
   steps: RecordedStep[];
 }
 
 interface StepDiff {
   id: string;
-  status: "same" | "changed" | "unsupported";
+
+  /**
+   * `new` and `failed` steps were not recorded as completed, so replay stops
+   * there instead of running them.
+   */
+  status: "same" | "changed" | "new" | "failed" | "unsupported";
   recorded?: unknown;
   replayed?: unknown;
 }
@@ -86,21 +97,13 @@ export const readPullSettings = (
   };
 };
 
-/** First defined value, so camelCase and snake_case JSON both work. */
-const pick = (obj: unknown, ...keys: string[]): unknown => {
-  for (const key of keys) {
-    const value = (obj as Json | undefined)?.[key];
-    if (value !== undefined && value !== null) {
-      return value;
-    }
-  }
-
-  return undefined;
-};
-
-const unwrap = (body: unknown): unknown => {
-  return pick(body, "data") ?? body;
-};
+interface TraceSpan {
+  name?: string;
+  stepId?: string;
+  status?: string;
+  output?: unknown;
+  children?: TraceSpan[];
+}
 
 const getJson = async (url: string, headers: Record<string, string>) => {
   const resp = await fetch(url, { headers });
@@ -110,13 +113,11 @@ const getJson = async (url: string, headers: Record<string, string>) => {
     );
   }
 
-  return unwrap(await resp.json());
+  return ((await resp.json()) as { data?: unknown }).data;
 };
 
-const flattenSpans = (span: unknown): unknown[] => {
-  const children = (pick(span, "children") as unknown[] | undefined) ?? [];
-
-  return [span, ...children.flatMap(flattenSpans)];
+const flattenSpans = (span: TraceSpan): TraceSpan[] => {
+  return [span, ...(span.children ?? []).flatMap(flattenSpans)];
 };
 
 const isHashed = (id: string) => {
@@ -132,20 +133,20 @@ const unwrapOutput = (output: unknown): unknown => {
     : output;
 };
 
-const stepFromSpan = (span: unknown): RecordedStep | undefined => {
-  const rawId = pick(span, "stepId", "step_id");
-  if (typeof rawId !== "string" || rawId === "") {
+const stepFromSpan = (span: TraceSpan): RecordedStep | undefined => {
+  if (!span.stepId) {
     return undefined;
   }
 
-  const hashed = isHashed(rawId) ? rawId : _internals.hashId(rawId);
-  const name = pick(span, "name");
+  const hashed = isHashed(span.stepId)
+    ? span.stepId
+    : _internals.hashId(span.stepId);
 
   return {
-    id: isHashed(rawId) && typeof name === "string" ? name : rawId,
+    id: isHashed(span.stepId) && span.name ? span.name : span.stepId,
     hashed,
-    data: unwrapOutput(pick(span, "output")),
-    failed: String(pick(span, "status") ?? "").includes("FAIL"),
+    data: unwrapOutput(span.output),
+    failed: (span.status ?? "").includes("FAIL"),
   };
 };
 
@@ -171,24 +172,28 @@ export const fetchRecordedRun = async (opts: {
     ...(opts.env ? { [headerKeys.Environment]: opts.env } : {}),
   };
 
-  const run = await getJson(
+  const run = (await getJson(
     `${v2}/runs/${opts.runId}?include_output=true`,
     headers,
-  );
-  const trace = await getJson(
+  )) as { function?: { id?: string }; trigger?: { eventIds?: string[] } };
+  const trace = (await getJson(
     `${v2}/runs/${opts.runId}/trace?include_output=true`,
     headers,
-  );
+  )) as { rootSpan?: TraceSpan };
 
-  const eventIds =
-    (pick(pick(run, "trigger"), "eventIds", "event_ids") as string[]) ?? [];
+  if (!run?.function?.id || !run.trigger?.eventIds || !trace?.rootSpan) {
+    throw new PullDataError(
+      `Unexpected API response for run ${opts.runId}: ${JSON.stringify({ run, trace }).slice(0, 300)}`,
+    );
+  }
+
   const events = await Promise.all(
-    eventIds.map(async (id) => {
+    run.trigger.eventIds.map(async (id) => {
       return (await getJson(`${base}/v1/events/${id}`, headers)) as Json;
     }),
   );
 
-  const steps = flattenSpans(pick(trace, "rootSpan", "root_span"))
+  const steps = flattenSpans(trace.rootSpan)
     .map(stepFromSpan)
     .filter((step): step is RecordedStep => {
       return step !== undefined;
@@ -213,8 +218,7 @@ export const fetchRecordedRun = async (opts: {
 
   return {
     runId: opts.runId,
-    functionSlug: String(pick(pick(run, "function"), "id") ?? ""),
-    appId: String(pick(pick(run, "app"), "id") ?? ""),
+    functionSlug: run.function.id,
     events,
     steps,
   };
@@ -223,7 +227,8 @@ export const fetchRecordedRun = async (opts: {
 /**
  * Replay the recorded run on the current code. Each step result is compared to
  * the recorded one, then the recorded one is fed forward so a difference does
- * not cascade into later steps.
+ * not cascade into later steps. Stops at the first step that was not recorded
+ * as completed, without running it again.
  */
 export const replayRun = async (opts: {
   recorded: RecordedRun;
@@ -270,8 +275,8 @@ export const replayRun = async (opts: {
     });
   };
 
-  while (queue.length > 0 && requests < 500) {
-    const response: SDKResponse = await opts.handler(request(queue.shift()));
+  while (queue.length > 0) {
+    const response = await opts.handler(request(queue.shift()));
 
     if (response.status !== SDKResponseStatus.NOT_COMPLETED) {
       break;
@@ -288,24 +293,30 @@ export const replayRun = async (opts: {
       }
 
       const replayed = op.op === "StepRun" ? op.data : (op.error ?? op.op);
-      const ran = op.op === "StepRun";
-      const same =
-        ran &&
-        !rec?.failed &&
-        JSON.stringify(replayed) === JSON.stringify(rec?.data);
+      const status = !rec
+        ? "new"
+        : rec.failed
+          ? "failed"
+          : op.op !== "StepRun"
+            ? "unsupported"
+            : JSON.stringify(replayed) === JSON.stringify(rec.data)
+              ? "same"
+              : "changed";
       diffs.push({
         id: rec?.id ?? String(op.displayName ?? op.name ?? id),
-        status: ran ? (same ? "same" : "changed") : "unsupported",
+        status,
         recorded: rec?.data,
         replayed,
       });
 
-      if (rec && !rec.failed) {
-        memo[id] = { data: rec.data ?? null };
-        stack.push(id);
+      if (!rec || rec.failed) {
+        return diffs;
       }
 
-      if (rec && opts.stopAfter === rec.id) {
+      memo[id] = { data: rec.data ?? null };
+      stack.push(id);
+
+      if (opts.stopAfter === rec.id) {
         return diffs;
       }
     }
@@ -316,10 +327,6 @@ export const replayRun = async (opts: {
   }
 
   return diffs;
-};
-
-const safeName = (path: string) => {
-  return path.replace(/\.[cm]?[jt]sx?$/, "");
 };
 
 /**
@@ -333,15 +340,17 @@ export const writeTestScaffold = async (opts: {
   step?: string;
 }): Promise<{ fixturePath: string; target: string }> => {
   const { recorded } = opts;
-  const target =
-    opts.step ??
+  const targetStep =
+    recorded.steps.find((step) => {
+      return step.id === opts.step;
+    }) ??
     recorded.steps.find((step) => {
       return step.failed;
-    })?.id ??
-    recorded.steps[recorded.steps.length - 1]?.id ??
-    "";
-  const fixturePath = `${safeName(opts.testPath)}.fixture.json`;
-  const fixtureFile = fixturePath.split("/").pop();
+    }) ??
+    recorded.steps[recorded.steps.length - 1];
+  const target = targetStep?.id ?? "";
+  const fixturePath = `${opts.testPath.replace(/\.[cm]?[jt]sx?$/, "")}.fixture.json`;
+  const fixtureFile = fixturePath.split(/[\\/]/).pop();
 
   const fixture = {
     runId: recorded.runId,
@@ -356,7 +365,8 @@ export const writeTestScaffold = async (opts: {
   const test = `import { InngestTestEngine } from "@inngest/test";
 import { describe, expect, it } from "vitest";
 import fixture from "./${fixtureFile}";
-// Point this at the function with id "${recorded.functionSlug}".
+// Edit this import: point it at the function with id "${recorded.functionSlug}".
+// Importing JSON needs "resolveJsonModule" in your tsconfig.
 import { fn } from "./path-to-your-function";
 
 describe("run ${recorded.runId}", () => {
@@ -380,6 +390,9 @@ describe("run ${recorded.runId}", () => {
     });
 
     expect(result).not.toHaveProperty("error");
+
+    // Pin the behaviour you want. Production recorded this for the target:
+    // expect(result).toEqual(${JSON.stringify(targetStep?.data) ?? "undefined"});
   });
 });
 `;
@@ -391,32 +404,19 @@ describe("run ${recorded.runId}", () => {
   return { fixturePath, target };
 };
 
-const GUIDE = [
-  "pull: this replays or captures a recorded production run on your machine. Nothing is committed to production.",
-  "pull: recommended flow: pull, write a failing test, fix, see it pass, then tap (shadow --once, or take the next retry if prod is already failing), then ship.",
-  "pull: learn more: https://www.inngest.com/docs (Live Tap)",
-];
-
 /**
- * Run Pull for the configured apps. Sets a non-zero exit code when a replay
- * differs from the recording.
+ * Run Pull for the configured apps (the first app's client talks to the API).
+ * Sets a non-zero exit code when a replay differs from the recording.
  */
 export const runPull = async (
   settings: PullSettings,
   apps: ConnectApp[],
   client: Inngest.Any,
-  output: TapOutput = detectOutput(getProcessEnv()),
 ): Promise<void> => {
-  const write = (line: string) => {
-    process.stderr.write(`${line}\n`);
-  };
-  const emit = (event: string, human: string, extra: Json = {}) => {
-    write(output === "json" ? JSON.stringify({ event, ...extra }) : human);
-  };
+  const output = detectOutput(getProcessEnv());
+  const reporter = createReporter(output);
 
-  if (output === "agent") {
-    GUIDE.forEach(write);
-  }
+  reporter.guide();
 
   try {
     const recorded = await fetchRecordedRun({
@@ -433,7 +433,7 @@ export const runPull = async (
         testPath: settings.testPath,
         step: settings.step,
       });
-      emit(
+      reporter.emit(
         "scaffold",
         `pull: wrote ${settings.testPath} and ${fixturePath} (target step: ${target})\npull: the fixture is production data. Review or redact it before committing.`,
         { test: settings.testPath, fixture: fixturePath, target },
@@ -443,12 +443,10 @@ export const runPull = async (
     }
 
     const { requestHandlers } = prepareConnectionConfig(apps, client);
-    const appName = apps.find((app) => {
-      return requestHandlers[app.client.id];
-    })?.client.id;
-    const handler = appName ? requestHandlers[appName] : undefined;
-    if (!appName || !handler) {
-      throw new PullDataError("No app to replay the run on");
+    const appName = client.id;
+    const handler = requestHandlers[appName];
+    if (!handler) {
+      throw new PullDataError(`No app "${appName}" to replay the run on`);
     }
 
     const diffs = await replayRun({
@@ -460,7 +458,7 @@ export const runPull = async (
     });
 
     for (const diff of diffs) {
-      emit(
+      reporter.emit(
         "step",
         `pull ${diff.status.padEnd(11)} ${diff.id}${
           diff.status === "changed"
@@ -472,18 +470,17 @@ export const runPull = async (
     }
 
     const changed = diffs.filter((diff) => {
-      return diff.status === "changed";
+      return diff.status !== "same";
     }).length;
-    emit(
+    reporter.emit(
       "done",
       `pull: ${changed} of ${diffs.length} steps differ from the recording`,
       { changed, total: diffs.length },
     );
     process.exitCode = changed > 0 ? 1 : 0;
   } catch (err) {
-    emit("error", `pull: ${String(err instanceof Error ? err.message : err)}`, {
-      message: err instanceof Error ? err.message : String(err),
-    });
+    const message = err instanceof Error ? err.message : String(err);
+    reporter.emit("error", `pull: ${message}`, { message });
     process.exitCode = 2;
   }
 };

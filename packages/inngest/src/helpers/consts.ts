@@ -42,6 +42,8 @@ export enum envKeys {
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
   InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
+  ClaudeCode = "CLAUDECODE",
+  InngestAgent = "INNGEST_AGENT",
   InngestTapFunctions = "INNGEST_TAP_FUNCTIONS",
   InngestTapFilter = "INNGEST_TAP_FILTER",
   InngestTapOnce = "INNGEST_TAP_ONCE",

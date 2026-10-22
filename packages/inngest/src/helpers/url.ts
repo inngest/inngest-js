@@ -58,7 +58,7 @@ export function getRunUrl(opts: {
   runId: string;
   mode: Mode;
 
-  /** The environment name, used to build dashboard links. */
+  /** The environment slug, used to build dashboard links. */
   env?: string;
 }): string {
   const processEnv = getProcessEnv();
@@ -70,7 +70,7 @@ export function getRunUrl(opts: {
   }
 
   const env =
-    processEnv[envKeys.InngestEnvironment] ?? opts.env ?? "production";
+    processEnv[envKeys.InngestEnvironment] || opts.env || "production";
 
   return `https://app.inngest.com/env/${env}/runs/${opts.runId}`;
 }

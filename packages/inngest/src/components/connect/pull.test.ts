@@ -22,8 +22,8 @@ const fixtureApi = (outputs: Record<string, unknown>) => {
   const span = (stepId: string, output: unknown) => {
     return {
       name: stepId,
-      step_id: stepId,
-      step_op: "TRACE_STEP_OP_RUN",
+      stepId,
+      stepOp: "TRACE_STEP_OP_RUN",
       status: "COMPLETED",
       output,
       children: [],
@@ -35,13 +35,13 @@ const fixtureApi = (outputs: Record<string, unknown>) => {
       data: {
         id: "RUN1",
         function: { id: "app-double" },
-        trigger: { event_ids: ["evt1"] },
+        trigger: { eventIds: ["evt1"] },
       },
     },
     "/api/v2/runs/RUN1/trace?include_output=true": {
       data: {
-        run_id: "RUN1",
-        root_span: {
+        runId: "RUN1",
+        rootSpan: {
           children: Object.entries(outputs).map(([id, output]) => {
             return span(id, output);
           }),
@@ -152,6 +152,40 @@ describe("Pull", () => {
       recorded: 4,
       replayed: 6,
     });
+  });
+
+  it("stops at a step the recording never completed", async () => {
+    fixtureApi({ base: 2 });
+    const recorded = await fetchRecordedRun(fetchOpts);
+
+    const diffs = await replayRun({
+      recorded,
+      handler: build(2),
+      appName: "app",
+      functionSlug: "app-double",
+    });
+
+    expect(
+      diffs.map((d) => {
+        return [d.id, d.status];
+      }),
+    ).toEqual([
+      ["base", "same"],
+      ["scaled", "new"],
+    ]);
+  });
+
+  it("fails loudly on a response of an unexpected shape", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(JSON.stringify({ data: { id: "RUN1" } }));
+      }),
+    );
+
+    await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(
+      /Unexpected API response/,
+    );
   });
 
   it("stops after the requested step", async () => {

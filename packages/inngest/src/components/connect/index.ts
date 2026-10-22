@@ -184,31 +184,6 @@ export {
   type WorkerConnection,
 };
 
-/**
- * What `connect()` returns in Pull mode, where no connection is opened.
- */
-const pulledConnection: WorkerConnection = {
-  get connectionId(): string {
-    throw new Error("Pull mode does not open a connection");
-  },
-  closed: Promise.resolve(),
-  close: async () => {},
-  state: ConnectionState.CLOSED,
-  getDebugState: () => {
-    return {
-      state: ConnectionState.CLOSED,
-      activeConnectionId: undefined,
-      drainingConnectionId: undefined,
-      lastHeartbeatSentAt: undefined,
-      lastHeartbeatReceivedAt: undefined,
-      lastMessageReceivedAt: undefined,
-      shutdownRequested: false,
-      inFlightRequestCount: 0,
-      inFlightRequests: [],
-    };
-  },
-};
-
 export const connect = async (
   options: ConnectHandlerOptions,
 ): Promise<WorkerConnection> => {
@@ -220,7 +195,8 @@ export const connect = async (
   if (pull) {
     await runPull(pull, options.apps, options.apps[0]!.client as Inngest.Any);
 
-    return pulledConnection;
+    // Pull is a one-shot command: there is no connection to return.
+    process.exit(process.exitCode ?? 0);
   }
 
   const conn = new WebSocketWorkerConnection(options);
