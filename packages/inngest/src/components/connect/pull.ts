@@ -72,9 +72,17 @@ interface StepDiff {
 
   /**
    * `new` and `failed` steps were not recorded as completed, so replay stops
-   * there instead of running them.
+   * there instead of running them. `fixed` is a recorded failure that now
+   * passes; `missing` is a recorded step the new code never reached.
    */
-  status: "same" | "changed" | "new" | "failed" | "unsupported";
+  status:
+    | "same"
+    | "changed"
+    | "fixed"
+    | "new"
+    | "failed"
+    | "missing"
+    | "unsupported";
   recorded?: unknown;
   replayed?: unknown;
 }
@@ -133,14 +141,26 @@ const unwrapOutput = (output: unknown): unknown => {
     : output;
 };
 
-const stepFromSpan = (span: TraceSpan): RecordedStep | undefined => {
+/**
+ * Repeated step IDs (loops) are hashed by the SDK as `id:1`, `id:2`, ... so
+ * count occurrences the same way.
+ */
+const stepFromSpan = (
+  span: TraceSpan,
+  seen: Map<string, number>,
+): RecordedStep | undefined => {
   if (!span.stepId) {
     return undefined;
   }
 
-  const hashed = isHashed(span.stepId)
-    ? span.stepId
-    : _internals.hashId(span.stepId);
+  let hashed = span.stepId;
+  if (!isHashed(span.stepId)) {
+    const count = seen.get(span.stepId) ?? 0;
+    seen.set(span.stepId, count + 1);
+    hashed = _internals.hashId(
+      count > 0 ? `${span.stepId}:${count}` : span.stepId,
+    );
+  }
 
   return {
     id: isHashed(span.stepId) && span.name ? span.name : span.stepId,
@@ -193,8 +213,11 @@ export const fetchRecordedRun = async (opts: {
     }),
   );
 
+  const seen = new Map<string, number>();
   const steps = flattenSpans(trace.rootSpan)
-    .map(stepFromSpan)
+    .map((span) => {
+      return stepFromSpan(span, seen);
+    })
     .filter((step): step is RecordedStep => {
       return step !== undefined;
     });
@@ -222,6 +245,28 @@ export const fetchRecordedRun = async (opts: {
     events,
     steps,
   };
+};
+
+const diffStatus = (
+  ran: boolean,
+  replayed: unknown,
+  rec: RecordedStep | undefined,
+): StepDiff["status"] => {
+  if (!rec) {
+    return "new";
+  }
+
+  if (rec.failed) {
+    return ran ? "fixed" : "failed";
+  }
+
+  if (!ran) {
+    return "unsupported";
+  }
+
+  return JSON.stringify(replayed) === JSON.stringify(rec.data)
+    ? "same"
+    : "changed";
 };
 
 /**
@@ -278,6 +323,16 @@ export const replayRun = async (opts: {
   while (queue.length > 0) {
     const response = await opts.handler(request(queue.shift()));
 
+    if (response.status === SDKResponseStatus.ERROR) {
+      diffs.push({
+        id: opts.functionSlug,
+        status: "failed",
+        replayed: new TextDecoder().decode(response.body),
+      });
+
+      return diffs;
+    }
+
     if (response.status !== SDKResponseStatus.NOT_COMPLETED) {
       break;
     }
@@ -293,15 +348,7 @@ export const replayRun = async (opts: {
       }
 
       const replayed = op.op === "StepRun" ? op.data : (op.error ?? op.op);
-      const status = !rec
-        ? "new"
-        : rec.failed
-          ? "failed"
-          : op.op !== "StepRun"
-            ? "unsupported"
-            : JSON.stringify(replayed) === JSON.stringify(rec.data)
-              ? "same"
-              : "changed";
+      const status = diffStatus(op.op === "StepRun", replayed, rec);
       diffs.push({
         id: rec?.id ?? String(op.displayName ?? op.name ?? id),
         status,
@@ -309,11 +356,11 @@ export const replayRun = async (opts: {
         replayed,
       });
 
-      if (!rec || rec.failed) {
+      if (!rec || (rec.failed && status !== "fixed")) {
         return diffs;
       }
 
-      memo[id] = { data: rec.data ?? null };
+      memo[id] = { data: rec.failed ? replayed : (rec.data ?? null) };
       stack.push(id);
 
       if (opts.stopAfter === rec.id) {
@@ -323,6 +370,14 @@ export const replayRun = async (opts: {
 
     if (queue.length === 0 && ops.length > 0) {
       queue.push(undefined);
+    }
+  }
+
+  if (!opts.stopAfter) {
+    for (const rec of recorded.steps) {
+      if (!diffs.some((diff) => diff.id === rec.id)) {
+        diffs.push({ id: rec.id, status: "missing", recorded: rec.data });
+      }
     }
   }
 
@@ -365,12 +420,12 @@ export const writeTestScaffold = async (opts: {
   const test = `import { InngestTestEngine } from "@inngest/test";
 import { describe, expect, it } from "vitest";
 import fixture from "./${fixtureFile}";
-// Edit this import: point it at the function with id "${recorded.functionSlug}".
+// Edit this import: point it at the function with id ${JSON.stringify(recorded.functionSlug)}.
 // Importing JSON needs "resolveJsonModule" in your tsconfig.
 import { fn } from "./path-to-your-function";
 
-describe("run ${recorded.runId}", () => {
-  it("${target} with production inputs", async () => {
+describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
+  it(${JSON.stringify(`${target} with production inputs`)}, async () => {
     const t = new InngestTestEngine({ function: fn });
 
     const { result } = await t.executeStep(fixture.target, {
@@ -470,7 +525,7 @@ export const runPull = async (
     }
 
     const changed = diffs.filter((diff) => {
-      return diff.status !== "same";
+      return diff.status !== "same" && diff.status !== "fixed";
     }).length;
     reporter.emit(
       "done",

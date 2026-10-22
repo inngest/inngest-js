@@ -291,7 +291,11 @@ describe("tap over the mock gateway", () => {
     await start({ once: true }, handler);
 
     gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
-    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    gateway.sendExecutorRequest({
+      requestId: "r2",
+      appName: "test-app",
+      runId: "run-2",
+    });
     await waitFor(() => {
       return replies().length === 2;
     });
@@ -302,6 +306,44 @@ describe("tap over the mock gateway", () => {
         return r.status;
       }),
     ).toEqual([SDKResponseStatus.NACKED, SDKResponseStatus.DONE]);
+    await waitFor(() => {
+      return (
+        gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE).length === 1
+      );
+    });
+  });
+
+  it("once with sticky keeps its run, NACKs others and closes when the run ends", async () => {
+    let status = SDKResponseStatus.NOT_COMPLETED;
+    const handler = vi.fn(async (msg) => {
+      return response(msg, status, "[]");
+    });
+    await start({ once: true, sticky: true }, handler);
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+    gateway.sendExecutorRequest({
+      requestId: "other",
+      appName: "test-app",
+      runId: "run-2",
+    });
+    status = SDKResponseStatus.DONE;
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 3;
+    });
+
+    expect(
+      replies().map((r) => {
+        return [r.requestId, r.status, r.sticky];
+      }),
+    ).toEqual([
+      ["r1", SDKResponseStatus.NOT_COMPLETED, true],
+      ["other", SDKResponseStatus.NACKED, undefined],
+      ["r2", SDKResponseStatus.DONE, false],
+    ]);
     await waitFor(() => {
       return (
         gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE).length === 1

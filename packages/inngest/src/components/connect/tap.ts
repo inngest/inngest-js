@@ -190,6 +190,7 @@ export class Tap {
   private readonly options: TapOptions;
   private readonly reporter;
   private stopping = false;
+  private onceRun: string | undefined;
   private close: (() => Promise<void>) | undefined;
 
   constructor(options: TapOptions) {
@@ -288,14 +289,16 @@ export class Tap {
       } catch (err) {
         this.report("error", msg, String(err));
 
+        this.finishOnce();
+
         if (this.settings.shadow) {
           return this.nack(msg);
         }
 
         throw err;
-      } finally {
-        this.finishOnce();
       }
+
+      this.finishOnce(response);
 
       if (this.settings.shadow) {
         this.report("done", msg, "shadow, result discarded");
@@ -313,17 +316,26 @@ export class Tap {
     }
 
     if (this.settings.once) {
-      this.stopping = true;
+      if (this.onceRun && this.onceRun !== msg.runId) {
+        return false;
+      }
+
+      this.onceRun = msg.runId;
     }
 
     return true;
   }
 
   /**
-   * Close the connection after the one request `once` allows.
+   * Close after the one run `once` allows: right away, unless the run is held
+   * sticky, in which case when its last reply is out. Without a response (the
+   * handler threw) it closes too.
    */
-  private finishOnce(): void {
-    if (this.settings.once) {
+  private finishOnce(response?: SDKResponse): void {
+    const holding = this.settings.sticky && !this.settings.shadow;
+    const finished = !response || !holding || endsRun(response);
+
+    if (this.settings.once && finished) {
       void this.close?.();
     }
   }

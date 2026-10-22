@@ -18,13 +18,13 @@ import {
 
 const event = { id: "evt1", name: "demo/sent", data: { n: 2 } };
 
-const fixtureApi = (outputs: Record<string, unknown>) => {
+const fixtureApi = (outputs: Record<string, unknown>, failed?: string) => {
   const span = (stepId: string, output: unknown) => {
     return {
       name: stepId,
       stepId,
       stepOp: "TRACE_STEP_OP_RUN",
-      status: "COMPLETED",
+      status: stepId === failed ? "FAILED" : "COMPLETED",
       output,
       children: [],
     };
@@ -173,6 +173,41 @@ describe("Pull", () => {
       ["base", "same"],
       ["scaled", "new"],
     ]);
+  });
+
+  it("reports a recorded failure that now passes as fixed", async () => {
+    fixtureApi({ base: 2, scaled: undefined }, "scaled");
+    const recorded = await fetchRecordedRun(fetchOpts);
+
+    const diffs = await replayRun({
+      recorded,
+      handler: build(2),
+      appName: "app",
+      functionSlug: "app-double",
+    });
+
+    expect(
+      diffs.map((d) => {
+        return [d.id, d.status];
+      }),
+    ).toEqual([
+      ["base", "same"],
+      ["scaled", "fixed"],
+    ]);
+  });
+
+  it("reports recorded steps the new code never reaches", async () => {
+    fixtureApi({ base: 2, scaled: 4, extra: 1 });
+    const recorded = await fetchRecordedRun(fetchOpts);
+
+    const diffs = await replayRun({
+      recorded,
+      handler: build(2),
+      appName: "app",
+      functionSlug: "app-double",
+    });
+
+    expect(diffs[2]).toMatchObject({ id: "extra", status: "missing" });
   });
 
   it("fails loudly on a response of an unexpected shape", async () => {
