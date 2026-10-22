@@ -14,6 +14,7 @@ import {
   canonicalUuidSchema,
   normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
+  outputEncodingSchema,
   parseWithSchema,
   sandboxImageSchema,
   sandboxNameSchema,
@@ -363,7 +364,7 @@ const wireCommandResultSchema = z
   .object({
     stdout: z.string(),
     stderr: z.string(),
-    encoding: z.literal("base64"),
+    encoding: outputEncodingSchema,
     exitCode: z.number().int().min(-0x80000000).max(0x7fffffff),
     output: commandOutputMetadataSchema,
   })
