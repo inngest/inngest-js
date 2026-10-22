@@ -25,7 +25,8 @@ export const pr = ci.pipeline(
     on: ["opened", "synchronize", "reopened"].map((action) => {
       return {
         event: `github/pull_request.${action}`,
-        if: 'event.data.repository.full_name == "inngest/inngest-js"',
+        // Temporary: only jpwilliams' pull requests, so CI Bench fills from them.
+        if: '(event.data.repository.full_name == "inngest/inngest-js") && (event.data.pull_request.user.login == "jpwilliams")',
       };
     }),
     singleton: { key: "event.data.pull_request.number", mode: "cancel" },
