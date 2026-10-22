@@ -1096,7 +1096,7 @@ describe("re-running from buttons and suites", () => {
     };
   };
 
-  test("a job's button re-runs that job, without the cache for the fresh one", async () => {
+  test("a check's button re-runs its pipeline, without the cache for the fresh one", async () => {
     setup(gh);
 
     gh.route("GET /repos/inngest/inngest-js/pulls/7", { number: 7 });
@@ -1117,7 +1117,6 @@ describe("re-running from buttons and suites", () => {
         data: expect.objectContaining({
           _ci: {
             rerunOf: "01RUN",
-            job: "lint",
             pipeline: "pr",
             noCache: true,
           },

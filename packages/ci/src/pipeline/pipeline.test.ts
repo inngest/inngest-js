@@ -5091,55 +5091,10 @@ describe("what a check shows", () => {
   });
 });
 
-describe("re-running one job", () => {
+describe("re-running a pipeline", () => {
   const rerunEvent = (ci: Record<string, unknown>) => {
     return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
   };
-
-  const skippedPipeline = (read: boolean) => {
-    const { ci } = setup();
-
-    const first = ci.job("first", async () => {
-      await $`pnpm first`;
-
-      return { target: "x" };
-    });
-
-    const second = ci.job("second", async () => {
-      await $`pnpm second`;
-    });
-
-    return ci.pipeline({ id: "pr", on: prTrigger, retries: 0 }, async () => {
-      const result = (await first()) as { target?: string };
-
-      if (read) {
-        return result.target;
-      }
-
-      await second();
-
-      return undefined;
-    });
-  };
-
-  test("a job that's skipped can be awaited, and the target still runs", async () => {
-    const result = await runFunction(skippedPipeline(false), {
-      event: rerunEvent({ job: "second", pipeline: "pr" }),
-    });
-
-    expect(result.type).toBe("function-resolved");
-  });
-
-  test("reading what a skipped job returned fails and says to re-run all", async () => {
-    const result = await runFunction(skippedPipeline(true), {
-      event: rerunEvent({ job: "second", pipeline: "pr" }),
-    });
-
-    expect(result.type).toBe("function-rejected");
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      'Use "Re-run all"',
-    );
-  });
 
   test("another pipeline on the same trigger does nothing, and reports nothing", async () => {
     const { ci, reporter } = setup();
@@ -5147,7 +5102,7 @@ describe("re-running one job", () => {
     const pipeline = ci.pipeline({ id: "lint", on: prTrigger }, async () => {});
 
     const result = await runFunction(pipeline, {
-      event: rerunEvent({ job: "test", pipeline: "pr" }),
+      event: rerunEvent({ pipeline: "pr", noCache: true }),
     });
 
     expect(result.data).toEqual({ skipped: "another pipeline's re-run" });
@@ -5341,29 +5296,6 @@ describe("re-running from a check", () => {
       return argv.join(" ");
     });
   };
-
-  test("a job's re-run runs that job alone", async () => {
-    const { api, ci } = setup();
-
-    const lint = ci.job("lint", async () => {
-      await $`pnpm lint`;
-    });
-
-    const test = ci.job("test", async () => {
-      await $`pnpm test`;
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await Promise.all([lint(), test()]);
-    });
-
-    const result = await runFunction(pipeline, {
-      event: rerunEvent({ job: "test" }),
-    });
-
-    expect(result.type).toBe("function-resolved");
-    expect(commandsRun(api)).toEqual(["pnpm test"]);
-  });
 
   test("a re-run without the cache builds a cached job again", async () => {
     const api = createFakeSandboxApi();

@@ -12,12 +12,12 @@ import type { CheckReporter } from "../github/checks.ts";
 import { checkStaticFrom } from "../machine/from.ts";
 import type {
   JobConfig,
-  MatrixJob,
   MatrixAxes,
   MatrixCombo,
+  MatrixContext,
+  MatrixJob,
   MatrixJobConfig,
   MatrixOptions,
-  MatrixContext,
 } from "../types.ts";
 import type { Ci } from "./createCi.ts";
 import type { RegisteredJob } from "./job.ts";
@@ -191,16 +191,9 @@ export const createMatrix = <TAxes extends MatrixAxes>({
       const name = config.check ? config.check.name : undefined;
       const scope = requireRunScope("matrix");
 
-      // A re-run of one job queues only that one.
-      const only = scope.rerun?.job;
-
       await Promise.all(
         combos.map((combo) => {
           const jobPath = matrixJobId(config.id, combo);
-
-          if (only !== undefined && jobPath !== only) {
-            return undefined;
-          }
 
           scope.openChecks.set(jobPath, name);
 

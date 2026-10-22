@@ -252,10 +252,10 @@ export interface CiRunScope {
   childRuns: boolean;
   event: unknown;
   /**
-   * What a re-run from a GitHub check asked for: a single job, and no cache.
+   * Whether a re-run from a GitHub check asked to build without the cache.
    * Read from the trigger event, so it is the same on every request.
    */
-  rerun?: { job?: string; noCache?: boolean };
+  noCache?: boolean;
   repo?: RepoContext;
   /**
    * The builds `from` has asked for, keyed by request: the parent's job ID

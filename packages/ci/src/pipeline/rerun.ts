@@ -145,12 +145,6 @@ export const rerunEventFor = async ({
 
   const rerunOf = externalId?.split(":")[0];
 
-  // A job's check re-runs that job alone; the pipeline's and the suite's
-  // re-run everything.
-  const job = externalId?.includes(":")
-    ? externalId.split(":").slice(1).join(":")
-    : undefined;
-
   const noCache = event?.data?.requested_action?.identifier === "rerun-fresh";
 
   // Every pipeline hears the same webhook, so they all send the same ID and
@@ -231,8 +225,9 @@ export const rerunEventFor = async ({
         _github: event?.data?._github,
         _ci: {
           ...(rerunOf ? { rerunOf } : {}),
-          ...(job && job !== "pipeline" ? { job, pipeline: config.id } : {}),
-          ...(noCache ? { noCache, pipeline: config.id } : {}),
+          // A check's re-run is for its own pipeline; a suite's is for all.
+          ...(event?.data?.check_run ? { pipeline: config.id } : {}),
+          ...(noCache ? { noCache } : {}),
         },
       },
     });
