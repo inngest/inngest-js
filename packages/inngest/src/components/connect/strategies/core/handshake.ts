@@ -43,6 +43,16 @@ export interface EstablishConnectionResult {
  * Send the HTTP start request to the Inngest API to obtain a gateway endpoint
  * and session tokens.
  */
+/**
+ * A tap always gets the per-process nonce, even on a user-set instance ID, so
+ * two taps never share one.
+ */
+async function resolveInstanceId(config: ConnectionCoreConfig) {
+  const base = config.instanceId || (await getHostname());
+
+  return config.connectionData.tap ? `${base}-${processNonce}` : base;
+}
+
 export async function sendStartRequest(
   config: ConnectionCoreConfig,
   hashedSigningKey: string | undefined,
@@ -277,9 +287,7 @@ export async function establishConnection(
           config.connectionData.marshaledCapabilities,
         ),
         startedAt: startedAt,
-        instanceId:
-          config.instanceId ||
-          `${await getHostname()}${config.connectionData.tap ? `-${processNonce}` : ""}`,
+        instanceId: await resolveInstanceId(config),
         maxWorkerConcurrency: config.maxWorkerConcurrency,
         tap: config.connectionData.tap,
       });

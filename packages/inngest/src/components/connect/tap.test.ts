@@ -597,7 +597,7 @@ describe("tap over the mock gateway", () => {
       gateway.getMessagesOfType(GatewayMessageType.WORKER_CONNECT)[0]!.payload,
     );
 
-    expect(data.instanceId).toMatch(new RegExp(`-${processNonce}$`));
+    expect(data.instanceId).toMatch(new RegExp(`^.+-${processNonce}$`));
   });
 
   it("writes one JSON line per request in json mode", async () => {
