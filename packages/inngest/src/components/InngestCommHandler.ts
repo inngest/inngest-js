@@ -419,6 +419,12 @@ export class InngestCommHandler<
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
+   * `true` if the `streaming` option was explicitly set to `false`, which takes
+   * precedence over the `INNGEST_STREAMING` environment variable.
+   */
+  private readonly streamingDisabled: boolean;
+
+  /**
    * Whether unauthenticated `PUT` (sync) requests are accepted. Set via the
    * `enableUnauthedSync` serve option or `INNGEST_ENABLE_UNAUTHED_SYNC` env
    * var; serve option wins. Only applies in cloud mode.
@@ -557,8 +563,10 @@ export class InngestCommHandler<
         return defaultStreamingOption;
       })
       .parse(
-        options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
+        options.streaming ?? parseAsBoolean(this.env[envKeys.InngestStreaming]),
       );
+
+    this.streamingDisabled = options.streaming === false;
 
     this.enableUnauthedSync = options.enableUnauthedSync;
 
@@ -663,6 +671,11 @@ export class InngestCommHandler<
       queryKeys.Probe,
     );
     if (rawProbe !== undefined) {
+      return false;
+    }
+
+    // An explicit `streaming: false` option always wins over the environment.
+    if (this.streamingDisabled) {
       return false;
     }
 
