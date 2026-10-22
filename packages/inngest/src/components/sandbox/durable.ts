@@ -12,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { codeTools } from "./codeTools.ts";
 import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
@@ -783,6 +784,7 @@ export const createDurableSandboxFacade = (
   const facade: DurableSandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
+    tools: { code: (options) => codeTools(facade, options) },
     commands: Object.freeze({
       run: async (idOrOptions, command, options) => {
         const { tools, toolOptions, ...commandOptions } = options ?? {};

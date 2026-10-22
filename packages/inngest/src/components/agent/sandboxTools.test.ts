@@ -3,13 +3,14 @@
  * Tests for `codeTools()` and `repo()` against a sandbox API that records the
  * commands it is sent.
  */
+
+import { codeTools } from "../sandbox/codeTools.ts";
 import {
   createClient,
   runToEnd,
   sandboxResource,
 } from "../sandbox/test-helpers.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
-import { codeTools } from "./codeTools.ts";
 import { repo } from "./repo.ts";
 
 type Exec = {
