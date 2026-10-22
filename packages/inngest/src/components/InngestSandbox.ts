@@ -5,6 +5,7 @@ export { getCommandError } from "./sandbox/commandError.ts";
 export type {
   DollarOptions,
   DollarPromise,
+  DollarTag,
   DollarValue,
   SandboxDollar,
 } from "./sandbox/dollar.ts";

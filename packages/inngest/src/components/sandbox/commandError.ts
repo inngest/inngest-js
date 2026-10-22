@@ -3,9 +3,9 @@
  * The failure of a command run by `sandbox.$`: the non-retriable error a step
  * throws for an exit the command was not allowed to make, a timeout or a
  * process that ended without an exit, and `getCommandError()` to read it from
- * whatever a handler caught. A step's failure reaches the handler as a
- * `StepError` that carries these as its `cause`, so the guard reads the
- * payload instead of using `instanceof`.
+ * whatever a handler caught. A failed step reaches the handler as a
+ * `StepError` carrying these as its `cause` (a captured command's timeout, as
+ * the error itself), so the guard reads the payload, not `instanceof`.
  */
 
 import { z } from "zod/v3";
@@ -57,13 +57,24 @@ export const clip = (
     return text;
   }
 
-  if (keep === "end") {
-    return new TextDecoder()
-      .decode(bytes.subarray(bytes.byteLength - maxBytes))
-      .replace(/^�+/, "");
+  // A continuation byte (10xxxxxx) is the middle of a character
+  const inside = (index: number): boolean => {
+    return ((bytes[index] ?? 0) & 0xc0) === 0x80;
+  };
+  let from = keep === "end" ? bytes.byteLength - maxBytes : 0;
+  let to = keep === "end" ? bytes.byteLength : maxBytes;
+
+  while (inside(from)) {
+    from++;
   }
 
-  return `${new TextDecoder().decode(bytes.subarray(0, maxBytes)).replace(/�+$/, "")}…`;
+  while (inside(to)) {
+    to--;
+  }
+
+  const cut = new TextDecoder().decode(bytes.subarray(from, to));
+
+  return keep === "end" ? cut : `${cut}…`;
 };
 
 /**
@@ -132,7 +143,8 @@ export const formatTimeout = (milliseconds: number): string => {
 /**
  * Returns the command failure carried by `error`, or `undefined` if it isn't
  * one. A failed `sandbox.$` command rejects with a `StepError`, like any other
- * step, so use this to read its command, exit code and output.
+ * step (a captured command's timeout, with a `NonRetriableError`), so use this
+ * to read its command, exit code and output.
  */
 export const getCommandError = (error: unknown): CommandError | undefined => {
   return findInCauses(error, payloadSchema);

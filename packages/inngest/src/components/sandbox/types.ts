@@ -164,8 +164,8 @@ export interface SandboxListResult<TSandbox = SandboxRef> {
  *
  * Strings run as `["/bin/sh", "-c", command]`. They are passed to the shell
  * unchanged, so normal shell quoting, variables, pipes, redirects, and
- * chaining apply. Arrays bypass the shell and must begin with an absolute
- * executable path. To find a program on `PATH`, use a string command.
+ * chaining apply. Arrays bypass the shell: the first item is the program, a
+ * bare name such as `pnpm` (found on the sandbox's `PATH`) or a path.
  */
 export type SandboxCommand = string | readonly string[];
 
@@ -609,8 +609,9 @@ export interface DurableSandbox {
           | {
               /**
                * The exit codes that are not failures. Any other exit rejects,
-               * from inside the step, without retrying. Defaults to `"any"`,
-               * so the exit code returns as data. Can't be used with `tools`.
+               * without retrying. Defaults to `"any"`, so the exit code returns
+               * as data, except that a process ending LOST or FAILED has none
+               * and throws. Can't be used with `tools`.
                */
               exitCodes?: SandboxExitCodes;
               tools?: undefined;

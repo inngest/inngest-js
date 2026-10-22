@@ -1,11 +1,12 @@
 /**
  * @module
  * `$`: run a command in a sandbox as one step, from a tagged template.
- * `` sandbox.$`/usr/bin/git status` `` runs argv with no shell,
+ * `` sandbox.$`git status` `` runs argv with no shell,
  * `` sandbox.$.sh`a | b` `` runs a quoted shell command, and
  * `sandbox.$(options)` is a `$` with options set. Every sandbox handle has one.
  */
 
+import { NonRetriableError } from "../NonRetriableError.ts";
 import {
   clip,
   commandErrorTextBytes,
@@ -23,6 +24,7 @@ import type {
 import {
   maxSandboxProcessTimeoutMs,
   normalizeDurationMs,
+  validateDollarOptions,
 } from "./validation.ts";
 
 /**
@@ -43,9 +45,11 @@ export type DollarValue =
 export interface DollarOptions {
   /**
    * How long the command may run. Defaults to five minutes, the most that one
-   * step can wait. A longer command runs as a process that several steps
-   * follow, shown as one row, and its output is the last 512 KiB; a shorter
-   * one fails on output that is too large.
+   * step can wait. A captured command keeps a 2 MiB output tail. A longer
+   * timeout runs it as a process that steps follow, shown as one row, and
+   * returns the last 512 KiB. That costs one wait step per five minutes (24
+   * hours is about 288 steps, against the run's step limit), and the limit is
+   * approximate.
    */
   timeout?: SandboxDuration;
   /**
@@ -64,7 +68,7 @@ export interface DollarOptions {
   exitCodes?: SandboxExitCodes;
 }
 
-type DollarTag = (
+export type DollarTag = (
   strings: TemplateStringsArray,
   ...values: DollarValue[]
 ) => DollarPromise;
@@ -92,20 +96,21 @@ export interface DollarPromise extends Promise<SandboxCommandResult> {
 /**
  * `$`: runs a command as one step, from a tagged template.
  *
- * `` sandbox.$`/usr/bin/git status` `` runs argv, with no shell: static text
- * splits on whitespace and each value is one argument. The first word must be
- * an absolute path, as the sandbox does not search `PATH` for it. To run a
- * program by name, use `` sandbox.$.sh`git status` ``, which runs a shell
- * script with each value quoted.
+ * `` sandbox.$`git status` `` runs argv, with no shell: static text splits on
+ * whitespace and each value is one argument. The first word is looked up on
+ * the sandbox's `PATH` like any exec, not the shell profile's. For pipes,
+ * redirects, `&&`, builtins or the profile's `PATH`, use
+ * `` sandbox.$.sh`git status | head` ``, which runs a shell script with each
+ * value quoted.
  *
  * `sandbox.$(options)` is a `$` with options set, to keep or to use once.
  * `sandbox.$({ id: "build" })` also names the step, in place of one made from
- * the command; the SDK numbers repeats of an ID.
+ * the command; the SDK numbers repeats.
  *
  * A command that exits with a code not in `exitCodes` fails its step without
- * retrying, and `getCommandError()` reads the failure. A command that is not
- * found fails the step with the sandbox's own error, which `getSandboxError()`
- * reads, and not as a command failure.
+ * retrying, and `getCommandError()` reads the failure from the `StepError` (or,
+ * for a captured command's timeout, `NonRetriableError`) the handler catches.
+ * A program that is not found fails the step.
  *
  * Don't put secrets in the command: its text and step ID are not redacted.
  * Pass them in `env`, whose values are kept out of the trace.
@@ -213,7 +218,11 @@ const maxIdChars = 60;
  * numbers repeats (`npm test`, `npm test:1`), so equal commands never clash.
  */
 export const commandId = (text: string): string => {
-  return text.length <= maxIdChars ? text : `${text.slice(0, maxIdChars - 1)}…`;
+  const chars = [...text.replace(/\s+/g, " ").trim()];
+
+  return chars.length <= maxIdChars
+    ? chars.join("")
+    : `${chars.slice(0, maxIdChars - 1).join("")}…`;
 };
 
 const isTemplate = (value: unknown): value is TemplateStringsArray => {
@@ -239,7 +248,7 @@ const withHelpers = (
       try {
         return JSON.parse(stdout) as T;
       } catch (error) {
-        throw new Error(
+        throw new NonRetriableError(
           `Output of command is not valid JSON: ${clip(text, commandErrorTextBytes, "start")}`,
           { cause: error },
         );
@@ -336,6 +345,8 @@ export const createDollar = (
     ...values: DollarValue[]
   ) => {
     if (!isTemplate(first)) {
+      validateDollarOptions(first);
+
       const { id: callId, ...options } = first;
 
       return createDollar(run, mergeOptions(defaults, options), callId);

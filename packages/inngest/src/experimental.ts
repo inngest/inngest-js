@@ -17,6 +17,7 @@ export type {
   CommandError,
   DollarOptions,
   DollarPromise,
+  DollarTag,
   DollarValue,
   DurableSandbox,
   DurableSandboxProcess,

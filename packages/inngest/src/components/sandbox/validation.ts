@@ -778,6 +778,30 @@ export const normalizeSandboxCommandOptions = (
   };
 };
 
+export const exitCodesSchema = z.union([
+  z.literal("any"),
+  z.array(z.number().int()),
+]);
+
+/**
+ * Rejects keys a `$` does not take, and bad `exitCodes`.
+ */
+export const validateDollarOptions = (options: unknown): void => {
+  parseWithSchema(
+    z
+      .object({
+        id: z.string().optional(),
+        timeout: z.unknown(),
+        env: z.unknown(),
+        cwd: z.unknown(),
+        exitCodes: exitCodesSchema.optional(),
+      })
+      .strict(),
+    options,
+    "$ options",
+  );
+};
+
 export const normalizeSandboxProcessStartOptions = (
   options: SandboxProcessStartOptions,
 ): Omit<SandboxProcessStartOptions, "command"> & { command: string[] } =>

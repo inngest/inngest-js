@@ -59,6 +59,7 @@ import {
   decodeUtf8,
   encodeBase64,
   encodeOutput,
+  exitCodesSchema,
   maxSandboxProcessTimeoutMs,
   normalizeDurationMs,
   normalizeSandboxCommandOptions,
@@ -751,12 +752,10 @@ export const createDurableSandboxFacade = (
   ) => {
     const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
 
-    if (
-      exitCodes !== undefined &&
-      exitCodes !== "any" &&
-      !exitCodes.every(Number.isInteger)
-    ) {
-      throw new SandboxValidationError('exitCodes must be integers or "any"');
+    parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
+
+    if (tools && exitCodes !== undefined) {
+      throw new SandboxValidationError("exitCodes can't be used with tools");
     }
 
     const text = commandText(command);

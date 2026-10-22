@@ -9,7 +9,7 @@ import { runFnWithStack } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { StepError } from "../StepError.ts";
-import { commandFailure, getCommandError } from "./commandError.ts";
+import { clip, commandFailure, getCommandError } from "./commandError.ts";
 import {
   buildArgv,
   buildShellString,
@@ -35,10 +35,6 @@ type Script = {
    * A process never exits by itself, and ends when signalled.
    */
   neverExits?: boolean;
-  /**
-   * A process that SIGTERM does not stop, and only SIGKILL does.
-   */
-  ignoresTerm?: boolean;
   /**
    * A process ends killed by this signal, with no exit code.
    */
@@ -175,9 +171,7 @@ const createFakeClient = (
 
       signals.push(signal);
 
-      if (!process.script.ignoresTerm || signal.signal === 9) {
-        process.killedBy = signal.signal;
-      }
+      process.killedBy = signal.signal;
 
       return new Response(null, { status: 204 });
     }
@@ -278,6 +272,24 @@ const findStep = (steps: OutgoingOp[], id: string) => {
   });
 };
 
+/**
+ * The distinct `$` row spans of the steps of one command, so one means that
+ * all its steps are one row.
+ */
+const rowSpans = (steps: OutgoingOp[], id: string): Set<string> => {
+  return new Set(
+    steps
+      .filter((step) => {
+        return step.userland?.id?.startsWith(id);
+      })
+      .map((step) => {
+        return JSON.stringify(
+          (step.opts?.span as { kind: string; name: string }[]).at(-1),
+        );
+      }),
+  );
+};
+
 const groupFunction = (
   client: ReturnType<typeof createFakeClient>["client"],
   callback: (sandbox: DurableSandbox) => Promise<unknown>,
@@ -338,6 +350,18 @@ describe("templates", () => {
     expect(commandId("npm test")).toBe("npm test");
     expect(commandId("x".repeat(80))).toHaveLength(60);
     expect(commandId("x".repeat(80)).endsWith("…")).toBe(true);
+  });
+
+  test("the default step ID has no newlines and never splits a character", () => {
+    expect(commandId("set -e\n  make\tall")).toBe("set -e make all");
+    expect([...commandId("😀".repeat(80))]).toHaveLength(60);
+    expect(commandId("😀".repeat(80))).not.toContain("\uFFFD");
+  });
+
+  test("clip keeps a replacement character the text already had", () => {
+    expect(clip("\uFFFDab", 10, "end")).toBe("\uFFFDab");
+    expect(clip("😀😀", 5, "end")).toBe("😀");
+    expect(clip("ab😀", 3, "start")).toBe("ab…");
   });
 });
 
@@ -689,19 +713,13 @@ describe("long commands", () => {
     expect(execs).toHaveLength(1);
     expect(execs[0]?.body.command).toEqual(["make", "all"]);
 
-    // One `$` row, however many steps
-    const spans = steps.slice(1, -1).map((step) => {
-      return step.opts?.span as { kind: string; name: string }[];
-    });
+    const spans = rowSpans(steps, "make all");
 
-    expect(
-      new Set(
-        spans.map((span) => {
-          return JSON.stringify(span?.at(-1));
-        }),
-      ).size,
-    ).toBe(1);
-    expect(spans[0]?.at(-1)).toMatchObject({ kind: "$", name: "make all" });
+    expect(spans.size).toBe(1);
+    expect(JSON.parse([...spans][0]!)).toMatchObject({
+      kind: "$",
+      name: "make all",
+    });
   });
 
   test("a disallowed exit fails the output step", async () => {
@@ -723,7 +741,7 @@ describe("long commands", () => {
     expect(result).toMatchObject({ data: ["failed", "o", "e"] });
   });
 
-  test("a process that outlives the timeout is stopped, then reported as a timeout with its output", async () => {
+  test("a process that outlives the timeout is killed once, on the same row, and reported as a timeout with its output", async () => {
     const { client, signals } = createFakeClient(() => {
       return { stdout: "partial", neverExits: true };
     });
@@ -735,9 +753,10 @@ describe("long commands", () => {
       });
     });
 
-    const { result, ran } = await runAll(fn);
+    const { result, ran, steps } = await runAll(fn);
 
-    expect(signals).toEqual([{ signal: 15, includeChildren: true }]);
+    expect(signals).toEqual([{ signal: 9, includeChildren: true }]);
+    expect(rowSpans(steps, "serve").size).toBe(1);
     expect(
       ran.filter((id) => {
         return id.startsWith("serve");
@@ -747,37 +766,14 @@ describe("long commands", () => {
       "serve #wait-1",
       "serve #wait-2",
       "serve #stop",
-      "serve #stop-wait",
       "serve #output",
     ]);
     expect(result).toMatchObject({
       data: [
         "timeout",
-        "Command timed out after 331s and was stopped: serve",
+        "Command timed out after 331s and was killed: serve",
         "partial",
       ],
-    });
-  });
-
-  test("a process that ignores SIGTERM is killed, and the message says so", async () => {
-    const { client, signals } = createFakeClient(() => {
-      return { neverExits: true, ignoresTerm: true };
-    });
-    const fn = groupFunction(client, async (sandbox) => {
-      return sandbox.$({ timeout: "6m" })`serve`.catch((error: unknown) => {
-        return getCommandError(error)?.message;
-      });
-    });
-
-    const { result, ran } = await runAll(fn);
-
-    expect(signals).toEqual([
-      { signal: 15, includeChildren: true },
-      { signal: 9, includeChildren: true },
-    ]);
-    expect(ran).toContain("serve #kill");
-    expect(result).toMatchObject({
-      data: "Command timed out after 6m and was killed after it did not stop on SIGTERM: serve",
     });
   });
 
@@ -932,17 +928,56 @@ describe("validation and helpers", () => {
     expect(execs).toEqual([]);
   });
 
-  test("exitCodes must be integers", async () => {
+  test('options must be known keys, and exitCodes integers or "any"', async () => {
     const { client } = createFakeClient();
     const fn = groupFunction(client, async (sandbox) => {
-      return sandbox.$({ exitCodes: [0, 1.5] })`x`.catch((error: unknown) => {
-        return error instanceof SandboxValidationError;
-      });
+      const rejects = (options: object) => {
+        try {
+          sandbox.$(options);
+        } catch (error) {
+          return error instanceof SandboxValidationError;
+        }
+
+        return false;
+      };
+
+      return [
+        rejects({ exitCodes: [0, 1.5] }),
+        rejects({ exitCodes: "some" }),
+        rejects({ retries: 3 }),
+        rejects({ exitCodes: [0], cwd: "/work" }),
+      ];
     });
 
     const { result } = await runAll(fn);
 
-    expect(result).toMatchObject({ data: true });
+    expect(result).toMatchObject({ data: [true, true, true, false] });
+  });
+
+  test("commands.run rejects exitCodes with tools, and non-integer exitCodes, at runtime", async () => {
+    const { client, execs } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      const run = sandbox.commands.run as (
+        id: string,
+        command: string,
+        options: object,
+      ) => Promise<unknown>;
+      const rejected = (options: object) => {
+        return run("x", "x", options).catch((error: unknown) => {
+          return error instanceof SandboxValidationError;
+        });
+      };
+
+      return [
+        await rejected({ exitCodes: [0], tools: {} }),
+        await rejected({ exitCodes: [0.5] }),
+      ];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({ data: [true, true] });
+    expect(execs).toEqual([]);
   });
 
   test("exitCodes can't be used with tools", () => {
@@ -984,8 +1019,12 @@ describe("validation and helpers", () => {
       return [
         await sandbox.$`text`.text(),
         await sandbox.$`lines`.lines(),
-        await sandbox.$`bad`.json().catch((error: unknown) => {
-          return (error as Error).message;
+        await sandbox.$`bad`.json().catch((error: Error) => {
+          return [
+            error.name,
+            error.message,
+            error.cause instanceof SyntaxError,
+          ];
         }),
       ];
     });
@@ -996,7 +1035,7 @@ describe("validation and helpers", () => {
       data: [
         "a\r\nb",
         ["  a", "b"],
-        "Output of command is not valid JSON: bad",
+        ["NonRetriableError", "Output of command is not valid JSON: bad", true],
       ],
     });
   });

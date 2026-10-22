@@ -3,15 +3,9 @@
  * A command that may run longer than one step can wait (over five minutes):
  * it starts as a process, steps wait on it in bounded windows, and one step
  * reads its output and decides whether the exit is allowed. The steps are
- * states of one `/**
- * @module
- * A command that may run longer than one step can wait (over five minutes):
- * it starts as a process, steps wait on it in bounded windows, and one step
- * reads its output and decides whether the exit is allowed. The steps are
- row in the trace, and their IDs end in ` #wait-1`,
+ * states of one `$` row in the trace, and their IDs end in ` #wait-1`,
  * ` #output` and so on, which the SDK's own `:1` repeat numbers never do.
- * Its output is the 512 KiB tail the server keeps, where a command that fits
- * in one step fails on output that is too large.
+ * Its output is the 512 KiB tail the server keeps across both streams.
  */
 
 import type { StepOptionsOrId } from "../../types.ts";
@@ -33,29 +27,10 @@ import {
 import {
   decodeOutputChunk,
   decodeUtf8,
+  maxSandboxProcessTailBytes,
   maxSandboxProcessTimeoutMs,
   normalizeSandboxProcessStartOptions,
 } from "./validation.ts";
-
-/**
- * How long each wait step follows the process for: the most the protocol
- * allows, so a long timeout takes few steps.
- */
-const waitWindowMs = maxSandboxProcessTimeoutMs;
-
-/**
- * How long a process gets to exit after SIGTERM before it is killed.
- */
-const stopWindowMs = 5_000;
-
-/**
- * The most output the server returns for a process, which is a limit of its
- * protocol.
- */
-const outputTailBytes = 512 * 1024;
-
-const sigterm = 15;
-const sigkill = 9;
 
 /**
  * What a wait reports of a process.
@@ -76,13 +51,12 @@ const isRunning = (process: Ended): boolean => {
  * FAILED) has none.
  */
 const exitCodeOf = (process: Ended): number | undefined => {
-  if (process.exitCode !== undefined) {
-    return process.exitCode;
-  }
-
-  return process.terminationSignal === undefined
-    ? undefined
-    : 128 + process.terminationSignal;
+  return (
+    process.exitCode ??
+    (process.terminationSignal === undefined
+      ? undefined
+      : 128 + process.terminationSignal)
+  );
 };
 
 const collect = (
@@ -172,19 +146,15 @@ export const runManagedCommand = async (opts: {
         input: [{ timeoutMs: windowMs, allowRunning: true }],
       });
     };
-    const signalOperation = (signal: number) => {
-      return parseSandboxOperationForAction("process.signal", {
-        protocolVersion: sandboxProtocolVersion,
-        action: "process.signal",
-        target,
-        input: [{ signal, includeChildren: true }],
-      });
-    };
     let current: Ended = started;
     let elapsed = 0;
 
     for (let wait = 1; isRunning(current) && elapsed < timeoutMs; wait++) {
-      const windowMs = Math.min(waitWindowMs, timeoutMs - elapsed);
+      // Each wait is the most the protocol allows, so a long timeout takes few
+      const windowMs = Math.min(
+        maxSandboxProcessTimeoutMs,
+        timeoutMs - elapsed,
+      );
       const waited = await callRawTool(
         rawToolResolver,
         later(`#wait-${wait}`, "Wait for command"),
@@ -195,44 +165,31 @@ export const runManagedCommand = async (opts: {
       elapsed += windowMs;
     }
 
-    // How a command that outlived its timeout ended, for the error's message
-    let stopped: string | undefined;
+    const timedOut = isRunning(current);
 
-    if (isRunning(current)) {
+    if (timedOut) {
       await callRawTool(
         rawToolResolver,
         later("#stop", "Stop command"),
-        signalOperation(sigterm),
+        parseSandboxOperationForAction("process.signal", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "process.signal",
+          target,
+          input: [{ signal: 9, includeChildren: true }],
+        }),
       );
-
-      const waited = await callRawTool(
-        rawToolResolver,
-        later("#stop-wait", "Wait for command to stop"),
-        waitOperation(stopWindowMs),
-      );
-
-      if (isRunning(waited.process)) {
-        await callRawTool(
-          rawToolResolver,
-          later("#kill", "Kill command"),
-          signalOperation(sigkill),
-        );
-
-        stopped = "was killed after it did not stop on SIGTERM";
-      } else {
-        stopped = "was stopped";
-      }
     }
 
-    // Throws the failure of this command, or returns its exit code
-    const settle = (stdout: string, stderr: string): number => {
+    // The result of this command, or the throw of its failure
+    const settle = (chunks: readonly unknown[]): SandboxCommandResult => {
+      const { stdout, stderr, sizes } = collect(chunks);
       const failure = { command: text, stdout, stderr };
 
-      if (stopped !== undefined) {
+      if (timedOut) {
         throw commandFailure({
           ...failure,
           type: "timeout",
-          reason: `timed out after ${formatTimeout(timeoutMs)} and ${stopped}`,
+          reason: `timed out after ${formatTimeout(timeoutMs)} and was killed`,
         });
       }
 
@@ -248,40 +205,33 @@ export const runManagedCommand = async (opts: {
 
       checkExit(exitCodes, { ...failure, exitCode });
 
-      return exitCode;
+      return {
+        stdout,
+        stderr,
+        exitCode,
+        // The server reports no size for what it cut, so a full tail is taken
+        // as cut, and only what was kept is known
+        output:
+          sizes.stdout + sizes.stderr < maxSandboxProcessTailBytes
+            ? { truncated: false }
+            : { truncated: true, strategy: "tail", retainedBytes: sizes },
+      };
     };
 
     // The one step that decides the outcome, so a failure is a step's failure
-    const output = await callRawTool(
+    return callRawTool(
       rawToolResolver,
       later("#output", "Read command output"),
       parseSandboxOperationForAction("process.output", {
         protocolVersion: sandboxProtocolVersion,
         action: "process.output",
         target,
-        input: [{ tailBytes: outputTailBytes }],
+        input: [{ tailBytes: maxSandboxProcessTailBytes }],
       }),
       (result) => {
-        const { stdout, stderr } = collect(result.result.chunks);
-
-        settle(stdout, stderr);
-
-        return result;
+        return settle(result.result.chunks);
       },
     );
-    const { stdout, stderr, sizes } = collect(output.result.chunks);
-
-    return {
-      stdout,
-      stderr,
-      exitCode: settle(stdout, stderr),
-      // The server reports no size for what it cut, so a full tail is taken
-      // as cut, and only what was kept is known
-      output:
-        sizes.stdout + sizes.stderr < outputTailBytes
-          ? { truncated: false }
-          : { truncated: true, strategy: "tail", retainedBytes: sizes },
-    };
   };
 
   return span ? withSpan(span, run) : run();
