@@ -162,13 +162,14 @@ export interface InngestExecutionOptions {
   /**
    * Which handler variant is being executed. `"failure"` skips
    * trigger-schema validation and resolves `onFailure` instead of the
-   * main handler. `"defer"` marks the fn as a standalone defer function
+   * main handler. `"cancel"` does the same for `onCancel`. `"defer"` marks
+   * the fn as a standalone defer function
    * (created via `createDefer`); incoming event data is validated
    * against the defer function's schema.
    *
    * @default "main"
    */
-  handlerKind?: "main" | "failure" | "defer";
+  handlerKind?: "main" | "failure" | "cancel" | "defer";
 
   /**
    * Whether this execution is part of a Durable Endpoint flow. Could be either

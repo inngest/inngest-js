@@ -2018,8 +2018,12 @@ class InngestExecutionEngine
    * Validate event data against schemas defined in function triggers.
    */
   private async validateEventSchemas(): Promise<void> {
-    if (this.options.handlerKind === "failure") {
-      // The failure handler is triggered by "inngest/function.failed" —
+    if (
+      this.options.handlerKind === "failure" ||
+      this.options.handlerKind === "cancel"
+    ) {
+      // The failure and cancel handlers are triggered by internal
+      // "inngest/function.failed" and "inngest/function.cancelled" events, so
       // the main function's trigger schemas don't apply.
       return;
     }
@@ -3115,6 +3119,15 @@ class InngestExecutionEngine
         }
 
         return this.options.fn["onFailureFn"];
+      }
+
+      case "cancel": {
+        if (!this.options.fn["onCancelFn"]) {
+          // As with `onFailure`, this should never happen.
+          throw new Error("Cannot find function `onCancel` handler");
+        }
+
+        return this.options.fn["onCancelFn"];
       }
 
       default:

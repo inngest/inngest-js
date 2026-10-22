@@ -50,6 +50,7 @@ import {
   type ApplyAllMiddlewareStepExtensions,
   type ApplyAllMiddlewareTransforms,
   type BaseContext,
+  type CancelledEventArgs,
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
@@ -1379,8 +1380,13 @@ export namespace Inngest {
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined,
     TFailureHandler extends Handler.Any,
+    TCancelHandler extends Handler.Any = Handler.Any,
   > = Omit<
-    InngestFunction.Options<InngestFunction.Trigger<string>[], TFailureHandler>,
+    InngestFunction.Options<
+      InngestFunction.Trigger<string>[],
+      TFailureHandler,
+      TCancelHandler
+    >,
     "triggers"
   > & {
     triggers?: TTriggers;
@@ -1451,11 +1457,43 @@ export namespace Inngest {
             ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
         }
     >,
+    TCancelHandler extends Handler.Any = HandlerWithTriggers<
+      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
+      ResolveTriggers<TTriggers>,
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+        CancelledEventArgs<EventPayload> &
+        ApplyAllMiddlewareCtxExtensions<
+          ClientOptionsFromInngest<TClient>["middleware"]
+        > &
+        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
+          step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+            ApplyAllMiddlewareStepExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+          group: GroupTools &
+            ApplyAllMiddlewareGroupExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            > &
+            ApplyAllMiddlewareGroupExtensions<TFnMiddleware>;
+        }
+    >,
   >(
-    options: CreateFunctionInput<TFnMiddleware, TTriggers, TFailureHandler>,
+    options: CreateFunctionInput<
+      TFnMiddleware,
+      TTriggers,
+      TFailureHandler,
+      TCancelHandler
+    >,
     handler: THandler,
   ) => InngestFunction<
-    InngestFunction.Options<ResolveTriggers<TTriggers>, TFailureHandler>,
+    InngestFunction.Options<
+      ResolveTriggers<TTriggers>,
+      TFailureHandler,
+      TCancelHandler
+    >,
     THandler,
     TFailureHandler,
     TClient,
