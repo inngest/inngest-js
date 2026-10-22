@@ -380,6 +380,23 @@ describe("templates", () => {
     );
   });
 
+  test("$.sh refuses a value inside quotes or after a backslash", () => {
+    const input = "$(printf INJECTED)";
+
+    expect(() => {
+      return shell`echo "${input}"`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`echo '${input}'`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`echo \\${input}`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`echo "a" ${"b"} 'c d' ${input} "e\\"f" ${input}`;
+    }).not.toThrow();
+  });
+
   test("the default step ID is the command, cut to 60 characters", () => {
     expect(commandId("npm test")).toBe("npm test");
     expect(commandId("x".repeat(80))).toHaveLength(60);

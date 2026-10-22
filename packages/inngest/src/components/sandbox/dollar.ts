@@ -14,12 +14,13 @@ import {
   formatTimeout,
 } from "./commandError.ts";
 import { getSandboxError } from "./protocol.ts";
-import type {
-  DurableSandbox,
-  SandboxCommand,
-  SandboxCommandResult,
-  SandboxDuration,
-  SandboxExitCodes,
+import {
+  type DurableSandbox,
+  type SandboxCommand,
+  type SandboxCommandResult,
+  type SandboxDuration,
+  type SandboxExitCodes,
+  SandboxValidationError,
 } from "./types.ts";
 import {
   maxSandboxProcessTimeoutMs,
@@ -101,7 +102,7 @@ export interface DollarPromise extends Promise<SandboxCommandResult> {
  * the sandbox's `PATH` like any exec, not the shell profile's. For pipes,
  * redirects, `&&`, builtins or the profile's `PATH`, use
  * `` sandbox.$.sh`git status | head` ``, which runs a shell script with each
- * value quoted.
+ * value quoted. A value can't go inside quotes of the script, which throws.
  *
  * `sandbox.$(options)` is a `$` with options set, to keep or to use once.
  * `sandbox.$({ id: "build" })` also names the step, in place of one made from
@@ -182,7 +183,41 @@ const shellEscape = (value: string): string => {
 };
 
 /**
- * The shell string of a `$.sh` template, with each value escaped.
+ * Whether the end of `text` is inside a quote or right after a backslash, so
+ * that text appended there is not the shell's own word.
+ */
+const endsInShellContext = (text: string): boolean => {
+  let current = "";
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+
+    if (current === "'") {
+      if (char === "'") {
+        current = "";
+      }
+    } else if (char === "\\") {
+      if (index === text.length - 1) {
+        return true;
+      }
+
+      index++;
+    } else if (current === '"') {
+      if (char === '"') {
+        current = "";
+      }
+    } else if (char === "'" || char === '"') {
+      current = char;
+    }
+  }
+
+  return current !== "";
+};
+
+/**
+ * The shell string of a `$.sh` template, with each value escaped. A value
+ * inside quotes of the template, or after a backslash, is an error: the
+ * shell would not read its escaping as the value's own.
  */
 export const buildShellString = (
   strings: readonly string[],
@@ -197,6 +232,12 @@ export const buildShellString = (
 
     if (value === undefined || !isPresent(value)) {
       continue;
+    }
+
+    if (endsInShellContext(out)) {
+      throw new SandboxValidationError(
+        "A $.sh value can't go inside quotes or after a backslash, as it is quoted for you. Write it on its own, like ls ${dir}.",
+      );
     }
 
     out += Array.isArray(value)
