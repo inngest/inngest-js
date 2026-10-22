@@ -93,7 +93,7 @@ export const replayRun = async (opts: {
 
     if (response.status === SDKResponseStatus.ERROR) {
       diffs.push({
-        id: stepId ?? opts.functionSlug,
+        id: (stepId && byHash.get(stepId)?.id) || stepId || opts.functionSlug,
         status: "failed",
         replayed: new TextDecoder().decode(response.body),
       });
@@ -113,7 +113,16 @@ export const replayRun = async (opts: {
       const rec = byHash.get(id);
 
       if (op.op === "StepPlanned") {
-        queue.push(id);
+        if (id === stepId) {
+          throw new Error(
+            `Replay is not advancing: step ${id} came back again`,
+          );
+        }
+
+        if (!queue.includes(id)) {
+          queue.push(id);
+        }
+
         continue;
       }
 

@@ -141,3 +141,9 @@ export async function getHostname() {
 
   return "unknown";
 }
+
+/**
+ * Random per process, so two taps on one host get distinct instance IDs while a
+ * reconnect of the same process keeps its ID (and with it sticky runs).
+ */
+export const processNonce = Math.random().toString(36).slice(2, 8);

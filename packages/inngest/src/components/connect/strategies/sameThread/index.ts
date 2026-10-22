@@ -118,8 +118,8 @@ export class SameThreadStrategy extends BaseStrategy {
   }
 
   async close(): Promise<void> {
-    const stopWatching = this.config.tap?.drain();
     this.cleanupShutdown();
+    await this.config.tap?.drain();
     this.setClosing();
 
     await this.core.close();
@@ -136,7 +136,7 @@ export class SameThreadStrategy extends BaseStrategy {
       await this.messageBuffer.flush(this.config.hashedFallbackKey);
     }
 
-    stopWatching?.();
+    this.config.tap?.release();
     this.setClosed();
     this.internalLogger.debug("Fully closed");
   }

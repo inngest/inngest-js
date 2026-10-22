@@ -24,7 +24,11 @@ import {
 import { version } from "../../../../version.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
 import { createStartRequest, parseConnectMessage } from "../../messages.ts";
-import { getHostname, retrieveSystemAttributes } from "../../os.ts";
+import {
+  getHostname,
+  processNonce,
+  retrieveSystemAttributes,
+} from "../../os.ts";
 import { AuthError, ConnectionLimitError, ReconnectError } from "../../util.ts";
 import type { Connection, ConnectionCoreConfig } from "./connection.ts";
 
@@ -272,7 +276,9 @@ export async function establishConnection(
           config.connectionData.marshaledCapabilities,
         ),
         startedAt: startedAt,
-        instanceId: config.instanceId || (await getHostname()),
+        instanceId:
+          config.instanceId ||
+          `${await getHostname()}${config.connectionData.tap ? `-${processNonce}` : ""}`,
         maxWorkerConcurrency: config.maxWorkerConcurrency,
         tap: config.connectionData.tap,
       });

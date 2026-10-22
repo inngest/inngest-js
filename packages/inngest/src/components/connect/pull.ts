@@ -35,6 +35,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { replayRun } from "./pullReplay.ts";
 import { writeTestScaffold } from "./pullTest.ts";
+import { readTapSettings } from "./tap.ts";
 import { createReporter, detectOutput } from "./tapOutput.ts";
 import type { ConnectApp } from "./types.ts";
 
@@ -214,8 +215,12 @@ export const fetchRecordedRun = async (opts: {
       return step !== undefined;
     });
 
+  const completed = steps.filter((step) => {
+    return !step.failed;
+  });
   if (
-    steps.every((step) => {
+    completed.length > 0 &&
+    completed.every((step) => {
       return step.data === undefined;
     })
   ) {
@@ -254,6 +259,10 @@ export const runPull = async (
       signingKey: client.signingKey,
       env: client.env ?? undefined,
     });
+
+    if (readTapSettings()) {
+      throw new Error("Pull and tap mode cannot be combined");
+    }
 
     if (
       settings.step &&

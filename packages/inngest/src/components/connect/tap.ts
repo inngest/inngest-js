@@ -143,6 +143,12 @@ export class Tap {
   private readonly reporter;
   private stopping = false;
   private onceRun: string | undefined;
+
+  /** Runs currently held sticky, until their releasing reply. */
+  private readonly held = new Set<string>();
+  private idle: Promise<void> | undefined;
+  private onIdle: (() => void) | undefined;
+  private unwatch: (() => void) | undefined;
   private close: (() => Promise<void>) | undefined;
 
   constructor(options: TapOptions) {
@@ -198,24 +204,22 @@ export class Tap {
   }
 
   /**
-   * Stop taking requests. Requests still running reply `sticky=false`; idle
-   * sticky runs lapse by TTL on the server. A second shutdown signal drops
-   * everything immediately. Calling it again does nothing.
-   *
-   * @returns Removes the second-signal handler.
+   * Stop taking new runs and stop sending `sticky=true`, then wait until every
+   * run held sticky has had its releasing reply. No `WORKER_PAUSE` is sent
+   * before this resolves: a paused connection is no longer routed anything,
+   * sticky runs included. A second shutdown signal drops everything at once;
+   * idle sticky runs then lapse on the server.
    */
-  drain(): () => void {
-    if (this.stopping) {
-      return () => {};
+  async drain(): Promise<void> {
+    if (!this.stopping) {
+      this.stopping = true;
+      this.reporter.emit(
+        "draining",
+        `tap: draining, waiting for ${this.held.size} sticky run(s). Ctrl-C again to drop everything.`,
+      );
     }
 
-    this.stopping = true;
-    this.reporter.emit(
-      "draining",
-      "tap: draining, no new requests. Ctrl-C again to drop everything.",
-    );
-
-    return onShutdown(["SIGINT", "SIGTERM"], () => {
+    this.unwatch ??= onShutdown(["SIGINT", "SIGTERM"], () => {
       this.reporter.emit(
         "dropped",
         "tap: second signal, exiting without draining",
@@ -223,6 +227,19 @@ export class Tap {
 
       (this.options.exit ?? process.exit)(130);
     });
+
+    if (this.held.size > 0) {
+      this.idle ??= new Promise((resolve) => {
+        this.onIdle = resolve;
+      });
+      await this.idle;
+    }
+  }
+
+  /** Remove the second-signal handler once the connection is closed. */
+  release(): void {
+    this.unwatch?.();
+    this.unwatch = undefined;
   }
 
   /**
@@ -254,6 +271,7 @@ export class Tap {
         this.report("error", msg, String(err));
 
         if (!this.settings.shadow) {
+          this.hold(msg.runId, false);
           this.closeOnce();
 
           throw err;
@@ -261,6 +279,8 @@ export class Tap {
 
         reply = this.nack(msg);
       }
+
+      this.hold(msg.runId, reply.sticky === true);
 
       if (reply.sticky !== true) {
         this.closeOnce();
@@ -271,7 +291,12 @@ export class Tap {
   }
 
   private admit(msg: GatewayExecutorRequestData): boolean {
-    if (this.stopping || !this.selected.has(msg.functionSlug)) {
+    if (!this.selected.has(msg.functionSlug)) {
+      return false;
+    }
+
+    // Draining still serves the runs it holds, to release them.
+    if (this.stopping && !this.held.has(msg.runId)) {
       return false;
     }
 
@@ -284,6 +309,19 @@ export class Tap {
     }
 
     return true;
+  }
+
+  private hold(runId: string, sticky: boolean): void {
+    if (sticky) {
+      this.held.add(runId);
+
+      return;
+    }
+
+    this.held.delete(runId);
+    if (this.held.size === 0) {
+      this.onIdle?.();
+    }
   }
 
   /**

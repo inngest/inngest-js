@@ -2,7 +2,7 @@
  * Tests for Live Tap Pull using fixture API data and real functions.
  */
 
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -338,9 +338,14 @@ describe("Pull", () => {
 
     await writeTestScaffold({ recorded, testPath });
 
+    await rm(`${testPath.replace(".test.ts", "")}.test.fixture.json`);
+
     await expect(writeTestScaffold({ recorded, testPath })).rejects.toThrow(
       /EEXIST/,
     );
+    await expect(
+      readFile(`${testPath.replace(".test.ts", "")}.test.fixture.json`),
+    ).rejects.toThrow(/ENOENT/);
   });
 
   it("replays on the app that owns the function", async () => {

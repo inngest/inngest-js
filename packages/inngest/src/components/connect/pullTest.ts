@@ -5,7 +5,7 @@
  * @module
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import type { RecordedRun } from "./pull.ts";
 
 /**
@@ -77,10 +77,16 @@ describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
 `;
 
   // `wx`: never overwrite your code or an earlier fixture.
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, {
-    flag: "wx",
-  });
   await writeFile(opts.testPath, test, { flag: "wx" });
+  try {
+    await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, {
+      flag: "wx",
+    });
+  } catch (err) {
+    await rm(opts.testPath);
+
+    throw err;
+  }
 
   return { fixturePath, target };
 };

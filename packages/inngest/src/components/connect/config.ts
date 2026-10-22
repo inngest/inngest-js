@@ -177,12 +177,14 @@ export function prepareConnectionConfig(
       .filter(([, { functions: fns }]) => {
         return !tap || fns.length > 0;
       })
-      .map(([appId, { client, functions: fns }]) => ({
-        appName: appId,
-        appVersion: client.appVersion,
-        functions: new TextEncoder().encode(JSON.stringify(fns)),
-        featureObservations: sdkFeatureObservations.get(client),
-      })),
+      .map(([appId, { client, functions: fns }]) => {
+        return {
+          appName: appId,
+          appVersion: client.appVersion,
+          functions: new TextEncoder().encode(JSON.stringify(fns)),
+          featureObservations: sdkFeatureObservations.get(client),
+        };
+      }),
   };
 
   // Build request handlers

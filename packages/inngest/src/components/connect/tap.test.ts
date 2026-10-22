@@ -14,6 +14,7 @@ import {
 import type { FunctionConfig } from "../../types.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { parseGatewayExecutorRequest } from "./messages.ts";
+import { processNonce } from "./os.ts";
 import { ConnectionCore } from "./strategies/core/connection.ts";
 import { MockGateway } from "./strategies/core/mock-gateway.ts";
 import type { RequestHandler } from "./strategies/index.ts";
@@ -422,7 +423,7 @@ describe("tap over the mock gateway", () => {
     expect(replies()[0]?.status).toBe(SDKResponseStatus.NACKED);
   });
 
-  it("drain releases sticky runs and a second signal drops everything", async () => {
+  it("drain waits for held runs, releases them, and a second signal drops everything", async () => {
     const exit = vi.fn();
     const listeners: Array<() => void> = [];
     vi.spyOn(process, "on").mockImplementation(((
@@ -433,17 +434,9 @@ describe("tap over the mock gateway", () => {
 
       return process;
     }) as never);
-    let started = false;
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     const tap = await start(
       { sticky: true },
       async (msg) => {
-        started = true;
-        await gate;
-
         return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
       },
       exit,
@@ -451,22 +444,55 @@ describe("tap over the mock gateway", () => {
 
     gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
     await waitFor(() => {
-      return started;
-    });
-    const stopListening = tap.drain();
-    release();
-    await waitFor(() => {
       return replies().length === 1;
     });
+    let drained = false;
+    const draining = tap.drain().then(() => {
+      drained = true;
+    });
+    gateway.sendExecutorRequest({
+      requestId: "other",
+      appName: "test-app",
+      runId: "run-2",
+    });
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 3;
+    });
+    await draining;
 
-    expect(replies()[0]?.sticky).toBe(false);
+    expect(drained).toBe(true);
+    expect(
+      replies().map((r) => {
+        return [r.requestId, r.status, r.sticky];
+      }),
+    ).toEqual([
+      ["r1", SDKResponseStatus.NOT_COMPLETED, true],
+      ["other", SDKResponseStatus.NACKED, undefined],
+      ["r2", SDKResponseStatus.NOT_COMPLETED, false],
+    ]);
+    expect(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE),
+    ).toHaveLength(0);
 
     for (const fn of listeners) {
       fn();
     }
 
     expect(exit).toHaveBeenCalledWith(130);
-    stopListening();
+    tap.release();
+  });
+
+  it("sends a distinct instance ID per tap process", async () => {
+    await start({}, async (msg) => {
+      return response(msg, SDKResponseStatus.DONE);
+    });
+
+    const data = WorkerConnectRequestData.decode(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_CONNECT)[0]!.payload,
+    );
+
+    expect(data.instanceId).toMatch(new RegExp(`-${processNonce}$`));
   });
 
   it("writes one JSON line per request in json mode", async () => {
