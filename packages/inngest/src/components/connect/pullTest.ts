@@ -71,7 +71,7 @@ describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
     expect(result).not.toHaveProperty("error");
 
     // Pin the behaviour you want. Production recorded this for the target:
-    // expect(result).toEqual(${JSON.stringify(targetStep?.data) ?? "undefined"});
+    // expect(result).toEqual(${(JSON.stringify(targetStep?.data) ?? "undefined").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029")});
   });
 });
 `;

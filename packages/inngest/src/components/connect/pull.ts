@@ -147,6 +147,7 @@ const stepFromSpan = (
   }
 
   let hashed = span.stepId;
+
   if (!isHashed(span.stepId)) {
     const count = seen.get(span.stepId) ?? 0;
     seen.set(span.stepId, count + 1);
@@ -274,6 +275,10 @@ export const runPull = async (
     }
 
     if (settings.testPath) {
+      if (recorded.steps.length === 0) {
+        throw new Error("The run has no steps to build a test from");
+      }
+
       const { fixturePath, target } = await writeTestScaffold({
         recorded,
         testPath: settings.testPath,

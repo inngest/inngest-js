@@ -140,7 +140,7 @@ export class Tap {
   /** Selected function slug to the requested name it satisfied. */
   private readonly selected = new Map<string, string>();
   private readonly options: TapOptions;
-  private readonly reporter;
+  private readonly reporter: ReturnType<typeof createReporter>;
   private stopping = false;
   private onceRun: string | undefined;
 
@@ -215,14 +215,17 @@ export class Tap {
   async drain(): Promise<void> {
     if (!this.stopping) {
       this.stopping = true;
-      const runs = [...this.held].map((runId) => {
-        return getRunUrl({ runId, ...this.options });
-      });
-      this.reporter.emit(
-        "draining",
-        `tap: draining, waiting for ${runs.length} sticky run(s) to send their next request: ${runs.join(" ")}\ntap: a run that already failed its last attempt never sends one. Ctrl-C again to drop everything.`,
-        { runs },
-      );
+
+      if (this.held.size > 0) {
+        const runs = [...this.held].map((runId) => {
+          return getRunUrl({ runId, ...this.options });
+        });
+        this.reporter.emit(
+          "draining",
+          `tap: draining, waiting for ${runs.length} sticky run(s) to send their next request: ${runs.join(" ")}\ntap: a run that failed its last attempt, was cancelled or is asleep sends none. Ctrl-C again to drop everything.`,
+          { runs },
+        );
+      }
     }
 
     this.unwatch ??= onShutdown(["SIGINT", "SIGTERM"], () => {
@@ -325,6 +328,7 @@ export class Tap {
     }
 
     this.held.delete(runId);
+
     if (this.held.size === 0) {
       this.onIdle?.();
     }

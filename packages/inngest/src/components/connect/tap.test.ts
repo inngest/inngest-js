@@ -12,6 +12,7 @@ import {
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
+  WorkerRequestAckData,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { FunctionConfig } from "../../types.ts";
 import { prepareConnectionConfig } from "./config.ts";
@@ -239,6 +240,7 @@ describe("tap over the mock gateway", () => {
     );
     const data = WorkerConnectRequestData.decode(connect[0]!.payload);
 
+    expect(data.authData?.syncToken).toBe("");
     expect(data.tap).toMatchObject({
       functions: ["test-fn"],
       filter: "event.name == 'a'",
@@ -382,6 +384,43 @@ describe("tap over the mock gateway", () => {
 
     expect(replies()[0]?.sticky).toBe(true);
     expect(replies()[1]?.sticky).toBe(false);
+  });
+
+  it("sets the run ID on every ack and reply", async () => {
+    await start({ sticky: true }, async (msg) => {
+      return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
+    });
+
+    gateway.sendExecutorRequest({
+      requestId: "r1",
+      appName: "test-app",
+      runId: "RUN1",
+    });
+    gateway.sendExecutorRequest({
+      requestId: "other",
+      appName: "test-app",
+      functionSlug: "not-wanted",
+      runId: "RUN2",
+    });
+    await waitFor(() => {
+      return replies().length === 2;
+    });
+
+    expect(
+      replies()
+        .map((r) => {
+          return r.runId;
+        })
+        .sort(),
+    ).toEqual(["RUN1", "RUN2"]);
+    expect(
+      gateway
+        .getMessagesOfType(GatewayMessageType.WORKER_REQUEST_ACK)
+        .map((m) => {
+          return WorkerRequestAckData.decode(m.payload).runId;
+        })
+        .sort(),
+    ).toEqual(["RUN1", "RUN2"]);
   });
 
   it("refuses to stick when the reply reports a missing step, and NACKs", async () => {

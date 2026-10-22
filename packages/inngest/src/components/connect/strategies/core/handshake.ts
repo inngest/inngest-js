@@ -269,7 +269,8 @@ export async function establishConnection(
         systemAttributes: await retrieveSystemAttributes(),
         authData: {
           sessionToken: startResp.sessionToken,
-          syncToken: startResp.syncToken,
+          // Taps never sync; an empty token also guards against gateway skew.
+          syncToken: config.connectionData.tap ? "" : startResp.syncToken,
         },
         apps: config.connectionData.apps,
         capabilities: new TextEncoder().encode(
