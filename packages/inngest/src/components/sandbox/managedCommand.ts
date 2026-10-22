@@ -5,7 +5,7 @@
  * reads its output and decides whether the exit is allowed. The steps are
  * states of one `$` row in the trace, and their IDs end in ` #wait-1`,
  * ` #output` and so on, which the SDK's own `:1` repeat numbers never do.
- * Its output is the 512 KiB tail the server keeps across both streams.
+ * Its output is a tail of at most 512 KiB (the `tailBytes` limit); the docs describe it as one budget across both streams, which the SDK does not enforce.
  */
 
 import type { StepOptionsOrId } from "../../types.ts";
