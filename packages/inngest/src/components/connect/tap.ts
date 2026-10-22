@@ -205,7 +205,9 @@ export class Tap {
 
   /**
    * Stop taking new runs and stop sending `sticky=true`, then wait until every
-   * run held sticky has had its releasing reply. No `WORKER_PAUSE` is sent
+   * run held sticky has had its releasing reply. A run only gets one when its
+   * next request arrives, so a run that ended without one (its last attempt
+   * failed, it was cancelled) holds the drain until a second signal. No `WORKER_PAUSE` is sent
    * before this resolves: a paused connection is no longer routed anything,
    * sticky runs included. A second shutdown signal drops everything at once;
    * idle sticky runs then lapse on the server.
@@ -213,9 +215,13 @@ export class Tap {
   async drain(): Promise<void> {
     if (!this.stopping) {
       this.stopping = true;
+      const runs = [...this.held].map((runId) => {
+        return getRunUrl({ runId, ...this.options });
+      });
       this.reporter.emit(
         "draining",
-        `tap: draining, waiting for ${this.held.size} sticky run(s). Ctrl-C again to drop everything.`,
+        `tap: draining, waiting for ${runs.length} sticky run(s) to send their next request: ${runs.join(" ")}\ntap: a run that already failed its last attempt never sends one. Ctrl-C again to drop everything.`,
+        { runs },
       );
     }
 
@@ -330,7 +336,7 @@ export class Tap {
    * Marked as stopping first so the close is quiet.
    */
   private closeOnce(): void {
-    if (this.settings.once) {
+    if (this.settings.once && !this.stopping) {
       this.stopping = true;
       this.close?.().catch((err) => {
         this.reporter.emit("error", `tap: close failed: ${String(err)}`);

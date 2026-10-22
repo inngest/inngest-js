@@ -58,7 +58,9 @@ export const createReporter = (
 
     guide(): void {
       if (output === "agent") {
-        GUIDE.forEach(write);
+        for (const line of GUIDE) {
+          write(line);
+        }
       }
     },
   };

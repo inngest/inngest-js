@@ -252,6 +252,10 @@ export const runPull = async (
   reporter.guide();
 
   try {
+    if (readTapSettings()) {
+      throw new Error("Pull and tap mode cannot be combined");
+    }
+
     const recorded = await fetchRecordedRun({
       runId: settings.runId,
       apiBaseUrl: client.apiBaseUrl,
@@ -259,10 +263,6 @@ export const runPull = async (
       signingKey: client.signingKey,
       env: client.env ?? undefined,
     });
-
-    if (readTapSettings()) {
-      throw new Error("Pull and tap mode cannot be combined");
-    }
 
     if (
       settings.step &&

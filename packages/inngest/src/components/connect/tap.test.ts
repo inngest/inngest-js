@@ -1,4 +1,6 @@
 /**
+ * @module
+ *
  * Tests for Live Tap: settings, the handshake, and the NACK, shadow, once,
  * sticky and drain behaviour, driven through ConnectionCore against the mock
  * gateway.
@@ -18,6 +20,7 @@ import { processNonce } from "./os.ts";
 import { ConnectionCore } from "./strategies/core/connection.ts";
 import { MockGateway } from "./strategies/core/mock-gateway.ts";
 import type { RequestHandler } from "./strategies/index.ts";
+import { SameThreadStrategy } from "./strategies/sameThread/index.ts";
 import { readTapSettings, Tap, type TapSettings } from "./tap.ts";
 import type { TapOutput } from "./tapOutput.ts";
 import { ConnectionState } from "./types.ts";
@@ -425,12 +428,12 @@ describe("tap over the mock gateway", () => {
 
   it("drain waits for held runs, releases them, and a second signal drops everything", async () => {
     const exit = vi.fn();
-    const listeners: Array<() => void> = [];
+    const listeners: Array<[string, () => void]> = [];
     vi.spyOn(process, "on").mockImplementation(((
-      _signal: string,
+      signal: string,
       fn: () => void,
     ) => {
-      listeners.push(fn);
+      listeners.push([signal, fn]);
 
       return process;
     }) as never);
@@ -455,6 +458,12 @@ describe("tap over the mock gateway", () => {
       appName: "test-app",
       runId: "run-2",
     });
+    await waitFor(() => {
+      return replies().length === 2;
+    });
+
+    expect(drained).toBe(false);
+
     gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
     await waitFor(() => {
       return replies().length === 3;
@@ -475,12 +484,66 @@ describe("tap over the mock gateway", () => {
       gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE),
     ).toHaveLength(0);
 
-    for (const fn of listeners) {
-      fn();
+    for (const [signal, fn] of listeners) {
+      if (signal === "SIGINT" || signal === "SIGTERM") {
+        fn();
+      }
     }
 
     expect(exit).toHaveBeenCalledWith(130);
     tap.release();
+  });
+
+  it("closing through the strategy releases held runs before WORKER_PAUSE", async () => {
+    const tap = new Tap({
+      settings: { ...baseSettings, sticky: true },
+      mode: "dev",
+      baseUrl: "http://localhost:8288",
+      write: () => {},
+    });
+    tap.select("app", [{ id: "test-fn" }] as FunctionConfig[]);
+    const strategy = new SameThreadStrategy({
+      hashedSigningKey: "key",
+      hashedFallbackKey: undefined,
+      envName: "env",
+      connectionData: {
+        marshaledCapabilities: "",
+        manualReadinessAck: false,
+        apps: [],
+        tap: tap.config,
+      },
+      apiBaseUrl: gateway.httpUrl,
+      mode: "cloud",
+      internalLogger: { debug() {}, info() {}, warn() {}, error() {} },
+      requestHandlers: {
+        "test-app": tap.wrap(async (msg) => {
+          return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
+        }),
+      },
+      options: { apps: [] },
+      tap,
+    });
+    await strategy.connect();
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+    const closing = strategy.close();
+    await sleep(50);
+
+    expect(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE),
+    ).toHaveLength(0);
+
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await closing;
+
+    expect(replies()[1]?.sticky).toBe(false);
+
+    expect(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("sends a distinct instance ID per tap process", async () => {

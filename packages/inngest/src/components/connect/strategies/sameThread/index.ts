@@ -80,7 +80,9 @@ export class SameThreadStrategy extends BaseStrategy {
       },
     );
 
-    config.tap?.bind(() => this.close());
+    config.tap?.bind(() => {
+      return this.close();
+    });
 
     this.messageBuffer = new MessageBuffer({
       envName: config.envName,

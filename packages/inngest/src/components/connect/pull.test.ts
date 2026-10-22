@@ -1,4 +1,6 @@
 /**
+ * @module
+ *
  * Tests for Live Tap Pull using fixture API data and real functions.
  */
 

@@ -9,6 +9,8 @@ Experimental: your `connect()` worker can now run as a Live Tap. Started with `i
 ```ts
 await connect({
   apps: [{ client }],
-  start: async () => mintSessionOnTheHost(),
+  start: async () => {
+    return mintSessionOnTheHost();
+  },
 });
 ```
