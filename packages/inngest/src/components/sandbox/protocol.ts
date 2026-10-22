@@ -766,26 +766,49 @@ export const restoreEnvironment = (
   return environment ? withEnvironment(recorded, environment) : recorded;
 };
 
-export const findSandboxErrorOptions = (
+/**
+ * The first error in `error`'s chain of causes that matches `schema`. A step's
+ * failure reaches the handler as a `StepError`, with what the step threw
+ * nested in its `cause`.
+ */
+export const findInCauses = <T>(
   error: unknown,
-): SandboxErrorOptions | undefined => {
+  schema: {
+    safeParse(value: unknown): { success: true; data: T } | { success: false };
+  },
+): T | undefined => {
   let current = error;
+
   for (let depth = 0; depth < 6 && current; depth++) {
-    const parsed = sandboxErrorPayloadSchema.safeParse(current);
+    const parsed = schema.safeParse(current);
+
     if (parsed.success) {
-      return {
-        ...parsed.data,
-        code: parsed.data.code,
-        details: parsed.data.details as SandboxErrorDetail[],
-        cause: error,
-      };
+      return parsed.data;
     }
+
     if (typeof current !== "object" || !("cause" in current)) {
       return;
     }
+
     current = (current as { cause?: unknown }).cause;
   }
+
   return;
+};
+
+export const findSandboxErrorOptions = (
+  error: unknown,
+): SandboxErrorOptions | undefined => {
+  const data = findInCauses(error, sandboxErrorPayloadSchema);
+
+  return (
+    data && {
+      ...data,
+      code: data.code,
+      details: data.details as SandboxErrorDetail[],
+      cause: error,
+    }
+  );
 };
 
 /**
@@ -804,18 +827,9 @@ export const getSandboxError = (error: unknown): SandboxError | undefined => {
 export const findSandboxValidationError = (
   error: unknown,
 ): { message: string } | undefined => {
-  let current = error;
-  for (let depth = 0; depth < 6 && current; depth++) {
-    const parsed = sandboxValidationErrorPayloadSchema.safeParse(current);
-    if (parsed.success) {
-      return { message: parsed.data.message };
-    }
-    if (typeof current !== "object" || !("cause" in current)) {
-      return;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return;
+  const data = findInCauses(error, sandboxValidationErrorPayloadSchema);
+
+  return data && { message: data.message };
 };
 
 export const operationSandboxId = (
