@@ -4,9 +4,14 @@
  * it is aborted, and what it destroys.
  */
 
+import { vi } from "vitest";
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
-import { withMiddlewareFunctions } from "../InngestCommHandler.ts";
+import { internalLoggerSymbol } from "../Inngest.ts";
+import {
+  InngestCommHandler,
+  withMiddlewareFunctions,
+} from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { createSandboxCleanup } from "./cleanup.ts";
 import {
@@ -46,6 +51,14 @@ const runForRequests = async (fn: InngestFunction.Any, requests: number) => {
         stepState = {
           ...stepState,
           [op.id]: { id: op.id, data: op.data },
+        };
+      } else if (
+        op.op === StepOpCode.StepFailed ||
+        op.op === StepOpCode.StepError
+      ) {
+        stepState = {
+          ...stepState,
+          [op.id]: { id: op.id, error: op.error },
         };
       }
     }
@@ -115,6 +128,32 @@ describe("sandbox cleanup defer", () => {
     );
 
     expect(await runForRequests(fn, 10)).toEqual([]);
+  });
+
+  test("group.sandbox() aborts it when the name belongs to another sandbox", async () => {
+    const client = createClient((path, method) => {
+      if (path === "/v2/sandboxes" && method === "POST") {
+        return Response.json(
+          { errors: [{ code: "sandbox_name_taken", message: "name taken" }] },
+          { status: 409 },
+        );
+      }
+
+      return undefined;
+    });
+    const fn = client.createFunction(
+      { id: "grouped", triggers: [{ event: "sandbox/cleanup" }] },
+      async ({ group }) => {
+        await group.sandbox("box", async () => undefined);
+      },
+    );
+
+    const defers = await runForRequests(fn, 2);
+
+    expect(names(defers)).toEqual([
+      "DeferAdd:box:cleanup",
+      "DeferAbort:box:cleanup",
+    ]);
   });
 
   test.each([
@@ -247,5 +286,24 @@ describe("serving the cleanup function", () => {
 
       expect(fns).toEqual([cleanup]);
     }
+  });
+
+  test("a valid served list does not warn that functions are undefined", () => {
+    const { client } = createScopeClient();
+    const warn = vi
+      .spyOn(client[internalLoggerSymbol], "warn")
+      .mockImplementation(() => undefined);
+    const fn = buildScoped(client);
+
+    new InngestCommHandler({
+      client,
+      frameworkName: "test",
+      functions: [fn],
+      handler: () => {
+        return {} as never;
+      },
+    });
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

@@ -518,7 +518,7 @@ export class InngestCommHandler<
       []) as InngestFunction.Any[];
     this.rawFns = withMiddlewareFunctions(this.client, servedFns);
 
-    if (this.rawFns.length !== (options.functions ?? []).length) {
+    if (servedFns.length !== (options.functions ?? []).length) {
       this.client[internalLoggerSymbol].warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );

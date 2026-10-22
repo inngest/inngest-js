@@ -9,6 +9,7 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import { cleanupRegistrarOf } from "./cleanup.ts";
+import { getSandboxError } from "./protocol.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -97,7 +98,17 @@ export const withSandbox = <T>(
     },
     async () => {
       const cleanup = cleanupRegistrarOf(tools)?.(id, { name: options.name });
-      const sandbox = await tools.create({ ...steps.create, id }, options);
+      const sandbox = await tools
+        .create({ ...steps.create, id }, options)
+        .catch((error: unknown) => {
+          // The name belongs to a sandbox this scope never acquired, which its
+          // cleanup must not destroy.
+          if (getSandboxError(error)?.code === "sandbox_name_taken") {
+            cleanup?.abort();
+          }
+
+          throw error;
+        });
 
       try {
         return await callback(sandbox);
