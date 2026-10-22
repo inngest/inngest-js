@@ -159,6 +159,14 @@ export interface BuildOutcome {
   reused: boolean;
 }
 
+/** What a build records in its machine, for the jobs that start from it. */
+export interface BuildInfo {
+  /** How long the job took to build, in milliseconds. */
+  durationMs: number;
+  /** When the snapshot was taken, as an ISO timestamp. */
+  createdAt: string;
+}
+
 export interface JobSummary {
   path: string;
   conclusion: CheckConclusion;
@@ -243,6 +251,11 @@ export interface CiRunScope {
   /** Whether jobs run in runs of their own, as `PipelineConfig.childRuns` says. */
   childRuns: boolean;
   event: unknown;
+  /**
+   * Whether a re-run from a GitHub check asked to build without the cache.
+   * Read from the trigger event, so it is the same on every request.
+   */
+  noCache?: boolean;
   repo?: RepoContext;
   /**
    * The builds `from` has asked for, keyed by request: the parent's job ID
@@ -303,6 +316,17 @@ export interface CiRunScope {
    * are still going, these are completed rather than left spinning.
    */
   openChecks: Map<string, string | undefined>;
+  /**
+   * How long each reused snapshot took to build, by the ID of the job that made
+   * it, for what the run saved from cache. Write-only for jobs, read once the
+   * run is over.
+   */
+  cacheSaved: Map<string, number>;
+  /**
+   * When the run started, for how long it took by the clock. Write-once, and
+   * only read inside the step that completes the pipeline.
+   */
+  startedAt?: number;
   /** This attempt, counting from 0. */
   attempt: number;
   /** How many attempts Inngest makes in all. */
@@ -351,6 +375,8 @@ export interface CiJobScope {
   /** Set when the job builds a snapshot for someone who asked for it. */
   request?: BuildRequest;
   fromSnapshotId?: string;
+  /** The job this one starts from, and whether its snapshot was made before this run. */
+  fromParent?: { id: string; reused: boolean };
   /** Re-runs the `from` parent on this job's machine. Set by `startFrom`. */
   rebuildParent?: () => Promise<void>;
   /**

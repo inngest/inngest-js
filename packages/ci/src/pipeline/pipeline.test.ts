@@ -3638,7 +3638,7 @@ describe("checks", () => {
 
     expect(completed[0]).toMatchObject({
       name: "pr",
-      conclusion: "success",
+      conclusion: "skipped",
       title: "Nothing to do: no relevant changes",
     });
   });
@@ -3666,7 +3666,7 @@ describe("checks", () => {
       expect.objectContaining({
         name: "pr / test",
         conclusion: "failure",
-        title: "`pnpm test` exited with 1",
+        title: "boom (exit 1)",
       }),
       expect.objectContaining({ name: "pr", conclusion: "failure" }),
     ]);
@@ -4422,7 +4422,7 @@ describe("failures that retrying cannot fix", () => {
       }),
     ).toEqual([
       ["pr / build", "failure", "machine didn't start in 2m"],
-      ["pr", "failure", "build: machine didn't start in 2m"],
+      ["pr", "failure", "1 of 1 job failed: build: machine didn't start in 2m"],
     ]);
   });
 
@@ -4516,12 +4516,1100 @@ describe("commit statuses", () => {
         return (request.body as { description: string }).description;
       });
 
-      expect(descriptions).toContain(
-        "`pnpm test` exited with 1: ENOTFOUND localhost",
-      );
+      expect(descriptions).toContain("ENOTFOUND localhost (exit 1)");
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("the pipeline's commit status", () => {
+  test("ends with how many jobs failed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub();
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const test = ci.job("test", async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        const results = await Promise.allSettled([lint(), test()]);
+        const errors = results.flatMap((result) => {
+          return result.status === "rejected" ? [result.reason] : [];
+        });
+
+        if (errors.length > 0) {
+          throw new AggregateError(errors, "jobs failed");
+        }
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const statuses = gh.requests
+        .map((request) => {
+          return request.body as {
+            context: string;
+            state: string;
+            description: string;
+          };
+        })
+        .filter((status) => {
+          return status.context === "pr";
+        });
+
+      expect(statuses.at(0)).toMatchObject({ state: "pending" });
+      expect(statuses.at(-1)).toMatchObject({
+        state: "failure",
+        description: "1 of 2 jobs failed: lint: Error: bad (exit 1)",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("a handler that resolves is a success, however many jobs failed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub();
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.allSettled([lint()]);
+      });
+
+      const result = await runFunction(pipeline, { event: prEvent });
+
+      expect(result.type).toBe("function-resolved");
+
+      const statuses = gh.requests
+        .map((request) => {
+          return request.body as { context: string; state: string };
+        })
+        .filter((status) => {
+          return status.context === "pr";
+        });
+
+      expect(statuses.at(-1)).toMatchObject({ state: "success" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("the lifecycle of a check", () => {
+  const statusesOf = (
+    gh: ReturnType<typeof setupGitHub>["gh"],
+    context: string,
+  ) => {
+    return gh.requests
+      .filter((request) => {
+        return (
+          (request.body as { context?: string } | undefined)?.context ===
+          context
+        );
+      })
+      .map((request) => {
+        const status = request.body as { state: string; description: string };
+
+        return [status.state, status.description];
+      });
+  };
+
+  test("statuses go from queued to running to the result", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const lifecycle = statusesOf(gh, "pr / lint");
+
+      expect(lifecycle.slice(0, 2)).toEqual([
+        ["pending", "Queued"],
+        ["pending", "Running"],
+      ]);
+
+      expect(lifecycle.at(-1)?.[0]).toBe("success");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("every matrix combination is queued before any starts", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const compat = ci.job(
+        {
+          id: "compat",
+          matrix: { axes: { node: ["20", "22"] }, concurrency: 1 },
+        },
+        async () => {},
+      );
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await compat();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const posts = gh.requests.map((request) => {
+        const status = request.body as { context: string; description: string };
+
+        return `${status.context}: ${status.description}`;
+      });
+
+      const firstRunning = posts.findIndex((post) => {
+        return post.startsWith("pr / compat") && post.endsWith("Running");
+      });
+
+      const queued = posts.filter((post) => {
+        return post.startsWith("pr / compat") && post.endsWith("Queued");
+      });
+
+      expect(queued).toHaveLength(2);
+      expect(
+        posts.slice(0, firstRunning).filter((post) => {
+          return post.endsWith("Queued");
+        }),
+      ).toHaveLength(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("checks go from queued to in progress to completed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const lintId = made.find((check) => {
+        return check.name === "pr / lint";
+      })?.id;
+
+      const states = gh.requests
+        .filter((request) => {
+          const body = request.body as
+            | { name?: string; status?: string }
+            | undefined;
+
+          return (
+            request.method !== "GET" &&
+            body?.status !== undefined &&
+            (body.name === "pr / lint" ||
+              request.path.endsWith(`/check-runs/${lintId}`))
+          );
+        })
+        .map((request) => {
+          const body = request.body as { status: string; conclusion?: string };
+
+          return [request.method, body.status, body.conclusion];
+        });
+
+      expect(states).toEqual([
+        ["POST", "queued", undefined],
+        ["PATCH", "in_progress", undefined],
+        ["PATCH", "completed", "success"],
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("a pipeline that skips ends as skipped", async () => {
+    const { ci, reporter } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return ci.skip("nothing changed");
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(reporter.history.at(-1)).toMatchObject({ conclusion: "skipped" });
+  });
+});
+
+describe("how long a pipeline took", () => {
+  test("the title is the clock time, not the sum of the jobs' times", async () => {
+    const { ci, reporter } = setup();
+
+    const jobs = ["a", "b", "c"].map((id) => {
+      return ci.job(id, async () => {
+        await $`pnpm ${id}`;
+      });
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all(
+          jobs.map((job) => {
+            return job();
+          }),
+        );
+      }),
+      { event: prEvent },
+    );
+
+    const done = reporter.history.find((entry) => {
+      return entry.name === "pr" && entry.status === "completed";
+    });
+
+    expect(done?.title).toMatch(/^3 jobs passed in \d+(ms|s)$/);
+    expect(done?.summary).toMatch(/^\*\*Took \d+(ms|s)\*\*/);
+  });
+});
+
+describe("what the cache saved", () => {
+  test("a job that starts from a reused snapshot says how long it took to build", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async () => {
+      const { ci, reporter } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const test = ci.job({ id: "test", from: base }, async () => {
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await test();
+      });
+
+      await runFunction(pipeline, { event: prEvent });
+
+      return reporter.history.filter((entry) => {
+        return entry.name === "pr" && entry.status === "completed";
+      });
+    };
+
+    // Every clock read is a second later than the last, so the build takes time.
+    const realNow = Date.now.bind(Date);
+    let reads = 0;
+
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+
+      return realNow() + reads * 1000;
+    });
+
+    const first = await run().finally(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    expect(first[0]?.title).not.toContain("saved");
+
+    const second = await run();
+
+    expect(second[0]?.title).toMatch(/\(saved \d+s from cache\)$/);
+    expect(second[0]?.summary).toContain("| base |");
+  });
+});
+
+describe("a job's status while it runs in its own run", () => {
+  test("links to the pipeline run, so a cancel of that run can find it", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("statuses");
+
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const own = gh.requests
+        .map((request) => {
+          return request.body as { description: string; target_url: string };
+        })
+        .filter((status) => {
+          return status.description === "Running in its own run";
+        });
+
+      expect(own).toHaveLength(1);
+      expect(own[0]?.target_url).toContain("01TESTRUN");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("a cancelled pipeline's job runs", () => {
+  test("the build function ends its runs when the pipeline run that called them is cancelled", () => {
+    const { ci } = setup();
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const cancelOn = (
+      build?.opts as {
+        cancelOn?: Array<{ event: string; if?: string }>;
+      }
+    )?.cancelOn;
+
+    expect(cancelOn).toContainEqual({
+      event: "inngest/function.cancelled",
+      if: "async.data.run_id == event.data.rootRunId",
+    });
+  });
+});
+
+describe("what a check shows", () => {
+  const checksSetup = () => {
+    const { api, ci, gh } = setupGitHub("checks");
+    const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+    gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+      const body = request.body as { name: string; external_id: string };
+      const created = { id: made.length + 1, ...body };
+
+      made.push(created);
+
+      return { body: created };
+    });
+
+    gh.handle(
+      "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+      () => {
+        return { body: { total_count: made.length, check_runs: made } };
+      },
+    );
+
+    gh.route("GET /repos/inngest/inngest-js/check-runs/*", {
+      output: { summary: "before" },
+    });
+
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+    return { api, ci, gh };
+  };
+
+  const patches = (gh: ReturnType<typeof setupGitHub>["gh"]) => {
+    return gh.requests
+      .filter((request) => {
+        return request.method === "PATCH";
+      })
+      .map((request) => {
+        return request.body as {
+          actions?: Array<{ identifier: string }>;
+          output?: {
+            title?: string;
+            summary?: string;
+            annotations?: unknown[];
+          };
+        };
+      });
+  };
+
+  test("Cancel stays on a check while its job runs in its own run", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = checksSetup();
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const building = patches(gh).filter((body) => {
+        return body.output?.title === "Running in its own run";
+      });
+
+      expect(building).toHaveLength(1);
+      expect(building[0]?.actions?.map((action) => action.identifier)).toEqual([
+        "cancel",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("annotations past the first 50 are steps of their own", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = checksSetup();
+
+      const lint = ci.job("lint", async () => {
+        await report.annotate(
+          Array.from({ length: 120 }, (_, index) => {
+            return { path: "a.ts", line: index + 1, message: "boom" };
+          }),
+        );
+
+        await $`pnpm lint`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const sizes = patches(gh)
+        .filter((body) => {
+          return body.output?.annotations !== undefined;
+        })
+        .map((body) => {
+          return body.output?.annotations?.length;
+        });
+
+      expect(sizes).toEqual([50, 50, 20]);
+
+      expect(
+        result.stepIds.filter((id) => {
+          return id.includes("annotations");
+        }),
+      ).toEqual([
+        "github › check:lint:annotations:2",
+        "github › check:lint:annotations:3",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("a log that holds a code fence is shown in a longer one", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = checksSetup();
+
+      api.script([
+        {
+          match: "pnpm lint",
+          exitCode: 1,
+          stderr: "Error: see\n```ts\ncode\n```\n",
+        },
+      ]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const summaries = patches(gh).map((body) => {
+        return body.output?.summary ?? "";
+      });
+
+      expect(
+        summaries.some((summary) => {
+          return summary.startsWith("````\n");
+        }),
+      ).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("re-running a pipeline", () => {
+  const rerunEvent = (ci: Record<string, unknown>) => {
+    return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
+  };
+
+  test("another pipeline on the same trigger does nothing, and reports nothing", async () => {
+    const { ci, reporter } = setup();
+
+    const pipeline = ci.pipeline({ id: "lint", on: prTrigger }, async () => {});
+
+    const result = await runFunction(pipeline, {
+      event: rerunEvent({ pipeline: "pr", noCache: true }),
+    });
+
+    expect(result.data).toEqual({ skipped: "another pipeline's re-run" });
+    expect(reporter.history).toHaveLength(0);
+  });
+
+  test("a re-run without the cache builds a cached job defined in the pipeline again", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (event: typeof prEvent) => {
+      const { ci } = setup({ api });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          const install = ci.job(
+            { id: "install", cache: { key: "v1" } },
+            async () => {
+              await $`pnpm install`;
+            },
+          );
+
+          await install();
+        }),
+        { event },
+      );
+    };
+
+    await run(prEvent);
+    await run(prEvent);
+
+    expect(userCommands(api)).toHaveLength(1);
+
+    const fresh = await run(rerunEvent({ noCache: true, pipeline: "pr" }));
+
+    expect(fresh.type).toBe("function-resolved");
+    expect(userCommands(api)).toHaveLength(2);
+  });
+});
+
+describe("the Cancel button", () => {
+  const click = async (
+    checkName: string,
+    permission: string,
+  ): Promise<string[]> => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route(
+        "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+        {
+          permission,
+        },
+      );
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const fn = ci.functions().find((candidate) => {
+        return candidate.opts.id === "pr/check-rerequested";
+      });
+
+      if (!fn) {
+        throw new Error("no check-rerequested function");
+      }
+
+      const result = await runFunction(fn, {
+        event: {
+          name: "github/check_run.requested_action",
+          data: {
+            action: "requested_action",
+            requested_action: { identifier: "cancel" },
+            sender: { login: "octocat" },
+            check_run: {
+              name: checkName,
+              external_id: "01RUN:lint",
+              head_sha: "abc1234",
+            },
+            repository: { full_name: "inngest/inngest-js" },
+          },
+        },
+      });
+
+      return result.stepIds;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  test("sends the cancel event for a check of the pipeline, from someone who can write", async () => {
+    expect(await click("pr / lint", "write")).toContain("cancel");
+  });
+
+  test.each([
+    ["someone who can only read", "pr / lint", "read"],
+    ["another pipeline's check", "other / lint", "write"],
+  ])("does nothing for %s", async (_who, name, permission) => {
+    expect(await click(name, permission)).not.toContain("cancel");
+  });
+
+  test("a pipeline's runs end on the cancel event", () => {
+    const { ci } = setup();
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+    const [cancel] =
+      (pipeline.opts as { cancelOn?: Array<{ event: string; if: string }> })
+        .cancelOn ?? [];
+
+    expect(cancel?.event).toBe("ci/run.cancel");
+
+    // A fork can have the same commit, so the repository is part of the match.
+    expect(cancel?.if).toContain(
+      "async.data.repo == event.data.repository.full_name",
+    );
+  });
+
+  test("waiting and running checks carry the button, and finishing takes it away", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const actionsOf = (status: string) => {
+        return gh.requests
+          .filter((request) => {
+            return (
+              request.method !== "GET" &&
+              (request.body as { status?: string }).status === status
+            );
+          })
+          .map((request) => {
+            return (request.body as { actions?: Array<{ identifier: string }> })
+              .actions;
+          });
+      };
+
+      for (const actions of [
+        ...actionsOf("queued"),
+        ...actionsOf("in_progress"),
+      ]) {
+        expect(actions?.map((action) => action.identifier)).toEqual(["cancel"]);
+      }
+
+      for (const actions of actionsOf("completed")) {
+        expect(actions).toEqual([]);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("re-running from a check", () => {
+  const rerunEvent = (ci: Record<string, unknown>) => {
+    return { ...prEvent, data: { ...prEvent.data, _ci: ci } };
+  };
+
+  const commandsRun = (api: ReturnType<typeof createFakeSandboxApi>) => {
+    return userCommands(api).map((argv) => {
+      return argv.join(" ");
+    });
+  };
+
+  test("a re-run without the cache builds a cached job again", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (event: typeof prEvent) => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await base();
+      });
+
+      return runFunction(pipeline, { event });
+    };
+
+    await run(prEvent);
+    await run(prEvent);
+
+    expect(commandsRun(api)).toEqual(["pnpm install"]);
+
+    const fresh = await run(rerunEvent({ noCache: true }));
+
+    expect(fresh.type).toBe("function-resolved");
+    expect(commandsRun(api)).toEqual(["pnpm install", "pnpm install"]);
+  });
+
+  test("a failed check offers a re-run without the cache", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { api, ci, gh } = setupGitHub("checks");
+      const made: Array<{ id: number; name: string; external_id: string }> = [];
+
+      gh.handle("POST /repos/inngest/inngest-js/check-runs", (request) => {
+        const body = request.body as { name: string; external_id: string };
+        const created = { id: made.length + 1, ...body };
+
+        made.push(created);
+
+        return { body: created };
+      });
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        () => {
+          return { body: { total_count: made.length, check_runs: made } };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/*", {});
+
+      api.script([{ match: "pnpm lint", exitCode: 1, stderr: "Error: bad\n" }]);
+
+      const lint = ci.job("lint", async () => {
+        await $`pnpm lint`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      const completed = gh.requests.filter((request) => {
+        return (
+          request.method === "PATCH" &&
+          (request.body as { conclusion?: string }).conclusion === "failure"
+        );
+      });
+
+      expect(completed.length).toBeGreaterThan(0);
+
+      for (const request of completed) {
+        expect((request.body as { actions: unknown[] }).actions).toEqual([
+          {
+            label: "Re-run, no cache",
+            description: "Run again from scratch",
+            identifier: "rerun-fresh",
+          },
+        ]);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("closing what a cancelled run left open", () => {
+  const cancelFor = async (
+    reporter: "checks" | "statuses",
+    seed: (gh: ReturnType<typeof setupGitHub>["gh"]) => void,
+  ) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub(reporter);
+
+      seed(gh);
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      return gh.requests;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  test("check runs that are still queued are closed as well as running ones", async () => {
+    const requests = await cancelFor("checks", (gh) => {
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/check-runs",
+        (request) => {
+          return {
+            body: {
+              total_count: 1,
+              check_runs:
+                request.query.status === "queued"
+                  ? [
+                      {
+                        id: 8,
+                        name: "pr / test",
+                        external_id: "01TESTRUN:test",
+                      },
+                    ]
+                  : [],
+            },
+          };
+        },
+      );
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/8", { id: 8 });
+    });
+
+    expect(
+      requests.filter((request) => {
+        return request.method === "PATCH";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("statuses past the first page are closed too", async () => {
+    const url = "http://localhost:8288/run?runID=01TESTRUN";
+
+    const requests = await cancelFor("statuses", (gh) => {
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      gh.handle(
+        "GET /repos/inngest/inngest-js/commits/abc1234/status",
+        (request) => {
+          return {
+            body: {
+              statuses:
+                request.query.page === "2"
+                  ? [
+                      {
+                        context: "pr / late",
+                        state: "pending",
+                        target_url: url,
+                      },
+                    ]
+                  : Array.from({ length: 100 }, (_, index) => {
+                      return {
+                        context: `other ${index}`,
+                        state: "success",
+                        target_url: "http://elsewhere",
+                      };
+                    }),
+            },
+          };
+        },
+      );
+    });
+
+    expect(
+      requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          return (request.body as { context: string }).context;
+        }),
+    ).toEqual(["pr / late"]);
+  });
+});
+
+describe("a cancelled run's checks", () => {
+  const cancelWith = async (
+    reporter: "checks" | "statuses",
+    eventName: string,
+    seed: (gh: ReturnType<typeof setupGitHub>["gh"]) => void,
+  ) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub(reporter);
+
+      seed(gh);
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      const ended = await runFunction(cleanup, {
+        event: {
+          name: eventName,
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      expect(ended.type).toBe("function-resolved");
+
+      return gh.requests.filter((request) => {
+        return request.method !== "GET";
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  const url = (runId: string) => {
+    return `http://localhost:8288/run?runID=${runId}`;
+  };
+
+  test.each([
+    ["cancelled", "inngest/function.cancelled", ["pr", "pr / lint"]],
+    ["failed", "inngest/function.failed", []],
+  ])("statuses of a run that was %s", async (_how, eventName, expected) => {
+    const posts = await cancelWith("statuses", eventName, (gh) => {
+      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/status", {
+        statuses: [
+          { context: "pr", state: "pending", target_url: url("01TESTRUN") },
+          {
+            context: "pr / lint",
+            state: "pending",
+            target_url: url("01TESTRUN"),
+          },
+          {
+            context: "pr / test",
+            state: "success",
+            target_url: url("01TESTRUN"),
+          },
+          { context: "other", state: "pending", target_url: url("01OTHER") },
+        ],
+      });
+    });
+
+    expect(
+      posts.map((request) => {
+        const status = request.body as { context: string; description: string };
+
+        expect(status.description).toBe("Cancelled");
+
+        return status.context;
+      }),
+    ).toEqual(expected);
+  });
+
+  test("check runs of a cancelled run, jobs included, are completed as cancelled", async () => {
+    const posts = await cancelWith(
+      "checks",
+      "inngest/function.cancelled",
+      (gh) => {
+        gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+          total_count: 3,
+          check_runs: [
+            { id: 1, name: "pr", external_id: "01TESTRUN:pipeline" },
+            { id: 2, name: "pr / lint", external_id: "01TESTRUN:lint" },
+            { id: 3, name: "other", external_id: "01OTHER:pipeline" },
+          ],
+        });
+
+        gh.route("PATCH /repos/inngest/inngest-js/check-runs/1", { id: 1 });
+        gh.route("PATCH /repos/inngest/inngest-js/check-runs/2", { id: 2 });
+      },
+    );
+
+    expect(
+      posts.map((request) => {
+        return [
+          request.path,
+          (request.body as { conclusion: string }).conclusion,
+        ];
+      }),
+    ).toEqual([
+      [expect.stringContaining("/check-runs/1"), "cancelled"],
+      [expect.stringContaining("/check-runs/2"), "cancelled"],
+    ]);
   });
 });
 

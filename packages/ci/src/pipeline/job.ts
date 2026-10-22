@@ -55,9 +55,14 @@ import type {
 import {
   durationToMs,
   errorMessage,
+  failureLine,
+  fenceFor,
   formatDuration,
   isSandboxNameTaken,
+  maxStatusDescription,
   shortReason,
+  stripAnsi,
+  truncateLabel,
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
@@ -346,7 +351,7 @@ export const builtResult = (
   id: string,
   rest: Pick<
     CacheBuildResult,
-    "createdSnapshots" | "warnings" | "report" | "apis"
+    "createdSnapshots" | "warnings" | "report" | "apis" | "cacheSaved"
   >,
 ): CacheBuildResult => {
   const { outcome, summary, output } = sink;
@@ -496,7 +501,25 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     check,
     lookup = true,
   } = args;
-  const { target, exclude, broken, unnamed, direct, base } = requestFrom(args);
+  const requested = requestFrom(args);
+  const { target, unnamed, direct, base } = requested;
+
+  // A re-run without the cache treats the snapshot that's there as broken, so
+  // the build replaces it rather than finding it again.
+  const bust = lookup && !direct && run.noCache === true;
+
+  const stale = bust
+    ? await lookupBeforeBuild(
+        run,
+        { id: config.id, path, stepPath },
+        config.cache,
+        target,
+        requested.exclude,
+      )
+    : undefined;
+
+  const exclude = stale?.snapshotId ?? requested.exclude;
+  const broken = stale ? true : requested.broken;
   const origin = matrixOriginOf(config);
   const chain = chainOf(run);
 
@@ -541,7 +564,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
   // A snapshot that is already there needs no build run, and no wait behind
   // the builds that are queued for its name. A caller that has just looked it
   // up itself has no use for a second lookup.
-  if (lookup && !direct) {
+  if (lookup && !direct && !bust) {
     const hit = await lookupBeforeBuild(
       run,
       { id: config.id, path, stepPath },
@@ -640,6 +663,10 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
 
   for (const [name, count] of Object.entries(built.apis ?? {})) {
     run.apis[name as ApiName] += count;
+  }
+
+  for (const [id, ms] of Object.entries(built.cacheSaved ?? {})) {
+    run.cacheSaved.set(id, ms);
   }
 
   for (const id of built.createdSnapshots) {
@@ -804,6 +831,16 @@ const jobSteps = async ({
     ...(checkName ? { name: checkName } : {}),
   };
 
+  // Open from the moment it's shown, so a run that ends first closes it. A
+  // matrix queues all its combinations at once, when its axes are known.
+  if (checked) {
+    run.openChecks.set(scope.path, checkName);
+  }
+
+  if (checked && !matrixOriginOf(config)) {
+    await checks.jobQueued(target);
+  }
+
   // A job's name includes the snapshot of the parent it starts from, so the
   // parent comes first: a parent that changed gives this job a new name. A
   // parent that failed fails this job too, once its check has started.
@@ -856,14 +893,21 @@ const jobSteps = async ({
     run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
   }
 
-  const hit = builtAs
+  const found = builtAs
     ? await lookupCache(scope, config.cache, builtAs, request?.exclude)
     : undefined;
+
+  // A re-run without the cache builds again, and treats the snapshot that's
+  // there as broken, so the new one replaces it under the name.
+  const stale = run.noCache && found ? found.snapshotId : undefined;
+  const hit = stale ? undefined : found;
 
   if (hit) {
     const title = restoreFromCache(scope, hit);
 
     if (checked) {
+      run.openChecks.delete(scope.path);
+
       await checks.jobStart(target);
       await checks.jobComplete({ ...target, conclusion: "success", title });
     }
@@ -878,10 +922,6 @@ const jobSteps = async ({
   const startedAt =
     checkStartedAt ??
     (await durableNow(run, `start:${scope.path}`, scope.path, "started"));
-
-  if (checked) {
-    run.openChecks.set(scope.path, checkName);
-  }
 
   try {
     let reusedTitle: string | undefined;
@@ -963,7 +1003,7 @@ const jobSteps = async ({
         }
 
         if (builtAs) {
-          await snapshotBuilt(scope, builtAs);
+          await snapshotBuilt(scope, builtAs, startedAt, stale);
           await confirmBuilt(scope, builtAs);
         }
       } catch (error) {
@@ -1043,7 +1083,6 @@ const jobSteps = async ({
       const result = {
         conclusion,
         title,
-        ...jobErrorDetail(error),
         summary: jobFailureSummary(error, scope),
         annotations: scope.annotations,
       };
@@ -1143,10 +1182,22 @@ const restoreFromCache = (scope: CiJobScope, hit: CachedSnapshot): string => {
 const snapshotBuilt = async (
   scope: CiJobScope,
   target: CacheTarget,
+  /** When the job started, so the snapshot can say how long it took. */
+  startedAt: number,
+  /** A snapshot a re-run without the cache replaces. */
+  stale?: string,
 ): Promise<void> => {
   const { run } = scope;
 
-  await saveOutputs(scope);
+  await saveOutputs(
+    scope,
+    scope.machine && scope.config.cache
+      ? {
+          durationMs: Date.now() - startedAt,
+          createdAt: new Date().toISOString(),
+        }
+      : undefined,
+  );
 
   if (!scope.machine) {
     if (scope.config.cache) {
@@ -1163,8 +1214,10 @@ const snapshotBuilt = async (
   const taken = await snapshotMachine(scope, {
     target,
     cache: scope.config.cache,
-    ...(scope.request?.exclude ? { exclude: scope.request.exclude } : {}),
-    ...(scope.request?.broken ? { broken: true } : {}),
+    ...((scope.request?.exclude ?? stale)
+      ? { exclude: scope.request?.exclude ?? stale }
+      : {}),
+    ...(scope.request?.broken || stale ? { broken: true } : {}),
     ...(scope.request?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
@@ -1211,7 +1264,13 @@ const warnBuiltInRun = (run: CiRunScope, jobId: string): void => {
 
 const jobErrorTitle = (error: unknown): string => {
   if (error instanceof CommandFailedError) {
-    return `\`${error.command.join(" ")}\` exited with ${error.exitCode}`;
+    const suffix = ` (exit ${error.exitCode})`;
+    const reason = failureLine(error.stderrTail, error.stdoutTail);
+
+    // The reason is why the job failed; the command is only there without one.
+    return reason
+      ? `${truncateLabel(reason, maxStatusDescription - suffix.length)}${suffix}`
+      : `\`${error.command.join(" ")}\` exited with ${error.exitCode}`;
   }
 
   if (error instanceof CommandTimeoutError) {
@@ -1221,33 +1280,18 @@ const jobErrorTitle = (error: unknown): string => {
   return shortReason(error) || "Failed";
 };
 
-/** A failed command's last line of error output, which is the usual reason. */
-const jobErrorDetail = (error: unknown): { detail?: string } => {
-  if (!(error instanceof CommandFailedError)) {
-    return {};
-  }
-
-  const detail = (error.stderrTail || error.stdoutTail)
-    .split("\n")
-    .map((line) => {
-      return line.trim();
-    })
-    .filter(Boolean)
-    .at(-1);
-
-  return detail ? { detail } : {};
-};
-
 const jobFailureSummary = (error: unknown, scope: CiJobScope): string => {
   const parts: string[] = [];
 
   if (error instanceof CommandFailedError) {
-    const output = `${error.stdoutTail}\n${error.stderrTail}`
+    const output = stripAnsi(`${error.stdoutTail}\n${error.stderrTail}`)
       .split("\n")
       .slice(-60)
       .join("\n");
 
-    parts.push(`\`\`\`\n${output}\n\`\`\``);
+    const fence = fenceFor(output);
+
+    parts.push(`${fence}\n${output}\n${fence}`);
   } else if (error instanceof Error) {
     parts.push(error.message);
   }

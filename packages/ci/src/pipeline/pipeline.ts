@@ -21,7 +21,7 @@ import {
 } from "../errors.ts";
 import type { GitHubProvider } from "../github/auth.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { pipelineSummary } from "../github/checks.ts";
+import { pipelineSummary, savedFromCache, wallTime } from "../github/checks.ts";
 import {
   commentAuthor,
   commentBody,
@@ -70,6 +70,9 @@ import {
   runInScope,
   withScopePreserved,
 } from "./scope.ts";
+
+/** Sent by a check's Cancel button, to end the runs of a pipeline for a commit. */
+export const cancelRunEvent = "ci/run.cancel";
 
 /**
  * Options for every function that runs a pipeline: pipelines, cache builds and
@@ -140,6 +143,14 @@ export const definePipeline = ({
       id: config.id,
       triggers,
       ...pipelineFunctionOptions,
+      // The Cancel button on a check ends this pipeline's runs for the commit.
+      // A trigger's commit is where its event keeps it.
+      cancelOn: [
+        {
+          event: cancelRunEvent,
+          if: `async.data.app == "${client.id}" && async.data.pipeline == "${config.id}" && async.data.repo == event.data.repository.full_name && (async.data.sha == event.data.pull_request.head.sha || async.data.sha == event.data.after || async.data.sha == event.data.merge_group.head_sha)`,
+        },
+      ],
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
@@ -156,7 +167,7 @@ export const definePipeline = ({
   return {
     fn,
     config,
-    generated: generatedFunctions({ client, config }),
+    generated: generatedFunctions({ client, config, internals }),
   };
 };
 
@@ -231,6 +242,7 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     childRuns: config.childRuns !== false,
     event: ctx.event,
+    ...rerunOf(ctx.event),
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
@@ -246,6 +258,7 @@ const newRunScope = ({
     createdSnapshots: new Set(),
     summaries: [],
     openChecks: new Map(),
+    cacheSaved: new Map(),
     attempt,
     maxAttempts,
     willRetry: (error) => {
@@ -305,6 +318,17 @@ const runPipelineAttempt = async ({
     );
   }
 
+  // A re-run of one pipeline's check goes out as an event every pipeline on
+  // the trigger hears. The others have nothing to re-run, and a run that did
+  // nothing must not report success over the result they already have.
+  const rerunPipeline = (
+    ctx.event as { data?: { _ci?: { pipeline?: string } } } | undefined
+  )?.data?._ci?.pipeline;
+
+  if (!build && rerunPipeline !== undefined && rerunPipeline !== config.id) {
+    return { skipped: "another pipeline's re-run" };
+  }
+
   const run = newRunScope({
     internals,
     config,
@@ -335,6 +359,10 @@ const runPipelineAttempt = async ({
         return runStartMetadata(run);
       },
     });
+
+    if (checkStarted !== undefined) {
+      run.startedAt = checkStarted;
+    }
 
     if (checkStarted === undefined) {
       await metadataStep(run, "ci › metadata:start", () => {
@@ -382,9 +410,19 @@ const runPipelineAttempt = async ({
     };
 
     try {
-      await closeJobChecks(run, checks);
+      try {
+        await closeJobChecks(run, checks);
 
-      run.ci.hooks.warnings(run);
+        run.ci.hooks.warnings(run);
+      } catch (error) {
+        // However the run ended, its status says so, unless another attempt
+        // will.
+        if (!run.willRetry(error)) {
+          await completePipeline(run, checks, outcome);
+        }
+
+        throw error;
+      }
 
       await completePipeline(run, checks, outcome);
     } catch (error) {
@@ -417,6 +455,13 @@ const runPipelineAttempt = async ({
       ? { skipped: "not permitted" }
       : outcome.result;
   });
+};
+
+/** What a re-run from a GitHub check asked for, from its event's `_ci`. */
+const rerunOf = (event: unknown): Pick<CiRunScope, "noCache"> => {
+  const ci = (event as { data?: { _ci?: { noCache?: boolean } } })?.data?._ci;
+
+  return ci?.noCache ? { noCache: true } : {};
 };
 
 /** How the handler ended, caught rather than thrown. */
@@ -472,7 +517,7 @@ const settle = async ({
 const conclusionOf = (outcome: Outcome): CheckConclusion => {
   switch (outcome.kind) {
     case "ran": {
-      return "success";
+      return asSkip(outcome.result) ? "skipped" : "success";
     }
 
     case "denied": {
@@ -749,35 +794,39 @@ const pipelineSummaryWithReports = (run: CiRunScope): string => {
   return [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
 };
 
-const summaryTitle = (run: CiRunScope): string => {
+const failedJobsTitle = (run: CiRunScope): string | undefined => {
   const failed = run.summaries.filter((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed.length > 0) {
-    return `${failed
-      .map((summary) => {
-        return summary.path;
-      })
-      .join(", ")} failed`;
+  return failed.length === 0
+    ? undefined
+    : `${failed.length} of ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} failed`;
+};
+
+const summaryTitle = (run: CiRunScope): string => {
+  const failed = failedJobsTitle(run);
+
+  if (failed) {
+    return failed;
   }
 
-  const total = run.summaries.reduce((sum, summary) => {
-    return sum + summary.durationMs;
-  }, 0);
+  const saved = savedFromCache(run);
+  const wall = wallTime(run);
 
   return run.summaries.length === 0
     ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed in ${formatDuration(total)}`;
+    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed${wall === undefined ? "" : ` in ${formatDuration(wall)}`}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {
-  const failed = run.summaries.find((summary) => {
+  const count = failedJobsTitle(run);
+  const first = run.summaries.find((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed) {
-    return `${failed.path}: ${failed.title}`;
+  if (count && first) {
+    return `${count}: ${first.path}: ${first.title}`;
   }
 
   return error instanceof Error
@@ -867,9 +916,12 @@ const permissionForComment = (
 export const cleanupFunction = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
-  config: Pick<PipelineConfig, "id">;
+  config: Pick<PipelineConfig, "id" | "check">;
+  /** Given, a cancelled run's pipeline check is completed as cancelled. */
+  internals?: CiInternals;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
@@ -912,6 +964,28 @@ export const cleanupFunction = ({
         },
       );
 
+      // A cancelled run never reaches its own completion, so its check would
+      // stay in progress. What it needs comes from the run's trigger event.
+      const repo = repoContextFromEvent(event?.data?.event);
+      const checkName =
+        config.check === false ? undefined : (config.check?.name ?? config.id);
+
+      if (
+        internals &&
+        runId &&
+        event?.name === internalEvents.FunctionCancelled &&
+        checkName &&
+        repo?.sha
+      ) {
+        await step.run(stepOptions(steps.endCancelledCheck()), async () => {
+          await (internals.checks as CheckReporter).runCancelled({
+            run: { runId, checkName, repo },
+          });
+
+          return null;
+        });
+      }
+
       // The runs waiting on it would otherwise wait for a build that is gone.
       // A build that ended on its own already told them, and one that told them
       // must not be counted as failing twice.
@@ -938,12 +1012,14 @@ export const cleanupFunction = ({
 const generatedFunctions = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
   config: PipelineConfig;
+  internals: CiInternals;
 }): InngestFunction.Any[] => {
   const functions: InngestFunction.Any[] = [
-    cleanupFunction({ client, config }),
+    cleanupFunction({ client, config, internals }),
   ];
 
   functions.push(
@@ -953,11 +1029,38 @@ const generatedFunctions = ({
         triggers: [
           { event: "github/check_run.rerequested" },
           { event: "github/check_suite.rerequested" },
+          { event: "github/check_run.requested_action" },
         ],
       },
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
       async ({ event, step }: any) => {
-        const { rerunEventFor } = await import("./rerun.ts");
+        const { isOurCheck, rerunEventFor, mayRerun } = await import(
+          "./rerun.ts"
+        );
+
+        // A button anyone who can see the check could click, so it needs the
+        // same permission as pushing to the repository.
+        if (!(await mayRerun({ event, step }))) {
+          return { rerun: false, reason: "not permitted" };
+        }
+
+        if (event?.data?.requested_action?.identifier === "cancel") {
+          if (!isOurCheck(event, config)) {
+            return { rerun: false, reason: "not this pipeline's check" };
+          }
+
+          await step.sendEvent("cancel", {
+            name: cancelRunEvent,
+            data: {
+              app: client.id,
+              pipeline: config.id,
+              repo: event.data.repository?.full_name,
+              sha: event.data.check_run?.head_sha,
+            },
+          });
+
+          return { rerun: false, reason: "cancelled" };
+        }
 
         return rerunEventFor({ event, step, client, config });
       },
