@@ -29,6 +29,12 @@ import {
 import type { FunctionConfig } from "../../types.ts";
 import { onShutdown } from "./os.ts";
 import type { RequestHandler } from "./strategies/index.ts";
+import {
+  createReporter,
+  detectOutput,
+  isOn,
+  type TapOutput,
+} from "./tapOutput.ts";
 
 export interface TapSettings {
   /** Function IDs or full slugs the tap wants. */
@@ -41,15 +47,10 @@ export interface TapSettings {
   output: TapOutput;
 }
 
-/**
- * How tap reports: `human` lines, `json` lines for programs, or `agent` for
- * coding agents (human lines plus guidance on what to do next).
- */
-export type TapOutput = "human" | "json" | "agent";
-
 interface TapOptions {
   settings: TapSettings;
   mode: Mode;
+  baseUrl: string;
   env?: string;
 
   /** Where output lines go. Defaults to stderr. */
@@ -60,55 +61,6 @@ interface TapOptions {
 }
 
 type TapEvent = "taken" | "nacked" | "done" | "error";
-
-const isOn = (value: string | undefined): boolean => {
-  return value === "1" || value === "true";
-};
-
-export const detectOutput = (
-  env: Record<string, string | undefined>,
-): TapOutput => {
-  const given = env[envKeys.InngestTapOutput];
-  if (given === "json" || given === "human" || given === "agent") {
-    return given;
-  }
-
-  if (env[envKeys.ClaudeCode] || isOn(env[envKeys.InngestAgent])) {
-    return "agent";
-  }
-
-  return process.stderr.isTTY ? "human" : "json";
-};
-
-const GUIDE = [
-  "tap: this connects your code to real Inngest runs. Flow: pull a failing run, write a failing test, fix it, see it pass, tap it (shadow and once first), then ship.",
-  "tap: every line is one request or step. Open its link to see the run. Shadow mode runs your code for real, side effects included.",
-];
-
-/**
- * Print events as JSON lines or as human text, plus the guide for agents. Used
- * by tap and pull so both read the same.
- */
-export const createReporter = (
-  output: TapOutput,
-  write: (line: string) => void = (line) => {
-    process.stderr.write(`${line}\n`);
-  },
-) => {
-  return {
-    emit(event: string, human: string, fields: Json = {}): void {
-      write(output === "json" ? JSON.stringify({ event, ...fields }) : human);
-    },
-
-    guide(): void {
-      if (output === "agent") {
-        GUIDE.forEach(write);
-      }
-    },
-  };
-};
-
-type Json = Record<string, unknown>;
 
 /**
  * Read the tap settings from the environment. Returns `undefined` when tap mode
@@ -144,6 +96,7 @@ export const readTapSettings = (
  */
 export const createTap = (opts: {
   mode: Mode;
+  baseUrl: string;
   env?: string;
 }): Tap | undefined => {
   const settings = readTapSettings();
@@ -185,8 +138,9 @@ const endsRun = (response: SDKResponse): boolean => {
 
 export class Tap {
   private readonly settings: TapSettings;
-  private readonly slugs = new Set<string>();
-  private readonly found = new Set<string>();
+
+  /** Selected function slug to the requested name it satisfied. */
+  private readonly selected = new Map<string, string>();
   private readonly options: TapOptions;
   private readonly reporter;
   private stopping = false;
@@ -221,8 +175,7 @@ export class Tap {
       });
 
       if (wanted) {
-        this.slugs.add(config.id);
-        this.found.add(wanted);
+        this.selected.set(config.id, wanted);
       }
 
       return Boolean(wanted);
@@ -231,8 +184,10 @@ export class Tap {
 
   /** Fail early if a requested function exists in none of the apps. */
   assertAllFound(): void {
+    const found = new Set(this.selected.values());
+
     for (const fn of this.settings.functions) {
-      if (!this.found.has(fn)) {
+      if (!found.has(fn)) {
         throw new Error(`Tap function "${fn}" not found in the connected apps`);
       }
     }
@@ -245,13 +200,17 @@ export class Tap {
   }
 
   /**
-   * Stop taking requests. Runs that were held sticky are released on their
-   * next reply. A second shutdown signal drops everything immediately; sticky
-   * records then lapse on the server.
+   * Stop taking requests. Requests still running reply `sticky=false`; idle
+   * sticky runs lapse by TTL on the server. A second shutdown signal drops
+   * everything immediately. Calling it again does nothing.
    *
    * @returns Removes the second-signal handler.
    */
   drain(): () => void {
+    if (this.stopping) {
+      return () => {};
+    }
+
     this.stopping = true;
     this.reporter.emit(
       "draining",
@@ -311,7 +270,7 @@ export class Tap {
   }
 
   private admit(msg: GatewayExecutorRequestData): boolean {
-    if (this.stopping || !this.slugs.has(msg.functionSlug)) {
+    if (this.stopping || !this.selected.has(msg.functionSlug)) {
       return false;
     }
 
@@ -393,6 +352,7 @@ export class Tap {
     const traceUrl = getRunUrl({
       runId: msg.runId,
       mode: this.options.mode,
+      baseUrl: this.options.baseUrl,
       env: this.options.env,
     });
     const step = msg.stepId ? ` step=${msg.stepId}` : "";

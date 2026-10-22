@@ -30,15 +30,13 @@ import { envKeys, headerKeys } from "../../helpers/consts.ts";
 import { getProcessEnv, type Mode } from "../../helpers/env.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import { resolveApiBaseUrl } from "../../helpers/url.ts";
-import {
-  GatewayExecutorRequestData,
-  SDKResponseStatus,
-} from "../../proto/src/components/connect/protobuf/connect.ts";
 import { _internals } from "../execution/engine.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { prepareConnectionConfig } from "./config.ts";
-import type { RequestHandler } from "./strategies/index.ts";
-import { createReporter, detectOutput } from "./tap.ts";
+import { replayRun } from "./pullReplay.ts";
+import { writeTestScaffold } from "./pullTest.ts";
+import { createReporter, detectOutput } from "./tapOutput.ts";
 import type { ConnectApp } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -53,21 +51,21 @@ export interface PullSettings {
   testPath?: string;
 }
 
-interface RecordedStep {
+export interface RecordedStep {
   id: string;
   hashed: string;
   data?: unknown;
   failed: boolean;
 }
 
-interface RecordedRun {
+export interface RecordedRun {
   runId: string;
   functionSlug: string;
   events: Json[];
   steps: RecordedStep[];
 }
 
-interface StepDiff {
+export interface StepDiff {
   id: string;
 
   /**
@@ -222,20 +220,9 @@ export const fetchRecordedRun = async (opts: {
       return step !== undefined;
     });
 
-  const missing = steps.filter((step) => {
-    return step.data === undefined && !step.failed;
-  });
-  if (steps.length === 0 || missing.length > 0) {
+  if (steps.every((step) => step.data === undefined)) {
     throw new PullDataError(
-      steps.length === 0
-        ? `The trace for run ${opts.runId} has no steps with recorded outputs. The server may not store outputs, or the run has none.`
-        : `The server returned no output for step(s) ${missing
-            .map((step) => {
-              return step.id;
-            })
-            .join(
-              ", ",
-            )} of run ${opts.runId}. Outputs may be missing or truncated, so Pull cannot reproduce this run.`,
+      `The trace for run ${opts.runId} has no recorded step outputs. The server may not store outputs, or the run has no steps.`,
     );
   }
 
@@ -245,218 +232,6 @@ export const fetchRecordedRun = async (opts: {
     events,
     steps,
   };
-};
-
-const diffStatus = (
-  ran: boolean,
-  replayed: unknown,
-  rec: RecordedStep | undefined,
-): StepDiff["status"] => {
-  if (!rec) {
-    return "new";
-  }
-
-  if (rec.failed) {
-    return ran ? "fixed" : "failed";
-  }
-
-  if (!ran) {
-    return "unsupported";
-  }
-
-  return JSON.stringify(replayed) === JSON.stringify(rec.data)
-    ? "same"
-    : "changed";
-};
-
-/**
- * Replay the recorded run on the current code. Each step result is compared to
- * the recorded one, then the recorded one is fed forward so a difference does
- * not cascade into later steps. Stops at the first step that was not recorded
- * as completed, without running it again.
- */
-export const replayRun = async (opts: {
-  recorded: RecordedRun;
-  handler: RequestHandler;
-  appName: string;
-  functionSlug: string;
-  stopAfter?: string;
-}): Promise<StepDiff[]> => {
-  const { recorded } = opts;
-  const byHash = new Map(
-    recorded.steps.map((step) => {
-      return [step.hashed, step];
-    }),
-  );
-  const memo: Record<string, { data: unknown }> = {};
-  const stack: string[] = [];
-  const diffs: StepDiff[] = [];
-  const queue: Array<string | undefined> = [undefined];
-  let requests = 0;
-
-  const request = (stepId: string | undefined) => {
-    requests += 1;
-
-    return GatewayExecutorRequestData.create({
-      requestId: `pull-${requests}`,
-      appName: opts.appName,
-      functionSlug: opts.functionSlug,
-      stepId,
-      runId: recorded.runId,
-      leaseId: "pull",
-      requestPayload: new TextEncoder().encode(
-        JSON.stringify({
-          event: recorded.events[0] ?? {},
-          events: recorded.events,
-          steps: memo,
-          ctx: {
-            run_id: recorded.runId,
-            attempt: 0,
-            stack: { stack, current: stack.length - 1 },
-          },
-          version: 1,
-        }),
-      ),
-    });
-  };
-
-  while (queue.length > 0) {
-    const response = await opts.handler(request(queue.shift()));
-
-    if (response.status === SDKResponseStatus.ERROR) {
-      diffs.push({
-        id: opts.functionSlug,
-        status: "failed",
-        replayed: new TextDecoder().decode(response.body),
-      });
-
-      return diffs;
-    }
-
-    if (response.status !== SDKResponseStatus.NOT_COMPLETED) {
-      break;
-    }
-
-    const ops = JSON.parse(new TextDecoder().decode(response.body)) as Json[];
-    for (const op of ops) {
-      const id = String(op.id);
-      const rec = byHash.get(id);
-
-      if (op.op === "StepPlanned") {
-        queue.push(id);
-        continue;
-      }
-
-      const replayed = op.op === "StepRun" ? op.data : (op.error ?? op.op);
-      const status = diffStatus(op.op === "StepRun", replayed, rec);
-      diffs.push({
-        id: rec?.id ?? String(op.displayName ?? op.name ?? id),
-        status,
-        recorded: rec?.data,
-        replayed,
-      });
-
-      if (!rec || (rec.failed && status !== "fixed")) {
-        return diffs;
-      }
-
-      memo[id] = { data: rec.failed ? replayed : (rec.data ?? null) };
-      stack.push(id);
-
-      if (opts.stopAfter === rec.id) {
-        return diffs;
-      }
-    }
-
-    if (queue.length === 0 && ops.length > 0) {
-      queue.push(undefined);
-    }
-  }
-
-  if (!opts.stopAfter) {
-    for (const rec of recorded.steps) {
-      if (!diffs.some((diff) => diff.id === rec.id)) {
-        diffs.push({ id: rec.id, status: "missing", recorded: rec.data });
-      }
-    }
-  }
-
-  return diffs;
-};
-
-/**
- * Write a JSON fixture and an `@inngest/test` scaffold. The test mocks every
- * recorded step except the target by its real ID, and runs the target on your
- * code with the production event.
- */
-export const writeTestScaffold = async (opts: {
-  recorded: RecordedRun;
-  testPath: string;
-  step?: string;
-}): Promise<{ fixturePath: string; target: string }> => {
-  const { recorded } = opts;
-  const targetStep =
-    recorded.steps.find((step) => {
-      return step.id === opts.step;
-    }) ??
-    recorded.steps.find((step) => {
-      return step.failed;
-    }) ??
-    recorded.steps[recorded.steps.length - 1];
-  const target = targetStep?.id ?? "";
-  const fixturePath = `${opts.testPath.replace(/\.[cm]?[jt]sx?$/, "")}.fixture.json`;
-  const fixtureFile = fixturePath.split(/[\\/]/).pop();
-
-  const fixture = {
-    runId: recorded.runId,
-    function: recorded.functionSlug,
-    target,
-    events: recorded.events,
-    steps: recorded.steps.map((step) => {
-      return { id: step.id, data: step.data, failed: step.failed };
-    }),
-  };
-
-  const test = `import { InngestTestEngine } from "@inngest/test";
-import { describe, expect, it } from "vitest";
-import fixture from "./${fixtureFile}";
-// Edit this import: point it at the function with id ${JSON.stringify(recorded.functionSlug)}.
-// Importing JSON needs "resolveJsonModule" in your tsconfig.
-import { fn } from "./path-to-your-function";
-
-describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
-  it(${JSON.stringify(`${target} with production inputs`)}, async () => {
-    const t = new InngestTestEngine({ function: fn });
-
-    const { result } = await t.executeStep(fixture.target, {
-      events: fixture.events,
-      steps: fixture.steps
-        .filter((step) => {
-          return step.id !== fixture.target && !step.failed;
-        })
-        .map((step) => {
-          return {
-            id: step.id,
-            handler() {
-              return step.data;
-            },
-          };
-        }),
-    });
-
-    expect(result).not.toHaveProperty("error");
-
-    // Pin the behaviour you want. Production recorded this for the target:
-    // expect(result).toEqual(${JSON.stringify(targetStep?.data) ?? "undefined"});
-  });
-});
-`;
-
-  const { writeFile } = await import("node:fs/promises");
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await writeFile(opts.testPath, test);
-
-  return { fixturePath, target };
 };
 
 /**
@@ -497,11 +272,23 @@ export const runPull = async (
       return;
     }
 
-    const { requestHandlers } = prepareConnectionConfig(apps, client);
-    const appName = client.id;
-    const handler = requestHandlers[appName];
-    if (!handler) {
-      throw new PullDataError(`No app "${appName}" to replay the run on`);
+    const app =
+      apps.find((candidate) => {
+        const fns = (candidate.functions ??
+          candidate.client.funcs) as InngestFunction.Any[];
+
+        return fns.some((fn) => {
+          return fn.id(candidate.client.id) === recorded.functionSlug;
+        });
+      }) ?? (apps.length === 1 ? apps[0] : undefined);
+    const appName = app?.client.id;
+    const handler = appName
+      ? prepareConnectionConfig(apps, client).requestHandlers[appName]
+      : undefined;
+    if (!appName || !handler) {
+      throw new PullDataError(
+        `No connected app has the function "${recorded.functionSlug}" to replay the run on`,
+      );
     }
 
     const diffs = await replayRun({

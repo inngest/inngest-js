@@ -121,7 +121,11 @@ export function prepareConnectionConfig(
     connect: "v1",
   };
 
-  const tap = createTap({ mode: inngest.mode, env: envName });
+  const tap = createTap({
+    mode: inngest.mode,
+    baseUrl: inngest.apiBaseUrl,
+    env: envName,
+  });
 
   const functions = collectFunctions(apps);
 

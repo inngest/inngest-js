@@ -65,6 +65,31 @@ describe("ConnectionCore handshake", () => {
     });
   });
 
+  describe("start hook", () => {
+    test("takes the session from start() and never calls the start endpoint", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock;
+      const start = vi.fn(async () => {
+        return {
+          connectionId: "conn-hook",
+          gatewayEndpoint: "ws://gateway.test/connect",
+          gatewayGroup: "group-1",
+          sessionToken: "session-token",
+        };
+      });
+
+      const helpers = createTestCore({ config: { start } });
+      void helpers.core.start();
+      await flushMicrotasks();
+      await driveHandshake(MockWebSocket.instances[0]!);
+      await flushMicrotasks();
+
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(helpers.core.connectionId).toBe("conn-hook");
+    });
+  });
+
   describe("16. HTTP 429 rate limit", () => {
     test("reconnects after 429 response", async () => {
       const fetchMock = vi.fn();

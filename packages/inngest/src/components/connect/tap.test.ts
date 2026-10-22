@@ -17,12 +17,8 @@ import { parseGatewayExecutorRequest } from "./messages.ts";
 import { ConnectionCore } from "./strategies/core/connection.ts";
 import { MockGateway } from "./strategies/core/mock-gateway.ts";
 import type { RequestHandler } from "./strategies/index.ts";
-import {
-  readTapSettings,
-  Tap,
-  type TapOutput,
-  type TapSettings,
-} from "./tap.ts";
+import { readTapSettings, Tap, type TapSettings } from "./tap.ts";
+import type { TapOutput } from "./tapOutput.ts";
 import { ConnectionState } from "./types.ts";
 
 const baseSettings: TapSettings = {
@@ -111,7 +107,11 @@ describe("function selection", () => {
   ] as FunctionConfig[];
 
   it("keeps the wanted functions by id or slug", () => {
-    const tap = new Tap({ settings: baseSettings, mode: "dev" });
+    const tap = new Tap({
+      settings: baseSettings,
+      mode: "dev",
+      baseUrl: "http://localhost:8288",
+    });
 
     expect(tap.select("app", configs)).toEqual([{ id: "app-test-fn" }]);
     expect(() => {
@@ -123,6 +123,7 @@ describe("function selection", () => {
     const tap = new Tap({
       settings: { ...baseSettings, functions: ["nope"] },
       mode: "dev",
+      baseUrl: "http://localhost:8288",
     });
 
     tap.select("app", configs);
@@ -160,6 +161,7 @@ describe("tap over the mock gateway", () => {
     const tap = new Tap({
       settings: { ...baseSettings, ...settings },
       mode: "dev",
+      baseUrl: "http://localhost:8288",
       write: (line) => {
         lines.push(line);
       },
@@ -218,6 +220,7 @@ describe("tap over the mock gateway", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await core?.close();
     await gateway.stop();
   });
@@ -396,10 +399,25 @@ describe("tap over the mock gateway", () => {
 
   it("drain releases sticky runs and a second signal drops everything", async () => {
     const exit = vi.fn();
+    const listeners: Array<() => void> = [];
+    vi.spyOn(process, "on").mockImplementation(((
+      _signal: string,
+      fn: () => void,
+    ) => {
+      listeners.push(fn);
+
+      return process;
+    }) as never);
+    let started = false;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const tap = await start(
       { sticky: true },
       async (msg) => {
-        await sleep(100);
+        started = true;
+        await gate;
 
         return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
       },
@@ -407,15 +425,20 @@ describe("tap over the mock gateway", () => {
     );
 
     gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
-    await sleep(20);
+    await waitFor(() => {
+      return started;
+    });
     const stopListening = tap.drain();
+    release();
     await waitFor(() => {
       return replies().length === 1;
     });
 
     expect(replies()[0]?.sticky).toBe(false);
 
-    process.emit("SIGINT");
+    for (const fn of listeners) {
+      fn();
+    }
 
     expect(exit).toHaveBeenCalledWith(130);
     stopListening();

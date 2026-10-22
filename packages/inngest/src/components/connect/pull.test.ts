@@ -8,13 +8,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "../../test/helpers.ts";
 import { prepareConnectionConfig } from "./config.ts";
-import {
-  fetchRecordedRun,
-  PullDataError,
-  readPullSettings,
-  replayRun,
-  writeTestScaffold,
-} from "./pull.ts";
+import { fetchRecordedRun, PullDataError, readPullSettings } from "./pull.ts";
+import { replayRun } from "./pullReplay.ts";
+import { writeTestScaffold } from "./pullTest.ts";
 
 const event = { id: "evt1", name: "demo/sent", data: { n: 2 } };
 
@@ -238,12 +234,12 @@ describe("Pull", () => {
     expect(diffs).toHaveLength(1);
   });
 
-  it("says so when step outputs are missing", async () => {
-    fixtureApi({ base: 2, scaled: undefined });
+  it("says so when the server stored no step outputs", async () => {
+    fixtureApi({ base: undefined, scaled: undefined });
 
     await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(PullDataError);
     await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(
-      /no output for step\(s\) scaled/,
+      /no recorded step outputs/,
     );
   });
 
