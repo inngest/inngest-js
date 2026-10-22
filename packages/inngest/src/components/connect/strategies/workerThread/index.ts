@@ -29,6 +29,11 @@ const maxConsecutiveCrashes = 10;
 const baseBackoffMs = 500;
 const maxBackoffMs = 30_000;
 
+type ExecutionReply = Extract<
+  MainToWorkerMessage,
+  { type: "EXECUTION_RESPONSE" | "EXECUTION_ERROR" }
+>;
+
 /**
  * Worker thread connection strategy.
  *
@@ -42,6 +47,23 @@ export class WorkerThreadStrategy extends BaseStrategy {
   private consecutiveCrashes = 0;
   private _connectionId: string | undefined;
   private _cachedDebugState: ConnectDebugState | undefined;
+
+  /**
+   * Requests that the main thread is executing, or whose reply it has not yet
+   * sent to a worker thread. A respawned worker thread knows nothing about
+   * them, so we hand them over to it to resume the lease extension and send
+   * the reply.
+   */
+  private readonly inFlightRequests = new Map<
+    string,
+    { request: GatewayExecutorRequestData; reply?: ExecutionReply }
+  >();
+
+  /**
+   * True from a worker thread crash until the respawned worker thread is
+   * connected.
+   */
+  private workerRespawning = false;
 
   constructor(config: StrategyConfig) {
     const primaryApp = config.options.apps[0];
@@ -217,6 +239,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
       this.consecutiveCrashes++;
       this._state = ConnectionState.RECONNECTING;
+      this.workerRespawning = true;
 
       if (this.consecutiveCrashes > maxConsecutiveCrashes) {
         this.internalLogger.error(
@@ -276,6 +299,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
           { connectionId: msg.connectionId },
           "Connection ready",
         );
+        if (this.workerRespawning) {
+          this.workerRespawning = false;
+          this.resumeInFlightRequests();
+        }
         break;
 
       case "ERROR":
@@ -295,6 +322,14 @@ export class WorkerThreadStrategy extends BaseStrategy {
       case "EXECUTION_REQUEST":
         this.handleExecutionRequest(msg.requestId, msg.request);
         break;
+
+      case "LEASE_EXTENDED": {
+        const inFlight = this.inFlightRequests.get(msg.requestId);
+        if (inFlight) {
+          inFlight.request.leaseId = msg.leaseId;
+        }
+        break;
+      }
 
       case "DEBUG_STATE":
         this._cachedDebugState = msg.state;
@@ -331,6 +366,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
       // Decode the request
       const gatewayExecutorRequest =
         GatewayExecutorRequestData.decode(requestBytes);
+      this.inFlightRequests.set(requestId, { request: gatewayExecutorRequest });
 
       // Find the request handler
       const requestHandler =
@@ -341,7 +377,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
           { appName: gatewayExecutorRequest.appName },
           "No handler for app",
         );
-        this.sendToWorker({
+        this.sendReply({
           type: "EXECUTION_ERROR",
           requestId,
           error: `No handler for app: ${gatewayExecutorRequest.appName}`,
@@ -354,7 +390,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
       // Encode and send response back to worker
       const responseBytes = SDKResponse.encode(response).finish();
-      this.sendToWorker({
+      this.sendReply({
         type: "EXECUTION_RESPONSE",
         requestId,
         response: responseBytes,
@@ -367,11 +403,49 @@ export class WorkerThreadStrategy extends BaseStrategy {
         error = new Error(String(err));
       }
       this.internalLogger.debug({ err: error, requestId }, "Execution error");
-      this.sendToWorker({
+      this.sendReply({
         type: "EXECUTION_ERROR",
         requestId,
         error: err instanceof Error ? err.message : "Unknown error",
       });
+    }
+  }
+
+  /**
+   * Send the reply of a request to the worker thread. While the worker thread
+   * is respawning, keep the reply until the new worker thread is connected.
+   */
+  private sendReply(reply: ExecutionReply): void {
+    const inFlight = this.inFlightRequests.get(reply.requestId);
+    if (inFlight && this.workerRespawning) {
+      inFlight.reply = reply;
+      return;
+    }
+
+    this.inFlightRequests.delete(reply.requestId);
+    this.sendToWorker(reply);
+  }
+
+  /**
+   * Hand the in-flight requests to a respawned worker thread, so it extends
+   * their leases and sends their replies.
+   */
+  private resumeInFlightRequests(): void {
+    for (const [requestId, { request, reply }] of this.inFlightRequests) {
+      this.internalLogger.debug(
+        { requestId, leaseId: request.leaseId },
+        "Resuming in-flight request in respawned worker",
+      );
+      this.sendToWorker({
+        type: "RESUME_EXECUTION",
+        requestId,
+        request: GatewayExecutorRequestData.encode(request).finish(),
+      });
+
+      if (reply) {
+        this.inFlightRequests.delete(requestId);
+        this.sendToWorker(reply);
+      }
     }
   }
 
