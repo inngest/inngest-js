@@ -4512,9 +4512,13 @@ describe("commit statuses", () => {
 
       await runFunction(pipeline, { event: prEvent });
 
-      const descriptions = gh.requests.map((request) => {
-        return (request.body as { description: string }).description;
-      });
+      const descriptions = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          return (request.body as { description: string }).description;
+        });
 
       expect(descriptions).toContain("ENOTFOUND localhost (exit 1)");
     } finally {
@@ -4556,6 +4560,9 @@ describe("the pipeline's commit status", () => {
       await runFunction(pipeline, { event: prEvent });
 
       const statuses = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as {
             context: string;
@@ -4600,6 +4607,9 @@ describe("the pipeline's commit status", () => {
       expect(result.type).toBe("function-resolved");
 
       const statuses = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as { context: string; state: string };
         })
@@ -4686,11 +4696,18 @@ describe("the lifecycle of a check", () => {
 
       await runFunction(pipeline, { event: prEvent });
 
-      const posts = gh.requests.map((request) => {
-        const status = request.body as { context: string; description: string };
+      const posts = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          const status = request.body as {
+            context: string;
+            description: string;
+          };
 
-        return `${status.context}: ${status.description}`;
-      });
+          return `${status.context}: ${status.description}`;
+        });
 
       const firstRunning = posts.findIndex((post) => {
         return post.startsWith("pr / compat") && post.endsWith("Running");
@@ -4892,6 +4909,9 @@ describe("a job's status while it runs in its own run", () => {
       );
 
       const own = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as { description: string; target_url: string };
         })
@@ -6742,5 +6762,237 @@ describe("run snapshot cleanup", () => {
     expect(sizeBeforeRetry).toBe(1);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+});
+
+describe("a pull request's test merge", () => {
+  const pull = (overrides: Record<string, unknown> = {}) => {
+    return {
+      number: 7,
+      head: { sha: "abc1234", ref: "feature" },
+      base: { sha: "def5678", ref: "main" },
+      mergeable: true,
+      merge_commit_sha: "mergee1",
+      ...overrides,
+    };
+  };
+
+  const live = () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test("is what the run clones and hashes, while checks stay on the head", async () => {
+    live();
+
+    const { api, ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", pull());
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+    gh.route("GET /repos/inngest/inngest-js/git/trees/mergee1", {
+      tree: [{ type: "blob", path: "package.json", sha: "blob1" }],
+    });
+
+    const build = ci.job(
+      { id: "build", cache: { key: files("package.json") } },
+      async () => {
+        await checkout();
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
+        await build();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.stepIds).toContain("github › pr:merge");
+
+    const script = api.commands
+      .map((argv) => {
+        return argv[2] ?? "";
+      })
+      .find((command) => {
+        return command.includes("git clone");
+      });
+
+    expect(script).toContain(
+      "fetch --filter=blob:none origin 'refs/pull/7/merge'",
+    );
+    expect(script).toContain("checkout 'mergee1'");
+
+    const paths = gh.requests.map((request) => {
+      return request.path;
+    });
+
+    expect(paths).toContain("/repos/inngest/inngest-js/git/trees/mergee1");
+    expect(paths).not.toContain("/repos/inngest/inngest-js/git/trees/abc1234");
+    expect(paths).toContain("/repos/inngest/inngest-js/statuses/abc1234");
+    expect(paths).not.toContain("/repos/inngest/inngest-js/statuses/mergee1");
+  });
+
+  test("is asked again while GitHub is still working it out", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    let asked = 0;
+
+    gh.handle("GET /repos/inngest/inngest-js/pulls/7", () => {
+      asked += 1;
+
+      return {
+        body:
+          asked === 1
+            ? pull({ mergeable: null, merge_commit_sha: null })
+            : pull(),
+      };
+    });
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, check: false, childRuns: false },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(asked).toBe(2);
+    expect(result.data).toMatchObject({ sha: "abc1234", mergeSha: "mergee1" });
+  });
+
+  test("a pull request with conflicts fails the run, not retrying", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/pulls/7",
+      pull({ mergeable: false, merge_commit_sha: null }),
+    );
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        async () => {},
+      ),
+      { event: prEvent },
+    );
+
+    const statuses = gh.requests
+      .filter((request) => {
+        return request.method === "POST";
+      })
+      .map((request) => {
+        return request.body as { state: string; description: string };
+      });
+
+    expect(statuses.at(-1)).toMatchObject({ state: "failure" });
+    expect(statuses.at(-1)?.description).toContain(
+      "PR has conflicts with main",
+    );
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "PR has conflicts with main",
+    );
+  });
+
+  test("a head that has moved on since the event keeps testing the event's commit", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/pulls/7",
+      pull({ head: { sha: "newer99", ref: "feature" } }),
+    );
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, check: false, childRuns: false },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(result.data).toMatchObject({ sha: "abc1234" });
+    expect(result.data).not.toHaveProperty("mergeSha");
+  });
+
+  test("a build run keeps the merge its parent chose", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    let asked = 0;
+
+    gh.handle("GET /repos/inngest/inngest-js/pulls/7", () => {
+      asked += 1;
+
+      return { body: pull({ merge_commit_sha: `mergee${asked}` }) };
+    });
+
+    const setupJob = ci.job(
+      { id: "setup", cache: { key: "s" } },
+      async () => {},
+    );
+
+    const test = ci.job({ id: "test", from: setupJob }, async () => {});
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        await test();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(asked).toBe(1);
+  });
+
+  test("a pushed commit has no merge to test", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    const result = await runFunction(
+      ci.pipeline(
+        {
+          id: "push",
+          on: [{ event: "github/push" }],
+          check: false,
+          childRuns: false,
+        },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      {
+        event: {
+          name: "github/push",
+          data: {
+            ref: "refs/heads/main",
+            after: "cafe1234",
+            repository: { full_name: "inngest/inngest-js" },
+            _github: { event: "push", installationId: 1 },
+          },
+        },
+      },
+    );
+
+    expect(result.data).toMatchObject({ sha: "cafe1234" });
+    expect(gh.requests).toEqual([]);
   });
 });
