@@ -219,7 +219,7 @@ const resolveFilesPart = async (
   }
 
   const tree = await rest.git.getTree({
-    tree_sha: repo.sha,
+    tree_sha: repo.mergeSha ?? repo.sha,
     recursive: "1",
   });
 
