@@ -24,3 +24,5 @@ export type {
 export { agent } from "./loop.ts";
 export type { Repo, RepoOptions } from "./repo.ts";
 export { repo } from "./repo.ts";
+export type { DurableOptions, PrepareStepHelpers } from "./durable.ts";
+export { durable } from "./durable.ts";

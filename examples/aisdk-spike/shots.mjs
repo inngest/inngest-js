@@ -1,0 +1,16 @@
+import { createRequire } from "node:module";
+const require = createRequire("/home/nixos/.npm/_npx/705bc6b22212b352/node_modules/");
+const { chromium } = require("playwright-core");
+const [port, runID, label] = process.argv.slice(2);
+const dir = "/tmp/claude-1000/-home-nixos-repo-inngest/dcc79adb-bda5-4648-9dc4-6c27f494bef3/scratchpad/aisdk-shots";
+const browser = await chromium.launch({ executablePath: "/nix/store/ky199ji3a5drs6rm3wr5zidamx9dhz56-chromium-155.0.8059.39/bin/chromium", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage({ colorScheme: "dark", viewport: { width: 1500, height: 1000 } });
+await page.goto(`http://127.0.0.1:${port}/run?runID=${runID}`);
+await page.waitForTimeout(4000);
+await page.screenshot({ path: `${dir}/${label}-run.png` });
+await page.getByText("ai:model:1", { exact: true }).first().click();
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${dir}/${label}-model1.png` });
+const body = await page.innerText("body");
+console.log(body.slice(0, 3000));
+await browser.close();

@@ -1,0 +1,1 @@
+{"name":"aisdk-spike","private":true,"type":"module","dependencies":{"ai":"7.0.148","@ai-sdk/anthropic":"4.0.85","zod":"^4.0.0","tsx":"^4.19.0","inngest":"file:../../packages/inngest"}}
