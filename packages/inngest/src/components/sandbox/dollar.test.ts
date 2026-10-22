@@ -9,12 +9,7 @@ import { runFnWithStack } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { StepError } from "../StepError.ts";
-import {
-  CommandFailedError,
-  CommandTimeoutError,
-  commandFailure,
-  getCommandError,
-} from "./commandError.ts";
+import { commandFailure, getCommandError } from "./commandError.ts";
 import {
   buildArgv,
   buildShellString,
@@ -22,9 +17,7 @@ import {
   type DollarValue,
 } from "./dollar.ts";
 import { createClient, sandboxId, sandboxResource } from "./test-helpers.ts";
-import type { DurableSandbox } from "./types.ts";
-
-const processId = "33333333-3333-4333-8333-333333333333";
+import { type DurableSandbox, SandboxValidationError } from "./types.ts";
 
 type Script = {
   stdout?: string;
@@ -42,9 +35,27 @@ type Script = {
    * A process never exits by itself, and ends when signalled.
    */
   neverExits?: boolean;
+  /**
+   * A process that SIGTERM does not stop, and only SIGKILL does.
+   */
+  ignoresTerm?: boolean;
+  /**
+   * A process ends killed by this signal, with no exit code.
+   */
+  exitSignal?: number;
+  /**
+   * A process ends in this state, with no exit code.
+   */
+  endsAs?: "LOST" | "FAILED";
+};
+
+const base64 = (text: string): string => {
+  return Buffer.from(text).toString("base64");
 };
 
 type Exec = { body: Record<string, unknown> };
+
+type Process = { script: Script; waits: number; killedBy?: number };
 
 /**
  * A client whose commands answer from `script`, which is given the command's
@@ -58,9 +69,7 @@ const createFakeClient = (
   const execs: Exec[] = [];
   const signals: unknown[] = [];
   const counts = new Map<string, number>();
-  let waits = 0;
-  let current: Script = {};
-  let killed = false;
+  const processes = new Map<string, Process>();
 
   const run = (command: string[]) => {
     const text = command[0] === "/bin/sh" ? command[2]! : command.join(" ");
@@ -89,8 +98,8 @@ const createFakeClient = (
 
       return Response.json({
         data: {
-          stdout: btoa(result.stdout ?? ""),
-          stderr: btoa(result.stderr ?? ""),
+          stdout: base64(result.stdout ?? ""),
+          stderr: base64(result.stderr ?? ""),
           encoding: "base64",
           exitCode: result.exitCode ?? 0,
         },
@@ -99,16 +108,15 @@ const createFakeClient = (
 
     if (path.endsWith("/processes") && method === "POST") {
       const parsed = JSON.parse(String(body)) as { command: string[] };
+      const id = `33333333-3333-4333-8333-${String(processes.size + 1).padStart(12, "0")}`;
 
       execs.push({ body: parsed });
-      current = run(parsed.command);
-      waits = 0;
-      killed = false;
+      processes.set(id, { script: run(parsed.command), waits: 0 });
 
       return Response.json(
         {
           data: {
-            id: processId,
+            id,
             command: parsed.command,
             pid: 7,
             state: "RUNNING",
@@ -119,16 +127,21 @@ const createFakeClient = (
       );
     }
 
-    if (path.endsWith("/wait")) {
-      waits++;
+    const id = /\/processes\/([^/]+)\//.exec(path)?.[1] ?? "";
+    const process = processes.get(id);
 
-      if (killed) {
+    if (process && path.endsWith("/wait")) {
+      const { script: current } = process;
+
+      process.waits++;
+
+      if (process.killedBy !== undefined) {
         return Response.json({
-          data: { id: processId, state: "KILLED", terminationSignal: 15 },
+          data: { id, state: "KILLED", terminationSignal: process.killedBy },
         });
       }
 
-      if (current.neverExits || waits <= (current.runningWaits ?? 0)) {
+      if (current.neverExits || process.waits <= (current.runningWaits ?? 0)) {
         return Response.json(
           {
             errors: [
@@ -142,34 +155,45 @@ const createFakeClient = (
         );
       }
 
+      if (current.endsAs) {
+        return Response.json({ data: { id, state: current.endsAs } });
+      }
+
+      if (current.exitSignal !== undefined) {
+        return Response.json({
+          data: { id, state: "KILLED", terminationSignal: current.exitSignal },
+        });
+      }
+
       return Response.json({
-        data: {
-          id: processId,
-          state: "EXITED",
-          exitCode: current.exitCode ?? 0,
-        },
+        data: { id, state: "EXITED", exitCode: current.exitCode ?? 0 },
       });
     }
 
-    if (path.endsWith("/signals")) {
-      signals.push(JSON.parse(String(body)));
-      killed = true;
+    if (process && path.endsWith("/signals")) {
+      const signal = JSON.parse(String(body)) as { signal: number };
+
+      signals.push(signal);
+
+      if (!process.script.ignoresTerm || signal.signal === 9) {
+        process.killedBy = signal.signal;
+      }
 
       return new Response(null, { status: 204 });
     }
 
-    if (path.endsWith("/output")) {
+    if (process && path.endsWith("/output")) {
       return Response.json({
         data: {
           chunks: [
             {
               stream: "STDOUT",
-              data: btoa(current.stdout ?? ""),
+              data: base64(process.script.stdout ?? ""),
               encoding: "base64",
             },
             {
               stream: "STDERR",
-              data: btoa(current.stderr ?? ""),
+              data: base64(process.script.stderr ?? ""),
               encoding: "base64",
             },
           ],
@@ -248,6 +272,12 @@ const runAll = async (fn: InngestFunction.Any) => {
   throw new Error("The function did not finish");
 };
 
+const findStep = (steps: OutgoingOp[], id: string) => {
+  return steps.find((step) => {
+    return step.userland?.id === id;
+  });
+};
+
 const groupFunction = (
   client: ReturnType<typeof createFakeClient>["client"],
   callback: (sandbox: DurableSandbox) => Promise<unknown>,
@@ -324,7 +354,11 @@ describe("options", () => {
     const { result } = await runAll(fn);
 
     expect(result.type).toBe("function-resolved");
-    expect(execs.map((exec) => exec.body.command)).toEqual([
+    expect(
+      execs.map((exec) => {
+        return exec.body.command;
+      }),
+    ).toEqual([
       ["pnpm", "test", "a b"],
       ["/bin/sh", "-c", "echo 'it'\\''s' | cat"],
       ["pwd"],
@@ -350,7 +384,11 @@ describe("options", () => {
 
     await runAll(fn);
 
-    expect(execs.map((exec) => exec.body)).toMatchObject([
+    expect(
+      execs.map((exec) => {
+        return exec.body;
+      }),
+    ).toMatchObject([
       { cwd: "/work/repo", environment: { NODE_ENV: "test", A: "1" } },
       { cwd: "/work/repo", environment: { NODE_ENV: "test", A: "2", B: "3" } },
       { cwd: "/other", environment: { NODE_ENV: "test", A: "1" } },
@@ -366,10 +404,11 @@ describe("options", () => {
 
     await runAll(fn);
 
-    expect(execs.map((exec) => exec.body.timeout)).toEqual([
-      "300000ms",
-      "10000ms",
-    ]);
+    expect(
+      execs.map((exec) => {
+        return exec.body.timeout;
+      }),
+    ).toEqual(["300000ms", "10000ms"]);
   });
 
   test("results have text, lines and json", async () => {
@@ -408,7 +447,7 @@ describe("options", () => {
     });
 
     const { steps } = await runAll(fn);
-    const command = steps.find((step) => step.userland?.id === "deploy");
+    const command = findStep(steps, "deploy");
 
     expect(JSON.stringify(command?.opts?.input)).not.toContain("hunter2");
     expect(command?.opts?.input).toMatchObject([
@@ -435,7 +474,7 @@ describe("exit codes", () => {
     expect(result).toMatchObject({ data: [1, 1] });
   });
 
-  test("a disallowed exit fails the step without retries, and the handler sees a CommandFailedError", async () => {
+  test("a disallowed exit fails the step without retries, and the handler reads a failed command error", async () => {
     const { client } = createFakeClient(() => {
       return { exitCode: 2, stdout: "out", stderr: "boom" };
     });
@@ -447,11 +486,7 @@ describe("exit codes", () => {
 
         return {
           step: error instanceof StepError,
-          name: command?.name,
-          command: command?.command,
-          exitCode: command instanceof CommandFailedError && command.exitCode,
-          stdoutTail: command?.stdoutTail,
-          stderrTail: command?.stderrTail,
+          ...command,
         };
       }
 
@@ -459,16 +494,17 @@ describe("exit codes", () => {
     });
 
     const { result, steps } = await runAll(fn);
-    const failed = steps.find((step) => step.userland?.id === "npm test");
+    const failed = findStep(steps, "npm test");
 
     // The failure is the step's own, and is final
     expect(failed?.error).toMatchObject({ name: "NonRetriableError" });
     expect(result).toMatchObject({
       data: {
         step: true,
-        name: "CommandFailedError",
+        type: "failed",
         command: "npm test",
         exitCode: 2,
+        message: "Command failed with exit code 2: npm test",
         stdoutTail: "out",
         stderrTail: "boom",
       },
@@ -498,7 +534,7 @@ describe("exit codes", () => {
       const outcome = await sandbox.commands
         .run("strict", "x", { exitCodes: [0] })
         .catch((error: unknown) => {
-          return getCommandError(error)?.name;
+          return getCommandError(error)?.type;
         });
 
       return [data.exitCode, outcome];
@@ -506,7 +542,7 @@ describe("exit codes", () => {
 
     const { result } = await runAll(fn);
 
-    expect(result).toMatchObject({ data: [3, "CommandFailedError"] });
+    expect(result).toMatchObject({ data: [3, "failed"] });
   });
 
   test("tails keep the last 8 KiB", async () => {
@@ -531,6 +567,8 @@ describe("exit codes", () => {
 describe("getCommandError", () => {
   test("reads a payload through a StepError, and ignores other errors", () => {
     const thrown = commandFailure({
+      type: "failed",
+      reason: "failed with exit code 2",
       command: "make",
       exitCode: 2,
       stdout: "",
@@ -543,7 +581,7 @@ describe("getCommandError", () => {
     });
 
     expect(getCommandError(step)).toMatchObject({
-      name: "CommandFailedError",
+      type: "failed",
       command: "make",
       exitCode: 2,
       stderrTail: "no rule",
@@ -552,23 +590,45 @@ describe("getCommandError", () => {
     expect(getCommandError(undefined)).toBeUndefined();
   });
 
-  test("tells a timeout from a failed exit by name", () => {
+  test("tells a timeout from a failed exit by type", () => {
     const thrown = commandFailure({
+      type: "timeout",
+      reason: "timed out after 5m",
       command: "sleep 1000",
-      timeout: "5m",
       stdout: "",
       stderr: "",
     });
     const error = getCommandError(thrown);
 
-    expect(error).toBeInstanceOf(CommandTimeoutError);
-    expect(error?.name).toBe("CommandTimeoutError");
+    expect(error?.type).toBe("timeout");
+    expect(error?.exitCode).toBeUndefined();
     expect(error?.message).toBe("Command timed out after 5m: sleep 1000");
+  });
+
+  test("the command in an error is cut to 1 KiB, in the message too", () => {
+    const error = getCommandError(
+      commandFailure({
+        type: "failed",
+        reason: "failed with exit code 1",
+        command: `echo ${"é".repeat(2000)}`,
+        exitCode: 1,
+        stdout: "",
+        stderr: "",
+      }),
+    );
+
+    expect(new TextEncoder().encode(error?.command).byteLength).toBeLessThan(
+      1030,
+    );
+    expect(error?.command.endsWith("…")).toBe(true);
+    expect(error?.message).toBe(
+      `Command failed with exit code 1: ${error?.command}`,
+    );
   });
 });
 
 describe("timeouts", () => {
-  test("a captured command that outlives its timeout is a CommandTimeoutError", async () => {
+  test("a captured command that outlives its timeout is a timeout command error", async () => {
     const { client } = createFakeClient(() => {
       return { timesOut: true };
     });
@@ -582,6 +642,23 @@ describe("timeouts", () => {
 
     expect(result).toMatchObject({
       data: "Command timed out after 30s: sleep 99",
+    });
+  });
+
+  test("its tails are empty, as the server returns no output for it", async () => {
+    const { client } = createFakeClient(() => {
+      return { timesOut: true };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      return sandbox.$({ timeout: "30s" })`sleep 99`.catch((error: unknown) => {
+        return getCommandError(error);
+      });
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({
+      data: { type: "timeout", stdoutTail: "", stderrTail: "" },
     });
   });
 });
@@ -618,7 +695,11 @@ describe("long commands", () => {
     });
 
     expect(
-      new Set(spans.map((span) => JSON.stringify(span?.at(-1)))).size,
+      new Set(
+        spans.map((span) => {
+          return JSON.stringify(span?.at(-1));
+        }),
+      ).size,
     ).toBe(1);
     expect(spans[0]?.at(-1)).toMatchObject({ kind: "$", name: "make all" });
   });
@@ -631,17 +712,15 @@ describe("long commands", () => {
       return sandbox.$({ timeout: "6m" })`make`.catch((error: unknown) => {
         const command = getCommandError(error);
 
-        return [command?.name, command?.stdoutTail, command?.stderrTail];
+        return [command?.type, command?.stdoutTail, command?.stderrTail];
       });
     });
 
     const { result, steps } = await runAll(fn);
-    const output = steps.find((step) => step.userland?.id === "make #output");
+    const output = findStep(steps, "make #output");
 
     expect(output?.error).toMatchObject({ name: "NonRetriableError" });
-    expect(result).toMatchObject({
-      data: ["CommandFailedError", "o", "e"],
-    });
+    expect(result).toMatchObject({ data: ["failed", "o", "e"] });
   });
 
   test("a process that outlives the timeout is stopped, then reported as a timeout with its output", async () => {
@@ -652,24 +731,272 @@ describe("long commands", () => {
       return sandbox.$({ timeout: "5m31s" })`serve`.catch((error: unknown) => {
         const command = getCommandError(error);
 
-        return [command?.name, command?.message, command?.stdoutTail];
+        return [command?.type, command?.message, command?.stdoutTail];
       });
     });
 
     const { result, ran } = await runAll(fn);
 
     expect(signals).toEqual([{ signal: 15, includeChildren: true }]);
-    expect(ran.filter((id) => id.startsWith("serve"))).toEqual([
+    expect(
+      ran.filter((id) => {
+        return id.startsWith("serve");
+      }),
+    ).toEqual([
       "serve",
-      ...Array.from({ length: 12 }, (_, index) => `serve #wait-${index + 1}`),
+      "serve #wait-1",
+      "serve #wait-2",
       "serve #stop",
+      "serve #stop-wait",
       "serve #output",
     ]);
     expect(result).toMatchObject({
       data: [
-        "CommandTimeoutError",
-        "Command timed out after 331s: serve",
+        "timeout",
+        "Command timed out after 331s and was stopped: serve",
         "partial",
+      ],
+    });
+  });
+
+  test("a process that ignores SIGTERM is killed, and the message says so", async () => {
+    const { client, signals } = createFakeClient(() => {
+      return { neverExits: true, ignoresTerm: true };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      return sandbox.$({ timeout: "6m" })`serve`.catch((error: unknown) => {
+        return getCommandError(error)?.message;
+      });
+    });
+
+    const { result, ran } = await runAll(fn);
+
+    expect(signals).toEqual([
+      { signal: 15, includeChildren: true },
+      { signal: 9, includeChildren: true },
+    ]);
+    expect(ran).toContain("serve #kill");
+    expect(result).toMatchObject({
+      data: "Command timed out after 6m and was killed after it did not stop on SIGTERM: serve",
+    });
+  });
+
+  test("a process stopped by a signal exits as 128 plus the signal", async () => {
+    const { client } = createFakeClient(() => {
+      return { exitSignal: 9 };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      const data = await sandbox.commands.run("any", "x", { timeout: "6m" });
+      const failed = await sandbox.$({ timeout: "6m" })`strict`.catch(
+        (error: unknown) => {
+          return getCommandError(error);
+        },
+      );
+
+      return [data.exitCode, failed?.exitCode];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({ data: [137, 137] });
+  });
+
+  test("a process that ends LOST or FAILED is reported by its state, with no exit code", async () => {
+    const { client } = createFakeClient((text) => {
+      return { endsAs: text === "lost" ? "LOST" : "FAILED" };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      const lost = await sandbox.$({
+        timeout: "6m",
+        exitCodes: "any",
+      })`lost`.catch((error: unknown) => {
+        return getCommandError(error);
+      });
+      const failed = await sandbox.commands
+        .run("failed", "failed", { timeout: "6m" })
+        .catch((error: unknown) => {
+          return getCommandError(error);
+        });
+
+      return [lost, failed];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({
+      data: [
+        { type: "failed", message: "Command ended LOST: lost" },
+        { type: "failed", message: "Command ended FAILED: failed" },
+      ],
+    });
+    expect(
+      (result as { data: { exitCode?: number }[] }).data.map((error) => {
+        return error.exitCode;
+      }),
+    ).toEqual([undefined, undefined]);
+  });
+
+  test("commands.run over five minutes returns a non-zero exit as data by default", async () => {
+    const { client } = createFakeClient(() => {
+      return { exitCode: 3, stdout: "partial" };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      const result = await sandbox.commands.run("long", "x", {
+        timeout: "6m",
+      });
+
+      return [result.exitCode, result.stdout, result.output];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({
+      data: [3, "partial", { truncated: false }],
+    });
+  });
+
+  test("a tail over 8 KiB keeps whole characters", async () => {
+    const stderr = "é".repeat(5000);
+    const { client } = createFakeClient(() => {
+      return { exitCode: 1, stderr };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      return sandbox.$({ timeout: "6m" })`x`.catch((error: unknown) => {
+        return getCommandError(error)?.stderrTail;
+      });
+    });
+
+    const { result } = await runAll(fn);
+    const tail = (result as { data: string }).data;
+
+    expect(new TextEncoder().encode(tail).byteLength).toBeLessThanOrEqual(
+      8 * 1024,
+    );
+    expect(tail).toMatch(/^é+$/);
+  });
+
+  test("the env is redacted from every step of a long command, and still reaches it", async () => {
+    const { client, execs } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      await sandbox.$({ timeout: "6m", env: { TOKEN: "hunter2" } })`deploy`;
+    });
+
+    const { steps } = await runAll(fn);
+
+    expect(steps.length).toBeGreaterThan(3);
+    expect(JSON.stringify(steps)).not.toContain("hunter2");
+    expect(execs[0]?.body).toMatchObject({ environment: { TOKEN: "hunter2" } });
+  });
+
+  test("a long command that repeats gets each result from its own process", async () => {
+    const build = (together: boolean) => {
+      const { client } = createFakeClient();
+
+      return groupFunction(client, async (sandbox) => {
+        const make$ = sandbox.$({ timeout: "6m" });
+
+        if (together) {
+          return Promise.all([make$`make`.text(), make$`make`.text()]);
+        }
+
+        return [await make$`make`.text(), await make$`make`.text()];
+      });
+    };
+
+    for (const together of [false, true]) {
+      const { result, hashed } = await runAll(build(together));
+
+      expect(result).toMatchObject({ data: ["make#1", "make#2"] });
+      expect(new Set(hashed).size).toBe(hashed.length);
+    }
+  });
+});
+
+describe("validation and helpers", () => {
+  test("an empty command is a validation error", async () => {
+    const { client, execs } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      const argv = await sandbox.$``.catch((error: unknown) => {
+        return error instanceof SandboxValidationError;
+      });
+      const script = await sandbox.$.sh``.catch((error: unknown) => {
+        return error instanceof SandboxValidationError;
+      });
+
+      return [argv, script];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({ data: [true, true] });
+    expect(execs).toEqual([]);
+  });
+
+  test("exitCodes must be integers", async () => {
+    const { client } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      return sandbox.$({ exitCodes: [0, 1.5] })`x`.catch((error: unknown) => {
+        return error instanceof SandboxValidationError;
+      });
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({ data: true });
+  });
+
+  test("exitCodes can't be used with tools", () => {
+    const check = (sandbox: DurableSandbox) => {
+      sandbox.commands.run("ok", "x", { tools: {} });
+      sandbox.commands.run("ok", "x", { exitCodes: [0] });
+      // @ts-expect-error exitCodes and tools exclude each other
+      sandbox.commands.run("bad", "x", { exitCodes: [0], tools: {} });
+    };
+
+    expect(check).toBeTypeOf("function");
+  });
+
+  test("an option set to undefined leaves the default, and an id is for one `$` only", async () => {
+    const { client, execs } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      const repo$ = sandbox.$({ cwd: "/work" });
+
+      await repo$({ cwd: undefined })`pwd`;
+      await repo$({ id: "named" })`pwd`;
+      await repo$`pwd`;
+    });
+
+    const { ran } = await runAll(fn);
+
+    expect(
+      execs.map((exec) => {
+        return exec.body.cwd;
+      }),
+    ).toEqual(["/work", "/work", "/work"]);
+    expect(ran).toEqual(["box", "pwd", "named", "pwd", "box:destroy"]);
+  });
+
+  test("text trims, lines split on CRLF, and json names the command when it fails", async () => {
+    const { client } = createFakeClient((text) => {
+      return { stdout: text === "bad" ? "not json" : "  a\r\nb\r\n\n " };
+    });
+    const fn = groupFunction(client, async (sandbox) => {
+      return [
+        await sandbox.$`text`.text(),
+        await sandbox.$`lines`.lines(),
+        await sandbox.$`bad`.json().catch((error: unknown) => {
+          return (error as Error).message;
+        }),
+      ];
+    });
+
+    const { result } = await runAll(fn);
+
+    expect(result).toMatchObject({
+      data: [
+        "a\r\nb",
+        ["  a", "b"],
+        "Output of command is not valid JSON: bad",
       ],
     });
   });
@@ -777,7 +1104,9 @@ describe("every handle has $", () => {
 
     expect(result).toMatchObject({
       type: "function-resolved",
-      data: Array.from({ length: 6 }, () => "function"),
+      data: Array.from({ length: 6 }, () => {
+        return "function";
+      }),
     });
   });
 });

@@ -164,8 +164,8 @@ export interface SandboxListResult<TSandbox = SandboxRef> {
  *
  * Strings run as `["/bin/sh", "-c", command]`. They are passed to the shell
  * unchanged, so normal shell quoting, variables, pipes, redirects, and
- * chaining apply. Arrays bypass the shell and run the executable named first,
- * which can be a bare name such as `pnpm`, found on the sandbox's `PATH`.
+ * chaining apply. Arrays bypass the shell and must begin with an absolute
+ * executable path. To find a program on `PATH`, use a string command.
  */
 export type SandboxCommand = string | readonly string[];
 
@@ -184,15 +184,6 @@ export interface SandboxCommandOptions {
  */
 export type SandboxExitCodes = readonly number[] | "any";
 
-export interface SandboxExitCodeOptions {
-  /**
-   * The exit codes that are not failures. Any other exit rejects, from inside
-   * the step, without retrying. Defaults to `"any"`, so `commands.run` returns
-   * the exit code as data. Not checked for a command with `tools`.
-   */
-  exitCodes?: SandboxExitCodes;
-}
-
 export type SandboxCommandOutputMetadata =
   | {
       truncated: false;
@@ -200,7 +191,11 @@ export type SandboxCommandOutputMetadata =
   | {
       truncated: true;
       strategy: "tail";
-      originalBytes: {
+      /**
+       * Left out when the command ran as a process (a `timeout` over five
+       * minutes), whose output is a 512 KiB tail with no original size.
+       */
+      originalBytes?: {
         stdout: number;
         stderr: number;
       };
@@ -609,8 +604,19 @@ export interface DurableSandbox {
       idOrOptions: StepOptionsOrId,
       command: SandboxCommand,
       options?: SandboxCommandOptions &
-        SandboxToolsOptions &
-        SandboxExitCodeOptions,
+        (
+          | (SandboxToolsOptions & { exitCodes?: never })
+          | {
+              /**
+               * The exit codes that are not failures. Any other exit rejects,
+               * from inside the step, without retrying. Defaults to `"any"`,
+               * so the exit code returns as data. Can't be used with `tools`.
+               */
+              exitCodes?: SandboxExitCodes;
+              tools?: undefined;
+              toolOptions?: undefined;
+            }
+        ),
     ): Promise<SandboxCommandResult>;
   };
   /**

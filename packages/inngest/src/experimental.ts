@@ -17,7 +17,6 @@ export type {
   CommandError,
   DollarOptions,
   DollarPromise,
-  DollarTag,
   DollarValue,
   DurableSandbox,
   DurableSandboxProcess,
@@ -44,7 +43,6 @@ export type {
   SandboxDuration,
   SandboxErrorCode,
   SandboxErrorDetail,
-  SandboxExitCodeOptions,
   SandboxExitCodes,
   SandboxFileDownloadOptions,
   SandboxFileUploadOptions,
@@ -82,8 +80,6 @@ export type {
   SandboxWaitUntilRunningOptions,
 } from "./components/InngestSandbox.ts";
 export {
-  CommandFailedError,
-  CommandTimeoutError,
   getCommandError,
   getSandboxError,
   SandboxError,

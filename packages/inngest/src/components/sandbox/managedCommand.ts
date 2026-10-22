@@ -3,21 +3,27 @@
  * A command that may run longer than one step can wait (over five minutes):
  * it starts as a process, steps wait on it in bounded windows, and one step
  * reads its output and decides whether the exit is allowed. The steps are
- * states of one `$` row in the trace, and their IDs end in ` #wait-1`,
+ * states of one `/**
+ * @module
+ * A command that may run longer than one step can wait (over five minutes):
+ * it starts as a process, steps wait on it in bounded windows, and one step
+ * reads its output and decides whether the exit is allowed. The steps are
+ row in the trace, and their IDs end in ` #wait-1`,
  * ` #output` and so on, which the SDK's own `:1` repeat numbers never do.
+ * Its output is the 512 KiB tail the server keeps, where a command that fits
+ * in one step fails on output that is too large.
  */
 
 import type { StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
+import { callRawTool } from "./callRawTool.ts";
 import { checkExit, commandFailure, formatTimeout } from "./commandError.ts";
 import {
   parseSandboxOperationForAction,
-  type SandboxOperationForAction,
-  type SandboxResultForAction,
+  type SandboxRawToolResolver,
 } from "./protocol.ts";
 import { commandSpan, sdkOrigin } from "./trace.ts";
 import {
-  type SandboxAction,
   type SandboxCommandResult,
   type SandboxExitCodes,
   type SandboxProcessRef,
@@ -27,26 +33,20 @@ import {
 import {
   decodeOutputChunk,
   decodeUtf8,
+  maxSandboxProcessTimeoutMs,
   normalizeSandboxProcessStartOptions,
 } from "./validation.ts";
 
 /**
- * Runs an operation as a step; with `finish`, the step's output is what
- * `finish` returns. This is `callRawTool`, which this file cannot import.
+ * How long each wait step follows the process for: the most the protocol
+ * allows, so a long timeout takes few steps.
  */
-export type CallOperation = <
-  A extends SandboxAction,
-  T = SandboxResultForAction<A>,
->(
-  idOrOptions: StepOptionsOrId,
-  operation: SandboxOperationForAction<A>,
-  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
-) => Promise<T>;
+const waitWindowMs = maxSandboxProcessTimeoutMs;
 
 /**
- * How long each wait step follows the process for.
+ * How long a process gets to exit after SIGTERM before it is killed.
  */
-const waitWindowMs = 30_000;
+const stopWindowMs = 5_000;
 
 /**
  * The most output the server returns for a process, which is a limit of its
@@ -55,25 +55,33 @@ const waitWindowMs = 30_000;
 const outputTailBytes = 512 * 1024;
 
 const sigterm = 15;
+const sigkill = 9;
 
-const isRunning = (process: { state: string }): boolean => {
+/**
+ * What a wait reports of a process.
+ */
+type Ended = {
+  state: string;
+  exitCode?: number | undefined;
+  terminationSignal?: number | undefined;
+};
+
+const isRunning = (process: Ended): boolean => {
   return process.state === "STARTING" || process.state === "RUNNING";
 };
 
 /**
- * The exit code of a process that has ended. A process stopped by a signal
- * reports as a shell does, and one that never ran to an exit as -1.
+ * The exit code of a process that has ended: its own, or for one stopped by a
+ * signal what a shell reports. A process that ended without either (LOST or
+ * FAILED) has none.
  */
-const exitCodeOf = (process: {
-  exitCode?: number | undefined;
-  terminationSignal?: number | undefined;
-}): number => {
+const exitCodeOf = (process: Ended): number | undefined => {
   if (process.exitCode !== undefined) {
     return process.exitCode;
   }
 
   return process.terminationSignal === undefined
-    ? -1
+    ? undefined
     : 128 + process.terminationSignal;
 };
 
@@ -118,7 +126,7 @@ const collect = (
 };
 
 export const runManagedCommand = async (opts: {
-  call: CallOperation;
+  rawToolResolver: SandboxRawToolResolver;
   sandbox: SandboxRef;
   /**
    * The step options of the command, which the process's start step has.
@@ -135,7 +143,8 @@ export const runManagedCommand = async (opts: {
   timeoutMs: number;
   exitCodes: SandboxExitCodes;
 }): Promise<SandboxCommandResult> => {
-  const { call, sandbox, idOrOptions, text, timeoutMs, exitCodes } = opts;
+  const { rawToolResolver, sandbox, idOrOptions, text, timeoutMs, exitCodes } =
+    opts;
   const step = getStepOptions(idOrOptions);
   const later = (suffix: string, name: string): StepOptionsOrId => {
     return { ...step, id: `${step.id} ${suffix}`, name, "~origin": sdkOrigin };
@@ -149,43 +158,102 @@ export const runManagedCommand = async (opts: {
   const span = commandSpan(startOperation, idOrOptions);
 
   const run = async (): Promise<SandboxCommandResult> => {
-    const { process: started } = await call(idOrOptions, startOperation);
+    const { process: started } = await callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      startOperation,
+    );
     const target = { sandbox, process: started as SandboxProcessRef };
-    let current: Parameters<typeof exitCodeOf>[0] & { state: string } = started;
+    const waitOperation = (windowMs: number) => {
+      return parseSandboxOperationForAction("process.wait", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "process.wait",
+        target,
+        input: [{ timeoutMs: windowMs, allowRunning: true }],
+      });
+    };
+    const signalOperation = (signal: number) => {
+      return parseSandboxOperationForAction("process.signal", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "process.signal",
+        target,
+        input: [{ signal, includeChildren: true }],
+      });
+    };
+    let current: Ended = started;
     let elapsed = 0;
 
     for (let wait = 1; isRunning(current) && elapsed < timeoutMs; wait++) {
-      const window = Math.min(waitWindowMs, timeoutMs - elapsed);
-      const waited = await call(
+      const windowMs = Math.min(waitWindowMs, timeoutMs - elapsed);
+      const waited = await callRawTool(
+        rawToolResolver,
         later(`#wait-${wait}`, "Wait for command"),
-        parseSandboxOperationForAction("process.wait", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "process.wait",
-          target,
-          input: [{ timeoutMs: window, allowRunning: true }],
-        }),
+        waitOperation(windowMs),
       );
 
       current = waited.process;
-      elapsed += window;
+      elapsed += windowMs;
     }
 
-    const timedOut = isRunning(current);
+    // How a command that outlived its timeout ended, for the error's message
+    let stopped: string | undefined;
 
-    if (timedOut) {
-      await call(
+    if (isRunning(current)) {
+      await callRawTool(
+        rawToolResolver,
         later("#stop", "Stop command"),
-        parseSandboxOperationForAction("process.signal", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "process.signal",
-          target,
-          input: [{ signal: sigterm, includeChildren: true }],
-        }),
+        signalOperation(sigterm),
       );
+
+      const waited = await callRawTool(
+        rawToolResolver,
+        later("#stop-wait", "Wait for command to stop"),
+        waitOperation(stopWindowMs),
+      );
+
+      if (isRunning(waited.process)) {
+        await callRawTool(
+          rawToolResolver,
+          later("#kill", "Kill command"),
+          signalOperation(sigkill),
+        );
+
+        stopped = "was killed after it did not stop on SIGTERM";
+      } else {
+        stopped = "was stopped";
+      }
     }
+
+    // Throws the failure of this command, or returns its exit code
+    const settle = (stdout: string, stderr: string): number => {
+      const failure = { command: text, stdout, stderr };
+
+      if (stopped !== undefined) {
+        throw commandFailure({
+          ...failure,
+          type: "timeout",
+          reason: `timed out after ${formatTimeout(timeoutMs)} and ${stopped}`,
+        });
+      }
+
+      const exitCode = exitCodeOf(current);
+
+      if (exitCode === undefined) {
+        throw commandFailure({
+          ...failure,
+          type: "failed",
+          reason: `ended ${current.state}`,
+        });
+      }
+
+      checkExit(exitCodes, { ...failure, exitCode });
+
+      return exitCode;
+    };
 
     // The one step that decides the outcome, so a failure is a step's failure
-    const output = await call(
+    const output = await callRawTool(
+      rawToolResolver,
       later("#output", "Read command output"),
       parseSandboxOperationForAction("process.output", {
         protocolVersion: sandboxProtocolVersion,
@@ -196,21 +264,7 @@ export const runManagedCommand = async (opts: {
       (result) => {
         const { stdout, stderr } = collect(result.result.chunks);
 
-        if (timedOut) {
-          throw commandFailure({
-            command: text,
-            timeout: formatTimeout(timeoutMs),
-            stdout,
-            stderr,
-          });
-        }
-
-        checkExit(exitCodes, {
-          command: text,
-          exitCode: exitCodeOf(current),
-          stdout,
-          stderr,
-        });
+        settle(stdout, stderr);
 
         return result;
       },
@@ -220,18 +274,13 @@ export const runManagedCommand = async (opts: {
     return {
       stdout,
       stderr,
-      exitCode: exitCodeOf(current),
+      exitCode: settle(stdout, stderr),
       // The server reports no size for what it cut, so a full tail is taken
-      // as cut, with the same size on both sides
+      // as cut, and only what was kept is known
       output:
         sizes.stdout + sizes.stderr < outputTailBytes
           ? { truncated: false }
-          : {
-              truncated: true,
-              strategy: "tail",
-              originalBytes: sizes,
-              retainedBytes: sizes,
-            },
+          : { truncated: true, strategy: "tail", retainedBytes: sizes },
     };
   };
 

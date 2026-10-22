@@ -1,10 +1,11 @@
 /**
  * @module
- * The errors of a command run by `sandbox.$`: one for an exit the command was
- * not allowed to make, one for a timeout, and `getCommandError()` to read
- * either from whatever a handler caught. A step's failure reaches the handler
- * as a `StepError` that carries these as its `cause`, so `instanceof` on the
- * classes would never match; the guard reads the payload instead.
+ * The failure of a command run by `sandbox.$`: the non-retriable error a step
+ * throws for an exit the command was not allowed to make, a timeout or a
+ * process that ended without an exit, and `getCommandError()` to read it from
+ * whatever a handler caught. A step's failure reaches the handler as a
+ * `StepError` that carries these as its `cause`, so the guard reads the
+ * payload instead of using `instanceof`.
  */
 
 import { z } from "zod/v3";
@@ -19,119 +20,74 @@ import type { SandboxCommand, SandboxExitCodes } from "./types.ts";
  */
 export const commandErrorTailBytes = 8 * 1024;
 
-const baseSchema = z.object({
+/**
+ * How much of the command an error shows.
+ */
+export const commandErrorTextBytes = 1024;
+
+const payloadSchema = z.object({
+  type: z.enum(["failed", "timeout"]),
   message: z.string(),
   command: z.string(),
+  exitCode: z.number().int().optional(),
   stdoutTail: z.string(),
   stderrTail: z.string(),
 });
 
-const failedSchema = baseSchema.extend({
-  type: z.literal("sandbox_command_failed"),
-  exitCode: z.number().int(),
-});
-
-const timeoutSchema = baseSchema.extend({
-  type: z.literal("sandbox_command_timeout"),
-});
-
-const payloadSchema = z.union([failedSchema, timeoutSchema]);
-
-type FailedPayload = z.infer<typeof failedSchema>;
-type TimeoutPayload = z.infer<typeof timeoutSchema>;
+/**
+ * What a failed command carries: its `type` (`"failed"` for an exit that was
+ * not allowed or a process that ended without one, `"timeout"` for a command
+ * stopped at its timeout), the command, its `exitCode` when it exited, and the
+ * last 8 KiB of its stdout and stderr. A single-step command that times out
+ * has empty tails, because the server returns no output for it.
+ */
+export type CommandError = z.infer<typeof payloadSchema>;
 
 /**
- * A command exited with a code its `exitCodes` did not allow.
+ * `text` cut to `maxBytes` at one end, without a character cut in half.
  */
-export class CommandFailedError extends Error {
-  public readonly command: string;
-  public readonly exitCode: number;
-  /**
-   * The end of what the command wrote to stdout, at most 8 KiB.
-   */
-  public readonly stdoutTail: string;
-  /**
-   * The end of what the command wrote to stderr, at most 8 KiB.
-   */
-  public readonly stderrTail: string;
-  public override readonly cause?: unknown;
-
-  constructor(payload: FailedPayload, cause?: unknown) {
-    super(payload.message);
-    this.name = "CommandFailedError";
-    this.command = payload.command;
-    this.exitCode = payload.exitCode;
-    this.stdoutTail = payload.stdoutTail;
-    this.stderrTail = payload.stderrTail;
-    this.cause = cause;
-  }
-}
-
-/**
- * A command ran past its `timeout` and was stopped.
- */
-export class CommandTimeoutError extends Error {
-  public readonly command: string;
-  public readonly stdoutTail: string;
-  public readonly stderrTail: string;
-  public override readonly cause?: unknown;
-
-  constructor(payload: TimeoutPayload, cause?: unknown) {
-    super(payload.message);
-    this.name = "CommandTimeoutError";
-    this.command = payload.command;
-    this.stdoutTail = payload.stdoutTail;
-    this.stderrTail = payload.stderrTail;
-    this.cause = cause;
-  }
-}
-
-export type CommandError = CommandFailedError | CommandTimeoutError;
-
-/**
- * The last `maxBytes` bytes of `text`, without a character cut in half.
- */
-const tail = (text: string, maxBytes: number): string => {
+export const clip = (
+  text: string,
+  maxBytes: number,
+  keep: "start" | "end",
+): string => {
   const bytes = new TextEncoder().encode(text);
 
   if (bytes.byteLength <= maxBytes) {
     return text;
   }
 
-  return new TextDecoder()
-    .decode(bytes.subarray(bytes.byteLength - maxBytes))
-    .replace(/^�+/, "");
+  if (keep === "end") {
+    return new TextDecoder()
+      .decode(bytes.subarray(bytes.byteLength - maxBytes))
+      .replace(/^�+/, "");
+  }
+
+  return `${new TextDecoder().decode(bytes.subarray(0, maxBytes)).replace(/�+$/, "")}…`;
 };
 
 /**
- * The non-retriable error a step throws for a failed command. Its `cause` is
- * the payload that `getCommandError()` reads back.
+ * The non-retriable error a step throws for a failed command. `reason` ends
+ * the message ("failed with exit code 2", "timed out after 5m"), and the
+ * error's `cause` is the payload that `getCommandError()` reads back.
  */
-export const commandFailure = (
-  failure: {
-    command: string;
-    stdout: string;
-    stderr: string;
-  } & ({ exitCode: number } | { timeout: string }),
-): NonRetriableError => {
-  const { command, stdout, stderr } = failure;
-  const payload: FailedPayload | TimeoutPayload =
-    "timeout" in failure
-      ? {
-          type: "sandbox_command_timeout",
-          message: `Command timed out after ${failure.timeout}: ${command}`,
-          command,
-          stdoutTail: tail(stdout, commandErrorTailBytes),
-          stderrTail: tail(stderr, commandErrorTailBytes),
-        }
-      : {
-          type: "sandbox_command_failed",
-          message: `Command failed with exit code ${failure.exitCode}: ${command}`,
-          command,
-          exitCode: failure.exitCode,
-          stdoutTail: tail(stdout, commandErrorTailBytes),
-          stderrTail: tail(stderr, commandErrorTailBytes),
-        };
+export const commandFailure = (failure: {
+  type: CommandError["type"];
+  reason: string;
+  command: string;
+  exitCode?: number;
+  stdout: string;
+  stderr: string;
+}): NonRetriableError => {
+  const command = clip(failure.command, commandErrorTextBytes, "start");
+  const payload: CommandError = {
+    type: failure.type,
+    message: `Command ${failure.reason}: ${command}`,
+    command,
+    ...(failure.exitCode !== undefined && { exitCode: failure.exitCode }),
+    stdoutTail: clip(failure.stdout, commandErrorTailBytes, "end"),
+    stderrTail: clip(failure.stderr, commandErrorTailBytes, "end"),
+  };
 
   return new NonRetriableError(payload.message, { cause: payload });
 };
@@ -152,7 +108,11 @@ export const checkExit = (
   result: { command: string; exitCode: number; stdout: string; stderr: string },
 ): void => {
   if (exitCodes !== "any" && !exitCodes.includes(result.exitCode)) {
-    throw commandFailure(result);
+    throw commandFailure({
+      ...result,
+      type: "failed",
+      reason: `failed with exit code ${result.exitCode}`,
+    });
   }
 };
 
@@ -172,24 +132,8 @@ export const formatTimeout = (milliseconds: number): string => {
 /**
  * Returns the command failure carried by `error`, or `undefined` if it isn't
  * one. A failed `sandbox.$` command rejects with a `StepError`, like any other
- * step, so use this to read its command, exit code and output. Check `name` to
- * tell a failed exit from a timeout.
+ * step, so use this to read its command, exit code and output.
  */
 export const getCommandError = (error: unknown): CommandError | undefined => {
-  if (
-    error instanceof CommandFailedError ||
-    error instanceof CommandTimeoutError
-  ) {
-    return error;
-  }
-
-  const payload = findInCauses(error, payloadSchema);
-
-  if (!payload) {
-    return undefined;
-  }
-
-  return payload.type === "sandbox_command_failed"
-    ? new CommandFailedError(payload, error)
-    : new CommandTimeoutError(payload, error);
+  return findInCauses(error, payloadSchema);
 };
