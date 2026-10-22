@@ -138,7 +138,7 @@ const learn = async (api: Api) => {
 };
 
 /** A build lock held by a run that has since died. */
-const plantLock = (api: Api, lock: string, owner: string): string => {
+const plantLock = (api: Api, lock: string): string => {
   const id = "99999999-9999-4999-8999-000000000001";
 
   api.sandboxes.set(id, {
@@ -147,21 +147,9 @@ const plantLock = (api: Api, lock: string, owner: string): string => {
     status: "RUNNING",
     vcpu: 2,
     memoryMb: 2048,
-    environment: { INNGEST_CI_LOCK_OWNER: owner },
   });
 
   return id;
-};
-
-const failedEvent = (request: BusEvent, owner: string) => {
-  return {
-    name: "inngest/function.failed",
-    data: {
-      function_id: "ci-test-ci/build",
-      run_id: owner,
-      event: { data: request.data },
-    },
-  };
 };
 
 describe("runs that miss the same cached job together", () => {
@@ -184,12 +172,9 @@ describe("runs that miss the same cached job together", () => {
     expect(held(api)).toEqual([]);
 
     // Four requests, one the build's: the singleton skipped the rest before
-    // they started a run, and the builder's machine is owned by its run.
+    // they started a run.
     expect(sentOf(bus, buildRequestedEvent)).toHaveLength(4);
     expect(bus.skipped).toBe(3);
-    expect(locks(api)[0]?.environment).toEqual({
-      INNGEST_CI_LOCK_OWNER: expect.stringMatching(/^01BUILD/),
-    });
 
     const done = sentOf(bus, buildDoneEvent);
 
@@ -280,7 +265,7 @@ describe("a build run handed a request", () => {
     const { ci, bus, request, snapshot, lock } = await learn(api);
 
     if (lockHeld) {
-      plantLock(api, lock, "01OTHER");
+      plantLock(api, lock);
     } else {
       api.snapshots.set(snapshot.id, snapshot);
     }
@@ -416,80 +401,11 @@ describe("a build that fails", () => {
   });
 });
 
-describe("a build that died holding the lock", () => {
-  test("the cleanup function releases it and sends a failed event, which wakes the waiting run to ask again", async () => {
-    const api = createFakeSandboxApi();
-    const { request, lock } = await learn(api);
-
-    plantLock(api, lock, "01DEAD");
-
-    const { ci, pipeline, bus } = setup(api);
-
-    // The test acts as the platform, so it counts as a run that may still act.
-    bus.enter();
-
-    const waiter = runFunction(pipeline, { event: prEvent, runId: "01WAITER" });
-
-    while (sentOf(bus, buildRequestedEvent).length === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 60));
-
-    expect(installs(api)).toBe(0);
-
-    await runFunction(functionOf(ci, "ci/build/cleanup"), {
-      event: failedEvent(request, "01DEAD"),
-    });
-
-    bus.leave();
-
-    expect((await waiter).type).toBe("function-resolved");
-    expect(timeouts(bus)).toBe(0);
-    expect(installs(api)).toBe(1);
-    expect(held(api)).toEqual([]);
-    expect(
-      sentOf(bus, buildDoneEvent).map((event) => event.data.reason),
-    ).toContain("the build run ended before it finished");
-  });
-
-  test.each([
-    [
-      "a lock another run holds now is left alone and tells no one",
-      "01NEWER",
-      true,
-    ],
-    [
-      "a build nobody else waits on has no lock to release and tells no one",
-      "01DEAD",
-      false,
-    ],
-  ])("%s", async (_, owner, locked) => {
-    const api = createFakeSandboxApi();
-    const { request, lock } = await learn(api);
-    const id = plantLock(api, lock, owner);
-    const { ci, bus } = setup(api);
-
-    await runFunction(functionOf(ci, "ci/build/cleanup"), {
-      event: failedEvent(
-        {
-          ...request,
-          data: { ...request.data, locked: locked ? true : undefined },
-        },
-        "01DEAD",
-      ),
-    });
-
-    expect(api.sandboxes.get(id)?.status).toBe("RUNNING");
-    expect(sentOf(bus, buildDoneEvent)).toEqual([]);
-  });
-});
-
 describe("a wait that nothing ends", () => {
   test("is followed by another look and request, which builds once the lost lock is gone", async () => {
     const api = createFakeSandboxApi();
     const { lock } = await learn(api);
-    const id = plantLock(api, lock, "01LOST");
+    const id = plantLock(api, lock);
     const { pipeline, bus } = setup(api);
 
     const result = await runFunction(pipeline, {

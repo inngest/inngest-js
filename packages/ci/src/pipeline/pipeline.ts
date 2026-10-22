@@ -29,13 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import {
-  deleteOrphanSnapshots,
-  deleteRunSnapshots,
-  destroyOrphans,
-  destroyRunMachines,
-  lockMachineName,
-} from "../machine/machine.ts";
+import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -47,8 +41,7 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration, parseRepo } from "../util.ts";
-import type { BuildDone } from "./buildLock.ts";
-import { buildDoneEvent, endBuild } from "./buildLock.ts";
+import { endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -256,6 +249,7 @@ const newRunScope = ({
     inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
+    createdMachines: new Set(),
     summaries: [],
     openChecks: new Map(),
     cacheSaved: new Map(),
@@ -380,9 +374,7 @@ const runPipelineAttempt = async ({
     if (outcome.kind === "failed") {
       // A run that is about to be retried keeps its machines and snapshots:
       // the retry replays the memoized machine and snapshot IDs and needs them
-      // alive. The generated cleanup function covers a run that never gets
-      // here; it finds machines by name, but snapshots carry no run name, so
-      // it can't delete them.
+      // alive.
       if (
         !isDeterministicFailure(outcome.error) &&
         run.willRetry(outcome.error)
@@ -909,9 +901,13 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines and deletes the snapshots of a run of `config.id`
- * that ended permanently, by failure or cancellation, without reaching its own
- * cleanup step.
+ * Completes the pipeline check of a run of `config.id` that was cancelled, as
+ * cancelled. A cancelled run never reaches its own completion, so its check
+ * would stay in progress.
+ *
+ * A run only destroys the machines and deletes the snapshots it holds the IDs
+ * of, in its own cleanup step. One that ends without reaching it leaves them
+ * to expire.
  */
 export const cleanupFunction = ({
   client,
@@ -920,17 +916,13 @@ export const cleanupFunction = ({
 }: {
   client: Inngest.Any;
   config: Pick<PipelineConfig, "id" | "check">;
-  /** Given, a cancelled run's pipeline check is completed as cancelled. */
+  /** Without it there is nothing to complete, and the function does nothing. */
   internals?: CiInternals;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
       id: `${config.id}/cleanup`,
       triggers: [
-        {
-          event: internalEvents.FunctionFailed,
-          if: `event.data.function_id == "${client.id}-${config.id}"`,
-        },
         {
           event: internalEvents.FunctionCancelled,
           if: `event.data.function_id == "${client.id}-${config.id}"`,
@@ -941,42 +933,12 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      // A build that others waited on took a lock on its cache entry, whose
-      // name is worked out from the request it failed on.
-      const request = event?.data?.event?.data;
-
-      const lock =
-        request?.locked === true && typeof request.cacheKey === "string"
-          ? lockMachineName(request.cacheKey)
-          : undefined;
-
-      const destroyed = await step.run(
-        stepOptions(steps.cleanUpEndedRun()),
-        async () => {
-          if (!runId) {
-            return { destroyed: 0, lockReleased: false, deleted: 0 };
-          }
-
-          return {
-            ...(await destroyOrphans(client, runId, lock)),
-            ...(await deleteOrphanSnapshots(client, runId)),
-          };
-        },
-      );
-
-      // A cancelled run never reaches its own completion, so its check would
-      // stay in progress. What it needs comes from the run's trigger event.
+      // What the check needs comes from the run's trigger event.
       const repo = repoContextFromEvent(event?.data?.event);
       const checkName =
         config.check === false ? undefined : (config.check?.name ?? config.id);
 
-      if (
-        internals &&
-        runId &&
-        event?.name === internalEvents.FunctionCancelled &&
-        checkName &&
-        repo?.sha
-      ) {
+      if (internals && runId && checkName && repo?.sha) {
         await step.run(stepOptions(steps.endCancelledCheck()), async () => {
           await (internals.checks as CheckReporter).runCancelled({
             run: { runId, checkName, repo },
@@ -986,28 +948,14 @@ export const cleanupFunction = ({
         });
       }
 
-      // The runs waiting on it would otherwise wait for a build that is gone.
-      // A build that ended on its own already told them, and one that told them
-      // must not be counted as failing twice.
-      if (lock && destroyed.lockReleased) {
-        await step.sendEvent("announce-lock-released", {
-          name: buildDoneEvent,
-          data: {
-            name: lock,
-            status: "failed",
-            reason: "the build run ended before it finished",
-          } satisfies BuildDone,
-        });
-      }
-
-      return destroyed;
+      return { cancelled: Boolean(runId) };
     },
   );
 };
 
 /**
- * The functions a pipeline needs behind the scenes: cleanup after a permanent
- * failure or cancellation, and re-runs from a GitHub check.
+ * The functions a pipeline needs behind the scenes: ending a cancelled run's
+ * check, and re-runs from a GitHub check.
  */
 const generatedFunctions = ({
   client,

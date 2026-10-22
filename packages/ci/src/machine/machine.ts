@@ -8,12 +8,7 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import {
-  deleteReplacedCache,
-  resolveTakenName,
-  snapshotState,
-} from "../cache/cache.ts";
-import { runNamePrefix } from "../cache/names.ts";
+import { resolveTakenName, snapshotState } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
@@ -38,11 +33,11 @@ import {
   boundedName,
   errorMessage,
   hash,
-  isSandboxNotFound,
+  isSandboxNameTaken,
   isSnapshotNotFound,
   slug,
 } from "../util.ts";
-import { deleteMatching, deleteSnapshots, listSandboxes } from "./admin.ts";
+import { deleteSnapshots, destroySandboxes } from "./admin.ts";
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -180,11 +175,17 @@ export const lockMachineName = (cacheKey: string): string => {
 };
 
 /**
- * The environment variable that says which run holds a build lock, namespaced
- * so it can not clash with a job's own. The platform refuses a create of the
- * lock's name with another value, and gives the same machine back for the same.
+ * Thrown by the create of a build's lock machine when another build holds the
+ * lock's name, which is how a build that lost the lock finds out. It is thrown
+ * by that one create and nothing else.
  */
-const lockOwnerKey = "INNGEST_CI_LOCK_OWNER";
+export class BuildLockTakenError extends Error {
+  constructor(lock: string, options?: { cause?: unknown }) {
+    super(`Another build holds the lock ${lock}`, options);
+
+    this.name = "BuildLockTakenError";
+  }
+}
 
 /**
  * Where a machine keeps what the jobs on its chain returned. It is in the
@@ -304,7 +305,7 @@ const startSandbox = async (
     const step = { id: idOf(stage), name: stages[stage] };
 
     // The build that answers for a lock claims it by creating its job's
-    // machine under the lock's name, owned by this run.
+    // machine under the lock's name.
     const lock =
       stage === "first" && run.buildLock?.path === scope.path
         ? run.buildLock.name
@@ -312,16 +313,27 @@ const startSandbox = async (
 
     const name = lock ?? nameOf(stage);
 
-    const sandbox = await tools.create(
-      step,
-      snapshotId
-        ? { name, snapshotId }
-        : {
-            name,
-            ...machineConfig,
-            ...(lock ? { environment: { [lockOwnerKey]: run.runId } } : {}),
-          },
-    );
+    const sandbox = await tools
+      .create(
+        step,
+        snapshotId
+          ? { name, snapshotId }
+          : {
+              name,
+              ...machineConfig,
+            },
+      )
+      .catch((error: unknown) => {
+        // Only this create can say another build holds the lock.
+        if (lock && isSandboxNameTaken(error)) {
+          throw new BuildLockTakenError(lock, { cause: error });
+        }
+
+        throw error;
+      });
+
+    // Only a machine this run created is one it destroys, by this ID.
+    run.createdMachines.add(sandbox.id);
 
     const setup = await sandbox.commands.run(
       { id: joinId(step.id, "setup"), name: traceName.prepareWorkspace },
@@ -359,7 +371,7 @@ const startSandbox = async (
         throw failure;
       }
 
-      await discardFailedStart(run, idOf(stage), nameOf(stage), failure);
+      await discardFailedStart(run, idOf(stage), failure);
 
       return { failure };
     }
@@ -483,49 +495,43 @@ const startSandbox = async (
 
 /**
  * Best-effort cleanup of a machine that failed to start. The platform keeps
- * such a machine (stuck in STARTING) and its name, so it is destroyed here, and
- * the end of the run finds it by its name if this couldn't.
+ * such a machine (stuck in STARTING), and names it in the error when it has
+ * one. A machine the error doesn't name is left to expire: it is never looked
+ * for.
  *
  * Never throws: a machine that can't be cleaned up now must not fail the job.
  */
 const discardFailedStart = async (
   run: CiRunScope,
   stepId: string,
-  name: string,
   error: unknown,
 ): Promise<void> => {
-  const knownId = (error as { cause?: { sandboxId?: string } })?.cause
-    ?.sandboxId;
+  const id = (error as { cause?: { sandboxId?: string } })?.cause?.sandboxId;
+
+  if (!id) {
+    return;
+  }
+
+  // If the destroy below fails, the run's cleanup tries again.
+  run.createdMachines.add(id);
 
   try {
     await ciRun(
       run,
       steps.discardMachine(stepId),
-      async (): Promise<{ id?: string }> => {
+      async (): Promise<{
+        id: string;
+      }> => {
         // Errors are swallowed inside the step so it never retries.
-        let id = knownId;
-
         try {
-          if (!id) {
-            for await (const sandbox of listSandboxes(run.ci.client)) {
-              if (sandbox.name === name && sandbox.status !== "TERMINATED") {
-                id = sandbox.id;
+          const sandbox = await run.ci.client.sandboxes.get(id);
 
-                break;
-              }
-            }
-          }
-
-          if (id) {
-            const sandbox = await run.ci.client.sandboxes.get(id);
-
-            await sandbox?.destroy();
-          }
+          await sandbox?.destroy();
         } catch {
-          // The run's cleanup finds it again by its name.
+          // The run's cleanup tries again.
         }
 
-        return id ? { id } : {};
+        return { id };
       },
     );
   } catch {
@@ -730,16 +736,6 @@ const takeSnapshot = async (
         ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
         : await createRunSnapshot(handle, jobPath, stepId);
 
-    // A new key can't be named again by anything that used the old one, so
-    // the entry it replaces would otherwise stay until it expires.
-    if (taken.named && !taken.reused && !cache?.ephemeral) {
-      await deleteReplacedCache(
-        run,
-        `${stepId}${scopeSeparator}replaced`,
-        taken.named,
-      );
-    }
-
     return taken;
   } catch (error) {
     if (hasCode(error, "sandbox_snapshot_limit_exceeded")) {
@@ -881,11 +877,10 @@ const isNameRefused = (error: unknown): boolean => {
 };
 
 /**
- * Destroy every machine this run created, which the Sandboxes API lists by the
- * run's name prefix. Tolerates machines that are already gone, because cleanup
- * also runs after failures.
+ * Destroy every machine this run created, by the IDs it holds. Tolerates
+ * machines that are already gone, because cleanup also runs after failures.
  *
- * The step is always there and reads the list when it runs: how many machines
+ * The step is always there and reads the set when it runs: how many machines
  * exist now depends on how far each sibling got in this request, so a request
  * that sees none must still plan what another found.
  */
@@ -894,7 +889,7 @@ export const destroyRunMachines = async (
   attempt = 0,
 ): Promise<void> => {
   await ciRun(run, steps.cleanUpMachines(attempt), () => {
-    return destroyOrphans(run.ci.client, run.runId, run.buildLock?.name);
+    return destroySandboxes(run.ci.client, run.createdMachines);
   });
 };
 
@@ -928,98 +923,4 @@ export const deleteRunSnapshots = async (
       );
     });
   });
-};
-
-/**
- * A run that ended permanently never reached its own cleanup step, so the
- * snapshots it owned are found by name, which starts with the run's.
- *
- * A snapshot still being taken when this runs is not seen. A cancelled run
- * can't check for it afterwards, because its code stops running, so such a
- * snapshot is left to expire.
- */
-export const deleteOrphanSnapshots = async (
-  client: Inngest.Any,
-  runId: string,
-): Promise<{ deleted: number }> => {
-  const prefix = runNamePrefix(runId);
-
-  const { deleted } = await deleteMatching(client, ({ name }) => {
-    return name.startsWith(prefix);
-  });
-
-  return { deleted: deleted.length };
-};
-
-/**
- * A run that ended permanently never reached its own cleanup step, so its
- * machines are found by name. Listing has no name filter, so the comparison
- * happens here. A build lock's name is the same for every run, so its machine
- * is also destroyed if this run is the one that holds it.
- */
-export const destroyOrphans = async (
-  client: Inngest.Any,
-  runId: string,
-  /** The lock whose machine this run may hold. */
-  lock?: string,
-): Promise<{ destroyed: number; lockReleased: boolean }> => {
-  const prefix = `ci-${runId}-`;
-  let destroyed = 0;
-  let lockReleased = false;
-
-  for await (const sandbox of listSandboxes(client)) {
-    const holdsIt = sandbox.name === lock && (await holdsLock(sandbox, runId));
-
-    if (sandbox.name.startsWith(prefix) || holdsIt) {
-      try {
-        await sandbox.destroy();
-
-        destroyed++;
-
-        lockReleased ||= holdsIt;
-      } catch (error) {
-        // Anything but "not found" fails the step so it retries.
-        if (!isSandboxNotFound(error)) {
-          throw error;
-        }
-      }
-    }
-  }
-
-  return { destroyed, lockReleased };
-};
-
-/** Whether a machine is still there to hold a name. */
-const isLive = (sandbox: { status: string }): boolean => {
-  return !["TERMINATING", "TERMINATED", "FAILED"].includes(sandbox.status);
-};
-
-/**
- * Whether a lock's machine is this run's. A machine that is gone isn't; any
- * other error fails the cleanup step so it retries, as a lock wrongly kept
- * would stay taken until its snapshot expires.
- */
-const holdsLock = async (
-  // biome-ignore lint/suspicious/noExplicitAny: SDK sandbox
-  sandbox: any,
-  runId: string,
-): Promise<boolean> => {
-  if (!isLive(sandbox)) {
-    return false;
-  }
-
-  try {
-    const owner = await sandbox.commands.run(
-      ["/bin/sh", "-c", `printf %s "$${lockOwnerKey}"`],
-      { timeout: "10s" },
-    );
-
-    return owner.exitCode === 0 && owner.stdout === runId;
-  } catch (error) {
-    if (isSandboxNotFound(error)) {
-      return false;
-    }
-
-    throw error;
-  }
 };
