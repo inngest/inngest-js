@@ -106,17 +106,17 @@ export const createTap = (opts: {
 };
 
 /**
- * Whether a function reply says the new code no longer has the step prod asked
- * for. That is the one signal of a changed step graph visible in the reply.
+ * Whether the reply body carries an opcode with this name. Bodies that are not
+ * an opcode list (a plain `DONE` result, an error) have none.
  */
-const hasStepNotFound = (response: SDKResponse): boolean => {
+const hasOp = (response: SDKResponse, name: string): boolean => {
   try {
     const ops = JSON.parse(new TextDecoder().decode(response.body));
 
     return (
       Array.isArray(ops) &&
       ops.some((op) => {
-        return op?.op === "StepNotFound";
+        return op?.op === name;
       })
     );
   } catch {
@@ -125,11 +125,22 @@ const hasStepNotFound = (response: SDKResponse): boolean => {
 };
 
 /**
+ * Whether a function reply says the new code no longer has the step prod asked
+ * for. That is the one signal of a changed step graph visible in the reply.
+ */
+const hasStepNotFound = (response: SDKResponse): boolean => {
+  return hasOp(response, "StepNotFound");
+};
+
+/**
  * Whether this reply finishes the run, so nothing more will be routed to us.
+ * A function that returns is reported as a `RunComplete` opcode on a
+ * `NOT_COMPLETED` (206) reply, not as `DONE`.
  */
 const endsRun = (response: SDKResponse): boolean => {
   return (
     response.status === SDKResponseStatus.DONE ||
+    hasOp(response, "RunComplete") ||
     (response.status === SDKResponseStatus.ERROR && response.noRetry)
   );
 };

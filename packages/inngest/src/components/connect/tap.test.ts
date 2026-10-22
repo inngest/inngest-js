@@ -386,6 +386,27 @@ describe("tap over the mock gateway", () => {
     expect(replies()[1]?.sticky).toBe(false);
   });
 
+  it("releases sticky when the reply carries RunComplete", async () => {
+    let body = "[]";
+    await start({ sticky: true }, async (msg) => {
+      return response(msg, SDKResponseStatus.NOT_COMPLETED, body);
+    });
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+    body = JSON.stringify([{ op: "RunComplete", id: "x", data: 1 }]);
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 2;
+    });
+
+    expect(replies()[0]?.sticky).toBe(true);
+    expect(replies()[1]?.status).toBe(SDKResponseStatus.NOT_COMPLETED);
+    expect(replies()[1]?.sticky).toBe(false);
+  });
+
   it("sets the run ID on every ack and reply", async () => {
     await start({ sticky: true }, async (msg) => {
       return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
