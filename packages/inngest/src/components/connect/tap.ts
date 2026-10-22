@@ -60,8 +60,6 @@ interface TapOptions {
   exit?: (code: number) => void;
 }
 
-type TapEvent = "taken" | "nacked" | "done" | "error";
-
 /**
  * Read the tap settings from the environment. Returns `undefined` when tap mode
  * is off, which is the case unless `INNGEST_TAP_FUNCTIONS` is set.
@@ -242,30 +240,33 @@ export class Tap {
         return this.nack(msg);
       }
 
-      let response: SDKResponse;
+      let reply: SDKResponse;
       try {
-        response = await handler(msg);
+        const response = await handler(msg);
+
+        if (this.settings.shadow) {
+          this.report("done", msg, "shadow, result discarded");
+          reply = this.nack(msg);
+        } else {
+          reply = this.settle(msg, response);
+        }
       } catch (err) {
         this.report("error", msg, String(err));
 
-        this.finishOnce();
+        if (!this.settings.shadow) {
+          this.closeOnce();
 
-        if (this.settings.shadow) {
-          return this.nack(msg);
+          throw err;
         }
 
-        throw err;
+        reply = this.nack(msg);
       }
 
-      this.finishOnce(response);
-
-      if (this.settings.shadow) {
-        this.report("done", msg, "shadow, result discarded");
-
-        return this.nack(msg);
+      if (reply.sticky !== true) {
+        this.closeOnce();
       }
 
-      return this.settle(msg, response);
+      return reply;
     };
   }
 
@@ -286,15 +287,13 @@ export class Tap {
   }
 
   /**
-   * Close after the one run `once` allows: right away, unless the run is held
-   * sticky, in which case when its last reply is out. Without a response (the
-   * handler threw) it closes too.
+   * With `once`, close after the one run it allows: right after the reply
+   * unless the run is held sticky, in which case when its last reply is out.
+   * Marked as stopping first so the close is quiet.
    */
-  private finishOnce(response?: SDKResponse): void {
-    const holding = this.settings.sticky && !this.settings.shadow;
-    const finished = !response || !holding || endsRun(response);
-
-    if (this.settings.once && finished) {
+  private closeOnce(): void {
+    if (this.settings.once) {
+      this.stopping = true;
       void this.close?.();
     }
   }
@@ -345,7 +344,7 @@ export class Tap {
   }
 
   private report(
-    event: TapEvent,
+    event: string,
     msg: GatewayExecutorRequestData,
     detail?: string,
   ): void {

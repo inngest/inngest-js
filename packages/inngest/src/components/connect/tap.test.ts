@@ -397,6 +397,25 @@ describe("tap over the mock gateway", () => {
     expect(lines.join("\n")).toContain("step graph differs");
   });
 
+  it("once with sticky closes when the step graph does not match", async () => {
+    await start({ once: true, sticky: true }, async (msg) => {
+      return response(
+        msg,
+        SDKResponseStatus.NOT_COMPLETED,
+        JSON.stringify([{ op: "StepNotFound", id: "x" }]),
+      );
+    });
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return (
+        gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE).length === 1
+      );
+    });
+
+    expect(replies()[0]?.status).toBe(SDKResponseStatus.NACKED);
+  });
+
   it("drain releases sticky runs and a second signal drops everything", async () => {
     const exit = vi.fn();
     const listeners: Array<() => void> = [];

@@ -15,9 +15,8 @@
  * server did not keep the outputs, Pull says so and stops; it never invents
  * data.
  *
- * Replay runs every step that was not recorded for real on this machine, with
- * your credentials, so it stops at the first such step. Use test mode when
- * even that is not safe.
+ * Replay runs every step for real on this machine, with your credentials, to
+ * produce the replayed results. Use test mode when that is not safe.
  *
  * UNVERIFIED: the shape of the v2 run and trace responses comes from
  * `proto/api/v2/service.proto` (camelCase JSON), not from a live server. A
@@ -272,15 +271,14 @@ export const runPull = async (
       return;
     }
 
-    const app =
-      apps.find((candidate) => {
-        const fns = (candidate.functions ??
-          candidate.client.funcs) as InngestFunction.Any[];
+    const app = apps.find((candidate) => {
+      const fns = (candidate.functions ??
+        candidate.client.funcs) as InngestFunction.Any[];
 
-        return fns.some((fn) => {
-          return fn.id(candidate.client.id) === recorded.functionSlug;
-        });
-      }) ?? (apps.length === 1 ? apps[0] : undefined);
+      return fns.some((fn) => {
+        return fn.id(candidate.client.id) === recorded.functionSlug;
+      });
+    });
     const appName = app?.client.id;
     const handler = appName
       ? prepareConnectionConfig(apps, client).requestHandlers[appName]
@@ -316,7 +314,7 @@ export const runPull = async (
     }).length;
     reporter.emit(
       "done",
-      `pull: ${changed} of ${diffs.length} steps differ from the recording`,
+      `pull: ${changed} of ${diffs.length} steps need a look`,
       { changed, total: diffs.length },
     );
     process.exitCode = changed > 0 ? 1 : 0;

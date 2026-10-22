@@ -37,8 +37,9 @@ const diffStatus = (
 /**
  * Replay the recorded run on the current code. Each step result is compared to
  * the recorded one, then the recorded one is fed forward so a difference does
- * not cascade into later steps. Stops at the first step that was not recorded
- * as completed, without running it again.
+ * not cascade into later steps. Every step runs for real on this machine to
+ * produce its replayed result. Stops after the first step that was not
+ * recorded as completed.
  */
 export const replayRun = async (opts: {
   recorded: RecordedRun;
@@ -57,6 +58,7 @@ export const replayRun = async (opts: {
   const stack: string[] = [];
   const diffs: StepDiff[] = [];
   const queue: Array<string | undefined> = [undefined];
+  const reached = new Set<string>();
   let requests = 0;
 
   const request = (stepId: string | undefined) => {
@@ -86,11 +88,12 @@ export const replayRun = async (opts: {
   };
 
   while (queue.length > 0) {
-    const response = await opts.handler(request(queue.shift()));
+    const stepId = queue.shift();
+    const response = await opts.handler(request(stepId));
 
     if (response.status === SDKResponseStatus.ERROR) {
       diffs.push({
-        id: opts.functionSlug,
+        id: stepId ?? opts.functionSlug,
         status: "failed",
         replayed: new TextDecoder().decode(response.body),
       });
@@ -127,6 +130,7 @@ export const replayRun = async (opts: {
         return diffs;
       }
 
+      reached.add(id);
       memo[id] = { data: rec.failed ? replayed : (rec.data ?? null) };
       stack.push(id);
 
@@ -142,7 +146,7 @@ export const replayRun = async (opts: {
 
   if (!opts.stopAfter) {
     for (const rec of recorded.steps) {
-      if (!diffs.some((diff) => diff.id === rec.id)) {
+      if (!reached.has(rec.hashed)) {
         diffs.push({ id: rec.id, status: "missing", recorded: rec.data });
       }
     }

@@ -135,13 +135,13 @@ export function prepareConnectionConfig(
     { client: Inngest.Any; functions: FunctionConfig[] }
   > = {};
   for (const [appId, { client, functions: fns }] of Object.entries(functions)) {
-    const configs = fns.flatMap((f) =>
-      f["getConfig"]({
+    const configs = fns.flatMap((f) => {
+      return f["getConfig"]({
         baseUrl: new URL("wss://connect"),
         appPrefix: client.id,
         isConnect: true,
-      }),
-    );
+      });
+    });
 
     functionConfigs[appId] = {
       client: client,
