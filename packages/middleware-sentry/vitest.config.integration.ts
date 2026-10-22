@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    dedupe: ["@sentry/core", "@sentry/types"],
+    dedupe: ["@sentry/core"],
   },
   test: {
     environment: "node",
