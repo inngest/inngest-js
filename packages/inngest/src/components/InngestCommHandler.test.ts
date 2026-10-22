@@ -959,6 +959,14 @@ describe("introspection", () => {
 });
 
 describe("reqUrl (Vercel deployment protection bypass)", () => {
+  beforeEach(() => {
+    // The shell may set VERCEL_AUTOMATION_BYPASS_SECRET (e.g. in CI), and
+    // vi.unstubAllEnvs() restores that value instead of clearing it. Stub it
+    // to an empty string here so individual tests start from a clean state
+    // and override it only where they need it.
+    vi.stubEnv(envKeys.VercelAutomationBypassSecret, "");
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });
