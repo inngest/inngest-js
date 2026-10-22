@@ -465,17 +465,6 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const execInSandbox: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
 
-    // CI reads a build lock's owner out of the machine's environment. That is
-    // not a command of a job, so it is answered and not recorded.
-    if (argv.join(" ").includes('"$INNGEST_CI_LOCK_OWNER"')) {
-      return json(200, {
-        encoding: "base64",
-        stdout: btoa(sandbox.environment?.INNGEST_CI_LOCK_OWNER ?? ""),
-        stderr: "",
-        exitCode: 0,
-      });
-    }
-
     commands.push(argv);
     timeline.push(`command ${argv.join(" ")}`);
 

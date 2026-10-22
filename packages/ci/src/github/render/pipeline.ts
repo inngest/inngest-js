@@ -474,8 +474,22 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
       const by = input.cancelledBy ? ` by **${input.cancelledBy}**` : "";
       const at = input.cancelledAt ? ` at ${input.cancelledAt}` : "";
 
+      const cancelledBy = input.cancelledBy ? ` by ${input.cancelledBy}` : "";
+
+      // A run whose jobs aren't known just says it was cancelled.
+      if (input.jobs.length === 0) {
+        return {
+          title: `🛑 Cancelled${cancelledBy} after ${time}`,
+          summary: sections(
+            callout("note", `🛑 **Cancelled**${at}${by}.`),
+            closingRow(input, "👉", "Press **Re-run all jobs**"),
+          ),
+          actions: [rerunAllAction],
+        };
+      }
+
       return {
-        title: `🛑 Cancelled${input.cancelledBy ? ` by ${input.cancelledBy}` : ""} after ${time}: ${counts.passed} passed, ${counts.total - counts.passed} not finished`,
+        title: `🛑 Cancelled${cancelledBy} after ${time}: ${counts.passed} passed, ${counts.total - counts.passed} not finished`,
         summary: sections(
           callout(
             "note",

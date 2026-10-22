@@ -22,11 +22,7 @@ import {
 import { consoleReporter, githubToken } from "../github/auth.ts";
 import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
-import {
-  destroyOrphans,
-  destroyRunMachines,
-  machineSetupScript,
-} from "../machine/machine.ts";
+import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { report } from "../report.ts";
 import { busOf, createCiTestClient } from "../testing/client.ts";
@@ -2386,88 +2382,7 @@ describe("cache", () => {
     }
 
     expect(ran(api, "pnpm install")).toBe(2);
-    // The second key replaced the first, which nothing can name again.
-    expect(namedSnapshots(api)).toHaveLength(1);
-  });
-
-  test("a new key replaces the old entry of its own job and input, and no other", async () => {
-    const api = createFakeSandboxApi();
-
-    const runWithKey = async (key: string, targets: string[]) => {
-      const { ci } = setup({ api });
-
-      const build = ci.job(
-        {
-          id: "build",
-          cache: { key },
-          input: fakeSchema<{ target: string }>({ target: "string" }),
-        },
-        async () => {
-          await $`pnpm build`;
-        },
-      );
-
-      const lint = ci.job({ id: "lint", cache: { key } }, async () => {
-        await $`pnpm lint`;
-      });
-
-      await runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-          await Promise.all([
-            ...targets.map((target) => {
-              return build({ target });
-            }),
-            lint(),
-          ]);
-        }),
-        { event: prEvent },
-      );
-    };
-
-    await runWithKey("v1", ["web", "api"]);
-
-    expect(namedSnapshots(api)).toHaveLength(3);
-
-    // Only `web` is built under the new key.
-    await runWithKey("v2", ["web"]);
-
-    const jobsLeft = namedSnapshots(api).map((name) => {
-      return name.split("/")[2];
-    });
-
-    // `web` and `lint` hold their v2 entries; `api` still has its v1.
-    expect(jobsLeft.sort()).toEqual(["build", "build", "lint"]);
-    expect(ran(api, "pnpm build")).toBe(3);
-    expect(ran(api, "pnpm lint")).toBe(2);
-  });
-
-  test("a build never deletes a newer entry of its slot", async () => {
-    const api = createFakeSandboxApi();
-
-    const runWithKey = async (key: string) => {
-      const { ci } = setup({ api });
-
-      const build = ci.job({ id: "setup", cache: { key } }, async () => {
-        await $`pnpm install`;
-      });
-
-      await runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-          return build();
-        }),
-        { event: prEvent },
-      );
-    };
-
-    await runWithKey("v1");
-
-    // As if a build with another key finished after this one started.
-    for (const snapshot of api.snapshots.values()) {
-      snapshot.createdAt = new Date(Date.now() + 3_600_000).toISOString();
-    }
-
-    await runWithKey("v2");
-
+    // The first key's entry is not deleted: it expires on its own.
     expect(namedSnapshots(api)).toHaveLength(2);
   });
 
@@ -3062,12 +2977,6 @@ describe("cache", () => {
       }).length;
     };
 
-    const leftoverMachines = (api: ReturnType<typeof createFakeSandboxApi>) => {
-      return [...api.sandboxes.values()].filter((machine) => {
-        return machine.stuck && machine.status !== "TERMINATED";
-      });
-    };
-
     /** A cached `base` from a first run, ready to be restored by the next. */
     const built = async () => {
       const api = createFakeSandboxApi();
@@ -3142,7 +3051,6 @@ describe("cache", () => {
               return candidate.name;
             }),
         ).toEqual([expect.stringMatching(/^ci\/pr:7\/base\//)]);
-        expect(leftoverMachines(api)).toEqual([]);
       },
     );
 
@@ -3194,7 +3102,6 @@ describe("cache", () => {
         expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
         expect(ran(api, "pnpm install")).toBe(1);
         expect(ran(api, "pnpm lint")).toBe(2);
-        expect(leftoverMachines(api)).toEqual([]);
       },
     );
 
@@ -3245,7 +3152,6 @@ describe("cache", () => {
       expect(namedSnapshots(api)).toEqual([
         expect.stringMatching(/^ci\/pr:7\/base\//),
       ]);
-      expect(leftoverMachines(api)).toEqual([]);
     });
 
     test("a snapshot that times out twice is rebuilt unnamed, and never deleted", async () => {
@@ -3260,7 +3166,6 @@ describe("cache", () => {
       expect(api.snapshots.has(snapshot?.id ?? "")).toBe(true);
       expect(ran(api, "pnpm install")).toBe(2);
       expect(ran(api, "pnpm lint")).toBe(2);
-      expect(leftoverMachines(api)).toEqual([]);
     });
 
     test("a launch failure fails the job and leaves the snapshot alone, whatever the number of tries", async () => {
@@ -3364,7 +3269,6 @@ describe("cache", () => {
       expect(ran(api, "pnpm lint")).toBe(2);
       expect(ran(api, "pnpm test")).toBe(2);
       expect(ran(api, "pnpm build")).toBe(2);
-      expect(leftoverMachines(api)).toEqual([]);
     });
   });
 
@@ -4070,7 +3974,7 @@ describe("cleanup", () => {
     code: "sandbox_not_found",
   });
 
-  const runWithSandboxes = (list: () => Promise<unknown>) => {
+  const runHolding = (ids: string[], get: (id: string) => Promise<unknown>) => {
     return {
       step: {
         run: (_options: unknown, fn: () => unknown) => {
@@ -4078,14 +3982,16 @@ describe("cleanup", () => {
         },
       },
       runId: "r",
+      createdMachines: new Set(ids),
       ci: {
         client: {
-          sandboxes: { list },
+          sandboxes: { get },
         },
       },
       // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
     } as any;
   };
+
   test("the machine cleanup step is planned even when no machine exists yet", async () => {
     const { ci } = setup();
 
@@ -4098,114 +4004,39 @@ describe("cleanup", () => {
     // Which machines exist depends on how far each sibling got in a request,
     // so the step can't be left out for a request that sees none.
     expect(result.stepIds).toContain("pipeline › cleanup");
-    expect(result.steps["pipeline › cleanup"]).toEqual({
-      destroyed: 0,
-      lockReleased: false,
-    });
+    expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: 0 });
   });
 
   test("a machine that is already gone is not an error", async () => {
-    const run = runWithSandboxes(async () => {
-      return {
-        items: [
-          {
-            name: "ci-r-a",
-            destroy: async () => {
-              throw notFound;
-            },
-          },
-        ],
-        page: { hasMore: false },
-      };
+    const run = runHolding(["a"], async () => {
+      throw notFound;
     });
 
     await expect(destroyRunMachines(run)).resolves.toBeUndefined();
   });
 
-  test("any other failure fails the step so it retries", async () => {
-    const run = runWithSandboxes(async () => {
+  test("a run destroys the machines it holds the IDs of, and no others", async () => {
+    const destroyed: string[] = [];
+
+    const run = runHolding(["a", "b"], async (id) => {
       return {
-        items: [
-          {
-            name: "ci-r-a",
-            destroy: async () => {
-              throw new Error("503 service unavailable");
-            },
-          },
-        ],
-        page: { hasMore: false },
+        destroy: async () => {
+          destroyed.push(id);
+        },
       };
     });
 
-    await expect(destroyRunMachines(run)).rejects.toThrow("503");
+    await destroyRunMachines(run);
 
-    const lookup = runWithSandboxes(async () => {
-      throw new Error("network down");
+    expect(destroyed).toEqual(["a", "b"]);
+  });
+
+  test("any other failure fails the step so it retries", async () => {
+    const run = runHolding(["a"], async () => {
+      throw new Error("503 service unavailable");
     });
 
-    await expect(destroyRunMachines(lookup)).rejects.toThrow("network down");
-  });
-
-  test("orphan recovery only ignores not-found", async () => {
-    const page = (destroy: () => Promise<unknown>) => {
-      return {
-        sandboxes: {
-          list: async () => {
-            return {
-              items: [{ name: "ci-run1-test", destroy }],
-              page: { hasMore: false },
-            };
-          },
-        },
-        // biome-ignore lint/suspicious/noExplicitAny: a partial client is enough here
-      } as any;
-    };
-
-    await expect(
-      destroyOrphans(
-        page(async () => {
-          throw notFound;
-        }),
-        "run1",
-      ),
-    ).resolves.toEqual({ destroyed: 0, lockReleased: false });
-
-    await expect(
-      destroyOrphans(
-        page(async () => {
-          throw new Error("503 service unavailable");
-        }),
-        "run1",
-      ),
-    ).rejects.toThrow("503");
-  });
-
-  test("a lock machine that can't be asked who owns it fails the step to retry", async () => {
-    const client = {
-      sandboxes: {
-        list: async () => {
-          return {
-            items: [
-              {
-                name: "ci-lock",
-                status: "RUNNING",
-                destroy: async () => {},
-                commands: {
-                  run: async () => {
-                    throw new Error("503 service unavailable");
-                  },
-                },
-              },
-            ],
-          };
-        },
-      },
-      // biome-ignore lint/suspicious/noExplicitAny: a partial client is enough here
-    } as any;
-
-    await expect(destroyOrphans(client, "run1", "ci-lock")).rejects.toThrow(
-      "503",
-    );
+    await expect(destroyRunMachines(run)).rejects.toThrow("503");
   });
 
   test("a run that will be retried keeps its machines for the retry", async () => {
@@ -4551,9 +4382,13 @@ describe("commit statuses", () => {
 
       await runFunction(pipeline, { event: prEvent });
 
-      const descriptions = gh.requests.map((request) => {
-        return (request.body as { description: string }).description;
-      });
+      const descriptions = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          return (request.body as { description: string }).description;
+        });
 
       expect(descriptions).toContain("❌ ENOTFOUND localhost (exit 1)");
     } finally {
@@ -4595,6 +4430,9 @@ describe("the pipeline's commit status", () => {
       await runFunction(pipeline, { event: prEvent });
 
       const statuses = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as {
             context: string;
@@ -4639,6 +4477,9 @@ describe("the pipeline's commit status", () => {
       expect(result.type).toBe("function-resolved");
 
       const statuses = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as { context: string; state: string };
         })
@@ -4725,11 +4566,18 @@ describe("the lifecycle of a check", () => {
 
       await runFunction(pipeline, { event: prEvent });
 
-      const posts = gh.requests.map((request) => {
-        const status = request.body as { context: string; description: string };
+      const posts = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
+        .map((request) => {
+          const status = request.body as {
+            context: string;
+            description: string;
+          };
 
-        return `${status.context}: ${status.description}`;
-      });
+          return `${status.context}: ${status.description}`;
+        });
 
       const firstRunning = posts.findIndex((post) => {
         return post.startsWith("pr / compat") && post.endsWith("Running");
@@ -4933,6 +4781,9 @@ describe("a job's status while it runs in its own run", () => {
       );
 
       const own = gh.requests
+        .filter((request) => {
+          return request.method === "POST";
+        })
         .map((request) => {
           return request.body as { description: string; target_url: string };
         })
@@ -5593,41 +5444,44 @@ describe("a cancelled run's checks", () => {
     return `http://localhost:8288/run?runID=${runId}`;
   };
 
-  test.each([
-    ["cancelled", "inngest/function.cancelled", ["pr", "pr / lint"]],
-    ["failed", "inngest/function.failed", []],
-  ])("statuses of a run that was %s", async (_how, eventName, expected) => {
-    const posts = await cancelWith("statuses", eventName, (gh) => {
-      gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+  test.each([["cancelled", "inngest/function.cancelled", ["pr", "pr / lint"]]])(
+    "statuses of a run that was %s",
+    async (_how, eventName, expected) => {
+      const posts = await cancelWith("statuses", eventName, (gh) => {
+        gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
 
-      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/status", {
-        statuses: [
-          { context: "pr", state: "pending", target_url: url("01TESTRUN") },
-          {
-            context: "pr / lint",
-            state: "pending",
-            target_url: url("01TESTRUN"),
-          },
-          {
-            context: "pr / test",
-            state: "success",
-            target_url: url("01TESTRUN"),
-          },
-          { context: "other", state: "pending", target_url: url("01OTHER") },
-        ],
+        gh.route("GET /repos/inngest/inngest-js/commits/abc1234/status", {
+          statuses: [
+            { context: "pr", state: "pending", target_url: url("01TESTRUN") },
+            {
+              context: "pr / lint",
+              state: "pending",
+              target_url: url("01TESTRUN"),
+            },
+            {
+              context: "pr / test",
+              state: "success",
+              target_url: url("01TESTRUN"),
+            },
+            { context: "other", state: "pending", target_url: url("01OTHER") },
+          ],
+        });
       });
-    });
 
-    expect(
-      posts.map((request) => {
-        const status = request.body as { context: string; description: string };
+      expect(
+        posts.map((request) => {
+          const status = request.body as {
+            context: string;
+            description: string;
+          };
 
-        expect(status.description).toBe("Cancelled");
+          expect(status.description).toBe("Cancelled");
 
-        return status.context;
-      }),
-    ).toEqual(expected);
-  });
+          return status.context;
+        }),
+      ).toEqual(expected);
+    },
+  );
 
   test("check runs of a cancelled run, jobs included, are completed as cancelled", async () => {
     const posts = await cancelWith(
@@ -5663,7 +5517,7 @@ describe("a cancelled run's checks", () => {
 });
 
 describe("a cancelled run's pipeline check", () => {
-  test("says what finished, what was stopped and what never started, and offers a re-run", async () => {
+  test("just says it was cancelled, and offers a re-run", async () => {
     vi.stubEnv("INNGEST_CI_GITHUB", "live");
 
     try {
@@ -5742,13 +5596,9 @@ describe("a cancelled run's pipeline check", () => {
       const pipeline = patched(1);
 
       expect(pipeline.conclusion).toBe("cancelled");
-      expect(pipeline.output.title).toMatch(
-        /^🛑 Cancelled after .+: 1 passed, 2 not finished$/,
-      );
+      expect(pipeline.output.title).toMatch(/^🛑 Cancelled after \S+( \S+)?$/);
       expect(pipeline.output.summary).toContain("> [!NOTE]");
-      expect(pipeline.output.summary).toContain(
-        "✅ 1 passed · 🛑 1 stopped mid-run · ⬜ 1 never started",
-      );
+      expect(pipeline.output.summary).not.toContain("passed");
       expect(pipeline.actions.map((action) => action.identifier)).toEqual([
         "rerun-all",
       ]);
@@ -6570,73 +6420,6 @@ describe("run snapshot cleanup", () => {
     expect(deletedBy(result)).toHaveLength(0);
   });
 
-  test.each([
-    ["cancelled", "inngest/function.cancelled"],
-    ["failed or ran out of steps", "inngest/function.failed"],
-  ])(
-    "a run that was %s without reaching its cleanup has its snapshots deleted",
-    async (_how, eventName) => {
-      const { api, client, ci } = setup();
-      const leftBehind = new Map<string, FakeSnapshot>();
-
-      const base = ci.job("base", async () => {
-        await $`pnpm install`;
-      });
-
-      const child = ci.job({ id: "child", from: base }, async () => {
-        await $`pnpm build`;
-
-        for (const snapshot of api.snapshots.values()) {
-          leftBehind.set(snapshot.id, snapshot);
-        }
-      });
-
-      const result = await runFunction(
-        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-          await child();
-        }),
-        { event: prEvent },
-      );
-
-      expect(result.type).toBe("function-resolved");
-      expect(leftBehind.size).toBe(1);
-
-      // What the run would have left had it stopped before its cleanup, beside
-      // another run's snapshot and a cache entry, which are not its to delete.
-      const [owned] = [...leftBehind.values()];
-
-      for (const snapshot of [
-        ...leftBehind.values(),
-        {
-          ...owned,
-          id: "00000000-0000-4000-8000-0000000000aa",
-          name: "ci/run:01OTHER/base/k",
-        },
-        {
-          ...owned,
-          id: "00000000-0000-4000-8000-0000000000bb",
-          name: "ci/pr:7/setup/s/k",
-        },
-      ] as FakeSnapshot[]) {
-        api.snapshots.set(snapshot.id, snapshot);
-      }
-
-      expect(api.snapshots.size).toBe(3);
-
-      const ended = await runFunction(
-        cleanupFunction({ client, config: { id: "pr" } }),
-        { event: { name: eventName, data: { run_id: "01TESTRUN" } } },
-      );
-
-      expect(ended.error).toBeUndefined();
-      expect(ended.type).toBe("function-resolved");
-      expect(namedSnapshots(api).sort()).toEqual([
-        "ci/pr:7/setup/s/k",
-        "ci/run:01OTHER/base/k",
-      ]);
-    },
-  );
-
   test("an unnamed fallback snapshot is deleted at the end of the run", async () => {
     const api = createFakeSandboxApi();
 
@@ -6892,5 +6675,237 @@ describe("run snapshot cleanup", () => {
     expect(sizeBeforeRetry).toBe(1);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+});
+
+describe("a pull request's test merge", () => {
+  const pull = (overrides: Record<string, unknown> = {}) => {
+    return {
+      number: 7,
+      head: { sha: "abc1234", ref: "feature" },
+      base: { sha: "def5678", ref: "main" },
+      mergeable: true,
+      merge_commit_sha: "mergee1",
+      ...overrides,
+    };
+  };
+
+  const live = () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test("is what the run clones and hashes, while checks stay on the head", async () => {
+    live();
+
+    const { api, ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", pull());
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+    gh.route("GET /repos/inngest/inngest-js/git/trees/mergee1", {
+      tree: [{ type: "blob", path: "package.json", sha: "blob1" }],
+    });
+
+    const build = ci.job(
+      { id: "build", cache: { key: files("package.json") } },
+      async () => {
+        await checkout();
+      },
+    );
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
+        await build();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.stepIds).toContain("github › pr:merge");
+
+    const script = api.commands
+      .map((argv) => {
+        return argv[2] ?? "";
+      })
+      .find((command) => {
+        return command.includes("git clone");
+      });
+
+    expect(script).toContain(
+      "fetch --filter=blob:none origin 'refs/pull/7/merge'",
+    );
+    expect(script).toContain("checkout 'mergee1'");
+
+    const paths = gh.requests.map((request) => {
+      return request.path;
+    });
+
+    expect(paths).toContain("/repos/inngest/inngest-js/git/trees/mergee1");
+    expect(paths).not.toContain("/repos/inngest/inngest-js/git/trees/abc1234");
+    expect(paths).toContain("/repos/inngest/inngest-js/statuses/abc1234");
+    expect(paths).not.toContain("/repos/inngest/inngest-js/statuses/mergee1");
+  });
+
+  test("is asked again while GitHub is still working it out", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    let asked = 0;
+
+    gh.handle("GET /repos/inngest/inngest-js/pulls/7", () => {
+      asked += 1;
+
+      return {
+        body:
+          asked === 1
+            ? pull({ mergeable: null, merge_commit_sha: null })
+            : pull(),
+      };
+    });
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, check: false, childRuns: false },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(asked).toBe(2);
+    expect(result.data).toMatchObject({ sha: "abc1234", mergeSha: "mergee1" });
+  });
+
+  test("a pull request with conflicts fails the run, not retrying", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/pulls/7",
+      pull({ mergeable: false, merge_commit_sha: null }),
+    );
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, childRuns: false },
+        async () => {},
+      ),
+      { event: prEvent },
+    );
+
+    const statuses = gh.requests
+      .filter((request) => {
+        return request.method === "POST";
+      })
+      .map((request) => {
+        return request.body as { state: string; description: string };
+      });
+
+    expect(statuses.at(-1)).toMatchObject({ state: "failure" });
+    expect(statuses.at(-1)?.description).toContain(
+      "PR has conflicts with main",
+    );
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+    expect(String((result.error as { message?: string })?.message)).toContain(
+      "PR has conflicts with main",
+    );
+  });
+
+  test("a head that has moved on since the event keeps testing the event's commit", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/pulls/7",
+      pull({ head: { sha: "newer99", ref: "feature" } }),
+    );
+
+    const result = await runFunction(
+      ci.pipeline(
+        { id: "pr", on: prTrigger, check: false, childRuns: false },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      { event: prEvent },
+    );
+
+    expect(result.data).toMatchObject({ sha: "abc1234" });
+    expect(result.data).not.toHaveProperty("mergeSha");
+  });
+
+  test("a build run keeps the merge its parent chose", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    let asked = 0;
+
+    gh.handle("GET /repos/inngest/inngest-js/pulls/7", () => {
+      asked += 1;
+
+      return { body: pull({ merge_commit_sha: `mergee${asked}` }) };
+    });
+
+    const setupJob = ci.job(
+      { id: "setup", cache: { key: "s" } },
+      async () => {},
+    );
+
+    const test = ci.job({ id: "test", from: setupJob }, async () => {});
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        await test();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(asked).toBe(1);
+  });
+
+  test("a pushed commit has no merge to test", async () => {
+    live();
+
+    const { ci, gh } = setupGitHub();
+
+    const result = await runFunction(
+      ci.pipeline(
+        {
+          id: "push",
+          on: [{ event: "github/push" }],
+          check: false,
+          childRuns: false,
+        },
+        async ({ repo }) => {
+          return repo;
+        },
+      ),
+      {
+        event: {
+          name: "github/push",
+          data: {
+            ref: "refs/heads/main",
+            after: "cafe1234",
+            repository: { full_name: "inngest/inngest-js" },
+            _github: { event: "push", installationId: 1 },
+          },
+        },
+      },
+    );
+
+    expect(result.data).toMatchObject({ sha: "cafe1234" });
+    expect(gh.requests).toEqual([]);
   });
 });

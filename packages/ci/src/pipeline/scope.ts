@@ -318,6 +318,11 @@ export interface CiRunScope {
    */
   createdSnapshots: Set<string>;
   /**
+   * The IDs of the machines this run created, which it destroys when it ends.
+   * It only ever destroys what it holds the ID of.
+   */
+  createdMachines: Set<string>;
+  /**
    * Set when this run is a build: one job's snapshot, built for the run that
    * invoked it. It has no checks of its own and reports to that run.
    */

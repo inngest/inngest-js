@@ -206,7 +206,6 @@ export const steps = {
   resolveCacheName: named("Resolve cache name"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
-  deleteReplacedCache: named("Delete replaced cache"),
 
   // Sandboxes.
   discardMachine: (stepId: string): StepSpec => {
@@ -317,6 +316,14 @@ export const steps = {
     return {
       id: joinId("github", "pr:resolve"),
       name: "pr:resolve",
+      unmarked: true,
+    };
+  },
+
+  resolveMergeCommit: (): StepSpec => {
+    return {
+      id: joinId("github", "pr:merge"),
+      name: "pr:merge",
       unmarked: true,
     };
   },
@@ -440,13 +447,10 @@ export const steps = {
   },
 
   recordRunDetails: named("Record run details"),
-
-  checkBuildLock: named("Check build"),
 };
 
 export const traceName = {
   /** The step that looks for the run holding a build lock. */
-  checkBuildLock: "Check who is building",
 
   /**
    * A job's span: its `name`, or its path when it has none. A later direct

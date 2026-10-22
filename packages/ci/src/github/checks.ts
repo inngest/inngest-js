@@ -913,71 +913,6 @@ const clientFor = (provider: GitHubProvider, repo: Repo) => {
 };
 
 /**
- * The jobs of a run as their checks show them, for drawing a run whose own
- * state is gone. A job's check does not say what it started from, so none is
- * drawn as the child of another.
- */
-const jobsFromChecks = (
-  checkRuns: Array<{
-    name: string;
-    status: string;
-    conclusion?: string | null;
-    external_id?: string | null;
-    started_at?: string | null;
-    completed_at?: string | null;
-    output?: { title?: string | null };
-  }>,
-  runId: string,
-  startedAt: string | null | undefined,
-): GraphJob[] => {
-  const origin = new Date(startedAt ?? Date.now()).getTime();
-
-  return checkRuns
-    .filter((checkRun) => {
-      return (
-        checkRun.external_id?.startsWith(`${runId}:`) &&
-        checkRun.external_id !== `${runId}:pipeline`
-      );
-    })
-    .map((checkRun) => {
-      const id = String(checkRun.external_id).slice(runId.length + 1);
-
-      const state: GraphJob["state"] =
-        checkRun.status === "queued"
-          ? "queued"
-          : checkRun.status !== "completed"
-            ? "stopped"
-            : checkRun.conclusion === "success"
-              ? checkRun.output?.title?.includes("Cache hit")
-                ? "cached"
-                : "ok"
-              : checkRun.conclusion === "cancelled"
-                ? "stopped"
-                : "failed";
-
-      const startMs = checkRun.started_at
-        ? Math.max(0, new Date(checkRun.started_at).getTime() - origin)
-        : Math.max(0, Date.now() - origin);
-
-      return {
-        id,
-        name: id,
-        parents: [],
-        state,
-        startMs,
-        ...(checkRun.completed_at
-          ? {
-              endMs: Math.max(
-                startMs,
-                new Date(checkRun.completed_at).getTime() - origin,
-              ),
-            }
-          : {}),
-      };
-    });
-};
-
-/**
  * Real GitHub checks, through the Checks API.
  */
 export const checksSink = (provider: GitHubProvider): CheckSink => {
@@ -1148,16 +1083,15 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      // Every check a run starts has its ID in its external ID. All are read
-      // before any is closed, since closing one moves the pages, and finished
-      // ones too, because the pipeline's check draws the run.
+      // Every check a run starts has its ID in its external ID. All the open
+      // ones are read before any is closed, since closing one moves the pages.
       type Listed = Awaited<
         ReturnType<typeof octokit.rest.checks.listForRef>
       >["data"]["check_runs"][number];
 
       const listed = new Map<number, Listed>();
 
-      for (const status of ["queued", "in_progress", "completed"] as const) {
+      for (const status of ["queued", "in_progress"] as const) {
         const found = await octokit.paginate(octokit.rest.checks.listForRef, {
           owner: repo.owner,
           repo: repo.name,
@@ -1202,12 +1136,12 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
               ...links,
               run: checkRun.details_url ?? "",
               state: "cancelled",
+              jobs: [],
               elapsedMs: Math.max(
                 0,
                 Date.now() -
                   new Date(checkRun.started_at ?? Date.now()).getTime(),
               ),
-              jobs: jobsFromChecks(mine, run.runId, checkRun.started_at),
             })
           : jobCheck({
               ...links,

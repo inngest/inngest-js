@@ -55,50 +55,19 @@ describe("job check", () => {
     expect(check.summary).not.toContain("| Command |");
   });
 
-  it("waiting on another run's build: says it is not stuck, with an ETA", () => {
+  it("waiting on a build: says it is not stuck, without a link to the builder", () => {
     const check = render({
       state: {
         kind: "waiting-build",
         build: "build",
-        builder: {
-          url: "https://app.inngest.com/runs/B",
-          pullRequest: {
-            number: 1814,
-            url: "https://github.com/o/r/pull/1814",
-          },
-          commit: {
-            sha: "a91c0de",
-            url: "https://github.com/o/r/commit/a91c0de",
-          },
-          elapsedMs: 182_000,
-          usualMs: 250_000,
-        },
-        lock: "ci-build-7f3a9c",
         missReason: "`pnpm-lock.yaml` changed",
       },
     });
 
-    expect(check.title).toBe(
-      "⏳ Waiting on another run's build of `build` (about 1m 08s left)",
-    );
+    expect(check.title).toBe("⏳ Waiting on a build of `build`");
     expect(check.summary).toContain("> [!IMPORTANT]");
     expect(check.summary).toContain("**Not stuck.**");
-    expect(check.summary).toContain("[PR #1814]");
-    expect(check.summary).toContain(
-      "🔒 Lock `ci-build-7f3a9c` · 🧩 Cache miss: `pnpm-lock.yaml` changed",
-    );
-  });
-
-  it("waiting without an ETA does not invent one", () => {
-    const check = render({
-      state: {
-        kind: "waiting-build",
-        build: "build",
-        builder: { url: "u", elapsedMs: 5000 },
-      },
-    });
-
-    expect(check.title).not.toContain("left");
+    expect(check.summary).toContain("🧩 Cache miss: `pnpm-lock.yaml` changed");
   });
 
   it("building: explains the miss and who waits", () => {

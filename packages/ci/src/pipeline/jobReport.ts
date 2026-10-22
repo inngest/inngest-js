@@ -128,32 +128,16 @@ export const reportProgress = async (
   await run.ci.checks?.jobProgress?.({ run, jobPath, count, payload });
 };
 
-/** The check of a job that waits on a build another run is making. */
+/** The check of a job that waits on a build, which may be in another run. */
 export const waitingBuildPayload = (
   run: CiRunScope,
   jobPath: string,
   build: string,
-  builder: { runId: string; startedAt: string },
-  lock: string,
 ): CheckPayload => {
   return jobCheck({
     ...runLinks(run),
     name: jobPath,
-    state: {
-      kind: "waiting-build",
-      build,
-      builder: {
-        url: run.ci.runUrl({
-          runId: builder.runId,
-          functionId: cacheBuildFunctionId,
-        }),
-        elapsedMs: Math.max(
-          0,
-          Date.now() - new Date(builder.startedAt).getTime(),
-        ),
-      },
-      lock,
-    },
+    state: { kind: "waiting-build", build },
   });
 };
 

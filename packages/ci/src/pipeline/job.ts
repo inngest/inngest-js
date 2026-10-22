@@ -36,6 +36,7 @@ import {
   withoutUnreusableCache,
 } from "../machine/from.ts";
 import {
+  BuildLockTakenError,
   destroyJobMachines,
   lockMachineName,
   saveOutputs,
@@ -59,14 +60,13 @@ import {
   failureLine,
   fenceFor,
   formatDuration,
-  isSandboxNameTaken,
   maxStatusDescription,
   shortReason,
   stripAnsi,
   truncateLabel,
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
-import { confirmBuilt, requestBuild, takesBuildLock } from "./buildLock.ts";
+import { requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import {
@@ -1047,12 +1047,11 @@ const jobSteps = async ({
 
         if (builtAs) {
           await snapshotBuilt(scope, builtAs, startedAt, stale);
-          await confirmBuilt(scope, builtAs);
         }
       } catch (error) {
         // Another build holds the lock, and whoever holds it tells everyone
         // how it ended, so this one ends without a word.
-        if (!run.buildLock || !isSandboxNameTaken(error)) {
+        if (!(error instanceof BuildLockTakenError)) {
           throw error;
         }
 

@@ -79,14 +79,6 @@ export type JobState =
       kind: "waiting-build";
       /** The build being waited for. */
       build: string;
-      builder: {
-        url: string;
-        pullRequest?: { number: number; url: string };
-        commit?: { sha: string; url: string };
-        elapsedMs: number;
-        usualMs?: number;
-      };
-      lock?: string;
       missReason?: string;
     }
   | {
@@ -316,36 +308,15 @@ export const jobCheck = (input: JobInput): CheckPayload => {
     }
 
     case "waiting-build": {
-      const { builder } = state;
-      const left =
-        builder.usualMs === undefined
-          ? undefined
-          : Math.max(0, builder.usualMs - builder.elapsedMs);
-
-      const progress = `${formatDuration(builder.elapsedMs)} in${builder.usualMs === undefined ? "" : `, usually ${formatDuration(builder.usualMs)}`}`;
-
       return {
-        title: `⏳ Waiting on another run's build of \`${state.build}\`${left === undefined ? "" : ` (about ${formatDuration(left)} left)`}`,
+        title: `⏳ Waiting on a build of \`${state.build}\``,
         summary: sections(
           callout(
             "important",
-            `⏳ **Not stuck.** Another run is building the snapshot this job needs: ${progress}.${left === undefined ? "" : ` About **${formatDuration(left)} left**.`}`,
+            "⏳ **Not stuck.** The snapshot this job needs is being built.",
           ),
-          linksRow("🔗", [
-            link("This run (cancel here)", input.run),
-            link("The builder", builder.url),
-            builder.pullRequest
-              ? link(
-                  `PR #${builder.pullRequest.number}`,
-                  builder.pullRequest.url,
-                )
-              : undefined,
-            builder.commit
-              ? link(`Commit \`${builder.commit.sha}\``, builder.commit.url)
-              : undefined,
-          ]),
+          linksRow("🔗", [link("This run (cancel here)", input.run)]),
           facts(
-            state.lock ? `🔒 Lock \`${state.lock}\`` : undefined,
             state.missReason ? `🧩 Cache miss: ${state.missReason}` : undefined,
           ),
           callout(
