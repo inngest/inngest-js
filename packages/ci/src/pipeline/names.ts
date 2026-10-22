@@ -321,6 +321,14 @@ export const steps = {
     };
   },
 
+  resolveMergeCommit: (): StepSpec => {
+    return {
+      id: joinId("github", "pr:merge"),
+      name: "pr:merge",
+      unmarked: true,
+    };
+  },
+
   resolveRef: (key: string): StepSpec => {
     return {
       id: boundedName(joinId("github", `ref:${key}`)),

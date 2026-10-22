@@ -138,7 +138,14 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   }
 
   // Resolved outside the step, since a step can't start another.
-  const source = await resolveSource(run, opts);
+  const resolved = await resolveSource(run, opts);
+
+  // The run's own commit is checked out as its test merge when it has one.
+  const source =
+    targetsRunRepo(run, opts) && run.repo?.mergeSha
+      ? { ...resolved, sha: run.repo.mergeSha }
+      : resolved;
+
   const machine = await ensureMachine(scope);
 
   await ciRun(run, steps.cloneRepository(id), () => {
@@ -194,6 +201,8 @@ export const cloneScript = (args: {
   opts: CheckoutOptions;
   target: string;
   sha: string;
+  /** `sha` is a pull request's test merge, which is only under `refs/pull/N/merge`. */
+  merged?: boolean;
 }): string => {
   const { repo, opts, sha } = args;
 
@@ -214,6 +223,13 @@ export const cloneScript = (args: {
     ? `git -C ${target} fetch origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/head`)}`
     : null;
 
+  // A test merge is on no branch, so its ref is fetched before the commit is
+  // checked out.
+  const merge =
+    args.merged && repo.pullRequest
+      ? `git -C ${target} fetch ${filter} origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/merge`)}`
+      : null;
+
   const submodules = opts.submodules
     ? [`git -C ${target} submodule update --init --recursive`]
     : [];
@@ -221,6 +237,7 @@ export const cloneScript = (args: {
   const clone = [
     `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
     ...(fork ? [fork] : []),
+    ...(merge ? [merge] : []),
     `git -C ${target} checkout ${shellEscape(sha)}`,
     ...submodules,
   ].join(" && ");
@@ -256,17 +273,20 @@ const cloneFromGithub = async (
 
   const url = `https://x-access-token:${accessToken}@github.com/${source.fullName}.git`;
 
-  // A fork's pull request head is only fetched for the run's own commit.
+  // A fork's pull request head is only fetched for the run's own commit, and
+  // so is its test merge.
   const own =
     sameRepo(source.fullName, run.repo?.fullName) &&
-    run.repo?.sha === source.sha;
+    (run.repo?.sha === source.sha || run.repo?.mergeSha === source.sha);
   const pullRequest = own ? run.repo?.pullRequest : undefined;
+  const merged = own && run.repo?.mergeSha === source.sha;
 
   const script = cloneScript({
     repo: { ...(pullRequest ? { pullRequest } : {}) },
     opts,
     target,
     sha: source.sha,
+    ...(merged ? { merged: true } : {}),
   });
 
   const result = await sandbox.commands.run(["/bin/sh", "-c", script], {
