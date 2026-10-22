@@ -4,9 +4,11 @@ import type { Logger } from "../../../../middleware/logger.ts";
 import type {
   GatewayExecutorRequestData,
   SDKResponse,
+  TapConfig,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import type { FeatureObservations } from "../../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import type { Inngest } from "../../../Inngest.ts";
+import type { Tap } from "../../tap.ts";
 import type {
   ConnectDebugState,
   ConnectHandlerOptions,
@@ -28,6 +30,9 @@ export type RequestHandler = (
 export interface ConnectionEstablishData {
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
+
+  /** Present in tap mode: makes the connection a tap at handshake. */
+  tap?: TapConfig;
   apps: {
     appName: string;
     appVersion?: string;
@@ -92,6 +97,9 @@ export interface StrategyConfig extends BaseConnectionConfig {
    * Connection options from the user.
    */
   options: ConnectHandlerOptions;
+
+  /** Present in tap mode. */
+  tap?: Tap;
 }
 
 /**

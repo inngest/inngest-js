@@ -35,6 +35,7 @@ export class SameThreadStrategy extends BaseStrategy {
         maxWorkerConcurrency: config.options.maxWorkerConcurrency,
         mode: config.mode,
         gatewayUrl: config.options.gatewayUrl,
+        start: config.options.start,
       },
       {
         logger: this.internalLogger,
@@ -79,6 +80,8 @@ export class SameThreadStrategy extends BaseStrategy {
       },
     );
 
+    config.tap?.bind(() => this.close());
+
     this.messageBuffer = new MessageBuffer({
       envName: config.envName,
       getApiBaseUrl: () => this.core.getApiBaseUrl(),
@@ -115,6 +118,7 @@ export class SameThreadStrategy extends BaseStrategy {
   }
 
   async close(): Promise<void> {
+    this.config.tap?.drain();
     this.cleanupShutdown();
     this.setClosing();
 

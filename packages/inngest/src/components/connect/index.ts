@@ -8,6 +8,8 @@ import {
   type ConnectDebugState,
   type ConnectHandlerOptions,
   ConnectionState,
+  type ConnectSession,
+  type ConnectStart,
   DEFAULT_SHUTDOWN_SIGNALS,
   type InFlightRequest,
   type WorkerConnection,
@@ -141,7 +143,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
       envName,
       connectionData,
       requestHandlers,
-    } = prepareConnectionConfig(this.options.apps, this.inngest);
+      tap,
+    } = prepareConnectionConfig(this.options.apps, this.inngest, {
+      skipSigningKeyCheck: Boolean(this.options.start),
+    });
 
     // Create and initialize the strategy
     this.strategy = await createStrategy(
@@ -152,6 +157,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         envName,
         connectionData,
         requestHandlers,
+        tap,
         options: this.options,
         apiBaseUrl: this.inngest.apiBaseUrl,
         mode: this.inngest["mode"],
@@ -170,6 +176,8 @@ export {
   type ConnectApp,
   type ConnectDebugState,
   type ConnectHandlerOptions,
+  type ConnectSession,
+  type ConnectStart,
   ConnectionState,
   type InFlightRequest,
   type WorkerConnection,

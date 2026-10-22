@@ -57,7 +57,41 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    * @default true
    */
   isolateExecution?: boolean;
+
+  /**
+   * Get the connection session from this function instead of from the Inngest
+   * API with a signing key. It is called for every connection attempt, so the
+   * worker can reconnect with fresh tokens. This lets a worker that holds no
+   * signing key connect, for example one running in a sandbox whose host mints
+   * the session. Runs in the same thread as user code.
+   *
+   * @experimental
+   */
+  start?: ConnectStart;
 }
+
+/**
+ * The session a worker needs to open a connection, as returned by the Inngest
+ * API's connect start endpoint.
+ *
+ * @experimental
+ */
+export interface ConnectSession {
+  connectionId: string;
+  gatewayEndpoint: string;
+  gatewayGroup: string;
+  sessionToken: string;
+
+  /** Only needed by workers that sync; leave empty for taps. */
+  syncToken?: string;
+}
+
+/**
+ * Provides the session for each connection attempt.
+ *
+ * @experimental
+ */
+export type ConnectStart = () => Promise<ConnectSession>;
 
 export interface WorkerConnection {
   connectionId: string;

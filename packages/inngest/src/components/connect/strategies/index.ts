@@ -22,7 +22,9 @@ export async function createStrategy(
   config: StrategyConfig,
   options: ConnectHandlerOptions,
 ): Promise<ConnectionStrategy> {
-  if (options.isolateExecution === false) {
+  // Tap mode and a custom `start` hook need user code and output in the main
+  // thread, so they always use the same-thread strategy.
+  if (options.isolateExecution === false || config.tap || options.start) {
     return new SameThreadStrategy(config);
   }
 

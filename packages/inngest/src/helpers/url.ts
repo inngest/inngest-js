@@ -1,6 +1,10 @@
-import { defaultDevServerHost, defaultInngestApiBaseUrl } from "./consts.ts";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+  envKeys,
+} from "./consts.ts";
 import { devServerAvailable } from "./devserver.ts";
-import type { Mode } from "./env.ts";
+import { getProcessEnv, type Mode } from "./env.ts";
 
 interface ResolveApiBaseUrlOpts {
   /**
@@ -44,4 +48,29 @@ export function resolveApiBaseUrl(opts: ResolveApiBaseUrlOpts): string {
   }
 
   return defaultInngestApiBaseUrl;
+}
+
+/**
+ * The URL where a run can be inspected: the Dev Server UI in dev mode, the
+ * Inngest dashboard otherwise.
+ */
+export function getRunUrl(opts: {
+  runId: string;
+  mode: Mode;
+
+  /** The environment name, used to build dashboard links. */
+  env?: string;
+}): string {
+  const processEnv = getProcessEnv();
+
+  if (opts.mode === "dev") {
+    const base = processEnv[envKeys.InngestBaseUrl] ?? "http://localhost:8288";
+
+    return `${base.replace(/\/$/, "")}/run?runID=${opts.runId}`;
+  }
+
+  const env =
+    processEnv[envKeys.InngestEnvironment] ?? opts.env ?? "production";
+
+  return `https://app.inngest.com/env/${env}/runs/${opts.runId}`;
 }

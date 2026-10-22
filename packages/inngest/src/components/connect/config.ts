@@ -33,6 +33,7 @@ import type {
   ConnectionEstablishData,
   RequestHandler,
 } from "./strategies/index.ts";
+import { createTap, type Tap } from "./tap.ts";
 import type { ConnectApp } from "./types.ts";
 import { parseTraceCtx } from "./util.ts";
 
@@ -51,6 +52,7 @@ export interface PreparedConnectionConfig {
   envName: string | undefined;
   connectionData: ConnectionEstablishData;
   requestHandlers: Record<string, RequestHandler>;
+  tap: Tap | undefined;
 }
 
 /**
@@ -88,6 +90,10 @@ function collectFunctions(
 export function prepareConnectionConfig(
   apps: ConnectApp[],
   inngest: Inngest.Any,
+  opts: {
+    /** The session comes from `start`, so no signing key is needed. */
+    skipSigningKeyCheck?: boolean;
+  } = {},
 ): PreparedConnectionConfig {
   const envName = inngest.env ?? getEnvironmentName();
 
@@ -115,6 +121,8 @@ export function prepareConnectionConfig(
     connect: "v1",
   };
 
+  const tap = createTap({ mode: inngest.mode, env: envName });
+
   const functions = collectFunctions(apps);
 
   // Build function configs
@@ -123,17 +131,21 @@ export function prepareConnectionConfig(
     { client: Inngest.Any; functions: FunctionConfig[] }
   > = {};
   for (const [appId, { client, functions: fns }] of Object.entries(functions)) {
+    const configs = fns.flatMap((f) =>
+      f["getConfig"]({
+        baseUrl: new URL("wss://connect"),
+        appPrefix: client.id,
+        isConnect: true,
+      }),
+    );
+
     functionConfigs[appId] = {
       client: client,
-      functions: fns.flatMap((f) =>
-        f["getConfig"]({
-          baseUrl: new URL("wss://connect"),
-          appPrefix: client.id,
-          isConnect: true,
-        }),
-      ),
+      functions: tap ? tap.select(appId, configs) : configs,
     };
   }
+
+  tap?.assertAllFound();
 
   inngest[internalLoggerSymbol].debug(
     {
@@ -156,14 +168,17 @@ export function prepareConnectionConfig(
   const connectionData: ConnectionEstablishData = {
     manualReadinessAck: true,
     marshaledCapabilities: JSON.stringify(capabilities),
-    apps: Object.entries(functionConfigs).map(
-      ([appId, { client, functions: fns }]) => ({
+    tap: tap?.config,
+    apps: Object.entries(functionConfigs)
+      .filter(([, { functions: fns }]) => {
+        return !tap || fns.length > 0;
+      })
+      .map(([appId, { client, functions: fns }]) => ({
         appName: appId,
         appVersion: client.appVersion,
         functions: new TextEncoder().encode(JSON.stringify(fns)),
         featureObservations: sdkFeatureObservations.get(client),
-      }),
-    ),
+      })),
   };
 
   // Build request handlers
@@ -263,12 +278,15 @@ export function prepareConnectionConfig(
       },
     });
 
-    if (!inngestCommHandler.checkModeConfiguration()) {
+    if (
+      !opts.skipSigningKeyCheck &&
+      !inngestCommHandler.checkModeConfiguration()
+    ) {
       throw new Error("Signing key is required");
     }
 
     const requestHandler = inngestCommHandler.createHandler();
-    requestHandlers[appId] = requestHandler;
+    requestHandlers[appId] = tap ? tap.wrap(requestHandler) : requestHandler;
   }
 
   return {
@@ -277,5 +295,6 @@ export function prepareConnectionConfig(
     envName,
     connectionData,
     requestHandlers,
+    tap,
   };
 }

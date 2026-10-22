@@ -319,6 +319,8 @@ export class MockGateway {
       appName: string;
       functionSlug?: string;
       leaseId?: string;
+      runId?: string;
+      stepId?: string;
     },
     client?: WsWebSocket,
   ): void {
@@ -338,7 +340,8 @@ export class MockGateway {
         requestPayload: new Uint8Array(0),
         systemTraceCtx: new Uint8Array(0),
         userTraceCtx: new Uint8Array(0),
-        runId: "run-1",
+        runId: opts.runId ?? "run-1",
+        stepId: opts.stepId,
       }),
     ).finish();
 

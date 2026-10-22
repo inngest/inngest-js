@@ -42,6 +42,13 @@ export enum envKeys {
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
   InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
+  InngestTapFunctions = "INNGEST_TAP_FUNCTIONS",
+  InngestTapFilter = "INNGEST_TAP_FILTER",
+  InngestTapOnce = "INNGEST_TAP_ONCE",
+  InngestTapShadow = "INNGEST_TAP_SHADOW",
+  InngestTapSticky = "INNGEST_TAP_STICKY",
+  InngestTapLabel = "INNGEST_TAP_LABEL",
+  InngestTapOutput = "INNGEST_TAP_OUTPUT",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not

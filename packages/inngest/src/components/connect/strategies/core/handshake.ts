@@ -16,6 +16,7 @@ import {
   GatewayConnectionReadyData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
+  StartResponse,
   WorkerConnectRequestData,
   WorkerDisconnectReason,
   workerDisconnectReasonToJSON,
@@ -45,6 +46,19 @@ export async function sendStartRequest(
   excludeGateways: Set<string>,
   logger: Logger,
 ) {
+  if (config.start) {
+    try {
+      return StartResponse.create(await config.start());
+    } catch (err) {
+      throw new ReconnectError(
+        `Failed to get a connection session from start(): ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+        attempt,
+      );
+    }
+  }
+
   const msg = createStartRequest(Array.from(excludeGateways));
 
   const headers: Record<string, string> = {
@@ -260,6 +274,7 @@ export async function establishConnection(
         startedAt: startedAt,
         instanceId: config.instanceId || (await getHostname()),
         maxWorkerConcurrency: config.maxWorkerConcurrency,
+        tap: config.connectionData.tap,
       });
 
       const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(

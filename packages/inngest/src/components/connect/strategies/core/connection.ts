@@ -27,6 +27,7 @@ import { parseConnectMessage } from "../../messages.ts";
 import {
   type ConnectDebugState,
   ConnectionState,
+  type ConnectStart,
   type InFlightRequest,
 } from "../../types.ts";
 import {
@@ -70,6 +71,7 @@ export interface ConnectionCoreConfig extends BaseConnectionConfig {
   instanceId?: string;
   maxWorkerConcurrency?: number;
   gatewayUrl?: string;
+  start?: ConnectStart;
   appIds: string[];
 }
 
