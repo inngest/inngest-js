@@ -253,3 +253,54 @@ describe("cloneScript", () => {
     expect(readFileSync(join(target, "fork.txt"), "utf8")).toBe("from a fork");
   });
 });
+
+describe("cloneScript of a test merge", () => {
+  test("fetches the pull request's merge ref, which is on no branch", () => {
+    const root = mkdtempSync(join(tmpdir(), "ci-merge-"));
+    const origin = join(root, "origin");
+
+    mkdirSync(origin);
+
+    git(origin, "init", "-q", "-b", "main");
+    git(origin, "config", "user.email", "ci@example.com");
+    git(origin, "config", "user.name", "ci");
+
+    writeFileSync(join(origin, "a.txt"), "a");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "init");
+
+    git(origin, "checkout", "-q", "-b", "other");
+    writeFileSync(join(origin, "merged.txt"), "merged");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "test merge");
+
+    const mergeSha = git(origin, "rev-parse", "HEAD");
+
+    // GitHub keeps a pull request's test merge under `refs/pull/<n>/merge` only.
+    git(origin, "update-ref", "refs/pull/7/merge", mergeSha);
+    git(origin, "checkout", "-q", "main");
+    git(origin, "branch", "-q", "-D", "other");
+
+    const target = join(root, "work");
+
+    execFileSync(
+      "/bin/sh",
+      [
+        "-c",
+        cloneScript({
+          repo: { pullRequest: { number: 7, headRef: "feature", fork: false } },
+          opts: { history: "full" },
+          target,
+          sha: mergeSha,
+          merged: true,
+        }),
+      ],
+      { cwd: root, env: { ...process.env, CI_REPO_URL: origin } },
+    );
+
+    expect(git(target, "rev-parse", "HEAD")).toBe(mergeSha);
+    expect(readFileSync(join(target, "merged.txt"), "utf8")).toBe("merged");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+});
