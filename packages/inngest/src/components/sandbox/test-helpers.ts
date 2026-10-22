@@ -5,7 +5,8 @@
  */
 
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
-import type { OutgoingOp } from "../../types.ts";
+import { type OutgoingOp, StepOpCode } from "../../types.ts";
+import { _internals } from "../execution/engine.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { sandboxMiddleware } from "./middleware.ts";
@@ -135,6 +136,37 @@ export const createScopeClient = (
 };
 
 /**
+ * How a request finished the function, if it did. A finish that carries
+ * defers is a `steps-found` of them plus the terminal op.
+ */
+const finish = (result: Awaited<ReturnType<typeof runFnWithStack>>) => {
+  if (result.type === "steps-found") {
+    const last = result.steps.find((step) => {
+      return step.id === _internals.hashId("complete");
+    });
+
+    if (last) {
+      return {
+        type:
+          last.op === StepOpCode.RunComplete
+            ? ("function-resolved" as const)
+            : ("function-rejected" as const),
+        retriable: last.op === StepOpCode.StepError,
+      };
+    }
+  }
+
+  if (result.type === "step-ran" || result.type === "steps-found") {
+    return undefined;
+  }
+
+  return {
+    type: result.type,
+    retriable: result.type === "function-rejected" && result.retriable,
+  };
+};
+
+/**
  * Run `fn` request by request until it finishes, memoizing each step, and
  * return how it finished and the steps that ran.
  */
@@ -148,21 +180,53 @@ export const runToEnd = async (
 
   for (let request = 0; request < 20; request++) {
     const result = await runFnWithStack(fn, stepState, opts);
+    const finished = finish(result);
 
-    if (result.type !== "step-ran") {
-      return {
-        type: result.type,
-        ran,
-        steps,
-        retriable: result.type === "function-rejected" && result.retriable,
-      };
+    if (finished) {
+      return { ...finished, ran, steps };
     }
 
-    const { id, data, error } = result.step;
-    steps.push(result.step);
-    ran.push(result.step.userland?.id ?? id);
-    stepState = { ...stepState, [id]: error ? { id, error } : { id, data } };
+    // Steps ride with the defers the request registered or aborted.
+    const found =
+      result.type === "step-ran"
+        ? [result.step]
+        : result.type === "steps-found"
+          ? result.steps
+          : [];
+
+    for (const step of found) {
+      if (
+        step.op === StepOpCode.DeferAdd ||
+        step.op === StepOpCode.DeferAbort
+      ) {
+        continue;
+      }
+
+      const { id, data, error } = step;
+      steps.push(step);
+      ran.push(step.userland?.id ?? id);
+      stepState = { ...stepState, [id]: error ? { id, error } : { id, data } };
+    }
   }
 
   throw new Error("The function did not finish");
+};
+
+/**
+ * The step a request ran, which shares its response with the defers the
+ * request registered or aborted.
+ */
+export const ranStep = (
+  result: Awaited<ReturnType<typeof runFnWithStack>>,
+): OutgoingOp | undefined => {
+  const ops =
+    result.type === "step-ran"
+      ? [result.step]
+      : result.type === "steps-found"
+        ? result.steps
+        : [];
+
+  return ops.find((op) => {
+    return op.op !== StepOpCode.DeferAdd && op.op !== StepOpCode.DeferAbort;
+  });
 };
