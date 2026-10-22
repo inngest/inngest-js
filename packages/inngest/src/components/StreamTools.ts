@@ -55,12 +55,21 @@ export interface StreamTools {
  * @internal
  */
 export class Stream implements StreamTools {
-  private transform: TransformStream<Uint8Array, Uint8Array>;
-  private writer: WritableStreamDefaultWriter<Uint8Array>;
+  private transform?: TransformStream<Uint8Array, Uint8Array>;
+  private writer?: WritableStreamDefaultWriter<Uint8Array>;
   private encoder = new TextEncoder();
   private _activated = false;
   private _errored = false;
+  private _closed = false;
   private writeChain: Promise<void> = Promise.resolve();
+
+  /**
+   * SSE events enqueued before the underlying `TransformStream` exists. The
+   * transform is only allocated when `readable` is first accessed, so
+   * executions whose stream is never consumed never allocate one
+   * (https://github.com/inngest/inngest-js/issues/1624).
+   */
+  private buffered: string[] = [];
 
   /**
    * Optional callback invoked the first time `push` or `pipe` is called.
@@ -82,6 +91,33 @@ export class Stream implements StreamTools {
   }) {
     this.onActivated = opts?.onActivated;
     this.onWriteError = opts?.onWriteError;
+  }
+
+  /**
+   * Whether `push` or `pipe` has been called at least once.
+   */
+  get activated(): boolean {
+    return this._activated;
+  }
+
+  /**
+   * The readable side of the underlying transform stream. Consumers (i.e. the
+   * HTTP response) read SSE events from here. Accessing this allocates the
+   * transform stream, so only access it when the stream will actually be
+   * delivered to a consumer.
+   */
+  get readable(): ReadableStream<Uint8Array> {
+    return this.materialize().readable;
+  }
+
+  /**
+   * Allocate the underlying `TransformStream` and flush any buffered events
+   * (and pending close) through it.
+   */
+  private materialize(): TransformStream<Uint8Array, Uint8Array> {
+    if (this.transform) {
+      return this.transform;
+    }
 
     let readableStrategy: QueuingStrategy<Uint8Array> | undefined;
 
@@ -103,22 +139,33 @@ export class Stream implements StreamTools {
       undefined,
       readableStrategy,
     );
-    this.writer = this.transform.writable.getWriter();
+    const writer = this.transform.writable.getWriter();
+    this.writer = writer;
+
+    for (const sseEvent of this.buffered) {
+      this.chainWrite(writer, sseEvent);
+    }
+    this.buffered = [];
+
+    if (this._closed) {
+      this.chainClose(writer);
+    }
+
+    return this.transform;
   }
 
   /**
-   * Whether `push` or `pipe` has been called at least once.
+   * The full SSE payload, known synchronously once the stream has closed
+   * without `readable` ever being materialized. Returns `undefined` while the
+   * stream is still open or once a consumer holds the readable side — in
+   * those cases the payload must be read from `readable` instead.
    */
-  get activated(): boolean {
-    return this._activated;
-  }
+  undeliveredPayload(): string | undefined {
+    if (!this._closed || this.transform) {
+      return undefined;
+    }
 
-  /**
-   * The readable side of the underlying transform stream. Consumers (i.e. the
-   * HTTP response) read SSE events from here.
-   */
-  get readable(): ReadableStream<Uint8Array> {
-    return this.transform.readable;
+    return this.buffered.join("");
   }
 
   /**
@@ -130,31 +177,46 @@ export class Stream implements StreamTools {
   }
 
   private activate(): void {
-    if (!this._activated) {
+    if (!this._activated && !this._closed) {
       this._activated = true;
       this.onActivated?.();
     }
   }
 
   /**
-   * Encode and write an SSE event string to the underlying writer.
-   */
-  private writeEncoded(sseEvent: string): Promise<void> {
-    return this.writer.write(this.encoder.encode(sseEvent));
-  }
-
-  /**
-   * Enqueue a pre-built SSE event string onto the write chain.
+   * Enqueue a pre-built SSE event string, buffering it until the transform
+   * stream is materialized.
    */
   private enqueue(sseEvent: string): void {
-    if (this._errored) return;
+    if (this._errored || this._closed) return;
 
+    const writer = this.writer;
+    if (!writer) {
+      this.buffered.push(sseEvent);
+      return;
+    }
+
+    this.chainWrite(writer, sseEvent);
+  }
+
+  private chainWrite(
+    writer: WritableStreamDefaultWriter<Uint8Array>,
+    sseEvent: string,
+  ): void {
     this.writeChain = this.writeChain
-      .then(() => this.writeEncoded(sseEvent))
+      .then(() => writer.write(this.encoder.encode(sseEvent)))
       .catch((err) => {
         // Writer errored (e.g. stream closed) — swallow so the chain
         // doesn't break and subsequent writes fail gracefully.
         this._errored = true;
+        this.onWriteError?.(err);
+      });
+  }
+
+  private chainClose(writer: WritableStreamDefaultWriter<Uint8Array>): void {
+    this.writeChain = this.writeChain
+      .then(() => writer.close())
+      .catch((err) => {
         this.onWriteError?.(err);
       });
   }
@@ -254,7 +316,7 @@ export class Stream implements StreamTools {
     const chunks: string[] = [];
 
     for await (const chunk of source) {
-      if (this._errored) break;
+      if (this._errored || this._closed) break;
 
       chunks.push(chunk);
 
@@ -299,19 +361,20 @@ export class Stream implements StreamTools {
   }
 
   /**
-   * Optionally write a final SSE event, then close the writer.
+   * Optionally write a final SSE event, then close the writer. Idempotent —
+   * only the first close takes effect, and later enqueues are dropped.
    */
   private closeWriter(finalEvent?: string): void {
-    this.writeChain = this.writeChain
-      .then(async () => {
-        if (finalEvent) {
-          await this.writeEncoded(finalEvent);
-        }
-        await this.writer.close();
-      })
-      .catch((err) => {
-        this.onWriteError?.(err);
-      });
+    if (this._closed) return;
+
+    if (finalEvent) {
+      this.enqueue(finalEvent);
+    }
+    this._closed = true;
+
+    if (this.writer) {
+      this.chainClose(this.writer);
+    }
   }
 
   /**
