@@ -1,4 +1,5 @@
-import { internalEvents, queryKeys } from "../helpers/consts.ts";
+import { envKeys, internalEvents, queryKeys } from "../helpers/consts.ts";
+import { parseAsBoolean, processEnv } from "../helpers/env.ts";
 import { warnOnce } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
@@ -321,6 +322,12 @@ export class InngestFunction<
     defaultMaxRuntime: DefaultMaxRuntime,
   ): InternalCheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
+      return;
+    }
+
+    // A shadow tap must not commit anything. Checkpoints reach the server
+    // before the reply, so they would outlive the NACK that discards the run.
+    if (parseAsBoolean(processEnv(envKeys.InngestTapShadow))) {
       return;
     }
 

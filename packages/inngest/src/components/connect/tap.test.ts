@@ -14,7 +14,8 @@ import {
   WorkerConnectRequestData,
   WorkerRequestAckData,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import type { FunctionConfig } from "../../types.ts";
+import { DefaultMaxRuntime, type FunctionConfig } from "../../types.ts";
+import { Inngest } from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { parseGatewayExecutorRequest } from "./messages.ts";
 import { processNonce } from "./os.ts";
@@ -136,6 +137,38 @@ describe("function selection", () => {
     expect(() => {
       return tap.assertAllFound();
     }).toThrow(/nope/);
+  });
+});
+
+describe("checkpointing", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const checkpoints = () => {
+    const fn = new Inngest({ id: "app" }).createFunction(
+      { id: "fn", triggers: [{ event: "e" }] },
+      async () => {},
+    );
+
+    return Boolean(
+      fn["shouldAsyncCheckpoint"](
+        undefined,
+        "fn-id",
+        false,
+        DefaultMaxRuntime.connect,
+      ),
+    );
+  };
+
+  it("is on by default and off for a shadow tap, which must not commit anything", () => {
+    expect(checkpoints()).toBe(true);
+
+    vi.stubEnv("INNGEST_TAP_SHADOW", "1");
+    expect(checkpoints()).toBe(false);
+
+    vi.stubEnv("INNGEST_TAP_SHADOW", "");
+    expect(checkpoints()).toBe(true);
   });
 });
 
