@@ -209,8 +209,76 @@ export class EventType<
 type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
+ * Whether `T` carries a brand, i.e. has symbol keys that its base primitive
+ * `TBase` doesn't have.
+ */
+type HasBrand<T, TBase> = [Exclude<keyof T, keyof TBase>] extends [never]
+  ? false
+  : true;
+
+/**
+ * Map each element of an array or tuple through `Unbrand`, keeping tuple
+ * positions, optional elements, and rest elements intact.
+ */
+type UnbrandElements<T extends readonly unknown[]> = {
+  [K in keyof T]: Unbrand<T[K]>;
+};
+
+/**
+ * Recursively strip nominal "brands" from a type.
+ *
+ * Brands (e.g. Zod's `.brand()`) are modelled as an intersection with an
+ * object that only has `unique symbol` keys, like `string & { [BRAND]: ... }`.
+ * They change the static type but never the runtime value, so a branded
+ * schema is not a transform and should be accepted. Removing the brands lets
+ * us compare a schema's input and output types without them getting in the
+ * way.
+ *
+ * Unbranded literals are kept exact so that literal-to-literal transforms
+ * (e.g. `1` to `2`) are still caught. Branded numbers and bigints are widened
+ * to their base type, since TypeScript can't recover the literal from a
+ * branded literal.
+ */
+type Unbrand<T> = T extends string
+  ? T extends `${infer TLiteral}`
+    ? TLiteral
+    : string
+  : T extends number
+    ? HasBrand<T, number> extends true
+      ? number
+      : T
+    : T extends bigint
+      ? HasBrand<T, bigint> extends true
+        ? bigint
+        : T
+      : T extends boolean
+        ? T extends true
+          ? true
+          : false
+        : T extends symbol
+          ? symbol
+          : T extends null | undefined
+            ? T
+            : T extends readonly unknown[]
+              ? // Re-infer the items to drop any brand on the array itself
+                T extends readonly [...infer TItems]
+                ? T extends unknown[]
+                  ? UnbrandElements<TItems>
+                  : Readonly<UnbrandElements<TItems>>
+                : never
+              : T extends object
+                ? {
+                    [K in keyof T as K extends symbol ? never : K]: Unbrand<
+                      T[K]
+                    >;
+                  }
+                : T;
+
+/**
  * Ensure that users don't use transforms in their schemas, since we don't
  * support transforms.
+ *
+ * Branded types are allowed, as they don't change the runtime value.
  */
 type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
   TSchema extends undefined
@@ -221,8 +289,11 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
         [TInput] extends [TOutput]
         ? // Input and output schemas match, so we're good
           TSchema
-        : // Return an error message since the input and output schemas don't match
-          StaticTypeError<"Transforms not supported: schema input/output types must match">
+        : [TInput] extends [Unbrand<TOutput>]
+          ? // Input and output only differ by brands, so we're good
+            TSchema
+          : // Return an error message since the input and output schemas don't match
+            StaticTypeError<"Transforms not supported: schema input/output types must match">
       : // Return an error message since the schema is not a StandardSchemaV1
         StaticTypeError<"Transforms not supported: schema input/output types must match">;
 
