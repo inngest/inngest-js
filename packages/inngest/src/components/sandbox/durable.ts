@@ -1,6 +1,7 @@
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
+import { callRawTool } from "./callRawTool.ts";
 import {
   type SandboxCleanupRegistrar,
   setCleanupRegistrar,
@@ -16,7 +17,10 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { checkExit, commandText } from "./commandError.ts";
+import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
+import { runManagedCommand } from "./managedCommand.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -40,7 +44,7 @@ import {
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
-  type SandboxCommandOutputMetadata,
+  type SandboxCommandResult,
   type SandboxDestroyResult,
   SandboxError,
   type SandboxOutputChunk,
@@ -59,7 +63,9 @@ import {
   decodeUtf8,
   encodeBase64,
   encodeOutput,
+  exitCodesSchema,
   maxSandboxProcessTimeoutMs,
+  normalizeDurationMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
@@ -85,7 +91,7 @@ const fitDurableSandboxExecOutput = (
 ): {
   stdout: Uint8Array;
   stderr: Uint8Array;
-  output: SandboxCommandOutputMetadata;
+  output: SandboxResultForAction<"exec">["result"]["output"];
 } => {
   const originalBytes = {
     stdout: stdout.byteLength,
@@ -405,10 +411,23 @@ export const executeSandboxOperation = async (
       };
     }
     case "process.wait": {
-      const process = await sandboxProcessForOperation(
-        client,
-        operation.target.process,
-      ).wait({ timeout: operation.input[0].timeoutMs });
+      const { timeoutMs, allowRunning } = operation.input[0];
+      const { process: ref } = operation.target;
+      const process = await sandboxProcessForOperation(client, ref)
+        .wait({ timeout: timeoutMs })
+        .catch((error: unknown) => {
+          // The server reports an elapsed wait window as an error. For a
+          // caller that polls, that is an answer: the process is still RUNNING
+          if (
+            allowRunning &&
+            error instanceof SandboxError &&
+            error.code === "sandbox_process_wait_timed_out"
+          ) {
+            return { ...ref, state: "RUNNING" as const };
+          }
+
+          throw error;
+        });
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -417,7 +436,12 @@ export const executeSandboxOperation = async (
           version: process.version,
           sandboxId: process.sandboxId,
           id: process.id,
-          state: process.state as "EXITED" | "KILLED" | "FAILED" | "LOST",
+          state: process.state as
+            | "RUNNING"
+            | "EXITED"
+            | "KILLED"
+            | "FAILED"
+            | "LOST",
           ...(process.exitCode !== undefined && {
             exitCode: process.exitCode,
           }),
@@ -497,88 +521,6 @@ export const executeSandboxOperation = async (
         result: null,
       };
     }
-  }
-};
-
-/**
- * Run an operation as a step. With `finish`, the step also does that work and
- * its output is what `finish` returns, so a replay returns it unchanged.
- */
-const callRawTool = async <
-  A extends SandboxAction,
-  T = SandboxResultForAction<A>,
->(
-  rawToolResolver: SandboxRawToolResolver,
-  idOrOptions: StepOptionsOrId,
-  operation: SandboxOperationForAction<A>,
-  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
-  tools?: SandboxToolsRequest,
-): Promise<T> => {
-  try {
-    const rawTool = await rawToolResolver();
-    const named = namedStep(operation, idOrOptions);
-    // A command with tools takes several steps, so a caller's own span goes
-    // around all of them, not just the first
-    const { "~span": toolsSpan, ...ungrouped } = getStepOptions(named);
-    const step = tools && toolsSpan ? ungrouped : named;
-    const span = (tools && toolsSpan) || commandSpan(operation, step);
-    // A command is one row, however many steps it takes
-    const inSpan = <R>(fn: () => R): R => {
-      return span ? withSpan(span, fn) : fn();
-    };
-
-    if (tools) {
-      return validateSandboxResult(
-        operation,
-        await inSpan(() => {
-          return rawTool(step, operation, undefined, tools);
-        }),
-      ) as T;
-    }
-
-    if (finish) {
-      return (await inSpan(() => {
-        return rawTool(step, operation, (result) => {
-          return finish(validateSandboxResult(operation, result));
-        });
-      })) as T;
-    }
-
-    return validateSandboxResult(
-      operation,
-      await inSpan(() => {
-        return rawTool(step, operation);
-      }),
-    ) as T;
-  } catch (error) {
-    if (error instanceof SandboxValidationError) {
-      throw error;
-    }
-    const options = findSandboxErrorOptions(error);
-    if (options) {
-      if (options.action !== operation.action) {
-        throw new SandboxValidationError(
-          `Sandbox operation returned a ${options.action} error for ${operation.action}`,
-        );
-      }
-      // A failed step rejects with the engine's own StepError. Rethrow that
-      // exact error so it behaves like any other step: left uncaught, it fails
-      // the function without retrying it.
-      if (error instanceof StepError) {
-        throw error;
-      }
-      throw new SandboxError(options);
-    }
-    if (error instanceof StepError) {
-      throw error;
-    }
-    const validationError = findSandboxValidationError(error);
-    if (validationError) {
-      throw new SandboxValidationError(validationError.message, {
-        cause: error,
-      });
-    }
-    throw error;
   }
 };
 
@@ -807,52 +749,107 @@ export const createDurableSandboxFacade = (
       return createSnapshot(idOrOptions, ...args);
     });
   };
+  const run: DurableSandbox["commands"]["run"] = async (
+    idOrOptions,
+    command,
+    options,
+  ) => {
+    const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
+
+    parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
+
+    if (tools && exitCodes !== undefined) {
+      throw new SandboxValidationError("exitCodes can't be used with tools");
+    }
+
+    const text = commandText(command);
+    const timeoutMs =
+      commandOptions.timeout === undefined
+        ? undefined
+        : normalizeDurationMs(
+            commandOptions.timeout,
+            Number.POSITIVE_INFINITY,
+            "timeout",
+          );
+
+    // A command that may outlive one step's wait runs as a process
+    if (
+      !tools &&
+      timeoutMs !== undefined &&
+      timeoutMs > maxSandboxProcessTimeoutMs
+    ) {
+      const { timeout: _timeout, ...spec } = commandOptions;
+
+      return runManagedCommand({
+        rawToolResolver,
+        sandbox: ref,
+        idOrOptions,
+        spec: { ...spec, command },
+        text,
+        timeoutMs,
+        exitCodes: exitCodes ?? "any",
+      });
+    }
+
+    const normalized = normalizeSandboxCommandOptions(command, {
+      ...commandOptions,
+      ...(tools && {
+        timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+      }),
+    });
+    const { timeout: _timeout, ...input } = normalized;
+    const operation = parseSandboxOperationForAction("exec", {
+      protocolVersion: sandboxProtocolVersion,
+      action: "exec",
+      target: sandboxTarget(ref),
+      input: [input],
+    });
+    const toResult = (
+      wire: SandboxResultForAction<"exec">,
+    ): SandboxCommandResult => {
+      return {
+        stdout: decodeUtf8(
+          decodeOutputData(
+            wire.result.stdout,
+            wire.result.encoding,
+            "sandbox exec stdout",
+          ),
+        ),
+        stderr: decodeUtf8(
+          decodeOutputData(
+            wire.result.stderr,
+            wire.result.encoding,
+            "sandbox exec stderr",
+          ),
+        ),
+        exitCode: wire.result.exitCode,
+        output: wire.result.output,
+      };
+    };
+
+    // The exit is checked inside the step, so a disallowed one fails the step
+    // and a replay throws it again
+    const result = await callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      operation,
+      exitCodes && exitCodes !== "any"
+        ? (wire) => {
+            checkExit(exitCodes, { command: text, ...toResult(wire) });
+
+            return wire;
+          }
+        : undefined,
+      tools && { tools, toolOptions },
+    );
+
+    return toResult(result);
+  };
   const facade: DurableSandbox = {
+    $: createDollar(run),
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
-    commands: Object.freeze({
-      run: async (idOrOptions, command, options) => {
-        const { tools, toolOptions, ...commandOptions } = options ?? {};
-        const normalized = normalizeSandboxCommandOptions(command, {
-          ...commandOptions,
-          ...(tools && {
-            timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
-          }),
-        });
-        const { timeout: _timeout, ...input } = normalized;
-        const operation = parseSandboxOperationForAction("exec", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "exec",
-          target: sandboxTarget(ref),
-          input: [input],
-        });
-        const result = await callRawTool(
-          rawToolResolver,
-          idOrOptions,
-          operation,
-          undefined,
-          tools && { tools, toolOptions },
-        );
-        return {
-          stdout: decodeUtf8(
-            decodeOutputData(
-              result.result.stdout,
-              result.result.encoding,
-              "sandbox exec stdout",
-            ),
-          ),
-          stderr: decodeUtf8(
-            decodeOutputData(
-              result.result.stderr,
-              result.result.encoding,
-              "sandbox exec stderr",
-            ),
-          ),
-          exitCode: result.result.exitCode,
-          output: result.result.output,
-        };
-      },
-    }),
+    commands: Object.freeze({ run }),
     files: Object.freeze({
       write: async (idOrOptions, { path, data }) => {
         const operation = parseSandboxOperationForAction("file.upload", {

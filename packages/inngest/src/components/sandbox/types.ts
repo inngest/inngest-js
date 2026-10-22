@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
@@ -163,8 +164,8 @@ export interface SandboxListResult<TSandbox = SandboxRef> {
  *
  * Strings run as `["/bin/sh", "-c", command]`. They are passed to the shell
  * unchanged, so normal shell quoting, variables, pipes, redirects, and
- * chaining apply. Arrays bypass the shell and must begin with an absolute
- * executable path.
+ * chaining apply. Arrays bypass the shell: the first item is the program, a
+ * bare name such as `pnpm` (found on the sandbox's `PATH`) or a path.
  */
 export type SandboxCommand = string | readonly string[];
 
@@ -178,6 +179,11 @@ export interface SandboxCommandOptions {
   timeout?: SandboxDuration;
 }
 
+/**
+ * The exit codes a command may end with: a list, or `"any"` for all of them.
+ */
+export type SandboxExitCodes = readonly number[] | "any";
+
 export type SandboxCommandOutputMetadata =
   | {
       truncated: false;
@@ -185,7 +191,11 @@ export type SandboxCommandOutputMetadata =
   | {
       truncated: true;
       strategy: "tail";
-      originalBytes: {
+      /**
+       * Left out when the command ran as a process (a `timeout` over five
+       * minutes), whose output is a 512 KiB tail with no original size.
+       */
+      originalBytes?: {
         stdout: number;
         stderr: number;
       };
@@ -571,6 +581,11 @@ export interface SandboxClient {
 }
 
 export interface DurableSandbox {
+  /**
+   * Run a command as one step, from a tagged template. `$.sh` runs a shell
+   * script, and `$(options)` gives a `$` with options set. See `SandboxDollar`.
+   */
+  readonly $: SandboxDollar;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;
@@ -588,7 +603,21 @@ export interface DurableSandbox {
     run(
       idOrOptions: StepOptionsOrId,
       command: SandboxCommand,
-      options?: SandboxCommandOptions & SandboxToolsOptions,
+      options?: SandboxCommandOptions &
+        (
+          | (SandboxToolsOptions & { exitCodes?: never })
+          | {
+              /**
+               * The exit codes that are not failures. Any other exit rejects,
+               * without retrying. Defaults to `"any"`, so the exit code returns
+               * as data, except that a process ending LOST or FAILED has none
+               * and throws. Can't be used with `tools`.
+               */
+              exitCodes?: SandboxExitCodes;
+              tools?: undefined;
+              toolOptions?: undefined;
+            }
+        ),
     ): Promise<SandboxCommandResult>;
   };
   /**

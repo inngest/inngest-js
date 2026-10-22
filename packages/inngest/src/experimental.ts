@@ -14,6 +14,11 @@ export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
 // Sandboxes
 export type {
+  CommandError,
+  DollarOptions,
+  DollarPromise,
+  DollarTag,
+  DollarValue,
   DurableSandbox,
   DurableSandboxProcess,
   DurableSandboxSnapshot,
@@ -35,9 +40,11 @@ export type {
   SandboxCreateFromSnapshotOptions,
   SandboxCreateOptions,
   SandboxDestroyResult,
+  SandboxDollar,
   SandboxDuration,
   SandboxErrorCode,
   SandboxErrorDetail,
+  SandboxExitCodes,
   SandboxFileDownloadOptions,
   SandboxFileUploadOptions,
   SandboxFileUploadResult,
@@ -74,6 +81,7 @@ export type {
   SandboxWaitUntilRunningOptions,
 } from "./components/InngestSandbox.ts";
 export {
+  getCommandError,
   getSandboxError,
   SandboxError,
   SandboxValidationError,
