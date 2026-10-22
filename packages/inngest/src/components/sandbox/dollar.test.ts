@@ -6,7 +6,8 @@
  */
 
 import { runFnWithStack } from "../../test/helpers.ts";
-import type { OutgoingOp } from "../../types.ts";
+import { type OutgoingOp, StepOpCode } from "../../types.ts";
+import { _internals } from "../execution/engine.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { StepError } from "../StepError.ts";
 import { clip, commandFailure, getCommandError } from "./commandError.ts";
@@ -16,7 +17,12 @@ import {
   commandId,
   type DollarValue,
 } from "./dollar.ts";
-import { createClient, sandboxId, sandboxResource } from "./test-helpers.ts";
+import {
+  createClient,
+  ranStep,
+  sandboxId,
+  sandboxResource,
+} from "./test-helpers.ts";
 import { type DurableSandbox, SandboxValidationError } from "./types.ts";
 
 type Script = {
@@ -226,6 +232,11 @@ const createFakeClient = (
  * return the IDs that ran in order, the steps, and how the function ended.
  */
 const runAll = async (fn: InngestFunction.Any) => {
+  const priorDefers = Object.fromEntries(
+    ["box", "one", "two", "scoped"].map((name) => {
+      return [_internals.hashId(`${name}:cleanup`), {}];
+    }),
+  );
   const ran: string[] = [];
   const hashed: string[] = [];
   const steps: OutgoingOp[] = [];
@@ -244,7 +255,28 @@ const runAll = async (fn: InngestFunction.Any) => {
   };
 
   for (let request = 0; request < 80; request++) {
-    const result = await runFnWithStack(fn, stepState);
+    const result = await runFnWithStack(fn, stepState, { priorDefers });
+    const complete =
+      result.type === "steps-found"
+        ? result.steps.find((step) => {
+            return step.id === _internals.hashId("complete");
+          })
+        : undefined;
+
+    if (complete) {
+      return {
+        ran,
+        hashed,
+        steps,
+        result: {
+          type:
+            complete.op === StepOpCode.RunComplete
+              ? ("function-resolved" as const)
+              : ("function-rejected" as const),
+          data: complete.data,
+        },
+      };
+    }
 
     if (result.type === "step-ran") {
       memoize(result.step);
@@ -252,10 +284,12 @@ const runAll = async (fn: InngestFunction.Any) => {
       for (const found of result.steps) {
         const done = await runFnWithStack(fn, stepState, {
           runStep: found.id,
+          priorDefers,
         });
+        const step = ranStep(done);
 
-        if (done.type === "step-ran") {
-          memoize(done.step);
+        if (step) {
+          memoize(step);
         }
       }
     } else {
