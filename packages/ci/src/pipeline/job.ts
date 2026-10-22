@@ -214,6 +214,28 @@ interface RunJobArgs {
 }
 
 /**
+ * What a job that a re-run skipped gives back. Awaiting it is fine; reading
+ * anything it returned fails and says what to do, because the data of the
+ * first run isn't kept.
+ */
+const skippedResult = (id: string): Record<string, unknown> => {
+  return new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        if (typeof key === "symbol" || key === "then") {
+          return undefined;
+        }
+
+        throw new NonRetriableError(
+          `This pipeline reads what the job "${id}" returned, but a re-run of one job skips it. Use "Re-run all" to run the whole pipeline again.`,
+        );
+      },
+    },
+  );
+};
+
+/**
  * Run a job. Every direct call is its own run of the job: the first has the
  * job's ID as its path, and each later call gets `${id} (n)`, so it has its
  * own machine, steps and check.
@@ -241,9 +263,7 @@ export const runJob = async ({
     run.rerun?.job !== undefined &&
     run.rerun.job !== (number === 1 ? config.id : `${config.id} (${number})`)
   ) {
-    // It returns nothing, but something to read from: a pipeline that uses
-    // what an earlier job returned gets no data from it, not an error.
-    return {};
+    return skippedResult(config.id);
   }
 
   return jobBody({
