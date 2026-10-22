@@ -1058,7 +1058,6 @@ export const createSandboxTools = (
         {
           get: () => {
             cleanup ??= registerCleanup?.(id, {
-              name: result.sandbox.name,
               sandboxId: result.sandbox.id,
             });
 

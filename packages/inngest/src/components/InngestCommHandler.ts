@@ -315,8 +315,12 @@ const registerResSchema = z.object({
 });
 
 /**
- * `fns` plus the functions the client's middleware needs served, such as the
- * sandbox cleanup, unless `fns` already has them.
+ * EXPERIMENTAL: `fns` plus the functions the client's middleware provides
+ * through its static `functions` hook, such as the sandbox cleanup, unless
+ * `fns` already has them. A client without middleware that provides any gets
+ * `fns` back unchanged.
+ *
+ * @experimental
  */
 export const withMiddlewareFunctions = (
   client: Inngest.Any,

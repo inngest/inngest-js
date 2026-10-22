@@ -1,9 +1,14 @@
 /**
  * @module
  * Cleanup for scoped sandboxes (`await using` and `group.sandbox()`). Each one
- * registers a defer that destroys the sandbox when the run ends for any reason,
- * including cancel and timeout, and aborts it once the scope has destroyed the
- * sandbox itself, so a run that finishes normally starts no extra run.
+ * registers a defer, once its create has succeeded, that destroys the sandbox
+ * by ID when the run ends for any reason, including cancel and timeout, and
+ * aborts it once the scope has destroyed the sandbox itself, so a run that
+ * finishes normally starts no extra run.
+ *
+ * A run cancelled after the create finished and before the defer was
+ * registered, which happens in the request that follows the create step, leaves
+ * the sandbox to its own running timeout.
  */
 
 import type { DeferHandle } from "../../types.ts";
@@ -12,11 +17,10 @@ import type { Inngest } from "../Inngest.ts";
 import type { DurableSandboxTools, SandboxClient } from "./types.ts";
 
 /**
- * The sandbox a cleanup run destroys: by ID when it is known, else by name.
+ * The sandbox a cleanup run destroys: one the run created, by its ID.
  */
 export type SandboxCleanupTarget = {
-  name: string;
-  sandboxId?: string;
+  sandboxId: string;
 };
 
 /**
@@ -54,28 +58,7 @@ const destroyTarget = async (
   sandboxes: SandboxClient,
   target: SandboxCleanupTarget,
 ): Promise<void> => {
-  if (target.sandboxId) {
-    await (await sandboxes.get(target.sandboxId))?.destroy();
-
-    return;
-  }
-
-  let cursor: string | undefined;
-
-  do {
-    const page = await sandboxes.list({ limit: 100, cursor });
-    const found = page.items.find((sandbox) => {
-      return sandbox.name === target.name;
-    });
-
-    if (found) {
-      await found.destroy();
-
-      return;
-    }
-
-    cursor = page.page.hasMore ? page.page.cursor : undefined;
-  } while (cursor);
+  await (await sandboxes.get(target.sandboxId))?.destroy();
 };
 
 /**

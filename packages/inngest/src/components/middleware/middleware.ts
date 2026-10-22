@@ -105,7 +105,9 @@ export namespace Middleware {
   }>;
 
   /**
-   * The argument passed to the static `functions` hook.
+   * EXPERIMENTAL: The argument passed to the static `functions` hook.
+   *
+   * @experimental
    */
   export type FunctionsArgs = Readonly<{ client: Inngest.Any }>;
 
@@ -360,9 +362,14 @@ export namespace Middleware {
     static onRegister?(args: Middleware.OnRegisterArgs): void;
 
     /**
+     * EXPERIMENTAL: This API is not yet stable and may change in the future
+     * without a major version bump.
+     *
      * Functions the middleware needs served alongside the app's own, such as
      * one that cleans up after runs. `serve()` and `connect()` add them to
-     * the app's functions.
+     * the app's functions only when the middleware is on the client.
+     *
+     * @experimental
      */
     static functions?(args: Middleware.FunctionsArgs): InngestFunction.Any[];
 

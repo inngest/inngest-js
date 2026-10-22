@@ -5,9 +5,13 @@
  */
 
 import { vi } from "vitest";
-import { runFnWithStack } from "../../test/helpers.ts";
+import {
+  createClient as createPlainClient,
+  runFnWithStack,
+} from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
-import { internalLoggerSymbol } from "../Inngest.ts";
+import { prepareConnectionConfig } from "../connect/config.ts";
+import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import {
   InngestCommHandler,
   withMiddlewareFunctions,
@@ -86,7 +90,7 @@ const buildScoped = (client: Client) => {
 };
 
 describe("sandbox cleanup defer", () => {
-  test("group.sandbox() registers it before the create step", async () => {
+  test("group.sandbox() registers it once the create has succeeded, by ID", async () => {
     const { client } = createScopeClient();
     const fn = client.createFunction(
       { id: "grouped", triggers: [{ event: "sandbox/cleanup" }] },
@@ -95,12 +99,12 @@ describe("sandbox cleanup defer", () => {
       },
     );
 
-    const defers = await runForRequests(fn, 1);
+    const defers = await runForRequests(fn, 2);
 
     expect(names(defers)).toEqual(["DeferAdd:box:cleanup"]);
     expect(defers[0]?.opts).toMatchObject({
       fn_slug: expect.stringContaining("inngest-sandbox-cleanup"),
-      input: { name: "run-box" },
+      input: { sandboxId },
     });
   });
 
@@ -110,10 +114,13 @@ describe("sandbox cleanup defer", () => {
     const defers = await runForRequests(buildScoped(client), 2);
 
     expect(names(defers)).toEqual(["DeferAdd:box:cleanup"]);
-    expect(defers[0]?.opts?.input).toEqual({
-      name: sandboxResource.name,
-      sandboxId,
-    });
+    expect(defers[0]?.opts?.input).toEqual({ sandboxId });
+  });
+
+  test("a run cut off before the request after the create registered nothing, so the sandbox is left to its running timeout", async () => {
+    const { client } = createScopeClient();
+
+    expect(await runForRequests(buildScoped(client), 1)).toEqual([]);
   });
 
   test("a plain create never registers it, even when the sandbox is used", async () => {
@@ -130,7 +137,7 @@ describe("sandbox cleanup defer", () => {
     expect(await runForRequests(fn, 10)).toEqual([]);
   });
 
-  test("group.sandbox() aborts it when the name belongs to another sandbox", async () => {
+  test("group.sandbox() registers nothing when the create fails, as when another sandbox holds the name", async () => {
     const client = createClient((path, method) => {
       if (path === "/v2/sandboxes" && method === "POST") {
         return Response.json(
@@ -150,14 +157,11 @@ describe("sandbox cleanup defer", () => {
 
     const defers = await runForRequests(fn, 2);
 
-    expect(names(defers)).toEqual([
-      "DeferAdd:box:cleanup",
-      "DeferAbort:box:cleanup",
-    ]);
+    expect(names(defers)).toEqual([]);
   });
 
   test.each([
-    { name: "group.sandbox()", requests: 1 },
+    { name: "group.sandbox()", requests: 2 },
     { name: "await using", requests: 2 },
   ])(
     "$name run cut off after its create leaves the defer to run",
@@ -222,18 +226,10 @@ describe("sandbox cleanup defer", () => {
 });
 
 describe("sandbox cleanup function", () => {
-  const run = async (data: { name: string; sandboxId?: string }) => {
+  const run = async (data: { sandboxId: string }) => {
     const calls: string[] = [];
     const client = createClient((path, method) => {
       calls.push(`${method} ${path}`);
-
-      if (path === "/v2/sandboxes" && method === "GET") {
-        return Response.json({
-          data: [sandboxResource],
-          page: { hasMore: false, limit: 100 },
-          metadata: { fetchedAt: now },
-        });
-      }
 
       if (path === `/v2/sandboxes/${sandboxId}` && method === "DELETE") {
         return new Response(null, { status: 204 });
@@ -260,23 +256,79 @@ describe("sandbox cleanup function", () => {
   };
 
   test("destroys by ID without listing", async () => {
-    const { result, calls } = await run({ name: "box", sandboxId });
+    const { result, calls } = await run({ sandboxId });
 
     expect(result.type).toBe("step-ran");
     expect(calls).toContain(`DELETE /v2/sandboxes/${sandboxId}`);
     expect(calls).not.toContain("GET /v2/sandboxes");
   });
-
-  test("destroys by name when there is no ID", async () => {
-    const { result, calls } = await run({ name: sandboxResource.name });
-
-    expect(result.type).toBe("step-ran");
-    expect(calls).toContain("GET /v2/sandboxes");
-    expect(calls).toContain(`DELETE /v2/sandboxes/${sandboxId}`);
-  });
 });
 
 describe("serving the cleanup function", () => {
+  const cleanupId = (client: Inngest.Any) => {
+    return createSandboxCleanup(client).id(client.id);
+  };
+
+  const idsServedBy = {
+    "serve()": (client: Inngest.Any, fns: InngestFunction.Any[]) => {
+      const handler = new InngestCommHandler({
+        client,
+        frameworkName: "test",
+        functions: fns,
+        handler: () => {
+          return {} as never;
+        },
+      });
+
+      return Object.keys(handler["fns"]);
+    },
+    "connect()": (client: Inngest.Any, fns: InngestFunction.Any[]) => {
+      const { connectionData } = prepareConnectionConfig(
+        [{ client, functions: fns }],
+        client,
+      );
+
+      const configs = JSON.parse(
+        new TextDecoder().decode(connectionData.apps[0]?.functions),
+      ) as { id: string }[];
+
+      return configs.map((config) => {
+        return config.id;
+      });
+    },
+  };
+
+  test.each(Object.entries(idsServedBy))(
+    "%s adds it once to an app that uses the sandbox middleware",
+    (_name, idsServed) => {
+      const { client } = createScopeClient();
+
+      for (const fns of [[], [createSandboxCleanup(client)]]) {
+        const ids = idsServed(client, fns);
+
+        expect(
+          ids.filter((id) => {
+            return id === cleanupId(client);
+          }),
+        ).toHaveLength(1);
+      }
+    },
+  );
+
+  test.each(Object.entries(idsServedBy))(
+    "%s adds nothing to an app without the sandbox middleware",
+    (_name, idsServed) => {
+      const client = createPlainClient({ id: "plain", isDev: true });
+      const fn = client.createFunction(
+        { id: "plain", triggers: [{ event: "demo/event.sent" }] },
+        () => "ok",
+      );
+
+      expect(idsServed(client, [fn])).toEqual(["plain-plain"]);
+      expect(withMiddlewareFunctions(client, [fn])).toEqual([fn]);
+    },
+  );
+
   test("a client with the sandbox middleware serves it once", () => {
     const { client } = createScopeClient();
     const cleanup = createSandboxCleanup(client);
