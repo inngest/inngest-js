@@ -72,7 +72,10 @@ export const setFallbackGitHub = (
  * Built inside the step that uses it, so its installation token never appears
  * in step input or output.
  */
-export const octokitForRun = async (): Promise<Octokit> => {
+export const octokitForRun = async (
+  /** The repository to act on, for code that runs outside a pipeline run. */
+  repository?: { owner: string; repo: string; installationId?: number },
+): Promise<Octokit> => {
   const run = getRunScope();
 
   const provider = (run?.ci.github ?? fallbackProvider) as
@@ -86,11 +89,18 @@ export const octokitForRun = async (): Promise<Octokit> => {
   }
 
   const installationId =
-    run?.repo?.installationId ?? fallbackInstallationId ?? undefined;
+    repository?.installationId ??
+    run?.repo?.installationId ??
+    fallbackInstallationId ??
+    undefined;
+
+  const target =
+    repository ??
+    (run?.repo ? { owner: run.repo.owner, repo: run.repo.name } : undefined);
 
   return provider.octokit({
     ...(installationId === undefined ? {} : { installationId }),
-    ...(run?.repo ? { owner: run.repo.owner, repo: run.repo.name } : {}),
+    ...(target ? { owner: target.owner, repo: target.repo } : {}),
   });
 };
 

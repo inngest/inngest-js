@@ -44,6 +44,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     snapshots: new Map(),
     cached: new Map(),
     createdSnapshots: new Set(),
+    cacheSaved: new Map(),
     sandboxes: new Set(),
     summaries: [],
     counters: new Map(),
@@ -78,6 +79,7 @@ describe("check idempotency", () => {
 
     const result = await sink.start({
       run: fakeRun(),
+      state: "in_progress",
       name: "pr",
       externalId: "01TESTRUN:pipeline",
       detailsUrl: "http://trace/01TESTRUN",
@@ -111,6 +113,7 @@ describe("check idempotency", () => {
 
     const result = await sink.start({
       run: fakeRun(),
+      state: "in_progress",
       name: "pr",
       externalId: "01TESTRUN:pipeline",
       detailsUrl: "http://trace/01TESTRUN",
@@ -119,7 +122,7 @@ describe("check idempotency", () => {
     expect(result).toEqual({ id: 77 });
   });
 
-  test("annotations past the first batch go up as further updates", async () => {
+  test("each batch past the first is its own update", async () => {
     const gh = createFakeGitHub();
 
     gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
@@ -132,6 +135,16 @@ describe("check idempotency", () => {
       }),
     );
 
+    const annotations = (count: number) => {
+      return Array.from({ length: count }, (_, index) => {
+        return normaliseAnnotation({
+          path: "app/src/sum.ts",
+          line: index + 1,
+          message: "boom",
+        });
+      });
+    };
+
     await sink.complete({
       run: fakeRun(),
       name: "pr / test",
@@ -140,28 +153,103 @@ describe("check idempotency", () => {
       conclusion: "failure",
       title: "failed",
       summary: "…",
-      annotations: Array.from({ length: 120 }, (_, index) => {
-        return normaliseAnnotation({
-          path: "app/src/sum.ts",
-          line: index + 1,
-          message: "boom",
-        });
-      }),
+      annotations: annotations(50),
       checkRunId: 55,
     });
 
-    const updates = gh.requests.filter((request) => {
-      return request.method === "PATCH";
+    await sink.annotate?.({
+      run: fakeRun(),
+      name: "pr / test",
+      externalId: "01TESTRUN:test",
+      detailsUrl: "http://trace/01TESTRUN",
+      title: "failed",
+      summary: "…",
+      annotations: annotations(20),
+      checkRunId: 55,
     });
 
-    expect(updates).toHaveLength(3);
+    expect(
+      gh.requests
+        .filter((request) => {
+          return request.method === "PATCH";
+        })
+        .map((request) => {
+          return (request.body as { output: { annotations: unknown[] } }).output
+            .annotations.length;
+        }),
+    ).toEqual([50, 20]);
+  });
+});
+
+describe("updating a running check", () => {
+  const checkRun = (gh: ReturnType<typeof createFakeGitHub>) => {
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
+
+    gh.route("GET /repos/inngest/inngest-js/check-runs/55", {
+      output: { summary: "what it showed before" },
+    });
+
+    return checksSink(
+      githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    );
+  };
+
+  const bodyOf = (gh: ReturnType<typeof createFakeGitHub>) => {
+    return gh.requests.find((request) => {
+      return request.method === "PATCH";
+    })?.body as {
+      actions?: unknown[];
+      output: { title: string; summary: string; text?: string };
+    };
+  };
+
+  test("keeps the buttons it is given and the summary it had", async () => {
+    const gh = createFakeGitHub();
+    const sink = checkRun(gh);
+
+    await sink.update?.({
+      run: fakeRun(),
+      name: "pr / test",
+      title: "Retrying",
+      actions: [{ label: "Cancel", description: "Stop", identifier: "cancel" }],
+      checkRunId: 55,
+    });
+
+    expect(bodyOf(gh).actions).toEqual([
+      { label: "Cancel", description: "Stop", identifier: "cancel" },
+    ]);
+
+    expect(bodyOf(gh).output.summary).toBe("what it showed before");
+  });
+
+  test("shows a new summary and text instead of the old summary", async () => {
+    const gh = createFakeGitHub();
+    const sink = checkRun(gh);
+
+    await sink.update?.({
+      run: fakeRun(),
+      name: "pr / test",
+      title: "\u001b[1mBuilding\u001b[0m",
+      summary: "2 of 5 steps done",
+      text: "log",
+      checkRunId: 55,
+    });
+
+    expect(bodyOf(gh).output).toEqual({
+      title: "Building",
+      summary: "2 of 5 steps done",
+      text: "log",
+    });
 
     expect(
-      updates.map((request) => {
-        return (request.body as { output: { annotations: unknown[] } }).output
-          .annotations.length;
+      gh.requests.filter((request) => {
+        return request.method === "GET";
       }),
-    ).toEqual([50, 50, 20]);
+    ).toHaveLength(0);
   });
 });
 
@@ -203,7 +291,7 @@ describe("commit statuses", () => {
 });
 
 describe("commit status descriptions", () => {
-  const descriptionFor = async (title: string, detail?: string) => {
+  const descriptionFor = async (title: string) => {
     const gh = createFakeGitHub();
 
     gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
@@ -223,7 +311,6 @@ describe("commit status descriptions", () => {
       detailsUrl: "http://trace/01TESTRUN",
       conclusion: "failure",
       title,
-      ...(detail ? { detail } : {}),
       summary: "",
       annotations: [],
     });
@@ -231,31 +318,17 @@ describe("commit status descriptions", () => {
     return (gh.requests[0]?.body as { description: string }).description;
   };
 
-  test.each([
-    [
-      "no detail",
-      "`pnpm test` exited with 1",
-      undefined,
-      "`pnpm test` exited with 1",
-    ],
-    [
-      "a detail that fits",
-      "`pnpm test` exited with 1",
-      "ENOTFOUND localhost",
-      "`pnpm test` exited with 1: ENOTFOUND localhost",
-    ],
-    [
-      "a detail that is too long",
-      "`pnpm test` exited with 1",
-      "x".repeat(300),
-      `\`pnpm test\` exited with 1: ${"x".repeat(112)}…`,
-    ],
-  ])("%s", async (_name, title, detail, expected) => {
-    const description = await descriptionFor(title, detail);
+  test("a title that fits is the description", async () => {
+    expect(await descriptionFor("ENOTFOUND localhost (exit 1)")).toBe(
+      "ENOTFOUND localhost (exit 1)",
+    );
+  });
 
-    expect(description).toBe(expected);
+  test("a title that is too long is cut to GitHub's limit", async () => {
+    const description = await descriptionFor("x".repeat(300));
 
-    expect(description.length).toBeLessThanOrEqual(140);
+    expect(description).toBe(`${"x".repeat(139)}…`);
+    expect(description.length).toBe(140);
   });
 });
 
@@ -349,6 +422,46 @@ describe("live updates", () => {
 });
 
 describe("pipeline summary", () => {
+  test("says how long the run took by the clock, and the compute time apart", () => {
+    const summary = pipelineSummary(
+      fakeRun({
+        startedAt: Date.now() - 585_000,
+        summaries: [
+          {
+            path: "a",
+            conclusion: "success",
+            title: "ok",
+            durationMs: 600_000,
+          },
+          {
+            path: "b",
+            conclusion: "success",
+            title: "ok",
+            durationMs: 600_000,
+          },
+        ],
+      }),
+    );
+
+    expect(summary).toMatch(
+      /^\*\*Took 9m 4\ds\*\* \(20m 00s of compute across 2 jobs\)/,
+    );
+  });
+
+  test("a table says how long the cache saved", () => {
+    const summary = pipelineSummary(
+      fakeRun({
+        cacheSaved: new Map([
+          ["install", 180_000],
+          ["build", 60_000],
+        ]),
+      }),
+    );
+
+    expect(summary).toContain("| install | 3m 00s |");
+    expect(summary).toContain("| **Total** | **4m 00s** |");
+  });
+
   test("lists jobs, links the trace, and names kept machines", () => {
     const summary = pipelineSummary(
       fakeRun({

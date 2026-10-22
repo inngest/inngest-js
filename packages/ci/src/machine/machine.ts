@@ -18,6 +18,7 @@ import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type {
+  BuildInfo,
   CiJobScope,
   CiRunScope,
   MachineHandle,
@@ -192,6 +193,13 @@ const lockOwnerKey = "INNGEST_CI_LOCK_OWNER";
 const outputsPath = "/var/tmp/.inngest-ci-outputs.json";
 
 /**
+ * Where, among the outputs, a build keeps how long it took. It can't collide
+ * with an output, whose keys are a position and an ID. This is the stopgap
+ * until snapshots can carry labels of their own.
+ */
+const buildInfoKey = ".build";
+
+/**
  * The most the outputs file can hold. A machine reads it back in its setup
  * command, and a command's captured output keeps only its last 2 MiB.
  */
@@ -320,9 +328,14 @@ const startSandbox = async (
       ["/bin/sh", "-c", machineSetupScript],
     );
 
-    const onDisk: StoredOutputs = setup.stdout.trim()
-      ? JSON.parse(setup.stdout)
-      : {};
+    const { [buildInfoKey]: build, ...onDisk } = (
+      setup.stdout.trim() ? JSON.parse(setup.stdout) : {}
+    ) as StoredOutputs & { [buildInfoKey]?: BuildInfo };
+
+    // Only a snapshot from an earlier run saved this run anything.
+    if (snapshotId && scope.fromParent?.reused && build) {
+      run.cacheSaved.set(scope.fromParent.id, build.durationMs);
+    }
 
     scope.savedOutputs = JSON.stringify(onDisk);
     scope.outputs = { ...onDisk, ...scope.outputs };
@@ -646,8 +659,14 @@ const snapshotStep = (jobPath: string, id: string) => {
  * the snapshot takes it. A job that returned something gets a machine to hold
  * it, even if it ran no commands.
  */
-export const saveOutputs = async (scope: CiJobScope): Promise<void> => {
-  const data = JSON.stringify(scope.outputs);
+export const saveOutputs = async (
+  scope: CiJobScope,
+  /** How long the job took to build, when this is the machine it's snapshotted from. */
+  build?: BuildInfo,
+): Promise<void> => {
+  const data = JSON.stringify(
+    build ? { ...scope.outputs, [buildInfoKey]: build } : scope.outputs,
+  );
 
   if (data === scope.savedOutputs) {
     return;
