@@ -42,6 +42,15 @@ message AuthData {
 	string sync_token = 2;
 }
 
+// Sent at handshake. Presence of WorkerConnectRequestData.tap makes the connection a tap.
+message TapConfig {
+	repeated string functions = 1;   // function slugs wanted (informational; routing uses the group's function list)
+	optional string filter = 2;      // CEL, evaluated by the server only while a tap is connected
+	bool once = 3;                   // informational (SDK enforces)
+	bool shadow = 4;                 // informational (SDK enforces)
+	string label = 5;                // free text for listings
+}
+
 message WorkerConnectRequestData {
 	string connection_id = 1;
 	string instance_id = 2;
@@ -63,6 +72,7 @@ message WorkerConnectRequestData {
 	google.protobuf.Timestamp started_at = 13;
 
 	optional int64 max_worker_concurrency = 14;
+	optional TapConfig tap = 15;
 }
 
 message GatewayConnectionReadyData {
@@ -111,6 +121,7 @@ message WorkerRequestAckData {
 	bytes system_trace_ctx = 7;
 	bytes user_trace_ctx = 8;
 	string run_id = 9;
+	optional bool sticky = 10;       // unset: no change; true: make run sticky; false: release
 }
 
 message WorkerRequestExtendLeaseData {
@@ -141,6 +152,7 @@ enum SDKResponseStatus {
 	NOT_COMPLETED = 0;
 	DONE = 1;
 	ERROR = 2;
+	NACKED = 3;       // not a failure: server re-routes excluding this connection
 }
 
 message SDKResponse {
@@ -157,6 +169,7 @@ message SDKResponse {
 	bytes system_trace_ctx = 11;
 	bytes user_trace_ctx = 12;
 	string run_id = 13;
+	optional bool sticky = 14;       // same semantics; NACKED always drops stickiness
 }
 
 message WorkerReplyAckData {
@@ -183,6 +196,7 @@ message ConnMetadata {
 	string sdk_language = 8;
 	string sdk_version = 9;
 	SystemAttributes attributes = 10;
+	optional TapConfig tap = 11;     // visibility: listings count conns with tap set
 }
 
 message SystemAttributes {

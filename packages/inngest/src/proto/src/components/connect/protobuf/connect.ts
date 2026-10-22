@@ -132,6 +132,8 @@ export enum SDKResponseStatus {
   NOT_COMPLETED = 0,
   DONE = 1,
   ERROR = 2,
+  /** NACKED - not a failure: server re-routes excluding this connection */
+  NACKED = 3,
   UNRECOGNIZED = -1,
 }
 
@@ -146,6 +148,9 @@ export function sDKResponseStatusFromJSON(object: any): SDKResponseStatus {
     case 2:
     case "ERROR":
       return SDKResponseStatus.ERROR;
+    case 3:
+    case "NACKED":
+      return SDKResponseStatus.NACKED;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -161,6 +166,8 @@ export function sDKResponseStatusToJSON(object: SDKResponseStatus): string {
       return "DONE";
     case SDKResponseStatus.ERROR:
       return "ERROR";
+    case SDKResponseStatus.NACKED:
+      return "NACKED";
     case SDKResponseStatus.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -286,6 +293,22 @@ export interface AuthData {
   syncToken: string;
 }
 
+/** Sent at handshake. Presence of WorkerConnectRequestData.tap makes the connection a tap. */
+export interface TapConfig {
+  /** function slugs wanted (informational; routing uses the group's function list) */
+  functions: string[];
+  /** CEL, evaluated by the server only while a tap is connected */
+  filter?:
+    | string
+    | undefined;
+  /** informational (SDK enforces) */
+  once: boolean;
+  /** informational (SDK enforces) */
+  shadow: boolean;
+  /** free text for listings */
+  label: string;
+}
+
 export interface WorkerConnectRequestData {
   connectionId: string;
   instanceId: string;
@@ -301,6 +324,7 @@ export interface WorkerConnectRequestData {
   sdkLanguage: string;
   startedAt: Date | undefined;
   maxWorkerConcurrency?: number | undefined;
+  tap?: TapConfig | undefined;
 }
 
 export interface GatewayConnectionReadyData {
@@ -341,6 +365,8 @@ export interface WorkerRequestAckData {
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
   runId: string;
+  /** unset: no change; true: make run sticky; false: release */
+  sticky?: boolean | undefined;
 }
 
 export interface WorkerRequestExtendLeaseData {
@@ -379,6 +405,8 @@ export interface SDKResponse {
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
   runId: string;
+  /** same semantics; NACKED always drops stickiness */
+  sticky?: boolean | undefined;
 }
 
 export interface WorkerReplyAckData {
@@ -396,7 +424,11 @@ export interface ConnMetadata {
   lastHeartbeatAt: Date | undefined;
   sdkLanguage: string;
   sdkVersion: string;
-  attributes: SystemAttributes | undefined;
+  attributes:
+    | SystemAttributes
+    | undefined;
+  /** visibility: listings count conns with tap set */
+  tap?: TapConfig | undefined;
 }
 
 export interface ConnMetadata_AllWorkerGroupsEntry {
@@ -717,6 +749,132 @@ export const AuthData: MessageFns<AuthData> = {
   },
 };
 
+function createBaseTapConfig(): TapConfig {
+  return { functions: [], filter: undefined, once: false, shadow: false, label: "" };
+}
+
+export const TapConfig: MessageFns<TapConfig> = {
+  encode(message: TapConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.functions) {
+      writer.uint32(10).string(v!);
+    }
+    if (message.filter !== undefined) {
+      writer.uint32(18).string(message.filter);
+    }
+    if (message.once !== false) {
+      writer.uint32(24).bool(message.once);
+    }
+    if (message.shadow !== false) {
+      writer.uint32(32).bool(message.shadow);
+    }
+    if (message.label !== "") {
+      writer.uint32(42).string(message.label);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): TapConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTapConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.functions.push(reader.string());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.filter = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.once = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.shadow = reader.bool();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.label = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): TapConfig {
+    return {
+      functions: globalThis.Array.isArray(object?.functions)
+        ? object.functions.map((e: any) => globalThis.String(e))
+        : [],
+      filter: isSet(object.filter) ? globalThis.String(object.filter) : undefined,
+      once: isSet(object.once) ? globalThis.Boolean(object.once) : false,
+      shadow: isSet(object.shadow) ? globalThis.Boolean(object.shadow) : false,
+      label: isSet(object.label) ? globalThis.String(object.label) : "",
+    };
+  },
+
+  toJSON(message: TapConfig): unknown {
+    const obj: any = {};
+    if (message.functions?.length) {
+      obj.functions = message.functions;
+    }
+    if (message.filter !== undefined) {
+      obj.filter = message.filter;
+    }
+    if (message.once !== false) {
+      obj.once = message.once;
+    }
+    if (message.shadow !== false) {
+      obj.shadow = message.shadow;
+    }
+    if (message.label !== "") {
+      obj.label = message.label;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<TapConfig>, I>>(base?: I): TapConfig {
+    return TapConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<TapConfig>, I>>(object: I): TapConfig {
+    const message = createBaseTapConfig();
+    message.functions = object.functions?.map((e) => e) || [];
+    message.filter = object.filter ?? undefined;
+    message.once = object.once ?? false;
+    message.shadow = object.shadow ?? false;
+    message.label = object.label ?? "";
+    return message;
+  },
+};
+
 function createBaseWorkerConnectRequestData(): WorkerConnectRequestData {
   return {
     connectionId: "",
@@ -733,6 +891,7 @@ function createBaseWorkerConnectRequestData(): WorkerConnectRequestData {
     sdkLanguage: "",
     startedAt: undefined,
     maxWorkerConcurrency: undefined,
+    tap: undefined,
   };
 }
 
@@ -779,6 +938,9 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
     }
     if (message.maxWorkerConcurrency !== undefined) {
       writer.uint32(112).int64(message.maxWorkerConcurrency);
+    }
+    if (message.tap !== undefined) {
+      TapConfig.encode(message.tap, writer.uint32(122).fork()).join();
     }
     return writer;
   },
@@ -902,6 +1064,14 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
           message.maxWorkerConcurrency = longToNumber(reader.int64());
           continue;
         }
+        case 15: {
+          if (tag !== 122) {
+            break;
+          }
+
+          message.tap = TapConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -931,6 +1101,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
       maxWorkerConcurrency: isSet(object.maxWorkerConcurrency)
         ? globalThis.Number(object.maxWorkerConcurrency)
         : undefined,
+      tap: isSet(object.tap) ? TapConfig.fromJSON(object.tap) : undefined,
     };
   },
 
@@ -978,6 +1149,9 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
     if (message.maxWorkerConcurrency !== undefined) {
       obj.maxWorkerConcurrency = Math.round(message.maxWorkerConcurrency);
     }
+    if (message.tap !== undefined) {
+      obj.tap = TapConfig.toJSON(message.tap);
+    }
     return obj;
   },
 
@@ -1004,6 +1178,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
     message.sdkLanguage = object.sdkLanguage ?? "";
     message.startedAt = object.startedAt ?? undefined;
     message.maxWorkerConcurrency = object.maxWorkerConcurrency ?? undefined;
+    message.tap = (object.tap !== undefined && object.tap !== null) ? TapConfig.fromPartial(object.tap) : undefined;
     return message;
   },
 };
@@ -1472,6 +1647,7 @@ function createBaseWorkerRequestAckData(): WorkerRequestAckData {
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
     runId: "",
+    sticky: undefined,
   };
 }
 
@@ -1503,6 +1679,9 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     }
     if (message.runId !== "") {
       writer.uint32(74).string(message.runId);
+    }
+    if (message.sticky !== undefined) {
+      writer.uint32(80).bool(message.sticky);
     }
     return writer;
   },
@@ -1586,6 +1765,14 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
           message.runId = reader.string();
           continue;
         }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.sticky = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1606,6 +1793,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
       runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
+      sticky: isSet(object.sticky) ? globalThis.Boolean(object.sticky) : undefined,
     };
   },
 
@@ -1638,6 +1826,9 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.runId !== "") {
       obj.runId = message.runId;
     }
+    if (message.sticky !== undefined) {
+      obj.sticky = message.sticky;
+    }
     return obj;
   },
 
@@ -1655,6 +1846,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     message.runId = object.runId ?? "";
+    message.sticky = object.sticky ?? undefined;
     return message;
   },
 };
@@ -2031,6 +2223,7 @@ function createBaseSDKResponse(): SDKResponse {
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
     runId: "",
+    sticky: undefined,
   };
 }
 
@@ -2074,6 +2267,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     }
     if (message.runId !== "") {
       writer.uint32(106).string(message.runId);
+    }
+    if (message.sticky !== undefined) {
+      writer.uint32(112).bool(message.sticky);
     }
     return writer;
   },
@@ -2189,6 +2385,14 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.runId = reader.string();
           continue;
         }
+        case 14: {
+          if (tag !== 112) {
+            break;
+          }
+
+          message.sticky = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2213,6 +2417,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
       runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
+      sticky: isSet(object.sticky) ? globalThis.Boolean(object.sticky) : undefined,
     };
   },
 
@@ -2257,6 +2462,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.runId !== "") {
       obj.runId = message.runId;
     }
+    if (message.sticky !== undefined) {
+      obj.sticky = message.sticky;
+    }
     return obj;
   },
 
@@ -2278,6 +2486,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     message.runId = object.runId ?? "";
+    message.sticky = object.sticky ?? undefined;
     return message;
   },
 };
@@ -2352,6 +2561,7 @@ function createBaseConnMetadata(): ConnMetadata {
     sdkLanguage: "",
     sdkVersion: "",
     attributes: undefined,
+    tap: undefined,
   };
 }
 
@@ -2386,6 +2596,9 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     }
     if (message.attributes !== undefined) {
       SystemAttributes.encode(message.attributes, writer.uint32(82).fork()).join();
+    }
+    if (message.tap !== undefined) {
+      TapConfig.encode(message.tap, writer.uint32(90).fork()).join();
     }
     return writer;
   },
@@ -2483,6 +2696,14 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
           message.attributes = SystemAttributes.decode(reader, reader.uint32());
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.tap = TapConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2514,6 +2735,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
       sdkLanguage: isSet(object.sdkLanguage) ? globalThis.String(object.sdkLanguage) : "",
       sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
       attributes: isSet(object.attributes) ? SystemAttributes.fromJSON(object.attributes) : undefined,
+      tap: isSet(object.tap) ? TapConfig.fromJSON(object.tap) : undefined,
     };
   },
 
@@ -2561,6 +2783,9 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.attributes !== undefined) {
       obj.attributes = SystemAttributes.toJSON(message.attributes);
     }
+    if (message.tap !== undefined) {
+      obj.tap = TapConfig.toJSON(message.tap);
+    }
     return obj;
   },
 
@@ -2597,6 +2822,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     message.attributes = (object.attributes !== undefined && object.attributes !== null)
       ? SystemAttributes.fromPartial(object.attributes)
       : undefined;
+    message.tap = (object.tap !== undefined && object.tap !== null) ? TapConfig.fromPartial(object.tap) : undefined;
     return message;
   },
 };
