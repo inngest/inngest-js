@@ -458,18 +458,10 @@ const runPipelineAttempt = async ({
 };
 
 /** What a re-run from a GitHub check asked for, from its event's `_ci`. */
-const rerunOf = (event: unknown): Pick<CiRunScope, "rerun"> => {
-  const ci = (event as { data?: { _ci?: { job?: string; noCache?: boolean } } })
-    ?.data?._ci;
+const rerunOf = (event: unknown): Pick<CiRunScope, "noCache"> => {
+  const ci = (event as { data?: { _ci?: { noCache?: boolean } } })?.data?._ci;
 
-  return ci?.job || ci?.noCache
-    ? {
-        rerun: {
-          ...(ci.job ? { job: ci.job } : {}),
-          ...(ci.noCache ? { noCache: true } : {}),
-        },
-      }
-    : {};
+  return ci?.noCache ? { noCache: true } : {};
 };
 
 /** How the handler ended, caught rather than thrown. */

@@ -214,28 +214,6 @@ interface RunJobArgs {
 }
 
 /**
- * What a job that a re-run skipped gives back. Awaiting it is fine; reading
- * anything it returned fails and says what to do, because the data of the
- * first run isn't kept.
- */
-const skippedResult = (id: string): Record<string, unknown> => {
-  return new Proxy(
-    {},
-    {
-      get: (_target, key) => {
-        if (typeof key === "symbol" || key === "then") {
-          return undefined;
-        }
-
-        throw new NonRetriableError(
-          `This pipeline reads what the job "${id}" returned, but a re-run of one job skips it. Use "Re-run all" to run the whole pipeline again.`,
-        );
-      },
-    },
-  );
-};
-
-/**
  * Run a job. Every direct call is its own run of the job: the first has the
  * job's ID as its path, and each later call gets `${id} (n)`, so it has its
  * own machine, steps and check.
@@ -256,15 +234,6 @@ export const runJob = async ({
   const number = (run.jobCalls.get(config.id) ?? 0) + 1;
 
   run.jobCalls.set(config.id, number);
-
-  // A re-run of one job leaves every other job alone: its check from the first
-  // run still stands.
-  if (
-    run.rerun?.job !== undefined &&
-    run.rerun.job !== (number === 1 ? config.id : `${config.id} (${number})`)
-  ) {
-    return skippedResult(config.id);
-  }
 
   return jobBody({
     run,
@@ -537,7 +506,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
 
   // A re-run without the cache treats the snapshot that's there as broken, so
   // the build replaces it rather than finding it again.
-  const bust = lookup && !direct && run.rerun?.noCache === true;
+  const bust = lookup && !direct && run.noCache === true;
 
   const stale = bust
     ? await lookupBeforeBuild(
@@ -930,7 +899,7 @@ const jobSteps = async ({
 
   // A re-run without the cache builds again, and treats the snapshot that's
   // there as broken, so the new one replaces it under the name.
-  const stale = run.rerun?.noCache && found ? found.snapshotId : undefined;
+  const stale = run.noCache && found ? found.snapshotId : undefined;
   const hit = stale ? undefined : found;
 
   if (hit) {
