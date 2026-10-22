@@ -1,0 +1,422 @@
+/**
+ * Tests for Live Tap: settings, the handshake, and the NACK, shadow, once,
+ * sticky and drain behaviour, driven through ConnectionCore against the mock
+ * gateway.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  GatewayMessageType,
+  SDKResponse,
+  SDKResponseStatus,
+  WorkerConnectRequestData,
+} from "../../proto/src/components/connect/protobuf/connect.ts";
+import type { FunctionConfig } from "../../types.ts";
+import { prepareConnectionConfig } from "./config.ts";
+import { parseGatewayExecutorRequest } from "./messages.ts";
+import { ConnectionCore } from "./strategies/core/connection.ts";
+import { MockGateway } from "./strategies/core/mock-gateway.ts";
+import type { RequestHandler } from "./strategies/index.ts";
+import {
+  readTapSettings,
+  Tap,
+  type TapOutput,
+  type TapSettings,
+} from "./tap.ts";
+import { ConnectionState } from "./types.ts";
+
+const baseSettings: TapSettings = {
+  functions: ["test-fn"],
+  once: false,
+  shadow: false,
+  sticky: false,
+  label: "me@box",
+  output: "human",
+};
+
+const sleep = (ms: number) => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+};
+
+const waitFor = async (condition: () => boolean) => {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > 3000) {
+      throw new Error("waitFor timed out");
+    }
+
+    await sleep(10);
+  }
+};
+
+const response = (
+  msg: { requestId: string; runId: string },
+  status: SDKResponseStatus,
+  body = "",
+) => {
+  return SDKResponse.create({
+    requestId: msg.requestId,
+    runId: msg.runId,
+    status,
+    body: new TextEncoder().encode(body),
+  });
+};
+
+describe("readTapSettings", () => {
+  it("is off without INNGEST_TAP_FUNCTIONS", () => {
+    expect(readTapSettings({})).toBeUndefined();
+  });
+
+  it("parses the env vars", () => {
+    const settings = readTapSettings({
+      INNGEST_TAP_FUNCTIONS: "a, b",
+      INNGEST_TAP_FILTER: "event.data.x == 1",
+      INNGEST_TAP_ONCE: "1",
+      INNGEST_TAP_SHADOW: "1",
+      INNGEST_TAP_STICKY: "1",
+      INNGEST_TAP_LABEL: "jack",
+      INNGEST_TAP_OUTPUT: "agent",
+    });
+
+    expect(settings).toEqual({
+      functions: ["a", "b"],
+      filter: "event.data.x == 1",
+      once: true,
+      shadow: true,
+      sticky: true,
+      label: "jack",
+      output: "agent",
+    });
+  });
+
+  it("detects the output mode when none is given", () => {
+    const base = { INNGEST_TAP_FUNCTIONS: "a" };
+
+    expect(readTapSettings({ ...base, CLAUDECODE: "1" })?.output).toBe("agent");
+    expect(readTapSettings({ ...base, INNGEST_AGENT: "1" })?.output).toBe(
+      "agent",
+    );
+    expect(
+      readTapSettings({ ...base, INNGEST_TAP_OUTPUT: "json" })?.output,
+    ).toBe("json");
+  });
+});
+
+describe("function selection", () => {
+  const configs = [
+    { id: "app-test-fn" },
+    { id: "app-other" },
+  ] as FunctionConfig[];
+
+  it("keeps the wanted functions by id or slug", () => {
+    const tap = new Tap({ settings: baseSettings, mode: "dev" });
+
+    expect(tap.select("app", configs)).toEqual([{ id: "app-test-fn" }]);
+    expect(() => {
+      return tap.assertAllFound();
+    }).not.toThrow();
+  });
+
+  it("fails when a function is missing", () => {
+    const tap = new Tap({
+      settings: { ...baseSettings, functions: ["nope"] },
+      mode: "dev",
+    });
+
+    tap.select("app", configs);
+
+    expect(() => {
+      return tap.assertAllFound();
+    }).toThrow(/nope/);
+  });
+});
+
+describe("without tap env", () => {
+  it("prepares the same connection data with no tap", async () => {
+    const { createClient } = await import("../../test/helpers.ts");
+    const client = createClient({ id: "app", isDev: true });
+    const { connectionData, tap } = prepareConnectionConfig(
+      [{ client, functions: [] }],
+      client,
+    );
+
+    expect(tap).toBeUndefined();
+    expect(connectionData.tap).toBeUndefined();
+  });
+});
+
+describe("tap over the mock gateway", () => {
+  let gateway: MockGateway;
+  let lines: string[];
+  let core: ConnectionCore | undefined;
+
+  const start = async (
+    settings: Partial<TapSettings>,
+    handler: RequestHandler,
+    exit: (code: number) => void = () => {},
+  ) => {
+    const tap = new Tap({
+      settings: { ...baseSettings, ...settings },
+      mode: "dev",
+      write: (line) => {
+        lines.push(line);
+      },
+      exit,
+    });
+    tap.select("app", [{ id: "test-fn" }] as FunctionConfig[]);
+
+    const wrapped = tap.wrap(handler);
+    let state = ConnectionState.CONNECTING;
+    core = new ConnectionCore(
+      {
+        hashedSigningKey: "key",
+        hashedFallbackKey: undefined,
+        envName: "env",
+        connectionData: {
+          marshaledCapabilities: "",
+          manualReadinessAck: false,
+          apps: [],
+          tap: tap.config,
+        },
+        apiBaseUrl: gateway.httpUrl,
+        mode: "cloud",
+        appIds: ["test-app"],
+      },
+      {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        onStateChange: (s) => {
+          state = s;
+        },
+        getState: () => state,
+        handleExecutionRequest: async (request) => {
+          return SDKResponse.encode(await wrapped(request)).finish();
+        },
+      },
+    );
+    tap.bind(() => {
+      return core!.close();
+    });
+    await core.start();
+
+    return tap;
+  };
+
+  const replies = () => {
+    return gateway
+      .getMessagesOfType(GatewayMessageType.WORKER_REPLY)
+      .map((m) => {
+        return SDKResponse.decode(m.payload);
+      });
+  };
+
+  beforeEach(async () => {
+    lines = [];
+    gateway = new MockGateway({ extendLeaseInterval: "50ms" });
+    await gateway.start();
+  });
+
+  afterEach(async () => {
+    await core?.close();
+    await gateway.stop();
+  });
+
+  it("sends the tap config at the handshake", async () => {
+    await start({ filter: "event.name == 'a'", shadow: true }, async (msg) => {
+      return response(msg, SDKResponseStatus.DONE);
+    });
+
+    const connect = gateway.getMessagesOfType(
+      GatewayMessageType.WORKER_CONNECT,
+    );
+    const data = WorkerConnectRequestData.decode(connect[0]!.payload);
+
+    expect(data.tap).toMatchObject({
+      functions: ["test-fn"],
+      filter: "event.name == 'a'",
+      shadow: true,
+      label: "me@box",
+    });
+  });
+
+  it("ACKs then NACKs a request for another function, running nothing", async () => {
+    const handler = vi.fn();
+    await start({}, handler);
+
+    gateway.sendExecutorRequest({
+      requestId: "r1",
+      appName: "test-app",
+      functionSlug: "other",
+    });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(replies()[0]?.status).toBe(SDKResponseStatus.NACKED);
+    expect(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_REQUEST_ACK),
+    ).toHaveLength(1);
+  });
+
+  it("shadow runs locally, extends the lease, then NACKs", async () => {
+    const handler = vi.fn(async (msg) => {
+      await sleep(300);
+
+      return response(msg, SDKResponseStatus.DONE, "real result");
+    });
+    await start({ shadow: true }, handler);
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(replies()[0]?.status).toBe(SDKResponseStatus.NACKED);
+    expect(replies()[0]?.body.length).toBe(0);
+    expect(
+      gateway.getMessagesOfType(GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE)
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("once takes one request, NACKs the rest and closes", async () => {
+    const handler = vi.fn(async (msg) => {
+      await sleep(100);
+
+      return response(msg, SDKResponseStatus.DONE);
+    });
+    await start({ once: true }, handler);
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 2;
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(
+      replies().map((r) => {
+        return r.status;
+      }),
+    ).toEqual([SDKResponseStatus.NACKED, SDKResponseStatus.DONE]);
+    await waitFor(() => {
+      return (
+        gateway.getMessagesOfType(GatewayMessageType.WORKER_PAUSE).length === 1
+      );
+    });
+  });
+
+  it("sets sticky while the run continues and releases it when it ends", async () => {
+    let status = SDKResponseStatus.NOT_COMPLETED;
+    await start({ sticky: true }, async (msg) => {
+      return response(msg, status, "[]");
+    });
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+    status = SDKResponseStatus.DONE;
+    gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
+    await waitFor(() => {
+      return replies().length === 2;
+    });
+
+    expect(replies()[0]?.sticky).toBe(true);
+    expect(replies()[1]?.sticky).toBe(false);
+  });
+
+  it("refuses to stick when the step graph differs, and NACKs", async () => {
+    await start({ sticky: true }, async (msg) => {
+      return response(
+        msg,
+        SDKResponseStatus.NOT_COMPLETED,
+        JSON.stringify([{ op: "StepNotFound", id: "x" }]),
+      );
+    });
+
+    gateway.sendExecutorRequest({
+      requestId: "r1",
+      appName: "test-app",
+      stepId: "abc",
+    });
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+
+    expect(replies()[0]?.status).toBe(SDKResponseStatus.NACKED);
+    expect(replies()[0]?.sticky).toBeUndefined();
+    expect(lines.join("\n")).toContain("step graph differs");
+  });
+
+  it("drain releases sticky runs and a second signal drops everything", async () => {
+    const exit = vi.fn();
+    const tap = await start(
+      { sticky: true },
+      async (msg) => {
+        await sleep(100);
+
+        return response(msg, SDKResponseStatus.NOT_COMPLETED, "[]");
+      },
+      exit,
+    );
+
+    gateway.sendExecutorRequest({ requestId: "r1", appName: "test-app" });
+    await sleep(20);
+    const stopListening = tap.drain();
+    await waitFor(() => {
+      return replies().length === 1;
+    });
+
+    expect(replies()[0]?.sticky).toBe(false);
+
+    process.emit("SIGINT");
+
+    expect(exit).toHaveBeenCalledWith(130);
+    stopListening();
+  });
+
+  it("writes one JSON line per request in json mode", async () => {
+    await start({ output: "json" }, async (msg) => {
+      return response(msg, SDKResponseStatus.DONE);
+    });
+
+    gateway.sendExecutorRequest({
+      requestId: "r1",
+      appName: "test-app",
+      runId: "RUN1",
+    });
+    await waitFor(() => {
+      return lines.length === 1;
+    });
+
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      event: "done",
+      runId: "RUN1",
+      fn: "test-fn",
+      traceUrl: "http://localhost:8288/run?runID=RUN1",
+    });
+  });
+
+  it("writes one human line with the trace link", async () => {
+    await start({}, async (msg) => {
+      return response(msg, SDKResponseStatus.DONE);
+    });
+
+    gateway.sendExecutorRequest({
+      requestId: "r1",
+      appName: "test-app",
+      runId: "RUN1",
+    });
+    await waitFor(() => {
+      return lines.length === 1;
+    });
+
+    expect(lines[0]).toBe(
+      "tap done test-fn http://localhost:8288/run?runID=RUN1",
+    );
+  });
+});

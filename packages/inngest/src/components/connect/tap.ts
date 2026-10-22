@@ -30,7 +30,7 @@ import type { FunctionConfig } from "../../types.ts";
 import { onShutdown } from "./os.ts";
 import type { RequestHandler } from "./strategies/index.ts";
 
-interface TapSettings {
+export interface TapSettings {
   /** Function IDs or full slugs the tap wants. */
   functions: string[];
   filter?: string;
