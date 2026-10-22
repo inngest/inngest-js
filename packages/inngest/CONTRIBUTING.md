@@ -98,3 +98,5 @@ We can create new examples using the following formula:
    - Deploy button (or deploy instructions at the bottom if not available)
    - How to use with `create-next-app`
    - "Learn more" links for Inngest and any other related services/libraries
+
+<!-- Inngest CI dogfood smoke test: safe to close without merging. -->
