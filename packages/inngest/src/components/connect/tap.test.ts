@@ -538,6 +538,9 @@ describe("tap over the mock gateway", () => {
 
     gateway.sendExecutorRequest({ requestId: "r2", appName: "test-app" });
     await closing;
+    await waitFor(() => {
+      return replies().length === 2;
+    });
 
     expect(replies()[1]?.sticky).toBe(false);
 
