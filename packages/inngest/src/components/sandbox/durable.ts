@@ -12,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { codeTools } from "./codeTools.ts";
 import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
@@ -33,6 +34,7 @@ import {
   type DurableSandboxProcess,
   type DurableSandboxSnapshot,
   type DurableSandboxTools,
+  type LazyDurableSandbox,
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
@@ -783,6 +785,7 @@ export const createDurableSandboxFacade = (
   const facade: DurableSandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
+    tools: { code: (options) => codeTools(facade, options) },
     commands: Object.freeze({
       run: async (idOrOptions, command, options) => {
         const { tools, toolOptions, ...commandOptions } = options ?? {};
@@ -997,90 +1000,169 @@ export const readParsedFile = <T>(
 
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
-): DurableSandboxTools => ({
-  create: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("create", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "create",
-      input: [normalizeSandboxCreateOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
-    const { id } = getStepOptions(idOrOptions);
-
-    const disposable = Object.freeze({
-      ...sandbox,
-      [Symbol.asyncDispose]: async () => {
-        await destroyQuietly(sandbox, `${id}:destroy`);
-      },
-    });
-    fileParsers.set(disposable, fileParserOf(sandbox));
-
-    return disposable;
-  },
-  list: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("list", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "list",
-      input: [normalizeSandboxListOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return {
-      items: result.sandboxes.map((sandbox) =>
-        createDurableSandboxFacade(sandbox, rawToolResolver),
-      ),
-      page: { ...result.page },
-      fetchedAt: result.fetchedAt,
-    };
-  },
-  get: async (idOrOptions, sandboxId) => {
-    const parsedSandboxId = parseWithSchema(
-      canonicalUuidSchema,
-      sandboxId,
-      "sandbox ID",
-    );
-    const operation = parseSandboxOperationForAction("get", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "get",
-      input: [{ sandboxId: parsedSandboxId }],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return result.sandbox
-      ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
-      : null;
-  },
-  snapshots: {
-    list: async (idOrOptions, options) => {
-      const operation = parseSandboxOperationForAction("snapshot.list", {
+): DurableSandboxTools => {
+  const tools: DurableSandboxTools = {
+    create: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("create", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.list",
-        input: [normalizeSandboxSnapshotListOptions(options)],
+        action: "create",
+        input: [normalizeSandboxCreateOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      const sandbox = createDurableSandboxFacade(
+        result.sandbox,
+        rawToolResolver,
+      );
+      const { id } = getStepOptions(idOrOptions);
+
+      const disposable = Object.freeze({
+        ...sandbox,
+        [Symbol.asyncDispose]: async () => {
+          await destroyQuietly(sandbox, `${id}:destroy`);
+        },
+      });
+      fileParsers.set(disposable, fileParserOf(sandbox));
+
+      return disposable;
+    },
+    lazy: (idOrOptions, options) => {
+      let created: ReturnType<DurableSandboxTools["create"]> | undefined;
+
+      const ensure = () => {
+        created ??= tools.create(idOrOptions, options);
+
+        return created;
+      };
+      const handle: LazyDurableSandbox = {
+        commands: {
+          run: async (...args) => {
+            return (await ensure()).commands.run(...args);
+          },
+        },
+        files: {
+          write: async (...args) => {
+            return (await ensure()).files.write(...args);
+          },
+          read: async (...args) => {
+            return (await ensure()).files.read(...args);
+          },
+        },
+        processes: {
+          start: async (...args) => {
+            return (await ensure()).processes.start(...args);
+          },
+          list: async (...args) => {
+            return (await ensure()).processes.list(...args);
+          },
+          get: async (...args) => {
+            return (await ensure()).processes.get(...args);
+          },
+        },
+        snapshots: {
+          create: async (...args) => {
+            return (await ensure()).snapshots.create(...args);
+          },
+        },
+        snapshot: async (...args) => {
+          return (await ensure()).snapshot(...args);
+        },
+        pause: async (...args) => {
+          return (await ensure()).pause(...args);
+        },
+        resume: async (...args) => {
+          return (await ensure()).resume(...args);
+        },
+        waitUntilRunning: async (...args) => {
+          return (await ensure()).waitUntilRunning(...args);
+        },
+        destroy: async (...args) => {
+          return (await ensure()).destroy(...args);
+        },
+        tools: { code: (codeOptions) => codeTools(handle, codeOptions) },
+        ready: ensure,
+        [Symbol.asyncDispose]: async () => {
+          if (created) {
+            await (await created)[Symbol.asyncDispose]();
+          }
+        },
+      };
+
+      return Object.freeze(handle);
+    },
+    list: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("list", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "list",
+        input: [normalizeSandboxListOptions(options)],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return {
-        items: result.snapshots.map((snapshot) =>
-          createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+        items: result.sandboxes.map((sandbox) =>
+          createDurableSandboxFacade(sandbox, rawToolResolver),
         ),
         page: { ...result.page },
         fetchedAt: result.fetchedAt,
       };
     },
-    get: async (idOrOptions, snapshotId) => {
-      const parsedSnapshotId = parseWithSchema(
+    get: async (idOrOptions, sandboxId) => {
+      const parsedSandboxId = parseWithSchema(
         canonicalUuidSchema,
-        snapshotId,
-        "sandbox snapshot ID",
+        sandboxId,
+        "sandbox ID",
       );
-      const operation = parseSandboxOperationForAction("snapshot.get", {
+      const operation = parseSandboxOperationForAction("get", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.get",
-        target: { snapshotId: parsedSnapshotId },
-        input: [],
+        action: "get",
+        input: [{ sandboxId: parsedSandboxId }],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-      return result.snapshot
-        ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+      return result.sandbox
+        ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
         : null;
     },
-  },
-});
+    snapshots: {
+      list: async (idOrOptions, options) => {
+        const operation = parseSandboxOperationForAction("snapshot.list", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.list",
+          input: [normalizeSandboxSnapshotListOptions(options)],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return {
+          items: result.snapshots.map((snapshot) =>
+            createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+          ),
+          page: { ...result.page },
+          fetchedAt: result.fetchedAt,
+        };
+      },
+      get: async (idOrOptions, snapshotId) => {
+        const parsedSnapshotId = parseWithSchema(
+          canonicalUuidSchema,
+          snapshotId,
+          "sandbox snapshot ID",
+        );
+        const operation = parseSandboxOperationForAction("snapshot.get", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.get",
+          target: { snapshotId: parsedSnapshotId },
+          input: [],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return result.snapshot
+          ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+          : null;
+      },
+    },
+  };
+
+  return tools;
+};

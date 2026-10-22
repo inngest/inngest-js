@@ -78,7 +78,7 @@ export const createClient = (
 
 /**
  * A client whose sandbox API creates, execs in and destroys sandboxes, with
- * the number of destroys it has served and the files uploaded to it. Every
+ * the number of creates and destroys it has served and the files uploaded to it. Every
  * command prints `stdout`, and exits with `exitCode`; downloads serve `file`.
  */
 export const createScopeClient = (
@@ -86,6 +86,7 @@ export const createScopeClient = (
   { stdout = "", stderr = "", exitCode = 0, file = "" } = {},
 ) => {
   const calls = {
+    creates: 0,
     destroys: 0,
     uploads: [] as { path: string; body: string }[],
   };
@@ -108,6 +109,8 @@ export const createScopeClient = (
     }
 
     if (path === "/v2/sandboxes" && method === "POST") {
+      calls.creates++;
+
       return Response.json({ data: sandboxResource }, { status: 201 });
     }
 

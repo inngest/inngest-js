@@ -1,7 +1,8 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 import type { SandboxImage } from "./image.ts";
-import type { SandboxToolsOptions } from "./tools.ts";
+import type { SandboxTool, SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -570,6 +571,19 @@ export interface SandboxClient {
   };
 }
 
+/**
+ * Tools a model can use in a sandbox, built on the sandbox's own commands and
+ * files. They work on a lazy sandbox too.
+ */
+export interface DurableSandboxToolSet {
+  /**
+   * `read`, `write`, `edit`, `search` and `run`, for `agent.loop()`.
+   */
+  code<TName extends CodeToolName = CodeToolName>(
+    options?: CodeToolsOptions<TName>,
+  ): Record<TName, SandboxTool>;
+}
+
 export interface DurableSandbox {
   readonly kind: "inngest/sandbox";
   readonly version: 1;
@@ -584,6 +598,7 @@ export interface DurableSandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
+  readonly tools: DurableSandboxToolSet;
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,
@@ -641,6 +656,38 @@ export interface DurableSandbox {
     options: SandboxWaitUntilRunningOptions,
   ): Promise<DurableSandbox>;
   destroy(idOrOptions: StepOptionsOrId): Promise<SandboxDestroyResult>;
+}
+
+/**
+ * What a sandbox handle can do, whether the sandbox exists yet or not.
+ */
+export type DurableSandboxActions = Pick<
+  DurableSandbox,
+  | "commands"
+  | "files"
+  | "processes"
+  | "snapshots"
+  | "snapshot"
+  | "pause"
+  | "resume"
+  | "waitUntilRunning"
+  | "destroy"
+  | "tools"
+>;
+
+/**
+ * A sandbox that is created by its first use. It does everything a created
+ * sandbox does, but has none of its data (`id`, `status`, ...) until `ready()`
+ * gives the sandbox itself.
+ */
+export interface LazyDurableSandbox
+  extends DurableSandboxActions,
+    AsyncDisposable {
+  /**
+   * Creates the sandbox if nothing has yet, and returns it. Every caller
+   * shares the one creation.
+   */
+  ready(): Promise<DurableSandbox & AsyncDisposable>;
 }
 
 export interface DurableSandboxSnapshot {
@@ -708,6 +755,16 @@ export interface DurableSandboxTools {
     idOrOptions: StepOptionsOrId,
     options: SandboxCreateOptions,
   ): Promise<DurableSandbox & AsyncDisposable>;
+  /**
+   * A sandbox that is only created when it is first used, as the step
+   * `idOrOptions`. Use it where most runs never touch the sandbox. Uses that
+   * start together share one creation. With `await using`, the sandbox is
+   * destroyed when the scope ends, if it was created.
+   */
+  lazy(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxCreateOptions,
+  ): LazyDurableSandbox;
   list(
     idOrOptions: StepOptionsOrId,
     options?: SandboxListOptions,

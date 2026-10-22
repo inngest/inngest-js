@@ -1,13 +1,13 @@
 /**
  * @module
- * EXPERIMENTAL: `codeTools()`, the tools a coding agent needs in a sandbox:
- * read, write, edit, search and run. Each call is one command step in the
- * sandbox, named after the command it runs.
+ * EXPERIMENTAL: `sandbox.tools.code()`, the tools a coding agent needs in a
+ * sandbox: read, write, edit, search and run. Each call is one command step in
+ * the sandbox, named after the command it runs.
  */
 import { z } from "zod/v4";
-import { type SandboxTool, tool } from "../sandbox/tools.ts";
-import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
 import { editText } from "./editText.ts";
+import { type SandboxTool, tool } from "./tools.ts";
+import type { DurableSandbox, SandboxDuration } from "./types.ts";
 
 export type CodeToolName = "read" | "write" | "edit" | "search" | "run";
 
@@ -45,8 +45,9 @@ const isFileNotFound = (error: unknown): boolean => {
 };
 
 /**
- * EXPERIMENTAL: Tools for a model to work on code in `sandbox`: `read`,
- * `write`, `edit`, `search` and `run`. Hand them to `agent.loop()`.
+ * EXPERIMENTAL: Tools for a model to work on code in a sandbox: `read`,
+ * `write`, `edit`, `search` and `run`. Hand them to `agent.loop()`. It
+ * works on a lazy sandbox too, which is created by the first call.
  *
  * `edit` replaces exact text, like the text editor tools models are trained
  * on, and runs in your app: it reads the file, changes it and writes it back,
@@ -58,12 +59,12 @@ const isFileNotFound = (error: unknown): boolean => {
  * await agent.loop({
  *   model,
  *   prompt,
- *   tools: codeTools(sandbox, { cwd: "/work/app", only: ["read", "run"] }),
+ *   tools: sandbox.tools.code({ cwd: "/work/app", only: ["read", "run"] }),
  * });
  * ```
  */
 export const codeTools = <TName extends CodeToolName = CodeToolName>(
-  sandbox: DurableSandbox,
+  sandbox: Pick<DurableSandbox, "commands" | "files">,
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m" } = options;

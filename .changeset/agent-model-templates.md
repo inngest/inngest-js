@@ -18,3 +18,11 @@ const refund = tool.step({
 
 await agent.loop({ model: claude, prompt, tools: { refund }, dryRun: true });
 ```
+
+Sandbox tools now live on the sandbox: `sandbox.tools.code()` replaces `codeTools(sandbox)`. `step.sandbox.lazy()` gives a sandbox that is only created when something first uses it, so a run that never needs one pays nothing.
+
+```ts
+await using sandbox = step.sandbox.lazy("coder", { name, vcpu: 2, memoryMb: 2048 });
+
+await agent.loop({ model: claude, prompt, tools: sandbox.tools.code() });
+```

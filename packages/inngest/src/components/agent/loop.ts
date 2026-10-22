@@ -355,12 +355,12 @@ const runTool = async (
  *
  * @example
  * ```ts
- * import { agent, codeTools } from "inngest/experimental";
+ * import { agent } from "inngest/experimental";
  *
  * const { text } = await agent.loop({
  *   model: claude, // see `agent.model()`
  *   prompt: "Fix the failing test",
- *   tools: codeTools(sandbox),
+ *   tools: sandbox.tools.code(),
  * });
  * ```
  */
