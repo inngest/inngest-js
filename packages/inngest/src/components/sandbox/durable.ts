@@ -12,6 +12,7 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
 import {
   findSandboxErrorOptions,
@@ -804,6 +805,11 @@ export const createDurableSandboxFacade = (
     });
   };
   const facade: DurableSandbox = {
+    $: createDollar(() => {
+      return (id, command, options) => {
+        return facade.commands.run(id, command, options);
+      };
+    }),
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({

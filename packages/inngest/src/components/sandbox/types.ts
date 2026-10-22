@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
@@ -571,6 +572,10 @@ export interface SandboxClient {
 }
 
 export interface DurableSandbox {
+  /**
+   * Run a command as one step: `` await sandbox.$`npm test` ``.
+   */
+  readonly $: SandboxDollar;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;

@@ -9,6 +9,7 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { StepError } from "../StepError.ts";
+import { withCurrentSandbox } from "./dollar.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -109,7 +110,9 @@ export const withSandbox = <T>(
       let failure: { error: unknown } | undefined;
 
       try {
-        return await callback(sandbox);
+        return await withCurrentSandbox(sandbox, () => {
+          return callback(sandbox);
+        });
       } catch (error) {
         failure = { error };
 

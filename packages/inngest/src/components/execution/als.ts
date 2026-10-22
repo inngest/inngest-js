@@ -61,6 +61,12 @@ export interface AsyncContext {
     stepIdPrefix?: string;
 
     /**
+     * If present, the sandbox that a bare `$` runs commands in. Set by
+     * `group.sandbox()`, and by libraries that scope a sandbox of their own.
+     */
+    sandbox?: object;
+
+    /**
      * The stream tools instance for this execution context. Used by the
      * `stream` singleton to push/pipe SSE data to the client.
      */
