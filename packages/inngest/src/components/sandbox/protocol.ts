@@ -150,6 +150,9 @@ const waitInputSchema = z
   .object({ timeoutMs: z.number().int().positive().max(300_000) })
   .strict();
 const lifecycleInputSchema = waitInputSchema;
+const processWaitInputSchema = waitInputSchema
+  .extend({ allowRunning: z.boolean().optional() })
+  .strict();
 const outputInputSchema = z
   .object({
     tailBytes: z
@@ -281,7 +284,7 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("process.wait"),
       target: processTargetSchema,
-      input: z.tuple([waitInputSchema]),
+      input: z.tuple([processWaitInputSchema]),
     })
     .strict(),
   z
@@ -426,7 +429,7 @@ const wireWaitProcessSchema = z
     version: z.literal(1),
     sandboxId: canonicalUuidSchema,
     id: canonicalUuidSchema,
-    state: z.enum(["EXITED", "KILLED", "FAILED", "LOST"]),
+    state: z.enum(["RUNNING", "EXITED", "KILLED", "FAILED", "LOST"]),
     exitCode: z.number().int().optional(),
     terminationSignal: z.number().int().min(1).max(64).optional(),
   })

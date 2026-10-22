@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
@@ -163,8 +164,8 @@ export interface SandboxListResult<TSandbox = SandboxRef> {
  *
  * Strings run as `["/bin/sh", "-c", command]`. They are passed to the shell
  * unchanged, so normal shell quoting, variables, pipes, redirects, and
- * chaining apply. Arrays bypass the shell and must begin with an absolute
- * executable path.
+ * chaining apply. Arrays bypass the shell and run the executable named first,
+ * which can be a bare name such as `pnpm`, found on the sandbox's `PATH`.
  */
 export type SandboxCommand = string | readonly string[];
 
@@ -176,6 +177,20 @@ export interface SandboxCommandOptions {
   environment?: Record<string, string>;
   cwd?: string;
   timeout?: SandboxDuration;
+}
+
+/**
+ * The exit codes a command may end with: a list, or `"any"` for all of them.
+ */
+export type SandboxExitCodes = readonly number[] | "any";
+
+export interface SandboxExitCodeOptions {
+  /**
+   * The exit codes that are not failures. Any other exit rejects, from inside
+   * the step, without retrying. Defaults to `"any"`, so `commands.run` returns
+   * the exit code as data. Not checked for a command with `tools`.
+   */
+  exitCodes?: SandboxExitCodes;
 }
 
 export type SandboxCommandOutputMetadata =
@@ -571,6 +586,11 @@ export interface SandboxClient {
 }
 
 export interface DurableSandbox {
+  /**
+   * Run a command as one step, from a tagged template. `$.sh` runs a shell
+   * script, and `$(options)` gives a `$` with options set. See `SandboxDollar`.
+   */
+  readonly $: SandboxDollar;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;
@@ -588,7 +608,9 @@ export interface DurableSandbox {
     run(
       idOrOptions: StepOptionsOrId,
       command: SandboxCommand,
-      options?: SandboxCommandOptions & SandboxToolsOptions,
+      options?: SandboxCommandOptions &
+        SandboxToolsOptions &
+        SandboxExitCodeOptions,
     ): Promise<SandboxCommandResult>;
   };
   /**
