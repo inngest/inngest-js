@@ -1,0 +1,22 @@
+{"t":1792694794204,"pid":505261,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JEZDWWRY36P06WEPBAH4V0","nested":false}
+{"t":1792694795134,"pid":505261,"kind":"proxy.req","id":"model:c0b5620f40ca","msgs":1,"tools":0,"stream":true}
+{"t":1792694795134,"pid":505261,"kind":"proxy.upstream","id":"model:c0b5620f40ca"}
+{"t":1792694795470,"pid":505261,"kind":"proxy.req","id":"model:7cbda6627227","msgs":1,"tools":2,"stream":true}
+{"t":1792694796115,"pid":505261,"kind":"proxy.upstream","id":"model:7cbda6627227"}
+{"t":1792694797983,"pid":505261,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694803983,"pid":505261,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694804020,"pid":505261,"kind":"proxy.req","id":"model:5623678e151d","msgs":3,"tools":2,"stream":true}
+{"t":1792694804020,"pid":505261,"kind":"proxy.upstream","id":"model:5623678e151d"}
+{"t":1792694805445,"pid":505261,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JEZDWWRY36P06WEPBAH4V0","nested":false}
+{"t":1792694806271,"pid":505261,"kind":"proxy.req","id":"model:c0b5620f40ca","msgs":1,"tools":0,"stream":true}
+{"t":1792694806527,"pid":505261,"kind":"proxy.req","id":"model:7cbda6627227","msgs":1,"tools":2,"stream":true}
+{"t":1792694806604,"pid":505261,"kind":"proxy.req","id":"model:5623678e151d","msgs":3,"tools":2,"stream":true}
+{"t":1792694806630,"pid":505261,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694812631,"pid":505261,"kind":"tool.end","tool":"read_note","args":{"name":"a"}}
+{"t":1792694812792,"pid":505261,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JEZDWWRY36P06WEPBAH4V0","nested":false}
+{"t":1792694813600,"pid":505261,"kind":"proxy.req","id":"model:c0b5620f40ca","msgs":1,"tools":0,"stream":true}
+{"t":1792694815165,"pid":505261,"kind":"proxy.req","id":"model:7cbda6627227","msgs":1,"tools":2,"stream":true}
+{"t":1792694815219,"pid":505261,"kind":"proxy.req","id":"model:5623678e151d","msgs":3,"tools":2,"stream":true}
+{"t":1792694815246,"pid":505261,"kind":"proxy.req","id":"model:2856af9635e5","msgs":5,"tools":2,"stream":true}
+{"t":1792694815246,"pid":505261,"kind":"proxy.upstream","id":"model:2856af9635e5"}
+{"t":1792694816869,"pid":505261,"kind":"turn.end","sessionId":"3b3106ad-306a-1bc5-4a11-665874fad947","done":false,"text":"The text of note a is: **hello**\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":3,"costUsd":0.0047376,"toolCalls":["mcp__box__write_note","mcp__box__read_note"],"assistantMessages":7}

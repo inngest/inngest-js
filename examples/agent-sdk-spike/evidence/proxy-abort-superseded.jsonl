@@ -1,0 +1,24 @@
+{"t":1792694883759,"pid":507504,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF25A7N082YQVF1Q80ACA4","nested":false}
+{"t":1792694884758,"pid":507504,"kind":"proxy.req","id":"model:b0559cbe62cb","msgs":1,"tools":0,"stream":true}
+{"t":1792694884759,"pid":507504,"kind":"proxy.upstream","id":"model:b0559cbe62cb"}
+{"t":1792694885079,"pid":507504,"kind":"proxy.req","id":"model:dcb89aba1771","msgs":1,"tools":2,"stream":true}
+{"t":1792694885608,"pid":507504,"kind":"proxy.upstream","id":"model:dcb89aba1771"}
+{"t":1792694887663,"pid":507504,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694893663,"pid":507504,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694893686,"pid":507504,"kind":"proxy.req","id":"model:0ee9528d8753","msgs":3,"tools":2,"stream":true}
+{"t":1792694893687,"pid":507504,"kind":"proxy.upstream","id":"model:0ee9528d8753"}
+{"t":1792694894993,"pid":507504,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF25A7N082YQVF1Q80ACA4","nested":false}
+{"t":1792694895040,"pid":507504,"kind":"proxy.req","id":"model:8e55c78c1ccd","msgs":5,"tools":2,"stream":true}
+{"t":1792694895707,"pid":507504,"kind":"proxy.req","id":"model:b0559cbe62cb","msgs":1,"tools":0,"stream":true}
+{"t":1792694895993,"pid":507504,"kind":"proxy.req","id":"model:dcb89aba1771","msgs":1,"tools":2,"stream":true}
+{"t":1792694896085,"pid":507504,"kind":"proxy.req","id":"model:0ee9528d8753","msgs":3,"tools":2,"stream":true}
+{"t":1792694896126,"pid":507504,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694896995,"pid":507504,"kind":"turn.end","sessionId":"34b8e694-68c6-a44f-255a-b473f3a7fd0b","done":false,"text":"","stopReason":null,"subtype":"","numTurns":0,"costUsd":0,"toolCalls":["mcp__box__write_note","mcp__box__read_note"],"assistantMessages":4,"thrown":"Claude Code process aborted by user"}
+{"t":1792694902126,"pid":507504,"kind":"tool.end","tool":"read_note","args":{"name":"a"}}
+{"t":1792694902195,"pid":507504,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF25A7N082YQVF1Q80ACA4","nested":false}
+{"t":1792694903146,"pid":507504,"kind":"proxy.req","id":"model:b0559cbe62cb","msgs":1,"tools":0,"stream":true}
+{"t":1792694903438,"pid":507504,"kind":"proxy.req","id":"model:dcb89aba1771","msgs":1,"tools":2,"stream":true}
+{"t":1792694903525,"pid":507504,"kind":"proxy.req","id":"model:0ee9528d8753","msgs":3,"tools":2,"stream":true}
+{"t":1792694903588,"pid":507504,"kind":"proxy.req","id":"model:76c82369b982","msgs":5,"tools":2,"stream":true}
+{"t":1792694903588,"pid":507504,"kind":"proxy.upstream","id":"model:76c82369b982"}
+{"t":1792694905463,"pid":507504,"kind":"turn.end","sessionId":"34b8e694-68c6-a44f-255a-b473f3a7fd0b","done":false,"text":"The text of note a is: **hello**\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":3,"costUsd":0.0047849500000000005,"toolCalls":["mcp__box__write_note","mcp__box__read_note"],"assistantMessages":6}

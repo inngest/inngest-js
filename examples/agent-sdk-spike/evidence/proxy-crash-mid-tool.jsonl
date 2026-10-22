@@ -1,0 +1,22 @@
+{"t":1792694832633,"pid":505261,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF0KBSK9X4D0JA0KRQRXX5","nested":false}
+{"t":1792694833582,"pid":505261,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
+{"t":1792694833582,"pid":505261,"kind":"proxy.upstream","id":"model:10b3bbca30db"}
+{"t":1792694833855,"pid":505261,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
+{"t":1792694834327,"pid":505261,"kind":"proxy.upstream","id":"model:0e5d14366c16"}
+{"t":1792694835969,"pid":505261,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694840239,"pid":506767,"kind":"app.boot","port":"32289","data":"/home/nixos/repo/inngest/inngest-js-agent-sdk-spike/examples/agent-sdk-spike/data"}
+{"t":1792694840384,"pid":506767,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF0KBSK9X4D0JA0KRQRXX5","nested":false}
+{"t":1792694841331,"pid":506767,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
+{"t":1792694841565,"pid":506767,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
+{"t":1792694841595,"pid":506767,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694847594,"pid":506767,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694847744,"pid":506767,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF0KBSK9X4D0JA0KRQRXX5","nested":false}
+{"t":1792694848653,"pid":506767,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
+{"t":1792694849028,"pid":506767,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
+{"t":1792694849088,"pid":506767,"kind":"proxy.req","id":"model:2186f9c43221","msgs":3,"tools":2,"stream":true}
+{"t":1792694849089,"pid":506767,"kind":"proxy.upstream","id":"model:2186f9c43221"}
+{"t":1792694850351,"pid":506767,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694856351,"pid":506767,"kind":"tool.end","tool":"read_note","args":{"name":"a"}}
+{"t":1792694856371,"pid":506767,"kind":"proxy.req","id":"model:018859ac5ad0","msgs":5,"tools":2,"stream":true}
+{"t":1792694856372,"pid":506767,"kind":"proxy.upstream","id":"model:018859ac5ad0"}
+{"t":1792694857883,"pid":506767,"kind":"turn.end","sessionId":"de5829bb-75e6-247f-9154-7eb67cdd8157","done":false,"text":"The text of note \"a\" is: **hello**\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":3,"costUsd":0.0044845,"toolCalls":["mcp__box__write_note","mcp__box__read_note"],"assistantMessages":6}

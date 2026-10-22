@@ -1,0 +1,25 @@
+RESTART at 18:47:17
+  lease      until 2026-10-22T20:47:19.872Z (renewed by use)
+{"fn.invoke":3,"proxy.req":8,"proxy.upstream":4,"tool.start":3,"app.boot":1,"tool.end":2,"turn.end":1}
++  0.0s pid=505261 fn.invoke    run=RQRXX5
++  0.9s pid=505261 proxy.req    {"t":1792694833582,"pid":505261,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
++  0.9s pid=505261 proxy.upstream {"t":1792694833582,"pid":505261,"kind":"proxy.upstream","id":"model:10b3bbca30db"}
++  1.2s pid=505261 proxy.req    {"t":1792694833855,"pid":505261,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
++  1.7s pid=505261 proxy.upstream {"t":1792694834327,"pid":505261,"kind":"proxy.upstream","id":"model:0e5d14366c16"}
++  3.3s pid=505261 tool.start   write_note {"name":"a","text":"hello"}
++  7.6s pid=506767 app.boot     {"t":1792694840239,"pid":506767,"kind":"app.boot","port":"32289","data":"/home/nixos/repo/inngest/inngest-js-agent-sdk-s
++  7.8s pid=506767 fn.invoke    run=RQRXX5
++  8.7s pid=506767 proxy.req    {"t":1792694841331,"pid":506767,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
++  8.9s pid=506767 proxy.req    {"t":1792694841565,"pid":506767,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
++  9.0s pid=506767 tool.start   write_note {"name":"a","text":"hello"}
++ 15.0s pid=506767 tool.end     write_note {"name":"a","text":"hello"}
++ 15.1s pid=506767 fn.invoke    run=RQRXX5
++ 16.0s pid=506767 proxy.req    {"t":1792694848653,"pid":506767,"kind":"proxy.req","id":"model:10b3bbca30db","msgs":1,"tools":0,"stream":true}
++ 16.4s pid=506767 proxy.req    {"t":1792694849028,"pid":506767,"kind":"proxy.req","id":"model:0e5d14366c16","msgs":1,"tools":2,"stream":true}
++ 16.5s pid=506767 proxy.req    {"t":1792694849088,"pid":506767,"kind":"proxy.req","id":"model:2186f9c43221","msgs":3,"tools":2,"stream":true}
++ 16.5s pid=506767 proxy.upstream {"t":1792694849089,"pid":506767,"kind":"proxy.upstream","id":"model:2186f9c43221"}
++ 17.7s pid=506767 tool.start   read_note {"name":"a"}
++ 23.7s pid=506767 tool.end     read_note {"name":"a"}
++ 23.7s pid=506767 proxy.req    {"t":1792694856371,"pid":506767,"kind":"proxy.req","id":"model:018859ac5ad0","msgs":5,"tools":2,"stream":true}
++ 23.7s pid=506767 proxy.upstream {"t":1792694856372,"pid":506767,"kind":"proxy.upstream","id":"model:018859ac5ad0"}
++ 25.3s pid=506767 turn.end     success calls=mcp__box__write_note+mcp__box__read_note cost=0.00448

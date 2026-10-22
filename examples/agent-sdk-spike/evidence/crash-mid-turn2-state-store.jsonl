@@ -1,0 +1,17 @@
+{"t":1792694197091,"pid":487758,"kind":"fn.invoke","fn":"a1b","runId":"01M5JED6TFBPF1BC560YM541C6"}
+{"t":1792694197103,"pid":487758,"kind":"turn.start","runId":"01M5JED6TFBPF1BC560YM541C6","turn":1,"mode":"state"}
+{"t":1792694200569,"pid":487758,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694207569,"pid":487758,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694208577,"pid":487758,"kind":"turn.end","sessionId":"93b13e65-4097-4228-baa8-07045edb2524","done":false,"text":"","stopReason":"tool_use","subtype":"error_max_turns","numTurns":2,"costUsd":0.0016954,"toolCalls":["mcp__box__write_note"],"assistantMessages":3,"thrown":"Claude Code returned an error result: Reached maximum number of turns (1)"}
+{"t":1792694208637,"pid":487758,"kind":"fn.invoke","fn":"a1b","runId":"01M5JED6TFBPF1BC560YM541C6"}
+{"t":1792694208638,"pid":487758,"kind":"turn.start","runId":"01M5JED6TFBPF1BC560YM541C6","turn":2,"mode":"state"}
+{"t":1792694210997,"pid":487758,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694216529,"pid":488400,"kind":"app.boot","port":"32289","data":"/home/nixos/repo/inngest/inngest-js-agent-sdk-spike/examples/agent-sdk-spike/data"}
+{"t":1792694217447,"pid":488400,"kind":"fn.invoke","fn":"a1b","runId":"01M5JED6TFBPF1BC560YM541C6"}
+{"t":1792694217450,"pid":488400,"kind":"turn.start","runId":"01M5JED6TFBPF1BC560YM541C6","turn":2,"mode":"state"}
+{"t":1792694220036,"pid":488400,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694227037,"pid":488400,"kind":"tool.end","tool":"read_note","args":{"name":"a"}}
+{"t":1792694228029,"pid":488400,"kind":"turn.end","sessionId":"93b13e65-4097-4228-baa8-07045edb2524","done":false,"text":"","stopReason":"tool_use","subtype":"error_max_turns","numTurns":2,"costUsd":0.0027447,"toolCalls":["mcp__box__read_note"],"assistantMessages":2,"thrown":"Claude Code returned an error result: Reached maximum number of turns (1)"}
+{"t":1792694228137,"pid":488400,"kind":"fn.invoke","fn":"a1b","runId":"01M5JED6TFBPF1BC560YM541C6"}
+{"t":1792694228138,"pid":488400,"kind":"turn.start","runId":"01M5JED6TFBPF1BC560YM541C6","turn":3,"mode":"state"}
+{"t":1792694232209,"pid":488400,"kind":"turn.end","sessionId":"93b13e65-4097-4228-baa8-07045edb2524","done":true,"text":"The text of note a is: **hello**\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":1,"costUsd":0.004179,"toolCalls":[],"assistantMessages":2}

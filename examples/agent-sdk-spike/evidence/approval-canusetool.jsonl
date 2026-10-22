@@ -1,0 +1,12 @@
+{"t":1792695001756,"pid":510093,"kind":"fn.invoke","fn":"a1b","runId":"01M5JF5RJFKV7BD5DDTPPXV3M8"}
+{"t":1792695001766,"pid":510093,"kind":"turn.start","runId":"01M5JF5RJFKV7BD5DDTPPXV3M8","turn":1,"mode":"state"}
+{"t":1792695004939,"pid":510093,"kind":"canUseTool","name":"mcp__box__write_note","input":{"name":"a","text":"hello"}}
+{"t":1792695006031,"pid":510093,"kind":"turn.end","sessionId":"db7d0475-052c-4950-995e-0399d33f535e","done":false,"text":"","stopReason":"tool_use","subtype":"error_max_turns","numTurns":2,"costUsd":0.007824600000000001,"toolCalls":["mcp__box__write_note"],"assistantMessages":2,"thrown":"Claude Code returned an error result: Reached maximum number of turns (1)"}
+{"t":1792695020036,"pid":510093,"kind":"fn.invoke","fn":"a1b","runId":"01M5JF5RJFKV7BD5DDTPPXV3M8"}
+{"t":1792695020037,"pid":510093,"kind":"turn.start","runId":"01M5JF5RJFKV7BD5DDTPPXV3M8","turn":2,"mode":"state"}
+{"t":1792695022637,"pid":510093,"kind":"canUseTool","name":"mcp__box__write_note","input":{"name":"a","text":"hello"}}
+{"t":1792695022654,"pid":510093,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695022654,"pid":510093,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695023874,"pid":510093,"kind":"turn.end","sessionId":"db7d0475-052c-4950-995e-0399d33f535e","done":false,"text":"","stopReason":"tool_use","subtype":"error_max_turns","numTurns":2,"costUsd":0.009339900000000002,"toolCalls":["mcp__box__write_note"],"assistantMessages":2,"thrown":"Claude Code returned an error result: Reached maximum number of turns (1)"}
+{"t":1792695023882,"pid":510093,"kind":"turn.start","runId":"01M5JF5RJFKV7BD5DDTPPXV3M8","turn":3,"mode":"state"}
+{"t":1792695028074,"pid":510093,"kind":"turn.end","sessionId":"db7d0475-052c-4950-995e-0399d33f535e","done":true,"text":"Done.\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":1,"costUsd":0.010907550000000002,"toolCalls":[],"assistantMessages":2}

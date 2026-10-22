@@ -1,0 +1,5 @@
+{"t":1792695057683,"pid":510093,"kind":"fn.invoke","fn":"a1b","runId":"01M5JF7F5C6FH436GKAQ9EZAPN"}
+{"t":1792695057693,"pid":510093,"kind":"turn.start","runId":"01M5JF7F5C6FH436GKAQ9EZAPN","turn":1,"mode":"state"}
+{"t":1792695064413,"pid":510093,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695064413,"pid":510093,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695066839,"pid":510093,"kind":"turn.end","sessionId":"8965e5b3-66f2-47bf-8cd8-8498e3d7a005","done":false,"text":"","stopReason":null,"subtype":"error_max_budget_usd","numTurns":1,"costUsd":0.0082624,"toolCalls":["mcp__box__write_note"],"assistantMessages":3,"thrown":"Claude Code returned an error result: Reached maximum budget ($0.004)"}

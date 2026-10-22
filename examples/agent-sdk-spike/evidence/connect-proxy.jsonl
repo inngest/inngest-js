@@ -1,0 +1,10 @@
+{"t":1792695099126,"pid":513343,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF8QJJ91H1VWD219G2H18F","nested":false}
+{"t":1792695100177,"pid":513343,"kind":"proxy.req","id":"model:09799acfb2c6","msgs":1,"tools":0,"stream":true}
+{"t":1792695100177,"pid":513343,"kind":"proxy.upstream","id":"model:09799acfb2c6"}
+{"t":1792695100457,"pid":513343,"kind":"proxy.req","id":"model:8dbf9ff462cf","msgs":1,"tools":2,"stream":true}
+{"t":1792695101183,"pid":513343,"kind":"proxy.upstream","id":"model:8dbf9ff462cf"}
+{"t":1792695102728,"pid":513343,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695102728,"pid":513343,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695102751,"pid":513343,"kind":"proxy.req","id":"model:b50df873d4da","msgs":3,"tools":2,"stream":true}
+{"t":1792695102751,"pid":513343,"kind":"proxy.upstream","id":"model:b50df873d4da"}
+{"t":1792695104100,"pid":513343,"kind":"turn.end","sessionId":"44be524a-0faa-bd37-0d31-e44ac0c18e26","done":false,"text":"Done.\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":2,"costUsd":0.0096066,"toolCalls":["mcp__box__write_note"],"assistantMessages":4}

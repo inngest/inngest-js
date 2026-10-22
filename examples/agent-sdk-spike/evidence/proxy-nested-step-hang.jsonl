@@ -1,0 +1,3 @@
+{"t":1792694927848,"pid":507504,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JF3GE217M79GBJ15DF8AJR","nested":true}
+{"t":1792694928691,"pid":507504,"kind":"proxy.req","id":"model:f22cb13364e7","msgs":1,"tools":0,"stream":true}
+{"t":1792694930244,"pid":507504,"kind":"proxy.req","id":"model:f728e0c840d8","msgs":1,"tools":2,"stream":true}

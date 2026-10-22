@@ -1,0 +1,7 @@
+{"t":1792695245643,"pid":513343,"kind":"fn.invoke","fn":"a1b","runId":"01M5JFD6NDYRP3HS5MBP3ZXZNF"}
+{"t":1792695245661,"pid":513343,"kind":"turn.start","runId":"01M5JFD6NDYRP3HS5MBP3ZXZNF","turn":1,"mode":"state"}
+{"t":1792695248724,"pid":513343,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695248724,"pid":513343,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792695249981,"pid":513343,"kind":"turn.end","sessionId":"3340b69b-25fd-44ec-a443-669d757d93e0","done":false,"text":"","stopReason":"tool_use","subtype":"error_max_turns","numTurns":2,"costUsd":0.0013574,"toolCalls":["mcp__box__write_note"],"assistantMessages":2,"thrown":"Claude Code returned an error result: Reached maximum number of turns (1)"}
+{"t":1792695249992,"pid":513343,"kind":"turn.start","runId":"01M5JFD6NDYRP3HS5MBP3ZXZNF","turn":2,"mode":"state"}
+{"t":1792695253475,"pid":513343,"kind":"turn.end","sessionId":"3340b69b-25fd-44ec-a443-669d757d93e0","done":true,"text":"Done.","stopReason":"end_turn","subtype":"success","numTurns":1,"costUsd":0.0026452000000000003,"toolCalls":[],"assistantMessages":2}

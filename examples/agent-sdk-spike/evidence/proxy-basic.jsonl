@@ -1,0 +1,14 @@
+{"t":1792694262042,"pid":489165,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JEF67MYTW3TF7D5YH0JH6N","nested":false}
+{"t":1792694262986,"pid":489165,"kind":"proxy.req","id":"model:e3783323a01d","msgs":1,"tools":0,"stream":true}
+{"t":1792694262987,"pid":489165,"kind":"proxy.upstream","id":"model:e3783323a01d"}
+{"t":1792694264529,"pid":489165,"kind":"proxy.req","id":"model:7646ae095015","msgs":1,"tools":2,"stream":true}
+{"t":1792694264530,"pid":489165,"kind":"proxy.upstream","id":"model:7646ae095015"}
+{"t":1792694266439,"pid":489165,"kind":"tool.start","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694266439,"pid":489165,"kind":"tool.end","tool":"write_note","args":{"name":"a","text":"hello"}}
+{"t":1792694266472,"pid":489165,"kind":"proxy.req","id":"model:b856b2201570","msgs":3,"tools":2,"stream":true}
+{"t":1792694266473,"pid":489165,"kind":"proxy.upstream","id":"model:b856b2201570"}
+{"t":1792694267785,"pid":489165,"kind":"tool.start","tool":"read_note","args":{"name":"a"}}
+{"t":1792694267785,"pid":489165,"kind":"tool.end","tool":"read_note","args":{"name":"a"}}
+{"t":1792694267802,"pid":489165,"kind":"proxy.req","id":"model:89d39b1f03de","msgs":5,"tools":2,"stream":true}
+{"t":1792694267803,"pid":489165,"kind":"proxy.upstream","id":"model:89d39b1f03de"}
+{"t":1792694269293,"pid":489165,"kind":"turn.end","sessionId":"bdf60b34-eb54-0b59-0000-71a715e0e657","done":false,"text":"The text of note \"a\" is: **hello**\n\nWEBSITE-RULES-LOADED","stopReason":"end_turn","subtype":"success","numTurns":3,"costUsd":0.01124245,"toolCalls":["mcp__box__write_note","mcp__box__read_note"],"assistantMessages":8}

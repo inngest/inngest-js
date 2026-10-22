@@ -1,0 +1,19 @@
+./crash.sh: line 7: [: : integer expected
+./crash.sh: line 7: [: : integer expected
+RESTART at 18:34:50
+  log        /home/nixos/.local/state/inngest-devstack/logs/agsdk__agsdk.log
+  lease      until 2026-10-22T20:34:53.692Z (renewed by use)
+{"fn.invoke":3,"turn.start":3,"store.append":17,"tool.start":2,"app.boot":1,"tool.end":1,"turn.end":2,"store.load":1}
++  0.0s pid=484879 fn.invoke    run=AFH9TX
++  0.0s pid=484879 turn.start   run=AFH9TX turn=1
++  3.6s pid=484879 tool.start   write_note {"name":"a","text":"hello"}
++  9.1s pid=485204 app.boot     {"t":1792694094708,"pid":485204,"kind":"app.boot","port":"32289","data":"/home/nixos/repo/inngest/inngest-js-agent-sdk-s
++ 10.0s pid=485204 fn.invoke    run=AFH9TX
++ 10.0s pid=485204 turn.start   run=AFH9TX turn=1
++ 13.1s pid=485204 tool.start   write_note {"name":"a","text":"hello"}
++ 21.1s pid=485204 tool.end     write_note {"name":"a","text":"hello"}
++ 22.0s pid=485204 turn.end     error_max_turns calls=mcp__box__write_note cost=0.00144
++ 22.0s pid=485204 fn.invoke    run=AFH9TX
++ 22.0s pid=485204 turn.start   run=AFH9TX turn=2
++ 22.0s pid=485204 store.load   n=38 found=true
++ 25.9s pid=485204 turn.end     success calls= cost=0.00293

@@ -1,0 +1,1 @@
+{"name":"agent-sdk-spike","private":true,"type":"module","dependencies":{"@anthropic-ai/claude-agent-sdk":"0.3.296","inngest":"4.25.0","zod":"^4.0.0","tsx":"^4.19.0"}}

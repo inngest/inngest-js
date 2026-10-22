@@ -1,0 +1,20 @@
+RESTART at 18:36:52
+  lease      until 2026-10-22T20:36:55.560Z (renewed by use)
+{"fn.invoke":4,"turn.start":4,"tool.start":3,"tool.end":2,"turn.end":3,"app.boot":1}
++  0.0s pid=487758 fn.invoke    run=M541C6
++  0.0s pid=487758 turn.start   run=M541C6 turn=1
++  3.5s pid=487758 tool.start   write_note {"name":"a","text":"hello"}
++ 10.5s pid=487758 tool.end     write_note {"name":"a","text":"hello"}
++ 11.5s pid=487758 turn.end     error_max_turns calls=mcp__box__write_note cost=0.00170
++ 11.5s pid=487758 fn.invoke    run=M541C6
++ 11.5s pid=487758 turn.start   run=M541C6 turn=2
++ 13.9s pid=487758 tool.start   read_note {"name":"a"}
++ 19.4s pid=488400 app.boot     {"t":1792694216529,"pid":488400,"kind":"app.boot","port":"32289","data":"/home/nixos/repo/inngest/inngest-js-agent-sdk-s
++ 20.4s pid=488400 fn.invoke    run=M541C6
++ 20.4s pid=488400 turn.start   run=M541C6 turn=2
++ 22.9s pid=488400 tool.start   read_note {"name":"a"}
++ 29.9s pid=488400 tool.end     read_note {"name":"a"}
++ 30.9s pid=488400 turn.end     error_max_turns calls=mcp__box__read_note cost=0.00274
++ 31.0s pid=488400 fn.invoke    run=M541C6
++ 31.0s pid=488400 turn.start   run=M541C6 turn=3
++ 35.1s pid=488400 turn.end     success calls= cost=0.00418

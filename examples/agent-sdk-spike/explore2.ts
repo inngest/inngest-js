@@ -1,0 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { FileSessionStore, resetSandbox, runTurn } from "./lib.ts";
+resetSandbox();
+const store = new FileSessionStore();
+const sessionId = randomUUID();
+const cwd = join(import.meta.dirname, "host/website");
+const t1 = await runTurn({ prompt: "Write a note named a with text hello, then tell me done.", sessionId, resume: false, store, cwd });
+console.log("T1", t1.subtype, t1.toolCalls);
+const t2 = await runTurn({ prompt: "continue", sessionId, resume: true, store, cwd });
+console.log("T2", t2.subtype, t2.text);

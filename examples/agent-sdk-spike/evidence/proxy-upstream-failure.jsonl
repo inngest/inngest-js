@@ -1,0 +1,11 @@
+{"t":1792695258087,"pid":513343,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JFDJX7P8SRV09KJZEA94XE","nested":false}
+{"t":1792695258888,"pid":513343,"kind":"proxy.req","id":"model:6c5ea65864a6","msgs":1,"tools":0,"stream":true}
+{"t":1792695258888,"pid":513343,"kind":"proxy.upstream","id":"model:6c5ea65864a6"}
+{"t":1792695259123,"pid":513343,"kind":"proxy.req","id":"model:44c17ccc2761","msgs":1,"tools":2,"stream":true}
+{"t":1792695259916,"pid":513343,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JFDJX7P8SRV09KJZEA94XE","nested":false}
+{"t":1792695260719,"pid":513343,"kind":"proxy.req","id":"model:6c5ea65864a6","msgs":1,"tools":0,"stream":true}
+{"t":1792695260720,"pid":513343,"kind":"proxy.upstream","id":"model:6c5ea65864a6"}
+{"t":1792695260950,"pid":513343,"kind":"proxy.req","id":"model:44c17ccc2761","msgs":1,"tools":2,"stream":true}
+{"t":1792695261733,"pid":513343,"kind":"fn.invoke","fn":"proxy-agent","runId":"01M5JFDJX7P8SRV09KJZEA94XE","nested":false}
+{"t":1792695261917,"pid":513343,"kind":"turn.end","sessionId":"c5a4c7b8-85aa-222e-eb0c-314b3783a956","done":false,"text":"","stopReason":null,"subtype":"","numTurns":0,"costUsd":0,"toolCalls":[],"assistantMessages":0,"thrown":"Claude Code process aborted by user"}
+{"t":1792695263175,"pid":513343,"kind":"turn.end","sessionId":"c5a4c7b8-85aa-222e-eb0c-314b3783a956","done":true,"text":"There's an issue with the selected model (claude-haiku-4-5). It may not exist or you may not have access to it.","stopReason":"stop_sequence","subtype":"success","numTurns":1,"costUsd":0,"toolCalls":[],"assistantMessages":1,"thrown":"Claude Code returned an error result: There's an issue with the selected model (claude-haiku-4-5). It may not exist or you may not have access to it."}
