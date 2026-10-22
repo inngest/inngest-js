@@ -2381,7 +2381,27 @@ export class InngestCommHandler<
     const servePath = this.servePath || this.env[envKeys.InngestServePath];
 
     if (servePath) {
-      ret.pathname = servePath;
+      /**
+       * Parse the path and query separately. Assigning a string containing
+       * `?` to `URL.pathname` percent-encodes the separator (`%3F`), which
+       * breaks Vercel Deployment Protection bypass and other query-based
+       * routing.
+       */
+      const parsedServeUrl = new URL(servePath, "http://localhost");
+      ret.pathname = parsedServeUrl.pathname;
+      parsedServeUrl.searchParams.forEach((value, key) => {
+        ret.searchParams.set(key, value);
+      });
+    }
+
+    /**
+     * When Vercel Deployment Protection is enabled, append the automation
+     * bypass secret as a real query parameter so Inngest Cloud can invoke
+     * protected preview deployments.
+     */
+    const bypassSecret = this.env[envKeys.VercelAutomationBypassSecret];
+    if (bypassSecret) {
+      ret.searchParams.set("x-vercel-protection-bypass", bypassSecret);
     }
 
     if (this.serveOrigin) {
