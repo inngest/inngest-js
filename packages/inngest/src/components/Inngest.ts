@@ -1220,6 +1220,40 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return this.localFns;
   }
 
+  /**
+   * Remove functions from this client's local registry.
+   *
+   * `createFunction()` adds every created function to the client's local
+   * registry (`client.funcs`), and the client is often a module-level
+   * singleton. If your process creates functions more than once, for
+   * example an app factory invoked per test, per tenant or plugin instance,
+   * or on hot reload, every function ever created stays reachable through
+   * this registry, along with everything its handler closure captured
+   * (logger, DI container, DB pool, ...). Call this method when an app is
+   * closed so its functions can be garbage-collected.
+   *
+   * The only SDK reader of the local registry is `connect()`'s fallback
+   * when no functions are passed explicitly, so removing closed functions
+   * does not affect served functions.
+   */
+  public removeFunctions(
+    fns: InngestFunction.Any | Iterable<InngestFunction.Any>,
+  ): void {
+    const asIterable = fns as Iterable<InngestFunction.Any>;
+    const targets = new Set<InngestFunction.Any>(
+      typeof asIterable[Symbol.iterator] === "function"
+        ? asIterable
+        : [fns as InngestFunction.Any],
+    );
+
+    for (let i = this.localFns.length - 1; i >= 0; i--) {
+      const fn = this.localFns[i];
+      if (fn && targets.has(fn)) {
+        this.localFns.splice(i, 1);
+      }
+    }
+  }
+
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     handler,
