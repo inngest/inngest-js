@@ -28,14 +28,10 @@ import {
   repoContextFromEvent,
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
+import { jobCheck } from "../github/render/job.ts";
+import type { CheckAction, CheckPayload } from "../github/render/types.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import {
-  deleteOrphanSnapshots,
-  deleteRunSnapshots,
-  destroyOrphans,
-  destroyRunMachines,
-  lockMachineName,
-} from "../machine/machine.ts";
+import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -46,12 +42,12 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration, parseRepo } from "../util.ts";
-import type { BuildDone } from "./buildLock.ts";
-import { buildDoneEvent, endBuild } from "./buildLock.ts";
+import { errorMessage, formatDuration, parseRepo } from "../util.ts";
+import { endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
+import { runLinks } from "./jobReport.ts";
 import {
   ciRun,
   metadataStep,
@@ -59,6 +55,7 @@ import {
   runStartMetadata,
 } from "./metadata.ts";
 import { stepOptions, steps } from "./names.ts";
+import { markJob, pipelinePayload } from "./pipelineReport.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -256,7 +253,9 @@ const newRunScope = ({
     inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
+    createdMachines: new Set(),
     summaries: [],
+    jobGraph: new Map(),
     openChecks: new Map(),
     cacheSaved: new Map(),
     attempt,
@@ -380,9 +379,7 @@ const runPipelineAttempt = async ({
     if (outcome.kind === "failed") {
       // A run that is about to be retried keeps its machines and snapshots:
       // the retry replays the memoized machine and snapshot IDs and needs them
-      // alive. The generated cleanup function covers a run that never gets
-      // here; it finds machines by name, but snapshots carry no run name, so
-      // it can't delete them.
+      // alive.
       if (
         !isDeterministicFailure(outcome.error) &&
         run.willRetry(outcome.error)
@@ -552,14 +549,30 @@ const conclusionOf = (outcome: Outcome): CheckConclusion => {
 const describeOutcome = (
   run: CiRunScope,
   outcome: Outcome,
-): { title: string; summary: string; annotations: CheckAnnotation[] } => {
+): {
+  title: string;
+  summary: string;
+  text?: string;
+  actions?: CheckAction[];
+  annotations: CheckAnnotation[];
+} => {
   switch (outcome.kind) {
     case "ran": {
       const skip = asSkip(outcome.result);
 
+      if (skip) {
+        return {
+          title: `Nothing to do: ${skip.reason}`,
+          summary: pipelineSummaryWithReports(run),
+          annotations: run.pipelineAnnotations,
+        };
+      }
+
       return {
-        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
-        summary: pipelineSummaryWithReports(run),
+        ...withPipelineReports(
+          run,
+          pipelinePayload(run, "passed", pipelineNotes(run)),
+        ),
         annotations: run.pipelineAnnotations,
       };
     }
@@ -573,9 +586,24 @@ const describeOutcome = (
     }
 
     case "failed": {
+      const jobFailed = [...run.jobGraph.values()].some((node) => {
+        return node.state === "failed";
+      });
+
+      const payload = pipelinePayload(run, "failed", {
+        ...pipelineNotes(run),
+        ...(jobFailed
+          ? {}
+          : {
+              error: {
+                title: errorTitle(outcome.error, run),
+                message: errorMessage(outcome.error).split("\n")[0] ?? "",
+              },
+            }),
+      });
+
       return {
-        title: errorTitle(outcome.error, run),
-        summary: pipelineSummaryWithReports(run),
+        ...withPipelineReports(run, payload),
         annotations: run.pipelineAnnotations,
       };
     }
@@ -850,7 +878,7 @@ const willRetry = (
 /** How many times Inngest retries a function that sets no `retries`. */
 const defaultRetries = 4;
 
-const cancelledTitle = "Cancelled: the pipeline ended first";
+const cancelledTitle = "🛑 Cancelled: the pipeline ended first";
 
 /**
  * Complete the job checks the run leaves behind: those of jobs still running.
@@ -869,11 +897,19 @@ const closeJobChecks = async (
     run,
     jobs: () => {
       const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
+        const shown = jobCheck({
+          ...runLinks(run),
+          name: jobPath,
+          state: { kind: "cancelled", reason: "the pipeline ended first" },
+        });
+
         return {
           jobPath,
           ...(name ? { name } : {}),
           conclusion: "cancelled" as const,
           title: cancelledTitle,
+          summary: shown.summary,
+          actions: shown.actions,
         };
       });
 
@@ -882,6 +918,8 @@ const closeJobChecks = async (
   });
 
   for (const job of closed) {
+    markJob(run, job.jobPath, { state: "stopped" });
+
     if (job.conclusion === "cancelled" && job.title === cancelledTitle) {
       run.summaries.push({
         path: job.jobPath,
@@ -891,6 +929,34 @@ const closeJobChecks = async (
       });
     }
   }
+};
+
+/** What the run has to say beside its jobs: its warnings and kept machines. */
+const pipelineNotes = (run: CiRunScope): { notes: string[] } => {
+  return {
+    notes: [
+      ...run.warnings.map((warning) => {
+        return `📝 ${warning}`;
+      }),
+      ...run.summaries
+        .filter((summary) => {
+          return summary.keptSnapshotId;
+        })
+        .map((summary) => {
+          return `📌 \`${summary.path}\` kept as snapshot \`${summary.keptSnapshotId}\``;
+        }),
+    ],
+  };
+};
+
+/** The payload, with what the pipeline's own code reported below it. */
+const withPipelineReports = (run: CiRunScope, payload: CheckPayload) => {
+  return {
+    title: payload.title,
+    summary: [payload.summary, ...run.pipelineSummaries].join("\n\n"),
+    ...(payload.text === undefined ? {} : { text: payload.text }),
+    actions: payload.actions,
+  };
 };
 
 const pipelineSummaryWithReports = (run: CiRunScope): string => {
@@ -905,21 +971,6 @@ const failedJobsTitle = (run: CiRunScope): string | undefined => {
   return failed.length === 0
     ? undefined
     : `${failed.length} of ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} failed`;
-};
-
-const summaryTitle = (run: CiRunScope): string => {
-  const failed = failedJobsTitle(run);
-
-  if (failed) {
-    return failed;
-  }
-
-  const saved = savedFromCache(run);
-  const wall = wallTime(run);
-
-  return run.summaries.length === 0
-    ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed${wall === undefined ? "" : ` in ${formatDuration(wall)}`}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {
@@ -1012,9 +1063,13 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines and deletes the snapshots of a run of `config.id`
- * that ended permanently, by failure or cancellation, without reaching its own
- * cleanup step.
+ * Completes the pipeline check of a run of `config.id` that was cancelled, as
+ * cancelled. A cancelled run never reaches its own completion, so its check
+ * would stay in progress.
+ *
+ * A run only destroys the machines and deletes the snapshots it holds the IDs
+ * of, in its own cleanup step. One that ends without reaching it leaves them
+ * to expire.
  */
 export const cleanupFunction = ({
   client,
@@ -1023,17 +1078,13 @@ export const cleanupFunction = ({
 }: {
   client: Inngest.Any;
   config: Pick<PipelineConfig, "id" | "check">;
-  /** Given, a cancelled run's pipeline check is completed as cancelled. */
+  /** Without it there is nothing to complete, and the function does nothing. */
   internals?: CiInternals;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
       id: `${config.id}/cleanup`,
       triggers: [
-        {
-          event: internalEvents.FunctionFailed,
-          if: `event.data.function_id == "${client.id}-${config.id}"`,
-        },
         {
           event: internalEvents.FunctionCancelled,
           if: `event.data.function_id == "${client.id}-${config.id}"`,
@@ -1044,42 +1095,12 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      // A build that others waited on took a lock on its cache entry, whose
-      // name is worked out from the request it failed on.
-      const request = event?.data?.event?.data;
-
-      const lock =
-        request?.locked === true && typeof request.cacheKey === "string"
-          ? lockMachineName(request.cacheKey)
-          : undefined;
-
-      const destroyed = await step.run(
-        stepOptions(steps.cleanUpEndedRun()),
-        async () => {
-          if (!runId) {
-            return { destroyed: 0, lockReleased: false, deleted: 0 };
-          }
-
-          return {
-            ...(await destroyOrphans(client, runId, lock)),
-            ...(await deleteOrphanSnapshots(client, runId)),
-          };
-        },
-      );
-
-      // A cancelled run never reaches its own completion, so its check would
-      // stay in progress. What it needs comes from the run's trigger event.
+      // What the check needs comes from the run's trigger event.
       const repo = repoContextFromEvent(event?.data?.event);
       const checkName =
         config.check === false ? undefined : (config.check?.name ?? config.id);
 
-      if (
-        internals &&
-        runId &&
-        event?.name === internalEvents.FunctionCancelled &&
-        checkName &&
-        repo?.sha
-      ) {
+      if (internals && runId && checkName && repo?.sha) {
         await step.run(stepOptions(steps.endCancelledCheck()), async () => {
           await (internals.checks as CheckReporter).runCancelled({
             run: { runId, checkName, repo },
@@ -1089,28 +1110,14 @@ export const cleanupFunction = ({
         });
       }
 
-      // The runs waiting on it would otherwise wait for a build that is gone.
-      // A build that ended on its own already told them, and one that told them
-      // must not be counted as failing twice.
-      if (lock && destroyed.lockReleased) {
-        await step.sendEvent("announce-lock-released", {
-          name: buildDoneEvent,
-          data: {
-            name: lock,
-            status: "failed",
-            reason: "the build run ended before it finished",
-          } satisfies BuildDone,
-        });
-      }
-
-      return destroyed;
+      return { cancelled: Boolean(runId) };
     },
   );
 };
 
 /**
- * The functions a pipeline needs behind the scenes: cleanup after a permanent
- * failure or cancellation, and re-runs from a GitHub check.
+ * The functions a pipeline needs behind the scenes: ending a cancelled run's
+ * check, and re-runs from a GitHub check.
  */
 const generatedFunctions = ({
   client,
