@@ -1,6 +1,10 @@
-import type { StepOptionsOrId } from "../../types.ts";
+import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
+import {
+  type SandboxCleanupRegistrar,
+  setCleanupRegistrar,
+} from "./cleanup.ts";
 import {
   createSandboxForOperation,
   createSandboxSnapshotForOperation,
@@ -1028,90 +1032,124 @@ export const readParsedFile = <T>(
 
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
-): DurableSandboxTools => ({
-  create: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("create", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "create",
-      input: [normalizeSandboxCreateOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
-    const { id } = getStepOptions(idOrOptions);
-
-    const disposable = Object.freeze({
-      ...sandbox,
-      [Symbol.asyncDispose]: async () => {
-        await destroyQuietly(sandbox, `${id}:destroy`);
-      },
-    });
-    fileParsers.set(disposable, fileParserOf(sandbox));
-
-    return disposable;
-  },
-  list: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("list", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "list",
-      input: [normalizeSandboxListOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return {
-      items: result.sandboxes.map((sandbox) =>
-        createDurableSandboxFacade(sandbox, rawToolResolver),
-      ),
-      page: { ...result.page },
-      fetchedAt: result.fetchedAt,
-    };
-  },
-  get: async (idOrOptions, sandboxId) => {
-    const parsedSandboxId = parseWithSchema(
-      canonicalUuidSchema,
-      sandboxId,
-      "sandbox ID",
-    );
-    const operation = parseSandboxOperationForAction("get", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "get",
-      input: [{ sandboxId: parsedSandboxId }],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return result.sandbox
-      ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
-      : null;
-  },
-  snapshots: {
-    list: async (idOrOptions, options) => {
-      const operation = parseSandboxOperationForAction("snapshot.list", {
+  registerCleanup?: SandboxCleanupRegistrar,
+): DurableSandboxTools => {
+  const tools: DurableSandboxTools = {
+    create: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("create", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.list",
-        input: [normalizeSandboxSnapshotListOptions(options)],
+        action: "create",
+        input: [normalizeSandboxCreateOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      const sandbox = createDurableSandboxFacade(
+        result.sandbox,
+        rawToolResolver,
+      );
+      const { id } = getStepOptions(idOrOptions);
+
+      // `await using` reads the dispose method as it declares the sandbox, so
+      // that read is what marks the sandbox as scoped. A plain create never
+      // reads it and is left running when the run ends.
+      let cleanup: DeferHandle | undefined;
+      const disposable = Object.defineProperty(
+        { ...sandbox },
+        Symbol.asyncDispose,
+        {
+          get: () => {
+            cleanup ??= registerCleanup?.(id, {
+              sandboxId: result.sandbox.id,
+            });
+
+            return async () => {
+              await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
+            };
+          },
+        },
+      ) as DurableSandbox & AsyncDisposable;
+      Object.freeze(disposable);
+      fileParsers.set(disposable, fileParserOf(sandbox));
+
+      return disposable;
+    },
+    list: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("list", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "list",
+        input: [normalizeSandboxListOptions(options)],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return {
-        items: result.snapshots.map((snapshot) =>
-          createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+        items: result.sandboxes.map((sandbox) =>
+          createDurableSandboxFacade(sandbox, rawToolResolver),
         ),
         page: { ...result.page },
         fetchedAt: result.fetchedAt,
       };
     },
-    get: async (idOrOptions, snapshotId) => {
-      const parsedSnapshotId = parseWithSchema(
+    get: async (idOrOptions, sandboxId) => {
+      const parsedSandboxId = parseWithSchema(
         canonicalUuidSchema,
-        snapshotId,
-        "sandbox snapshot ID",
+        sandboxId,
+        "sandbox ID",
       );
-      const operation = parseSandboxOperationForAction("snapshot.get", {
+      const operation = parseSandboxOperationForAction("get", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.get",
-        target: { snapshotId: parsedSnapshotId },
-        input: [],
+        action: "get",
+        input: [{ sandboxId: parsedSandboxId }],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-      return result.snapshot
-        ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+      return result.sandbox
+        ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
         : null;
     },
-  },
-});
+    snapshots: {
+      list: async (idOrOptions, options) => {
+        const operation = parseSandboxOperationForAction("snapshot.list", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.list",
+          input: [normalizeSandboxSnapshotListOptions(options)],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return {
+          items: result.snapshots.map((snapshot) =>
+            createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+          ),
+          page: { ...result.page },
+          fetchedAt: result.fetchedAt,
+        };
+      },
+      get: async (idOrOptions, snapshotId) => {
+        const parsedSnapshotId = parseWithSchema(
+          canonicalUuidSchema,
+          snapshotId,
+          "sandbox snapshot ID",
+        );
+        const operation = parseSandboxOperationForAction("snapshot.get", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.get",
+          target: { snapshotId: parsedSnapshotId },
+          input: [],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return result.snapshot
+          ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+          : null;
+      },
+    },
+  };
+
+  if (registerCleanup) {
+    setCleanupRegistrar(tools, registerCleanup);
+  }
+
+  return tools;
+};

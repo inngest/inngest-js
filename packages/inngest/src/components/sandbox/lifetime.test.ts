@@ -5,9 +5,11 @@
  */
 
 import { runFnWithStack, runSteps } from "../../test/helpers.ts";
+import { _internals } from "../execution/engine.ts";
 import {
   createClient,
   createScopeClient,
+  ranStep,
   runToEnd,
   sandboxId,
 } from "./test-helpers.ts";
@@ -181,18 +183,16 @@ describe("await using a sandbox", () => {
       },
     );
 
-    const [box, destroy] = await runSteps(fn, 2);
+    const [box] = await runSteps(fn, 1);
+    const stepState = { [box!.id]: { id: box!.id, data: box!.data } };
+    const destroy = ranStep(await runFnWithStack(fn, stepState));
     const result = await runFnWithStack(
       fn,
-      {
-        [box!.id]: { id: box!.id, data: box!.data },
-        [destroy!.id]: { id: destroy!.id, data: destroy!.data },
-      },
+      { ...stepState, [destroy!.id]: { id: destroy!.id, data: destroy!.data } },
       { attempt: 0, maxAttempts: 5 },
     );
 
-    assert(result.type === "step-ran");
-    expect(result.step.op).toBe("StepError");
+    expect(ranStep(result)?.op).toBe("StepError");
   });
 
   test("leaves an error thrown with no scope retriable", async () => {
@@ -257,13 +257,12 @@ describe("await using a sandbox that can't be destroyed", () => {
         },
       );
 
-      const first = await runFnWithStack(fn, {});
-      assert(first.type === "step-ran");
-      const box = { id: first.step.id, data: first.step.data };
+      const first = ranStep(await runFnWithStack(fn, {}));
+      const box = { id: first!.id, data: first!.data };
 
-      const destroy = await runFnWithStack(fn, { [box.id]: box });
-      assert(destroy.type === "step-ran");
-      expect(destroy.step.metadata).toEqual(
+      const destroy = ranStep(await runFnWithStack(fn, { [box.id]: box }));
+      assert(destroy);
+      expect(destroy.metadata).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "inngest.warning.sdk.sandbox.destroy",
@@ -277,15 +276,16 @@ describe("await using a sandbox that can't be destroyed", () => {
       );
 
       const failed = {
-        id: destroy.step.id,
-        error: destroy.step.error,
+        id: destroy.id,
+        error: destroy.error,
       };
 
       for (let attempt = 0; attempt < 3; attempt++) {
-        const result = await runFnWithStack(fn, {
-          [box.id]: box,
-          [failed.id]: failed,
-        });
+        const result = await runFnWithStack(
+          fn,
+          { [box.id]: box, [failed.id]: failed },
+          { priorDefers: { [_internals.hashId("box:cleanup")]: {} } },
+        );
 
         expect(result.type).toBe(type);
         if (result.type === "function-rejected") {
@@ -314,13 +314,12 @@ describe("await using a sandbox that can't be destroyed", () => {
     const [box] = await runSteps(fn, 1);
     const stepState = { [box!.id]: { id: box!.id, data: box!.data } };
 
-    const retried = await runFnWithStack(fn, stepState);
-    assert(retried.type === "step-ran");
-    expect(retried.step.op).toBe("StepError");
+    const retried = ranStep(await runFnWithStack(fn, stepState));
+    expect(retried?.op).toBe("StepError");
 
-    const destroyed = await runFnWithStack(fn, stepState);
-    assert(destroyed.type === "step-ran");
-    expect(destroyed.step.error).toBeUndefined();
+    const destroyed = ranStep(await runFnWithStack(fn, stepState));
+    assert(destroyed);
+    expect(destroyed.error).toBeUndefined();
     expect(calls.destroys).toBe(2);
   });
 });
