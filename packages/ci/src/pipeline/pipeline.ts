@@ -485,6 +485,20 @@ const settle = async ({
       return { kind: "denied" };
     }
 
+    // A pull request is tested as it would be merged, as GitHub's own checks
+    // are, so the commit of its test merge is looked up before anything is
+    // cloned or hashed. A conflict ends the run like any other failure, so its
+    // check says why. A build run is told its parent's, which its cache key
+    // was worked out from.
+    if (
+      !run.build &&
+      run.repo?.pullRequest &&
+      run.repo.sha &&
+      !run.repo.local
+    ) {
+      run.repo = await resolveMergeCommit(run, run.repo);
+    }
+
     const result = await handler({
       event: ctx.event,
       events: ctx.events ?? [ctx.event],
@@ -684,6 +698,95 @@ const resolvePullRequestHead = (
           fork: (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName,
         },
       };
+    },
+  );
+};
+
+/** How many times, and how far apart, a pull request's mergeability is asked. */
+const mergeabilityAttempts = 8;
+const mergeabilityDelayMs = 1500;
+
+/**
+ * Look up the commit of a pull request's test merge, in a step so every replay
+ * clones and hashes the same one.
+ *
+ * GitHub works out mergeability in the background, so `mergeable` is null for
+ * a moment after a push; it's asked again a few times. A pull request that
+ * conflicts has no merge commit to test, so the run fails rather than testing
+ * a head that could never merge. If the answer never arrives, or the head has
+ * moved on since the event, the run keeps testing the head.
+ */
+const resolveMergeCommit = async (
+  run: CiRunScope,
+  repo: RepoContext,
+): Promise<RepoContext> => {
+  // Against a Dev Server nothing is written to GitHub, so nothing is asked of it.
+  if (
+    (run.ci.github as GitHubProvider).kind === "console" ||
+    (run.ci.isDev() && process.env.INNGEST_CI_GITHUB !== "live")
+  ) {
+    return repo;
+  }
+
+  return ciRun(
+    run,
+    steps.resolveMergeCommit(),
+    async (): Promise<RepoContext> => {
+      const provider = run.ci.github as GitHubProvider;
+      const number = repo.pullRequest?.number;
+
+      if (!number) {
+        return repo;
+      }
+
+      const octokit = await provider.octokit({
+        owner: repo.owner,
+        repo: repo.name,
+        ...(repo.installationId === undefined
+          ? {}
+          : { installationId: repo.installationId }),
+      });
+
+      for (let attempt = 0; attempt < mergeabilityAttempts; attempt++) {
+        const pr = await octokit.rest.pulls
+          .get({ owner: repo.owner, repo: repo.name, pull_number: number })
+          .then((response) => {
+            return response.data;
+          })
+          .catch((error: { status?: number }) => {
+            // A pull request that is gone has no merge to test.
+            if (error.status === 404) {
+              return undefined;
+            }
+
+            throw error;
+          });
+
+        if (!pr) {
+          return repo;
+        }
+
+        if (pr.head?.sha !== repo.sha) {
+          return repo;
+        }
+
+        if (pr.mergeable === false) {
+          throw new NonRetriableError(`PR has conflicts with ${pr.base.ref}`);
+        }
+
+        // Only a null answer is worth asking again.
+        if (pr.mergeable !== null) {
+          return pr.merge_commit_sha
+            ? { ...repo, mergeSha: pr.merge_commit_sha }
+            : repo;
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, mergeabilityDelayMs);
+        });
+      }
+
+      return repo;
     },
   );
 };
