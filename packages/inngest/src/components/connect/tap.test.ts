@@ -265,7 +265,13 @@ describe("tap over the mock gateway", () => {
 
   it("shadow runs locally, extends the lease, then NACKs", async () => {
     const handler = vi.fn(async (msg) => {
-      await sleep(300);
+      await waitFor(() => {
+        return (
+          gateway.getMessagesOfType(
+            GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+          ).length >= 2
+        );
+      });
 
       return response(msg, SDKResponseStatus.DONE, "real result");
     });

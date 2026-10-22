@@ -84,9 +84,6 @@ export interface StepDiff {
   replayed?: unknown;
 }
 
-/** Thrown when the server cannot give Pull what it needs. */
-export class PullDataError extends Error {}
-
 export const readPullSettings = (
   env: Record<string, string | undefined> = getProcessEnv(),
 ): PullSettings | undefined => {
@@ -113,9 +110,7 @@ interface TraceSpan {
 const getJson = async (url: string, headers: Record<string, string>) => {
   const resp = await fetch(url, { headers });
   if (!resp.ok) {
-    throw new PullDataError(
-      `GET ${url} failed (${resp.status}): ${await resp.text()}`,
-    );
+    throw new Error(`GET ${url} failed (${resp.status}): ${await resp.text()}`);
   }
 
   return ((await resp.json()) as { data?: unknown }).data;
@@ -199,7 +194,7 @@ export const fetchRecordedRun = async (opts: {
   )) as { rootSpan?: TraceSpan };
 
   if (!run?.function?.id || !run.trigger?.eventIds || !trace?.rootSpan) {
-    throw new PullDataError(
+    throw new Error(
       `Unexpected API response for run ${opts.runId}: ${JSON.stringify({ run, trace }).slice(0, 300)}`,
     );
   }
@@ -219,8 +214,12 @@ export const fetchRecordedRun = async (opts: {
       return step !== undefined;
     });
 
-  if (steps.every((step) => step.data === undefined)) {
-    throw new PullDataError(
+  if (
+    steps.every((step) => {
+      return step.data === undefined;
+    })
+  ) {
+    throw new Error(
       `The trace for run ${opts.runId} has no recorded step outputs. The server may not store outputs, or the run has no steps.`,
     );
   }
@@ -256,6 +255,15 @@ export const runPull = async (
       env: client.env ?? undefined,
     });
 
+    if (
+      settings.step &&
+      !recorded.steps.some((step) => {
+        return step.id === settings.step;
+      })
+    ) {
+      throw new Error(`Step "${settings.step}" is not in the recorded run`);
+    }
+
     if (settings.testPath) {
       const { fixturePath, target } = await writeTestScaffold({
         recorded,
@@ -284,7 +292,7 @@ export const runPull = async (
       ? prepareConnectionConfig(apps, client).requestHandlers[appName]
       : undefined;
     if (!appName || !handler) {
-      throw new PullDataError(
+      throw new Error(
         `No connected app has the function "${recorded.functionSlug}" to replay the run on`,
       );
     }

@@ -117,6 +117,10 @@ export const replayRun = async (opts: {
         continue;
       }
 
+      if (reached.has(id)) {
+        throw new Error(`Replay is not advancing: step ${id} came back again`);
+      }
+
       const replayed = op.op === "StepRun" ? op.data : (op.error ?? op.op);
       const status = diffStatus(op.op === "StepRun", replayed, rec);
       diffs.push({

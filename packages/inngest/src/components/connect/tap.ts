@@ -294,7 +294,9 @@ export class Tap {
   private closeOnce(): void {
     if (this.settings.once) {
       this.stopping = true;
-      void this.close?.();
+      this.close?.().catch((err) => {
+        this.reporter.emit("error", `tap: close failed: ${String(err)}`);
+      });
     }
   }
 

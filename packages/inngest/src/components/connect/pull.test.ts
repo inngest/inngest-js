@@ -8,13 +8,19 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "../../test/helpers.ts";
 import { prepareConnectionConfig } from "./config.ts";
-import { fetchRecordedRun, PullDataError, readPullSettings } from "./pull.ts";
+import { fetchRecordedRun, readPullSettings, runPull } from "./pull.ts";
 import { replayRun } from "./pullReplay.ts";
 import { writeTestScaffold } from "./pullTest.ts";
 
 const event = { id: "evt1", name: "demo/sent", data: { n: 2 } };
 
-const fixtureApi = (outputs: Record<string, unknown>, failed?: string) => {
+const fixtureApi = (
+  recordedOutputs: Record<string, unknown> | Array<[string, unknown]>,
+  failed?: string,
+) => {
+  const outputs = Array.isArray(recordedOutputs)
+    ? recordedOutputs
+    : Object.entries(recordedOutputs);
   const span = (stepId: string, output: unknown) => {
     return {
       name: stepId,
@@ -38,7 +44,7 @@ const fixtureApi = (outputs: Record<string, unknown>, failed?: string) => {
       data: {
         runId: "RUN1",
         rootSpan: {
-          children: Object.entries(outputs).map(([id, output]) => {
+          children: outputs.map(([id, output]) => {
             return span(id, output);
           }),
         },
@@ -67,6 +73,26 @@ const fetchOpts = {
   env: undefined,
 };
 
+interface RunStep {
+  run: (id: string, fn: () => unknown) => Promise<unknown>;
+}
+
+const buildLoop = (run: (step: RunStep) => Promise<unknown>) => {
+  const client = createClient({ id: "app", isDev: true });
+  const fn = client.createFunction(
+    { id: "double", triggers: [{ event: "demo/sent" }] },
+    async ({ step }) => {
+      return run(step);
+    },
+  );
+  const { requestHandlers } = prepareConnectionConfig(
+    [{ client, functions: [fn] }],
+    client,
+  );
+
+  return requestHandlers.app!;
+};
+
 const build = (multiplier: number) => {
   const client = createClient({ id: "app", isDev: true });
   const fn = client.createFunction(
@@ -91,6 +117,8 @@ const build = (multiplier: number) => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe("readPullSettings", () => {
@@ -237,10 +265,119 @@ describe("Pull", () => {
   it("says so when the server stored no step outputs", async () => {
     fixtureApi({ base: undefined, scaled: undefined });
 
-    await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(PullDataError);
+    await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(Error);
     await expect(fetchRecordedRun(fetchOpts)).rejects.toThrow(
       /no recorded step outputs/,
     );
+  });
+
+  it("replays repeated step IDs from a loop", async () => {
+    fixtureApi([
+      ["x", 1],
+      ["x", 2],
+      ["x", 3],
+    ]);
+    const recorded = await fetchRecordedRun(fetchOpts);
+    const handler = buildLoop(async (step) => {
+      for (let i = 1; i <= 3; i++) {
+        await step.run("x", () => {
+          return i;
+        });
+      }
+    });
+
+    const diffs = await replayRun({
+      recorded,
+      handler,
+      appName: "app",
+      functionSlug: "app-double",
+    });
+
+    expect(
+      diffs.map((d) => {
+        return d.status;
+      }),
+    ).toEqual(["same", "same", "same"]);
+  });
+
+  it("replays parallel steps", async () => {
+    fixtureApi({ a: 1, b: 2 });
+    const recorded = await fetchRecordedRun(fetchOpts);
+    const handler = buildLoop(async (step) => {
+      return Promise.all([
+        step.run("a", () => {
+          return 1;
+        }),
+        step.run("b", () => {
+          return 2;
+        }),
+      ]);
+    });
+
+    const diffs = await replayRun({
+      recorded,
+      handler,
+      appName: "app",
+      functionSlug: "app-double",
+    });
+
+    expect(
+      diffs.map((d) => {
+        return [d.id, d.status];
+      }),
+    ).toEqual([
+      ["a", "same"],
+      ["b", "same"],
+    ]);
+  });
+
+  it("refuses to overwrite an existing test file", async () => {
+    fixtureApi({ base: 2, scaled: 4 });
+    const recorded = await fetchRecordedRun(fetchOpts);
+    const testPath = join(await mkdtemp(join(tmpdir(), "pull-")), "a.test.ts");
+
+    await writeTestScaffold({ recorded, testPath });
+
+    await expect(writeTestScaffold({ recorded, testPath })).rejects.toThrow(
+      /EEXIST/,
+    );
+  });
+
+  it("replays on the app that owns the function", async () => {
+    fixtureApi({ base: 2, scaled: 4 });
+    vi.stubEnv("INNGEST_TAP_OUTPUT", "json");
+    const lines: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation(((line: string) => {
+      lines.push(line);
+
+      return true;
+    }) as never);
+    const other = createClient({ id: "other", isDev: true });
+    const client = createClient({ id: "app", isDev: true });
+    const fn = client.createFunction(
+      { id: "double", triggers: [{ event: "demo/sent" }] },
+      async ({ event, step }) => {
+        const base = await step.run("base", () => {
+          return Number(event.data.n);
+        });
+
+        return step.run("scaled", () => {
+          return base * 2;
+        });
+      },
+    );
+
+    await runPull(
+      { runId: "RUN1" },
+      [
+        { client: other, functions: [] },
+        { client, functions: [fn] },
+      ],
+      other,
+    );
+
+    expect(lines.join("")).toContain('"changed":0');
+    process.exitCode = undefined;
   });
 
   it("writes a fixture and an @inngest/test scaffold", async () => {

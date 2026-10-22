@@ -76,8 +76,11 @@ describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
 });
 `;
 
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await writeFile(opts.testPath, test);
+  // `wx`: never overwrite your code or an earlier fixture.
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, {
+    flag: "wx",
+  });
+  await writeFile(opts.testPath, test, { flag: "wx" });
 
   return { fixturePath, target };
 };
