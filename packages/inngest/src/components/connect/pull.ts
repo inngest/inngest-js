@@ -145,7 +145,15 @@ const recordedSteps = (root: TraceSpan): RecordedStep[] => {
     }
   }
 
-  return [...groups].map(([hashed, spans]) => {
+  const settled = [...groups].filter(([, spans]) => {
+    return spans.some((span) => {
+      return (
+        span.status === "COMPLETED" || (span.status ?? "").includes("FAIL")
+      );
+    });
+  });
+
+  return settled.map(([hashed, spans]) => {
     const done = spans.find((span) => {
       return span.status === "COMPLETED";
     });

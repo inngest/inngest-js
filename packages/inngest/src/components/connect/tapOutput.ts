@@ -6,6 +6,7 @@
  */
 
 import { envKeys } from "../../helpers/consts.ts";
+import { parseAsBoolean } from "../../helpers/env.ts";
 
 /**
  * `human` lines, `json` lines for programs, or `agent` for coding agents
@@ -14,7 +15,7 @@ import { envKeys } from "../../helpers/consts.ts";
 export type TapOutput = "human" | "json" | "agent";
 
 export const isOn = (value: string | undefined): boolean => {
-  return value === "1" || value === "true";
+  return parseAsBoolean(value) === true;
 };
 
 /**

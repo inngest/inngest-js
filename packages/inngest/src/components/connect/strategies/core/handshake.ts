@@ -316,10 +316,14 @@ export async function establishConnection(
       if (connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY) {
         // The gateway says why it refused the connection (for example a tap
         // with no prod worker to borrow an app from).
-        const reason =
-          connectMessage.kind === GatewayMessageType.SYNC_FAILED
-            ? `: ${SystemError.decode(connectMessage.payload).message}`
-            : "";
+        let reason = "";
+        if (connectMessage.kind === GatewayMessageType.SYNC_FAILED) {
+          try {
+            reason = `: ${SystemError.decode(connectMessage.payload).message}`;
+          } catch {
+            // An unreadable reason must not hide the refusal itself.
+          }
+        }
 
         rejectHandshake(
           new ReconnectError(
