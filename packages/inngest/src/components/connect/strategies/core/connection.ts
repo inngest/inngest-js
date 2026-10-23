@@ -586,7 +586,7 @@ export class ConnectionCore {
 
           const delay = expBackoff(attempt);
           this.callbacks.logger.info(
-            { attempt, delay },
+            { attempt, delay, error: err.message },
             "Reconnecting after failure",
           );
 

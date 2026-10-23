@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ConnectMessage,
   GatewayMessageType,
+  SystemError,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
 import {
@@ -23,6 +24,46 @@ afterEach(() => {
 });
 
 describe("ConnectionCore handshake", () => {
+  describe("refused connections", () => {
+    test("logs the reason the gateway gave when it refuses a worker", async () => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValue(createMockStartResponse({ connectionId: "conn-1" }));
+
+      const helpers = createTestCore();
+      void helpers.core.start();
+      await flushMicrotasks();
+
+      const ws = MockWebSocket.instances[0]!;
+      ws.simulateOpen();
+      ws.sendGatewayHello();
+      await flushMicrotasks();
+
+      const refusal = ConnectMessage.encode(
+        ConnectMessage.create({
+          kind: GatewayMessageType.SYNC_FAILED,
+          payload: SystemError.encode(
+            SystemError.create({
+              code: "connect_worker_hello_invalid_payload",
+              message: "No synced Connect worker is connected for app x",
+            }),
+          ).finish(),
+        }),
+      ).finish();
+      ws.simulateMessage(
+        ensureUnsharedArrayBuffer(refusal).buffer as ArrayBuffer,
+      );
+      await flushMicrotasks();
+
+      expect(helpers.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining("No synced Connect worker"),
+        }),
+        "Reconnecting after failure",
+      );
+    });
+  });
+
   describe("15. Connection timeout", () => {
     test("times out and reconnects if no GATEWAY_HELLO within 10s", async () => {
       const fetchMock = vi.fn();

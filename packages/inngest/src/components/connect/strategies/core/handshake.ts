@@ -17,6 +17,7 @@ import {
   GatewayMessageType,
   gatewayMessageTypeToJSON,
   StartResponse,
+  SystemError,
   WorkerConnectRequestData,
   WorkerDisconnectReason,
   workerDisconnectReasonToJSON,
@@ -313,11 +314,18 @@ export async function establishConnection(
 
     if (!setupState.receivedConnectionReady) {
       if (connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY) {
+        // The gateway says why it refused the connection (for example a tap
+        // with no prod worker to borrow an app from).
+        const reason =
+          connectMessage.kind === GatewayMessageType.SYNC_FAILED
+            ? `: ${SystemError.decode(connectMessage.payload).message}`
+            : "";
+
         rejectHandshake(
           new ReconnectError(
             `Expected ready message, got ${gatewayMessageTypeToJSON(
               connectMessage.kind,
-            )}`,
+            )}${reason}`,
             attempt,
           ),
         );
