@@ -161,4 +161,96 @@ describe("prepareConnectionConfig", () => {
     });
     expect(childLogger.info).toHaveBeenCalledWith("hello from connect");
   });
+
+  test("warns and uses the client's latest function when an id was re-created", () => {
+    const warn = vi.fn();
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      internalLogger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn },
+    });
+    client.createFunction(
+      { id: "job", triggers: [{ event: "demo/first" }] },
+      () => "first",
+    );
+    client.createFunction(
+      { id: "job", triggers: [{ event: "demo/second" }] },
+      () => "second",
+    );
+
+    const { connectionData } = prepareConnectionConfig([{ client }], client);
+
+    const fns: unknown = JSON.parse(
+      new TextDecoder().decode(connectionData.apps[0]?.functions),
+    );
+    expect(fns).toEqual([
+      expect.objectContaining({
+        id: "test-job",
+        triggers: [{ event: "demo/second" }],
+      }),
+    ]);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      { functionIds: ["test-job"] },
+      expect.stringContaining("defined more than once"),
+    );
+  });
+
+  test("does not warn about re-created ids when functions are explicit", () => {
+    const warn = vi.fn();
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      internalLogger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn },
+    });
+    client.createFunction(
+      { id: "job", triggers: [{ event: "demo/first" }] },
+      () => "first",
+    );
+    const second = client.createFunction(
+      { id: "job", triggers: [{ event: "demo/second" }] },
+      () => "second",
+    );
+
+    prepareConnectionConfig([{ client, functions: [second] }], client);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("does not warn about re-created ids that were spliced out of funcs", () => {
+    const warn = vi.fn();
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      internalLogger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn },
+    });
+    client.createFunction(
+      { id: "job", triggers: [{ event: "demo/first" }] },
+      () => "first",
+    );
+    const second = client.createFunction(
+      { id: "job", triggers: [{ event: "demo/second" }] },
+      () => "second",
+    );
+    client.funcs.splice(client.funcs.indexOf(second), 1);
+
+    prepareConnectionConfig([{ client }], client);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("throws on duplicate ids in an explicit functions list", () => {
+    const client = createClient({ id: "test" });
+    const first = client.createFunction(
+      { id: "job", triggers: [{ event: "demo/first" }] },
+      () => "first",
+    );
+    const second = client.createFunction(
+      { id: "job", triggers: [{ event: "demo/second" }] },
+      () => "second",
+    );
+
+    expect(() =>
+      prepareConnectionConfig([{ client, functions: [first, second] }], client),
+    ).toThrow('Duplicate function ID "test-job"');
+  });
 });
