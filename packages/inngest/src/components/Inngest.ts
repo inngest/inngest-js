@@ -136,6 +136,13 @@ type FetchT = typeof fetch;
 export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
 
 /**
+ * Symbol for accessing the IDs of functions re-created on this client. Not
+ * part of the public API.
+ * @internal
+ */
+export const replacedFnIdsSymbol = Symbol.for("inngest.replacedFnIds");
+
+/**
  * Symbol for accessing whether session propagation is enabled on this client.
  * @internal
  */
@@ -208,7 +215,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   readonly [featureObservationStateSymbol]: FeatureObservationState;
 
+  /**
+   * Fully-qualified IDs of functions that replaced an earlier definition with
+   * the same ID.
+   *
+   * @internal
+   */
+  readonly [replacedFnIdsSymbol] = new Set<string>();
+
   private localFns: InngestFunction.Any[] = [];
+
+  /**
+   * IDs passed to `createFunction()`, so only re-created IDs scan `localFns`.
+   */
+  private createdFnIds = new Set<string>();
 
   /**
    * Middleware instances that provide simpler hooks.
@@ -1241,7 +1261,16 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       mw.onRegister?.({ client: this, fn });
     }
 
-    this.localFns.push(fn);
+    const idx = this.createdFnIds.has(fn.id())
+      ? this.localFns.findIndex((f) => f.id() === fn.id())
+      : -1;
+    this.createdFnIds.add(fn.id());
+    if (idx === -1) {
+      this.localFns.push(fn);
+    } else {
+      this.localFns[idx] = fn;
+      this[replacedFnIdsSymbol].add(fn.id(this.id));
+    }
 
     return fn;
   };
