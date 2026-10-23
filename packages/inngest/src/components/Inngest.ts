@@ -226,6 +226,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private localFns: InngestFunction.Any[] = [];
 
   /**
+   * IDs passed to `createFunction()`, so only re-created IDs scan `localFns`.
+   */
+  private createdFnIds = new Set<string>();
+
+  /**
    * Middleware instances that provide simpler hooks.
    */
   readonly middleware: Middleware.Class[];
@@ -1256,7 +1261,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       mw.onRegister?.({ client: this, fn });
     }
 
-    const idx = this.localFns.findIndex((f) => f.id() === fn.id());
+    const idx = this.createdFnIds.has(fn.id())
+      ? this.localFns.findIndex((f) => f.id() === fn.id())
+      : -1;
+    this.createdFnIds.add(fn.id());
     if (idx === -1) {
       this.localFns.push(fn);
     } else {
