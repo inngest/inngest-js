@@ -317,6 +317,7 @@ export async function establishConnection(
         // The gateway says why it refused the connection (for example a tap
         // with no prod worker to borrow an app from).
         let reason = "";
+
         if (connectMessage.kind === GatewayMessageType.SYNC_FAILED) {
           try {
             reason = `: ${SystemError.decode(connectMessage.payload).message}`;

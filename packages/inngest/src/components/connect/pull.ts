@@ -157,13 +157,17 @@ const recordedSteps = (root: TraceSpan): RecordedStep[] => {
     const done = spans.find((span) => {
       return span.status === "COMPLETED";
     });
-    const last = done ?? spans[spans.length - 1];
+    const last =
+      done ??
+      [...spans].reverse().find((span) => {
+        return (span.status ?? "").includes("FAIL");
+      });
 
     return {
       id: spans[0]?.name ?? hashed,
       hashed,
       data: last?.output,
-      failed: !done && (last?.status ?? "").includes("FAIL"),
+      failed: !done,
     };
   });
 };
