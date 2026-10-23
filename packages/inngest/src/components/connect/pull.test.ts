@@ -262,6 +262,37 @@ describe("Pull", () => {
     expect(diffs[2]).toMatchObject({ id: "extra", status: "missing" });
   });
 
+  it("ignores steps that are still running", async () => {
+    fixtureApi({ base: 2, scaled: 4 });
+    const fetched = vi.mocked(fetch);
+    const original = fetched.getMockImplementation()!;
+    fetched.mockImplementation(async (url: string | URL | Request) => {
+      const response = await original(url as string);
+      if (!String(url).includes("/trace")) {
+        return response;
+      }
+
+      const body = await response.json();
+      body.data.rootSpan.children = body.data.rootSpan.children.map(
+        (span: { name: string }) => {
+          return span.name === "scaled"
+            ? { ...span, status: "RUNNING", children: [] }
+            : span;
+        },
+      );
+
+      return new Response(JSON.stringify(body));
+    });
+
+    const recorded = await fetchRecordedRun(fetchOpts);
+
+    expect(
+      recorded.steps.map((step) => {
+        return step.id;
+      }),
+    ).toEqual(["base"]);
+  });
+
   it("fails loudly on a response of an unexpected shape", async () => {
     vi.stubGlobal(
       "fetch",

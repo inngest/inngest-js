@@ -25,6 +25,39 @@ afterEach(() => {
 
 describe("ConnectionCore handshake", () => {
   describe("refused connections", () => {
+    test("still reconnects when the refusal payload is unreadable", async () => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValue(createMockStartResponse({ connectionId: "conn-1" }));
+
+      const helpers = createTestCore();
+      void helpers.core.start();
+      await flushMicrotasks();
+
+      const ws = MockWebSocket.instances[0]!;
+      ws.simulateOpen();
+      ws.sendGatewayHello();
+      await flushMicrotasks();
+
+      const refusal = ConnectMessage.encode(
+        ConnectMessage.create({
+          kind: GatewayMessageType.SYNC_FAILED,
+          payload: new Uint8Array([0xff, 0xff, 0xff]),
+        }),
+      ).finish();
+      ws.simulateMessage(
+        ensureUnsharedArrayBuffer(refusal).buffer as ArrayBuffer,
+      );
+      await flushMicrotasks();
+
+      expect(helpers.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining("got SYNC_FAILED"),
+        }),
+        "Reconnecting after failure",
+      );
+    });
+
     test("logs the reason the gateway gave when it refuses a worker", async () => {
       global.fetch = vi
         .fn()
