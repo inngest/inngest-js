@@ -413,6 +413,40 @@ describe("Pull", () => {
     process.exitCode = undefined;
   });
 
+  it("does not count steps after a fixed failure as needing a look", async () => {
+    fixtureApi({ base: 2, scaled: undefined }, "scaled");
+    vi.stubEnv("INNGEST_TAP_OUTPUT", "json");
+    const lines: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation(((line: string) => {
+      lines.push(line);
+
+      return true;
+    }) as never);
+    const client = createClient({ id: "app", isDev: true });
+    const fn = client.createFunction(
+      { id: "double", triggers: [{ event: "demo/sent" }] },
+      async ({ event, step }) => {
+        const base = await step.run("base", () => {
+          return Number(event.data.n);
+        });
+        const scaled = await step.run("scaled", () => {
+          return base * 2;
+        });
+
+        return step.run("after", () => {
+          return scaled + 1;
+        });
+      },
+    );
+
+    await runPull({ runId: "RUN1" }, [{ client, functions: [fn] }], client);
+
+    expect(lines.join("")).toContain('"status":"new"');
+    expect(lines.join("")).toContain('"changed":0');
+    expect(process.exitCode).toBe(0);
+    process.exitCode = undefined;
+  });
+
   it("writes a fixture and an @inngest/test scaffold", async () => {
     fixtureApi({ base: 2, scaled: 4 });
     const recorded = await fetchRecordedRun(fetchOpts);

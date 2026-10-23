@@ -345,8 +345,17 @@ export const runPull = async (
       );
     }
 
+    // A run that stopped at a failure never reached the steps after it, so
+    // those are expected to be new once the failure is fixed.
+    const stoppedAtFailure = recorded.steps.some((step) => {
+      return step.failed;
+    });
     const changed = diffs.filter((diff) => {
-      return diff.status !== "same" && diff.status !== "fixed";
+      return (
+        diff.status !== "same" &&
+        diff.status !== "fixed" &&
+        !(diff.status === "new" && stoppedAtFailure)
+      );
     }).length;
     reporter.emit(
       "done",
