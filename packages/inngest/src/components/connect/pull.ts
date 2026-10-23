@@ -18,9 +18,11 @@
  * Replay runs every step for real on this machine, with your credentials, to
  * produce the replayed results. Use test mode when that is not safe.
  *
- * UNVERIFIED: the shape of the v2 run and trace responses comes from
- * `proto/api/v2/service.proto` (camelCase JSON), not from a live server. A
- * response that does not match fails loudly instead of being guessed at.
+ * The shape of the v2 run and trace responses was checked against a Dev Server:
+ * camelCase, step outputs are the raw values (no wrapper), step IDs are the
+ * hashed ones with the real name in `name`, and retries show up as extra spans
+ * of the same step. A response that does not match fails loudly instead of
+ * being guessed at.
  *
  * @module
  */
@@ -29,7 +31,6 @@ import { envKeys, headerKeys } from "../../helpers/consts.ts";
 import { getProcessEnv, type Mode } from "../../helpers/env.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import { resolveApiBaseUrl } from "../../helpers/url.ts";
-import { _internals } from "../execution/engine.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { prepareConnectionConfig } from "./config.ts";
@@ -60,7 +61,10 @@ export interface RecordedStep {
 
 export interface RecordedRun {
   runId: string;
+
+  /** The function ID as the API reports it, without the app prefix. */
   functionSlug: string;
+  appId?: string;
   events: Json[];
   steps: RecordedStep[];
 }
@@ -121,47 +125,39 @@ const flattenSpans = (span: TraceSpan): TraceSpan[] => {
   return [span, ...(span.children ?? []).flatMap(flattenSpans)];
 };
 
-const isHashed = (id: string) => {
-  return /^[0-9a-f]{40}$/.test(id);
-};
-
-/** Step outputs may be wrapped as `{ data: value }`. */
-const unwrapOutput = (output: unknown): unknown => {
-  const keys = Object.keys((output as Json | null) ?? {});
-
-  return keys.length === 1 && keys[0] === "data"
-    ? (output as Json).data
-    : output;
+/** Retries are child spans named "Attempt 0", "Attempt 1" of the step span. */
+const isAttempt = (span: TraceSpan) => {
+  return /^Attempt \d+$/.test(span.name ?? "");
 };
 
 /**
- * Repeated step IDs (loops) are hashed by the SDK as `id:1`, `id:2`, ... so
- * count occurrences the same way.
+ * One recorded step per hashed step ID. The trace repeats a step once per
+ * request and nests its retries, so spans are grouped: a step that ever
+ * completed is recorded with that output, otherwise with its last (failed)
+ * output.
  */
-const stepFromSpan = (
-  span: TraceSpan,
-  seen: Map<string, number>,
-): RecordedStep | undefined => {
-  if (!span.stepId) {
-    return undefined;
+const recordedSteps = (root: TraceSpan): RecordedStep[] => {
+  const groups = new Map<string, TraceSpan[]>();
+
+  for (const span of flattenSpans(root)) {
+    if (span.stepId && !isAttempt(span)) {
+      groups.set(span.stepId, [...(groups.get(span.stepId) ?? []), span]);
+    }
   }
 
-  let hashed = span.stepId;
+  return [...groups].map(([hashed, spans]) => {
+    const done = spans.find((span) => {
+      return span.status === "COMPLETED";
+    });
+    const last = done ?? spans[spans.length - 1];
 
-  if (!isHashed(span.stepId)) {
-    const count = seen.get(span.stepId) ?? 0;
-    seen.set(span.stepId, count + 1);
-    hashed = _internals.hashId(
-      count > 0 ? `${span.stepId}:${count}` : span.stepId,
-    );
-  }
-
-  return {
-    id: isHashed(span.stepId) && span.name ? span.name : span.stepId,
-    hashed,
-    data: unwrapOutput(span.output),
-    failed: (span.status ?? "").includes("FAIL"),
-  };
+    return {
+      id: spans[0]?.name ?? hashed,
+      hashed,
+      data: last?.output,
+      failed: !done && (last?.status ?? "").includes("FAIL"),
+    };
+  });
 };
 
 /**
@@ -189,7 +185,11 @@ export const fetchRecordedRun = async (opts: {
   const run = (await getJson(
     `${v2}/runs/${opts.runId}?include_output=true`,
     headers,
-  )) as { function?: { id?: string }; trigger?: { eventIds?: string[] } };
+  )) as {
+    app?: { id?: string };
+    function?: { id?: string };
+    trigger?: { eventIds?: string[] };
+  };
   const trace = (await getJson(
     `${v2}/runs/${opts.runId}/trace?include_output=true`,
     headers,
@@ -207,14 +207,7 @@ export const fetchRecordedRun = async (opts: {
     }),
   );
 
-  const seen = new Map<string, number>();
-  const steps = flattenSpans(trace.rootSpan)
-    .map((span) => {
-      return stepFromSpan(span, seen);
-    })
-    .filter((step): step is RecordedStep => {
-      return step !== undefined;
-    });
+  const steps = recordedSteps(trace.rootSpan);
 
   const completed = steps.filter((step) => {
     return !step.failed;
@@ -233,9 +226,38 @@ export const fetchRecordedRun = async (opts: {
   return {
     runId: opts.runId,
     functionSlug: run.function.id,
+    appId: run.app?.id,
     events,
     steps,
   };
+};
+
+/**
+ * The app and function slug that the recorded run belongs to. The API reports
+ * the function without its app prefix and the app separately.
+ */
+const findFunction = (
+  apps: ConnectApp[],
+  recorded: RecordedRun,
+): { appName: string; functionSlug: string } | undefined => {
+  for (const app of apps) {
+    const fns = (app.functions ?? app.client.funcs) as InngestFunction.Any[];
+    const fn = fns.find((candidate) => {
+      const slug = candidate.id(app.client.id);
+
+      return (
+        slug === recorded.functionSlug ||
+        (candidate.id() === recorded.functionSlug &&
+          (!recorded.appId || recorded.appId === app.client.id))
+      );
+    });
+
+    if (fn) {
+      return { appName: app.client.id, functionSlug: fn.id(app.client.id) };
+    }
+  }
+
+  return undefined;
 };
 
 /**
@@ -293,19 +315,11 @@ export const runPull = async (
       return;
     }
 
-    const app = apps.find((candidate) => {
-      const fns = (candidate.functions ??
-        candidate.client.funcs) as InngestFunction.Any[];
-
-      return fns.some((fn) => {
-        return fn.id(candidate.client.id) === recorded.functionSlug;
-      });
-    });
-    const appName = app?.client.id;
-    const handler = appName
-      ? prepareConnectionConfig(apps, client).requestHandlers[appName]
+    const match = findFunction(apps, recorded);
+    const handler = match
+      ? prepareConnectionConfig(apps, client).requestHandlers[match.appName]
       : undefined;
-    if (!appName || !handler) {
+    if (!match || !handler) {
       throw new Error(
         `No connected app has the function "${recorded.functionSlug}" to replay the run on`,
       );
@@ -314,8 +328,8 @@ export const runPull = async (
     const diffs = await replayRun({
       recorded,
       handler,
-      appName,
-      functionSlug: recorded.functionSlug,
+      appName: match.appName,
+      functionSlug: match.functionSlug,
       stopAfter: settings.step,
     });
 

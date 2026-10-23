@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "../../test/helpers.ts";
+import { _internals } from "../execution/engine.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { fetchRecordedRun, readPullSettings, runPull } from "./pull.ts";
 import { replayRun } from "./pullReplay.ts";
@@ -16,6 +17,11 @@ import { writeTestScaffold } from "./pullTest.ts";
 
 const event = { id: "evt1", name: "demo/sent", data: { n: 2 } };
 
+/**
+ * Shaped like a real Dev Server trace: hashed step IDs with the real name in
+ * `name`, raw outputs, retries as "Attempt N" children, and each step repeated
+ * as one span per request.
+ */
 const fixtureApi = (
   recordedOutputs: Record<string, unknown> | Array<[string, unknown]>,
   failed?: string,
@@ -23,22 +29,44 @@ const fixtureApi = (
   const outputs = Array.isArray(recordedOutputs)
     ? recordedOutputs
     : Object.entries(recordedOutputs);
-  const span = (stepId: string, output: unknown) => {
+  const seen = new Map<string, number>();
+  const span = (name: string, output: unknown, hashed: string) => {
+    const status = name === failed ? "FAILED" : "COMPLETED";
+
     return {
-      name: stepId,
-      stepId,
-      stepOp: "TRACE_STEP_OP_RUN",
-      status: stepId === failed ? "FAILED" : "COMPLETED",
-      output,
-      children: [],
+      name,
+      stepId: hashed,
+      stepOp: "RUN",
+      status,
+      output: name === failed ? { name: "Error", message: "boom" } : output,
+      children:
+        name === failed
+          ? [0, 1].map((n) => {
+              return {
+                name: `Attempt ${n}`,
+                stepId: hashed,
+                stepOp: "RUN",
+                status,
+                children: [],
+              };
+            })
+          : [],
     };
   };
+  const spans = outputs.flatMap(([name, output]) => {
+    const count = seen.get(name) ?? 0;
+    seen.set(name, count + 1);
+    const hashed = _internals.hashId(count > 0 ? `${name}:${count}` : name);
+
+    return [span(name, output, hashed), span(name, output, hashed)];
+  });
 
   const bodies: Record<string, unknown> = {
     "/api/v2/runs/RUN1?include_output=true": {
       data: {
         id: "RUN1",
-        function: { id: "app-double" },
+        app: { id: "app" },
+        function: { id: "double" },
         trigger: { eventIds: ["evt1"] },
       },
     },
@@ -46,9 +74,7 @@ const fixtureApi = (
       data: {
         runId: "RUN1",
         rootSpan: {
-          children: outputs.map(([id, output]) => {
-            return span(id, output);
-          }),
+          children: spans,
         },
       },
     },
