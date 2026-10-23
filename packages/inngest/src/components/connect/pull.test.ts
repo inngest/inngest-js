@@ -474,5 +474,6 @@ describe("Pull", () => {
     expect(test).toContain('from "@inngest/test"');
     expect(test).toContain('from "./double.test.fixture.json"');
     expect(test).toContain("t.executeStep(fixture.target");
+    expect(test).toContain("expect(error).toBeUndefined()");
   });
 });

@@ -41,6 +41,15 @@ export const writeTestScaffold = async (opts: {
     }),
   };
 
+  const oneLine = (value: unknown) => {
+    return (JSON.stringify(value) ?? "undefined")
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+  };
+  const recordedNote = targetStep?.failed
+    ? `Production failed this step with: ${oneLine((targetStep.data as { message?: unknown } | undefined)?.message)}`
+    : `Production recorded this for the target:\n    // expect(result).toEqual(${oneLine(targetStep?.data)});`;
+
   const test = `import { InngestTestEngine } from "@inngest/test";
 import { describe, expect, it } from "vitest";
 import fixture from "./${fixtureFile}";
@@ -52,7 +61,7 @@ describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
   it(${JSON.stringify(`${target} with production inputs`)}, async () => {
     const t = new InngestTestEngine({ function: fn });
 
-    const { result } = await t.executeStep(fixture.target, {
+    const { result, error } = await t.executeStep(fixture.target, {
       events: fixture.events,
       steps: fixture.steps
         .filter((step) => {
@@ -68,10 +77,9 @@ describe(${JSON.stringify(`run ${recorded.runId}`)}, () => {
         }),
     });
 
-    expect(result).not.toHaveProperty("error");
+    expect(error).toBeUndefined();
 
-    // Pin the behaviour you want. Production recorded this for the target:
-    // expect(result).toEqual(${(JSON.stringify(targetStep?.data) ?? "undefined").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029")});
+    // Pin the behaviour you want. ${recordedNote}
   });
 });
 `;
