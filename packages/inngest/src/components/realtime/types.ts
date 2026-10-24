@@ -141,7 +141,7 @@ export namespace Realtime {
     .transform(({ data, ...rest }) => {
       return {
         ...rest,
-        data: data ?? undefined,
+        data,
       };
     });
 
