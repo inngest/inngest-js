@@ -10,8 +10,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { cacheWrites, lookupCache } from "./cache/cache.ts";
-import { formatName, isRunName } from "./cache/names.ts";
+import { cacheLane, defaultBranchRepo, lookupCache } from "./cache/cache.ts";
+import { formatName, isPullRequestName, isRunName } from "./cache/names.ts";
 import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -619,49 +619,68 @@ describe("check output limits", () => {
 describe("where a run's snapshots go", () => {
   const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
 
-  test("a push writes the shared cache", () => {
-    expect(cacheWrites({ ...repo, ref: "refs/heads/feature" })).toBe("shared");
-  });
+  const pullRequest = (fork: boolean) => {
+    return {
+      ...repo,
+      baseRef: "main",
+      baseSha: "def",
+      mergeSha: "merge",
+      pullRequest: { number: 4, headRef: "f", fork },
+    };
+  };
 
-  test("a run with no repository writes the shared cache", () => {
-    expect(cacheWrites(undefined)).toBe("shared");
-  });
-
-  test("a pull request from the repository writes the shared cache", () => {
+  test("a push to the default branch writes the shared cache", () => {
     expect(
-      cacheWrites({
-        ...repo,
-        baseRef: "main",
-        pullRequest: { number: 4, headRef: "f", fork: false },
-      }),
+      cacheLane({ ...repo, ref: "refs/heads/main", defaultBranch: "main" }),
     ).toBe("shared");
   });
 
-  test("a pull request from a fork keeps what it builds to itself", () => {
+  test("a push to another branch keeps what it builds to itself", () => {
     expect(
-      cacheWrites({
-        ...repo,
-        baseRef: "main",
-        pullRequest: { number: 4, headRef: "f", fork: true },
-      }),
+      cacheLane({ ...repo, ref: "refs/heads/feature", defaultBranch: "main" }),
     ).toBe("run");
   });
+
+  test("a push is shared when the default branch isn't known", () => {
+    expect(cacheLane({ ...repo, ref: "refs/heads/feature" })).toBe("shared");
+  });
+
+  test("a run with no repository writes the shared cache", () => {
+    expect(cacheLane(undefined)).toBe("shared");
+  });
+
+  test.each([false, true])(
+    "a pull request (fork: %s) has a cache of its own",
+    (fork) => {
+      expect(cacheLane(pullRequest(fork))).toBe("pr");
+    },
+  );
 
   test("a local run writes only its own names, whatever its event looks like", () => {
     const local = { path: "/repo", baseRef: "main" };
 
-    expect(
-      cacheWrites({
-        ...repo,
-        local,
-        baseRef: "main",
-        pullRequest: { number: 1, headRef: "f", fork: false },
-      }),
-    ).toBe("local");
+    expect(cacheLane({ ...pullRequest(false), local })).toBe("local");
+    expect(cacheLane({ ...repo, local, ref: "refs/heads/main" })).toBe("local");
+  });
 
-    expect(cacheWrites({ ...repo, local, ref: "refs/heads/main" })).toBe(
-      "local",
+  test("the default branch's repository is the commit the pull request is based on", () => {
+    expect(defaultBranchRepo(pullRequest(true))).toEqual({
+      ...repo,
+      sha: "def",
+      ref: "refs/heads/main",
+      baseRef: "main",
+      baseSha: "def",
+    });
+  });
+
+  test("there is none without the base commit", () => {
+    expect(defaultBranchRepo({ ...repo, ref: "refs/heads/main" })).toBe(
+      undefined,
     );
+
+    expect(
+      defaultBranchRepo({ ...pullRequest(false), baseSha: undefined }),
+    ).toBe(undefined);
   });
 });
 
@@ -857,7 +876,7 @@ describe("looking a cached snapshot up by name", () => {
     });
   });
 
-  describe("for a pull request from a fork", () => {
+  describe("for a pull request whose key the default branch lacks", () => {
     const pullRequest = {
       repo: {
         owner: "o",
@@ -871,10 +890,10 @@ describe("looking a cached snapshot up by name", () => {
     };
 
     const own = formatName({
-      kind: "run",
-      rootRunId: "01RUN",
+      kind: "cache",
       jobId: "setup",
       ownKey: "k1",
+      pullRequest: 4,
     });
 
     const named = (...names: string[]) => {
@@ -909,7 +928,7 @@ describe("looking a cached snapshot up by name", () => {
       expect(found?.name).toBe(name);
     });
 
-    test("finds what its own run built, which is named for the run", async () => {
+    test("finds what an earlier run of the pull request built", async () => {
       const found = await lookup(
         named(own),
         undefined,
@@ -923,11 +942,11 @@ describe("looking a cached snapshot up by name", () => {
       );
 
       expect(found?.name).toBe(own);
-      expect(isRunName(own)).toBe(true);
+      expect(isPullRequestName(own)).toBe(true);
     });
 
-    test("never finds another run's", async () => {
-      const other = own.replace("01RUN", "01OTHER");
+    test("never finds another pull request's", async () => {
+      const other = own.replace("pr:4", "pr:5");
 
       expect(
         await lookup(named(other), undefined, undefined, pullRequest, {
@@ -973,6 +992,20 @@ describe("snapshot names", () => {
 
     expect(name("abc")).toBe(name("abc"));
     expect(name("abc")).not.toBe(name("abd"));
+  });
+
+  test("a pull request's name has its number and no commit", () => {
+    expect(
+      formatName({
+        kind: "cache",
+        jobId: "setup",
+        ownKey: "abc",
+        pullRequest: 12,
+      }),
+    ).toBe("ci/pr:12/setup/abc");
+
+    expect(isPullRequestName("ci/pr:12/setup/abc")).toBe(true);
+    expect(isPullRequestName("ci/cache/setup/abc")).toBe(false);
   });
 
   test("only a run's own names say they belong to it", () => {

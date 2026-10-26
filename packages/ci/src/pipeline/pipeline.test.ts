@@ -6575,6 +6575,173 @@ describe("run snapshot cleanup", () => {
   });
 });
 
+describe("a pull request's cache", () => {
+  const pull = {
+    number: 7,
+    head: { sha: "abc1234", ref: "feature" },
+    base: { sha: "def5678", ref: "main" },
+    mergeable: true,
+    merge_commit_sha: "mergee1",
+  };
+
+  const tree = (sha: string) => {
+    return { tree: [{ type: "blob", path: "package.json", sha }] };
+  };
+
+  const run = async (baseBlob: string) => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    const { api, client, gh, ci } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", pull);
+    gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
+    gh.route("GET /repos/inngest/inngest-js/git/trees/mergee1", tree("head"));
+    gh.route("GET /repos/inngest/inngest-js/git/trees/def5678", tree(baseBlob));
+
+    const build = ci.job(
+      { id: "build", cache: { key: files("package.json") } },
+      async () => {
+        await checkout();
+        await $`pnpm build`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await build();
+    });
+
+    const first = await runFunction(pipeline, { event: prEvent, runId: "01A" });
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01B",
+    });
+
+    expect(first.type).toBe("function-resolved");
+    expect(second.type).toBe("function-resolved");
+
+    const cloned = api.commands
+      .map((argv) => {
+        return argv[2] ?? "";
+      })
+      .filter((command) => {
+        return command.includes("git clone");
+      })
+      .join("\n");
+
+    return { api, client, ci, cloned };
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test("whose key is the default branch's is built from the default branch's commit into the shared cache", async () => {
+    const { api, cloned } = await run("head");
+
+    expect(namedSnapshots(api)).toEqual([
+      expect.stringMatching(/^ci\/cache\/build\//),
+    ]);
+
+    expect(cloned).toContain("checkout 'def5678'");
+    expect(cloned).not.toContain("checkout 'mergee1'");
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv.join(" ").includes("pnpm build");
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("whose key differs is built from the pull request into a cache of its own, which the next run reuses", async () => {
+    const { api, client, cloned } = await run("other");
+
+    expect(namedSnapshots(api)).toEqual([
+      expect.stringMatching(/^ci\/pr:7\/build\//),
+    ]);
+
+    expect(cloned).toContain("checkout 'mergee1'");
+    expect(cloned).not.toContain("checkout 'def5678'");
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv.join(" ").includes("pnpm build");
+      }),
+    ).toHaveLength(1);
+
+    const [snapshot] = [...api.snapshots.values()];
+
+    // It is held until the pull request closes.
+    expect(
+      busOf(client)?.sent.filter((event) => {
+        return event.name === "ci/pr-cache.hold";
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        data: { repo: "inngest/inngest-js", pr: 7, snapshotId: snapshot?.id },
+      }),
+    ]);
+  });
+});
+
+describe("holding a pull request's cache", () => {
+  const hold = async (closes: boolean) => {
+    const api = createFakeSandboxApi();
+    const { ci } = setup({ api });
+
+    const build = ci.job({ id: "build", cache: { key: "v1" } }, async () => {
+      await $`pnpm build`;
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "ci", on: [{ event: "github/push" }] }, async () => {
+        await build();
+      }),
+      {
+        event: {
+          name: "github/push",
+          data: {
+            ref: "refs/heads/main",
+            after: "abc1234",
+            repository: { full_name: "inngest/inngest-js" },
+          },
+        },
+      },
+    );
+
+    const [snapshot] = [...api.snapshots.keys()];
+
+    const holder = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/pr-cache";
+    });
+
+    const result = await runFunction(holder as never, {
+      event: {
+        name: "ci/pr-cache.hold",
+        data: { repo: "inngest/inngest-js", pr: 7, snapshotId: snapshot },
+      },
+      resolveWait: () => {
+        return closes
+          ? { name: "github/pull_request.closed", data: { number: 7 } }
+          : null;
+      },
+    });
+
+    return { api, snapshot: snapshot ?? "", result };
+  };
+
+  test("deletes the snapshot when the pull request closes", async () => {
+    const { api, snapshot, result } = await hold(true);
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshots.has(snapshot)).toBe(false);
+  });
+
+  test("deletes it when the close is never seen, once the wait runs out", async () => {
+    const { api, snapshot, result } = await hold(false);
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshots.has(snapshot)).toBe(false);
+  });
+});
+
 describe("a pull request's test merge", () => {
   const pull = (overrides: Record<string, unknown> = {}) => {
     return {

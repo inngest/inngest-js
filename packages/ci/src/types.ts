@@ -147,6 +147,8 @@ export interface RepoContext {
   baseSha?: string;
   /** The branch the change is based on, like `main`. */
   baseRef?: string;
+  /** The repository's default branch, when the event says. */
+  defaultBranch?: string;
   /** Set for pull request runs. `fork` is true when the head is another repo. */
   pullRequest?: { number: number; headRef: string; fork: boolean };
   /** The GitHub App installation the event came from, if any. */
@@ -208,9 +210,11 @@ export type KeyValues<TKey> = TKey extends CacheKeyValue | readonly unknown[]
 /**
  * A job's cache settings. `from` shares a job's machine within one run, and
  * only a `cache` key reuses it across runs. A snapshot is named by its job and
- * key alone, so every run that computes the same key shares it. Pull requests
- * from forks read it but never write it: what one builds is deleted when its
- * run ends.
+ * key alone, so every run that computes the same key shares it. Only the
+ * default branch writes it. A pull request whose key is the default branch's uses
+ * that entry, and asks for it to be built from the default branch's commit if it
+ * is missing. A pull request whose key differs has a cache of its own, shared by
+ * every run of that pull request and deleted when it closes.
  */
 export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
   /**

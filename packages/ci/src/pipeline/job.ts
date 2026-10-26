@@ -10,16 +10,18 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError, StepError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
+  cacheLane,
   cacheTarget,
-  cacheWrites,
   checkCache,
+  defaultBranchRepo,
   describeCached,
   directTarget,
   lookupBeforeBuild,
   lookupCache,
+  pullRequestTarget,
   runTarget,
 } from "../cache/cache.ts";
-import { isRunName } from "../cache/names.ts";
+import { isPullRequestName, isRunName } from "../cache/names.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -266,7 +268,10 @@ export const invokeBuild = async (
   const above = await ancestry(run, config, await validateInput(config, input));
 
   if (buildsInRun(config, above)) {
-    return buildInline(args);
+    return buildInline({
+      ...args,
+      target: pullRequestTarget(run, config.id, args.target),
+    });
   }
 
   return invokeBuildRun(args);
@@ -539,7 +544,12 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...(unnamed ? { unnamed } : {}),
     ...(direct ? { direct } : {}),
     ...(base ? { base } : {}),
-    ...(run.repo ? { repo: run.repo } : {}),
+    ...(run.repo
+      ? {
+          repo:
+            (target.asDefaultBranch && defaultBranchRepo(run.repo)) || run.repo,
+        }
+      : {}),
     sources: await settledSources(run),
     ...(run.machine ? { machine: run.machine } : {}),
     rootRunId: rootRunIdOf(run),
@@ -901,7 +911,10 @@ const jobSteps = async ({
   // asked for it chose.
   const builtAs = request?.direct
     ? undefined
-    : (request?.target ?? (inRun ? cacheAt : undefined));
+    : (request?.target ??
+      (inRun && cacheAt
+        ? pullRequestTarget(run, config.id, cacheAt)
+        : undefined));
 
   // A build that others wait on answers for the lock on its cache entry: it
   // claims it with the machine its first command creates, and tells them how
@@ -1227,6 +1240,13 @@ const snapshotBuilt = async (
     return;
   }
 
+  // A pull request's own code never writes the shared cache. Only a build run
+  // given the default branch's commit does (see `invokeBuildRun`).
+  const shared =
+    cacheLane(run.repo) === "pr" &&
+    !isPullRequestName(target.name) &&
+    !isRunName(target.name);
+
   const taken = await snapshotMachine(scope, {
     target,
     cache: scope.config.cache,
@@ -1234,8 +1254,8 @@ const snapshotBuilt = async (
       ? { exclude: scope.request?.exclude ?? stale }
       : {}),
     ...(scope.request?.broken || stale ? { broken: true } : {}),
-    ...(scope.request?.unnamed ? { unnamed: true } : {}),
-    ...(scope.config.cache && cacheWrites(run.repo) !== "run"
+    ...(scope.request?.unnamed || shared ? { unnamed: true } : {}),
+    ...(scope.config.cache && cacheLane(run.repo) !== "run" && !shared
       ? {}
       : { ephemeral: true }),
   });

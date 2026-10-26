@@ -56,29 +56,60 @@ export const checkCache = (id: string, cache?: CacheConfig): void => {
   }
 };
 
+/** Where a run's snapshots go. */
+export type CacheLane = "shared" | "pr" | "local" | "run";
+
 /**
- * Where a run's snapshots go: `shared` is the cache every run reads and
- * writes, named only by job and key; `local` is what a local run writes;
- * `run` is a snapshot only this pipeline run has, deleted when it ends.
+ * Where a run's snapshots go: `shared` is the cache every run reads, named
+ * only by job and key, which only the default branch writes; `pr` is a pull
+ * request's own, shared by every run of that pull request, for a key the default
+ * branch doesn't have; `local` is what a local run writes; `run` is a snapshot
+ * only this pipeline run has, deleted when it ends, as for a push to any other
+ * branch.
  *
  * A snapshot is whatever its build left on the machine, and the run that reads
- * it trusts it. A pull request from a fork runs code nobody on the repository
- * wrote, so it reads the shared cache and never writes it: what it builds is
- * its own, and no later run can find it.
+ * it trusts it. A pull request runs code the default branch hasn't taken, so it
+ * reads the shared cache and never writes it (see `defaultBranchRepo`).
  *
  * A local run, from `inngest-ci`, writes only to `local`, whatever its event
  * says: its fixtures look like real pull requests and pushes, and a working
  * tree must never stand in for one. It still reads what CI built.
  */
-export const cacheWrites = (
-  repo: RepoContext | undefined,
-): "shared" | "local" | "run" => {
+export const cacheLane = (repo: RepoContext | undefined): CacheLane => {
   if (repo?.local) {
     return "local";
   }
 
-  return repo?.pullRequest?.fork ? "run" : "shared";
+  if (repo?.pullRequest) {
+    return "pr";
+  }
+
+  const branch = repo?.ref?.replace(/^refs\/heads\//, "");
+
+  return repo?.defaultBranch && branch && branch !== repo.defaultBranch
+    ? "run"
+    : "shared";
 };
+
+/**
+ * The pull request's repository as the default branch has it: the commit the
+ * pull request is based on, with none of the pull request in it. A build run
+ * given this checks out that commit and writes the shared cache, so what is
+ * cached was built from the default branch's code.
+ */
+export const defaultBranchRepo = (
+  repo: RepoContext,
+): RepoContext | undefined => {
+  if (!repo.pullRequest || !repo.baseSha || !repo.baseRef) {
+    return undefined;
+  }
+
+  const { pullRequest: _pullRequest, mergeSha: _mergeSha, ...rest } = repo;
+
+  return { ...rest, sha: repo.baseSha, ref: `refs/heads/${repo.baseRef}` };
+};
+
+const unresolvedAtDefaultBranch = "\0unresolved";
 
 /**
  * Resolve the parts of a cache key: a single hash of all of them, and the
@@ -93,12 +124,20 @@ export const cacheWrites = (
 export const resolveCacheKey = async (
   run: CiRunScope,
   key: CacheKey | undefined,
-): Promise<{ hash: string; named: Record<string, string> }> => {
+  /** Also resolve the `files()` parts as this repository has them. */
+  at?: RepoContext,
+): Promise<{
+  hash: string;
+  named: Record<string, string>;
+  hashAt?: string;
+}> => {
   const resolved: string[] = [];
+  const resolvedAt: string[] = [];
   const named: Record<string, string> = {};
 
   for (const [name, part] of keyParts(key)) {
     let value: string;
+    let valueAt: string | undefined;
 
     if (typeof part === "function") {
       value = await part();
@@ -106,17 +145,30 @@ export const resolveCacheKey = async (
       value = part;
     } else {
       value = await resolveFilesPart(run, part);
+
+      // A key that can't be worked out there is not the same as this one.
+      valueAt = at
+        ? await resolveFilesPart({ ...run, repo: at }, part).catch(() => {
+            return unresolvedAtDefaultBranch;
+          })
+        : undefined;
     }
 
     if (name === undefined) {
       resolved.push(value);
+      resolvedAt.push(valueAt ?? value);
     } else {
       resolved.push(`${name}=${value}`);
+      resolvedAt.push(`${name}=${valueAt ?? value}`);
       named[name] = value;
     }
   }
 
-  return { hash: hash(resolved.join("\0")), named };
+  return {
+    hash: hash(resolved.join("\0")),
+    named,
+    ...(at ? { hashAt: hash(resolvedAt.join("\0")) } : {}),
+  };
 };
 
 const isFilesPart = (value: object): value is CacheKeyPart => {
@@ -278,8 +330,21 @@ export const jobCacheKey = async (
   input: unknown,
   /** What the job starts from. */
   base?: BaseIdentity,
-): Promise<{ ownKey: string; key: Record<string, string> }> => {
-  const { hash: resolved, named } = await resolveCacheKey(run, cache.key);
+  /** Also work out the key at the default branch, for a pull request. */
+  atDefaultBranch = false,
+): Promise<{
+  ownKey: string;
+  key: Record<string, string>;
+  defaultBranchKey?: string;
+}> => {
+  const defaultBranch =
+    atDefaultBranch && run.repo ? defaultBranchRepo(run.repo) : undefined;
+
+  const {
+    hash: resolved,
+    named,
+    hashAt,
+  } = await resolveCacheKey(run, cache.key, defaultBranch);
 
   // Repositories and apps can share a Sandbox environment, so the same
   // job and key in two of them are still two names.
@@ -296,6 +361,11 @@ export const jobCacheKey = async (
   return {
     ownKey: `${slot}/${identityKey(hash(`${resolved}\0${owner}`), input, base)}`,
     key: named,
+    ...(hashAt
+      ? {
+          defaultBranchKey: `${slot}/${identityKey(hash(`${hashAt}\0${owner}`), input, base)}`,
+        }
+      : {}),
   };
 };
 
@@ -344,6 +414,11 @@ export interface CachedSnapshot {
 
 /** Where a job's cached snapshot is written. */
 export interface CacheTarget {
+  /**
+   * Set for a pull request whose key is the default branch's, so its snapshot
+   * is the shared one. A miss is built from the default branch's commit.
+   */
+  asDefaultBranch?: true;
   /** The job's resolved key. */
   ownKey: string;
   /** The named parts of the job's `cache.key`, resolved: what its handler gets as `key`. */
@@ -376,29 +451,76 @@ export const cacheTarget = async (
 
   await resolveKeySources(run, cache.key);
 
-  const { ownKey, key } = await ciRun(run, steps.cacheKey(job.path), () => {
-    return jobCacheKey(run, cache, input, base);
-  });
+  const lane = cacheLane(run.repo);
 
-  const writes = cacheWrites(run.repo);
+  const { ownKey, key, defaultBranchKey } = await ciRun(
+    run,
+    steps.cacheKey(job.path),
+    () => {
+      return jobCacheKey(run, cache, input, base, lane === "pr");
+    },
+  );
+
+  if (lane === "run") {
+    return {
+      ownKey,
+      key,
+      name: formatName({
+        kind: "run",
+        rootRunId: rootRunIdOf(run),
+        jobId,
+        ownKey,
+      }),
+    };
+  }
+
+  if (lane === "pr" && defaultBranchKey !== ownKey) {
+    return {
+      ownKey,
+      key,
+      name: formatName({
+        kind: "cache",
+        jobId,
+        ownKey,
+        pullRequest: run.repo?.pullRequest?.number ?? 0,
+      }),
+    };
+  }
 
   return {
     ownKey,
     key,
-    name:
-      writes === "run"
-        ? formatName({
-            kind: "run",
-            rootRunId: rootRunIdOf(run),
-            jobId,
-            ownKey,
-          })
-        : formatName({
-            kind: "cache",
-            jobId,
-            ownKey,
-            local: writes === "local",
-          }),
+    name: formatName({ kind: "cache", jobId, ownKey, local: lane === "local" }),
+    ...(lane === "pr" ? { asDefaultBranch: true as const } : {}),
+  };
+};
+
+/**
+ * A target as the pull request's own, for a job that builds in the pull
+ * request's run and so can't write the shared cache, though its key is the
+ * default branch's.
+ */
+export const pullRequestTarget = (
+  run: CiRunScope,
+  jobId: string,
+  target: CacheTarget,
+): CacheTarget => {
+  const number = run.repo?.pullRequest?.number;
+
+  if (!target.asDefaultBranch || number === undefined) {
+    return target;
+  }
+
+  const { asDefaultBranch: _asDefaultBranch, ...rest } = target;
+
+  return {
+    ...rest,
+    name: formatName({
+      kind: "cache",
+      jobId,
+      ownKey: target.ownKey,
+      pullRequest: number,
+    }),
   };
 };
 
@@ -598,7 +720,8 @@ const findNamed = async (
 
 /**
  * Look a cached job's snapshot up where it may be: what a local run wrote,
- * then the shared cache, then, for a pull request, what this run built.
+ * then the shared cache, then where this run writes, such as its pull request's
+ * own cache.
  */
 const findInNames = async (
   run: CiRunScope,
@@ -609,8 +732,10 @@ const findInNames = async (
 ): Promise<CachedSnapshot | undefined> => {
   const usable = usableFor(cache, exclude);
 
-  const names = [
-    ...(cacheWrites(run.repo) === "local"
+  const lane = cacheLane(run.repo);
+
+  const names = new Set([
+    ...(lane === "local"
       ? [
           formatName({
             kind: "cache",
@@ -621,8 +746,8 @@ const findInNames = async (
         ]
       : []),
     formatName({ kind: "cache", jobId, ownKey: target.ownKey }),
-    ...(cacheWrites(run.repo) === "run" ? [target.name] : []),
-  ];
+    target.name,
+  ]);
 
   for (const name of names) {
     const found = await findNamed(run, name, usable);

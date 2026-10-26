@@ -51,6 +51,7 @@ import {
   cleanupFunction,
   definePipeline,
 } from "./pipeline.ts";
+import { prCacheFunction } from "./prCache.ts";
 import type { CiInternals } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
 
@@ -415,6 +416,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
+        prCacheFunction({ client }),
         ...cacheRefreshFunctions({
           client,
           internals,

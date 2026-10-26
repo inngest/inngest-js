@@ -9,15 +9,15 @@ import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
-  cacheWrites,
   deleteExpiredHolders,
   resolveTakenName,
   snapshotState,
 } from "../cache/cache.ts";
-import { isRunName } from "../cache/names.ts";
+import { isPullRequestName, isRunName } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
+import { holdForPullRequest } from "../pipeline/prCache.ts";
 import type {
   BuildInfo,
   CiJobScope,
@@ -474,13 +474,10 @@ const startSandbox = async (
 
     bad = `wouldn't start twice (${errorMessage(second.failure)})`;
 
-    // A timeout leaves the snapshot alone: it is rebuilt without a name. So
-    // does a fork's run, which reads the shared cache and never changes it.
-    rebuild =
-      hasCode(second.failure, "sandbox_start_timed_out") ||
-      cacheWrites(run.repo) === "run"
-        ? { broken: false, unnamed: true }
-        : { broken: true, unnamed: false };
+    // A timeout leaves the snapshot alone: it is rebuilt without a name.
+    rebuild = hasCode(second.failure, "sandbox_start_timed_out")
+      ? { broken: false, unnamed: true }
+      : { broken: true, unnamed: false };
   }
 
   run.warnings.push(
@@ -805,6 +802,14 @@ const createNamedSnapshot = async (
 
   try {
     const taken = await attempt(stepId);
+
+    if (isPullRequestName(name)) {
+      await holdForPullRequest(
+        run,
+        `${stepId}${scopeSeparator}hold`,
+        taken.snapshotId,
+      );
+    }
 
     // A run's own names are new, so none has an expired holder.
     if (!isRunName(name)) {

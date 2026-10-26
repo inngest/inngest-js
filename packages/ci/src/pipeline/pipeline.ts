@@ -645,6 +645,7 @@ const resolveConfiguredRepo = (
           sha: head.commit.sha,
           ref: `refs/heads/${branch}`,
           baseRef: branch,
+          defaultBranch: branch,
           trigger:
             (run.event as { name?: string } | undefined)?.name ?? "manual",
         };

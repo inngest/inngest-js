@@ -130,6 +130,7 @@ interface GithubEventData {
   _github?: { event?: string; delivery?: string; installationId?: number };
   local?: { path: string; baseRef: string };
   repository?: {
+    default_branch?: string;
     full_name?: string;
     owner?: { login?: string };
     name?: string;
@@ -177,6 +178,9 @@ export const repoContextFromEvent = (
     fullName,
     sha: "",
     trigger: event?.name,
+    ...(data.repository?.default_branch
+      ? { defaultBranch: data.repository.default_branch }
+      : {}),
     ...(installationId ? { installationId } : {}),
     ...(data.local ? { local: data.local } : {}),
   };

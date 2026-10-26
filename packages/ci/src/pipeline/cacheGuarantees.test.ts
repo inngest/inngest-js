@@ -1109,7 +1109,7 @@ describe("a snapshot that expired", () => {
   });
 });
 
-describe("a pull request from a fork", () => {
+describe("a pull request from a fork whose key matches the default branch's", () => {
   const forkEvent = {
     ...prEvent,
     data: {
@@ -1162,34 +1162,18 @@ describe("a pull request from a fork", () => {
     ]);
   });
 
-  test("never writes the shared cache, and deletes what it built when its run ends", async () => {
-    const api = createFakeSandboxApi();
-    const pipeline = pipelineOf(api);
-
-    const result = await runFunction(pipeline, {
-      event: forkEvent,
-      runId: "01FORK",
-    });
-
-    expect(result.type).toBe("function-resolved");
-    expect(count(api, "pnpm install")).toBe(1);
-
-    // Its snapshots were named for its run while it ran, and none is left.
-    expect(api.snapshots.size).toBe(0);
-    expect(
-      [...api.snapshots.values()].filter((snapshot) => {
-        return snapshot.name?.startsWith("ci/cache/");
-      }),
-    ).toEqual([]);
-  });
-
-  test("builds again in the next run, since nothing it built was kept", async () => {
+  test("whose key is the default branch's builds the shared entry as the default branch, and the next run reuses it", async () => {
     const api = createFakeSandboxApi();
     const pipeline = pipelineOf(api);
 
     await runFunction(pipeline, { event: forkEvent, runId: "01FORK1" });
+
+    expect(named(api).map((snapshot) => snapshot.name)).toEqual([
+      expect.stringMatching(/^ci\/cache\/install\//),
+    ]);
+
     await runFunction(pipeline, { event: forkEvent, runId: "01FORK2" });
 
-    expect(count(api, "pnpm install")).toBe(2);
+    expect(count(api, "pnpm install")).toBe(1);
   });
 });
