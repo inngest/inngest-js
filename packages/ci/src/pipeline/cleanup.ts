@@ -8,7 +8,8 @@
  * @module
  */
 
-import type { Inngest, InngestFunction } from "inngest";
+import type { Inngest } from "inngest";
+import type { DeferredFunction } from "inngest/experimental";
 import { createDefer, createSandboxCleanup } from "inngest/experimental";
 import type { DeferHandle } from "inngest/types";
 import type { CiRunScope } from "./scope.ts";
@@ -16,7 +17,7 @@ import type { CiRunScope } from "./scope.ts";
 /** What a run's cleanup removes, by ID. */
 export type RunOwned = { sandboxId: string } | { snapshotId: string };
 
-const snapshotCleanups = new WeakMap<Inngest.Any, InngestFunction.Any>();
+const snapshotCleanups = new WeakMap<Inngest.Any, DeferredFunction.Any>();
 
 /**
  * The function that deletes a snapshot a run owned, if it still exists. One per
@@ -24,7 +25,7 @@ const snapshotCleanups = new WeakMap<Inngest.Any, InngestFunction.Any>();
  */
 export const snapshotCleanupFunction = (
   client: Inngest.Any,
-): InngestFunction.Any => {
+): DeferredFunction.Any => {
   const existing = snapshotCleanups.get(client);
 
   if (existing) {
@@ -41,7 +42,7 @@ export const snapshotCleanupFunction = (
         await (await client.sandboxes.snapshots.get(snapshotId))?.delete();
       });
     },
-  ) as unknown as InngestFunction.Any;
+  );
 
   snapshotCleanups.set(client, cleanup);
 
@@ -65,13 +66,7 @@ export const ownedByRun = (
     });
   }
 
-  // The cleanup is built for this client, so its type isn't the call's.
-  const defer = run.defer as unknown as (
-    id: string,
-    options: { function: InngestFunction.Any; data: unknown },
-  ) => DeferHandle;
-
-  return defer(`snapshot:${target.snapshotId}:cleanup`, {
+  return run.defer(`snapshot:${target.snapshotId}:cleanup`, {
     function: snapshotCleanupFunction(client),
     data: target,
   });

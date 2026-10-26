@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { InngestFunction } from "inngest";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
@@ -6712,7 +6713,7 @@ describe("holding a pull request's cache", () => {
       return fn.opts.id === "ci/pr-cache";
     });
 
-    const result = await runFunction(holder as never, {
+    const result = await runFunction(holder as InngestFunction.Any, {
       event: {
         name: "ci/pr-cache.hold",
         data: { repo: "inngest/inngest-js", pr: 7, snapshotId: snapshot },
