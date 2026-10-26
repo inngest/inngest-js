@@ -293,8 +293,8 @@ export interface CiRunScope {
    * hands to the run that invoked it. The run at the root scopes them as they
    * arrive (see `adoptBuilt`), so they are deleted when the pipeline ends,
    * however it ends. A snapshot a build took but never handed back, because
-   * its run was cancelled first, is left to expire. A named cache snapshot is never added, so later runs find
-   * it.
+   * its run was cancelled first, is left to expire. A named cache snapshot is
+   * never added, so later runs find it.
    */
   createdSnapshots: Set<string>;
   /**

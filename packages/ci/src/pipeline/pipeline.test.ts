@@ -2328,7 +2328,7 @@ describe("cache", () => {
     expect(namedSnapshots(api)).toHaveLength(2);
   });
 
-  test("the same branch, job and key in another repository misses", async () => {
+  test("the same job and key in another repository misses", async () => {
     // Two repositories sharing one Sandbox environment.
     const api = createFakeSandboxApi();
 
@@ -2376,7 +2376,7 @@ describe("cache", () => {
     expect(userCommands(api)).toHaveLength(2);
   });
 
-  test("the same repository, branch, job and key in another app misses", async () => {
+  test("the same repository, job and key in another app misses", async () => {
     // Two apps in one repository and Sandbox environment.
     const api = createFakeSandboxApi();
 
