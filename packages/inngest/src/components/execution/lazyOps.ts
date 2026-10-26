@@ -18,10 +18,10 @@ export class LazyOps {
   private pushedIds: Set<string> = new Set();
 
   /**
-   * Number of ops waiting to ship.
+   * Number of ops waiting to ship, not counting memo ops (see `drainMemos`).
    */
   get length(): number {
-    return this.buffer.length;
+    return this.buffer.filter((op) => op.op !== StepOpCode.StepRun).length;
   }
 
   /**

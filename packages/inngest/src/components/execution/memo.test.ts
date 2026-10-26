@@ -311,4 +311,29 @@ describe("step.memo", () => {
 
     expect(result.type).toBe("function-rejected");
   });
+
+  test("checkpointing: a failed memo checkpoint falls back to returning it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const promise = run({
+      stepMode: StepMode.AsyncCheckpointing,
+      checkpointStepsAsync: vi.fn().mockRejectedValue(new Error("down")),
+      handler: async ({ step }) => {
+        await step.memo("m", 1);
+      },
+    });
+
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+
+    const { result } = await promise;
+    vi.useRealTimers();
+
+    expect(result.type).toBe("steps-found");
+    expect(stepsOf(result)[0]).toMatchObject({
+      id: hashId("m"),
+      data: 1,
+    });
+  });
 });

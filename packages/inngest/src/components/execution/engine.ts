@@ -3103,12 +3103,11 @@ class InngestExecutionEngine
         return;
       }
 
-      this.state.lazyOps.push({
-        ...result,
-        data: undefinedToNull(result.data),
-      });
+      // Buffer the round-tripped data, as a checkpointed `step.run` does. This
+      // runs before the user's code continues, so the op is buffered by then.
+      const resumed = this.resumeStepWithResult(result);
 
-      this.resumeStepWithResult(result);
+      this.state.lazyOps.push({ ...result, data: resumed.data });
     } catch (err) {
       // A failing middleware hook must fail the user's await, not hang it.
       step.memoizationDeferred?.reject(err);
@@ -3141,7 +3140,35 @@ class InngestExecutionEngine
       };
     }
 
-    await this.checkpoint(memos);
+    try {
+      await this.checkpoint(memos);
+    } catch (err) {
+      if (this.options.stepMode === StepMode.Sync) {
+        throw err;
+      }
+
+      if (isStaleDispatchError(err)) {
+        return {
+          type: "function-rejected",
+          ctx: this.fnArg,
+          ops: {},
+          error: serializeError(err),
+          retriable: false,
+        };
+      }
+
+      // Fall back to async: hand the memos and any buffered steps to the
+      // executor in the response.
+      const buffered = this.state.checkpointingStepBuffer;
+      this.state.checkpointingStepBuffer = [];
+
+      return {
+        type: "steps-found",
+        ctx: this.fnArg,
+        ops: this.ops,
+        steps: [...memos, ...buffered] as [OutgoingOp, ...OutgoingOp[]],
+      };
+    }
 
     return undefined;
   }
