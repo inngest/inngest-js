@@ -264,6 +264,23 @@ export interface SandboxProcessStartOptions {
    */
   environment?: Record<string, string>;
   cwd?: string;
+
+  /**
+   * Asks the platform to send this Inngest signal when the process ends, so a
+   * run can wait with `step.waitForSignal` instead of polling the process.
+   *
+   * The signal data is the process's terminal state: `state`, `exitCode` or
+   * `terminationSignal`, `endedAt`, the last 8 KiB of `stdout` and `stderr`,
+   * and `truncated`. Killed and failed processes send it too. Nothing is sent
+   * if the sandbox is lost, so keep a timeout on the wait and fall back to
+   * `process.wait()`.
+   *
+   * The id belongs to you and must be unique per run, for example
+   * `build:${event.id}`. Start the wait in the same batch as the start, for
+   * example with `Promise.all([step.waitForSignal(...), processes.start(...)])`,
+   * so the wait exists before the process can end.
+   */
+  signalId?: string;
 }
 
 export interface SandboxProcessSignalOptions {

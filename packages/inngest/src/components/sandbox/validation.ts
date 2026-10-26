@@ -801,11 +801,32 @@ export const validateDollarOptions = (options: unknown): void => {
     "$ options",
   );
 };
+/**
+ * The signal id is sent to the platform as is, so it is bounded here. It is
+ * user-chosen and must be unique per run; see `SandboxProcessStartOptions`.
+ */
+export const sandboxSignalIdSchema = z
+  .string()
+  .min(1, "signalId must not be empty")
+  .max(256, "signalId must not exceed 256 characters");
 
 export const normalizeSandboxProcessStartOptions = (
   options: SandboxProcessStartOptions,
-): Omit<SandboxProcessStartOptions, "command"> & { command: string[] } =>
-  normalizeProcessSpec(options, false);
+): Omit<SandboxProcessStartOptions, "command"> & { command: string[] } => {
+  const { signalId, ...spec } = options;
+  const normalized = normalizeProcessSpec(spec, false);
+  if (signalId === undefined) {
+    return normalized;
+  }
+  return {
+    ...normalized,
+    signalId: parseWithSchema(
+      sandboxSignalIdSchema,
+      signalId,
+      "sandbox process signalId",
+    ),
+  };
+};
 
 export const normalizeSandboxProcessSignalOptions = (
   options: SandboxProcessSignalOptions,

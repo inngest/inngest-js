@@ -22,6 +22,7 @@ import {
   sandboxRefSchema,
   sandboxSecretNameSchema,
   sandboxSnapshotCreateOptionsSchema,
+  sandboxSignalIdSchema,
   sandboxSnapshotRefSchema,
   wireOutputChunkSchema,
 } from "./validation.ts";
@@ -128,7 +129,7 @@ const validateProcessSpec = (
   }
 };
 const processSpecInputSchema = z
-  .object(processSpecShape)
+  .object({ ...processSpecShape, signalId: sandboxSignalIdSchema.optional() })
   .strict()
   .superRefine(validateProcessSpec);
 const execInputSchema = z

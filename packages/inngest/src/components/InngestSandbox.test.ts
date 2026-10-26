@@ -787,6 +787,73 @@ describe("step.sandbox", () => {
     expect(rawTool).not.toHaveBeenCalled();
   });
 
+  test("sends signalId when starting a process and validates it", async () => {
+    const operations: SandboxOperationV1[] = [];
+    const rawTool: SandboxRawTool = vi.fn(async (_id, operation) => {
+      operations.push(operation);
+      return resultForOperation(operation);
+    });
+    const sandbox = await createSandboxTools(() => rawTool).create(
+      "create",
+      createOptions,
+    );
+
+    await sandbox.processes.start("with-signal", {
+      command: "npm run build",
+      signalId: "build:evt-1",
+    });
+    await sandbox.processes.start("without-signal", {
+      command: "npm run build",
+    });
+
+    expect(operations[1]).toMatchObject({
+      action: "process.start",
+      input: [
+        {
+          command: ["/bin/sh", "-c", "npm run build"],
+          signalId: "build:evt-1",
+        },
+      ],
+    });
+    expect(operations[2]).toMatchObject({ action: "process.start" });
+    expect(operations[2]).not.toHaveProperty("input.0.signalId");
+
+    vi.mocked(rawTool).mockClear();
+    for (const signalId of ["", "x".repeat(257)]) {
+      await expect(
+        sandbox.processes.start("invalid", { command: "true", signalId }),
+      ).rejects.toBeInstanceOf(SandboxValidationError);
+    }
+    expect(rawTool).not.toHaveBeenCalled();
+  });
+
+  test("sends signalId in the direct start request body", async () => {
+    const bodies: unknown[] = [];
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v2/sandboxes")) {
+        return Response.json({ data: sandboxRef }, { status: 201 });
+      }
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({ data: processRef }, { status: 201 });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const sandbox = await client.create(createOptions);
+
+    await sandbox.processes.start({ command: "true", signalId: "build:evt-1" });
+    await sandbox.processes.start({ command: "true" });
+
+    expect(bodies).toEqual([
+      { command: ["/bin/sh", "-c", "true"], signalId: "build:evt-1" },
+      { command: ["/bin/sh", "-c", "true"] },
+    ]);
+  });
+
   test("accepts false for direct and durable Create and rejects invalid values", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     const direct = createSandboxClient({
