@@ -175,6 +175,16 @@ export const createShim = (
   const parsed: ShimDefinition =
     typeof definition === "function" ? { handle: definition } : definition;
 
+  if (parsed.inject) {
+    validateHostEnv(parsed.inject);
+
+    if (parsed.stdin || parsed.local) {
+      throw new SandboxValidationError(
+        "stdin and local are for shims with a handle",
+      );
+    }
+  }
+
   if (parsed.inject && Object.keys(parsed.inject).length === 0) {
     throw new SandboxValidationError("inject needs at least one variable");
   }
@@ -520,7 +530,7 @@ export const withShims = (
     for (const variable of variables) {
       if (!envNamePattern.test(variable) || Object.hasOwn(allowed, variable)) {
         throw new SandboxValidationError(
-          `Invalid or repeated inject variable "${variable}"`,
+          `Invalid inject variable "${variable}", or it is already set by hostEnv or another shim`,
         );
       }
 
