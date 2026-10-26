@@ -30,6 +30,7 @@ import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import type { DeferOp } from "../testing/runFunction.ts";
 import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import { temporalDuration } from "../testing/temporal.ts";
@@ -1792,30 +1793,6 @@ describe("from", () => {
       },
       message: 'The `cache.key` of "j" can\'t be empty',
     },
-    {
-      name: "an unknown cache scope",
-      define: (ci: Ci) => {
-        ci.job(
-          { id: "j", cache: { scope: "pr" as unknown as "branch" } },
-          async () => {},
-        );
-      },
-      message: 'The `cache.scope` of "j" must be "branch" or "global"',
-    },
-    {
-      name: "an unknown cache scope on a matrix",
-      define: (ci: Ci) => {
-        ci.job(
-          {
-            id: "m",
-            matrix: { axes: { node: ["20"] } },
-            cache: { scope: "pr" as unknown as "branch" },
-          },
-          async () => {},
-        );
-      },
-      message: 'The `cache.scope` of "m" must be',
-    },
   ])("$name throws when it's defined", ({ define, message }) => {
     const { ci } = setup();
 
@@ -2297,7 +2274,7 @@ describe("cache", () => {
     expect(ran(api, "pnpm install")).toBe(1);
     expect(api.sandboxes.size).toBe(1);
     expect(namedSnapshots(api)).toEqual([
-      expect.stringMatching(/^ci\/pr:7\/setup\/[0-9a-f]+\/[0-9a-f]+$/),
+      expect.stringMatching(/^ci\/cache\/setup\/[0-9a-f]+\/[0-9a-f]+$/),
     ]);
   });
 
@@ -2572,7 +2549,7 @@ describe("cache", () => {
       expect(duringRuns.length).toBeGreaterThan(0);
       expect(
         duringRuns.filter((name) => {
-          return name.startsWith("ci/pr:7/") || name.startsWith("ci/main/");
+          return name.startsWith("ci/cache/") || name.startsWith("ci/cache/");
         }),
       ).toEqual([]);
 
@@ -2691,7 +2668,7 @@ describe("cache", () => {
 
       expect(
         namedSnapshots(api).filter((name) => {
-          return name.startsWith("ci/pr:7/build/");
+          return name.startsWith("ci/cache/build/");
         }),
       ).toHaveLength(1);
     });
@@ -2739,7 +2716,7 @@ describe("cache", () => {
     /** The snapshots `build` is cached under, oldest first. */
     const buildSnapshots = (api: ReturnType<typeof createFakeSandboxApi>) => {
       return [...api.snapshots.values()].filter((snapshot) => {
-        return snapshot.name?.startsWith("ci/pr:7/build/");
+        return snapshot.name?.startsWith("ci/cache/build/");
       });
     };
 
@@ -2754,7 +2731,7 @@ describe("cache", () => {
         "its snapshot is gone",
         (api: ReturnType<typeof createFakeSandboxApi>) => {
           for (const snapshot of api.snapshots.values()) {
-            if (snapshot.name?.startsWith("ci/pr:7/setup/")) {
+            if (snapshot.name?.startsWith("ci/cache/setup/")) {
               api.snapshots.delete(snapshot.id);
             }
           }
@@ -2826,7 +2803,7 @@ describe("cache", () => {
     const [winner, ...others] = [...api.snapshots.values()];
 
     expect(others).toEqual([]);
-    expect(winner?.name).toMatch(/^ci\/pr:7\/base\//);
+    expect(winner?.name).toMatch(/^ci\/cache\/base\//);
     expect(winner?.status).toBe("READY");
 
     const child = [...api.sandboxes.values()].find((machine) => {
@@ -3015,7 +2992,7 @@ describe("cache", () => {
             .map((candidate) => {
               return candidate.name;
             }),
-        ).toEqual([expect.stringMatching(/^ci\/pr:7\/base\//)]);
+        ).toEqual([expect.stringMatching(/^ci\/cache\/base\//)]);
       },
     );
 
@@ -3115,7 +3092,7 @@ describe("cache", () => {
 
       // The rebuild is cached under the freed name for the next run.
       expect(namedSnapshots(api)).toEqual([
-        expect.stringMatching(/^ci\/pr:7\/base\//),
+        expect.stringMatching(/^ci\/cache\/base\//),
       ]);
     });
 
@@ -3193,7 +3170,7 @@ describe("cache", () => {
 
       const [main] = [...api.snapshots.values()];
 
-      expect(main?.name).toMatch(/^ci\/main\/base\//);
+      expect(main?.name).toMatch(/^ci\/cache\/base\//);
 
       api.failNextSnapshotStarts("timeout");
 
@@ -3479,7 +3456,7 @@ describe("cache", () => {
 
     expect(ran(api, "pnpm install")).toBe(1);
     expect(namedSnapshots(api)).toEqual([
-      expect.stringMatching(/^ci\/main\/setup\//),
+      expect.stringMatching(/^ci\/cache\/setup\//),
     ]);
   });
 
@@ -3939,7 +3916,11 @@ describe("cleanup", () => {
     code: "sandbox_not_found",
   });
 
+  const aborted: string[] = [];
+
   const runHolding = (ids: string[], get: (id: string) => Promise<unknown>) => {
+    aborted.length = 0;
+
     return {
       step: {
         run: (_options: unknown, fn: () => unknown) => {
@@ -3947,7 +3928,18 @@ describe("cleanup", () => {
         },
       },
       runId: "r",
-      createdMachines: new Set(ids),
+      createdMachines: new Map(
+        ids.map((id) => {
+          return [
+            id,
+            {
+              abort: () => {
+                aborted.push(id);
+              },
+            },
+          ];
+        }),
+      ),
       ci: {
         client: {
           sandboxes: { get },
@@ -3972,6 +3964,52 @@ describe("cleanup", () => {
     expect(result.steps["pipeline › cleanup"]).toEqual({ destroyed: 0 });
   });
 
+  test("every machine is scoped to the run, and the scope stops once the run has destroyed it", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+      await (await sandbox("extra")).$`pnpm other`.nothrow();
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await job();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const ids = [...api.sandboxes.keys()];
+
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+
+    const added = result.defers.filter((defer) => {
+      return defer.op === "DeferAdd";
+    });
+
+    // A defer per machine, by ID, which is what destroys it if the run is
+    // cancelled or times out before it does.
+    expect(
+      added.map((defer) => {
+        return defer.data;
+      }),
+    ).toEqual(
+      expect.arrayContaining(
+        ids.map((sandboxId) => {
+          return { sandboxId };
+        }),
+      ),
+    );
+
+    expect(
+      result.defers.filter((defer) => {
+        return defer.op === "DeferAbort";
+      }),
+    ).toHaveLength(added.length);
+  });
+
   test("a machine that is already gone is not an error", async () => {
     const run = runHolding(["a"], async () => {
       throw notFound;
@@ -3994,6 +4032,26 @@ describe("cleanup", () => {
     await destroyRunMachines(run);
 
     expect(destroyed).toEqual(["a", "b"]);
+  });
+
+  test("a machine the run destroyed no longer needs its cleanup", async () => {
+    const run = runHolding(["a", "b"], async (id) => {
+      return { destroy: async () => {} };
+    });
+
+    await destroyRunMachines(run);
+
+    expect(aborted).toEqual(["a", "b"]);
+  });
+
+  test("a machine that couldn't be destroyed keeps its cleanup", async () => {
+    const run = runHolding(["a"], async () => {
+      throw new Error("503 service unavailable");
+    });
+
+    await expect(destroyRunMachines(run)).rejects.toThrow("503");
+
+    expect(aborted).toEqual([]);
   });
 
   test("any other failure fails the step so it retries", async () => {
@@ -4041,7 +4099,7 @@ describe("cleanup", () => {
       result.stepIds.filter((id) => {
         return id.startsWith("pipeline › cleanup");
       }),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
@@ -5539,7 +5597,6 @@ describe("the end of a run", () => {
     "github › check:jobs:complete",
     "github › check:pr:complete",
     "pipeline › cleanup",
-    "pipeline › cleanup:snapshots",
   ];
 
   test("plans the same steps when a job passed, when one failed and when none ran", async () => {
@@ -5992,7 +6049,7 @@ describe("cache builds in their own run", () => {
         data: {
           jobId: "gone",
           ownKey: "k",
-          cacheKey: "ci/pr:7/gone/k",
+          cacheKey: "ci/cache/gone/k",
           rootRunId: "01ROOT",
           parent: {
             runId: "01ROOT",
@@ -6090,19 +6147,19 @@ describe("cache builds in their own run", () => {
 });
 
 describe("run snapshot cleanup", () => {
-  const cleanupSteps = (stepIds: string[]) => {
-    return stepIds.filter((id) => {
-      return id.includes("cleanup:snapshots");
+  /**
+   * The snapshots the run scoped, so the platform deletes them when the run
+   * ends. The harness does that as soon as the run is over.
+   */
+  const scoped = (result: { defers: DeferOp[] }) => {
+    return result.defers.filter((defer) => {
+      return (
+        defer.op === "DeferAdd" &&
+        typeof defer.data === "object" &&
+        defer.data !== null &&
+        "snapshotId" in defer.data
+      );
     });
-  };
-
-  /** The snapshots the cleanup step deleted. The step is always planned. */
-  const deletedBy = (result: { steps: Record<string, unknown> }) => {
-    const step = result.steps["pipeline › cleanup:snapshots"] as
-      | { deleted: string[] }
-      | undefined;
-
-    return step?.deleted ?? [];
   };
 
   const cachedChain = (ci: ReturnType<typeof setup>["ci"]) => {
@@ -6148,11 +6205,10 @@ describe("run snapshot cleanup", () => {
     // run, which hands it up instead of deleting what others may share.
     expect(duringRun).toBe(2);
     expect(api.snapshots.size).toBe(0);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
-    expect(deletedBy(result)).toHaveLength(2);
+    expect(scoped(result)).toHaveLength(2);
   });
 
-  test("a run with no snapshots still plans the cleanup step, which deletes nothing", async () => {
+  test("a run with no snapshots scopes none", async () => {
     const { ci } = setup();
 
     const job = ci.job("test", async () => {
@@ -6165,10 +6221,7 @@ describe("run snapshot cleanup", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    // Always planned, so a request that sees no snapshots yet can't skip a
-    // step another request found.
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
-    expect(deletedBy(result)).toHaveLength(0);
+    expect(scoped(result)).toHaveLength(0);
   });
 
   test("snapshots are deleted when the run fails", async () => {
@@ -6193,7 +6246,7 @@ describe("run snapshot cleanup", () => {
 
     expect(result.type).toBe("function-rejected");
     expect(api.snapshots.size).toBe(0);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(scoped(result)).toHaveLength(1);
   });
 
   test("snapshots are deleted when completing the pipeline check fails on the last attempt", async () => {
@@ -6256,8 +6309,8 @@ describe("run snapshot cleanup", () => {
 
     expect(second.type).toBe("function-resolved");
     expect([...api.snapshots.keys()]).toEqual(kept);
-    expect(deletedBy(first)).toHaveLength(0);
-    expect(deletedBy(second)).toHaveLength(0);
+    expect(scoped(first)).toHaveLength(0);
+    expect(scoped(second)).toHaveLength(0);
   });
 
   test("a snapshot that lost a name race is adopted and kept", async () => {
@@ -6271,7 +6324,7 @@ describe("run snapshot cleanup", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(namedSnapshots(api)).toHaveLength(1);
-    expect(deletedBy(result)).toHaveLength(0);
+    expect(scoped(result)).toHaveLength(0);
   });
 
   test("an unnamed fallback snapshot is deleted at the end of the run", async () => {
@@ -6286,7 +6339,7 @@ describe("run snapshot cleanup", () => {
     expect(result.type).toBe("function-resolved");
     expect(namedSnapshots(api)).toHaveLength(0);
     expect(api.snapshots.size).toBe(0);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(scoped(result)).toHaveLength(1);
   });
 
   test("a build run hands up its run-only snapshots, including a cached job's below an uncached one", async () => {
@@ -6320,7 +6373,7 @@ describe("run snapshot cleanup", () => {
     // too, rather than a named cache snapshot nothing could ever find again.
     expect(namedSnapshots(api)).toEqual([]);
     expect(api.snapshots.size).toBe(0);
-    expect(deletedBy(result)).toHaveLength(2);
+    expect(scoped(result)).toHaveLength(2);
   });
 
   test("a build run doesn't delete the named snapshot it built", async () => {
@@ -6348,7 +6401,7 @@ describe("run snapshot cleanup", () => {
     expect(result.type).toBe("function-resolved");
     expect(namedDuringRun).toHaveLength(1);
     expect(namedSnapshots(api)).toEqual(namedDuringRun);
-    expect(deletedBy(result)).toHaveLength(0);
+    expect(scoped(result)).toHaveLength(0);
   });
 
   test("a build run's unnamed fallback is left for the invoking run to delete", async () => {
@@ -6380,7 +6433,7 @@ describe("run snapshot cleanup", () => {
     // The build run's own cleanup left it, so `lint` could start from it.
     expect(duringRun).toBe(1);
     expect(api.snapshots.size).toBe(0);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(scoped(result)).toHaveLength(1);
   });
 
   test.each([
@@ -6419,7 +6472,7 @@ describe("run snapshot cleanup", () => {
     },
   );
 
-  test("a delete that throws is logged and doesn't fail the run", async () => {
+  test("a delete that throws doesn't fail the run", async () => {
     const real = createFakeSandboxApi();
 
     const flaky = {
@@ -6443,12 +6496,7 @@ describe("run snapshot cleanup", () => {
       }) as typeof real.fetch,
     };
 
-    const { client, ci } = setup({ api: flaky });
-
-    const warn = vi.spyOn(
-      client.logger as unknown as { warn: (...args: unknown[]) => void },
-      "warn",
-    );
+    const { ci } = setup({ api: flaky });
 
     const base = ci.job("base", async () => {
       await $`pnpm install`;
@@ -6466,11 +6514,6 @@ describe("run snapshot cleanup", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(real.snapshots.size).toBe(1);
-
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ snapshotId: expect.any(String) }),
-      expect.any(String),
-    );
   });
 
   test("a snapshot that's already gone is fine", async () => {
@@ -6528,7 +6571,7 @@ describe("run snapshot cleanup", () => {
     expect(result.type).toBe("function-resolved");
     expect(sizeBeforeRetry).toBe(1);
     expect(api.snapshots.size).toBe(0);
-    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+    expect(scoped(result)).toHaveLength(1);
   });
 });
 

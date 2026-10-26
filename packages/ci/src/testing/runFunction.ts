@@ -14,13 +14,17 @@
  */
 
 import type { EventPayload, InngestFunction } from "inngest";
+import { createSandboxCleanup } from "inngest/experimental";
 import { busOf, createdFunctions } from "./client.ts";
 import type { BusEvent, EventBus } from "./eventBus.ts";
 import { durationMs } from "./eventBus.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
+  DeferAbort: "DeferAbort",
+  DeferAdd: "DeferAdd",
   InvokeFunction: "InvokeFunction",
+  RunComplete: "RunComplete",
   WaitForEvent: "WaitForEvent",
   StepError: "StepError",
   StepFailed: "StepFailed",
@@ -56,6 +60,15 @@ type StepSpanPath = Array<{
   kind?: string;
   origin?: string;
 }>;
+
+/** What a run asked the platform to run when it ends: a defer, or its abort. */
+export interface DeferOp {
+  op: "DeferAdd" | "DeferAbort";
+  /** The defer's ID, before hashing. */
+  id: string;
+  /** What the deferred function was given, for a defer that is added. */
+  data?: unknown;
+}
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
 interface ExecutionResult {
@@ -99,6 +112,11 @@ export interface RunResult {
    * every attempt, so it can appear more than once.
    */
   metadata: Array<MetadataUpdate & { step: string }>;
+  /**
+   * The defers the run added or aborted, in order, each once. They run when
+   * the run ends, which the harness does not do.
+   */
+  defers: DeferOp[];
 }
 
 export interface RunFunctionOptions {
@@ -489,6 +507,8 @@ const driveFunction = async (
   // is called again as soon as any one of them ends, without waiting for the
   // rest. Their outcomes are only recorded between requests, so a request
   // never sees state change underneath it.
+  const defers: DeferOp[] = [];
+
   const inflight = new Map<string, Promise<void>>();
   const drops = new Set<() => void>();
   const started = new Set<string>();
@@ -524,7 +544,13 @@ const driveFunction = async (
 
     let progressed = false;
 
-    const result = await request();
+    let result = await request();
+
+    // The SDK ships the ops that start nothing (defers) and a run's end beside
+    // its steps, so they are taken out before the steps are read.
+    if (result.type === "steps-found") {
+      result = withoutLazyOps(result, defers);
+    }
 
     if (result.type === "function-resolved") {
       // A wait nothing has ended does not hold the run open: the run completes
@@ -532,6 +558,8 @@ const driveFunction = async (
       for (const drop of drops) {
         drop();
       }
+
+      await runDeferred(fn, defers, runId);
 
       return {
         type: result.type,
@@ -544,6 +572,7 @@ const driveFunction = async (
         origins,
         inputs,
         metadata,
+        defers,
       };
     }
 
@@ -553,6 +582,8 @@ const driveFunction = async (
 
         continue;
       }
+
+      await runDeferred(fn, defers, runId);
 
       return {
         type: result.type,
@@ -566,6 +597,7 @@ const driveFunction = async (
         origins,
         inputs,
         metadata,
+        defers,
       };
     }
 
@@ -680,11 +712,14 @@ const driveFunction = async (
 
       inputs[stepId(planned)] = planned.opts;
 
-      const ran = await (concurrencyKey
+      const asked = await (concurrencyKey
         ? inTurn(concurrencyKey, () => {
             return request(planned.id);
           })
         : request(planned.id));
+
+      // A step that ran beside a defer comes back among the steps found.
+      const ran = ranStep(asked, planned.id, defers);
 
       progressed = true;
 
@@ -702,6 +737,135 @@ const driveFunction = async (
   }
 
   throw new Error(`Function did not settle within ${maxRequests} requests`);
+};
+
+/**
+ * Run what the run deferred, as the platform does once the run is over: each
+ * sandbox cleanup that was added and not aborted destroys or deletes what it
+ * names.
+ */
+const runDeferred = async (
+  fn: InngestFunction.Any,
+  defers: DeferOp[],
+  runId: string,
+): Promise<void> => {
+  // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+  const client = (fn as any).client;
+
+  const aborted = new Set(
+    defers.flatMap((defer) => {
+      return defer.op === "DeferAbort" ? [defer.id] : [];
+    }),
+  );
+
+  for (const defer of defers) {
+    if (defer.op !== "DeferAdd" || aborted.has(defer.id)) {
+      continue;
+    }
+
+    const event = {
+      name: "inngest/deferred.schedule",
+      data: {
+        ...(defer.data as object),
+        _inngest: { parent_fn_slug: "parent", parent_run_id: runId },
+      },
+    };
+
+    await driveFunction(createSandboxCleanup(client), {
+      event,
+      runId: `${runId}-deferred-${defer.id}`,
+      nested: true,
+    });
+  }
+};
+
+/**
+ * A request's outcome without the ops that are not steps. Defers are added to
+ * `defers`, once each. A run's end that rides with them is the outcome.
+ */
+const withoutLazyOps = (
+  result: ExecutionResult,
+  defers: DeferOp[],
+): ExecutionResult => {
+  const steps = result.steps ?? [];
+
+  for (const planned of steps) {
+    if (
+      planned.op !== StepOpCode.DeferAdd &&
+      planned.op !== StepOpCode.DeferAbort
+    ) {
+      continue;
+    }
+
+    const id = stepId(planned);
+
+    const seen = defers.some((defer) => {
+      return defer.op === planned.op && defer.id === id;
+    });
+
+    if (!seen) {
+      defers.push({
+        op: planned.op,
+        id,
+        ...(planned.opts === undefined
+          ? {}
+          : { data: (planned.opts as { input?: unknown }).input }),
+      });
+    }
+  }
+
+  const rest = steps.filter((planned) => {
+    return (
+      planned.op !== StepOpCode.DeferAdd && planned.op !== StepOpCode.DeferAbort
+    );
+  });
+
+  const ended = rest.find((planned) => {
+    return planned.op === StepOpCode.RunComplete;
+  });
+
+  if (ended) {
+    return { ...result, type: "function-resolved", data: ended.data };
+  }
+
+  // The only step failure in a batch of steps found is the run's own.
+  const failed = rest.find((planned) => {
+    return planned.userland === undefined && isFailed(planned);
+  });
+
+  if (failed) {
+    return {
+      ...result,
+      type: "function-rejected",
+      error: failed.error,
+      retriable: failed.op !== StepOpCode.StepFailed,
+    };
+  }
+
+  return { ...result, steps: rest };
+};
+
+/**
+ * The outcome of asking for one step to run. The SDK ships a defer made while
+ * it ran beside the step's result, as steps found, so the result is read out
+ * of them.
+ */
+const ranStep = (
+  asked: ExecutionResult,
+  id: string,
+  defers: DeferOp[],
+): ExecutionResult => {
+  if (asked.type !== "steps-found") {
+    return asked;
+  }
+
+  const rest = withoutLazyOps(asked, defers).steps ?? [];
+
+  const step = rest.find((planned) => {
+    return planned.id === id && planned.op !== StepOpCode.StepPlanned;
+  });
+
+  return step ? { type: "step-ran", step } : asked;
 };
 
 /** Make one execution request, optionally asking it to run a single step. */
@@ -732,7 +896,14 @@ const runOnce = async (
   const execution = internals["createExecution"]({
     partialOptions: {
       client,
-      data: { event, events: [event], runId, attempt },
+      // A deferred function strips its routing data off the event it is given,
+      // so every request gets its own copy.
+      data: {
+        event: structuredClone(event),
+        events: [structuredClone(event)],
+        runId,
+        attempt,
+      },
       runId,
       stepState,
       stepCompletionOrder: completionOrder,

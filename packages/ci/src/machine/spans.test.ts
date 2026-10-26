@@ -270,7 +270,6 @@ describe("spans", () => {
       "github › check:jobs:complete",
       "github › check:pr:complete",
       "pipeline › cleanup",
-      "pipeline › cleanup:snapshots",
     ]);
   });
 
@@ -442,7 +441,6 @@ describe("spans", () => {
         "    Destroy sandbox",
         "  Destroy sandbox",
         "Clean up sandboxes",
-        "Clean up snapshots",
       ].join("\n"),
     );
   });
@@ -484,7 +482,6 @@ describe("spans", () => {
         "    Destroy sandbox <- ci",
         "  Destroy sandbox <- ci",
         "Clean up sandboxes <- ci",
-        "Clean up snapshots <- ci",
       ].join("\n"),
     );
   });

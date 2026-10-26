@@ -8,6 +8,7 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
+import type { DeferHandle } from "inngest/types";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -288,17 +289,20 @@ export interface CiRunScope {
   /** How many direct calls of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
   /**
-   * Snapshots the builds this run asked for left for it, by ID: a `from`
-   * parent's without a `cache`, and the unnamed fallback of any build. They are
-   * deleted when the run ends. A named cache snapshot is never added, so later
-   * runs find it.
+   * Snapshots the builds a build run asked for left for it, by ID, which it
+   * hands to the run that invoked it. The run at the root scopes them as they
+   * arrive (see `adoptBuilt`), so they are deleted when the pipeline ends,
+   * however it ends. A snapshot a build took but never handed back, because
+   * its run was cancelled first, is left to expire. A named cache snapshot is never added, so later runs find
+   * it.
    */
   createdSnapshots: Set<string>;
   /**
-   * The IDs of the machines this run created, which it destroys when it ends.
-   * It only ever destroys what it holds the ID of.
+   * The machines this run created, by ID, each with the handle of the cleanup
+   * that destroys it if the run ends before it does. The run destroys them
+   * itself when it ends, and only ever destroys what it holds the ID of.
    */
-  createdMachines: Set<string>;
+  createdMachines: Map<string, DeferHandle>;
   /**
    * Set when this run is a build: one job's snapshot, built for the run that
    * invoked it. It has no checks of its own and reports to that run.

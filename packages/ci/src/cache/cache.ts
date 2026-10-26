@@ -48,71 +48,36 @@ import { formatName } from "./names.ts";
  * Check a static `cache` when the job is defined, so a mistake fails
  * when the app boots rather than mid-pipeline.
  *
- * @throws {CiUsageError} When the key is empty or the scope isn't known.
+ * @throws {CiUsageError} When the key is empty.
  */
 export const checkCache = (id: string, cache?: CacheConfig): void => {
   if (cache?.key === "" || (cache?.key && !keyParts(cache.key).length)) {
     throw new CiUsageError(`The \`cache.key\` of "${id}" can't be empty.`);
   }
-
-  if (cache?.scope && !["branch", "global"].includes(cache.scope)) {
-    throw new CiUsageError(
-      `The \`cache.scope\` of "${id}" must be "branch" or "global", but got "${cache.scope}".`,
-    );
-  }
 };
 
 /**
- * Where a job reads and writes its cached snapshots.
+ * Where a run's snapshots go: `shared` is the cache every run reads and
+ * writes, named only by job and key; `local` is what a local run writes;
+ * `run` is a snapshot only this pipeline run has, deleted when it ends.
  *
- * With the default `"branch"` scope, a pull request reads snapshots built on
- * the branch it targets and writes its own, so one PR can't poison another. A
- * pull request's scope has a `:`, which a branch name can't contain, so a
- * branch called `pr-4` never shares it.
+ * A snapshot is whatever its build left on the machine, and the run that reads
+ * it trusts it. A pull request from a fork runs code nobody on the repository
+ * wrote, so it reads the shared cache and never writes it: what it builds is
+ * its own, and no later run can find it.
  *
  * A local run, from `inngest-ci`, writes only to `local`, whatever its event
  * says: its fixtures look like real pull requests and pushes, and a working
  * tree must never stand in for one. It still reads what CI built.
  */
-export const cacheScopes = (
+export const cacheWrites = (
   repo: RepoContext | undefined,
-  scope: CacheConfig["scope"],
-): { read: string[]; write: string } => {
-  const shared = sharedScopes(repo, scope);
-
-  if (!repo?.local) {
-    return shared;
+): "shared" | "local" | "run" => {
+  if (repo?.local) {
+    return "local";
   }
 
-  const read = shared.read.filter((name) => {
-    return !name.startsWith("pr:");
-  });
-
-  return { read: [localScope, ...read], write: localScope };
-};
-
-/** The scope every local run writes to. */
-const localScope = "local";
-
-const sharedScopes = (
-  repo: RepoContext | undefined,
-  scope: CacheConfig["scope"],
-): { read: string[]; write: string } => {
-  if (scope === "global" || !repo) {
-    return { read: ["global"], write: "global" };
-  }
-
-  const base = repo.baseRef ?? "default";
-
-  if (repo.pullRequest) {
-    const own = `pr:${repo.pullRequest.number}`;
-
-    return { read: [own, base], write: own };
-  }
-
-  const branch = repo.ref?.replace(/^refs\/heads\//, "") ?? base;
-
-  return { read: [branch], write: branch };
+  return repo?.pullRequest?.fork ? "run" : "shared";
 };
 
 /**
@@ -317,7 +282,7 @@ export const jobCacheKey = async (
   const { hash: resolved, named } = await resolveCacheKey(run, cache.key);
 
   // Repositories and apps can share a Sandbox environment, so the same
-  // branch, job and key in two of them are still two names.
+  // job and key in two of them are still two names.
   const app = `app:${run.ci.client?.id ?? ""}`;
   const owner = run.repo ? `repo:${run.repo.fullName}\0${app}` : app;
 
@@ -371,7 +336,7 @@ export interface BaseIdentity {
 /** A cached job's snapshot, as found by its name. */
 export interface CachedSnapshot {
   snapshotId: string;
-  /** The name it has, which may be another scope's, such as the base branch's. */
+  /** The name it has: the shared cache's, or a local run's or this run's own. */
   name: string;
   /** When it was taken, as an ISO timestamp. */
   createdAt: string;
@@ -415,15 +380,25 @@ export const cacheTarget = async (
     return jobCacheKey(run, cache, input, base);
   });
 
+  const writes = cacheWrites(run.repo);
+
   return {
     ownKey,
     key,
-    name: formatName({
-      kind: "cache",
-      scope: cacheScopes(run.repo, cache.scope).write,
-      jobId,
-      ownKey,
-    }),
+    name:
+      writes === "run"
+        ? formatName({
+            kind: "run",
+            rootRunId: rootRunIdOf(run),
+            jobId,
+            ownKey,
+          })
+        : formatName({
+            kind: "cache",
+            jobId,
+            ownKey,
+            local: writes === "local",
+          }),
   };
 };
 
@@ -621,22 +596,36 @@ const findNamed = async (
   }
 };
 
-/** Look a job's snapshot up in each scope it reads, in order. */
+/**
+ * Look a cached job's snapshot up where it may be: what a local run wrote,
+ * then the shared cache, then, for a pull request, what this run built.
+ */
 const findInScopes = async (
   run: CiRunScope,
   jobId: string,
   cache: CacheConfig,
-  ownKey: string,
+  target: CacheTarget,
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
   const usable = usableFor(cache, exclude);
 
-  for (const scope of cacheScopes(run.repo, cache.scope).read) {
-    const found = await findNamed(
-      run,
-      formatName({ kind: "cache", scope, jobId, ownKey }),
-      usable,
-    );
+  const names = [
+    ...(cacheWrites(run.repo) === "local"
+      ? [
+          formatName({
+            kind: "cache",
+            jobId,
+            ownKey: target.ownKey,
+            local: true,
+          }),
+        ]
+      : []),
+    formatName({ kind: "cache", jobId, ownKey: target.ownKey }),
+    ...(cacheWrites(run.repo) === "run" ? [target.name] : []),
+  ];
+
+  for (const name of names) {
+    const found = await findNamed(run, name, usable);
 
     if (found) {
       return found;
@@ -693,7 +682,7 @@ const findCached = (
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
   return cache
-    ? findInScopes(run, jobId, cache, target.ownKey, exclude)
+    ? findInScopes(run, jobId, cache, target, exclude)
     : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
@@ -744,7 +733,7 @@ export const resolveTakenName = async (
   /**
    * Whether `exclude` was decided to be broken, which is the only case where
    * it is deleted. A snapshot that merely failed to start once may be a
-   * shared one, such as the base branch's, that other runs still use.
+   * shared one, in the cache every run reads, that other runs still use.
    */
   broken?: boolean,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
@@ -787,6 +776,50 @@ export const resolveTakenName = async (
       return { cleared };
     },
   );
+};
+
+/**
+ * Delete the snapshots that hold a name the build has just taken, as a
+ * memoized step. A name is held only by an unexpired snapshot, so an expired
+ * one doesn't stop the build taking the name, and nothing else would remove it:
+ * the platform keeps it, and counts it, until it is deleted. They are found by
+ * the exact name and deleted by ID, and never the one just taken.
+ *
+ * Best effort: a snapshot that can't be deleted is left, as it was.
+ */
+export const deleteExpiredHolders = async (
+  run: CiRunScope,
+  stepId: string,
+  name: string,
+  /** The snapshot the build took, which stays. */
+  keep: string,
+): Promise<void> => {
+  await ciRun(run, steps.deleteExpiredSnapshots(stepId), async () => {
+    try {
+      const page = (await snapshotsClient(run).list({ name, limit: 10 })) as {
+        items: SnapshotResource[];
+      };
+
+      for (const holder of page.items) {
+        const expired =
+          holder.expiresAt !== undefined &&
+          Date.parse(holder.expiresAt) <= Date.now();
+
+        if (
+          holder.name === name &&
+          holder.id !== keep &&
+          holder.status === "READY" &&
+          expired
+        ) {
+          await (await snapshotsClient(run).get(holder.id))?.delete();
+        }
+      }
+    } catch {
+      // Left to the platform, as before.
+    }
+
+    return null;
+  });
 };
 
 /**

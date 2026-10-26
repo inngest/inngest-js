@@ -11,6 +11,7 @@ import { NonRetriableError, StepError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
+  cacheWrites,
   checkCache,
   describeCached,
   directTarget,
@@ -18,6 +19,7 @@ import {
   lookupCache,
   runTarget,
 } from "../cache/cache.ts";
+import { isRunName } from "../cache/names.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -653,10 +655,13 @@ export const reusedBuild = (
 
 /**
  * Take what a build ended with as this run's concern: its warnings, the APIs
- * it used, and its
- * snapshot when it isn't one the cache keeps, which the run deletes when it
- * ends. That is a snapshot only this run needs, or the build's unnamed
- * fallback (see createNamedSnapshot), which the build run left for this one.
+ * it used, and its snapshot when it isn't one the cache keeps. That is a
+ * snapshot only this pipeline needs, or the build's unnamed fallback (see
+ * createNamedSnapshot), which the build run left for this one.
+ *
+ * Such a snapshot belongs to the pipeline's root run, which scopes it, so it is
+ * deleted when that run ends for any reason. A build run hands it up instead:
+ * the run that invoked it still starts jobs from it.
  */
 export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   run.warnings.push(...built.warnings);
@@ -669,12 +674,24 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
     run.cacheSaved.set(id, ms);
   }
 
-  for (const id of built.createdSnapshots) {
-    run.createdSnapshots.add(id);
-  }
+  const keptByCache = built.cached && !isRunName(built.cached.name);
 
-  if (built.snapshotId && !built.cached) {
-    run.createdSnapshots.add(built.snapshotId);
+  const owned = [
+    ...built.createdSnapshots,
+    ...(built.snapshotId && !keptByCache ? [built.snapshotId] : []),
+  ];
+
+  for (const snapshotId of owned) {
+    // Scoped once: the SDK skips a repeated defer ID and warns.
+    if (run.createdSnapshots.has(snapshotId)) {
+      continue;
+    }
+
+    run.createdSnapshots.add(snapshotId);
+
+    if (!run.build) {
+      run.sandboxTools.scope({ snapshotId });
+    }
   }
 };
 
@@ -1218,7 +1235,9 @@ const snapshotBuilt = async (
       : {}),
     ...(scope.request?.broken || stale ? { broken: true } : {}),
     ...(scope.request?.unnamed ? { unnamed: true } : {}),
-    ...(scope.config.cache ? {} : { ephemeral: true }),
+    ...(scope.config.cache && cacheWrites(run.repo) !== "run"
+      ? {}
+      : { ephemeral: true }),
   });
 
   setOutcome(scope, {

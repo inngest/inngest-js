@@ -29,7 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
+import { destroyRunMachines } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -249,7 +249,7 @@ const newRunScope = ({
     inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
-    createdMachines: new Set(),
+    createdMachines: new Map(),
     summaries: [],
     openChecks: new Map(),
     cacheSaved: new Map(),
@@ -395,7 +395,6 @@ const runPipelineAttempt = async ({
     // unawaited on purpose is cancelled by the run ending.
     const cleanUp = async () => {
       await destroyRunMachines(run, ctx.attempt ?? 0);
-      await deleteRunSnapshots(run, ctx.attempt ?? 0);
 
       // Last, so the runs it wakes find the lock free.
       await endBuild(run, outcome);
@@ -1008,9 +1007,9 @@ const permissionForComment = (
  * cancelled. A cancelled run never reaches its own completion, so its check
  * would stay in progress.
  *
- * A run only destroys the machines and deletes the snapshots it holds the IDs
- * of, in its own cleanup step. One that ends without reaching it leaves them
- * to expire.
+ * A run only destroys the machines it holds the IDs of, in its own cleanup
+ * step, and the sandbox cleanup function destroys or deletes what a run that
+ * ended without reaching it left, machines and snapshots, by ID.
  */
 export const cleanupFunction = ({
   client,

@@ -8,7 +8,6 @@
 
 import { describe, expect, test } from "vitest";
 
-import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import {
   deleteSnapshot,
@@ -64,7 +63,7 @@ const replayOf = (
 };
 
 describe("deleteSnapshot", () => {
-  test("a memoized delete still takes the snapshot out of the run's cleanup", async () => {
+  test("a memoized delete still takes the snapshot out of what a build hands up", async () => {
     const memo: Memo = new Map();
     const gets: string[] = [];
 
@@ -83,11 +82,6 @@ describe("deleteSnapshot", () => {
     await deleteSnapshot(replay, "job › cache:delete", "snap-1");
 
     expect(replay.createdSnapshots.has("snap-1")).toBe(false);
-    expect(gets).toEqual(["snap-1"]);
-
-    // So the run's cleanup has nothing to look up for it.
-    await deleteRunSnapshots(replay);
-
     expect(gets).toEqual(["snap-1"]);
   });
 });

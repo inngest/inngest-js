@@ -12,11 +12,6 @@ describe("the step catalog", () => {
   test.each([
     [steps.cacheKey("test"), "test › cache:key", "Check cache"],
     [steps.cleanUpMachines(0), "pipeline › cleanup", "Clean up sandboxes"],
-    [
-      steps.cleanUpSnapshots(2),
-      "pipeline › cleanup:snapshots (attempt 2)",
-      "Clean up snapshots",
-    ],
     [steps.cleanUpEndedRun(), "destroy-orphans", "Clean up sandboxes"],
     [
       steps.recordCommandFailure("test › 1", 2),

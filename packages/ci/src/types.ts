@@ -207,7 +207,10 @@ export type KeyValues<TKey> = TKey extends CacheKeyValue | readonly unknown[]
 
 /**
  * A job's cache settings. `from` shares a job's machine within one run, and
- * only a `cache` key reuses it across runs.
+ * only a `cache` key reuses it across runs. A snapshot is named by its job and
+ * key alone, so every run that computes the same key shares it. Pull requests
+ * from forks read it but never write it: what one builds is deleted when its
+ * run ends.
  */
 export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
   /**
@@ -221,12 +224,6 @@ export interface CacheConfig<TKey extends CacheKey | undefined = CacheKey> {
    * pull requests don't pay for it.
    */
   refresh?: CiTrigger[];
-
-  /**
-   * Defaults to `"branch"`: PRs read from the default branch and write to
-   * their own scope.
-   */
-  scope?: "branch" | "global";
 
   /**
    * How old a cached snapshot may be before it is rebuilt, like `"1d"`. A

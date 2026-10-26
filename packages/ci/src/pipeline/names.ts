@@ -206,6 +206,7 @@ export const steps = {
   resolveCacheName: named("Resolve cache name"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
+  deleteExpiredSnapshots: named("Delete expired snapshots"),
 
   // Sandboxes.
   discardMachine: (stepId: string): StepSpec => {
@@ -269,13 +270,6 @@ export const steps = {
       unmarked: true,
     },
   ),
-
-  cleanUpSnapshots: (attempt: number): StepSpec => {
-    return {
-      id: cleanupId("cleanup:snapshots", attempt),
-      name: "Clean up snapshots",
-    };
-  },
 
   // Checking out.
   uploadWorkingTree: named("Upload working tree", { unmarked: true }),

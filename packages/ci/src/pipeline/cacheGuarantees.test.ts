@@ -169,7 +169,7 @@ describe("a burst of runs that need one cached job", () => {
     const [winner, ...others] = [...api.snapshots.values()];
 
     expect(others).toEqual([]);
-    expect(winner?.name).toMatch(/^ci\/pr:7\/install\//);
+    expect(winner?.name).toMatch(/^ci\/cache\/install\//);
     expect(winner?.status).toBe("READY");
 
     expect(startedFrom(api)).toEqual([
@@ -1041,5 +1041,155 @@ describe("a parent that several jobs need in one pipeline run", () => {
 
     expect(count(api, "pnpm install")).toBe(1);
     expect(count(api, "pnpm lint")).toBe(1);
+  });
+});
+
+describe("a snapshot that expired", () => {
+  const pipelineOf = (api: Api) => {
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job({ id: "lint", from: install }, async () => {
+      await $`pnpm lint`;
+    });
+
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
+  };
+
+  test("is deleted by ID when its name is taken again, though it held nothing", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = pipelineOf(api);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+
+    const [holder, ...others] = named(api);
+
+    expect(others).toEqual([]);
+
+    // Past its expiry, so the name is free and the platform still counts it.
+    (holder as { expiresAt: string }).expiresAt = new Date(
+      Date.now() - 60 * 1000,
+    ).toISOString();
+
+    const second = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01SECOND",
+    });
+
+    expect(second.type).toBe("function-resolved");
+    expect(api.snapshots.has(holder?.id ?? "")).toBe(false);
+
+    const [replacement, ...rest] = named(api);
+
+    expect(rest).toEqual([]);
+    expect(replacement?.name).toBe(holder?.name);
+    expect(replacement?.status).toBe("READY");
+  });
+
+  test("leaves alone a snapshot that holds the name and hasn't expired", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = pipelineOf(api);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01FIRST" });
+    await runFunction(pipeline, { event: prEvent, runId: "01SECOND" });
+
+    expect(named(api)).toHaveLength(1);
+    expect(count(api, "pnpm install")).toBe(1);
+  });
+});
+
+describe("a pull request from a fork", () => {
+  const forkEvent = {
+    ...prEvent,
+    data: {
+      ...prEvent.data,
+      pull_request: {
+        ...prEvent.data.pull_request,
+        head: {
+          ...prEvent.data.pull_request.head,
+          repo: { full_name: "stranger/inngest-js" },
+        },
+      },
+    },
+  };
+
+  const pipelineOf = (api: Api) => {
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const lint = ci.job({ id: "lint", from: install }, async () => {
+      await $`pnpm lint`;
+    });
+
+    return ci.pipeline(
+      { id: "pr", on: prTrigger, childRuns: false },
+      async () => {
+        await lint();
+      },
+    );
+  };
+
+  test("reads what the repository cached", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = pipelineOf(api);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01OURS" });
+
+    expect(count(api, "pnpm install")).toBe(1);
+
+    await runFunction(pipeline, { event: forkEvent, runId: "01FORK" });
+
+    expect(count(api, "pnpm install")).toBe(1);
+    expect(named(api).map((snapshot) => snapshot.name)).toEqual([
+      expect.stringMatching(/^ci\/cache\/install\//),
+    ]);
+  });
+
+  test("never writes the shared cache, and deletes what it built when its run ends", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = pipelineOf(api);
+
+    const result = await runFunction(pipeline, {
+      event: forkEvent,
+      runId: "01FORK",
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(count(api, "pnpm install")).toBe(1);
+
+    // Its snapshots were named for its run while it ran, and none is left.
+    expect(api.snapshots.size).toBe(0);
+    expect(
+      [...api.snapshots.values()].filter((snapshot) => {
+        return snapshot.name?.startsWith("ci/cache/");
+      }),
+    ).toEqual([]);
+  });
+
+  test("builds again in the next run, since nothing it built was kept", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = pipelineOf(api);
+
+    await runFunction(pipeline, { event: forkEvent, runId: "01FORK1" });
+    await runFunction(pipeline, { event: forkEvent, runId: "01FORK2" });
+
+    expect(count(api, "pnpm install")).toBe(2);
   });
 });

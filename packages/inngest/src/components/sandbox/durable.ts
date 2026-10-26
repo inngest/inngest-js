@@ -1142,6 +1142,14 @@ export const createSandboxTools = (
           : null;
       },
     },
+    scope: (target) => {
+      const id =
+        "snapshotId" in target
+          ? `snapshot:${target.snapshotId}`
+          : `sandbox:${target.sandboxId}`;
+
+      return registerCleanup?.(id, target) ?? { abort: () => {} };
+    },
   };
 
   if (registerCleanup) {

@@ -10,8 +10,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName } from "./cache/names.ts";
+import { cacheWrites, lookupCache } from "./cache/cache.ts";
+import { formatName, isRunName } from "./cache/names.ts";
 import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -616,78 +616,52 @@ describe("check output limits", () => {
   });
 });
 
-describe("cache scopes", () => {
-  test("pull requests read their own scope then the base branch", () => {
-    expect(
-      cacheScopes(
-        {
-          owner: "o",
-          name: "r",
-          fullName: "o/r",
-          sha: "abc",
-          baseRef: "main",
-          pullRequest: { number: 4, headRef: "f", fork: false },
-        },
-        undefined,
-      ),
-    ).toEqual({ read: ["pr:4", "main"], write: "pr:4" });
+describe("where a run's snapshots go", () => {
+  const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
+
+  test("a push writes the shared cache", () => {
+    expect(cacheWrites({ ...repo, ref: "refs/heads/feature" })).toBe("shared");
   });
 
-  test("a branch named like a pull request has its own scope", () => {
-    const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
+  test("a run with no repository writes the shared cache", () => {
+    expect(cacheWrites(undefined)).toBe("shared");
+  });
 
-    const branch = cacheScopes({ ...repo, ref: "refs/heads/pr-4" }, undefined);
-
-    const pullRequest = cacheScopes(
-      {
+  test("a pull request from the repository writes the shared cache", () => {
+    expect(
+      cacheWrites({
         ...repo,
         baseRef: "main",
         pullRequest: { number: 4, headRef: "f", fork: false },
-      },
-      undefined,
-    );
-
-    expect(branch.write).not.toBe(pullRequest.write);
-    expect(pullRequest.read).not.toContain(branch.write);
+      }),
+    ).toBe("shared");
   });
 
-  test("global scope ignores branches", () => {
+  test("a pull request from a fork keeps what it builds to itself", () => {
     expect(
-      cacheScopes(
-        { owner: "o", name: "r", fullName: "o/r", sha: "abc" },
-        "global",
-      ),
-    ).toEqual({ read: ["global"], write: "global" });
+      cacheWrites({
+        ...repo,
+        baseRef: "main",
+        pullRequest: { number: 4, headRef: "f", fork: true },
+      }),
+    ).toBe("run");
   });
 
-  describe("a local run writes only to its own scope, and reads what CI built", () => {
+  test("a local run writes only its own names, whatever its event looks like", () => {
     const local = { path: "/repo", baseRef: "main" };
-    const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
 
-    test.each([
-      [
-        "a pull request fixture",
-        {
-          ...repo,
-          baseRef: "main",
-          pullRequest: { number: 1, headRef: "f", fork: false },
-        },
-        undefined,
-        ["local", "main"],
-      ],
-      [
-        "a push fixture",
-        { ...repo, ref: "refs/heads/main" },
-        undefined,
-        ["local", "main"],
-      ],
-      ["global scope", repo, "global" as const, ["local", "global"]],
-    ])("%s", (_label, fixture, scope, read) => {
-      expect(cacheScopes({ ...fixture, local }, scope)).toEqual({
-        read,
-        write: "local",
-      });
-    });
+    expect(
+      cacheWrites({
+        ...repo,
+        local,
+        baseRef: "main",
+        pullRequest: { number: 1, headRef: "f", fork: false },
+      }),
+    ).toBe("local");
+
+    expect(cacheWrites({ ...repo, local, ref: "refs/heads/main" })).toBe(
+      "local",
+    );
   });
 });
 
@@ -771,7 +745,6 @@ describe("formatting", () => {
 describe("looking a cached snapshot up by name", () => {
   const name = formatName({
     kind: "cache",
-    scope: "global",
     jobId: "setup",
     ownKey: "k1",
   });
@@ -796,16 +769,19 @@ describe("looking a cached snapshot up by name", () => {
 
   /** A job scope just big enough for a lookup, over a list and a get. */
   const lookup = async (
-    list: () => Promise<unknown>,
+    list: (query?: unknown) => Promise<unknown>,
     get: () => Promise<unknown> = async () => {
       return null;
     },
     exclude?: string,
+    runWith: Record<string, unknown> = {},
+    target = { ownKey: "k1", key: {}, name },
   ) => {
     const scope = {
       path: "setup",
       config: { id: "setup" },
       run: {
+        ...runWith,
         step: {
           run: async (_id: unknown, fn: () => Promise<unknown>) => {
             return fn();
@@ -815,12 +791,7 @@ describe("looking a cached snapshot up by name", () => {
       },
     } as never;
 
-    return lookupCache(
-      scope,
-      { key: "v1", scope: "global" },
-      { ownKey: "k1", key: {}, name },
-      exclude,
-    );
+    return lookupCache(scope, { key: "v1" }, target, exclude);
   };
 
   const listing = (...items: unknown[]) => {
@@ -886,6 +857,88 @@ describe("looking a cached snapshot up by name", () => {
     });
   });
 
+  describe("for a pull request from a fork", () => {
+    const pullRequest = {
+      repo: {
+        owner: "o",
+        name: "r",
+        fullName: "o/r",
+        sha: "abc",
+        baseRef: "main",
+        pullRequest: { number: 4, headRef: "f", fork: true },
+      },
+      runId: "01RUN",
+    };
+
+    const own = formatName({
+      kind: "run",
+      rootRunId: "01RUN",
+      jobId: "setup",
+      ownKey: "k1",
+    });
+
+    const named = (...names: string[]) => {
+      return async (query?: unknown) => {
+        const asked = (query as { name?: string } | undefined)?.name;
+
+        return {
+          items: names
+            .filter((n) => {
+              return n === asked;
+            })
+            .map((n) => {
+              return snapshot({ id: n, name: n });
+            }),
+        };
+      };
+    };
+
+    test("reads the shared cache", async () => {
+      const found = await lookup(
+        named(name),
+        undefined,
+        undefined,
+        pullRequest,
+        {
+          ownKey: "k1",
+          key: {},
+          name: own,
+        },
+      );
+
+      expect(found?.name).toBe(name);
+    });
+
+    test("finds what its own run built, which is named for the run", async () => {
+      const found = await lookup(
+        named(own),
+        undefined,
+        undefined,
+        pullRequest,
+        {
+          ownKey: "k1",
+          key: {},
+          name: own,
+        },
+      );
+
+      expect(found?.name).toBe(own);
+      expect(isRunName(own)).toBe(true);
+    });
+
+    test("never finds another run's", async () => {
+      const other = own.replace("01RUN", "01OTHER");
+
+      expect(
+        await lookup(named(other), undefined, undefined, pullRequest, {
+          ownKey: "k1",
+          key: {},
+          name: own,
+        }),
+      ).toBe(undefined);
+    });
+  });
+
   test("a snapshot found to be bad is never found again", async () => {
     expect(await lookup(listing(snapshot({})), undefined, "s1")).toBe(
       undefined,
@@ -895,32 +948,53 @@ describe("looking a cached snapshot up by name", () => {
 
 describe("snapshot names", () => {
   test("say what they are for", () => {
+    expect(formatName({ kind: "cache", jobId: "setup", ownKey: "abc" })).toBe(
+      "ci/cache/setup/abc",
+    );
+
+    expect(
+      formatName({ kind: "cache", jobId: "setup", ownKey: "abc", local: true }),
+    ).toBe("ci/local/setup/abc");
+
     expect(
       formatName({
-        kind: "cache",
-        scope: "pr:4",
+        kind: "run",
+        rootRunId: "01RUN",
         jobId: "setup",
         ownKey: "abc",
       }),
-    ).toBe("ci/pr:4/setup/abc");
+    ).toBe("ci/run:01RUN/setup/abc");
+  });
+
+  test("a cache name has no pull request or branch in it", () => {
+    const name = (ownKey: string) => {
+      return formatName({ kind: "cache", jobId: "setup", ownKey });
+    };
+
+    expect(name("abc")).toBe(name("abc"));
+    expect(name("abc")).not.toBe(name("abd"));
+  });
+
+  test("only a run's own names say they belong to it", () => {
+    expect(isRunName("ci/run:01RUN/setup/abc")).toBe(true);
+    expect(isRunName("ci/cache/setup/abc")).toBe(false);
+    expect(isRunName("ci/local/setup/abc")).toBe(false);
   });
 
   test("too long a name keeps its start and stays unique", () => {
     const long = formatName({
       kind: "cache",
-      scope: "main",
       jobId: "j".repeat(300),
       ownKey: "abc",
     });
     const other = formatName({
       kind: "cache",
-      scope: "main",
       jobId: "j".repeat(300),
       ownKey: "abd",
     });
 
     expect(long).toHaveLength(255);
-    expect(long.startsWith("ci/main/jjj")).toBe(true);
+    expect(long.startsWith("ci/cache/jjj")).toBe(true);
     expect(long).not.toBe(other);
   });
 
@@ -928,7 +1002,6 @@ describe("snapshot names", () => {
     const name = (jobId: string, ownKey: string) => {
       return formatName({
         kind: "cache",
-        scope: "main",
         jobId,
         ownKey: `repo/${ownKey}`,
       });

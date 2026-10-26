@@ -8,7 +8,12 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import {
+  deleteExpiredHolders,
+  resolveTakenName,
+  snapshotState,
+} from "../cache/cache.ts";
+import { isRunName } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
@@ -34,10 +39,9 @@ import {
   errorMessage,
   hash,
   isSandboxNameTaken,
-  isSnapshotNotFound,
   slug,
 } from "../util.ts";
-import { deleteSnapshots, destroySandboxes } from "./admin.ts";
+import { destroySandboxes } from "./admin.ts";
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -344,8 +348,9 @@ const startSandbox = async (
         throw error;
       });
 
-    // Only a machine this run created is one it destroys, by this ID.
-    run.createdMachines.add(sandbox.id);
+    // Only a machine this run created is one it destroys, by this ID. If the
+    // run ends first, its cleanup does.
+    run.createdMachines.set(sandbox.id, tools.scope({ sandboxId: sandbox.id }));
 
     const setup = await sandbox.commands.run(
       { id: joinId(step.id, "setup"), name: traceName.prepareWorkspace },
@@ -525,7 +530,7 @@ const discardFailedStart = async (
   }
 
   // If the destroy below fails, the run's cleanup tries again.
-  run.createdMachines.add(id);
+  run.createdMachines.set(id, run.sandboxTools.scope({ sandboxId: id }));
 
   try {
     await ciRun(
@@ -795,7 +800,19 @@ const createNamedSnapshot = async (
   let refusal: unknown;
 
   try {
-    return await attempt(stepId);
+    const taken = await attempt(stepId);
+
+    // A run's own names are new, so none has an expired holder.
+    if (!isRunName(name)) {
+      await deleteExpiredHolders(
+        run,
+        `${stepId}${scopeSeparator}replace`,
+        name,
+        taken.snapshotId,
+      );
+    }
+
+    return taken;
   } catch (error) {
     if (!hasCode(error, nameTakenCode)) {
       if (!isNameRefused(error)) {
@@ -889,50 +906,26 @@ const isNameRefused = (error: unknown): boolean => {
 };
 
 /**
- * Destroy every machine this run created, by the IDs it holds. Tolerates
- * machines that are already gone, because cleanup also runs after failures.
+ * Destroy every machine this run created, by the IDs it holds, and then stop
+ * the cleanups that would have. Tolerates machines that are already gone,
+ * because cleanup also runs after failures.
  *
- * The step is always there and reads the set when it runs: how many machines
+ * The step is always there and reads the map when it runs: how many machines
  * exist now depends on how far each sibling got in this request, so a request
  * that sees none must still plan what another found.
+ *
+ * A run that ends without reaching this leaves its machines to their cleanups,
+ * which destroy them by ID.
  */
 export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
   await ciRun(run, steps.cleanUpMachines(attempt), () => {
-    return destroySandboxes(run.ci.client, run.createdMachines);
+    return destroySandboxes(run.ci.client, run.createdMachines.keys());
   });
-};
 
-/**
- * Delete the snapshots the builds of this run left for it, once the run is
- * over: those of `from` parents without a cache, and unnamed fallbacks.
- * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
- * run only restored never was.
- *
- * A build run deletes none: other builds in the pipeline share its snapshots,
- * so it hands them to the run that invoked it, and the root run deletes them.
- *
- * Best effort, in one step: a snapshot that can't be deleted is logged and
- * left to expire, and never fails the run.
- */
-export const deleteRunSnapshots = async (
-  run: CiRunScope,
-  attempt = 0,
-): Promise<void> => {
-  if (run.build) {
-    return;
+  for (const cleanup of run.createdMachines.values()) {
+    cleanup.abort();
   }
-
-  // Always there, and reads the set when it runs, for the reason cleaning up
-  // machines is.
-  await ciRun(run, steps.cleanUpSnapshots(attempt), () => {
-    return deleteSnapshots(run.ci.client, run.createdSnapshots, (id, error) => {
-      run.ci.logger?.warn(
-        { snapshotId: id, error },
-        "Couldn't delete a snapshot this run took; it will expire on its own",
-      );
-    });
-  });
 };

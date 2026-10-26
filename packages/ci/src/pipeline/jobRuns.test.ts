@@ -107,8 +107,8 @@ describe("jobs as child runs", () => {
       steps.push(result.stepIds.length);
     }
 
-    // Five steps are the pipeline's own: its check, the jobs' checks, cleanup.
-    expect(steps).toEqual([3 * 9 + 5, 3 * 4 + 5]);
+    // Four steps are the pipeline's own: its check, the jobs' checks, cleanup.
+    expect(steps).toEqual([3 * 9 + 4, 3 * 4 + 4]);
   });
 
   test("a pipeline that would overflow a step limit in its own run fits as child runs", async () => {

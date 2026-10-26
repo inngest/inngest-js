@@ -115,7 +115,7 @@ describe("inline jobs", () => {
     expect(invokes(cold.stepIds)).toEqual([]);
     expect(count(api, "pnpm install")).toBe(1);
 
-    const cached = snapshotNamed(api, /^ci\/pr:7\/base\//);
+    const cached = snapshotNamed(api, /^ci\/cache\/base\//);
 
     expect(cached?.status).toBe("READY");
     expect(machineOf(api, "lint", "01COLD")?.snapshotId).toBe(cached?.id);
