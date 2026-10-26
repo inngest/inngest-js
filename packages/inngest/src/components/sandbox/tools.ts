@@ -169,6 +169,12 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
   binary?: ToolBinary;
 
   /**
+   * What to run in place of the operation's command, which the trace shows:
+   * the command wrapped in its shims.
+   */
+  command?: string[];
+
+  /**
    * The command's own timeout, which may pass the five minutes one exec can
    * wait: the command is a process and steps follow it in windows.
    */

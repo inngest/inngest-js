@@ -34,6 +34,22 @@ const envNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const shimNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /**
+ * Names the prelude itself relies on, which a shim would replace on `PATH`.
+ */
+const reservedShimNames = new Set([
+  "inngest-tool",
+  "sh",
+  "rm",
+  "cat",
+  "ln",
+  "chmod",
+  "mktemp",
+  "mkdir",
+  "env",
+  "exit",
+]);
+
+/**
  * What the shim hands its handler.
  */
 export interface ShimCall {
@@ -97,19 +113,8 @@ export type HostEnvValue =
 
 export type HostEnv = Record<string, HostEnvValue>;
 
-export interface ShimDefinition {
+interface ShimOptions {
   description?: string;
-
-  /**
-   * Decides what the shim does.
-   */
-  handle?: ShimHandler;
-
-  /**
-   * Instead of a handler: environment variables for the real program, each
-   * read from the host just before it runs. No call to a handler, no binary.
-   */
-  inject?: HostEnv;
 
   /**
    * Read stdin and send it with the call. Off by default, since reading an
@@ -131,11 +136,32 @@ export interface ShimDefinition {
 }
 
 /**
+ * What a shim does: a handler that decides, or `inject` alone.
+ */
+export type ShimDefinition = ShimOptions &
+  (
+    | {
+        /**
+         * Decides what the shim does.
+         */
+        handle: ShimHandler;
+        inject?: never;
+      }
+    | {
+        /**
+         * Instead of a handler: environment variables for the real program,
+         * each read from the host just before it runs. No call to a handler,
+         * no binary.
+         */
+        inject: HostEnv;
+        handle?: never;
+      }
+  );
+
+/**
  * A shim made with `tool.shim()`, the only thing `shims` accepts.
  */
-export interface SandboxShim extends ShimDefinition {
-  readonly shim: true;
-}
+export type SandboxShim = ShimDefinition & { readonly shim: true };
 
 export type Shims = Record<string, SandboxShim>;
 
@@ -145,6 +171,7 @@ export const createShim = (
   const parsed: ShimDefinition =
     typeof definition === "function" ? { handle: definition } : definition;
 
+  // The type says so; this catches callers that cast.
   if (Boolean(parsed.handle) === Boolean(parsed.inject)) {
     throw new Error("A shim needs either a handle or inject, not both");
   }
@@ -185,9 +212,9 @@ export const injectEnv = (env: HostEnv): SandboxShim => {
 
 const callSchema = z.object({
   name: z.string().max(128),
-  argv: z.array(z.string()),
-  cwd: z.string(),
-  stdin: z.string(),
+  argv: z.array(z.string().max(32_768)).max(512),
+  cwd: z.string().max(4_096),
+  stdin: z.string().max(128 * 1024),
 });
 
 const toBase64 = (bytes: Uint8Array): string => {
@@ -241,6 +268,10 @@ export const shimTool = (shims: Shims): SandboxTool => {
   }) as SandboxTool;
 };
 
+const sourceIds = new WeakMap<object, number>();
+
+let lastSourceId = 0;
+
 const mintedValues = new Map<
   string,
   { expires: number; value: Promise<string> }
@@ -276,8 +307,17 @@ export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
           values.push(source);
         } else if (typeof source === "function") {
           values.push(await source());
+        } else if (!ctx.runId) {
+          // Without a run there is no one to share a value with.
+          values.push(await source.mint());
         } else {
-          const key = `${ctx.runId ?? ""}\0${String(name)}`;
+          let sourceId = sourceIds.get(source);
+          if (sourceId === undefined) {
+            sourceId = ++lastSourceId;
+            sourceIds.set(source, sourceId);
+          }
+
+          const key = `${ctx.runId}\0${sourceId}\0${String(name)}`;
           const now = Date.now();
           let hit = mintedValues.get(key);
           if (!hit || hit.expires <= now) {
@@ -409,6 +449,10 @@ export const withShims = (
         `Invalid shim name "${name}": use letters, digits, ".", "_" and "-", up to 64 characters`,
       );
     }
+
+    if (reservedShimNames.has(name)) {
+      throw new Error(`"${name}" can't be shimmed: the shims rely on it`);
+    }
   }
 
   if (handlers.length > 0 && !options.binary) {
@@ -445,6 +489,17 @@ export const withShims = (
     typeof command === "string" ? ["/bin/sh", "-c", command] : command;
   const script = preludeScript(launchers, config, options.binary?.path);
 
+  const environment: Record<string, string> = {};
+  for (const name of names) {
+    for (const [key, value] of Object.entries(shims[name]?.environment ?? {})) {
+      if (Object.hasOwn(environment, key) && environment[key] !== value) {
+        throw new Error(`Shims set ${key} to different values`);
+      }
+
+      environment[key] = value;
+    }
+  }
+
   return {
     command: ["/bin/sh", "-c", script, "sh", ...argv],
     tools: {
@@ -453,12 +508,7 @@ export const withShims = (
         [hostEnvToolName]: hostEnvTool(allowed),
       }),
     },
-    environment: Object.assign(
-      {},
-      ...names.map((name) => {
-        return shims[name]?.environment ?? {};
-      }),
-    ),
+    environment,
   };
 };
 

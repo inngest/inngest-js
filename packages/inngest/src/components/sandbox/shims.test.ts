@@ -14,6 +14,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,7 +52,9 @@ const temp = (): string => {
 };
 
 afterEach(() => {
-  dirs.length = 0;
+  for (const dir of dirs.splice(0)) {
+    rmSync(dir, { force: true, recursive: true });
+  }
 });
 
 /**
@@ -341,6 +344,16 @@ describe.skipIf(!hasBinary)("shims", () => {
         idempotencyKey: "k",
       }),
     ).rejects.toThrow("Unknown shim");
+  });
+
+  test("names the prelude relies on can't be shimmed", () => {
+    expect(() => {
+      return withShims(
+        "true",
+        { rm: tool.shim(() => reply(0)) },
+        { binary: testBinary },
+      );
+    }).toThrow("can't be shimmed");
   });
 
   test("shim names that could break the launcher are rejected", () => {

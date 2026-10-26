@@ -6,11 +6,7 @@
  * checks for it, and only a sandbox without it receives an upload. A base image
  * that already has it at the same path pays nothing.
  */
-import hashjs from "hash.js";
-
 import type { Sandbox } from "./types.ts";
-
-const { sha256 } = hashjs;
 
 export const toolBinaryDir = "/inngest/tools/bin";
 
@@ -27,28 +23,60 @@ export interface ToolBinary {
   load: () => Promise<Uint8Array>;
 }
 
+const binaryFile = "sandbox-tool/dist/inngest-tool-linux-amd64";
+
+let bundled: Promise<ToolBinary | undefined> | undefined;
+
 /**
- * The binary built next to the SDK, or the one `INNGEST_SANDBOX_TOOL` names.
- * Sandboxes are x86_64 linux. `undefined` when it has not been built, or where
- * there is no file system.
+ * Looks for `sandbox-tool/dist` in this folder and each one above it, so it is
+ * found from `src` and from a built chunk alike. Written so that bundlers do
+ * not mistake the file for an import.
  */
-export const bundledToolBinary = async (): Promise<ToolBinary | undefined> => {
+const findBinary = async (): Promise<string | undefined> => {
+  const { existsSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+
+  if (process.env.INNGEST_SANDBOX_TOOL) {
+    return process.env.INNGEST_SANDBOX_TOOL;
+  }
+
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    const file = join(dir, binaryFile);
+    if (existsSync(file)) {
+      return file;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return undefined;
+    }
+
+    dir = parent;
+  }
+};
+
+const loadBundled = async (): Promise<ToolBinary | undefined> => {
   try {
     const { readFile } = await import("node:fs/promises");
+    const { createHash } = await import("node:crypto");
     const { gzipSync } = await import("node:zlib");
-    const file =
-      process.env.INNGEST_SANDBOX_TOOL ??
-      new URL(
-        "../../../sandbox-tool/dist/inngest-tool-linux-amd64",
-        import.meta.url,
-      ).pathname;
+    const file = await findBinary();
+    if (!file) {
+      return undefined;
+    }
+
     const raw = await readFile(file);
-    const hash = sha256().update(Array.from(raw)).digest("hex").slice(0, 12);
+    const hash = createHash("sha256").update(raw).digest("hex").slice(0, 12);
+    let gz: Uint8Array | undefined;
 
     return {
       path: `${toolBinaryDir}/inngest-tool-${hash}`,
       load: async () => {
-        return gzipSync(raw, { level: 9 });
+        gz ??= gzipSync(raw, { level: 9 });
+
+        return gz;
       },
     };
   } catch {
@@ -57,7 +85,19 @@ export const bundledToolBinary = async (): Promise<ToolBinary | undefined> => {
 };
 
 /**
- * Makes sure the binary is in the sandbox. Safe to repeat.
+ * The binary built next to the SDK, or the one `INNGEST_SANDBOX_TOOL` names.
+ * Sandboxes are x86_64 linux. `undefined` when it has not been built, or where
+ * there is no file system.
+ */
+export const bundledToolBinary = (): Promise<ToolBinary | undefined> => {
+  bundled ??= loadBundled();
+
+  return bundled;
+};
+
+/**
+ * Makes sure the binary is in the sandbox. Safe to repeat, and to run next to
+ * itself: each run stages its own files and moves the result into place.
  */
 export const installToolBinary = async (
   sandbox: Sandbox,
@@ -74,15 +114,19 @@ export const installToolBinary = async (
     return;
   }
 
-  const gz = `${binary.path}.gz`;
-  await sandbox.commands.run(["/bin/mkdir", "-p", toolBinaryDir]);
+  const staged = `${binary.path}.${crypto.randomUUID()}`;
   const bytes = await binary.load();
-  await sandbox.files.upload({ path: gz, data: new Blob([bytes as BlobPart]) });
+  await sandbox.commands.run(["/bin/mkdir", "-p", toolBinaryDir]);
+  await sandbox.files.upload({
+    path: `${staged}.gz`,
+    data: new Blob([bytes as BlobPart]),
+  });
   await sandbox.commands.run([
     "/bin/sh",
     "-c",
-    'gunzip -c "$1.gz" > "$1.tmp" && chmod +x "$1.tmp" && mv "$1.tmp" "$1" && rm "$1.gz"',
+    'gunzip -c "$1.gz" > "$1" && chmod +x "$1" && mv "$1" "$2" && rm "$1.gz"',
     "sh",
+    staged,
     binary.path,
   ]);
 };

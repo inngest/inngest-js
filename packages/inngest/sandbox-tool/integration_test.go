@@ -343,3 +343,14 @@ func TestShimStdinNotReadByDefault(t *testing.T) {
 		t.Fatalf("%q", call.Stdin)
 	}
 }
+
+func TestShimReplaysDrainedStdinWhenNotOverridden(t *testing.T) {
+	_, _, env := shimFixture(t, `{"fake":{"stdin":true}}`)
+	h := newHost(t, shimHandlers(func(args []json.RawMessage) (any, error) {
+		return map[string]any{"exec": map[string]any{"env": map[string]string{"READ": "1"}}}, nil
+	}))
+	r := execute(t, append(env, "INNGEST_TOOLS_DIR="+h.dir), "typed by the user\n", "fake")
+	if r.code != 0 || r.stdout != "argv=\ntok=\ntyped by the user\n" {
+		t.Fatalf("%+v", r)
+	}
+}

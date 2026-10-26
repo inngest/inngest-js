@@ -192,6 +192,7 @@ export const runCommandWithTools = async (
     toolOptions = {},
     binary,
     timeoutMs: requestedTimeoutMs,
+    command: requestedCommand,
   }: SandboxToolsRequest,
 ): Promise<SandboxOperationResultV1> => {
   validateTools(tools);
@@ -218,8 +219,15 @@ export const runCommandWithTools = async (
     );
   }
 
-  const [{ command, environment, cwd, timeoutMs: operationTimeoutMs }] =
-    operation.input;
+  const [
+    {
+      command: operationCommand,
+      environment,
+      cwd,
+      timeoutMs: operationTimeoutMs,
+    },
+  ] = operation.input;
+  const command = requestedCommand ?? operationCommand;
   const timeoutMs = requestedTimeoutMs ?? operationTimeoutMs;
   const { sandbox } = host;
   // Concurrent callers of a group tool share step IDs, so their prefix tells
@@ -357,7 +365,9 @@ export const runCommandWithTools = async (
       }
 
       if (resolved.memo === "none") {
-        // Runs in the wait step, once, so a replay never calls it again.
+        // Runs inside the wait step: a replay of a finished wait never calls
+        // it again, but a retry of that step does, so it must be safe to repeat
+        // (the idempotency key is stable across retries).
         return async () => {
           try {
             const signal = AbortSignal.timeout(toolTimeoutMs);
@@ -463,18 +473,31 @@ export const runCommandWithTools = async (
     }
 
     const { lines } = state;
+    const settle = async (): Promise<string[]> => {
+      const settled: string[] = [];
+      for (let at = 0; at < replies.length; at += maxConcurrentCalls) {
+        settled.push(
+          ...(await Promise.all(
+            replies.slice(at, at + maxConcurrentCalls).map((reply) => {
+              return typeof reply === "function" ? reply() : reply;
+            }),
+          )),
+        );
+      }
+
+      return settled;
+    };
     const remainingMs = timeoutMs - (state.now - started.startedAt);
     state = await host.run(
-      sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
+      sdkStep(
+        `${id}:wait:${++waits}`,
+        runningNames[commandKind(operationCommand)],
+      ),
       async () => {
         return follow(
           dir,
           lines,
-          await Promise.all(
-            replies.map((reply) => {
-              return typeof reply === "function" ? reply() : reply;
-            }),
-          ),
+          await settle(),
           Math.min(waitWindowMs, remainingMs),
         );
       },

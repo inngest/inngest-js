@@ -1385,21 +1385,62 @@ describe("shims and long commands on commands.run", () => {
 
     const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
     expect(Object.keys(request?.tools ?? {})).toEqual(["env"]);
+    // The trace shows the user's command; the process runs it in the shims.
     expect(operation).toMatchObject({
-      input: [
-        {
-          command: [
-            "/bin/sh",
-            "-c",
-            expect.any(String),
-            "sh",
-            "/bin/sh",
-            "-c",
-            "fly deploy",
-          ],
-        },
-      ],
+      input: [{ command: ["/bin/sh", "-c", "fly deploy"] }],
     });
+    expect(request?.command).toEqual([
+      "/bin/sh",
+      "-c",
+      expect.any(String),
+      "sh",
+      "/bin/sh",
+      "-c",
+      "fly deploy",
+    ]);
+  });
+
+  test("an empty shims object is no shims", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "true", { shims: {} });
+
+    expect(rawTool).toHaveBeenCalledExactlyOnceWith(
+      "x",
+      expect.anything(),
+      ...[],
+    );
+  });
+
+  test("a user tool can't take the name of a built-in one", async () => {
+    const { sandbox } = facade();
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        tools: { env: async () => 1 },
+        hostEnv: ["HOME"],
+      }),
+    ).rejects.toThrow('"env" is used by shims and hostEnv');
+  });
+
+  test("a user tool can't turn on memo none", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "mine");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const memo = new Map<string, string>();
+    const { host, executed } = createHost(sandbox, memo);
+
+    await run(host, {
+      mine: { memo: "none", run: async () => "stored" } as never,
+    });
+
+    expect(executed).toContain("exec:tool:mine:1");
+    expect(replies(fake)).toEqual([{ id: 1, result: "stored" }]);
   });
 
   test("a timeout past five minutes reaches the tool loop whole", async () => {

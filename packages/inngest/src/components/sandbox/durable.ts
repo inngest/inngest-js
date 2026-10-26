@@ -768,8 +768,9 @@ export const createDurableSandboxFacade = (
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
-    for (const [name, shim] of Object.entries(shims ?? {})) {
-      if ((shim as { shim?: unknown } | undefined)?.shim !== true) {
+    const shimEntries = Object.entries(shims ?? {});
+    for (const [name, shim] of shimEntries) {
+      if (shim?.shim !== true) {
         throw new SandboxValidationError(
           `shims.${name} must be made with tool.shim()`,
         );
@@ -783,15 +784,24 @@ export const createDurableSandboxFacade = (
       ? await bundledToolBinary()
       : undefined;
     const shimmed =
-      shims && withShims(command, shims, { binary, hostEnv: allowedHostEnv });
+      shims && shimEntries.length > 0
+        ? withShims(command, shims, { binary, hostEnv: allowedHostEnv })
+        : undefined;
+    const builtTools = {
+      ...(allowedHostEnv && !shimmed && { env: hostEnvTool(allowedHostEnv) }),
+      ...(shimmed && shimmed.tools),
+    };
+    for (const name of Object.keys(builtTools)) {
+      if (ownTools && Object.hasOwn(ownTools, name)) {
+        throw new SandboxValidationError(
+          `The tool name "${name}" is used by shims and hostEnv`,
+        );
+      }
+    }
+
     const tools =
-      ownTools || shimmed || allowedHostEnv
-        ? {
-            ...ownTools,
-            ...(allowedHostEnv &&
-              !shimmed && { env: hostEnvTool(allowedHostEnv) }),
-            ...shimmed?.tools,
-          }
+      ownTools || Object.keys(builtTools).length > 0
+        ? { ...ownTools, ...builtTools }
         : undefined;
     const environment =
       shimmed || ownEnvironment
@@ -831,16 +841,13 @@ export const createDurableSandboxFacade = (
     // so its timeout is its own, however long. The operation below only
     // carries the command, so its timeout stays within what one exec accepts.
     const toolsTimeoutMs = timeoutMs ?? maxSandboxProcessTimeoutMs;
-    const normalized = normalizeSandboxCommandOptions(
-      shimmed?.command ?? command,
-      {
-        ...commandOptions,
-        ...(environment && { environment }),
-        ...(tools && {
-          timeout: Math.min(toolsTimeoutMs, maxSandboxProcessTimeoutMs),
-        }),
-      },
-    );
+    const normalized = normalizeSandboxCommandOptions(command, {
+      ...commandOptions,
+      ...(environment && { environment }),
+      ...(tools && {
+        timeout: Math.min(toolsTimeoutMs, maxSandboxProcessTimeoutMs),
+      }),
+    });
     const { timeout: _timeout, ...input } = normalized;
     const operation = parseSandboxOperationForAction("exec", {
       protocolVersion: sandboxProtocolVersion,
@@ -885,7 +892,13 @@ export const createDurableSandboxFacade = (
             return wire;
           }
         : undefined,
-      tools && { tools, toolOptions, binary, timeoutMs: toolsTimeoutMs },
+      tools && {
+        tools,
+        toolOptions,
+        binary,
+        timeoutMs: toolsTimeoutMs,
+        command: shimmed?.command,
+      },
     );
 
     if (tools && exitCodes && exitCodes !== "any") {

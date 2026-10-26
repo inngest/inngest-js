@@ -73,6 +73,8 @@ func findReal(name string) string {
 	if dir := os.Getenv("INNGEST_SHIMS_DIR"); dir != "" {
 		own = filepath.Clean(filepath.Join(dir, "bin"))
 	}
+	self, _ := os.Executable()
+	self, _ = filepath.EvalSymlinks(self)
 	for _, entry := range filepath.SplitList(os.Getenv("PATH")) {
 		if entry == "" {
 			entry = "."
@@ -82,9 +84,15 @@ func findReal(name string) string {
 		}
 		file := filepath.Join(entry, name)
 		info, err := os.Stat(file)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-			return file
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			continue
 		}
+		// A copy of this program on PATH (a shim whose directory is not
+		// `own`) would run itself forever.
+		if resolved, err := filepath.EvalSymlinks(file); err == nil && resolved == self {
+			continue
+		}
+		return file
 	}
 	return ""
 }
@@ -186,6 +194,7 @@ func runShim(name string, args []string) int {
 		data, _ := io.ReadAll(os.Stdin)
 		stdin = string(data)
 	}
+	readStdin := spec.Stdin
 	cwd, _ := os.Getwd()
 	arg, err := encodeNoEscape(shimCall{Name: name, Argv: append([]string{}, args...), Cwd: cwd, Stdin: stdin})
 	if err != nil {
@@ -214,7 +223,12 @@ func runShim(name string, args []string) int {
 		if action.Exec.Argv != nil {
 			argv = *action.Exec.Argv
 		}
-		return runReal(name, argv, action.Exec.Env, action.Exec.Stdin)
+		input := action.Exec.Stdin
+		if input == nil && readStdin {
+			// The program gets the stdin this process already drained.
+			input = &stdin
+		}
+		return runReal(name, argv, action.Exec.Env, input)
 	}
 	if *action.Exit < 0 || *action.Exit > 255 {
 		fmt.Fprintf(os.Stderr, "%s: bad reply from the host\n", name)
