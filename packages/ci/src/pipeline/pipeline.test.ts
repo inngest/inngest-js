@@ -6653,10 +6653,10 @@ describe("a pull request's cache", () => {
   });
 
   test("whose key differs is built from the pull request into a cache of its own, which the next run reuses", async () => {
-    const { api, client, cloned } = await run("other");
+    const { api, cloned } = await run("other");
 
     expect(namedSnapshots(api)).toEqual([
-      expect.stringMatching(/^ci\/pr:7\/build\//),
+      expect.stringMatching(/^ci\/pr:inngest\/inngest-js#7\/build\//),
     ]);
 
     expect(cloned).toContain("checkout 'mergee1'");
@@ -6666,80 +6666,40 @@ describe("a pull request's cache", () => {
         return argv.join(" ").includes("pnpm build");
       }),
     ).toHaveLength(1);
-
-    const [snapshot] = [...api.snapshots.values()];
-
-    // It is held until the pull request closes.
-    expect(
-      busOf(client)?.sent.filter((event) => {
-        return event.name === "ci/pr-cache.hold";
-      }),
-    ).toEqual([
-      expect.objectContaining({
-        data: { repo: "inngest/inngest-js", pr: 7, snapshotId: snapshot?.id },
-      }),
-    ]);
   });
-});
 
-describe("holding a pull request's cache", () => {
-  const hold = async (closes: boolean) => {
-    const api = createFakeSandboxApi();
-    const { ci } = setup({ api });
+  const closing = async (number: number) => {
+    const { api, ci } = await run("other");
 
-    const build = ci.job({ id: "build", cache: { key: "v1" } }, async () => {
-      await $`pnpm build`;
+    const closer = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/pr-closed";
     });
 
-    await runFunction(
-      ci.pipeline({ id: "ci", on: [{ event: "github/push" }] }, async () => {
-        await build();
-      }),
-      {
-        event: {
-          name: "github/push",
-          data: {
-            ref: "refs/heads/main",
-            after: "abc1234",
-            repository: { full_name: "inngest/inngest-js" },
-          },
-        },
-      },
-    );
-
-    const [snapshot] = [...api.snapshots.keys()];
-
-    const holder = ci.functions().find((fn) => {
-      return fn.opts.id === "ci/pr-cache";
-    });
-
-    const result = await runFunction(holder as InngestFunction.Any, {
+    const result = await runFunction(closer as InngestFunction.Any, {
       event: {
-        name: "ci/pr-cache.hold",
-        data: { repo: "inngest/inngest-js", pr: 7, snapshotId: snapshot },
-      },
-      resolveWait: () => {
-        return closes
-          ? { name: "github/pull_request.closed", data: { number: 7 } }
-          : null;
+        name: "github/pull_request.closed",
+        data: { number, repository: { full_name: "inngest/inngest-js" } },
       },
     });
 
-    return { api, snapshot: snapshot ?? "", result };
+    return { api, result };
   };
 
-  test("deletes the snapshot when the pull request closes", async () => {
-    const { api, snapshot, result } = await hold(true);
+  test("is deleted when the pull request closes", async () => {
+    const { api, result } = await closing(7);
 
     expect(result.type).toBe("function-resolved");
-    expect(api.snapshots.has(snapshot)).toBe(false);
+    expect(result.data).toEqual({ deleted: 1 });
+    expect(api.snapshots.size).toBe(0);
   });
 
-  test("deletes it when the close is never seen, once the wait runs out", async () => {
-    const { api, snapshot, result } = await hold(false);
+  test("is kept when another pull request closes", async () => {
+    const { api, result } = await closing(8);
 
-    expect(result.type).toBe("function-resolved");
-    expect(api.snapshots.has(snapshot)).toBe(false);
+    expect(result.data).toEqual({ deleted: 0 });
+    expect(namedSnapshots(api)).toEqual([
+      expect.stringMatching(/^ci\/pr:inngest\/inngest-js#7\/build\//),
+    ]);
   });
 });
 

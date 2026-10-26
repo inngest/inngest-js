@@ -13,12 +13,11 @@ import {
   resolveTakenName,
   snapshotState,
 } from "../cache/cache.ts";
-import { isPullRequestName, isRunName } from "../cache/names.ts";
+import { isRunName } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import { ownedByRun } from "../pipeline/cleanup.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
-import { holdForPullRequest } from "../pipeline/prCache.ts";
 import type {
   BuildInfo,
   CiJobScope,
@@ -806,14 +805,6 @@ const createNamedSnapshot = async (
     taken: TakenSnapshot,
     id: string,
   ): Promise<TakenSnapshot> => {
-    if (isPullRequestName(name)) {
-      await holdForPullRequest(
-        run,
-        `${id}${scopeSeparator}hold`,
-        taken.snapshotId,
-      );
-    }
-
     // A run's own names are new, so none has an expired holder.
     if (!isRunName(name)) {
       await deleteExpiredHolders(

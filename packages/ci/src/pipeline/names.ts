@@ -483,8 +483,6 @@ export const traceName = {
 
   announceBuild: "Tell the runs waiting on a build",
 
-  holdPullRequestCache: "Keep until the pull request closes",
-
   runInOwnRun: (path: string): string => {
     return `Run ${path} in its own run`;
   },

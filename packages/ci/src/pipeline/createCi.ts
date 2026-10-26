@@ -52,7 +52,7 @@ import {
   cleanupFunction,
   definePipeline,
 } from "./pipeline.ts";
-import { prCacheFunction } from "./prCache.ts";
+import { prClosedFunction } from "./prCache.ts";
 import type { CiInternals } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
 
@@ -418,7 +418,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         internals.cacheBuild(),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
         snapshotCleanupFunction(client),
-        prCacheFunction({ client }),
+        prClosedFunction({ client }),
         ...cacheRefreshFunctions({
           client,
           internals,

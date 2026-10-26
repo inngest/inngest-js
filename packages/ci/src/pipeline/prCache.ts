@@ -1,80 +1,86 @@
 /**
  * A pull request's own cache: the snapshots it takes for a key the default
- * branch doesn't have. Each is held by a run of its own that waits for the pull
- * request to close and then ends, which deletes the snapshot (see
- * `ownedByRun()`). Whatever ends that run deletes it too: a missed close
- * event leaves it to the wait's timeout, and a cancelled or failed run to its
- * cleanup, so nothing sweeps for leftovers.
+ * branch doesn't have, named `ci/pr:<repo>#<number>/...`. When the pull request
+ * closes, this deletes every snapshot with that prefix. A close that is never
+ * seen leaves them to the platform's expiry.
  *
  * @module
  */
 
 import type { Inngest, InngestFunction } from "inngest";
-import { snapshotCleanupFunction } from "./cleanup.ts";
-import { ciStep, traceName } from "./names.ts";
+import { pullRequestPrefix } from "../cache/names.ts";
+import { isSnapshotNotFound } from "../util.ts";
 import { pipelineFunctionOptions } from "./pipeline.ts";
-import type { CiRunScope } from "./scope.ts";
-
-/** Sent when a build takes a snapshot for a pull request's own cache. */
-export const prCacheHoldEvent = "ci/pr-cache.hold";
-
-/** How long a snapshot is held when the pull request's close is never seen. */
-const holdTimeout = "30d";
 
 /**
- * Ask for a pull request's snapshot to be held until the pull request closes.
- * A step, so a replay doesn't send it again.
+ * Delete every snapshot whose name starts with a pull request's prefix. The
+ * API filters by exact name only, so this pages through the snapshots and
+ * matches the prefix here.
  */
-export const holdForPullRequest = async (
-  run: CiRunScope,
-  stepId: string,
-  snapshotId: string,
-): Promise<void> => {
-  const { repo } = run;
+export const deletePullRequestSnapshots = async (
+  client: Inngest.Any,
+  prefix: string,
+): Promise<{ deleted: number }> => {
+  let deleted = 0;
+  let cursor: string | undefined;
 
-  if (!repo?.pullRequest) {
-    return;
+  while (true) {
+    const page = await client.sandboxes.snapshots.list({
+      limit: 100,
+      ...(cursor ? { cursor } : {}),
+    });
+
+    for (const snapshot of page.items) {
+      if (!snapshot.name?.startsWith(prefix)) {
+        continue;
+      }
+
+      try {
+        await snapshot.delete();
+
+        deleted++;
+      } catch (error) {
+        if (!isSnapshotNotFound(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!page.page.hasMore || !page.page.cursor) {
+      return { deleted };
+    }
+
+    cursor = page.page.cursor;
   }
-
-  await run.step.sendEvent(ciStep(stepId, traceName.holdPullRequestCache), {
-    name: prCacheHoldEvent,
-    data: {
-      repo: repo.fullName,
-      pr: repo.pullRequest.number,
-      snapshotId,
-    },
-  });
 };
 
-/**
- * The function that holds one snapshot: it scopes it to its own run, then waits
- * for the pull request to close.
- */
-export const prCacheFunction = ({
+/** The function that deletes a pull request's cache when it closes. */
+export const prClosedFunction = ({
   client,
 }: {
   client: Inngest.Any;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
-      id: "ci/pr-cache",
+      id: "ci/pr-closed",
       ...pipelineFunctionOptions,
-      triggers: [{ event: prCacheHoldEvent }],
+      triggers: [{ event: "github/pull_request.closed" }],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-    async ({ event, step, defer }: any) => {
-      defer(`snapshot:${event.data.snapshotId}:cleanup`, {
-        function: snapshotCleanupFunction(client),
-        data: { snapshotId: event.data.snapshotId },
-      });
+    async ({ event, step }: any) => {
+      const repo = event.data?.repository?.full_name;
+      const number = event.data?.number;
 
-      await step.waitForEvent("pull-request-closed", {
-        event: "github/pull_request.closed",
-        timeout: holdTimeout,
-        if: "async.data.repository.full_name == event.data.repo && async.data.number == event.data.pr",
-      });
+      if (!repo || number === undefined) {
+        return { deleted: 0 };
+      }
 
-      return { held: event.data.snapshotId };
+      return step.run("delete", () => {
+        return deletePullRequestSnapshots(
+          client,
+          pullRequestPrefix(repo, number),
+        );
+      });
     },
   );
 };

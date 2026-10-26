@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { cacheLane, defaultBranchRepo, lookupCache } from "./cache/cache.ts";
-import { formatName, isPullRequestName, isRunName } from "./cache/names.ts";
+import {
+  formatName,
+  isPullRequestName,
+  isRunName,
+  pullRequestPrefix,
+} from "./cache/names.ts";
 import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -899,7 +904,7 @@ describe("looking a cached snapshot up by name", () => {
       kind: "cache",
       jobId: "setup",
       ownKey: "k1",
-      pullRequest: 4,
+      pullRequest: { repo: "o/r", number: 4 },
     });
 
     const named = (...names: string[]) => {
@@ -952,7 +957,7 @@ describe("looking a cached snapshot up by name", () => {
     });
 
     test("never finds another pull request's", async () => {
-      const other = own.replace("pr:4", "pr:5");
+      const other = own.replace("#4", "#5");
 
       expect(
         await lookup(named(other), undefined, undefined, pullRequest, {
@@ -1006,11 +1011,12 @@ describe("snapshot names", () => {
         kind: "cache",
         jobId: "setup",
         ownKey: "abc",
-        pullRequest: 12,
+        pullRequest: { repo: "o/r", number: 12 },
       }),
-    ).toBe("ci/pr:12/setup/abc");
+    ).toBe("ci/pr:o/r#12/setup/abc");
 
-    expect(isPullRequestName("ci/pr:12/setup/abc")).toBe(true);
+    expect(pullRequestPrefix("o/r", 12)).toBe("ci/pr:o/r#12/");
+    expect(isPullRequestName("ci/pr:o/r#12/setup/abc")).toBe(true);
     expect(isPullRequestName("ci/cache/setup/abc")).toBe(false);
   });
 

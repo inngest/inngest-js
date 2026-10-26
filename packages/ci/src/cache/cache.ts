@@ -488,7 +488,10 @@ export const cacheTarget = async (
         kind: "cache",
         jobId,
         ownKey,
-        pullRequest: run.repo?.pullRequest?.number ?? 0,
+        pullRequest: {
+          repo: run.repo?.fullName ?? "",
+          number: run.repo?.pullRequest?.number ?? 0,
+        },
       }),
     };
   }
@@ -511,9 +514,9 @@ export const pullRequestTarget = (
   jobId: string,
   target: CacheTarget,
 ): CacheTarget => {
-  const number = run.repo?.pullRequest?.number;
+  const { repo } = run;
 
-  if (!target.asDefaultBranch || number === undefined) {
+  if (!target.asDefaultBranch || !repo?.pullRequest) {
     return target;
   }
 
@@ -525,7 +528,7 @@ export const pullRequestTarget = (
       kind: "cache",
       jobId,
       ownKey: target.ownKey,
-      pullRequest: number,
+      pullRequest: { repo: repo.fullName, number: repo.pullRequest.number },
     }),
   };
 };

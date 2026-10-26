@@ -16,25 +16,26 @@ export type SnapshotName =
       ownKey: string;
       local?: boolean;
       /** The pull request whose cache this is, for a key the default branch doesn't have. */
-      pullRequest?: number;
+      pullRequest?: { repo: string; number: number };
     }
   | { kind: "run"; rootRunId: string; jobId: string; ownKey: string };
 
 /**
  * The name a snapshot has: `ci/<where>/<job>/<key>`. A cache entry is named
  * only by its job and key, so every run that computes the same key finds it,
- * and `where` is `cache`, `local` for one a local run wrote, or `pr:<number>`
- * for a pull request's own, which every run of that pull request shares. A
- * run's own snapshots have `run:<root run>`. A name too long for a snapshot has everything
- * before its last part shortened, keeping its start and gaining a hash of it,
- * so the last part stays whole and no two names collide.
+ * and `where` is `cache`, `local` for one a local run wrote, or
+ * `pr:<repo>#<number>` for a pull request's own, which every run of that pull
+ * request shares. A run's own snapshots have `run:<root run>`. A name too long
+ * for a snapshot has everything before its last part shortened, keeping its
+ * start and gaining a hash of it, so the last part stays whole and no two names
+ * collide.
  */
 export const formatName = (name: SnapshotName): string => {
   const where =
     name.kind === "run"
       ? `run:${name.rootRunId}`
       : name.pullRequest !== undefined
-        ? `pr:${name.pullRequest}`
+        ? `pr:${name.pullRequest.repo}#${name.pullRequest.number}`
         : name.local
           ? "local"
           : "cache";
@@ -49,6 +50,11 @@ export const formatName = (name: SnapshotName): string => {
 /** Whether a name belongs to one pipeline run, which deletes the snapshot when it ends. */
 export const isRunName = (name: string): boolean => {
   return name.startsWith("ci/run:");
+};
+
+/** What every snapshot in a pull request's own cache starts with. */
+export const pullRequestPrefix = (repo: string, number: number): string => {
+  return `ci/pr:${repo}#${number}/`;
 };
 
 /** Whether a name belongs to one pull request, whose close deletes the snapshot. */
