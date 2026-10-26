@@ -470,6 +470,20 @@ describe("options", () => {
     ]);
   });
 
+  test("a derived $ preserves its step ID when chaining options without a new id", async () => {
+    const { client } = createFakeClient();
+    const fn = groupFunction(client, async (sandbox) => {
+      const build$ = sandbox.$({ id: "build-step" });
+
+      await build$({ cwd: "/work/repo" })`npm run build`;
+      await build$({ id: "override-step", cwd: "/work/repo" })`npm run test`;
+    });
+
+    const { ran } = await runAll(fn);
+
+    expect(ran).toEqual(["box", "build-step", "override-step", "box:destroy"]);
+  });
+
   test("the timeout defaults to five minutes", async () => {
     const { client, execs } = createFakeClient();
     const fn = groupFunction(client, async (sandbox) => {
