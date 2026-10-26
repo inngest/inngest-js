@@ -263,6 +263,7 @@ const newRunScope = ({
     step: withScopePreserved(ctx.step),
     sandboxTools: (ctx.step as { sandbox?: DurableSandboxTools })
       .sandbox as DurableSandboxTools,
+    defer: ctx.defer,
     asyncCtx,
     counters: new Map(),
     warnings: [],

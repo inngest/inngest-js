@@ -72,6 +72,7 @@ import { chainOf } from "./appJob.ts";
 import { requestBuild, takesBuildLock } from "./buildLock.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
+import { ownedByRun } from "./cleanup.ts";
 import { ciRun } from "./metadata.ts";
 import { ciStep, steps, traceName } from "./names.ts";
 import type {
@@ -700,7 +701,7 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
     run.createdSnapshots.add(snapshotId);
 
     if (!run.build) {
-      run.sandboxTools.scope({ snapshotId });
+      ownedByRun(run, { snapshotId });
     }
   }
 };

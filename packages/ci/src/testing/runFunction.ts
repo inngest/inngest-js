@@ -15,6 +15,7 @@
 
 import type { EventPayload, InngestFunction } from "inngest";
 import { createSandboxCleanup } from "inngest/experimental";
+import { snapshotCleanupFunction } from "../pipeline/cleanup.ts";
 import { busOf, createdFunctions } from "./client.ts";
 import type { BusEvent, EventBus } from "./eventBus.ts";
 import { durationMs } from "./eventBus.ts";
@@ -68,6 +69,8 @@ export interface DeferOp {
   id: string;
   /** What the deferred function was given, for a defer that is added. */
   data?: unknown;
+  /** The deferred function's slug, for a defer that is added. */
+  fn?: string;
 }
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
@@ -771,7 +774,11 @@ const runDeferred = async (
       },
     };
 
-    await driveFunction(createSandboxCleanup(client), {
+    const cleanup = defer.fn?.includes("ci-snapshot-cleanup")
+      ? snapshotCleanupFunction(client)
+      : createSandboxCleanup(client);
+
+    await driveFunction(cleanup, {
       event,
       runId: `${runId}-deferred-${defer.id}`,
       nested: true,
@@ -809,7 +816,10 @@ const withoutLazyOps = (
         id,
         ...(planned.opts === undefined
           ? {}
-          : { data: (planned.opts as { input?: unknown }).input }),
+          : {
+              data: (planned.opts as { input?: unknown }).input,
+              fn: (planned.opts as { fn_slug?: string }).fn_slug,
+            }),
       });
     }
   }

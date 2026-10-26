@@ -17,7 +17,7 @@ import {
   withMiddlewareFunctions,
 } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
-import { createSandboxCleanup, type SandboxCleanupTarget } from "./cleanup.ts";
+import { createSandboxCleanup } from "./cleanup.ts";
 import {
   createClient,
   createScopeClient,
@@ -27,23 +27,6 @@ import {
 } from "./test-helpers.ts";
 
 const createOptions = { name: "box", vcpu: 2, memoryMb: 2048 };
-
-const snapshotId = "33333333-3333-4333-8333-333333333333";
-
-const snapshotResource = {
-  id: snapshotId,
-  sourceImageId:
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  status: "READY",
-  compatibilityId: "simcity-linux-amd64-v1",
-  resources: { vcpu: 2, memoryMb: 2048 },
-  memoryPackCount: 8,
-  diskPackCount: 2,
-  storedBytes: 512,
-  createdAt: now,
-  updatedAt: now,
-  expiresAt: "2026-08-04T00:00:00Z",
-};
 
 type Client = ReturnType<typeof createScopeClient>["client"];
 
@@ -242,72 +225,13 @@ describe("sandbox cleanup defer", () => {
   });
 });
 
-describe("step.sandbox.scope()", () => {
-  const build = (client: Client, target: SandboxCleanupTarget) => {
-    return client.createFunction(
-      { id: "scoped-by-id", triggers: [{ event: "sandbox/cleanup" }] },
-      async ({ step }) => {
-        step.sandbox.scope(target);
-
-        await step.run("work", () => undefined);
-      },
-    );
-  };
-
-  test("registers a defer for a snapshot, by ID", async () => {
-    const { client } = createScopeClient();
-
-    const defers = await runForRequests(build(client, { snapshotId }), 1);
-
-    expect(names(defers)).toEqual([`DeferAdd:snapshot:${snapshotId}:cleanup`]);
-    expect(defers[0]?.opts?.input).toEqual({ snapshotId });
-  });
-
-  test("registers a defer for a sandbox, by ID", async () => {
-    const { client } = createScopeClient();
-
-    const defers = await runForRequests(build(client, { sandboxId }), 1);
-
-    expect(names(defers)).toEqual([`DeferAdd:sandbox:${sandboxId}:cleanup`]);
-    expect(defers[0]?.opts?.input).toEqual({ sandboxId });
-  });
-
-  test("returns a handle that aborts the defer", async () => {
-    const { client } = createScopeClient();
-    const fn = client.createFunction(
-      { id: "aborted", triggers: [{ event: "sandbox/cleanup" }] },
-      async ({ step }) => {
-        const cleanup = step.sandbox.scope({ snapshotId });
-
-        await step.run("work", () => undefined);
-
-        cleanup.abort();
-      },
-    );
-
-    const defers = await runForRequests(fn, 4);
-
-    expect(names(defers)).toContain(
-      `DeferAbort:snapshot:${snapshotId}:cleanup`,
-    );
-  });
-});
-
 describe("sandbox cleanup function", () => {
-  const run = async (data: SandboxCleanupTarget) => {
+  const run = async (data: { sandboxId: string }) => {
     const calls: string[] = [];
     const client = createClient((path, method) => {
       calls.push(`${method} ${path}`);
 
-      if (path === `/v2/snapshots/${snapshotId}` && method === "GET") {
-        return Response.json({ data: snapshotResource });
-      }
-
-      if (
-        (path === `/v2/sandboxes/${sandboxId}` ||
-          path === `/v2/snapshots/${snapshotId}`) &&
-        method === "DELETE"
-      ) {
+      if (path === `/v2/sandboxes/${sandboxId}` && method === "DELETE") {
         return new Response(null, { status: 204 });
       }
 
@@ -337,14 +261,6 @@ describe("sandbox cleanup function", () => {
     expect(result.type).toBe("step-ran");
     expect(calls).toContain(`DELETE /v2/sandboxes/${sandboxId}`);
     expect(calls).not.toContain("GET /v2/sandboxes");
-  });
-
-  test("deletes a snapshot by ID without listing", async () => {
-    const { result, calls } = await run({ snapshotId });
-
-    expect(result.type).toBe("step-ran");
-    expect(calls).toContain(`DELETE /v2/snapshots/${snapshotId}`);
-    expect(calls).not.toContain("GET /v2/snapshots");
   });
 });
 

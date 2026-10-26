@@ -1,5 +1,5 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
-import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
+import type { StepOptionsOrId } from "../../types.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
@@ -726,12 +726,6 @@ export interface DurableSandboxProcess {
   ): Promise<SandboxProcessOutput>;
 }
 
-/**
- * What a run's cleanup removes once the run ends: a sandbox or a snapshot, by
- * ID.
- */
-export type SandboxScopeTarget = { sandboxId: string } | { snapshotId: string };
-
 export interface DurableSandboxTools {
   /**
    * Create a sandbox. With `await using`, the sandbox is destroyed when the
@@ -761,29 +755,4 @@ export interface DurableSandboxTools {
       snapshotId: string,
     ): Promise<DurableSandboxSnapshot | null>;
   };
-  /**
-   * EXPERIMENTAL: This API is not yet stable and may change in the future
-   * without a major version bump.
-   *
-   * Make a sandbox or snapshot this run's own: it is destroyed or deleted when
-   * the run ends for any reason, including cancel and timeout, by the same
-   * cleanup that serves `await using` and `group.sandbox()`. Use it for
-   * what outlives a callback, such as a snapshot taken in another run that
-   * this one starts sandboxes from.
-   *
-   * Abort the returned handle once you have removed it yourself, so a run that
-   * finishes normally starts no extra run.
-   *
-   * @example
-   * ```ts
-   * const box = await step.sandbox.create("box", { name, vcpu: 2, memoryMb: 2048 });
-   *
-   * const cleanup = step.sandbox.scope({ sandboxId: box.id });
-   *
-   * await box.destroy("destroy-box");
-   *
-   * cleanup.abort();
-   * ```
-   */
-  scope(target: SandboxScopeTarget): DeferHandle;
 }

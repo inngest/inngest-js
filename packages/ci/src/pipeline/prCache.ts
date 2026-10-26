@@ -2,7 +2,7 @@
  * A pull request's own cache: the snapshots it takes for a key the default
  * branch doesn't have. Each is held by a run of its own that waits for the pull
  * request to close and then ends, which deletes the snapshot (see
- * `step.sandbox.scope()`). Whatever ends that run deletes it too: a missed close
+ * `ownedByRun()`). Whatever ends that run deletes it too: a missed close
  * event leaves it to the wait's timeout, and a cancelled or failed run to its
  * cleanup, so nothing sweeps for leftovers.
  *
@@ -10,7 +10,7 @@
  */
 
 import type { Inngest, InngestFunction } from "inngest";
-import { sandboxMiddleware } from "inngest/experimental";
+import { snapshotCleanupFunction } from "./cleanup.ts";
 import { ciStep, traceName } from "./names.ts";
 import { pipelineFunctionOptions } from "./pipeline.ts";
 import type { CiRunScope } from "./scope.ts";
@@ -60,11 +60,13 @@ export const prCacheFunction = ({
       id: "ci/pr-cache",
       ...pipelineFunctionOptions,
       triggers: [{ event: prCacheHoldEvent }],
-      middleware: [sandboxMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-    async ({ event, step }: any) => {
-      step.sandbox.scope({ snapshotId: event.data.snapshotId });
+    async ({ event, step, defer }: any) => {
+      defer(`snapshot:${event.data.snapshotId}:cleanup`, {
+        function: snapshotCleanupFunction(client),
+        data: { snapshotId: event.data.snapshotId },
+      });
 
       await step.waitForEvent("pull-request-closed", {
         event: "github/pull_request.closed",

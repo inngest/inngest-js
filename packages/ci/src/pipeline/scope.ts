@@ -8,7 +8,7 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
-import type { DeferHandle } from "inngest/types";
+import type { DeferFn, DeferHandle } from "inngest/types";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -345,6 +345,8 @@ export interface CiRunScope {
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;
+  /** Runs a function after this run ends, such as the cleanup of what it owns. */
+  defer: DeferFn;
   /** The SDK async context this run is nested in. */
   asyncCtx: AsyncContext;
   /** Step ID counters, keyed by the ID's base. */

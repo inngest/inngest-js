@@ -15,6 +15,7 @@ import {
 } from "../cache/cache.ts";
 import { isPullRequestName, isRunName } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
+import { ownedByRun } from "../pipeline/cleanup.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import { holdForPullRequest } from "../pipeline/prCache.ts";
@@ -351,7 +352,10 @@ const startSandbox = async (
 
     // Only a machine this run created is one it destroys, by this ID. If the
     // run ends first, its cleanup does.
-    run.createdMachines.set(sandbox.id, tools.scope({ sandboxId: sandbox.id }));
+    run.createdMachines.set(
+      sandbox.id,
+      ownedByRun(run, { sandboxId: sandbox.id }),
+    );
 
     const setup = await sandbox.commands.run(
       { id: joinId(step.id, "setup"), name: traceName.prepareWorkspace },
@@ -531,7 +535,7 @@ const discardFailedStart = async (
   }
 
   // If the destroy below fails, the run's cleanup tries again.
-  run.createdMachines.set(id, run.sandboxTools.scope({ sandboxId: id }));
+  run.createdMachines.set(id, ownedByRun(run, { sandboxId: id }));
 
   try {
     await ciRun(

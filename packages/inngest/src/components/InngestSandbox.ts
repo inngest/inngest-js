@@ -87,7 +87,6 @@ export type {
   SandboxRef,
   SandboxResource,
   SandboxResources,
-  SandboxScopeTarget,
   SandboxSnapshot,
   SandboxSnapshotCloneOptions,
   SandboxSnapshotCreateOptions,

@@ -1,11 +1,10 @@
 /**
  * @module
- * Cleanup for scoped sandboxes (`await using` and `group.sandbox()`) and for
- * what `step.sandbox.scope()` adopts. Each one registers a defer, once its
- * create has succeeded, that destroys the sandbox or deletes the snapshot by ID
- * when the run ends for any reason, including cancel and timeout, and aborts it
- * once the scope has removed it itself, so a run that finishes normally starts
- * no extra run.
+ * Cleanup for scoped sandboxes (`await using` and `group.sandbox()`). Each one
+ * registers a defer, once its create has succeeded, that destroys the sandbox
+ * by ID when the run ends for any reason, including cancel and timeout, and
+ * aborts it once the scope has destroyed the sandbox itself, so a run that
+ * finishes normally starts no extra run.
  *
  * A run cancelled after the create finished and before the defer was
  * registered, which happens in the request that follows the create step, leaves
@@ -15,16 +14,14 @@
 import type { DeferHandle } from "../../types.ts";
 import { createDefer, type DeferredFunction } from "../DeferredFunction.ts";
 import type { Inngest } from "../Inngest.ts";
-import type {
-  DurableSandboxTools,
-  SandboxClient,
-  SandboxScopeTarget,
-} from "./types.ts";
+import type { DurableSandboxTools, SandboxClient } from "./types.ts";
 
 /**
- * What a cleanup run removes: a sandbox or snapshot the run owns, by its ID.
+ * The sandbox a cleanup run destroys: one the run created, by its ID.
  */
-export type SandboxCleanupTarget = SandboxScopeTarget;
+export type SandboxCleanupTarget = {
+  sandboxId: string;
+};
 
 /**
  * Registers the cleanup defer for a scope, given the ID of its create step.
@@ -55,18 +52,12 @@ export const cleanupRegistrarOf = (
 };
 
 /**
- * Remove what `target` names, if it still exists.
+ * Destroy the sandbox of `target`, if it still exists.
  */
 const destroyTarget = async (
   sandboxes: SandboxClient,
   target: SandboxCleanupTarget,
 ): Promise<void> => {
-  if ("snapshotId" in target) {
-    await (await sandboxes.snapshots.get(target.snapshotId))?.delete();
-
-    return;
-  }
-
   await (await sandboxes.get(target.sandboxId))?.destroy();
 };
 
@@ -75,9 +66,8 @@ const destroyTarget = async (
  * a major version bump.
  *
  * The function that destroys the sandboxes of scopes (`await using` and
- * `group.sandbox()`) and deletes the snapshots of `step.sandbox.scope()` whose
- * run ended before they could, for example because it was cancelled or timed
- * out.
+ * `group.sandbox()`) whose run ended before they could, for example because it
+ * was cancelled or timed out.
  *
  * Apps with `sandboxMiddleware()` serve it automatically. Pass it to `serve()`
  * yourself only when you serve functions without the client's middleware.

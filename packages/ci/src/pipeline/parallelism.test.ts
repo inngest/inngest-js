@@ -41,7 +41,7 @@ describe("functions that run a pipeline", () => {
     const running = ci.functions().filter((fn) => {
       const id = optionsOf(fn).id ?? "";
 
-      return !id.endsWith("/cleanup") && !id.endsWith("/check-rerequested");
+      return !id.endsWith("cleanup") && !id.endsWith("/check-rerequested");
     });
 
     expect(running.length).toBeGreaterThan(1);

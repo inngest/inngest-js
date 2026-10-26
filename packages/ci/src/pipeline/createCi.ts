@@ -42,6 +42,7 @@ import type {
   PipelineContext,
 } from "../types.ts";
 import { cacheBuildFunction, cacheBuildFunctionId } from "./cacheBuild.ts";
+import { snapshotCleanupFunction } from "./cleanup.ts";
 import { noopHooks } from "./hooks.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
@@ -416,6 +417,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
+        snapshotCleanupFunction(client),
         prCacheFunction({ client }),
         ...cacheRefreshFunctions({
           client,
