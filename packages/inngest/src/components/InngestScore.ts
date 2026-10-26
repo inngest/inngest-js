@@ -208,7 +208,8 @@ export async function sendScoreExperiment(
   }
   validateExperimentRef(options.experiment);
 
-  const target = { runId: options.runId };
+  // null (not undefined) keeps the score run-scoped when called inside a step.
+  const target = { runId: options.runId ?? null };
 
   // Write the experiment attribution first, then the score. These are two
   // non-atomic metadata writes; if the second fails, attribution-without-score
