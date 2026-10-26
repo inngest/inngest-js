@@ -171,7 +171,7 @@ const machineName = (runId: string, path: string): string => {
 
 /**
  * The name of the machine that holds a cache entry's build lock. The entry's
- * name carries its scope, job and key, which include the app and the
+ * name carries its job and key, which include the app and the
  * repository, so apps and repositories never block each other.
  */
 export const lockMachineName = (cacheKey: string): string => {

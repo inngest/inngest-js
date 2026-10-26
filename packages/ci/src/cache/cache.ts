@@ -600,7 +600,7 @@ const findNamed = async (
  * Look a cached job's snapshot up where it may be: what a local run wrote,
  * then the shared cache, then, for a pull request, what this run built.
  */
-const findInScopes = async (
+const findInNames = async (
   run: CiRunScope,
   jobId: string,
   cache: CacheConfig,
@@ -673,7 +673,7 @@ const lookUp = async (
   return found ?? undefined;
 };
 
-/** A job's usable snapshot: in the scopes it reads if cached, else by its run's name. */
+/** A job's usable snapshot: in the names it reads if cached, else by its run's name. */
 const findCached = (
   run: CiRunScope,
   jobId: string,
@@ -682,7 +682,7 @@ const findCached = (
   exclude?: string,
 ): Promise<CachedSnapshot | undefined> => {
   return cache
-    ? findInScopes(run, jobId, cache, target, exclude)
+    ? findInNames(run, jobId, cache, target, exclude)
     : findNamed(run, target.name, usableFor(undefined, exclude));
 };
 
@@ -815,7 +815,7 @@ export const deleteExpiredHolders = async (
         }
       }
     } catch {
-      // Left to the platform, as before.
+      // Left to the platform, which keeps it until it is deleted.
     }
 
     return null;
