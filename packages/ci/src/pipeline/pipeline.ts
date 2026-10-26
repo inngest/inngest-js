@@ -1010,8 +1010,9 @@ const permissionForComment = (
  * would stay in progress.
  *
  * A run only destroys the machines it holds the IDs of, in its own cleanup
- * step, and the sandbox cleanup function destroys or deletes what a run that
- * ended without reaching it left, machines and snapshots, by ID.
+ * step. A run that ends without reaching it leaves its machines to the SDK's
+ * sandbox cleanup and its snapshots to `ci-snapshot-cleanup`, both deferred by
+ * ID.
  */
 export const cleanupFunction = ({
   client,
