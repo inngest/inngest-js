@@ -53,7 +53,7 @@ import {
   sandboxTraceMetadata,
   sdkOrigin,
 } from "./trace.ts";
-import { type Sandbox, SandboxValidationError } from "./types.ts";
+import { type Sandbox, SandboxError, SandboxValidationError } from "./types.ts";
 import {
   decodeBase64,
   maxSandboxProcessTimeoutMs,
@@ -311,7 +311,11 @@ export const runCommandWithTools = async (
     return { now: Date.now(), lines: lines + log.length, requests, result };
   };
 
-  const abort = async (dir: string, reason: string): Promise<never> => {
+  const abort = async (
+    dir: string,
+    reason: string,
+    timedOut = false,
+  ): Promise<never> => {
     await host.run(sdkStep(`${id}:abort`, "Stop command"), async () => {
       await sandbox.commands.run([
         "/bin/sh",
@@ -324,7 +328,15 @@ export const runCommandWithTools = async (
       return { reason };
     });
 
-    throw new Error(reason);
+    // A timeout is the same failure as the exec timing out, so `$` reports it
+    // as one.
+    throw timedOut
+      ? new SandboxError({
+          action: "exec",
+          code: "sandbox_exec_timed_out",
+          message: reason,
+        })
+      : new Error(reason);
   };
 
   const answer = async ({
@@ -445,6 +457,7 @@ export const runCommandWithTools = async (
       return abort(
         dir,
         `Command with tools exceeded its ${timeoutMs}ms timeout`,
+        true,
       );
     }
 

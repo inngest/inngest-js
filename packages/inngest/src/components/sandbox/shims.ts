@@ -11,6 +11,11 @@
  * durable step. They are a convenience, a credential channel and an audit log,
  * not a boundary: code can call the real program by its absolute path.
  *
+ * A handler runs in the step that replies to the sandbox, so a retry of that
+ * step runs it again: keep it safe to repeat (it gets a stable idempotency
+ * key), and expect a credential to be minted again. Its time adds to that
+ * step, and calls answered in one round wait for the slowest of them.
+ *
  * A shim with a handler is the `inngest-tool` binary under another name
  * (`toolBinary.ts`). A shim that only injects environment is a few lines of
  * `sh` that read each value with `inngest-tool env`.
@@ -20,6 +25,7 @@ import { z } from "zod/v3";
 import { internalTool } from "./internalTool.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import type { SandboxTool, SandboxToolContext, SandboxTools } from "./tools.ts";
+import { SandboxValidationError } from "./types.ts";
 
 /**
  * The tool every handler shim calls. The name of the shim travels in the
@@ -29,7 +35,7 @@ export const shimToolName = "inngestShim";
 
 export const hostEnvToolName = "env";
 
-const envNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const envNamePattern = /^(?!__proto__$)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 const shimNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -38,15 +44,9 @@ const shimNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
  */
 const reservedShimNames = new Set([
   "inngest-tool",
-  "sh",
-  "rm",
-  "cat",
-  "ln",
-  "chmod",
-  "mktemp",
-  "mkdir",
-  "env",
-  "exit",
+  ...["sh", "rm", "cat", "ln", "chmod", "mktemp", "mkdir", "env"],
+  ...["sed", "grep", "tail", "wc", "dd", "sleep", "tr", "head", "tee"],
+  ...["base64", "gunzip", "dirname", "basename", "test", "printf", "echo"],
 ]);
 
 /**
@@ -173,7 +173,9 @@ export const createShim = (
 
   // The type says so; this catches callers that cast.
   if (Boolean(parsed.handle) === Boolean(parsed.inject)) {
-    throw new Error("A shim needs either a handle or inject, not both");
+    throw new SandboxValidationError(
+      "A shim needs either a handle or inject, not both",
+    );
   }
 
   return { ...parsed, shim: true };
@@ -234,6 +236,9 @@ const wireResult = (result: ShimResult) => {
   }
 
   const { stdout, stderr, exit } = result;
+  if (!Number.isInteger(exit)) {
+    throw new Error("A shim handler must return run(), reply() or refuse()");
+  }
 
   return {
     exit,
@@ -268,10 +273,6 @@ export const shimTool = (shims: Shims): SandboxTool => {
   }) as SandboxTool;
 };
 
-const sourceIds = new WeakMap<object, number>();
-
-let lastSourceId = 0;
-
 const mintedValues = new Map<
   string,
   { expires: number; value: Promise<string> }
@@ -282,8 +283,8 @@ const mintedValues = new Map<
  * one name, or an array for several. Only names in `allowed` can be read.
  * A function is called on each read, so it can mint a fresh value; a
  * `{ mint, ttl }` value is kept in host memory for `ttl` milliseconds per run,
- * so repeated reads share one token and a worker change mints again. Results
- * are never stored in the run.
+ * so repeated reads share one token and a worker change mints again. There is
+ * one cached value per name per run. Results are never stored in the run.
  */
 export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
   return internalTool({
@@ -311,13 +312,7 @@ export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
           // Without a run there is no one to share a value with.
           values.push(await source.mint());
         } else {
-          let sourceId = sourceIds.get(source);
-          if (sourceId === undefined) {
-            sourceId = ++lastSourceId;
-            sourceIds.set(source, sourceId);
-          }
-
-          const key = `${ctx.runId}\0${sourceId}\0${String(name)}`;
+          const key = `${ctx.runId}\0${String(name)}`;
           const now = Date.now();
           let hit = mintedValues.get(key);
           if (!hit || hit.expires <= now) {
@@ -346,6 +341,42 @@ export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
       return values.length === 1 ? values[0] : values;
     },
   }) as SandboxTool;
+};
+
+/**
+ * Checks a `hostEnv` option: names, and values that are strings, functions or
+ * `{ mint, ttl }`.
+ */
+export const validateHostEnv = (option: unknown): void => {
+  const entries: [unknown, unknown][] = Array.isArray(option)
+    ? option.map((name) => {
+        return [name, ""];
+      })
+    : option && typeof option === "object"
+      ? Object.entries(option)
+      : [];
+
+  if (entries.length === 0 && !Array.isArray(option)) {
+    throw new SandboxValidationError(
+      "hostEnv must be a list of names or an object of values",
+    );
+  }
+
+  for (const [name, source] of entries) {
+    const valid =
+      typeof source === "string" ||
+      typeof source === "function" ||
+      (typeof source === "object" &&
+        source !== null &&
+        typeof (source as { mint?: unknown }).mint === "function" &&
+        Number.isFinite((source as { ttl?: unknown }).ttl));
+
+    if (typeof name !== "string" || !envNamePattern.test(name) || !valid) {
+      throw new SandboxValidationError(
+        `Invalid hostEnv entry "${String(name).slice(0, 64)}": names are variable names, values a string, a function or { mint, ttl }`,
+      );
+    }
+  }
 };
 
 /**
@@ -445,18 +476,20 @@ export const withShims = (
 
   for (const name of names) {
     if (!shimNamePattern.test(name)) {
-      throw new Error(
+      throw new SandboxValidationError(
         `Invalid shim name "${name}": use letters, digits, ".", "_" and "-", up to 64 characters`,
       );
     }
 
     if (reservedShimNames.has(name)) {
-      throw new Error(`"${name}" can't be shimmed: the shims rely on it`);
+      throw new SandboxValidationError(
+        `"${name}" can't be shimmed: the shims rely on it`,
+      );
     }
   }
 
   if (handlers.length > 0 && !options.binary) {
-    throw new Error(
+    throw new SandboxValidationError(
       `Shims with a handle (${handlers.join(", ")}) need the inngest-tool binary, which is not available here`,
     );
   }
@@ -471,7 +504,9 @@ export const withShims = (
     const variables = Object.keys(shim.inject ?? {});
     for (const variable of variables) {
       if (!envNamePattern.test(variable) || Object.hasOwn(allowed, variable)) {
-        throw new Error(`Invalid or repeated inject variable "${variable}"`);
+        throw new SandboxValidationError(
+          `Invalid or repeated inject variable "${variable}"`,
+        );
       }
 
       allowed[variable] = (shim.inject as HostEnv)[variable] as HostEnvValue;
@@ -493,7 +528,9 @@ export const withShims = (
   for (const name of names) {
     for (const [key, value] of Object.entries(shims[name]?.environment ?? {})) {
       if (Object.hasOwn(environment, key) && environment[key] !== value) {
-        throw new Error(`Shims set ${key} to different values`);
+        throw new SandboxValidationError(
+          `Shims set ${key} to different values`,
+        );
       }
 
       environment[key] = value;

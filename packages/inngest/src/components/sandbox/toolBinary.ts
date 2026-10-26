@@ -18,6 +18,11 @@ export interface ToolBinary {
   path: string;
 
   /**
+   * The SHA-256 of the binary, which an installed file must match.
+   */
+  sha256: string;
+
+  /**
    * Its gzipped bytes.
    */
   load: () => Promise<Uint8Array>;
@@ -68,11 +73,12 @@ const loadBundled = async (): Promise<ToolBinary | undefined> => {
     }
 
     const raw = await readFile(file);
-    const hash = createHash("sha256").update(raw).digest("hex").slice(0, 12);
+    const sha256 = createHash("sha256").update(raw).digest("hex");
     let gz: Uint8Array | undefined;
 
     return {
-      path: `${toolBinaryDir}/inngest-tool-${hash}`,
+      path: `${toolBinaryDir}/inngest-tool-${sha256.slice(0, 12)}`,
+      sha256,
       load: async () => {
         gz ??= gzipSync(raw, { level: 9 });
 
@@ -106,9 +112,10 @@ export const installToolBinary = async (
   const have = await sandbox.commands.run([
     "/bin/sh",
     "-c",
-    'test -x "$1"',
+    'test -x "$1" && sha256sum "$1" | grep -q "^$2 "',
     "sh",
     binary.path,
+    binary.sha256,
   ]);
   if (have.exitCode === 0) {
     return;

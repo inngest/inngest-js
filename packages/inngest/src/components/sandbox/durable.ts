@@ -34,7 +34,12 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import { hostEnvFrom, hostEnvTool, withShims } from "./shims.ts";
+import {
+  hostEnvFrom,
+  hostEnvTool,
+  validateHostEnv,
+  withShims,
+} from "./shims.ts";
 import { bundledToolBinary } from "./toolBinary.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
@@ -777,6 +782,10 @@ export const createDurableSandboxFacade = (
       }
     }
 
+    if (hostEnv !== undefined) {
+      validateHostEnv(hostEnv);
+    }
+
     const allowedHostEnv = hostEnv && hostEnvFrom(hostEnv);
     const binary = Object.values(shims ?? {}).some((shim) => {
       return shim.handle;
@@ -803,6 +812,17 @@ export const createDurableSandboxFacade = (
       ownTools || Object.keys(builtTools).length > 0
         ? { ...ownTools, ...builtTools }
         : undefined;
+    for (const [key, value] of Object.entries(shimmed?.environment ?? {})) {
+      if (
+        ownEnvironment?.[key] !== undefined &&
+        ownEnvironment[key] !== value
+      ) {
+        throw new SandboxValidationError(
+          `environment.${key} conflicts with the shims, which set it`,
+        );
+      }
+    }
+
     const environment =
       shimmed || ownEnvironment
         ? { ...shimmed?.environment, ...ownEnvironment }

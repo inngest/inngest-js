@@ -17,12 +17,12 @@ import {
   parseSandboxOperationForAction,
   type SandboxRawTool,
 } from "./protocol.ts";
-import { injectEnv } from "./shims.ts";
+import { gitCredentials, injectEnv } from "./shims.ts";
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
-import type { Sandbox } from "./types.ts";
+import { type Sandbox, SandboxValidationError } from "./types.ts";
 
 const sandboxRef = {
   kind: "inngest/sandbox" as const,
@@ -1454,6 +1454,50 @@ describe("shims and long commands on commands.run", () => {
     const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
     expect(request?.timeoutMs).toBe(2 * 60 * 60 * 1000);
     expect(operation).toMatchObject({ input: [{ timeoutMs: 300_000 }] });
+  });
+
+  test("hostEnv is validated", async () => {
+    const { sandbox } = facade();
+    const bad = async (hostEnv: unknown) => {
+      return sandbox.commands
+        .run("x", "true", { hostEnv: hostEnv as never })
+        .catch((error: unknown) => {
+          return error instanceof SandboxValidationError;
+        });
+    };
+
+    expect(await bad("HOME")).toBe(true);
+    expect(await bad({ A: 1 })).toBe(true);
+    expect(await bad({ __proto__: "x", "bad name": "x" })).toBe(true);
+    expect(await bad({ A: { mint: () => "x" } })).toBe(true);
+  });
+
+  test("an environment that fights a shim's is rejected", async () => {
+    const { sandbox } = facade();
+
+    await expect(
+      sandbox.commands.run("x", "git fetch", {
+        shims: gitCredentials({
+          "github.com": () => ({ username: "u", password: "p" }),
+        }),
+        environment: { GIT_CONFIG_COUNT: "0" },
+      }),
+    ).rejects.toThrow("conflicts with the shims");
+  });
+
+  test("a command with tools that outlives its timeout fails as an exec timeout", async () => {
+    const { fake, sandbox } = createFakeSandbox(() => undefined);
+    const { host } = createHost(sandbox);
+
+    await expect(
+      runCommandWithTools(host, "exec", operation(), {
+        tools: { a: async () => 1 },
+        timeoutMs: 1,
+        toolOptions: { waitWindow: 10 },
+      }),
+    ).rejects.toMatchObject({ code: "sandbox_exec_timed_out" });
+
+    expect(fake.killed).toBe(true);
   });
 
   test("exitCodes apply to a command with tools", async () => {

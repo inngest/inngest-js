@@ -69,6 +69,7 @@ const hasBinary = existsSync(builtBinary);
 const binaryDir = mkdtempSync(join(tmpdir(), "inngest-tool-bin-"));
 const testBinary: ToolBinary = {
   path: join(binaryDir, "inngest-tool"),
+  sha256: "",
   load: async () => {
     return new Uint8Array();
   },
@@ -235,6 +236,10 @@ describe("inngest-tool", () => {
   });
 });
 
+test.runIf(process.env.CI)("the sandbox-tool binary is built in CI", () => {
+  expect(hasBinary).toBe(true);
+});
+
 describe.skipIf(!hasBinary)("shims", () => {
   const fakeBin = (): string => {
     const dir = temp();
@@ -319,7 +324,11 @@ describe.skipIf(!hasBinary)("shims", () => {
   test("an unknown shim name from the sandbox is an error", async () => {
     const built = withShims(
       "true",
-      { fly: tool.shim(() => reply(0)) },
+      {
+        fly: tool.shim(() => {
+          return reply(0);
+        }),
+      },
       { binary: testBinary },
     );
     const resolved = await resolveToolCall(
@@ -350,7 +359,11 @@ describe.skipIf(!hasBinary)("shims", () => {
     expect(() => {
       return withShims(
         "true",
-        { rm: tool.shim(() => reply(0)) },
+        {
+          rm: tool.shim(() => {
+            return reply(0);
+          }),
+        },
         { binary: testBinary },
       );
     }).toThrow("can't be shimmed");
@@ -360,7 +373,11 @@ describe.skipIf(!hasBinary)("shims", () => {
     expect(() => {
       return withShims(
         "true",
-        { "a b; rm -rf /": tool.shim(() => reply(0)) },
+        {
+          "a b; rm -rf /": tool.shim(() => {
+            return reply(0);
+          }),
+        },
         { binary: testBinary },
       );
     }).toThrow("Invalid shim name");

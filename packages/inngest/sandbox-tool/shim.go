@@ -51,20 +51,23 @@ type shimAction struct {
 	StderrB64 string      `json:"stderrB64"`
 }
 
-func loadSpec(name string) shimSpec {
+// loadSpec reads the shim's entry of the config. Without INNGEST_SHIMS_DIR
+// there is no config and the defaults apply; with it, a config that cannot be
+// read is an error, since dropping it would silently change what the shim does.
+func loadSpec(name string) (shimSpec, error) {
 	dir := os.Getenv("INNGEST_SHIMS_DIR")
 	if dir == "" {
-		return shimSpec{}
+		return shimSpec{}, nil
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
-		return shimSpec{}
+		return shimSpec{}, err
 	}
 	var all map[string]shimSpec
-	if json.Unmarshal(data, &all) != nil {
-		return shimSpec{}
+	if err := json.Unmarshal(data, &all); err != nil {
+		return shimSpec{}, err
 	}
-	return all[name]
+	return all[name], nil
 }
 
 // findReal looks name up on PATH with the shims directory removed.
@@ -177,7 +180,11 @@ func writeOutputs(stdout, stderr string, stdoutB64, stderrB64 string) {
 }
 
 func runShim(name string, args []string) int {
-	spec := loadSpec(name)
+	spec, err := loadSpec(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: cannot read the shim config: %v\n", name, err)
+		return 125
+	}
 	if len(args) > 0 {
 		if local, ok := spec.Local[args[0]]; ok {
 			writeOutputs(local.Stdout, local.Stderr, "", "")

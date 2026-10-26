@@ -169,8 +169,9 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
   binary?: ToolBinary;
 
   /**
-   * What to run in place of the operation's command, which the trace shows:
-   * the command wrapped in its shims.
+   * What the process runs in place of the operation's command: the command
+   * wrapped in its shims. The operation keeps the user's command, which is
+   * what the trace shows.
    */
   command?: string[];
 
