@@ -216,6 +216,14 @@ export interface StepToolOptions<
    * `data` property.
    */
   fn?: (...args: [Context.Any, ...Parameters<T>]) => unknown;
+
+  /**
+   * If `true`, `fn` runs in-process as soon as the step is found, so the
+   * step's result is available without waiting for Inngest. The result is
+   * then reported to Inngest as a lazy op, on its own, ahead of any other
+   * step.
+   */
+  memo?: boolean;
 }
 
 export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
@@ -865,6 +873,53 @@ export const createStepTools = <
      * for next steps.
      */
     run: createStepRun(),
+
+    /**
+     * Save a value that is already known, so it never changes even if this
+     * code runs again with a different value.
+     *
+     * This behaves like `step.run(id, () => value)`: the value is serialized
+     * and passes through middleware as a step result does, and the return type
+     * is the same. The difference is that `await step.memo()` does not stop the
+     * function to report the value to Inngest. The value is saved before the
+     * next step runs, and every later run returns the saved value.
+     *
+     * ```ts
+     * const startedAt = await step.memo("started-at", Date.now());
+     * ```
+     */
+    memo: createTool<
+      <TValue>(
+        idOrOptions: StepOptionsOrId,
+
+        /**
+         * The value to save. It is returned as `step.run()` would return it.
+         */
+        value: TValue,
+      ) => Promise<
+        ApplyAllMiddlewareTransforms<
+          MergedMiddleware<TClient, TFnMiddleware>,
+          TValue extends void ? null : TValue
+        >
+      >
+    >(
+      ({ id, name }) => {
+        return {
+          id,
+          mode: StepMode.Sync,
+          op: StepOpCode.StepPlanned,
+          name: id,
+          displayName: name ?? id,
+          userland: { id },
+        };
+      },
+      {
+        memo: true,
+        fn: (_, __, value) => {
+          return value;
+        },
+      },
+    ),
 
     /**
      * AI tooling for running AI models and other AI-related tasks.

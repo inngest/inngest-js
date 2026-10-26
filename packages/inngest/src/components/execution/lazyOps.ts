@@ -46,6 +46,22 @@ export class LazyOps {
   }
 
   /**
+   * Take only the memo ops (`step.memo()` results, which are `StepRun` ops
+   * that carry data). Inngest treats more than one non-lazy op in a message
+   * as parallel steps, so memo ops must ship on their own.
+   */
+  drainMemos(): OutgoingOp[] {
+    const memos = this.buffer.filter((op) => op.op === StepOpCode.StepRun);
+    if (memos.length === 0) {
+      return [];
+    }
+
+    this.buffer = this.buffer.filter((op) => op.op !== StepOpCode.StepRun);
+
+    return memos;
+  }
+
+  /**
    * Buffer an op for later shipment.
    */
   push(op: OutgoingOp): void {

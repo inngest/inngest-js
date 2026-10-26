@@ -395,6 +395,49 @@ describe("run", () => {
   });
 });
 
+describe("memo", () => {
+  let step: StepTools;
+
+  beforeEach(() => {
+    step = getStepTools();
+  });
+
+  test("types match what step.run returns for the same value", () => {
+    const input = {
+      str: "",
+      date: new Date(),
+      fn: () => undefined,
+      undef: undefined,
+      arr: [0, () => undefined],
+    };
+
+    const memoed = step.memo("memo", input);
+    const ran = step.run("run", () => input);
+
+    assertType<IsEqual<Awaited<typeof memoed>, Awaited<typeof ran>>>(true);
+    assertType<Promise<{ str: string; date: string; arr: (number | null)[] }>>(
+      memoed,
+    );
+  });
+
+  test("undefined is typed as null, as with step.run", () => {
+    const memoed = step.memo("memo", undefined);
+    const ran = step.run("run", () => undefined);
+
+    assertType<Promise<null>>(memoed);
+    assertType<IsEqual<Awaited<typeof memoed>, Awaited<typeof ran>>>(true);
+  });
+
+  test("accepts an ID or options", () => {
+    void step.memo({ id: "id", name: "name" }, 1);
+  });
+
+  test("requires a value", () => {
+    // @ts-expect-error The value is required
+    void step.memo("id");
+  });
+});
+
 describe("ai", () => {
   describe("infer", () => {
     let step: StepTools;

@@ -465,6 +465,11 @@ class InngestExecutionEngine
       for await (const checkpoint of this.state.loop) {
         await allCheckpointHandler(checkpoint, i);
 
+        const memoResult = await this.flushMemos();
+        if (memoResult) {
+          return memoResult;
+        }
+
         const handler = this.getCheckpointHandler(checkpoint.type);
         const result = await handler(checkpoint, i++);
 
@@ -2794,7 +2799,12 @@ class InngestExecutionEngine
         step.memoizationDeferred = deferred;
 
         setActualHandler(() => {
-          pushStepToReport(step);
+          if (opts?.memo) {
+            void this.memoizeStep(step);
+          } else {
+            pushStepToReport(step);
+          }
+
           return deferred.promise;
         });
 
@@ -3072,6 +3082,55 @@ class InngestExecutionEngine
       stepState,
       isFulfilled,
     };
+  }
+
+  /**
+   * Run a `step.memo()` in-process and resolve it as if its result had been
+   * sent to Inngest and memoized, without stopping the function. The result
+   * is buffered as a lazy op, so it is saved ahead of any other step (see
+   * `flushMemos`).
+   */
+  private async memoizeStep(step: FoundStep): Promise<void> {
+    // The step is never reported to Inngest as found, so it must not look new.
+    step.hasStepState = true;
+
+    const result = await this.executeStep(step);
+    if (result.error) {
+      step.memoizationDeferred?.reject(result.error);
+      return;
+    }
+
+    this.state.lazyOps.push({ ...result, data: undefinedToNull(result.data) });
+
+    this.resumeStepWithResult(result);
+  }
+
+  /**
+   * Save buffered `step.memo()` results before anything else happens.
+   *
+   * Inngest treats more than one non-lazy op in a message as parallel steps, so
+   * memos are sent on their own: as a response in async mode, or as a
+   * checkpoint in checkpointing modes. Whatever was found next is found again
+   * when the run continues.
+   */
+  private async flushMemos(): Promise<ExecutionResult | undefined> {
+    const memos = this.state.lazyOps.drainMemos();
+    if (memos.length === 0) {
+      return;
+    }
+
+    if (this.options.stepMode === StepMode.Async) {
+      return {
+        type: "steps-found",
+        ctx: this.fnArg,
+        ops: this.ops,
+        steps: memos as [OutgoingOp, ...OutgoingOp[]],
+      };
+    }
+
+    await this.checkpoint(memos);
+
+    return undefined;
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
