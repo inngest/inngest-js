@@ -1,6 +1,6 @@
 /**
  * Unit tests for pure helpers across the package: parsing, matching, matrix
- expansion, GitHub mapping, cache scopes and formatting.
+ expansion, GitHub mapping, cache names and formatting.
  *
  * @module
  */
