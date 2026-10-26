@@ -11,6 +11,7 @@
   },
   "scripts": {
     "prebuild": "pnpm run pb:version",
+    "build:sandbox-tool": "sh sandbox-tool/build.sh",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto ./src/components/sdkFeatureObservations/protobuf/feature_observations.proto",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
