@@ -798,15 +798,15 @@ const createNamedSnapshot = async (
     };
   };
 
-  let refusal: unknown;
-
-  try {
-    const taken = await attempt(stepId);
-
+  /** What follows a snapshot that took the name. */
+  const settle = async (
+    taken: TakenSnapshot,
+    id: string,
+  ): Promise<TakenSnapshot> => {
     if (isPullRequestName(name)) {
       await holdForPullRequest(
         run,
-        `${stepId}${scopeSeparator}hold`,
+        `${id}${scopeSeparator}hold`,
         taken.snapshotId,
       );
     }
@@ -815,13 +815,20 @@ const createNamedSnapshot = async (
     if (!isRunName(name)) {
       await deleteExpiredHolders(
         run,
-        `${stepId}${scopeSeparator}replace`,
+        `${id}${scopeSeparator}replace`,
         name,
         taken.snapshotId,
       );
     }
 
     return taken;
+  };
+
+  let refusal: unknown;
+  let first: TakenSnapshot | undefined;
+
+  try {
+    first = await attempt(stepId);
   } catch (error) {
     if (!hasCode(error, nameTakenCode)) {
       if (!isNameRefused(error)) {
@@ -830,6 +837,10 @@ const createNamedSnapshot = async (
 
       refusal = error;
     }
+  }
+
+  if (first) {
+    return settle(first, stepId);
   }
 
   if (!refusal) {
@@ -854,7 +865,10 @@ const createNamedSnapshot = async (
 
     if (taken.cleared) {
       try {
-        return await attempt(`${stepId} (retry)`);
+        return await settle(
+          await attempt(`${stepId} (retry)`),
+          `${stepId} (retry)`,
+        );
       } catch (error) {
         refusal = error;
       }

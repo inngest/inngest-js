@@ -100,7 +100,13 @@ export const cacheLane = (repo: RepoContext | undefined): CacheLane => {
 export const defaultBranchRepo = (
   repo: RepoContext,
 ): RepoContext | undefined => {
-  if (!repo.pullRequest || !repo.baseSha || !repo.baseRef) {
+  // A pull request into another branch has no default branch's cache to use.
+  if (
+    !repo.pullRequest ||
+    !repo.baseSha ||
+    !repo.baseRef ||
+    (repo.defaultBranch && repo.defaultBranch !== repo.baseRef)
+  ) {
     return undefined;
   }
 

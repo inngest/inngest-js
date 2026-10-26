@@ -1157,9 +1157,11 @@ describe("a pull request from a fork whose key matches the default branch's", ()
     await runFunction(pipeline, { event: forkEvent, runId: "01FORK" });
 
     expect(count(api, "pnpm install")).toBe(1);
-    expect(named(api).map((snapshot) => snapshot.name)).toEqual([
-      expect.stringMatching(/^ci\/cache\/install\//),
-    ]);
+    expect(
+      named(api).map((snapshot) => {
+        return snapshot.name;
+      }),
+    ).toEqual([expect.stringMatching(/^ci\/cache\/install\//)]);
   });
 
   test("whose key is the default branch's builds the shared entry as the default branch, and the next run reuses it", async () => {
@@ -1168,9 +1170,11 @@ describe("a pull request from a fork whose key matches the default branch's", ()
 
     await runFunction(pipeline, { event: forkEvent, runId: "01FORK1" });
 
-    expect(named(api).map((snapshot) => snapshot.name)).toEqual([
-      expect.stringMatching(/^ci\/cache\/install\//),
-    ]);
+    expect(
+      named(api).map((snapshot) => {
+        return snapshot.name;
+      }),
+    ).toEqual([expect.stringMatching(/^ci\/cache\/install\//)]);
 
     await runFunction(pipeline, { event: forkEvent, runId: "01FORK2" });
 

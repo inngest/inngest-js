@@ -673,6 +673,12 @@ describe("where a run's snapshots go", () => {
     });
   });
 
+  test("there is none for a pull request into a branch that isn't the default", () => {
+    expect(
+      defaultBranchRepo({ ...pullRequest(false), defaultBranch: "trunk" }),
+    ).toBe(undefined);
+  });
+
   test("there is none without the base commit", () => {
     expect(defaultBranchRepo({ ...repo, ref: "refs/heads/main" })).toBe(
       undefined,
