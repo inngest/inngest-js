@@ -152,7 +152,7 @@ exports.tools = new Proxy({}, {
  * It records its pid for the host to stop it, and the directory is in the
  * command so that the process can be found again.
  */
-export const wrapperScript = `put() { cat > "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
+export const wrapperScript = `put() { cat > "$1.tmp$$" && chmod 755 "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
 d=$1; shift
 mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools ${toolsRoot}/bin
 mkdir "$d/started" 2>/dev/null || exit 0

@@ -112,13 +112,19 @@ export const installToolBinary = async (
   const have = await sandbox.commands.run([
     "/bin/sh",
     "-c",
-    'test -x "$1" && sha256sum "$1" | grep -q "^$2 "',
+    '[ "$(uname -m)" = x86_64 ] || exit 3; test -x "$1" && sha256sum "$1" | grep -q "^$2 "',
     "sh",
     binary.path,
     binary.sha256,
   ]);
   if (have.exitCode === 0) {
     return;
+  }
+
+  if (have.exitCode === 3) {
+    throw new Error(
+      "Handler shims need the inngest-tool binary, which is built for x86_64 sandboxes only",
+    );
   }
 
   const staged = `${binary.path}.${crypto.randomUUID()}`;

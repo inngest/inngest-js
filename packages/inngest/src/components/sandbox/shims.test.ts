@@ -212,6 +212,27 @@ describe("inngest-tool", () => {
     expect(JSON.parse(out.stdout)).toEqual(["head", "k=v"]);
   });
 
+  test("a result that has an error key is still a result", async () => {
+    const out = await runWrapped(["inngest-tool", "nested"], {
+      nested: () => {
+        return { error: "x", n: 1 };
+      },
+    });
+
+    expect(out.code).toBe(0);
+    expect(JSON.parse(out.stdout)).toEqual({ error: "x", n: 1 });
+  });
+
+  test("control characters the shell can't escape exit 2 instead of hanging", async () => {
+    const out = await runWrapped(
+      ["/bin/sh", "-c", "inngest-tool echo \"$(printf 'a\\rb')\""],
+      tools,
+    );
+
+    expect(out.code).toBe(2);
+    expect(out.stderr).toContain("control characters");
+  });
+
   test("a tool error prints its message and exits 1", async () => {
     const out = await runWrapped(["inngest-tool", "fail"], tools);
 
@@ -428,6 +449,29 @@ describe("inject and hostEnv", () => {
     expect(built.tools).toEqual({});
     expect(out.stdout).toBe('1\n["1","2"]\n');
     expect(out.stderr).toContain("Not allowed to read: C");
+  });
+
+  test("minted values are shared per run and scope", async () => {
+    let count = 0;
+    const mint = () => {
+      count++;
+
+      return `v${count}`;
+    };
+    const read = async (scope: string, runId: string) => {
+      const env = hostEnvTool({
+        T: { mint, ttl: 60_000, scope },
+      }) as unknown as {
+        run: (...args: unknown[]) => Promise<unknown>;
+      };
+
+      return env.run("T", { runId });
+    };
+
+    expect(await read("a", "run-1")).toBe("v1");
+    expect(await read("a", "run-1")).toBe("v1");
+    expect(await read("b", "run-1")).toBe("v2");
+    expect(await read("a", "run-2")).toBe("v3");
   });
 
   test("a name list reads the host's environment", async () => {

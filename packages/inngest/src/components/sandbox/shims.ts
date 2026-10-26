@@ -109,7 +109,11 @@ export type ShimHandler = (
 export type HostEnvValue =
   | string
   | (() => string | Promise<string>)
-  | { mint: () => string | Promise<string>; ttl: number };
+  | {
+      mint: () => string | Promise<string>;
+      ttl: number;
+      scope?: string;
+    };
 
 export type HostEnv = Record<string, HostEnvValue>;
 
@@ -170,6 +174,10 @@ export const createShim = (
 ): SandboxShim => {
   const parsed: ShimDefinition =
     typeof definition === "function" ? { handle: definition } : definition;
+
+  if (parsed.inject && Object.keys(parsed.inject).length === 0) {
+    throw new SandboxValidationError("inject needs at least one variable");
+  }
 
   // The type says so; this catches callers that cast.
   if (Boolean(parsed.handle) === Boolean(parsed.inject)) {
@@ -284,7 +292,9 @@ const mintedValues = new Map<
  * A function is called on each read, so it can mint a fresh value; a
  * `{ mint, ttl }` value is kept in host memory for `ttl` milliseconds per run,
  * so repeated reads share one token and a worker change mints again. There is
- * one cached value per name per run. Results are never stored in the run.
+ * one cached value per name and `scope` per run: give commands that mint
+ * different things for one name (a token per repository, say) different
+ * scopes. Results are never stored in the run.
  */
 export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
   return internalTool({
@@ -312,7 +322,7 @@ export const hostEnvTool = (allowed: HostEnv): SandboxTool => {
           // Without a run there is no one to share a value with.
           values.push(await source.mint());
         } else {
-          const key = `${ctx.runId}\0${String(name)}`;
+          const key = `${ctx.runId}\0${String(name)}\0${source.scope ?? ""}`;
           const now = Date.now();
           let hit = mintedValues.get(key);
           if (!hit || hit.expires <= now) {

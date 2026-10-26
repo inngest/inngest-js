@@ -11,7 +11,9 @@
  *
  * - Arguments are strings. With `-j` they are JSON values, which is how a tool
  *   with an `input` schema gets its one object of named arguments.
- * - `--stdin` adds all of stdin as a final string argument.
+ * - `--stdin` adds all of stdin as a final string argument. Trailing newlines
+ *   are not kept, and control characters other than tab and newline exit 2
+ *   (the static binary has neither limit).
  * - The result is printed as JSON. With `-r` a string result is printed
  *   unescaped, for `\n`, `\t`, `\"`, `\\` and `\/` only.
  * - A tool error prints its message on stderr and exits 1. Exit 2 is misuse
@@ -39,15 +41,18 @@ fi
 shift
 tab=$(printf '\t')
 esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$tab/\\\\t/g" -e ':a;N;$!ba;s/\n/\\n/g'; }
+plain() { printf '%s' "$1" | tr -d '\t\n' | LC_ALL=C grep -q '[[:cntrl:]]' && { echo "inngest-tool: control characters other than tab and newline need the static binary" >&2; exit 2; }; return 0; }
 args=
 sep=
 for a; do
+  [ -n "$json" ] || plain "$a"
   if [ -n "$json" ]; then args="$args$sep$a"; else args="$args$sep\"$(esc "$a")\""; fi
   sep=,
 done
 if [ -n "$stdin" ]; then
-  args="$args$sep\"$(esc "$(cat)
-")\""
+  input=$(cat)
+  plain "$input"
+  args="$args$sep\"$(esc "$input")\""
 fi
 id=0
 until mkdir "$d/id.$((id + 1))" 2>/dev/null; do id=$((id + 1)); done
@@ -70,7 +75,7 @@ while :; do
 done
 pre="{\"op\":\"reply\",\"id\":$id,"
 case $r in
-  *'"error":'*)
+  "$pre\"error\":"*)
     printf '%s\n' "$r" | sed -e "s/^$pre\"error\"://" -e 's/}$//' -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g' >&2
     exit 1;;
 esac
