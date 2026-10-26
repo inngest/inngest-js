@@ -29,6 +29,7 @@
  * The stubs ship inside the command itself (a heredoc in the wrapper script),
  * so a run that never calls a tool pays no extra requests and no extra steps.
  */
+import { toolCliName, toolCliScript } from "./toolCli.ts";
 import { maxToolRequestBytes } from "./tools.ts";
 
 export const toolsRoot = "/inngest/tools";
@@ -153,14 +154,17 @@ exports.tools = new Proxy({}, {
  */
 export const wrapperScript = `put() { cat > "$1.tmp$$" && mv "$1.tmp$$" "$1"; }
 d=$1; shift
-mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools
+mkdir -p "$d" ${toolsRoot}/py ${toolsRoot}/js/inngest_tools ${toolsRoot}/bin
 mkdir "$d/started" 2>/dev/null || exit 0
 echo $$ > "$d/pid"
 put ${toolsRoot}/py/inngest_tools.py <<'INNGEST_TOOLS_PY'
 ${pythonStub}INNGEST_TOOLS_PY
 put ${toolsRoot}/js/inngest_tools/index.js <<'INNGEST_TOOLS_JS'
 ${nodeStub}INNGEST_TOOLS_JS
-export INNGEST_TOOLS_DIR=$d PYTHONUNBUFFERED=1
+put ${toolsRoot}/bin/${toolCliName} <<'INNGEST_TOOLS_SH'
+${toolCliScript}INNGEST_TOOLS_SH
+chmod +x ${toolsRoot}/bin/${toolCliName}
+export INNGEST_TOOLS_DIR=$d PYTHONUNBUFFERED=1 PATH="${toolsRoot}/bin:$PATH"
 export PYTHONPATH="${toolsRoot}/py\${PYTHONPATH:+:$PYTHONPATH}" NODE_PATH="${toolsRoot}/js\${NODE_PATH:+:$NODE_PATH}"
 "$@" > "$d/out" 2> "$d/err"
 printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s"}\\n' $? "$(base64 -w0 "$d/out")" "$(base64 -w0 "$d/err")" | ${append}

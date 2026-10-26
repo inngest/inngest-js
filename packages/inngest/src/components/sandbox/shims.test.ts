@@ -1,0 +1,427 @@
+/**
+ * @module
+ * Tests for shims and `inngest-tool`, running the real wrapper, shim script and
+ * shell client in a local directory, with a loop in this process playing the
+ * host: it reads `ops.log`, answers each call as the tool runner would and
+ * appends the reply.
+ */
+import { spawn } from "node:child_process";
+import {
+  appendFileSync,
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+import {
+  gitCredentials,
+  hostEnvFrom,
+  hostEnvTool,
+  refuse,
+  reply,
+  run,
+  type Shims,
+  withShims,
+} from "./shims.ts";
+import { toolCliScript } from "./toolCli.ts";
+import { toolsRoot, wrapperScript } from "./toolStubs.ts";
+import { parseToolEvent, resolveToolCall, type SandboxTools } from "./tools.ts";
+
+const dirs: string[] = [];
+
+const temp = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "shims-"));
+  dirs.push(dir);
+
+  return dir;
+};
+
+afterEach(() => {
+  dirs.length = 0;
+});
+
+interface Outcome {
+  code: number;
+  stdout: string;
+  stderr: string;
+  calls: string[];
+}
+
+/**
+ * Runs `command` under the real tools wrapper in a temporary tools root, and
+ * answers its calls from `tools` until the exit arrives.
+ */
+const runWrapped = async (
+  command: string[],
+  tools: SandboxTools,
+  environment: Record<string, string> = {},
+): Promise<Outcome> => {
+  const root = temp();
+  const dir = join(root, "run");
+  const script = wrapperScript.replaceAll(toolsRoot, join(root, "tools"));
+  const calls: string[] = [];
+  const child = spawn("/bin/sh", ["-c", script, "sh", dir, ...command], {
+    env: { ...process.env, ...environment },
+    stdio: "ignore",
+  });
+  const log = join(dir, "ops.log");
+  let seen = 0;
+
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    let lines: string[] = [];
+    try {
+      lines = readFileSync(log, "utf8").split("\n").slice(0, -1);
+    } catch {}
+
+    for (const line of lines.slice(seen)) {
+      seen++;
+      const event = parseToolEvent(line);
+      if (event?.op === "exit") {
+        child.kill();
+
+        return {
+          code: event.code,
+          stdout: Buffer.from(event.stdout, "base64").toString(),
+          stderr: Buffer.from(event.stderr, "base64").toString(),
+          calls,
+        };
+      }
+
+      if (event?.op === "call") {
+        calls.push(event.tool);
+        const resolved = await resolveToolCall(tools, event, line);
+        const outcome =
+          "error" in resolved
+            ? { error: resolved.error }
+            : await resolved
+                .invoke?.({
+                  signal: new AbortController().signal,
+                  idempotencyKey: "k",
+                })
+                .then(
+                  (result: unknown) => {
+                    return { result };
+                  },
+                  (error: Error) => {
+                    return { error: error.message };
+                  },
+                );
+        appendFileSync(
+          log,
+          `${JSON.stringify({ op: "reply", id: event.id, ...outcome })}\n`,
+        );
+      }
+    }
+  }
+};
+
+const shimmed = (command: string, shims: Shims, path?: string) => {
+  const built = withShims(command, shims);
+
+  return runWrapped(built.command, built.tools, {
+    ...built.environment,
+    ...(path && { PATH: `${path}:${process.env.PATH}` }),
+  });
+};
+
+describe("inngest-tool", () => {
+  const tools: SandboxTools = {
+    echo: (...values: unknown[]) => {
+      return values;
+    },
+    text: () => {
+      return 'a "quote"\nline two\ttab \\ slash';
+    },
+    fail: () => {
+      throw new Error("no good");
+    },
+  };
+
+  test("calls a tool with string arguments and prints the result as JSON", async () => {
+    const out = await runWrapped(
+      ["/bin/sh", "-c", `inngest-tool echo 'a "b"' 'x\ty'`],
+      tools,
+    );
+
+    expect(out.code).toBe(0);
+    expect(JSON.parse(out.stdout)).toEqual(['a "b"', "x\ty"]);
+  });
+
+  test("-j passes JSON values", async () => {
+    const out = await runWrapped(
+      ["/bin/sh", "-c", `inngest-tool -j echo '{"n":1}' 2`],
+      tools,
+    );
+
+    expect(JSON.parse(out.stdout)).toEqual([{ n: 1 }, 2]);
+  });
+
+  test("-r prints a string result unescaped", async () => {
+    const out = await runWrapped(["inngest-tool", "-r", "text"], tools);
+
+    expect(out.stdout).toBe('a "quote"\nline two\ttab \\ slash');
+  });
+
+  test("--stdin sends stdin as the last argument", async () => {
+    const out = await runWrapped(
+      ["/bin/sh", "-c", `printf 'k=v\\n\\n' | inngest-tool --stdin echo head`],
+      tools,
+    );
+
+    expect(JSON.parse(out.stdout)).toEqual(["head", "k=v"]);
+  });
+
+  test("a tool error prints its message and exits 1", async () => {
+    const out = await runWrapped(["inngest-tool", "fail"], tools);
+
+    expect(out.code).toBe(1);
+    expect(out.stderr).toContain("no good");
+  });
+
+  test("outside a command with tools it exits 2", async () => {
+    const root = temp();
+    const file = join(root, "inngest-tool");
+    writeFileSync(file, toolCliScript);
+    chmodSync(file, 0o755);
+    const child = spawn("/bin/sh", [file, "echo"], {
+      env: { ...process.env, INNGEST_TOOLS_DIR: "" },
+      stdio: "ignore",
+    });
+    const code = await new Promise<number | null>((resolve) => {
+      child.on("exit", resolve);
+    });
+
+    expect(code).toBe(2);
+  });
+});
+
+describe("shims", () => {
+  const fakeBin = (): string => {
+    const dir = temp();
+    mkdirSync(dir, { recursive: true });
+    const fly = join(dir, "fly");
+    writeFileSync(
+      fly,
+      '#!/bin/sh\necho "fly $* token=${FLY_API_TOKEN:-none}"\n',
+    );
+    chmodSync(fly, 0o755);
+
+    return dir;
+  };
+
+  test("inject: runs the real program with a credential for this call only", async () => {
+    const out = await shimmed(
+      "fly deploy --app box; echo after: ${FLY_API_TOKEN:-unset}",
+      {
+        fly: {
+          handle: ({ argv }) => {
+            return run({ env: { FLY_API_TOKEN: `tok-for-${argv[0]}` } });
+          },
+        },
+      },
+      fakeBin(),
+    );
+
+    expect(out.stdout).toBe(
+      "fly deploy --app box token=tok-for-deploy\nafter: unset\n",
+    );
+    expect(out.calls).toEqual(["inngestShim"]);
+  });
+
+  test("rewrite: runs the real program with another argv", async () => {
+    const out = await shimmed(
+      "fly deploy",
+      {
+        fly: {
+          handle: ({ argv }) => {
+            return run({ argv: [...argv, "--dry-run"] });
+          },
+        },
+      },
+      fakeBin(),
+    );
+
+    expect(out.stdout).toBe("fly deploy --dry-run token=none\n");
+  });
+
+  test("decline: exits 126 with the message and never runs the program", async () => {
+    const out = await shimmed(
+      "fly destroy",
+      {
+        fly: {
+          handle: ({ name }) => {
+            return refuse(name, "destroy is not allowed here");
+          },
+        },
+      },
+      fakeBin(),
+    );
+
+    expect(out.code).toBe(126);
+    expect(out.stderr).toBe("fly: destroy is not allowed here\n");
+    expect(out.stdout).toBe("");
+  });
+
+  test("fake: answers without the program", async () => {
+    const out = await shimmed("fly status", {
+      fly: {
+        handle: () => {
+          return reply(0, { stdout: "all green\n" });
+        },
+      },
+    });
+
+    expect(out.stdout).toBe("all green\n");
+  });
+
+  test("a shim is found by a subprocess, not only the command itself", async () => {
+    const out = await shimmed("sh -c 'sh -c \"fly nested\"'", {
+      fly: {
+        handle: () => {
+          return reply(0, { stdout: "from host\n" });
+        },
+      },
+    });
+
+    expect(out.stdout).toBe("from host\n");
+  });
+
+  test("an unknown shim name from the sandbox is an error", async () => {
+    const built = withShims("true", { fly: { handle: () => reply(0) } });
+    const resolved = await resolveToolCall(
+      built.tools,
+      {
+        op: "call",
+        id: 1,
+        tool: "inngestShim",
+        args: [{ name: "constructor", argv: [], cwd: "/", stdin: "" }],
+      },
+      "{}",
+    );
+
+    expect("error" in resolved).toBe(false);
+    if (!("invoke" in resolved) || !resolved.invoke) {
+      throw new Error("expected a call to run");
+    }
+
+    await expect(
+      resolved.invoke({
+        signal: new AbortController().signal,
+        idempotencyKey: "k",
+      }),
+    ).rejects.toThrow("Unknown shim");
+  });
+
+  test("shim names that could break the launcher are rejected", () => {
+    expect(() => {
+      return withShims("true", { "a b; rm -rf /": { handle: () => reply(0) } });
+    }).toThrow("Invalid shim name");
+  });
+});
+
+describe("inject and hostEnv", () => {
+  let minted = 0;
+  const inject = {
+    fly: {
+      inject: {
+        FLY_API_TOKEN: () => {
+          minted++;
+
+          return `minted-${minted}`;
+        },
+      },
+    },
+  };
+  const fly = (): string => {
+    const dir = temp();
+    const file = join(dir, "fly");
+    writeFileSync(file, '#!/bin/sh\necho "fly $* $FLY_API_TOKEN"\n');
+    chmodSync(file, 0o755);
+
+    return dir;
+  };
+
+  test("an inject-only shim is plain sh: reads the value from the host and runs the real program", async () => {
+    const out = await shimmed("fly deploy; fly status", inject, fly());
+
+    expect(out.stdout).toBe("fly deploy minted-1\nfly status minted-2\n");
+    expect(out.calls).toEqual(["env", "env"]);
+  });
+
+  test("hostEnv reads only allowed names, one value or an array", async () => {
+    const built = withShims("true", {});
+    const tools: SandboxTools = {
+      env: hostEnvTool(hostEnvFrom({ A: "1", B: () => "2" })),
+    };
+    const out = await runWrapped(
+      [
+        "/bin/sh",
+        "-c",
+        "inngest-tool -r env A; echo; inngest-tool env A B; inngest-tool env C",
+      ],
+      tools,
+    );
+
+    expect(built.tools).toEqual({});
+    expect(out.stdout).toBe('1\n["1","2"]\n');
+    expect(out.stderr).toContain("Not allowed to read: C");
+  });
+
+  test("a name list reads the host's environment", async () => {
+    process.env.SHIM_TEST_VALUE = "from-host";
+    const env = hostEnvTool(hostEnvFrom(["SHIM_TEST_VALUE"]));
+    const out = await runWrapped(
+      ["inngest-tool", "-r", "env", "SHIM_TEST_VALUE"],
+      { env },
+    );
+
+    expect(out.stdout).toBe("from-host");
+  });
+});
+
+describe("gitCredentials", () => {
+  const minted: string[] = [];
+  const shims = gitCredentials({
+    "github.com": ({ path }) => {
+      minted.push(path ?? "");
+
+      return { username: "x-access-token", password: "ghs_short" };
+    },
+  });
+
+  test("git asks the helper, which answers from the host", async () => {
+    const out = await shimmed(
+      `printf 'protocol=https\\nhost=github.com\\npath=acme/app.git\\n\\n' | git -c credential.useHttpPath=true credential fill`,
+      shims,
+    );
+
+    expect(out.stdout).toContain("username=x-access-token\n");
+    expect(out.stdout).toContain("password=ghs_short\n");
+    expect(minted).toEqual(["acme/app.git"]);
+  });
+
+  test("a host without a handler gets no credential and git gives up", async () => {
+    const out = await shimmed(
+      `printf 'protocol=https\\nhost=example.com\\n\\n' | GIT_TERMINAL_PROMPT=0 git credential fill`,
+      shims,
+    );
+
+    expect(out.code).not.toBe(0);
+  });
+
+  test("store and erase are answered in the sandbox", async () => {
+    const out = await shimmed(
+      `printf 'protocol=https\\nhost=github.com\\nusername=u\\npassword=p\\n\\n' | git credential approve; git credential-inngest erase </dev/null`,
+      shims,
+    );
+
+    expect(out.calls).toEqual([]);
+  });
+});

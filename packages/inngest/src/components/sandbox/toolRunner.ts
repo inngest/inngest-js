@@ -124,6 +124,11 @@ interface Round {
   result?: SandboxOperationResultV1;
 }
 
+/**
+ * A reply, or a function that makes it when the wait step runs.
+ */
+type Reply = string | (() => Promise<string>);
+
 const errorMessage = (error: unknown): string => {
   return String(error instanceof Error ? error.message : error).slice(0, 2000);
 };
@@ -308,7 +313,7 @@ export const runCommandWithTools = async (
   }: {
     request: ToolRequest;
     line: string;
-  }): Promise<string> => {
+  }): Promise<Reply> => {
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
     const idempotencyKey = `${scope}${stepId}`;
 
@@ -336,6 +341,23 @@ export const runCommandWithTools = async (
         );
 
         return resultLine(call.id, call.tool, value);
+      }
+
+      if (resolved.memo === "none") {
+        // Runs in the wait step, once, so a replay never calls it again.
+        return async () => {
+          try {
+            const signal = AbortSignal.timeout(toolTimeoutMs);
+            const value = await Promise.race([
+              resolved.invoke({ signal, idempotencyKey }),
+              timeoutAfter(toolTimeoutMs, call.tool, signal),
+            ]);
+
+            return resultLine(call.id, call.tool, value);
+          } catch (error) {
+            return replyLine(call.id, { error: errorMessage(error) });
+          }
+        };
       }
 
       return await host.run(
@@ -414,7 +436,7 @@ export const runCommandWithTools = async (
       pending.push({ request, line });
     }
 
-    const replies: string[] = [];
+    const replies: Reply[] = [];
     for (let at = 0; at < pending.length; at += maxConcurrentCalls) {
       replies.push(
         ...(await Promise.all(
@@ -427,8 +449,17 @@ export const runCommandWithTools = async (
     const remainingMs = timeoutMs - (state.now - started.startedAt);
     state = await host.run(
       sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
-      () => {
-        return follow(dir, lines, replies, Math.min(waitWindowMs, remainingMs));
+      async () => {
+        return follow(
+          dir,
+          lines,
+          await Promise.all(
+            replies.map((reply) => {
+              return typeof reply === "function" ? reply() : reply;
+            }),
+          ),
+          Math.min(waitWindowMs, remainingMs),
+        );
       },
       { ...meta, kind: "wait" },
     );

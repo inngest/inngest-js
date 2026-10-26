@@ -696,6 +696,29 @@ describe("commands.run with tools", () => {
     expect(fake.replies).toHaveLength(1);
   });
 
+  test("memo none answers in the wait step: no step of its own and nothing stored", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "secret");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const memo = new Map<string, string>();
+    const { host, executed } = createHost(sandbox, memo);
+    const secret = vi.fn(async () => {
+      return "s3cret";
+    });
+
+    await run(host, { secret: tool.step({ memo: "none", run: secret }) });
+
+    expect(executed).toEqual(["exec", "exec:wait:1"]);
+    expect(replies(fake)).toEqual([{ id: 1, result: "s3cret" }]);
+    expect([...memo.values()].join("")).not.toContain("s3cret");
+    expect(secret).toHaveBeenCalledTimes(1);
+  });
+
   test("replay serves memoized steps without touching the sandbox or tools", async () => {
     const script: Fake["react"] = (f, replied) => {
       if (replied === undefined) {

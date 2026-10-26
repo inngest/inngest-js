@@ -21,6 +21,7 @@ import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
+import type { HostEnv, Shims } from "./shims.ts";
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
 /**
@@ -72,6 +73,7 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
 export interface SandboxTool {
   readonly description?: string;
   readonly group?: boolean;
+  readonly memo?: "step" | "none";
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -125,6 +127,20 @@ export interface SandboxToolsOptions {
    */
   tools?: SandboxTools;
   toolOptions?: SandboxToolOptions;
+
+  /**
+   * EXPERIMENTAL: Programs on `PATH` that call a handler in your app. See
+   * `shims.ts`. Counts as a tool for the command's limits.
+   */
+  shims?: Shims;
+
+  /**
+   * EXPERIMENTAL: Host values the code can read with `inngest-tool env NAME`,
+   * and nothing else. A list of names reads them from the host's environment;
+   * an object gives values, or functions that make one per read. Results are
+   * never stored in the run (`memo: "none"`).
+   */
+  hostEnv?: readonly string[] | HostEnv;
 }
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
@@ -139,6 +155,16 @@ export interface ToolDefinition<
    * What the tool does, for the people reading the code.
    */
   description?: string;
+
+  /**
+   * EXPERIMENTAL: Whether the result is stored. The default, `"step"`, runs
+   * the tool as a durable step, so its result is memoized and persisted with
+   * the run. `"none"` runs it inline, in the step that answers the sandbox:
+   * no step of its own, nothing stored, and it runs again if that step is
+   * retried. For results that are secret, or cheap and deterministic. Not for
+   * `tool.group()`.
+   */
+  memo?: "step" | "none";
 
   /**
    * Any Standard Schema. With it, sandbox code calls the tool with named
@@ -405,6 +431,7 @@ export const resolveToolCall = async (
 
   return {
     group: definition.group === true,
+    memo: definition.memo ?? "step",
     invoke: async (ctx: SandboxToolContext) => {
       // A plain function takes positional values and no context.
       const value = await run(

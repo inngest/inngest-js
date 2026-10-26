@@ -93,6 +93,22 @@ export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
+  GitCredential,
+  GitCredentialRequest,
+  Shim,
+  ShimAction,
+  ShimCall,
+  ShimReply,
+  ShimRun,
+  Shims,
+} from "./components/sandbox/shims.ts";
+export {
+  gitCredentials,
+  refuse,
+  reply,
+  run,
+} from "./components/sandbox/shims.ts";
+export type {
   SandboxTool,
   SandboxToolContext,
   SandboxToolEntry,

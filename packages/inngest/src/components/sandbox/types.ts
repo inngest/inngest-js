@@ -616,6 +616,8 @@ export interface DurableSandbox {
               exitCodes?: SandboxExitCodes;
               tools?: undefined;
               toolOptions?: undefined;
+              shims?: undefined;
+              hostEnv?: undefined;
             }
         ),
     ): Promise<SandboxCommandResult>;

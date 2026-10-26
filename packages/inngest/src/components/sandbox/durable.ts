@@ -34,6 +34,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import { hostEnvFrom, hostEnvTool, withShims } from "./shims.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
@@ -754,7 +755,30 @@ export const createDurableSandboxFacade = (
     command,
     options,
   ) => {
-    const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
+    const {
+      tools: ownTools,
+      toolOptions,
+      exitCodes,
+      shims,
+      hostEnv,
+      environment: ownEnvironment,
+      ...rest
+    } = options ?? {};
+    const shimmed = shims && withShims(command, shims);
+    const tools =
+      shims || hostEnv
+        ? {
+            ...ownTools,
+            ...(hostEnv && { env: hostEnvTool(hostEnvFrom(hostEnv)) }),
+            ...shimmed?.tools,
+          }
+        : ownTools;
+    const commandOptions = {
+      ...rest,
+      ...(shimmed
+        ? { environment: { ...shimmed.environment, ...ownEnvironment } }
+        : ownEnvironment && { environment: ownEnvironment }),
+    };
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
@@ -791,12 +815,15 @@ export const createDurableSandboxFacade = (
       });
     }
 
-    const normalized = normalizeSandboxCommandOptions(command, {
-      ...commandOptions,
-      ...(tools && {
-        timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
-      }),
-    });
+    const normalized = normalizeSandboxCommandOptions(
+      shimmed?.command ?? command,
+      {
+        ...commandOptions,
+        ...(tools && {
+          timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+        }),
+      },
+    );
     const { timeout: _timeout, ...input } = normalized;
     const operation = parseSandboxOperationForAction("exec", {
       protocolVersion: sandboxProtocolVersion,
