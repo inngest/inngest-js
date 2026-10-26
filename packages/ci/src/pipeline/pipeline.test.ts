@@ -3428,7 +3428,7 @@ describe("cache", () => {
     expect(api.snapshots.size).toBe(0);
   });
 
-  test("a pull request reuses what its base branch built, and caches nothing of its own", async () => {
+  test("a pull request reuses the shared cache entry a push built", async () => {
     const api = createFakeSandboxApi();
 
     const run = async (

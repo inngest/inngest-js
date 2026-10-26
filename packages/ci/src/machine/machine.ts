@@ -440,8 +440,8 @@ const startSandbox = async (
   // one still says `READY`. A start that times out says no more: the
   // machine may have been stuck, or the node busy, as easily as the
   // snapshot bad. Deleting on the first one would let a single blip
-  // destroy a cache that is shared, since a pull request restores its
-  // base branch's snapshots, and every run after it would build again. So
+  // destroy a cache that is shared by every run, and every run after it
+  // would build again. So
   // only a snapshot that fails to start a second time is broken enough to
   // delete, and never because of timeouts, which are rebuilt around.
   // Capacity errors (`compute_unavailable`, 429 and 503) and launch
