@@ -30,7 +30,12 @@ import {
 } from "./shims.ts";
 import { toolCliScript } from "./toolCli.ts";
 import { toolsRoot, wrapperScript } from "./toolStubs.ts";
-import { parseToolEvent, resolveToolCall, type SandboxTools } from "./tools.ts";
+import {
+  parseToolEvent,
+  resolveToolCall,
+  type SandboxTools,
+  tool,
+} from "./tools.ts";
 
 const dirs: string[] = [];
 
@@ -383,6 +388,40 @@ describe("inject and hostEnv", () => {
     );
 
     expect(out.stdout).toBe("from-host");
+  });
+});
+
+describe("a credential helper written in sh", () => {
+  test("git calls inngest-tool directly, with no shim and no node", async () => {
+    const helper =
+      '!f() { test "$1" = get || exit 0; inngest-tool -r --stdin gitCredential; }; f';
+    const tools: SandboxTools = {
+      gitCredential: tool.step({
+        memo: "none",
+        run: (stdin: string) => {
+          return stdin.includes("host=github.com")
+            ? "username=x-access-token\npassword=ghs_sh\n\n"
+            : "";
+        },
+      }),
+    };
+    const out = await runWrapped(
+      [
+        "/bin/sh",
+        "-c",
+        "printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill",
+      ],
+      tools,
+      {
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "credential.helper",
+        GIT_CONFIG_VALUE_0: "",
+        GIT_CONFIG_KEY_1: "credential.helper",
+        GIT_CONFIG_VALUE_1: helper,
+      },
+    );
+
+    expect(out.stdout).toContain("password=ghs_sh\n");
   });
 });
 
