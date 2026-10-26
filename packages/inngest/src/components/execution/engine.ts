@@ -3118,10 +3118,10 @@ class InngestExecutionEngine
   }
 
   /**
-   * Save buffered `step.memo()` results before anything else happens.
+   * Save the next buffered `step.memo()` result before anything else happens.
    *
    * Inngest treats more than one non-lazy op in a message as parallel steps, so
-   * memos are sent on their own: as a response in async mode, or as a
+   * each memo is sent on its own: as a response in async mode, or as a
    * checkpoint in checkpointing modes. Whatever was found next is found again
    * when the run continues.
    */
@@ -3170,7 +3170,8 @@ class InngestExecutionEngine
       };
     }
 
-    return undefined;
+    // Each memo is its own message, so go again for the next one.
+    return this.flushMemos();
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {

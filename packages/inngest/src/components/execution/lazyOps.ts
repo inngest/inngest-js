@@ -41,13 +41,20 @@ export class LazyOps {
   }
 
   /**
-   * Take only the memo ops (`step.memo()` results, which are `StepRun` ops
-   * that carry data). Inngest treats more than one non-lazy op in a message
-   * as parallel steps, so memo ops must ship on their own and `drain()` never
+   * Take the first memo op (a `step.memo()` result, which is a `StepRun` op
+   * that carries data). Inngest treats more than one non-lazy op in a message
+   * as parallel steps, so each memo ships on its own and `drain()` never
    * returns them.
    */
   drainMemos(): OutgoingOp[] {
-    return this.take((op) => op.op === StepOpCode.StepRun);
+    const first = this.buffer.find((op) => op.op === StepOpCode.StepRun);
+    if (!first) {
+      return [];
+    }
+
+    this.buffer = this.buffer.filter((op) => op !== first);
+
+    return [first];
   }
 
   private take(match: (op: OutgoingOp) => boolean): OutgoingOp[] {

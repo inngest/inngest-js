@@ -249,20 +249,36 @@ describe("step.memo", () => {
     expect(stepsOf(result)[0]?.data).toEqual({ wrapped: "v" });
   });
 
-  test("repeated IDs follow the normal indexing rules", async () => {
-    const seen: unknown[] = [];
-    const { result } = await run({
+  test("repeated IDs follow the normal indexing rules, one memo per message", async () => {
+    const handler: Handler = async ({ step }) => {
+      await step.memo("m", 1);
+      await step.memo("m", 2);
+    };
+
+    const first = await run({ handler });
+    expect(stepsOf(first.result).map((s) => s.id)).toEqual([hashId("m")]);
+
+    const second = await run({
+      handler,
+      stepState: { [hashId("m")]: { id: hashId("m"), data: 1 } },
+      stepCompletionOrder: [hashId("m")],
+    });
+    expect(stepsOf(second.result).map((s) => s.id)).toEqual([hashId("m:1")]);
+  });
+
+  test("checkpointing: sequential memos are checkpointed one per call", async () => {
+    const { checkpointStepsAsync } = await run({
+      stepMode: StepMode.AsyncCheckpointing,
       handler: async ({ step }) => {
-        seen.push(await step.memo("m", 1));
-        seen.push(await step.memo("m", 2));
+        await step.memo("a", 1);
+        await step.memo("b", 2);
       },
     });
 
-    expect(seen).toEqual([1, 2]);
-    expect(stepsOf(result).map((s) => s.id)).toEqual([
-      hashId("m"),
-      hashId("m:1"),
-    ]);
+    const calls = checkpointStepsAsync.mock.calls.map(([args]) => {
+      return args.steps.map((s: { id: string }) => s.id);
+    });
+    expect(calls.slice(0, 2)).toEqual([[hashId("a")], [hashId("b")]]);
   });
 
   test("a memo that finishes late does not ride with another step", async () => {
