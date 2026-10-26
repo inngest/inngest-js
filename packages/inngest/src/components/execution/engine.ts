@@ -466,6 +466,7 @@ class InngestExecutionEngine
         await allCheckpointHandler(checkpoint, i);
 
         const memoResult = await this.flushMemos();
+
         if (memoResult) {
           return memoResult;
         }
@@ -3094,15 +3095,27 @@ class InngestExecutionEngine
     // The step is never reported to Inngest as found, so it must not look new.
     step.hasStepState = true;
 
-    const result = await this.executeStep(step);
-    if (result.error) {
-      step.memoizationDeferred?.reject(result.error);
-      return;
+    try {
+      const result = await this.executeStep(step);
+
+      if (result.error) {
+        step.memoizationDeferred?.reject(result.error);
+        return;
+      }
+
+      this.state.lazyOps.push({
+        ...result,
+        data: undefinedToNull(result.data),
+      });
+
+      this.resumeStepWithResult(result);
+    } catch (err) {
+      // A failing middleware hook must fail the user's await, not hang it.
+      step.memoizationDeferred?.reject(err);
+    } finally {
+      // `executeStep` stops the step-not-found timer; nothing else restarts it.
+      this.timeout?.reset();
     }
-
-    this.state.lazyOps.push({ ...result, data: undefinedToNull(result.data) });
-
-    this.resumeStepWithResult(result);
   }
 
   /**

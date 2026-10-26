@@ -264,4 +264,51 @@ describe("step.memo", () => {
       hashId("m:1"),
     ]);
   });
+
+  test("a memo that finishes late does not ride with another step", async () => {
+    class Slow extends Middleware.BaseMiddleware {
+      readonly id = "slow";
+
+      override async wrapStepHandler({
+        next,
+        stepInfo,
+      }: Middleware.WrapStepHandlerArgs) {
+        if (stepInfo.options.id === "m") {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+
+        return next();
+      }
+    }
+
+    const { result } = await run({
+      middleware: [Slow],
+      handler: async ({ step }) => {
+        await Promise.all([step.memo("m", 1), step.run("r", () => 2)]);
+      },
+    });
+
+    const ids =
+      result.type === "steps-found" ? stepsOf(result).map((s) => s.id) : [];
+    expect(ids).not.toContain(hashId("m"));
+  });
+
+  test("a middleware that throws fails the await instead of hanging", async () => {
+    class Throws extends Middleware.BaseMiddleware {
+      readonly id = "throws";
+
+      override async wrapStepHandler(): Promise<unknown> {
+        throw new Error("boom");
+      }
+    }
+
+    const { result } = await run({
+      middleware: [Throws],
+      handler: async ({ step }) => {
+        await step.memo("m", 1);
+      },
+    });
+
+    expect(result.type).toBe("function-rejected");
+  });
 });

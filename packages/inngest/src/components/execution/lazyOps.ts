@@ -33,32 +33,28 @@ export class LazyOps {
   }
 
   /**
-   * Take ownership of buffered ops and clear the buffer. Callers ship them on
-   * whichever wire message comes next.
+   * Take ownership of buffered ops, except memo ops, and clear them from the
+   * buffer. Callers ship them on whichever wire message comes next.
    */
   drain(): OutgoingOp[] {
-    if (this.buffer.length === 0) {
-      return [];
-    }
-    const ops = this.buffer;
-    this.buffer = [];
-    return ops;
+    return this.take((op) => op.op !== StepOpCode.StepRun);
   }
 
   /**
    * Take only the memo ops (`step.memo()` results, which are `StepRun` ops
    * that carry data). Inngest treats more than one non-lazy op in a message
-   * as parallel steps, so memo ops must ship on their own.
+   * as parallel steps, so memo ops must ship on their own and `drain()` never
+   * returns them.
    */
   drainMemos(): OutgoingOp[] {
-    const memos = this.buffer.filter((op) => op.op === StepOpCode.StepRun);
-    if (memos.length === 0) {
-      return [];
-    }
+    return this.take((op) => op.op === StepOpCode.StepRun);
+  }
 
-    this.buffer = this.buffer.filter((op) => op.op !== StepOpCode.StepRun);
+  private take(match: (op: OutgoingOp) => boolean): OutgoingOp[] {
+    const taken = this.buffer.filter(match);
+    this.buffer = this.buffer.filter((op) => !match(op));
 
-    return memos;
+    return taken;
   }
 
   /**
