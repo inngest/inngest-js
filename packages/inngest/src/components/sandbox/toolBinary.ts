@@ -6,6 +6,7 @@
  * checks for it, and only a sandbox without it receives an upload. A base image
  * that already has it at the same path pays nothing.
  */
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { Sandbox } from "./types.ts";
 
 export const toolBinaryDir = "/inngest/tools/bin";
@@ -122,7 +123,7 @@ export const installToolBinary = async (
   }
 
   if (have.exitCode === 3) {
-    throw new Error(
+    throw new NonRetriableError(
       "Handler shims need the inngest-tool binary, which is built for x86_64 sandboxes only",
     );
   }

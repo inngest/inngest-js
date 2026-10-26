@@ -432,6 +432,18 @@ describe("inject and hostEnv", () => {
     expect(out.calls).toEqual(["env", "env"]);
   });
 
+  test("an inject shim still finds the real program when the code moves it in PATH", async () => {
+    const out = await shimmed(
+      'PATH="/usr/bin:$PATH" fly deploy; PATH="$PATH:/tmp" fly status',
+      inject,
+      fly(),
+    );
+
+    expect(out.stdout).toMatch(
+      /^fly deploy minted-\d+\nfly status minted-\d+\n$/,
+    );
+  });
+
   test("hostEnv reads only allowed names, one value or an array", async () => {
     const built = withShims("true", {});
     const tools: SandboxTools = {

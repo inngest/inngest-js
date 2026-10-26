@@ -422,7 +422,12 @@ export const hostEnvFrom = (option: readonly string[] | HostEnv): HostEnv => {
 const injectLauncher = (name: string, variables: string[]): string => {
   const lines = [
     "#!/bin/sh",
-    'PATH="${PATH#"${0%/*}":}"',
+    // Drop the shims directory wherever the code moved it to in PATH.
+    "d=${0%/*}",
+    "p=; IFS=:",
+    'for e in $PATH; do [ "$e" = "$d" ] || p="$p${p:+:}$e"; done',
+    "unset IFS",
+    "PATH=$p",
     ...variables.map((variable) => {
       return `${variable}=$(inngest-tool -r env ${variable}) || exit 125`;
     }),

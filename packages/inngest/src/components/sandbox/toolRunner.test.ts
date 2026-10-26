@@ -1468,7 +1468,8 @@ describe("shims and long commands on commands.run", () => {
 
     expect(await bad("HOME")).toBe(true);
     expect(await bad({ A: 1 })).toBe(true);
-    expect(await bad({ __proto__: "x", "bad name": "x" })).toBe(true);
+    expect(await bad(JSON.parse('{"__proto__":"x"}'))).toBe(true);
+    expect(await bad({ "bad name": "x" })).toBe(true);
     expect(await bad({ A: { mint: () => "x" } })).toBe(true);
   });
 
