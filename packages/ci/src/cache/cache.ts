@@ -348,7 +348,7 @@ export interface CacheTarget {
   ownKey: string;
   /** The named parts of the job's `cache.key`, resolved: what its handler gets as `key`. */
   key: Record<string, string>;
-  /** The name a build gives the snapshot, in the scope the job writes. */
+  /** The name a build gives the snapshot, where the run writes. */
   name: string;
 }
 

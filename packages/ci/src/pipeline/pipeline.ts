@@ -418,8 +418,8 @@ const runPipelineAttempt = async ({
       await completePipeline(run, checks, outcome);
     } catch (error) {
       // Reporting failed. Another attempt replays the memoized machine and
-      // snapshot IDs, so it keeps them; the last attempt cleans up anyway,
-      // since the generated cleanup function can't find snapshots.
+      // snapshot IDs, so it keeps them; the last attempt destroys its machines
+      // anyway, and the snapshots it scoped are deleted by the cleanup function.
       if (!run.willRetry(error)) {
         await cleanUp();
       }

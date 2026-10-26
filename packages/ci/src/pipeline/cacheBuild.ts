@@ -64,8 +64,8 @@ export interface CacheBuildData extends Record<string, unknown> {
    */
   ownKey: string;
   /**
-   * The name the snapshot is written under: scope, job and `ownKey`, where the
-   * scope of a job without a `cache` is the pipeline run.
+   * The name the snapshot is written under: the shared cache's, a local run's
+   * or the pipeline run's own, each with the job and `ownKey`.
    */
   cacheKey: string;
   /** The named parts of the job's `cache.key` as the invoking run resolved them. */
