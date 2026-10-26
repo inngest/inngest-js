@@ -37,6 +37,7 @@ import type {
   SandboxOperationForAction,
   SandboxOperationResultV1,
 } from "./protocol.ts";
+import { installToolBinary } from "./toolBinary.ts";
 import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
@@ -186,14 +187,23 @@ export const runCommandWithTools = async (
   host: ToolsHost,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<"exec">,
-  { tools, toolOptions = {} }: SandboxToolsRequest,
+  {
+    tools,
+    toolOptions = {},
+    binary,
+    timeoutMs: requestedTimeoutMs,
+  }: SandboxToolsRequest,
 ): Promise<SandboxOperationResultV1> => {
   validateTools(tools);
 
   const { id } = getStepOptions(idOrOptions);
+  // A command past five minutes waits in longer windows, to spend fewer steps.
   const waitWindowMs = normalizeDurationMs(
-    toolOptions.waitWindow ?? 20_000,
-    120_000,
+    toolOptions.waitWindow ??
+      ((requestedTimeoutMs ?? 0) > maxSandboxProcessTimeoutMs
+        ? 60_000
+        : 20_000),
+    240_000,
     "toolOptions.waitWindow",
   );
   const toolTimeoutMs = normalizeDurationMs(
@@ -208,7 +218,9 @@ export const runCommandWithTools = async (
     );
   }
 
-  const [{ command, environment, cwd, timeoutMs }] = operation.input;
+  const [{ command, environment, cwd, timeoutMs: operationTimeoutMs }] =
+    operation.input;
+  const timeoutMs = requestedTimeoutMs ?? operationTimeoutMs;
   const { sandbox } = host;
   // Concurrent callers of a group tool share step IDs, so their prefix tells
   // them apart
@@ -335,6 +347,7 @@ export const runCommandWithTools = async (
               return resolved.invoke({
                 signal: new AbortController().signal,
                 idempotencyKey,
+                runId: host.runId,
               });
             });
           },
@@ -349,7 +362,7 @@ export const runCommandWithTools = async (
           try {
             const signal = AbortSignal.timeout(toolTimeoutMs);
             const value = await Promise.race([
-              resolved.invoke({ signal, idempotencyKey }),
+              resolved.invoke({ signal, idempotencyKey, runId: host.runId }),
               timeoutAfter(toolTimeoutMs, call.tool, signal),
             ]);
 
@@ -370,7 +383,7 @@ export const runCommandWithTools = async (
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
           const value = await Promise.race([
-            resolved.invoke({ signal, idempotencyKey }),
+            resolved.invoke({ signal, idempotencyKey, runId: host.runId }),
             timeoutAfter(toolTimeoutMs, call.tool, signal),
           ]);
 
@@ -389,6 +402,10 @@ export const runCommandWithTools = async (
       // The step's own ID, which stays distinct when a command ID repeats.
       const stepId = getAsyncCtxSync()?.execution?.executingStep?.id ?? id;
       const dir = `${toolsRoot}/${sha256().update(`${scope}${stepId}`).digest("hex")}`;
+      if (binary) {
+        await installToolBinary(sandbox, binary);
+      }
+
       // The wait doesn't need the process to exist yet, so it runs alongside.
       const [, round] = await Promise.all([
         sandbox.processes.start({

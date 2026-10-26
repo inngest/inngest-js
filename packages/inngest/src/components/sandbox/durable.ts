@@ -35,6 +35,7 @@ import {
   validateSandboxResult,
 } from "./protocol.ts";
 import { hostEnvFrom, hostEnvTool, withShims } from "./shims.ts";
+import { bundledToolBinary } from "./toolBinary.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
@@ -762,29 +763,40 @@ export const createDurableSandboxFacade = (
       shims,
       hostEnv,
       environment: ownEnvironment,
-      ...rest
+      ...commandOptions
     } = options ?? {};
-    const shimmed = shims && withShims(command, shims);
-    const tools =
-      shims || hostEnv
-        ? {
-            ...ownTools,
-            ...(hostEnv && { env: hostEnvTool(hostEnvFrom(hostEnv)) }),
-            ...shimmed?.tools,
-          }
-        : ownTools;
-    const commandOptions = {
-      ...rest,
-      ...(shimmed
-        ? { environment: { ...shimmed.environment, ...ownEnvironment } }
-        : ownEnvironment && { environment: ownEnvironment }),
-    };
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
-    if (tools && exitCodes !== undefined) {
-      throw new SandboxValidationError("exitCodes can't be used with tools");
+    for (const [name, shim] of Object.entries(shims ?? {})) {
+      if ((shim as { shim?: unknown } | undefined)?.shim !== true) {
+        throw new SandboxValidationError(
+          `shims.${name} must be made with tool.shim()`,
+        );
+      }
     }
+
+    const allowedHostEnv = hostEnv && hostEnvFrom(hostEnv);
+    const binary = Object.values(shims ?? {}).some((shim) => {
+      return shim.handle;
+    })
+      ? await bundledToolBinary()
+      : undefined;
+    const shimmed =
+      shims && withShims(command, shims, { binary, hostEnv: allowedHostEnv });
+    const tools =
+      ownTools || shimmed || allowedHostEnv
+        ? {
+            ...ownTools,
+            ...(allowedHostEnv &&
+              !shimmed && { env: hostEnvTool(allowedHostEnv) }),
+            ...shimmed?.tools,
+          }
+        : undefined;
+    const environment =
+      shimmed || ownEnvironment
+        ? { ...shimmed?.environment, ...ownEnvironment }
+        : undefined;
 
     const text = commandText(command);
     const timeoutMs =
@@ -808,19 +820,24 @@ export const createDurableSandboxFacade = (
         rawToolResolver,
         sandbox: ref,
         idOrOptions,
-        spec: { ...spec, command },
+        spec: { ...spec, ...(environment && { environment }), command },
         text,
         timeoutMs,
         exitCodes: exitCodes ?? "any",
       });
     }
 
+    // A command with tools is always a process that steps follow in windows,
+    // so its timeout is its own, however long. The operation below only
+    // carries the command, so its timeout stays within what one exec accepts.
+    const toolsTimeoutMs = timeoutMs ?? maxSandboxProcessTimeoutMs;
     const normalized = normalizeSandboxCommandOptions(
       shimmed?.command ?? command,
       {
         ...commandOptions,
+        ...(environment && { environment }),
         ...(tools && {
-          timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+          timeout: Math.min(toolsTimeoutMs, maxSandboxProcessTimeoutMs),
         }),
       },
     );
@@ -855,20 +872,25 @@ export const createDurableSandboxFacade = (
     };
 
     // The exit is checked inside the step, so a disallowed one fails the step
-    // and a replay throws it again
+    // and a replay throws it again. A command with tools has no single step
+    // for it, so it is checked on the result, which replays the same.
     const result = await callRawTool(
       rawToolResolver,
       idOrOptions,
       operation,
-      exitCodes && exitCodes !== "any"
+      !tools && exitCodes && exitCodes !== "any"
         ? (wire) => {
             checkExit(exitCodes, { command: text, ...toResult(wire) });
 
             return wire;
           }
         : undefined,
-      tools && { tools, toolOptions },
+      tools && { tools, toolOptions, binary, timeoutMs: toolsTimeoutMs },
     );
+
+    if (tools && exitCodes && exitCodes !== "any") {
+      checkExit(exitCodes, { command: text, ...toResult(result) });
+    }
 
     return toResult(result);
   };

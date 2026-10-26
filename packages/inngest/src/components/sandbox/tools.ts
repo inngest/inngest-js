@@ -21,7 +21,15 @@ import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
-import type { HostEnv, Shims } from "./shims.ts";
+import { isInternalTool } from "./internalTool.ts";
+import {
+  createShim,
+  type HostEnv,
+  type SandboxShim,
+  type ShimDefinition,
+  type ShimHandler,
+} from "./shims.ts";
+import type { ToolBinary } from "./toolBinary.ts";
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
 /**
@@ -55,6 +63,11 @@ export interface SandboxToolContext {
    * writes, so a retry doesn't send the same Slack message twice.
    */
   idempotencyKey: string;
+
+  /**
+   * The ID of the run that is calling.
+   */
+  runId?: string;
 }
 
 type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
@@ -73,7 +86,11 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
 export interface SandboxTool {
   readonly description?: string;
   readonly group?: boolean;
-  readonly memo?: "step" | "none";
+  /**
+   * @internal Only for tools made by the SDK (`internalTool`): `"none"`
+   * answers inline, storing nothing.
+   */
+  readonly memo?: "none";
   readonly input?: StandardSchemaV1;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -132,19 +149,30 @@ export interface SandboxToolsOptions {
    * EXPERIMENTAL: Programs on `PATH` that call a handler in your app. See
    * `shims.ts`. Counts as a tool for the command's limits.
    */
-  shims?: Shims;
+  shims?: Record<string, SandboxShim>;
 
   /**
    * EXPERIMENTAL: Host values the code can read with `inngest-tool env NAME`,
    * and nothing else. A list of names reads them from the host's environment;
    * an object gives values, or functions that make one per read. Results are
-   * never stored in the run (`memo: "none"`).
+   * never stored in the run.
    */
   hostEnv?: readonly string[] | HostEnv;
 }
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
   tools: SandboxTools;
+
+  /**
+   * The binary handler shims need, put into the sandbox before the command.
+   */
+  binary?: ToolBinary;
+
+  /**
+   * The command's own timeout, which may pass the five minutes one exec can
+   * wait: the command is a process and steps follow it in windows.
+   */
+  timeoutMs?: number;
 };
 
 export interface ToolDefinition<
@@ -155,16 +183,6 @@ export interface ToolDefinition<
    * What the tool does, for the people reading the code.
    */
   description?: string;
-
-  /**
-   * EXPERIMENTAL: Whether the result is stored. The default, `"step"`, runs
-   * the tool as a durable step, so its result is memoized and persisted with
-   * the run. `"none"` runs it inline, in the step that answers the sandbox:
-   * no step of its own, nothing stored, and it runs again if that step is
-   * retried. For results that are secret, or cheap and deterministic. Not for
-   * `tool.group()`.
-   */
-  memo?: "step" | "none";
 
   /**
    * Any Standard Schema. With it, sandbox code calls the tool with named
@@ -218,6 +236,27 @@ export const tool = {
     definition: ToolDefinition<TInput, TOutput>,
   ): SandboxTool => {
     return definition as SandboxTool;
+  },
+
+  /**
+   * EXPERIMENTAL: Declares a program that stands in for the real one inside a
+   * sandbox command. Pass it to `shims` on `commands.run` or `$`. When code
+   * runs the program, `handle` runs here, in your app, and decides what
+   * happens. See `shims.ts`.
+   *
+   * @example
+   * ```ts
+   * const terraform = tool.shim((call) => {
+   *   return call.argv[0] === "apply"
+   *     ? refuse("terraform", "apply needs a pull request")
+   *     : run();
+   * });
+   *
+   * await sandbox.$({ shims: { terraform } }).sh`terraform plan`;
+   * ```
+   */
+  shim: (definition: ShimDefinition | ShimHandler): SandboxShim => {
+    return createShim(definition);
   },
 
   /**
@@ -431,7 +470,8 @@ export const resolveToolCall = async (
 
   return {
     group: definition.group === true,
-    memo: definition.memo ?? "step",
+    memo:
+      isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
     invoke: async (ctx: SandboxToolContext) => {
       // A plain function takes positional values and no context.
       const value = await run(

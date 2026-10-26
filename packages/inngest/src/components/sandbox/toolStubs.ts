@@ -167,7 +167,7 @@ chmod +x ${toolsRoot}/bin/${toolCliName}
 export INNGEST_TOOLS_DIR=$d PYTHONUNBUFFERED=1 PATH="${toolsRoot}/bin:$PATH"
 export PYTHONPATH="${toolsRoot}/py\${PYTHONPATH:+:$PYTHONPATH}" NODE_PATH="${toolsRoot}/js\${NODE_PATH:+:$NODE_PATH}"
 "$@" > "$d/out" 2> "$d/err"
-printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s"}\\n' $? "$(base64 -w0 "$d/out")" "$(base64 -w0 "$d/err")" | ${append}
+printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s"}\\n' $? "$(tail -c 262144 "$d/out" | base64 -w0)" "$(tail -c 262144 "$d/err" | base64 -w0)" | ${append}
 `;
 
 /**

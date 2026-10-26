@@ -1005,7 +1005,7 @@ describe("validation and helpers", () => {
     expect(result).toMatchObject({ data: [true, true, true, false] });
   });
 
-  test("commands.run rejects exitCodes with tools, and non-integer exitCodes, at runtime", async () => {
+  test("commands.run rejects non-integer exitCodes at runtime", async () => {
     const { client, execs } = createFakeClient();
     const fn = groupFunction(client, async (sandbox) => {
       const run = sandbox.commands.run as (
@@ -1019,24 +1019,20 @@ describe("validation and helpers", () => {
         });
       };
 
-      return [
-        await rejected({ exitCodes: [0], tools: {} }),
-        await rejected({ exitCodes: [0.5] }),
-      ];
+      return [await rejected({ exitCodes: [0.5] })];
     });
 
     const { result } = await runAll(fn);
 
-    expect(result).toMatchObject({ data: [true, true] });
+    expect(result).toMatchObject({ data: [true] });
     expect(execs).toEqual([]);
   });
 
-  test("exitCodes can't be used with tools", () => {
+  test("exitCodes can be used with tools", () => {
     const check = (sandbox: DurableSandbox) => {
       sandbox.commands.run("ok", "x", { tools: {} });
       sandbox.commands.run("ok", "x", { exitCodes: [0] });
-      // @ts-expect-error exitCodes and tools exclude each other
-      sandbox.commands.run("bad", "x", { exitCodes: [0], tools: {} });
+      sandbox.commands.run("both", "x", { exitCodes: [0], tools: {} });
     };
 
     expect(check).toBeTypeOf("function");

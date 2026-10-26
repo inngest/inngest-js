@@ -12,10 +12,12 @@ import { step, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { eventType } from "../triggers/triggers.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
+import { internalTool } from "./internalTool.ts";
 import {
   parseSandboxOperationForAction,
   type SandboxRawTool,
 } from "./protocol.ts";
+import { injectEnv } from "./shims.ts";
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
@@ -711,7 +713,12 @@ describe("commands.run with tools", () => {
       return "s3cret";
     });
 
-    await run(host, { secret: tool.step({ memo: "none", run: secret }) });
+    await run(host, {
+      secret: internalTool({
+        memo: "none",
+        run: secret,
+      }) as SandboxTools[string],
+    });
 
     expect(executed).toEqual(["exec", "exec:wait:1"]);
     expect(replies(fake)).toEqual([{ id: 1, result: "s3cret" }]);
@@ -1304,7 +1311,11 @@ describe("durable commands.run routing", () => {
     {
       name: "with tools, and a 5m default timeout",
       options: { tools: { a: async () => 1 } },
-      tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
+      tools: expect.objectContaining({
+        tools: { a: expect.any(Function) },
+        toolOptions: undefined,
+        timeoutMs: 300_000,
+      }),
     },
   ])("$name it is one raw tool call", async ({ options, tools }) => {
     const rawTool: SandboxRawTool = vi.fn(async () => {
@@ -1325,6 +1336,112 @@ describe("durable commands.run routing", () => {
       }),
       ...(tools ? [undefined, tools] : []),
     );
+  });
+});
+
+describe("shims and long commands on commands.run", () => {
+  const execResult = (exitCode: number) => {
+    return {
+      protocolVersion: 1,
+      action: "exec",
+      result: {
+        stdout: "",
+        stderr: "",
+        encoding: "base64",
+        exitCode,
+        output: { truncated: false },
+      },
+    } as const;
+  };
+  const facade = (exitCode = 0) => {
+    const rawTool: SandboxRawTool = vi.fn(async () => {
+      return execResult(exitCode);
+    });
+
+    return {
+      rawTool,
+      sandbox: createDurableSandboxFacade(sandboxRef, () => {
+        return rawTool;
+      }),
+    };
+  };
+
+  test("shims accept only tool.shim() values", async () => {
+    const { sandbox } = facade();
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        shims: { fly: { handle: () => undefined } } as never,
+      }),
+    ).rejects.toThrow("must be made with tool.shim()");
+  });
+
+  test("an inject shim adds the env tool and wraps the command", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "fly deploy", {
+      shims: { fly: injectEnv({ FLY_API_TOKEN: "t" }) },
+    });
+
+    const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(Object.keys(request?.tools ?? {})).toEqual(["env"]);
+    expect(operation).toMatchObject({
+      input: [
+        {
+          command: [
+            "/bin/sh",
+            "-c",
+            expect.any(String),
+            "sh",
+            "/bin/sh",
+            "-c",
+            "fly deploy",
+          ],
+        },
+      ],
+    });
+  });
+
+  test("a timeout past five minutes reaches the tool loop whole", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "true", {
+      tools: { a: async () => 1 },
+      timeout: "2h",
+    });
+
+    const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(request?.timeoutMs).toBe(2 * 60 * 60 * 1000);
+    expect(operation).toMatchObject({ input: [{ timeoutMs: 300_000 }] });
+  });
+
+  test("exitCodes apply to a command with tools", async () => {
+    const { sandbox } = facade(3);
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        tools: { a: async () => 1 },
+        exitCodes: [0],
+      }),
+    ).rejects.toThrow("exit code 3");
+  });
+});
+
+describe("the wait window of a long command", () => {
+  test("is a minute unless set, and the process is not capped at five minutes", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        exitWith(f);
+      }
+    });
+    const { host } = createHost(sandbox);
+
+    await runCommandWithTools(host, "exec", operation(), {
+      tools: { a: async () => 1 },
+      timeoutMs: 3_600_000,
+    });
+
+    expect(fake.waits[0]).toEqual({ lines: 0, seconds: 60 });
   });
 });
 

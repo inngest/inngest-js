@@ -9,6 +9,8 @@ import { spawn } from "node:child_process";
 import {
   appendFileSync,
   chmodSync,
+  copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -17,17 +19,19 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-
+import { internalTool } from "./internalTool.ts";
 import {
   gitCredentials,
   hostEnvFrom,
   hostEnvTool,
+  injectEnv,
   refuse,
   reply,
   run,
   type Shims,
   withShims,
 } from "./shims.ts";
+import type { ToolBinary } from "./toolBinary.ts";
 import { toolCliScript } from "./toolCli.ts";
 import { toolsRoot, wrapperScript } from "./toolStubs.ts";
 import {
@@ -49,6 +53,27 @@ const temp = (): string => {
 afterEach(() => {
   dirs.length = 0;
 });
+
+/**
+ * The static binary built from `sandbox-tool`, placed where the shim prelude
+ * links to it. Tests of handler shims are skipped where it is not built.
+ */
+const builtBinary = join(
+  import.meta.dirname,
+  "../../../sandbox-tool/dist/inngest-tool-linux-amd64",
+);
+const hasBinary = existsSync(builtBinary);
+const binaryDir = mkdtempSync(join(tmpdir(), "inngest-tool-bin-"));
+const testBinary: ToolBinary = {
+  path: join(binaryDir, "inngest-tool"),
+  load: async () => {
+    return new Uint8Array();
+  },
+};
+if (hasBinary) {
+  copyFileSync(builtBinary, testBinary.path);
+  chmodSync(testBinary.path, 0o755);
+}
 
 interface Outcome {
   code: number;
@@ -128,7 +153,7 @@ const runWrapped = async (
 };
 
 const shimmed = (command: string, shims: Shims, path?: string) => {
-  const built = withShims(command, shims);
+  const built = withShims(command, shims, { binary: testBinary });
 
   return runWrapped(built.command, built.tools, {
     ...built.environment,
@@ -207,7 +232,7 @@ describe("inngest-tool", () => {
   });
 });
 
-describe("shims", () => {
+describe.skipIf(!hasBinary)("shims", () => {
   const fakeBin = (): string => {
     const dir = temp();
     mkdirSync(dir, { recursive: true });
@@ -225,11 +250,9 @@ describe("shims", () => {
     const out = await shimmed(
       "fly deploy --app box; echo after: ${FLY_API_TOKEN:-unset}",
       {
-        fly: {
-          handle: ({ argv }) => {
-            return run({ env: { FLY_API_TOKEN: `tok-for-${argv[0]}` } });
-          },
-        },
+        fly: tool.shim(({ argv }) => {
+          return run({ env: { FLY_API_TOKEN: `tok-for-${argv[0]}` } });
+        }),
       },
       fakeBin(),
     );
@@ -244,11 +267,9 @@ describe("shims", () => {
     const out = await shimmed(
       "fly deploy",
       {
-        fly: {
-          handle: ({ argv }) => {
-            return run({ argv: [...argv, "--dry-run"] });
-          },
-        },
+        fly: tool.shim(({ argv }) => {
+          return run({ argv: [...argv, "--dry-run"] });
+        }),
       },
       fakeBin(),
     );
@@ -260,11 +281,9 @@ describe("shims", () => {
     const out = await shimmed(
       "fly destroy",
       {
-        fly: {
-          handle: ({ name }) => {
-            return refuse(name, "destroy is not allowed here");
-          },
-        },
+        fly: tool.shim(({ name }) => {
+          return refuse(name, "destroy is not allowed here");
+        }),
       },
       fakeBin(),
     );
@@ -276,11 +295,9 @@ describe("shims", () => {
 
   test("fake: answers without the program", async () => {
     const out = await shimmed("fly status", {
-      fly: {
-        handle: () => {
-          return reply(0, { stdout: "all green\n" });
-        },
-      },
+      fly: tool.shim(() => {
+        return reply(0, { stdout: "all green\n" });
+      }),
     });
 
     expect(out.stdout).toBe("all green\n");
@@ -288,18 +305,20 @@ describe("shims", () => {
 
   test("a shim is found by a subprocess, not only the command itself", async () => {
     const out = await shimmed("sh -c 'sh -c \"fly nested\"'", {
-      fly: {
-        handle: () => {
-          return reply(0, { stdout: "from host\n" });
-        },
-      },
+      fly: tool.shim(() => {
+        return reply(0, { stdout: "from host\n" });
+      }),
     });
 
     expect(out.stdout).toBe("from host\n");
   });
 
   test("an unknown shim name from the sandbox is an error", async () => {
-    const built = withShims("true", { fly: { handle: () => reply(0) } });
+    const built = withShims(
+      "true",
+      { fly: tool.shim(() => reply(0)) },
+      { binary: testBinary },
+    );
     const resolved = await resolveToolCall(
       built.tools,
       {
@@ -326,7 +345,11 @@ describe("shims", () => {
 
   test("shim names that could break the launcher are rejected", () => {
     expect(() => {
-      return withShims("true", { "a b; rm -rf /": { handle: () => reply(0) } });
+      return withShims(
+        "true",
+        { "a b; rm -rf /": tool.shim(() => reply(0)) },
+        { binary: testBinary },
+      );
     }).toThrow("Invalid shim name");
   });
 });
@@ -334,15 +357,13 @@ describe("shims", () => {
 describe("inject and hostEnv", () => {
   let minted = 0;
   const inject = {
-    fly: {
-      inject: {
-        FLY_API_TOKEN: () => {
-          minted++;
+    fly: injectEnv({
+      FLY_API_TOKEN: () => {
+        minted++;
 
-          return `minted-${minted}`;
-        },
+        return `minted-${minted}`;
       },
-    },
+    }),
   };
   const fly = (): string => {
     const dir = temp();
@@ -396,14 +417,14 @@ describe("a credential helper written in sh", () => {
     const helper =
       '!f() { test "$1" = get || exit 0; inngest-tool -r --stdin gitCredential; }; f';
     const tools: SandboxTools = {
-      gitCredential: tool.step({
+      gitCredential: internalTool({
         memo: "none",
         run: (stdin: string) => {
           return stdin.includes("host=github.com")
             ? "username=x-access-token\npassword=ghs_sh\n\n"
             : "";
         },
-      }),
+      }) as SandboxTools[string],
     };
     const out = await runWrapped(
       [
@@ -425,7 +446,7 @@ describe("a credential helper written in sh", () => {
   });
 });
 
-describe("gitCredentials", () => {
+describe.skipIf(!hasBinary)("gitCredentials", () => {
   const minted: string[] = [];
   const shims = gitCredentials({
     "github.com": ({ path }) => {

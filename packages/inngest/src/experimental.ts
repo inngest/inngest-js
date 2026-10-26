@@ -95,15 +95,19 @@ export { image } from "./components/sandbox/image.ts";
 export type {
   GitCredential,
   GitCredentialRequest,
-  Shim,
-  ShimAction,
+  HostEnv,
+  HostEnvValue,
+  SandboxShim,
   ShimCall,
+  ShimDefinition,
+  ShimHandler,
   ShimReply,
+  ShimResult,
   ShimRun,
-  Shims,
 } from "./components/sandbox/shims.ts";
 export {
   gitCredentials,
+  injectEnv,
   refuse,
   reply,
   run,
