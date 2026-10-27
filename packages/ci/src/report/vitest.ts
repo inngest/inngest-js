@@ -77,7 +77,6 @@ export const parseTestResults = (json: unknown): Found[] => {
           file,
           line: line ?? 1,
           level: "failure",
-          rule: snapshot ? "snapshot" : "test",
           title: snapshot ? `Snapshot mismatch: ${title}` : title,
           message: message.split("\n")[0] ?? "",
           details: message.slice(0, 2000),
@@ -88,7 +87,6 @@ export const parseTestResults = (json: unknown): Found[] => {
           file,
           line: line ?? 1,
           level: "warning",
-          rule: "flaky",
           title: `Flaky: ${title}`,
           message: `Passed after ${retries} ${retries === 1 ? "retry" : "retries"}.`,
         });

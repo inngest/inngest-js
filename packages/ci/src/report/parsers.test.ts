@@ -145,6 +145,25 @@ describe("parseTestResults", () => {
     expect(one).toMatchObject({ line: 1, title: "Test file failed to run" });
   });
 
+  it("counts lines in bytes, so earlier accents do not move it", () => {
+    const [result] = parseBiome({
+      diagnostics: [
+        {
+          category: "lint/x",
+          severity: "error",
+          description: "d",
+          location: {
+            path: "a.ts",
+            span: [4, 5],
+            sourceCode: "é\nb\nc",
+          },
+        },
+      ],
+    });
+
+    expect(result?.line).toBe(2);
+  });
+
   it("finds nothing in anything else", () => {
     expect(parseTestResults("nope")).toEqual([]);
     expect(parseTestResults({ testResults: "no" })).toEqual([]);
@@ -345,6 +364,19 @@ describe("shapeAnnotations", () => {
       title: "13 more of lint/x",
     });
     expect(shaped.annotations[0]?.raw_details?.split("\n")).toHaveLength(13);
+  });
+
+  it("keeps different ruleless failures apart", () => {
+    const many = Array.from({ length: groupAfter + 3 }, (_, index) => {
+      const { rule: _rule, ...rest } = found({
+        title: `test ${index}`,
+        line: index + 1,
+      });
+
+      return rest;
+    });
+
+    expect(shapeAnnotations([], many).annotations).toHaveLength(many.length);
   });
 
   it("keeps a rule on five lines or fewer as it is", () => {

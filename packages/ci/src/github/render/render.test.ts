@@ -49,6 +49,15 @@ describe("commandsTable", () => {
     expect(table.split("\n")).toHaveLength(4);
   });
 
+  it("keeps a pipeline and a multi-line command in its cell", () => {
+    const table = commandsTable([
+      { state: "done", command: "cat a | grep b\nwc -l", ms: 1000 },
+    ]);
+
+    expect(table).toContain("| ✅ | `cat a \\| grep b wc -l` |");
+    expect(table.split("\n")).toHaveLength(3);
+  });
+
   it("says nothing when no command has started", () => {
     expect(commandsTable([])).toBe("");
   });

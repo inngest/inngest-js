@@ -45,7 +45,8 @@ const grouped = (found: Found[]): Found[] => {
   const groups = new Map<string, Found[]>();
 
   for (const item of found) {
-    const key = `${item.tool}:${item.level}:${item.rule ?? item.message}`;
+    // Without a rule, only the same message of the same title repeats.
+    const key = `${item.tool}:${item.level}:${item.rule ?? `${item.title}:${item.message}`}`;
 
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }

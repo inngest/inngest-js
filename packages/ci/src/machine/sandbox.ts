@@ -69,6 +69,7 @@ export const sandbox = async (
       secrets: [],
       outputs: {},
       savedOutputs: "{}",
+      ...(job.check ? { check: job.check } : {}),
     } satisfies CiJobScope);
 
   job.extras ??= new Map();

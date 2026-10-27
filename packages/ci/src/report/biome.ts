@@ -7,6 +7,19 @@
 
 import { type Found, isRecord } from "./found.ts";
 
+/** The 1-based line of a UTF-8 byte offset into `source`. */
+const lineAt = (source: string, offset: number): number => {
+  let line = 1;
+
+  for (const byte of new TextEncoder().encode(source).subarray(0, offset)) {
+    if (byte === 10) {
+      line++;
+    }
+  }
+
+  return line;
+};
+
 /** `noExplicitAny` as the docs name it: `no-explicit-any`. */
 const kebab = (name: string): string => {
   return name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
@@ -37,10 +50,11 @@ export const parseBiome = (json: unknown): Found[] => {
     const span = diagnostic.location.span;
     const source = diagnostic.location.sourceCode;
 
-    // Spans are byte offsets, so the line is only known with the source.
+    // Spans are byte offsets, so the line is only known with the source, and
+    // its newlines are counted in the UTF-8 bytes the offset is into.
     const line =
       Array.isArray(span) && typeof source === "string"
-        ? source.slice(0, Number(span[0])).split("\n").length
+        ? lineAt(source, Number(span[0]))
         : 1;
 
     const category =

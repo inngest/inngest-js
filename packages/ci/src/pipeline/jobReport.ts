@@ -119,13 +119,21 @@ export const reportProgress = async (
   run: CiRunScope,
   jobPath: string,
   payload: () => CheckPayload,
+  /** The check's name, if it isn't the job's ID. */
+  name?: string,
 ): Promise<void> => {
   const base = joinId("github", `check:${jobPath}:progress`);
   const count = (run.counters.get(base) ?? 0) + 1;
 
   run.counters.set(base, count);
 
-  await run.ci.checks?.jobProgress?.({ run, jobPath, count, payload });
+  await run.ci.checks?.jobProgress?.({
+    run,
+    jobPath,
+    count,
+    payload,
+    ...(name ? { name } : {}),
+  });
 };
 
 /** The check of a job that waits on a build, which may be in another run. */

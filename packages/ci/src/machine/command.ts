@@ -1293,12 +1293,23 @@ const publishOutput = async (
  * more often, so it stays within GitHub's rate limits.
  */
 const showProgress = async (scope: CiJobScope): Promise<void> => {
-  await reportProgress(scope.run, scope.jobPath, () => {
-    return runningPayload(
-      scope,
-      scope.startedAt === undefined ? 0 : Date.now() - scope.startedAt,
-    );
-  });
+  // A job without a check of its own has none to update, and would leave a
+  // pending one behind.
+  if (!scope.check) {
+    return;
+  }
+
+  await reportProgress(
+    scope.run,
+    scope.jobPath,
+    () => {
+      return runningPayload(
+        scope,
+        scope.startedAt === undefined ? 0 : Date.now() - scope.startedAt,
+      );
+    },
+    scope.check.name,
+  );
 };
 
 const decoder = new TextDecoder();

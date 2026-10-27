@@ -324,6 +324,10 @@ interface BuildArgs {
   /** Whether nothing starts from the job, so the build takes no snapshot. */
   direct?: boolean;
   check?: CacheBuildData["parent"]["check"];
+  /** The waiting job's check name when it was given one, for its progress. */
+  checkName?: string;
+  /** Whether the waiting job has no check, so there is no progress to show. */
+  unchecked?: boolean;
   /** What the job starts from, which the build must start from too. */
   base?: CacheBuildResult;
   /** Whether to look the snapshot up before invoking. Off when the caller just did. */
@@ -509,6 +513,8 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     config,
     input,
     check,
+    checkName,
+    unchecked,
     lookup = true,
   } = args;
   const requested = requestFrom(args);
@@ -564,6 +570,8 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
       stepPath,
       config,
       target,
+      unchecked,
+      checkName,
       data,
       reused: (hit) => {
         return reusedBuild(config, target, hit);
@@ -848,6 +856,8 @@ const jobSteps = async ({
   // Open from the moment it's shown, so a run that ends first closes it. A
   // matrix queues all its combinations at once, when its axes are known.
   if (checked) {
+    scope.check = checkName ? { name: checkName } : {};
+
     run.openChecks.set(scope.path, checkName);
 
     const from = (config.from as { id?: unknown } | undefined)?.id;
@@ -981,7 +991,9 @@ const jobSteps = async ({
         input: given,
         target: cacheAt ?? directTarget(run, scope.path),
         direct: !cacheAt,
-        check: checks.target(target),
+        check: checked ? checks.target(target) : undefined,
+        ...(checkName ? { checkName } : {}),
+        ...(checked ? {} : { unchecked: true }),
         ...(fromParent ? { base: fromParent.built } : {}),
       }).catch((error: unknown) => {
         const report = failedReport(error);
@@ -1106,7 +1118,12 @@ const jobSteps = async ({
       (await durableNow(run, `end:${scope.path}`, scope.path, "ended"));
     const durationMs = endedAt - startedAt;
 
-    markJob(run, scope.path, { endedAt });
+    // Also for a job without a check, which the pipeline's check still counts.
+    markJob(run, scope.path, {
+      state: reusedSnapshot ? "cached" : "ok",
+      endedAt,
+      ...(asksBuild && config.cache && !reusedSnapshot ? { built: true } : {}),
+    });
 
     recordSummary(scope, {
       path: scope.path,

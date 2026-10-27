@@ -412,6 +412,11 @@ export interface CiJobScope {
   machine?: Promise<MachineHandle>;
   /** Set when the job builds a snapshot for someone who asked for it. */
   request?: BuildRequest;
+  /**
+   * Set when the job has a check of its own, with its name if it was given
+   * one. A job without it shows nothing on GitHub.
+   */
+  check?: { name?: string };
   fromSnapshotId?: string;
   /** The job this one starts from, and whether its snapshot was made before this run. */
   fromParent?: { id: string; reused: boolean };

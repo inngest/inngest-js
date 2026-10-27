@@ -108,6 +108,8 @@ export const requestBuild = async ({
   stepPath,
   config,
   target,
+  unchecked,
+  checkName,
   data,
   reused,
 }: {
@@ -118,6 +120,10 @@ export const requestBuild = async ({
   stepPath: string;
   config: JobConfig;
   target: CacheTarget;
+  /** Whether the job that waits has no check, so nothing shows the wait. */
+  unchecked?: boolean;
+  /** That check's name, if it was given one. */
+  checkName?: string;
   /** What the builder needs, which it can't work out from the lock. */
   data: CacheBuildData;
   /** What a build gives back for a snapshot that is found. */
@@ -197,9 +203,16 @@ export const requestBuild = async ({
     run.ci.hooks.activity(run, path, "asking for a build…");
 
     if (round === 0) {
-      await reportProgress(run, path, () => {
-        return waitingBuildPayload(run, path, config.id);
-      });
+      if (!unchecked) {
+        await reportProgress(
+          run,
+          path,
+          () => {
+            return waitingBuildPayload(run, path, config.id);
+          },
+          checkName,
+        );
+      }
     }
 
     // A request for a build that is still going is skipped, so asking again

@@ -57,6 +57,14 @@ const timeOf = (row: CommandRow): string => {
   return row.state === "stopped" ? `${time} when stopped` : time;
 };
 
+/** A command as one table cell: one line, with no pipes to split the row. */
+const cell = (command: string): string => {
+  return command
+    .replaceAll("`", "'")
+    .replace(/\s*\r?\n\s*/g, " ")
+    .replaceAll("|", "\\|");
+};
+
 /** The table, or an empty string when no command has started. */
 export const commandsTable = (rows: CommandRow[]): string => {
   if (rows.length === 0) {
@@ -71,7 +79,7 @@ export const commandsTable = (rows: CommandRow[]): string => {
         ? ""
         : colorBar(longest > 0 ? row.ms / longest : 1, squares[row.state], 8);
 
-    return `| ${icons[row.state]} | \`${row.command.replaceAll("`", "'")}\` | ${timeOf(row)} | ${bar} |`;
+    return `| ${icons[row.state]} | \`${cell(row.command)}\` | ${timeOf(row)} | ${bar} |`;
   });
 
   return ["| | Command | Time | |", "| --- | --- | --- | --- |", ...lines].join(
