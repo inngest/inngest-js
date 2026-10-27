@@ -597,7 +597,14 @@ export const createStepTools = <
             return { env: client.env ?? "default", app: client.id };
           },
           runId: () => {
-            return getAsyncCtxSync()?.execution?.ctx.runId ?? "run";
+            const runId = getAsyncCtxSync()?.execution?.ctx.runId;
+            if (!runId) {
+              // The run ID makes a claim unique; a constant would hand one
+              // run's message to another.
+              throw new Error("step.subscribe needs the run context.");
+            }
+
+            return runId;
           },
         },
         id,
