@@ -15,11 +15,22 @@ import type { InboxMessage, InboxStore } from "./inbox.ts";
 export type { InboxMessage } from "./inbox.ts";
 
 /**
- * The signal a sender rings to wake a reader of `key`.
+ * The key an inbox has in the store. Inboxes are per app, so the same thread
+ * key in two apps does not collide.
+ * @param app App ID.
  * @param key Inbox key.
  */
-export function doorbellSignal(key: string): string {
-  return `inbox:${key}`;
+export function inboxStoreKey(app: string, key: string): string {
+  return `${app}:${key}`;
+}
+
+/**
+ * The signal a sender rings to wake a reader of `key`.
+ * @param app App ID.
+ * @param key Inbox key.
+ */
+export function doorbellSignal(app: string, key: string): string {
+  return `inbox:${inboxStoreKey(app, key)}`;
 }
 
 export interface SubscribeOptions {
@@ -87,6 +98,7 @@ export interface SubscribeDeps {
   ) => Promise<unknown>;
   store: () => InboxStore;
   runId: () => string;
+  app: () => string;
 }
 
 /**
@@ -100,7 +112,12 @@ export function createSubscription<TData = unknown>(
   id: string,
   opts: SubscribeOptions,
 ): Subscription<TData> {
-  const store = () => opts.store ?? deps.store();
+  const store = () => {
+    return opts.store ?? deps.store();
+  };
+  const storeKey = () => {
+    return inboxStoreKey(deps.app(), opts.key);
+  };
   let reads = 0;
 
   async function next(): Promise<InboxMessage<TData> | null> {
@@ -110,7 +127,7 @@ export function createSubscription<TData = unknown>(
       reads += 1;
       const owner = `${deps.runId()}:${id}:${reads}`;
       const message = (await deps.run(`${id}:read`, async () => {
-        return store().claim(opts.key, owner);
+        return store().claim(storeKey(), owner);
       })) as InboxMessage<TData> | null;
 
       if (message) {
@@ -118,7 +135,7 @@ export function createSubscription<TData = unknown>(
       }
 
       const rung = await deps.waitForSignal(`${id}:wait`, {
-        signal: doorbellSignal(opts.key),
+        signal: doorbellSignal(deps.app(), opts.key),
         timeout: opts.recheck ?? "5m",
         onConflict: "replace",
       });
@@ -134,12 +151,12 @@ export function createSubscription<TData = unknown>(
     next,
     async peek() {
       return (await deps.run(`${id}:peek`, async () => {
-        return store().peek(opts.key);
+        return store().peek(storeKey());
       })) as InboxMessage<TData> | null;
     },
     async pending() {
       return (await deps.run(`${id}:pending`, async () => {
-        const { head, acked } = await store().cursors(opts.key);
+        const { head, acked } = await store().cursors(storeKey());
 
         return head > acked;
       })) as boolean;

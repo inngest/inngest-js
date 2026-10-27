@@ -22,7 +22,13 @@ describe("RESP", () => {
       1,
     ]);
     expect(parseReply(Buffer.from("$3\r\nab"))).toBeUndefined();
-    expect(() => parseReply(Buffer.from("-ERR bad\r\n"))).toThrow("ERR bad");
+    expect(parseReply(Buffer.from("-ERR bad\r\n"))?.reply).toEqual(
+      new Error("ERR bad"),
+    );
+    // An error nested in an array does not desync what follows it.
+    const nested = parseReply(Buffer.from("*2\r\n-ERR x\r\n:7\r\n+OK\r\n"));
+    expect(nested?.reply).toEqual([new Error("ERR x"), 7]);
+    expect(nested?.end).toBe("*2\r\n-ERR x\r\n:7\r\n".length);
   });
 
   test("runs commands in order over one connection", async () => {

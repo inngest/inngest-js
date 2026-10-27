@@ -19,9 +19,15 @@ describe("kv", () => {
       async () => {
         await kv.set("a", 1);
         await kv.set("a", 2, { scope: "function" });
-        const total = await kv.update<number>("n", (n) => (n ?? 0) + 5, {
-          scope: "app",
-        });
+        const total = await kv.update<number>(
+          "n",
+          function (n) {
+            return (n ?? 0) + 5;
+          },
+          {
+            scope: "app",
+          },
+        );
         out.push(
           await kv.get("a"),
           await kv.get("a", { scope: "function" }),
@@ -50,9 +56,9 @@ describe("kv", () => {
   });
 
   test("session and thread scopes need those sessions", () => {
-    expect(() => kvHash("thread", { env: "e", app: "a" })).toThrow(
-      /no thread id/,
-    );
+    expect(function () {
+      return kvHash("thread", { env: "e", app: "a" });
+    }).toThrow(/no thread id/);
     expect(kvHash("thread", { env: "e", app: "a", thread: "t1" })).toBe(
       "inngest:kv:thread:e:a:t1",
     );

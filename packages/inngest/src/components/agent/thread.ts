@@ -12,7 +12,7 @@
 import type { Inngest } from "../Inngest.ts";
 import { defaultInboxStore, type InboxStore } from "./inbox.ts";
 import { kv as defaultKv, type Kv, type KvHandle } from "./kv.ts";
-import { doorbellSignal } from "./subscribe.ts";
+import { doorbellSignal, inboxStoreKey } from "./subscribe.ts";
 
 /**
  * What a thread's inbox carries.
@@ -67,6 +67,11 @@ export const threadStopEvent = "agent/thread.stop";
  */
 export const stopFlagKey = "__stop";
 
+/**
+ * The thread KV key that names the live run of a thread, set while one runs.
+ */
+export const liveRunKey = "__run";
+
 export interface ThreadOptions {
   /**
    * The event that triggers the agent function.
@@ -113,7 +118,8 @@ export interface ThreadHandle {
 
   /**
    * Stops the thread. `"nextTurn"` lets the running model call finish and
-   * stops before the next; `"now"` also cancels the live run.
+   * stops before the next; `"now"` also cancels the live run. It does nothing
+   * when no run is live.
    */
   stop(options: { when: "now" | "nextTurn" }): Promise<void>;
 
@@ -161,11 +167,14 @@ export function getThread(
   options: ThreadOptions,
 ): ThreadHandle {
   const session = options.session ?? key;
-  const store = () => options.store ?? defaultInboxStore();
+  const store = () => {
+    return options.store ?? defaultInboxStore();
+  };
+  const storeKey = inboxStoreKey(client.id, key);
   const delays = options.doorbellDelays ?? defaultDelays;
 
   async function deliver(message: ThreadMessage) {
-    const seq = await store().append(key, message);
+    const seq = await store().append(storeKey, message);
 
     for (const delay of [0, ...delays]) {
       if (delay) {
@@ -173,14 +182,14 @@ export function getThread(
       }
 
       const rung = await client.sendSignal({
-        signal: doorbellSignal(key),
+        signal: doorbellSignal(client.id, key),
         data: { seq },
       });
       if (rung.runId) {
         return { seq };
       }
 
-      if ((await store().cursors(key)).acked >= seq) {
+      if ((await store().cursors(storeKey)).acked >= seq) {
         return { seq };
       }
     }
@@ -202,7 +211,15 @@ export function getThread(
       return deliver({ kind: "steer", content: message });
     },
     async stop({ when }) {
-      await threadKv(client, key, options.kv).set(stopFlagKey, { when });
+      const threadState = threadKv(client, key, options.kv);
+
+      // A stop asks a running thread to stop. With no live run there is
+      // nothing to stop, and a flag left behind would stop the next run.
+      if (!(await threadState.get(liveRunKey))) {
+        return;
+      }
+
+      await threadState.set(stopFlagKey, { when });
 
       if (when === "now") {
         await client.send({ name: threadStopEvent, data: { thread: key } });

@@ -16,6 +16,7 @@ export const run = async (
   fn: InngestFunction.Any,
   onWait: (op: OutgoingOp) => Promise<boolean>,
   event?: { name: string; data: Record<string, unknown> },
+  onOp?: (op: OutgoingOp) => Promise<void>,
 ) => {
   const ran: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
@@ -39,6 +40,12 @@ export const run = async (
       }
 
       ran.push(op.userland?.id ?? op.id);
+      await onOp?.(op);
+
+      if (op.op === StepOpCode.Sleep) {
+        state = { ...state, [op.id]: { id: op.id, data: null } };
+        continue;
+      }
 
       if (op.op === StepOpCode.WaitForSignal) {
         const rung = await onWait(op);
@@ -57,4 +64,11 @@ export const run = async (
   }
 
   throw new Error("The function did not finish");
+};
+
+/**
+ * Answers every doorbell wait with a timeout.
+ */
+export const noRing = async () => {
+  return false;
 };

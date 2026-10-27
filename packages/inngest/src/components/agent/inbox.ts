@@ -48,18 +48,29 @@ export interface InboxStore {
 }
 
 /**
+ * How many claimed messages stay in the store for debugging. Older ones are
+ * removed when a later message is claimed, so storage stays bounded.
+ */
+export const claimedTail = 50;
+
+/**
  * An in-process store, for tests and local scripts.
  */
 export function memoryInboxStore(): InboxStore {
   const inboxes = new Map<
     string,
-    { msgs: unknown[]; acked: number; claims: Map<string, number> }
+    {
+      msgs: Map<number, unknown>;
+      head: number;
+      acked: number;
+      claims: Map<string, number>;
+    }
   >();
 
   function inboxOf(key: string) {
     let found = inboxes.get(key);
     if (!found) {
-      found = { msgs: [], acked: 0, claims: new Map() };
+      found = { msgs: new Map(), head: 0, acked: 0, claims: new Map() };
       inboxes.set(key, found);
     }
 
@@ -69,38 +80,40 @@ export function memoryInboxStore(): InboxStore {
   return {
     async append(key, data) {
       const inbox = inboxOf(key);
-      inbox.msgs.push(JSON.parse(JSON.stringify(data)));
+      inbox.head += 1;
+      inbox.msgs.set(inbox.head, JSON.parse(JSON.stringify(data)));
 
-      return inbox.msgs.length;
+      return inbox.head;
     },
     async claim(key, owner) {
       const inbox = inboxOf(key);
       const prior = inbox.claims.get(owner);
       if (prior !== undefined) {
-        return { seq: prior, data: inbox.msgs[prior - 1] };
+        return { seq: prior, data: inbox.msgs.get(prior) };
       }
 
-      if (inbox.acked >= inbox.msgs.length) {
+      if (inbox.acked >= inbox.head) {
         return null;
       }
 
       inbox.acked += 1;
       inbox.claims.set(owner, inbox.acked);
+      inbox.msgs.delete(inbox.acked - claimedTail);
 
-      return { seq: inbox.acked, data: inbox.msgs[inbox.acked - 1] };
+      return { seq: inbox.acked, data: inbox.msgs.get(inbox.acked) };
     },
     async peek(key) {
       const inbox = inboxOf(key);
-      if (inbox.acked >= inbox.msgs.length) {
+      if (inbox.acked >= inbox.head) {
         return null;
       }
 
-      return { seq: inbox.acked + 1, data: inbox.msgs[inbox.acked] };
+      return { seq: inbox.acked + 1, data: inbox.msgs.get(inbox.acked + 1) };
     },
     async cursors(key) {
       const inbox = inboxOf(key);
 
-      return { head: inbox.msgs.length, acked: inbox.acked };
+      return { head: inbox.head, acked: inbox.acked };
     },
   };
 }
@@ -124,6 +137,7 @@ end
 redis.call('SET', KEYS[4], acked + 1)
 redis.call('HSET', KEYS[3], ARGV[1], acked + 1)
 redis.call('EXPIRE', KEYS[3], 604800)
+redis.call('HDEL', KEYS[2], acked + 1 - tonumber(ARGV[2]))
 return {acked + 1, msg}
 `;
 
@@ -179,6 +193,7 @@ export function redisInboxStore(url: string): InboxStore {
         k.claims,
         k.acked,
         owner,
+        String(claimedTail),
       );
       if (!Array.isArray(reply)) {
         return null;

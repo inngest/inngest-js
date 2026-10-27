@@ -44,9 +44,12 @@ describe("thread handle", () => {
     expect(await thread.send("hi")).toEqual({ seq: 1 });
 
     expect(signals).toHaveLength(2);
-    expect(signals[0]).toMatchObject({ signal: "inbox:t1", data: { seq: 1 } });
+    expect(signals[0]).toMatchObject({
+      signal: "inbox:app:t1",
+      data: { seq: 1 },
+    });
     expect(sent).toEqual([]);
-    expect(await opts.store.claim("t1", "o")).toEqual({
+    expect(await opts.store.claim("app:t1", "o")).toEqual({
       seq: 1,
       data: { kind: "user", content: "hi" },
     });
@@ -74,7 +77,7 @@ describe("thread handle", () => {
     const thread = getThread(client, "t1", opts);
     const originalSignal = client.sendSignal.bind(client);
     client.sendSignal = async (arg) => {
-      await opts.store.claim("t1", "reader");
+      await opts.store.claim("app:t1", "reader");
 
       return originalSignal(arg);
     };
@@ -85,16 +88,37 @@ describe("thread handle", () => {
     expect(sent).toEqual([]);
   });
 
+  test("stop does nothing without a live run", async () => {
+    const { client, sent } = fakeClient([]);
+    const opts = options();
+    const thread = getThread(client, "t1", opts);
+
+    await thread.stop({ when: "nextTurn" });
+    await thread.stop({ when: "now" });
+
+    expect(sent).toEqual([]);
+    expect(
+      await opts.kv
+        .at("thread", { env: "default", app: "app", thread: "t1" })
+        .all(),
+    ).toEqual({});
+  });
+
   test("stop sets the flag; now also cancels the run; state hides internal keys", async () => {
     const { client, sent } = fakeClient([]);
     const opts = options();
     const thread = getThread(client, "t1", opts);
-    await opts.kv
-      .at("thread", { env: "default", app: "app", thread: "t1" })
-      .set("plan", [1]);
+    const state = opts.kv.at("thread", {
+      env: "default",
+      app: "app",
+      thread: "t1",
+    });
+    await state.set("plan", [1]);
+    await state.set("__run", { runId: "r1" });
 
     await thread.stop({ when: "nextTurn" });
     expect(sent).toEqual([]);
+    expect(await state.get("__stop")).toEqual({ when: "nextTurn" });
 
     await thread.stop({ when: "now" });
     expect(sent).toEqual([

@@ -8,7 +8,7 @@ import { createAgentFunction } from "./agentFunction.ts";
 import { memoryInboxStore } from "./inbox.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent } from "./loop.ts";
-import { run } from "./test-helpers.ts";
+import { noRing, run } from "./test-helpers.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -29,6 +29,10 @@ const makeClient = () => {
   });
 };
 
+const scoped = (key: string) => {
+  return `${testClientId}:${key}`;
+};
+
 const start = { name: "agent/start", data: { thread: "t1" } };
 
 describe("agent function", () => {
@@ -37,8 +41,8 @@ describe("agent function", () => {
     const store = memoryInboxStore();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const prompts: string[][] = [];
-    await store.append("t1", { kind: "user", content: "one" });
-    await store.append("t1", { kind: "user", content: "two" });
+    await store.append(scoped("t1"), { kind: "user", content: "one" });
+    await store.append(scoped("t1"), { kind: "user", content: "two" });
 
     const { fn } = createAgentFunction(
       client,
@@ -74,7 +78,7 @@ describe("agent function", () => {
       },
     );
 
-    const { output } = await run(fn, async () => false, start);
+    const { output } = await run(fn, noRing, start);
 
     expect(output).toBe("ok 2");
     expect(prompts).toEqual([["one"], ["one", "two"]]);
@@ -85,8 +89,8 @@ describe("agent function", () => {
     const store = memoryInboxStore();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const seen: string[][] = [];
-    await store.append("t1", { kind: "user", content: "go" });
-    await store.append("t1", { kind: "steer", content: "left" });
+    await store.append(scoped("t1"), { kind: "user", content: "go" });
+    await store.append(scoped("t1"), { kind: "steer", content: "left" });
     await kv
       .at("thread", { env: "default", app: testClientId, thread: "t1" })
       .set("__stop", { when: "nextTurn" });
@@ -118,7 +122,7 @@ describe("agent function", () => {
       },
     );
 
-    const { output } = await run(fn, async () => false, start);
+    const { output } = await run(fn, noRing, start);
 
     expect(output).toMatchObject({ stopped: "stopped", turns: 1 });
     expect(seen).toEqual([["go"]]);
@@ -138,46 +142,96 @@ describe("agent cleanup", () => {
     };
   };
 
-  test("clears run KV and hands the thread over when messages are unread", async () => {
+  const setup = () => {
     const client = makeClient();
     const store = memoryInboxStore();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const ids = { env: "default", app: testClientId };
-    await kv.at("run", { ...ids, run: "run1" }).set("scratch", 1);
-    await store.append("t1", { kind: "user", content: "late" });
-
     const { cleanup } = createAgentFunction(
       client,
       { id: "bot", event: "agent/start", store, kv },
       async () => {},
     );
 
-    const { output, ran } = await run(cleanup, async () => false, finished());
+    return { store, kv, ids, cleanup };
+  };
 
-    expect(output).toEqual({ handoff: true, head: 1 });
-    expect(ran).toEqual(["clear-run-kv", "cursors", "handoff"]);
+  test("clears run KV, the live marker and the stop flag", async () => {
+    const { kv, ids, cleanup } = setup();
+    const thread = kv.at("thread", { ...ids, thread: "t1" });
+    await kv.at("run", { ...ids, run: "run1" }).set("scratch", 1);
+    await thread.set("__run", { runId: "run1" });
+    await thread.set("__stop", { when: "now" });
+    await thread.set("keep", 1);
+
+    const { output } = await run(cleanup, noRing, finished());
+
+    expect(output).toEqual({ handoff: false, attempts: 0 });
     expect(await kv.at("run", { ...ids, run: "run1" }).all()).toEqual({});
+    expect(await thread.all()).toEqual({ keep: 1 });
   });
 
-  test("does not hand over a failed run or an empty inbox", async () => {
-    const client = makeClient();
-    const store = memoryInboxStore();
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const { cleanup } = createAgentFunction(
-      client,
-      { id: "bot", event: "agent/start", store, kv },
-      async () => {},
-    );
+  test("a newer live run keeps its marker and stop flag", async () => {
+    const { kv, ids, cleanup } = setup();
+    const thread = kv.at("thread", { ...ids, thread: "t1" });
+    await thread.set("__run", { runId: "run2" });
+    await thread.set("__stop", { when: "nextTurn" });
 
-    expect((await run(cleanup, async () => false, finished())).output).toEqual({
-      handoff: false,
+    await run(cleanup, noRing, finished());
+
+    expect(await thread.get("__run")).toEqual({ runId: "run2" });
+    expect(await thread.get("__stop")).toEqual({ when: "nextTurn" });
+  });
+
+  test.each([
+    ["completed", undefined],
+    ["failed", { message: "boom" }],
+  ])(
+    "a %s run with unread messages starts the next run",
+    async (_name, error) => {
+      const { store, cleanup } = setup();
+      await store.append(scoped("t1"), { kind: "user", content: "late" });
+      const starts: string[] = [];
+
+      const { output } = await run(
+        cleanup,
+        noRing,
+        finished(error),
+        async (op) => {
+          if (op.userland?.id === "handoff") {
+            starts.push((op.opts as { id?: string } | undefined)?.id ?? "sent");
+            // The next run takes the message.
+            await store.claim(scoped("t1"), "next-run");
+          }
+        },
+      );
+
+      expect(output).toEqual({ handoff: true, attempts: 1 });
+      expect(starts).toHaveLength(1);
+    },
+  );
+
+  test("asks again, with a new event ID each time, while nobody takes the message", async () => {
+    const { store, cleanup } = setup();
+    await store.append(scoped("t1"), { kind: "user", content: "late" });
+    const sends: unknown[] = [];
+
+    const { output } = await run(cleanup, noRing, finished(), async (op) => {
+      if (op.userland?.id === "handoff") {
+        sends.push(op.id);
+      }
     });
 
-    await store.append("t1", { kind: "user", content: "x" });
+    expect(output).toEqual({ handoff: true, attempts: 5 });
+    expect(new Set(sends).size).toBe(5);
+  });
 
-    expect(
-      (await run(cleanup, async () => false, finished({ message: "boom" })))
-        .output,
-    ).toEqual({ handoff: false });
+  test("does nothing for an empty inbox", async () => {
+    const { cleanup } = setup();
+
+    const { output, ran } = await run(cleanup, noRing, finished());
+
+    expect(output).toEqual({ handoff: false, attempts: 0 });
+    expect(ran).not.toContain("handoff");
   });
 });

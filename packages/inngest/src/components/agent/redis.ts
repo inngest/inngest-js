@@ -6,7 +6,7 @@
 import * as net from "node:net";
 import * as tls from "node:tls";
 
-type Reply = string | number | null | Reply[];
+type Reply = string | number | null | Error | Reply[];
 
 interface Pending {
   resolve: (reply: Reply) => void;
@@ -56,7 +56,9 @@ export function parseReply(
     return { reply: line, end: next };
   }
   if (type === "-") {
-    throw new Error(line);
+    // An error reply is a value: nested in an array it must not desync the
+    // bytes that follow it. The caller rejects when it is the whole reply.
+    return { reply: new Error(line), end: next };
   }
   if (type === ":") {
     return { reply: Number(line), end: next };
@@ -142,20 +144,26 @@ export async function connectRedis(url: string): Promise<RedisClient> {
         return;
       }
 
+      let parsedReply: ReturnType<typeof parseReply>;
       try {
-        const parsedReply = parseReply(buffer);
-        if (!parsedReply) {
-          return;
-        }
-        buffer = buffer.subarray(parsedReply.end);
-        pending.shift();
-        waiting.resolve(parsedReply.reply);
+        parsedReply = parseReply(buffer);
       } catch (error) {
-        // An error reply consumes its line.
-        const end = buffer.indexOf("\r\n");
-        buffer = buffer.subarray(end + 2);
-        pending.shift();
-        waiting.reject(error as Error);
+        fail(error as Error);
+        socket.destroy();
+
+        return;
+      }
+      if (!parsedReply) {
+        return;
+      }
+
+      buffer = buffer.subarray(parsedReply.end);
+      pending.shift();
+
+      if (parsedReply.reply instanceof Error) {
+        waiting.reject(parsedReply.reply);
+      } else {
+        waiting.resolve(parsedReply.reply);
       }
     }
   });

@@ -19,15 +19,27 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import type { InboxStore } from "./inbox.ts";
 import { defaultInboxStore } from "./inbox.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
-import type { InboxMessage, Subscription } from "./subscribe.ts";
+import {
+  type InboxMessage,
+  inboxStoreKey,
+  type Subscription,
+} from "./subscribe.ts";
 import {
   getThread,
+  liveRunKey,
   stopFlagKey,
   type ThreadHandle,
   type ThreadMessage,
   threadStartEvent,
   threadStopEvent,
 } from "./thread.ts";
+
+/**
+ * How many times the cleanup function asks for a new run, and how long it
+ * waits between asks, when messages are still unread.
+ */
+const handoffAttempts = 5;
+const handoffWait = "3s";
 
 export interface AgentFunctionConfig {
   id: string;
@@ -120,8 +132,12 @@ export function createAgentFunction(
   config: AgentFunctionConfig,
   body: AgentBody,
 ): AgentFunction {
-  const store = () => config.store ?? defaultInboxStore();
-  const kv = () => config.kv ?? defaultKv;
+  const store = () => {
+    return config.store ?? defaultInboxStore();
+  };
+  const kv = () => {
+    return config.kv ?? defaultKv;
+  };
   const functionId = `${client.id}-${config.id}`;
 
   const fn = client.createFunction(
@@ -149,6 +165,9 @@ export function createAgentFunction(
         store: config.store,
         recheck: config.recheck,
       });
+
+      // Tells thread handles a run is live, so a stop has something to stop.
+      await kv().set(liveRunKey, { runId: ctx.runId }, { scope: "thread" });
 
       const control = {
         async steer() {
@@ -195,7 +214,6 @@ export function createAgentFunction(
     async ({ event, step, sessions }) => {
       const data = event.data as {
         run_id: string;
-        error?: unknown;
         event?: { data?: { thread?: string } };
       };
       const key = data.event?.data?.thread ?? sessions?.agent_thread;
@@ -207,36 +225,50 @@ export function createAgentFunction(
           .at("run", { ...ids, run: data.run_id })
           .clear();
 
-        // A stop request ends with the run it stopped.
         if (key) {
-          await kv()
-            .at("thread", { ...ids, thread: key })
-            .delete(stopFlagKey);
+          const threadState = kv().at("thread", { ...ids, thread: key });
+          const live = await threadState.get<{ runId: string }>(liveRunKey);
+
+          // A stop request ends with the run it stopped; a newer run that is
+          // already live keeps its own.
+          if (!live || live.runId === data.run_id) {
+            await threadState.delete(liveRunKey);
+            await threadState.delete(stopFlagKey);
+          }
         }
       });
 
-      if (!key || data.error !== undefined) {
-        return { handoff: false };
+      if (!key) {
+        return { handoff: false, attempts: 0 };
       }
 
-      const { head, acked } = await step.run("cursors", async () => {
-        return store().cursors(key);
-      });
-      if (head <= acked) {
-        return { handoff: false };
+      // Whatever ended the run (done, failed, cancelled), unread messages must
+      // not be stranded. The start can be skipped while the thread singleton
+      // is still held, so ask again until a run has taken the message.
+      const storeKey = inboxStoreKey(client.id, key);
+      let attempts = 0;
+
+      for (; attempts < handoffAttempts; attempts += 1) {
+        const { head, acked } = await step.run("cursors", async () => {
+          return store().cursors(storeKey);
+        });
+        if (head <= acked) {
+          break;
+        }
+
+        await step.sendEvent(
+          "handoff",
+          threadStartEvent(
+            config.event,
+            key,
+            sessions?.agent_session ?? key,
+            `handoff:${storeKey}:${head}:${attempts}`,
+          ),
+        );
+        await step.sleep("handoff-wait", handoffWait);
       }
 
-      await step.sendEvent(
-        "handoff",
-        threadStartEvent(
-          config.event,
-          key,
-          sessions?.agent_session ?? key,
-          `handoff:${key}:${head}`,
-        ),
-      );
-
-      return { handoff: true, head };
+      return { handoff: attempts > 0, attempts };
     },
   );
 

@@ -8,9 +8,9 @@
  * - `quick` answers one message and ends, so anything sent while it works is
  *   handed to the thread's next run.
  */
-import { Inngest } from "inngest";
-import { z } from "zod";
+import { Inngest, NonRetriableError } from "inngest";
 import { agent, createAgentFunction, kv, tool } from "inngest/experimental";
+import { z } from "zod";
 
 export const client = new Inngest({ id: "agents-f" });
 
@@ -78,9 +78,13 @@ export const chat = createAgentFunction(
       });
 
       await kv.set("history", result.history, { scope: "thread" });
-      await kv.set("last", { seq: message.seq, text: result.text }, {
-        scope: "thread",
-      });
+      await kv.set(
+        "last",
+        { seq: message.seq, text: result.text },
+        {
+          scope: "thread",
+        },
+      );
       await kv.set("scratch", message.seq);
       void thread;
     }
@@ -102,10 +106,32 @@ export const quick = createAgentFunction(
       prompt: message.data.content,
       tools: { think },
     });
-    await kv.set("last", { seq: message.seq, text: result.text }, {
-      scope: "thread",
-    });
+    await kv.set(
+      "last",
+      { seq: message.seq, text: result.text },
+      {
+        scope: "thread",
+      },
+    );
 
     return result.text;
+  },
+);
+
+export const boom = createAgentFunction(
+  client,
+  { id: "boom", event: "agents-f/boom" },
+  async ({ inbox }) => {
+    const message = await inbox.next();
+    await sleep(2500);
+    await kv.update<number[]>(
+      "seen",
+      function (seen) {
+        return [...(seen ?? []), message?.seq ?? 0];
+      },
+      { scope: "thread" },
+    );
+
+    throw new NonRetriableError("boom");
   },
 );

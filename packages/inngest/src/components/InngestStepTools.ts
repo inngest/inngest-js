@@ -593,6 +593,9 @@ export const createStepTools = <
             return tools.waitForSignal(stepId, waitOpts);
           },
           store: defaultInboxStore,
+          app: () => {
+            return client.id;
+          },
           runId: () => {
             return getAsyncCtxSync()?.execution?.ctx.runId ?? "run";
           },
