@@ -23,6 +23,9 @@ const registries = new WeakMap<Inngest.Any, Map<string, InngestFunction.Any>>();
  * same ID again keeps one function, the latest definition, in its original
  * place.
  *
+ * `serve()` and `connect()` read the registry once, when they are called, so
+ * register before them: declare agents in modules the serving module imports.
+ *
  * @param client The client the functions belong to.
  * @param fns The functions to serve, such as an agent's cleanup function.
  */
