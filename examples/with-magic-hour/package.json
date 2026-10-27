@@ -1,0 +1,18 @@
+{
+  "name": "with-magic-hour",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Generate Magic Hour images and videos with separate durable recovery",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "dev": "node index.mjs"
+  },
+  "dependencies": {
+    "inngest": "4.26.0",
+    "magic-hour": "0.86.0"
+  }
+}
