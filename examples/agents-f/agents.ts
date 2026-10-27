@@ -50,7 +50,9 @@ const scriptedModel = () => {
       };
     }
 
-    const lastUser = messages.findLast((m) => m.role === "user");
+    const lastUser = messages.findLast(function (m) {
+      return m.role === "user";
+    });
     const text = `echo: ${lastUser?.role === "user" ? lastUser.content : ""}`;
 
     return {

@@ -38,8 +38,12 @@ const run = `${Date.now()}`;
 const t1 = chat.thread(`chat-${run}`);
 await t1.send("hello");
 const first = await until(
-  () => t1.state(),
-  (s) => (s.last as { seq?: number } | undefined)?.seq === 1,
+  () => {
+    return t1.state();
+  },
+  (s) => {
+    return (s.last as { seq?: number } | undefined)?.seq === 1;
+  },
 );
 check(
   "first message answered",
@@ -49,8 +53,12 @@ check(
 
 await t1.send("again");
 const second = await until(
-  () => t1.state(),
-  (s) => (s.last as { seq?: number } | undefined)?.seq === 2,
+  () => {
+    return t1.state();
+  },
+  (s) => {
+    return (s.last as { seq?: number } | undefined)?.seq === 2;
+  },
 );
 check(
   "second message delivered to the waiting run",
@@ -68,8 +76,12 @@ await t1.send("work");
 await sleep(500);
 await t1.steer("faster please");
 const third = await until(
-  () => t1.state(),
-  (s) => (s.last as { seq?: number } | undefined)?.seq === 3,
+  () => {
+    return t1.state();
+  },
+  (s) => {
+    return (s.last as { seq?: number } | undefined)?.seq === 3;
+  },
 );
 check(
   "steer is folded into the running turn",
@@ -89,8 +101,12 @@ await t2.send("one");
 await sleep(1000);
 await t2.send("two");
 const handed = await until(
-  () => t2.state(),
-  (s) => (s.last as { seq?: number } | undefined)?.seq === 2,
+  () => {
+    return t2.state();
+  },
+  (s) => {
+    return (s.last as { seq?: number } | undefined)?.seq === 2;
+  },
   60_000,
 );
 check(
@@ -106,8 +122,12 @@ await t3.send("a");
 await sleep(1000);
 await t3.send("b");
 const seen = await until(
-  () => t3.state(),
-  (s) => ((s.seen as number[] | undefined)?.length ?? 0) >= 2,
+  () => {
+    return t3.state();
+  },
+  (s) => {
+    return ((s.seen as number[] | undefined)?.length ?? 0) >= 2;
+  },
   60_000,
 );
 check(
@@ -121,8 +141,12 @@ const t4 = chat.thread(`idle-${run}`);
 await t4.stop({ when: "nextTurn" });
 await t4.send("hi");
 const idle = await until(
-  () => t4.state(),
-  (s) => s.last !== undefined,
+  () => {
+    return t4.state();
+  },
+  (s) => {
+    return s.last !== undefined;
+  },
 );
 check(
   "stop on an idle thread is discarded",

@@ -249,7 +249,10 @@ export function createAgentFunction(
       // Whatever ended the run (done, failed, cancelled), unread messages must
       // not be stranded. The start can be skipped while the thread singleton
       // is still held, so ask again until a run has taken the message.
-      const storeKey = inboxStoreKey(client.id, key);
+      const storeKey = inboxStoreKey(
+        { env: client.env ?? "default", app: client.id },
+        key,
+      );
       let attempts = 0;
 
       for (; attempts < handoffAttempts; attempts += 1) {

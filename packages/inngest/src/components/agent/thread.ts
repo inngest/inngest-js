@@ -170,7 +170,8 @@ export function getThread(
   const store = () => {
     return options.store ?? defaultInboxStore();
   };
-  const storeKey = inboxStoreKey(client.id, key);
+  const scope = { env: client.env ?? "default", app: client.id };
+  const storeKey = inboxStoreKey(scope, key);
   const delays = options.doorbellDelays ?? defaultDelays;
 
   async function deliver(message: ThreadMessage) {
@@ -182,7 +183,7 @@ export function getThread(
       }
 
       const rung = await client.sendSignal({
-        signal: doorbellSignal(client.id, key),
+        signal: doorbellSignal(scope, key),
         data: { seq },
       });
       if (rung.runId) {

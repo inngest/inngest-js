@@ -3,8 +3,7 @@
  * A minimal Redis client (RESP2 over TCP or TLS) with just the commands the
  * experimental KV needs, so the SDK takes no Redis dependency.
  */
-import * as net from "node:net";
-import * as tls from "node:tls";
+import type { Socket } from "node:net";
 
 type Reply = string | number | null | Error | Reply[];
 
@@ -112,12 +111,17 @@ export interface RedisClient {
  * @param url Redis URL, with optional user, password and database.
  */
 export async function connectRedis(url: string): Promise<RedisClient> {
+  // Loaded on use so importing the SDK never pulls in Node networking.
+  const [net, tls] = await Promise.all([
+    import("node:net"),
+    import("node:tls"),
+  ]);
   const parsed = new URL(url);
   const secure = parsed.protocol === "rediss:";
   const port = Number(parsed.port || 6379);
   const host = parsed.hostname;
 
-  const socket = await new Promise<net.Socket>((resolve, reject) => {
+  const socket = await new Promise<Socket>((resolve, reject) => {
     const s = secure
       ? tls.connect({ host, port, servername: host })
       : net.connect({ host, port });
@@ -228,9 +232,11 @@ export function redisConnection(url: string): () => Promise<RedisClient> {
   let connection: Promise<RedisClient> | undefined;
 
   return async function client() {
-    if (connection) {
+    const seen = connection;
+
+    if (seen) {
       try {
-        const current = await connection;
+        const current = await seen;
         if (!current.isClosed()) {
           return current;
         }
@@ -239,9 +245,12 @@ export function redisConnection(url: string): () => Promise<RedisClient> {
       }
     }
 
-    const fresh = connectRedis(url);
-    connection = fresh;
+    // Callers that find the connection dead at once share one new connect:
+    // only the first to get here replaces it.
+    if (connection === seen) {
+      connection = connectRedis(url);
+    }
 
-    return fresh;
+    return connection as Promise<RedisClient>;
   };
 }

@@ -30,7 +30,7 @@ const makeClient = () => {
 };
 
 const scoped = (key: string) => {
-  return `${testClientId}:${key}`;
+  return `default:${testClientId}:${key}`;
 };
 
 const start = { name: "agent/start", data: { thread: "t1" } };

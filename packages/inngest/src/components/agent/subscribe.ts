@@ -15,22 +15,28 @@ import type { InboxMessage, InboxStore } from "./inbox.ts";
 export type { InboxMessage } from "./inbox.ts";
 
 /**
- * The key an inbox has in the store. Inboxes are per app, so the same thread
- * key in two apps does not collide.
- * @param app App ID.
+ * The key an inbox has in the store. Inboxes are per environment and app, so
+ * the same thread key elsewhere does not collide.
+ * @param scope Environment and app IDs.
  * @param key Inbox key.
  */
-export function inboxStoreKey(app: string, key: string): string {
-  return `${app}:${key}`;
+export function inboxStoreKey(
+  scope: { env: string; app: string },
+  key: string,
+): string {
+  return `${scope.env}:${scope.app}:${key}`;
 }
 
 /**
  * The signal a sender rings to wake a reader of `key`.
- * @param app App ID.
+ * @param scope Environment and app IDs.
  * @param key Inbox key.
  */
-export function doorbellSignal(app: string, key: string): string {
-  return `inbox:${inboxStoreKey(app, key)}`;
+export function doorbellSignal(
+  scope: { env: string; app: string },
+  key: string,
+): string {
+  return `inbox:${inboxStoreKey(scope, key)}`;
 }
 
 export interface SubscribeOptions {
@@ -98,7 +104,7 @@ export interface SubscribeDeps {
   ) => Promise<unknown>;
   store: () => InboxStore;
   runId: () => string;
-  app: () => string;
+  scope: () => { env: string; app: string };
 }
 
 /**
@@ -116,7 +122,7 @@ export function createSubscription<TData = unknown>(
     return opts.store ?? deps.store();
   };
   const storeKey = () => {
-    return inboxStoreKey(deps.app(), opts.key);
+    return inboxStoreKey(deps.scope(), opts.key);
   };
   let reads = 0;
 
@@ -135,7 +141,7 @@ export function createSubscription<TData = unknown>(
       }
 
       const rung = await deps.waitForSignal(`${id}:wait`, {
-        signal: doorbellSignal(deps.app(), opts.key),
+        signal: doorbellSignal(deps.scope(), opts.key),
         timeout: opts.recheck ?? "5m",
         onConflict: "replace",
       });

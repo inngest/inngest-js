@@ -12,7 +12,7 @@ const client = () => {
 };
 
 const scoped = (key: string) => {
-  return `${testClientId}:${key}`;
+  return `default:${testClientId}:${key}`;
 };
 
 describe("step.subscribe", () => {

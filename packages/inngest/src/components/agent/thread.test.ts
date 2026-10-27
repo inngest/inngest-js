@@ -45,11 +45,11 @@ describe("thread handle", () => {
 
     expect(signals).toHaveLength(2);
     expect(signals[0]).toMatchObject({
-      signal: "inbox:app:t1",
+      signal: "inbox:default:app:t1",
       data: { seq: 1 },
     });
     expect(sent).toEqual([]);
-    expect(await opts.store.claim("app:t1", "o")).toEqual({
+    expect(await opts.store.claim("default:app:t1", "o")).toEqual({
       seq: 1,
       data: { kind: "user", content: "hi" },
     });
@@ -77,7 +77,7 @@ describe("thread handle", () => {
     const thread = getThread(client, "t1", opts);
     const originalSignal = client.sendSignal.bind(client);
     client.sendSignal = async (arg) => {
-      await opts.store.claim("app:t1", "reader");
+      await opts.store.claim("default:app:t1", "reader");
 
       return originalSignal(arg);
     };
