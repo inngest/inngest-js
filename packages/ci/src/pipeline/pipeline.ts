@@ -21,7 +21,7 @@ import {
 } from "../errors.ts";
 import type { GitHubProvider } from "../github/auth.ts";
 import type { CheckReporter } from "../github/checks.ts";
-import { pipelineSummary } from "../github/checks.ts";
+import { pipelineSummary, savedFromCache, wallTime } from "../github/checks.ts";
 import {
   commentAuthor,
   commentBody,
@@ -29,13 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import {
-  deleteOrphanSnapshots,
-  deleteRunSnapshots,
-  destroyOrphans,
-  destroyRunMachines,
-  lockMachineName,
-} from "../machine/machine.ts";
+import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -47,8 +41,7 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration, parseRepo } from "../util.ts";
-import type { BuildDone } from "./buildLock.ts";
-import { buildDoneEvent, endBuild } from "./buildLock.ts";
+import { endBuild } from "./buildLock.ts";
 import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
@@ -70,6 +63,9 @@ import {
   runInScope,
   withScopePreserved,
 } from "./scope.ts";
+
+/** Sent by a check's Cancel button, to end the runs of a pipeline for a commit. */
+export const cancelRunEvent = "ci/run.cancel";
 
 /**
  * Options for every function that runs a pipeline: pipelines, cache builds and
@@ -140,6 +136,14 @@ export const definePipeline = ({
       id: config.id,
       triggers,
       ...pipelineFunctionOptions,
+      // The Cancel button on a check ends this pipeline's runs for the commit.
+      // A trigger's commit is where its event keeps it.
+      cancelOn: [
+        {
+          event: cancelRunEvent,
+          if: `async.data.app == "${client.id}" && async.data.pipeline == "${config.id}" && async.data.repo == event.data.repository.full_name && (async.data.sha == event.data.pull_request.head.sha || async.data.sha == event.data.after || async.data.sha == event.data.merge_group.head_sha)`,
+        },
+      ],
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
@@ -156,7 +160,7 @@ export const definePipeline = ({
   return {
     fn,
     config,
-    generated: generatedFunctions({ client, config }),
+    generated: generatedFunctions({ client, config, internals }),
   };
 };
 
@@ -231,6 +235,7 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     childRuns: config.childRuns !== false,
     event: ctx.event,
+    ...rerunOf(ctx.event),
     ...(repo ? { repo } : {}),
     ...(build ? { build, request: requestOf(build) } : {}),
     builds: new Map(),
@@ -244,8 +249,10 @@ const newRunScope = ({
     inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
+    createdMachines: new Set(),
     summaries: [],
     openChecks: new Map(),
+    cacheSaved: new Map(),
     attempt,
     maxAttempts,
     willRetry: (error) => {
@@ -305,6 +312,17 @@ const runPipelineAttempt = async ({
     );
   }
 
+  // A re-run of one pipeline's check goes out as an event every pipeline on
+  // the trigger hears. The others have nothing to re-run, and a run that did
+  // nothing must not report success over the result they already have.
+  const rerunPipeline = (
+    ctx.event as { data?: { _ci?: { pipeline?: string } } } | undefined
+  )?.data?._ci?.pipeline;
+
+  if (!build && rerunPipeline !== undefined && rerunPipeline !== config.id) {
+    return { skipped: "another pipeline's re-run" };
+  }
+
   const run = newRunScope({
     internals,
     config,
@@ -336,6 +354,10 @@ const runPipelineAttempt = async ({
       },
     });
 
+    if (checkStarted !== undefined) {
+      run.startedAt = checkStarted;
+    }
+
     if (checkStarted === undefined) {
       await metadataStep(run, "ci › metadata:start", () => {
         return runStartMetadata(run);
@@ -352,9 +374,7 @@ const runPipelineAttempt = async ({
     if (outcome.kind === "failed") {
       // A run that is about to be retried keeps its machines and snapshots:
       // the retry replays the memoized machine and snapshot IDs and needs them
-      // alive. The generated cleanup function covers a run that never gets
-      // here; it finds machines by name, but snapshots carry no run name, so
-      // it can't delete them.
+      // alive.
       if (
         !isDeterministicFailure(outcome.error) &&
         run.willRetry(outcome.error)
@@ -382,9 +402,19 @@ const runPipelineAttempt = async ({
     };
 
     try {
-      await closeJobChecks(run, checks);
+      try {
+        await closeJobChecks(run, checks);
 
-      run.ci.hooks.warnings(run);
+        run.ci.hooks.warnings(run);
+      } catch (error) {
+        // However the run ended, its status says so, unless another attempt
+        // will.
+        if (!run.willRetry(error)) {
+          await completePipeline(run, checks, outcome);
+        }
+
+        throw error;
+      }
 
       await completePipeline(run, checks, outcome);
     } catch (error) {
@@ -419,6 +449,13 @@ const runPipelineAttempt = async ({
   });
 };
 
+/** What a re-run from a GitHub check asked for, from its event's `_ci`. */
+const rerunOf = (event: unknown): Pick<CiRunScope, "noCache"> => {
+  const ci = (event as { data?: { _ci?: { noCache?: boolean } } })?.data?._ci;
+
+  return ci?.noCache ? { noCache: true } : {};
+};
+
 /** How the handler ended, caught rather than thrown. */
 type Outcome =
   | { kind: "ran"; result: unknown }
@@ -448,6 +485,20 @@ const settle = async ({
       return { kind: "denied" };
     }
 
+    // A pull request is tested as it would be merged, as GitHub's own checks
+    // are, so the commit of its test merge is looked up before anything is
+    // cloned or hashed. A conflict ends the run like any other failure, so its
+    // check says why. A build run is told its parent's, which its cache key
+    // was worked out from.
+    if (
+      !run.build &&
+      run.repo?.pullRequest &&
+      run.repo.sha &&
+      !run.repo.local
+    ) {
+      run.repo = await resolveMergeCommit(run, run.repo);
+    }
+
     const result = await handler({
       event: ctx.event,
       events: ctx.events ?? [ctx.event],
@@ -472,7 +523,7 @@ const settle = async ({
 const conclusionOf = (outcome: Outcome): CheckConclusion => {
   switch (outcome.kind) {
     case "ran": {
-      return "success";
+      return asSkip(outcome.result) ? "skipped" : "success";
     }
 
     case "denied": {
@@ -651,6 +702,95 @@ const resolvePullRequestHead = (
   );
 };
 
+/** How many times, and how far apart, a pull request's mergeability is asked. */
+const mergeabilityAttempts = 8;
+const mergeabilityDelayMs = 1500;
+
+/**
+ * Look up the commit of a pull request's test merge, in a step so every replay
+ * clones and hashes the same one.
+ *
+ * GitHub works out mergeability in the background, so `mergeable` is null for
+ * a moment after a push; it's asked again a few times. A pull request that
+ * conflicts has no merge commit to test, so the run fails rather than testing
+ * a head that could never merge. If the answer never arrives, or the head has
+ * moved on since the event, the run keeps testing the head.
+ */
+const resolveMergeCommit = async (
+  run: CiRunScope,
+  repo: RepoContext,
+): Promise<RepoContext> => {
+  // Against a Dev Server nothing is written to GitHub, so nothing is asked of it.
+  if (
+    (run.ci.github as GitHubProvider).kind === "console" ||
+    (run.ci.isDev() && process.env.INNGEST_CI_GITHUB !== "live")
+  ) {
+    return repo;
+  }
+
+  return ciRun(
+    run,
+    steps.resolveMergeCommit(),
+    async (): Promise<RepoContext> => {
+      const provider = run.ci.github as GitHubProvider;
+      const number = repo.pullRequest?.number;
+
+      if (!number) {
+        return repo;
+      }
+
+      const octokit = await provider.octokit({
+        owner: repo.owner,
+        repo: repo.name,
+        ...(repo.installationId === undefined
+          ? {}
+          : { installationId: repo.installationId }),
+      });
+
+      for (let attempt = 0; attempt < mergeabilityAttempts; attempt++) {
+        const pr = await octokit.rest.pulls
+          .get({ owner: repo.owner, repo: repo.name, pull_number: number })
+          .then((response) => {
+            return response.data;
+          })
+          .catch((error: { status?: number }) => {
+            // A pull request that is gone has no merge to test.
+            if (error.status === 404) {
+              return undefined;
+            }
+
+            throw error;
+          });
+
+        if (!pr) {
+          return repo;
+        }
+
+        if (pr.head?.sha !== repo.sha) {
+          return repo;
+        }
+
+        if (pr.mergeable === false) {
+          throw new NonRetriableError(`PR has conflicts with ${pr.base.ref}`);
+        }
+
+        // Only a null answer is worth asking again.
+        if (pr.mergeable !== null) {
+          return pr.merge_commit_sha
+            ? { ...repo, mergeSha: pr.merge_commit_sha }
+            : repo;
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, mergeabilityDelayMs);
+        });
+      }
+
+      return repo;
+    },
+  );
+};
+
 /** Errors that replaying the run would only reproduce. */
 const isDeterministicFailure = (error: unknown): error is Error => {
   // A matrix with `failFast` off rejects with every combination's error.
@@ -749,35 +889,39 @@ const pipelineSummaryWithReports = (run: CiRunScope): string => {
   return [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
 };
 
-const summaryTitle = (run: CiRunScope): string => {
+const failedJobsTitle = (run: CiRunScope): string | undefined => {
   const failed = run.summaries.filter((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed.length > 0) {
-    return `${failed
-      .map((summary) => {
-        return summary.path;
-      })
-      .join(", ")} failed`;
+  return failed.length === 0
+    ? undefined
+    : `${failed.length} of ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} failed`;
+};
+
+const summaryTitle = (run: CiRunScope): string => {
+  const failed = failedJobsTitle(run);
+
+  if (failed) {
+    return failed;
   }
 
-  const total = run.summaries.reduce((sum, summary) => {
-    return sum + summary.durationMs;
-  }, 0);
+  const saved = savedFromCache(run);
+  const wall = wallTime(run);
 
   return run.summaries.length === 0
     ? "Nothing to do"
-    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed in ${formatDuration(total)}`;
+    : `${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"} passed${wall === undefined ? "" : ` in ${formatDuration(wall)}`}${saved > 0 ? ` (saved ${formatDuration(saved)} from cache)` : ""}`;
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {
-  const failed = run.summaries.find((summary) => {
+  const count = failedJobsTitle(run);
+  const first = run.summaries.find((summary) => {
     return summary.conclusion !== "success";
   });
 
-  if (failed) {
-    return `${failed.path}: ${failed.title}`;
+  if (count && first) {
+    return `${count}: ${first.path}: ${first.title}`;
   }
 
   return error instanceof Error
@@ -801,7 +945,7 @@ const checkCommentPermission = async (
 ): Promise<boolean> => {
   const event = run.event as { name?: string } | undefined;
 
-  if (!event?.name?.startsWith("github/issue_comment")) {
+  if (!event?.name?.startsWith("github-ci/issue_comment")) {
     return true;
   }
 
@@ -860,25 +1004,28 @@ const permissionForComment = (
 };
 
 /**
- * Destroys the machines and deletes the snapshots of a run of `config.id`
- * that ended permanently, by failure or cancellation, without reaching its own
- * cleanup step.
+ * Completes the pipeline check of a run of `config.id` that was cancelled, as
+ * cancelled. A cancelled run never reaches its own completion, so its check
+ * would stay in progress.
+ *
+ * A run only destroys the machines and deletes the snapshots it holds the IDs
+ * of, in its own cleanup step. One that ends without reaching it leaves them
+ * to expire.
  */
 export const cleanupFunction = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
-  config: Pick<PipelineConfig, "id">;
+  config: Pick<PipelineConfig, "id" | "check">;
+  /** Without it there is nothing to complete, and the function does nothing. */
+  internals?: CiInternals;
 }): InngestFunction.Any => {
   return client.createFunction(
     {
       id: `${config.id}/cleanup`,
       triggers: [
-        {
-          event: internalEvents.FunctionFailed,
-          if: `event.data.function_id == "${client.id}-${config.id}"`,
-        },
         {
           event: internalEvents.FunctionCancelled,
           if: `event.data.function_id == "${client.id}-${config.id}"`,
@@ -889,61 +1036,41 @@ export const cleanupFunction = ({
     async ({ event, step }: any) => {
       const runId = event?.data?.run_id ?? event?.data?.runId;
 
-      // A build that others waited on took a lock on its cache entry, whose
-      // name is worked out from the request it failed on.
-      const request = event?.data?.event?.data;
+      // What the check needs comes from the run's trigger event.
+      const repo = repoContextFromEvent(event?.data?.event);
+      const checkName =
+        config.check === false ? undefined : (config.check?.name ?? config.id);
 
-      const lock =
-        request?.locked === true && typeof request.cacheKey === "string"
-          ? lockMachineName(request.cacheKey)
-          : undefined;
+      if (internals && runId && checkName && repo?.sha) {
+        await step.run(stepOptions(steps.endCancelledCheck()), async () => {
+          await (internals.checks as CheckReporter).runCancelled({
+            run: { runId, checkName, repo },
+          });
 
-      const destroyed = await step.run(
-        stepOptions(steps.cleanUpEndedRun()),
-        async () => {
-          if (!runId) {
-            return { destroyed: 0, lockReleased: false, deleted: 0 };
-          }
-
-          return {
-            ...(await destroyOrphans(client, runId, lock)),
-            ...(await deleteOrphanSnapshots(client, runId)),
-          };
-        },
-      );
-
-      // The runs waiting on it would otherwise wait for a build that is gone.
-      // A build that ended on its own already told them, and one that told them
-      // must not be counted as failing twice.
-      if (lock && destroyed.lockReleased) {
-        await step.sendEvent("announce-lock-released", {
-          name: buildDoneEvent,
-          data: {
-            name: lock,
-            status: "failed",
-            reason: "the build run ended before it finished",
-          } satisfies BuildDone,
+          return null;
         });
       }
 
-      return destroyed;
+      return { cancelled: Boolean(runId) };
     },
   );
 };
 
 /**
- * The functions a pipeline needs behind the scenes: cleanup after a permanent
- * failure or cancellation, and re-runs from a GitHub check.
+ * The functions a pipeline needs behind the scenes: ending a cancelled run's
+ * check, and re-runs from a GitHub check.
  */
 const generatedFunctions = ({
   client,
   config,
+  internals,
 }: {
   client: Inngest.Any;
   config: PipelineConfig;
+  internals: CiInternals;
 }): InngestFunction.Any[] => {
   const functions: InngestFunction.Any[] = [
-    cleanupFunction({ client, config }),
+    cleanupFunction({ client, config, internals }),
   ];
 
   functions.push(
@@ -951,13 +1078,40 @@ const generatedFunctions = ({
       {
         id: `${config.id}/check-rerequested`,
         triggers: [
-          { event: "github/check_run.rerequested" },
-          { event: "github/check_suite.rerequested" },
+          { event: "github-ci/check_run.rerequested" },
+          { event: "github-ci/check_suite.rerequested" },
+          { event: "github-ci/check_run.requested_action" },
         ],
       },
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
       async ({ event, step }: any) => {
-        const { rerunEventFor } = await import("./rerun.ts");
+        const { isOurCheck, rerunEventFor, mayRerun } = await import(
+          "./rerun.ts"
+        );
+
+        // A button anyone who can see the check could click, so it needs the
+        // same permission as pushing to the repository.
+        if (!(await mayRerun({ event, step }))) {
+          return { rerun: false, reason: "not permitted" };
+        }
+
+        if (event?.data?.requested_action?.identifier === "cancel") {
+          if (!isOurCheck(event, config)) {
+            return { rerun: false, reason: "not this pipeline's check" };
+          }
+
+          await step.sendEvent("cancel", {
+            name: cancelRunEvent,
+            data: {
+              app: client.id,
+              pipeline: config.id,
+              repo: event.data.repository?.full_name,
+              sha: event.data.check_run?.head_sha,
+            },
+          });
+
+          return { rerun: false, reason: "cancelled" };
+        }
 
         return rerunEventFor({ event, step, client, config });
       },

@@ -61,6 +61,11 @@ import {
   type SendSignalResponse,
   sendEventResponseSchema,
 } from "../types.ts";
+import type {
+  AgentBody,
+  AgentFunction,
+  AgentFunctionConfig,
+} from "./agent/agentFunction.ts";
 import { AgentRegistryMiddleware } from "./agent/register.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
@@ -70,8 +75,8 @@ import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
+  warningMetadataKind,
 } from "./InngestMetadata.ts";
-import { createSandboxClient, type SandboxClient } from "./InngestSandbox.ts";
 import {
   type ClientScore,
   type ScoreExperimentOptions,
@@ -80,13 +85,15 @@ import {
   sendScoreExperiment,
 } from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-import { step } from "./InngestStepTools.ts";
+import { group, step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
 import {
   getSubscriptionToken as realtimeGetSubscriptionToken,
   subscribe as realtimeSubscribe,
 } from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
+import { createSandboxClient } from "./sandbox/client.ts";
+import type { SandboxClient } from "./sandbox/types.ts";
 import {
   collectFeatureObservations,
   type FeatureObservationState,
@@ -135,6 +142,13 @@ type FetchT = typeof fetch;
 export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
 
 /**
+ * Symbol for accessing the IDs of functions re-created on this client. Not
+ * part of the public API.
+ * @internal
+ */
+export const replacedFnIdsSymbol = Symbol.for("inngest.replacedFnIds");
+
+/**
  * Symbol for accessing whether session propagation is enabled on this client.
  * @internal
  */
@@ -143,6 +157,17 @@ export const sessionPropagationSymbol = Symbol.for(
 );
 
 const SESSION_PROPAGATION_DEFAULT_ENABLED = true;
+
+/**
+ * Where the agents module installs the implementation of `client.agent()`.
+ */
+export const agentHook: {
+  create?: (
+    client: Inngest.Any,
+    config: AgentFunctionConfig,
+    body: AgentBody,
+  ) => AgentFunction;
+} = {};
 
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
@@ -207,7 +232,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   readonly [featureObservationStateSymbol]: FeatureObservationState;
 
+  /**
+   * Fully-qualified IDs of functions that replaced an earlier definition with
+   * the same ID.
+   *
+   * @internal
+   */
+  readonly [replacedFnIdsSymbol] = new Set<string>();
+
   private localFns: InngestFunction.Any[] = [];
+
+  /**
+   * IDs passed to `createFunction()`, so only re-created IDs scan `localFns`.
+   */
+  private createdFnIds = new Set<string>();
 
   /**
    * Middleware instances that provide simpler hooks.
@@ -723,18 +761,29 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       return;
     }
 
-    await this.updateMetadata({
-      target: target,
-      metadata: [
-        {
-          kind: "inngest.warnings",
-          op: "set",
-          values: {
-            [`sdk.${kind}`]: formatLogMessage(log),
+    const code = `sdk.${kind}`;
+    // Callers don't await this, so a failed write (IE an older server that
+    // rejects per-name warning kinds) must not become an unhandled rejection.
+    // The warning has already been logged above.
+    try {
+      await this.updateMetadata({
+        target: target,
+        metadata: [
+          {
+            kind: warningMetadataKind(code),
+            op: "set",
+            values: {
+              [code]: formatLogMessage(log),
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    } catch (err) {
+      this[internalLoggerSymbol].debug(
+        { err },
+        "Failed to write warning metadata",
+      );
+    }
   }
 
   /**
@@ -1190,6 +1239,51 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return (await wrappedHandler()) as SendEventOutput<TClientOpts>;
   }
 
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * The global `step` and `group` tools, typed with this client's middleware,
+   * so helpers can use them without being passed `step` or `group`.
+   *
+   * They find the tools of the function run they're called in, so
+   * middleware-added tools like `step.sandbox` and `group.sandbox` work, and
+   * they reject with an error when called outside a function run.
+   *
+   * @example
+   * ```ts
+   * // inngest.ts
+   * export const inngest = new Inngest({ id: "app", middleware: [sandboxMiddleware()] });
+   * export const { step, group } = inngest.globals();
+   *
+   * // helper.ts
+   * import { step } from "./inngest";
+   *
+   * export const build = () => step.sandbox.create("box");
+   * ```
+   *
+   * @experimental
+   */
+  public globals(): GlobalTools<this> {
+    return { step, group } as unknown as GlobalTools<this>;
+  }
+
+  /**
+   * EXPERIMENTAL: Defines an agent whose body owns its loop and reads a durable
+   * inbox. Import `inngest/experimental/agents` to use it.
+   * @param config Function ID and KV store.
+   * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
+   */
+  public agent(config: AgentFunctionConfig, body: AgentBody): AgentFunction {
+    if (!agentHook.create) {
+      throw new Error(
+        'client.agent() needs `import "inngest/experimental/agents"`.',
+      );
+    }
+
+    return agentHook.create(this, config, body);
+  }
+
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     handler,
@@ -1200,7 +1294,16 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       mw.onRegister?.({ client: this, fn });
     }
 
-    this.localFns.push(fn);
+    const idx = this.createdFnIds.has(fn.id())
+      ? this.localFns.findIndex((f) => f.id() === fn.id())
+      : -1;
+    this.createdFnIds.add(fn.id());
+    if (idx === -1) {
+      this.localFns.push(fn);
+    } else {
+      this.localFns[idx] = fn;
+      this[replacedFnIdsSymbol].add(fn.id(this.id));
+    }
 
     return fn;
   };
@@ -1452,6 +1555,21 @@ export namespace Inngest {
     ResolveTriggers<TTriggers>
   >;
 }
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * The global `step` and `group` tools typed for a given Inngest client, as
+ * returned by `inngest.globals()`.
+ *
+ * @public
+ * @experimental
+ */
+export type GlobalTools<TInngest extends Inngest.Any> = {
+  step: GetStepTools<TInngest>;
+  group: GetFunctionInput<TInngest>["group"];
+};
 
 /**
  * A helper type to extract the type of a set of event tooling from a given

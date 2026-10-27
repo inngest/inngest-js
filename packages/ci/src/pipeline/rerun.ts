@@ -8,6 +8,99 @@ import type { Inngest } from "inngest";
 import type { PipelineConfig } from "../types.ts";
 
 /**
+ * Whether a check's event may start a re-run. Re-requesting from GitHub's own
+ * button is already limited to people who can write to the repository; a
+ * button of ours (`requested_action`) carries the clicker, so it is checked
+ * here.
+ */
+/**
+ * The repository an event is about and the installation that delivered it, for
+ * a client built outside any run. An event with no installation leaves the
+ * provider to find the repository's own.
+ */
+const repositoryOf = (
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any,
+  owner: string,
+  repo: string,
+) => {
+  const installationId =
+    event?.data?._github?.installationId ?? event?.data?.installation?.id;
+
+  return { owner, repo, ...(installationId ? { installationId } : {}) };
+};
+
+/**
+ * Whether a check's event is for this pipeline: a check run is only ours if it
+ * carries our check name, since external IDs are not unique to a pipeline. A
+ * suite has no name, and every pipeline on the commit is meant.
+ */
+export const isOurCheck = (
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any,
+  config: PipelineConfig,
+): boolean => {
+  const checkName =
+    config.check === false ? config.id : (config.check?.name ?? config.id);
+
+  const name: string | undefined = event?.data?.check_run?.name;
+
+  return (
+    !event?.data?.check_run ||
+    name === checkName ||
+    Boolean(name?.startsWith(`${checkName} / `))
+  );
+};
+
+export const mayRerun = async ({
+  event,
+  step,
+}: {
+  // biome-ignore lint/suspicious/noExplicitAny: GitHub event
+  event: any;
+  // biome-ignore lint/suspicious/noExplicitAny: SDK step tools
+  step: any;
+}): Promise<boolean> => {
+  const login: string | undefined = event?.data?.sender?.login;
+
+  if (!event?.data?.requested_action) {
+    return true;
+  }
+
+  if (!login || !event?.data?.repository?.full_name) {
+    return false;
+  }
+
+  return step.run("check-permission", async () => {
+    const { octokitForRun } = await import("../github/rest.ts");
+    const { hasPermission } = await import("../github/triggers.ts");
+    const [owner, repo] = String(event.data.repository.full_name).split(
+      "/",
+    ) as [string, string];
+
+    try {
+      const octokit = await octokitForRun(repositoryOf(event, owner, repo));
+      const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+        owner,
+        repo,
+        username: login,
+      });
+
+      return hasPermission(data.permission, "write");
+    } catch (error) {
+      // Not being able to see the permission means no.
+      const status = (error as { status?: number }).status;
+
+      if (status === 403 || status === 404) {
+        return false;
+      }
+
+      throw error;
+    }
+  });
+};
+
+/**
  * Re-run a pipeline from a GitHub check's "Re-run" button.
  *
  * The original event isn't available from the SDK, so a minimal pull request
@@ -29,21 +122,8 @@ export const rerunEventFor = async ({
 }): Promise<{ rerun: boolean; reason?: string }> => {
   const checkRun = event?.data?.check_run ?? event?.data?.check_suite;
   const externalId: string | undefined = checkRun?.external_id;
-  const name: string | undefined = checkRun?.name;
 
-  const checkName =
-    config.check === false ? config.id : (config.check?.name ?? config.id);
-
-  // A suite has no name or external_id, and only the app that owns it hears
-  // about its re-request, so re-run for the suite's commit. A check run is
-  // only ours if it carries our check name: external IDs are not unique to
-  // this pipeline, so they say nothing about who owns the check.
-  const mine =
-    !event?.data?.check_run ||
-    name === checkName ||
-    name?.startsWith(`${checkName} / `);
-
-  if (!mine) {
+  if (!isOurCheck(event, config)) {
     return { rerun: false, reason: "not this pipeline's check" };
   }
 
@@ -65,6 +145,8 @@ export const rerunEventFor = async ({
 
   const rerunOf = externalId?.split(":")[0];
 
+  const noCache = event?.data?.requested_action?.identifier === "rerun-fresh";
+
   // Every pipeline hears the same webhook, so they all send the same ID and
   // the copies collapse into one event.
   const delivery: string | undefined =
@@ -82,7 +164,7 @@ export const rerunEventFor = async ({
     let branchVerified = false;
 
     try {
-      const octokit = await octokitForRun();
+      const octokit = await octokitForRun(repositoryOf(event, owner, repo));
 
       if (payloadPullRequest?.number) {
         const { data } = await octokit.rest.pulls.get({
@@ -130,7 +212,9 @@ export const rerunEventFor = async ({
 
     await client.send({
       ...(delivery ? { id: `ci-rerun-${delivery}` } : {}),
-      name: pullRequest ? "github/pull_request.synchronize" : "github/push",
+      name: pullRequest
+        ? "github-ci/pull_request.synchronize"
+        : "github-ci/push",
       data: {
         ...(pullRequest
           ? {
@@ -143,9 +227,9 @@ export const rerunEventFor = async ({
         _github: event?.data?._github,
         _ci: {
           ...(rerunOf ? { rerunOf } : {}),
-          ...(externalId?.includes(":")
-            ? { fromJob: externalId.split(":").slice(1).join(":") }
-            : {}),
+          // A check's re-run is for its own pipeline; a suite's is for all.
+          ...(event?.data?.check_run ? { pipeline: config.id } : {}),
+          ...(noCache ? { noCache } : {}),
         },
       },
     });

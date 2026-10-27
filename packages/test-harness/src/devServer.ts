@@ -9,14 +9,32 @@ export const DEV_SERVER_PORT = 8288;
  */
 export const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 
+async function isListening(): Promise<boolean> {
+  try {
+    return (
+      await fetch(`${DEV_SERVER_URL}/dev`, {
+        signal: AbortSignal.timeout(2000),
+      })
+    ).ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Start the Inngest Dev Server.
  *
  * This function spawns a new process running the Inngest CLI in dev mode.
- * It waits for the server to be ready before resolving.
+ * It waits for the server to be ready before resolving. A Dev Server that is
+ * already listening is used as it is.
  */
 export async function startDevServer(): Promise<void> {
   if (devServerProcess) {
+    console.log("Dev server already running");
+    return;
+  }
+
+  if (await isListening()) {
     console.log("Dev server already running");
     return;
   }

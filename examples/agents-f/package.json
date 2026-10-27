@@ -1,0 +1,20 @@
+{
+  "name": "agents-f",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Experimental F-layer agent: a durable inbox, thread handles and scoped KV, with a scripted model",
+  "type": "module",
+  "scripts": {
+    "start": "tsx app.ts",
+    "drive": "tsx driver.ts"
+  },
+  "dependencies": {
+    "inngest": "link:../../packages/inngest/dist",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.2"
+  }
+}

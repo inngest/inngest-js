@@ -35,10 +35,11 @@ import {
   type TriggerEventFromFunction,
 } from "../types.ts";
 import {
-  getAsyncCtx,
-  getAsyncCtxSync,
-  runWithAsyncCtx,
-} from "./execution/als.ts";
+  openSubscription,
+  type SubscribeOptions,
+  type Subscription,
+} from "./agent/subscribe.ts";
+import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
@@ -571,6 +572,60 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * EXPERIMENTAL: a durable subscription. Opens a subscription to events
+     * and returns it; iterate it with `for await`. The executor keeps the
+     * subscription for the life of the run and saves every matching event as
+     * a numbered message, so nothing sent while the function is busy is lost.
+     */
+    subscribe: <TData = unknown>(
+      idOrOptions: StepOptionsOrId,
+      opts: SubscribeOptions,
+    ): Promise<Subscription<TData>> => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+
+      return openSubscription<TData>(
+        function op(stepId, mode, seq) {
+          return tools["~subscribeOp"](stepId, {
+            event: opts.event,
+            if: opts.if,
+            subscribe: { key: id, mode, ...(seq ? { seq } : {}) },
+          });
+        },
+        id,
+        opts,
+      );
+    },
+
+    /**
+     * One op of a subscription. Used by `subscribe`.
+     */
+    "~subscribeOp": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          event: string;
+          if?: string;
+          subscribe: { key: string; mode: string; seq?: number };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.WaitForEvent,
+        name: opts.event,
+        displayName: name ?? id,
+        opts: {
+          event: opts.event,
+          if: opts.if,
+          timeout: "",
+          subscribe: opts.subscribe,
+        },
+        userland: { id },
+      };
+    }),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried
@@ -1214,111 +1269,147 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
 };
 
 /**
+ * Build a proxy for a set of tools that resolves to the current execution's
+ * real tools, so anything middleware adds to them (like `step.sandbox`) is
+ * there too.
+ *
+ * `base` holds what works outside a function run. Every other key is read from
+ * the tools of the run it's used in, synchronously, so steps are still found in
+ * the tick they're called. Outside a run, a key's value is a stand-in that
+ * looks the tool up when it's called, so references saved at module scope
+ * (`const { run } = step`) still work inside a run, and reject with a clear
+ * error when called outside one.
+ */
+const createDeferredTools = <T extends object>(
+  name: "step" | "group",
+  base: object,
+  getTools: (ctx: Context.Any) => unknown,
+): T => {
+  const getCurrentTools = (): Record<PropertyKey, unknown> => {
+    const als = getAsyncCtxSync();
+    if (!als?.execution) {
+      throw new Error(
+        `\`${name}\` tools can only be used within Inngest function executions; no ${
+          als ? "execution " : ""
+        }context was found`,
+      );
+    }
+
+    return getTools(als.execution.ctx) as Record<PropertyKey, unknown>;
+  };
+
+  const tryGetCurrentTools = (): Record<PropertyKey, unknown> | undefined => {
+    try {
+      return getCurrentTools();
+    } catch {
+      return undefined;
+    }
+  };
+
+  const createStandIn = (path: string[]): unknown => {
+    return new Proxy(() => undefined, {
+      get: (_target, prop) => {
+        if (prop === "then" || typeof prop === "symbol") {
+          return undefined;
+        }
+
+        return createStandIn([...path, prop]);
+      },
+      apply: (_target, _this, args) => {
+        try {
+          let parent: unknown = getCurrentTools();
+          for (const key of path.slice(0, -1)) {
+            parent = (parent as Record<string, unknown>)[key];
+          }
+
+          const tool = (parent as Record<string, unknown>)[path.at(-1) ?? ""];
+          if (typeof tool !== "function") {
+            throw new TypeError(
+              `\`${name}.${path.join(".")}\` is not a function`,
+            );
+          }
+
+          return tool.apply(parent, args);
+        } catch (error) {
+          return Promise.reject(error);
+        }
+      },
+    });
+  };
+
+  return new Proxy(base, {
+    get: (target, prop, receiver) => {
+      if (
+        Reflect.has(target, prop) ||
+        prop === "then" ||
+        typeof prop === "symbol"
+      ) {
+        return Reflect.get(target, prop, receiver);
+      }
+
+      const tools = tryGetCurrentTools();
+
+      return tools ? tools[prop] : createStandIn([prop]);
+    },
+    has: (target, prop) => {
+      if (Reflect.has(target, prop)) {
+        return true;
+      }
+
+      const tools = tryGetCurrentTools();
+
+      return tools ? prop in tools : false;
+    },
+  }) as T;
+};
+
+/**
  * A generic set of step tools that can be used without typing information about
  * the client used to create them.
  *
- * These tools use AsyncLocalStorage to track the context in which they are
- * used, and will throw an error if used outside of an Inngest context.
+ * These tools use AsyncLocalStorage to find the step tools of the function run
+ * they're used in, so they include anything middleware adds, like
+ * `step.sandbox`. They reject with an error if used outside of an Inngest
+ * context.
+ *
+ * To type them with a client's middleware, see `Inngest#globals()`.
  *
  * The intention of these high-level tools is to allow usage of Inngest step
  * tools within API endpoints, though they can still be used within regular
  * Inngest functions as well.
  */
-export const step: GenericStepTools = {
-  // TODO Support `step.fetch` (this is already kinda half way deferred)
-  fetch: null as unknown as GenericStepTools["fetch"],
-  ai: {
-    infer: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
-    wrap: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.ai.wrap(...args)),
-    models: {
-      ...models,
+export const step: GenericStepTools = createDeferredTools(
+  "step",
+  {
+    get fetch() {
+      return stepFetch;
     },
+    ai: createDeferredTools(
+      "step",
+      { models: { ...models } },
+      (ctx) => ctx.step.ai,
+    ),
+    realtime: createDeferredTools(
+      "step",
+      {},
+      (ctx) => (ctx.step as GenericStepTools).realtime,
+    ),
   },
-  invoke: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.invoke(...args)),
-  run: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.run(...args)),
-  sendEvent: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
-  sendSignal: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
-  sleep: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sleep(...args)),
-  sleepUntil: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sleepUntil(...args)),
-  waitForEvent: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.waitForEvent(...args)),
-  waitForSignal: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.waitForSignal(...args)),
-  realtime: {
-    publish: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.realtime.publish(...args)),
-  },
-};
+  (ctx) => ctx.step,
+);
 
 /**
- * An internal function used to retrieve or create step tooling for the current
- * execution context.
- *
- * Note that this requires an existing context to create the step tooling;
- * something must declare the Inngest execution context before this can be used.
- */
-const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
-  const ctx = await getAsyncCtx();
-  if (!ctx) {
-    throw new Error(
-      "`step` tools can only be used within Inngest function executions; no context was found",
-    );
-  }
-
-  if (!ctx.app) {
-    throw new Error(
-      "`step` tools can only be used within Inngest function executions; no Inngest client was found in the execution context",
-    );
-  }
-
-  if (!ctx.execution) {
-    throw new Error(
-      "`step` tools can only be used within Inngest function executions; no execution context was found",
-    );
-  }
-
-  // If we're here, we're in the context of a function execution already and
-  // we can return the existing step tooling.
-  return ctx.execution.ctx.step;
-};
-
-const getDeferredGroupTooling = async (): Promise<GroupTools> => {
-  const ctx = await getAsyncCtx();
-  if (!ctx) {
-    throw new Error(
-      "`group` tools can only be used within Inngest function executions; no context was found",
-    );
-  }
-
-  if (!ctx.execution) {
-    throw new Error(
-      "`group` tools can only be used within Inngest function executions; no execution context was found",
-    );
-  }
-
-  return ctx.execution.ctx.group;
-};
-
-/**
- * A deferred proxy for `group` tools that delegates through ALS context.
+ * A deferred proxy for `group` tools that finds the group tools of the function
+ * run they're used in, so it includes anything middleware adds, like
+ * `group.sandbox`.
  *
  * @public
  */
-export const group: GroupTools = {
-  parallel: (...args) =>
-    getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
-  experiment: (...args) =>
-    getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
-  "~span": withSpan,
-};
+export const group: GroupTools = createDeferredTools(
+  "group",
+  { "~span": withSpan },
+  (ctx) => ctx.group,
+);
 
 /**
  * The event payload portion of the options for `step.invoke()`. This does not
