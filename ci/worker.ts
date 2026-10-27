@@ -8,6 +8,7 @@
 import { connect } from "inngest/connect";
 
 import { ci, inngest } from "./client.ts";
+import "./pipelines/agents.ts";
 import "./pipelines/pr.ts";
 
 const worker = await connect({

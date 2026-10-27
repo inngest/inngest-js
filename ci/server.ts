@@ -7,6 +7,7 @@
 import { createServer } from "inngest/node";
 
 import { ci, inngest } from "./client.ts";
+import "./pipelines/agents.ts";
 import "./pipelines/pr.ts";
 
 const port = Number(process.env.PORT ?? 3939);

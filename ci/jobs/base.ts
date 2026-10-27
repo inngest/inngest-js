@@ -37,7 +37,7 @@ const latestDevServer = async (): Promise<string> => {
 const installPrefix = "/usr/local";
 
 /** The binary that the package's postinstall downloads over its own wrapper script. */
-const devServerBin = `${installPrefix}/lib/node_modules/inngest-cli/bin/inngest`;
+export const devServerBin = `${installPrefix}/lib/node_modules/inngest-cli/bin/inngest`;
 
 /** The port the Dev Server listens on, which the tests expect. */
 export const devServerPort = 8288;
