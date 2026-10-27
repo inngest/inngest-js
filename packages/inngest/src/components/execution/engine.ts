@@ -2717,9 +2717,15 @@ class InngestExecutionEngine
                   if (typeof result.data !== "undefined") {
                     // Validate waitForEvent results against the schema if present
                     // Skip validation if result.data is null (timeout case)
+                    //
+                    // Subscription ops (`step.subscribe`) answer with their own
+                    // shapes (acks, counts), so they are not validated here.
                     if (
                       opId.op === StepOpCode.WaitForEvent &&
-                      result.data !== null
+                      result.data !== null &&
+                      !(
+                        step.rawArgs?.[1] as { subscribe?: unknown } | undefined
+                      )?.subscribe
                     ) {
                       const { event } = (step.rawArgs?.[1] ?? {}) as {
                         event: unknown;
