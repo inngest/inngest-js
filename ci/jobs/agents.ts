@@ -35,7 +35,7 @@ export const agentScenarios = ci.job(
       "install redis",
     );
 
-    await $.sh`AGENTS_VERIFY_STACK=direct AGENTS_VERIFY_DEV_BIN=${devServerBin} pnpm agents:verify --all`.as(
+    await $.sh`AGENTS_VERIFY_STACK=direct AGENTS_VERIFY_DEV_BIN=${devServerBin} timeout 25m pnpm agents:verify --all`.as(
       "agents:verify --all",
     );
   },
