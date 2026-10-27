@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: a scoped key-value store over a Redis URL
- * (`INNGEST_KV_URL`). Scopes say how long a value lives and who sees it:
+ * (`INNGEST_EXPERIMENTAL_KV_URL`). Scopes say how long a value lives and who sees it:
  * `env`, `app`, `function`, `run` (the default), `session` and `thread`.
  *
  * Inside a function every read and write is its own memoized step, so a
@@ -11,6 +11,8 @@
  * Run-scoped keys are removed by `kv.clearRun()`, which the agent function
  * calls on every way a run can end.
  */
+
+import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
 import { connectRedis, type RedisClient } from "./redis.ts";
@@ -230,6 +232,15 @@ function currentIds(): KvScopeIds | undefined {
   const { ctx, instance } = execution;
   const app = getAsyncCtxSync()?.app as { id?: string; env?: string | null };
 
+  // `ctx.sessions` is only set while session propagation is on, so read the
+  // trigger events too. `data.thread` is what agent functions are started with.
+  const sessions = {
+    ...reduceEventsToPropagatedSessions(ctx.events ?? [ctx.event]),
+    ...ctx.sessions,
+  };
+  const thread =
+    sessions.agent_thread ?? (ctx.event?.data as { thread?: string })?.thread;
+
   return {
     env: app?.env ?? "default",
     app: app?.id ?? "app",
@@ -239,24 +250,24 @@ function currentIds(): KvScopeIds | undefined {
       instance as unknown as { options?: { fn?: { id(): string } } }
     ).options?.fn?.id(),
     run: ctx.runId,
-    session: ctx.sessions?.agent_session,
-    thread: ctx.sessions?.agent_thread,
+    session: sessions.agent_session,
+    thread,
   };
 }
 
 /**
  * Builds a store.
- * @param options.adapter Where values live. Default: Redis at `INNGEST_KV_URL`.
+ * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
 export function createKv(options: { adapter?: KvAdapter } = {}): Kv {
   let adapter = options.adapter;
 
   function store(): KvAdapter {
     if (!adapter) {
-      const url = process.env.INNGEST_KV_URL;
+      const url = process.env.INNGEST_EXPERIMENTAL_KV_URL;
       if (!url) {
         throw new Error(
-          "kv needs a Redis URL: set INNGEST_KV_URL (redis:// or rediss://).",
+          "kv needs a Redis URL: set INNGEST_EXPERIMENTAL_KV_URL (redis:// or rediss://).",
         );
       }
       adapter = redisKvAdapter(url);
@@ -331,6 +342,6 @@ export function createKv(options: { adapter?: KvAdapter } = {}): Kv {
 }
 
 /**
- * The default store, backed by Redis at `INNGEST_KV_URL`.
+ * The default store, backed by Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
 export const kv: Kv = createKv();

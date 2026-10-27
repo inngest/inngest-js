@@ -627,24 +627,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * EXPERIMENTAL: Appends a message to a `step.subscribe` inbox. Used by
-   * thread handles; prefer `threads.get()`.
-   */
-  public async appendInbox(
-    key: string,
-    data: unknown,
-  ): Promise<{ seq: number; delivered: boolean }> {
-    const res = await this.inngestApi.appendInbox(key, data, {
-      headers: this.headers,
-    });
-    if (res.ok) {
-      return res.value;
-    }
-
-    throw new Error(res.error?.error || "Failed to append inbox message");
-  }
-
-  /**
    * EXPERIMENTAL: This API is not yet stable and may change in the future
    * without a major version bump.
    *

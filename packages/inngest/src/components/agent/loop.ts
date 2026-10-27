@@ -124,6 +124,13 @@ export interface AgentLoopOptions {
   steer?: (turn: number) => Promise<string[] | undefined>;
 
   /**
+   * Called between model calls, after `steer`. Return `true` to end the loop
+   * early with `stopped: "stopped"`. It runs in your function, so it can use
+   * steps to read a durable flag.
+   */
+  stop?: (turn: number) => Promise<boolean>;
+
+  /**
    * Called inside each model step as it finishes, for progress. Errors are
    * ignored.
    */
@@ -135,7 +142,7 @@ export interface AgentLoopResult {
    * The text of the last model reply.
    */
   text: string;
-  stopped: "done" | "maxTurns";
+  stopped: "done" | "maxTurns" | "stopped";
   turns: number;
 
   /**
@@ -268,6 +275,16 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
 
     for (const content of (await options.steer?.(turn)) ?? []) {
       messages.push({ role: "user", content });
+    }
+
+    if (await options.stop?.(turn)) {
+      return {
+        text,
+        stopped: "stopped",
+        turns: turn,
+        history: messages,
+        usage,
+      };
     }
   }
 

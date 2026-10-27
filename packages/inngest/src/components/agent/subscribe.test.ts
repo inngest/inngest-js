@@ -1,69 +1,30 @@
 /**
  * @module
- * Tests for `step.subscribe()`, with a fake server that answers each inbox
- * wait from a queue.
+ * Tests for `step.subscribe()` over the in-memory inbox store.
  */
-import { runFnWithStack, testClientId } from "../../test/helpers.ts";
-import { type OutgoingOp, StepOpCode } from "../../types.ts";
-import { _internals } from "../execution/engine.ts";
+import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
+import { memoryInboxStore } from "./inbox.ts";
+import { run } from "./test-helpers.ts";
 
-/**
- * Runs `fn` request by request. Each inbox wait is answered with the next
- * queued message, or with a timeout once the queue is empty.
- */
-const runWithInbox = async (fn: InngestFunction.Any, queue: unknown[]) => {
-  const waits: OutgoingOp[] = [];
-  let state: Parameters<typeof runFnWithStack>[1] = {};
-  let seq = 0;
-
-  for (let request = 0; request < 30; request++) {
-    const result = await runFnWithStack(fn, state);
-
-    if (result.type === "function-resolved") {
-      return { waits, output: result.data };
-    }
-
-    const found =
-      result.type === "step-ran"
-        ? [result.step]
-        : result.type === "steps-found"
-          ? result.steps
-          : [];
-
-    for (const op of found) {
-      if (op.id === _internals.hashId("complete")) {
-        return { waits, output: op.data };
-      }
-
-      if (op.op === StepOpCode.WaitForSignal) {
-        waits.push(op);
-        const next = queue.shift();
-        const data =
-          next === undefined
-            ? null
-            : { signal: "inbox", data: { seq: ++seq, data: next } };
-        state = { ...state, [op.id]: { id: op.id, data } };
-        continue;
-      }
-
-      state = { ...state, [op.id]: { id: op.id, data: op.data } };
-    }
-  }
-
-  throw new Error("The function did not finish");
-};
+const client = () => new Inngest({ id: testClientId });
 
 describe("step.subscribe", () => {
   test("delivers queued messages in order, one memoized step each", async () => {
-    const client = new Inngest({ id: testClientId });
-    const fn = client.createFunction(
+    const store = memoryInboxStore();
+    await store.append("t1", "a");
+    await store.append("t1", { b: 1 });
+
+    const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const seen: unknown[] = [];
 
-        for await (const message of step.subscribe("inbox", { key: "t1" })) {
+        for await (const message of step.subscribe("inbox", {
+          key: "t1",
+          store,
+          maxRechecks: 1,
+        })) {
           seen.push([message.seq, message.data]);
         }
 
@@ -71,33 +32,78 @@ describe("step.subscribe", () => {
       },
     );
 
-    const { waits, output } = await runWithInbox(fn, ["a", { b: 1 }]);
+    const { ran, output } = await run(fn, async () => false);
 
     expect(output).toEqual([
       [1, "a"],
       [2, { b: 1 }],
     ]);
-    expect(waits).toHaveLength(3);
-    expect(waits[0]?.opts).toMatchObject({
-      signal: "inbox:t1",
-      conflict: "replace",
-      inbox: { key: "t1" },
-    });
-    expect(new Set(waits.map((wait) => wait.id)).size).toBe(3);
+    expect(ran).toEqual([
+      "inbox:read",
+      "inbox:read",
+      "inbox:read",
+      "inbox:wait",
+    ]);
+    expect(await store.cursors("t1")).toEqual({ head: 2, acked: 2 });
   });
 
-  test("next() returns null when the wait times out", async () => {
-    const client = new Inngest({ id: testClientId });
-    const fn = client.createFunction(
+  test("a ring on the doorbell wakes the reader to read again", async () => {
+    const store = memoryInboxStore();
+
+    const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        return step.subscribe("inbox", { key: "t1", timeout: "1m" }).next();
+        const inbox = step.subscribe("inbox", { key: "t1", store });
+
+        return inbox.next();
       },
     );
 
-    const { waits, output } = await runWithInbox(fn, []);
+    const { ran, output } = await run(fn, async (op) => {
+      expect(op.opts).toMatchObject({
+        signal: "inbox:t1",
+        timeout: "5m",
+        conflict: "replace",
+      });
+      await store.append("t1", "late");
 
-    expect(output).toBeNull();
-    expect(waits[0]?.opts).toMatchObject({ timeout: "1m" });
+      return true;
+    });
+
+    expect(output).toEqual({ seq: 1, data: "late" });
+    expect(ran).toEqual(["inbox:read", "inbox:wait", "inbox:read"]);
+  });
+
+  test("pending() reports messages without claiming them", async () => {
+    const store = memoryInboxStore();
+    await store.append("t1", "a");
+
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = step.subscribe("inbox", { key: "t1", store });
+        const before = await inbox.pending();
+        await inbox.next();
+
+        return [before, await inbox.pending()];
+      },
+    );
+
+    const { output } = await run(fn, async () => false);
+
+    expect(output).toEqual([true, false]);
+  });
+});
+
+describe("memory inbox store", () => {
+  test("claiming twice with one owner returns the same message", async () => {
+    const store = memoryInboxStore();
+    await store.append("k", 1);
+    await store.append("k", 2);
+
+    expect(await store.claim("k", "o1")).toEqual({ seq: 1, data: 1 });
+    expect(await store.claim("k", "o1")).toEqual({ seq: 1, data: 1 });
+    expect(await store.claim("k", "o2")).toEqual({ seq: 2, data: 2 });
+    expect(await store.claim("k", "o3")).toBeNull();
   });
 });
