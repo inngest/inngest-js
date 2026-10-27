@@ -8,8 +8,10 @@
  * replay sees the values the first execution saw. Outside a function (a thread
  * handle, a script) calls go straight to the store.
  *
- * Run-scoped keys are removed by `kv.clearRun()`, which the agent function
- * calls on every way a run can end.
+ * The scope is chosen up front: `kv.thread.get("plan")` is the current
+ * thread's, `kv.scope("thread", key).get("plan")` is another's, and plain
+ * `kv.get()` is the run's own. A global `kv` finds the current run, session
+ * and thread from the function it is called in.
  */
 
 import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
@@ -102,16 +104,14 @@ export function redisKvAdapter(url: string): KvAdapter {
   };
 }
 
-export interface KvOptions {
-  /**
-   * Which scope to use. Default `"run"`.
-   */
-  scope?: KvScope;
+export interface KvHandle {
+  get<T = unknown>(key: string): Promise<T | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  all<T = unknown>(): Promise<Record<string, T>>;
+  clear(): Promise<void>;
 }
 
-/**
- * The ids that name each scope instance.
- */
 export interface KvScopeIds {
   env: string;
   app: string;
@@ -122,19 +122,12 @@ export interface KvScopeIds {
 }
 
 /**
- * One scope instance, read and written directly (never as steps).
+ * One scope instance: the keys of a run, a thread and so on. Inside a function
+ * every call is a memoized step; outside one it goes straight to the store.
  */
-export interface KvHandle {
+export interface KvScopeInstance {
   get<T = unknown>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown): Promise<void>;
-  delete(key: string): Promise<void>;
-  all<T = unknown>(): Promise<Record<string, T>>;
-  clear(): Promise<void>;
-}
-
-export interface Kv {
-  get<T = unknown>(key: string, opts?: KvOptions): Promise<T | undefined>;
-  set(key: string, value: unknown, opts?: KvOptions): Promise<void>;
 
   /**
    * Reads, transforms and writes a key in one step. Not atomic across runs.
@@ -142,27 +135,43 @@ export interface Kv {
   update<T = unknown>(
     key: string,
     fn: (current: T | undefined) => T,
-    opts?: KvOptions,
   ): Promise<T>;
-  delete(key: string, opts?: KvOptions): Promise<void>;
 
   /**
-   * Reads a key and deletes it in one step. Use it for flags that are
-   * consumed once.
+   * Reads a key and deletes it in one step. Use it for flags consumed once.
    */
-  take<T = unknown>(key: string, opts?: KvOptions): Promise<T | undefined>;
-  all<T = unknown>(opts?: KvOptions): Promise<Record<string, T>>;
+  take<T = unknown>(key: string): Promise<T | undefined>;
+  delete(key: string): Promise<void>;
+  all<T = unknown>(): Promise<Record<string, T>>;
 
   /**
-   * Removes every run-scoped key of the current run.
+   * Removes every key of the scope instance.
    */
-  clearRun(): Promise<void>;
+  clear(): Promise<void>;
+}
+
+export interface Kv extends KvScopeInstance {
+  /**
+   * A scope instance. Without `id` it is the current function's (the run, or
+   * the thread or session the run belongs to); with one it is that instance.
+   * @param scope The scope.
+   * @param id The instance, for example a thread key.
+   */
+  scope(scope: KvScope, id?: string): KvScopeInstance;
+
+  readonly env: KvScopeInstance;
+  readonly app: KvScopeInstance;
+  readonly function: KvScopeInstance;
+  readonly run: KvScopeInstance;
+  readonly session: KvScopeInstance;
+  readonly thread: KvScopeInstance;
 
   /**
-   * A direct handle to a scope instance, for use outside functions. `ids`
-   * names the instance; fill in the one `scope` needs.
+   * The store for a client, to use outside a function (a thread handle, a
+   * script) where there is no current run to take the environment and app from.
+   * @param client Inngest client.
    */
-  at(scope: KvScope, ids: KvScopeIds): KvHandle;
+  with(client: { id: string; env: string | null }): Kv;
 }
 
 /**
@@ -174,7 +183,7 @@ export function kvHash(scope: KvScope, ids: KvScopeIds): string {
   const id = scope === "env" ? ids.env : ids[scope];
   if (!id) {
     throw new Error(
-      `kv scope "${scope}" is not available here: no ${scope} id (sessions and threads come from the event's meta.sessions).`,
+      `kv scope "${scope}" is not available here: no ${scope} id (sessions and threads come from the event's meta.sessions or data.thread).`,
     );
   }
 
@@ -186,40 +195,6 @@ export function kvHash(scope: KvScope, ids: KvScopeIds): string {
         : [ids.env, ids.app, id];
 
   return `inngest:kv:${scope}:${parts.filter(Boolean).join(":")}`;
-}
-
-function handleFor(
-  adapter: KvAdapter,
-  scope: KvScope,
-  ids: KvScopeIds,
-): KvHandle {
-  const hash = kvHash(scope, ids);
-
-  return {
-    async get<T>(key: string) {
-      const raw = await adapter.get(hash, key);
-
-      return raw === null ? undefined : (JSON.parse(raw) as T);
-    },
-    async set(key, value) {
-      await adapter.set(hash, key, JSON.stringify(value ?? null));
-    },
-    async delete(key) {
-      await adapter.delete(hash, key);
-    },
-    async all<T>() {
-      const raw = await adapter.all(hash);
-
-      return Object.fromEntries(
-        Object.entries(raw).map(([key, value]) => {
-          return [key, JSON.parse(value) as T];
-        }),
-      );
-    },
-    async clear() {
-      await adapter.clear(hash);
-    },
-  };
 }
 
 /**
@@ -258,10 +233,53 @@ function currentIds(): KvScopeIds | undefined {
 }
 
 /**
+ * Reads and writes one scope instance directly.
+ * @param adapter Where values live.
+ * @param scope The scope.
+ * @param ids Ids of the scope instances.
+ */
+function handleFor(
+  adapter: KvAdapter,
+  scope: KvScope,
+  ids: KvScopeIds,
+): KvHandle {
+  const hash = kvHash(scope, ids);
+
+  return {
+    async get<T>(key: string) {
+      const raw = await adapter.get(hash, key);
+
+      return raw === null ? undefined : (JSON.parse(raw) as T);
+    },
+    async set(key, value) {
+      await adapter.set(hash, key, JSON.stringify(value ?? null));
+    },
+    async delete(key) {
+      await adapter.delete(hash, key);
+    },
+    async all<T>() {
+      const raw = await adapter.all(hash);
+
+      return Object.fromEntries(
+        Object.entries(raw).map(([key, value]) => {
+          return [key, JSON.parse(value) as T];
+        }),
+      );
+    },
+    async clear() {
+      await adapter.clear(hash);
+    },
+  };
+}
+
+/**
  * Builds a store.
  * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
+ * @param options.bound Environment and app to use outside a function.
  */
-export function createKv(options: { adapter?: KvAdapter } = {}): Kv {
+export function createKv(
+  options: { adapter?: KvAdapter; bound?: { env: string; app: string } } = {},
+): Kv {
   let adapter = options.adapter;
 
   function store(): KvAdapter {
@@ -278,77 +296,119 @@ export function createKv(options: { adapter?: KvAdapter } = {}): Kv {
     return adapter;
   }
 
-  function target(opts: KvOptions | undefined) {
-    const ids = currentIds();
-    if (!ids) {
-      throw new Error(
-        "kv.get/set/update/delete/all run inside a function; use kv.at() elsewhere.",
-      );
-    }
-    const scope = opts?.scope ?? "run";
+  function instance(scope: KvScope, explicitId?: string): KvScopeInstance {
+    // Resolved on every call: the same instance works in whichever function
+    // it is called from.
+    function resolve() {
+      const current = currentIds();
+      const ids: KvScopeIds | undefined = current ?? options.bound;
+      if (!ids) {
+        throw new Error(
+          "kv outside a function needs a client: use kv.with(client).",
+        );
+      }
 
-    return { scope, handle: handleFor(store(), scope, ids) };
+      const scoped: KvScopeIds = { ...ids };
+      if (explicitId !== undefined) {
+        scoped[scope] = explicitId;
+      }
+
+      return {
+        handle: handleFor(store(), scope, scoped),
+        inFunction: Boolean(current),
+      };
+    }
+
+    // Inside a function each call is a step; outside it is direct.
+    async function run<T>(
+      op: string,
+      key: string | undefined,
+      fn: (handle: KvHandle) => Promise<T>,
+    ) {
+      const { handle, inFunction } = resolve();
+      if (!inFunction) {
+        return fn(handle);
+      }
+
+      return (await step.run(
+        `kv.${op}:${scope}${explicitId ? `:${explicitId}` : ""}${key === undefined ? "" : `:${key}`}`,
+        async () => {
+          return (await fn(handle)) ?? null;
+        },
+      )) as T;
+    }
+
+    return {
+      async get<T>(key: string) {
+        return ((await run("get", key, (h) => h.get<T>(key))) ?? undefined) as
+          | T
+          | undefined;
+      },
+      async set(key, value) {
+        await run("set", key, async (h) => {
+          await h.set(key, value);
+        });
+      },
+      async update<T>(key: string, fn: (current: T | undefined) => T) {
+        return run("update", key, async (h) => {
+          const next = fn(await h.get<T>(key));
+          await h.set(key, next);
+
+          return next;
+        });
+      },
+      async take<T>(key: string) {
+        return ((await run("take", key, async (h) => {
+          const value = (await h.get<T>(key)) ?? null;
+          await h.delete(key);
+
+          return value;
+        })) ?? undefined) as T | undefined;
+      },
+      async delete(key) {
+        await run("delete", key, async (h) => {
+          await h.delete(key);
+        });
+      },
+      async all<T>() {
+        return run("all", undefined, (h) => h.all<T>());
+      },
+      async clear() {
+        await run("clear", undefined, async (h) => {
+          await h.clear();
+        });
+      },
+    };
   }
 
+  const root = instance("run");
+
   return {
-    async get<T>(key: string, opts?: KvOptions) {
-      const { scope, handle } = target(opts);
-
-      return step.run(`kv.get:${scope}:${key}`, async () => {
-        return (await handle.get<T>(key)) ?? null;
-      }) as Promise<T | undefined>;
+    ...root,
+    scope: instance,
+    get env() {
+      return instance("env");
     },
-    async set(key, value, opts) {
-      const { scope, handle } = target(opts);
-      await step.run(`kv.set:${scope}:${key}`, async () => {
-        await handle.set(key, value);
+    get app() {
+      return instance("app");
+    },
+    get function() {
+      return instance("function");
+    },
+    get run() {
+      return instance("run");
+    },
+    get session() {
+      return instance("session");
+    },
+    get thread() {
+      return instance("thread");
+    },
+    with(client) {
+      return createKv({
+        adapter: store(),
+        bound: { env: client.env ?? "default", app: client.id },
       });
-    },
-    async update<T>(
-      key: string,
-      fn: (current: T | undefined) => T,
-      opts?: KvOptions,
-    ) {
-      const { scope, handle } = target(opts);
-
-      return (await step.run(`kv.update:${scope}:${key}`, async () => {
-        const next = fn(await handle.get<T>(key));
-        await handle.set(key, next);
-
-        return next;
-      })) as T;
-    },
-    async delete(key, opts) {
-      const { scope, handle } = target(opts);
-      await step.run(`kv.delete:${scope}:${key}`, async () => {
-        await handle.delete(key);
-      });
-    },
-    async take<T>(key: string, opts?: KvOptions) {
-      const { scope, handle } = target(opts);
-
-      return (await step.run(`kv.take:${scope}:${key}`, async () => {
-        const value = (await handle.get<T>(key)) ?? null;
-        await handle.delete(key);
-
-        return value;
-      })) as T | undefined;
-    },
-    async all<T>(opts?: KvOptions) {
-      const { scope, handle } = target(opts);
-
-      return (await step.run(`kv.all:${scope}`, async () => {
-        return handle.all<T>();
-      })) as Record<string, T>;
-    },
-    async clearRun() {
-      const { handle } = target({ scope: "run" });
-      await step.run("kv.clearRun", async () => {
-        await handle.clear();
-      });
-    },
-    at(scope, ids) {
-      return handleFor(store(), scope, ids);
     },
   };
 }

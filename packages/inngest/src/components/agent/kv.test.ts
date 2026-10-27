@@ -6,9 +6,10 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
 import { createKv, kvHash, memoryKvAdapter } from "./kv.ts";
+import { run } from "./test-helpers.ts";
 
 describe("kv", () => {
-  test("each read and write is a memoized step and scopes are separate", async () => {
+  test("each call is a memoized step and the scope is chosen up front", async () => {
     const adapter = memoryKvAdapter();
     const kv = createKv({ adapter });
     const client = new Inngest({ id: testClientId });
@@ -18,24 +19,14 @@ describe("kv", () => {
       { id: "kvfn", triggers: [{ event: "kv/run" }] },
       async () => {
         await kv.set("a", 1);
-        await kv.set("a", 2, { scope: "function" });
-        const total = await kv.update<number>(
-          "n",
-          function (n) {
-            return (n ?? 0) + 5;
-          },
-          {
-            scope: "app",
-          },
-        );
-        out.push(
-          await kv.get("a"),
-          await kv.get("a", { scope: "function" }),
-          total,
-        );
+        await kv.function.set("a", 2);
+        const total = await kv.app.update<number>("n", function (n) {
+          return (n ?? 0) + 5;
+        });
+        out.push(await kv.get("a"), await kv.function.get("a"), total);
         out.push(await kv.get("missing"));
         out.push(await kv.take("a"), await kv.get("a"));
-        await kv.clearRun();
+        await kv.run.clear();
         out.push(await kv.all());
       },
     );
@@ -52,13 +43,38 @@ describe("kv", () => {
       "kv.get:run:missing",
       "kv.take:run:a",
       "kv.get:run:a",
-      "kv.clearRun",
+      "kv.clear:run",
       "kv.all:run",
     ]);
-    expect(out.slice(-1)).toEqual([{}]);
+    expect(out.slice(-7)).toEqual([1, 2, 5, undefined, 1, undefined, {}]);
   });
 
-  test("session and thread scopes need those sessions", () => {
+  test("the current thread is found from the trigger event", async () => {
+    const adapter = memoryKvAdapter();
+    const kv = createKv({ adapter });
+    const client = new Inngest({ id: testClientId });
+    const out: unknown[] = [];
+
+    const fn = client.createFunction(
+      { id: "kvfn", triggers: [{ event: "kv/run" }] },
+      async () => {
+        await kv.thread.set("plan", [1]);
+        out.push(await kv.scope("thread", "t1").get("plan"));
+      },
+    );
+
+    await run(fn, { event: { name: "kv/run", data: { thread: "t1" } } });
+
+    expect(out.slice(-1)).toEqual([[1]]);
+    expect(
+      await kv
+        .with({ id: testClientId, env: null })
+        .scope("thread", "t1")
+        .get("plan"),
+    ).toEqual([1]);
+  });
+
+  test("session and thread scopes need those ids", () => {
     expect(function () {
       return kvHash("thread", { env: "e", app: "a" });
     }).toThrow(/no thread id/);
@@ -70,14 +86,19 @@ describe("kv", () => {
     );
   });
 
-  test("at() reads a scope instance directly, for thread handles", async () => {
+  test("outside a function it needs a client and goes straight to the store", async () => {
     const adapter = memoryKvAdapter();
     const kv = createKv({ adapter });
-    const ids = { env: "e", app: "a", thread: "t1" };
 
-    await kv.at("thread", ids).set("plan", { steps: 2 });
+    await expect(kv.thread.get("plan")).rejects.toThrow(/kv.with\(client\)/);
 
-    expect(await kv.at("thread", ids).get("plan")).toEqual({ steps: 2 });
-    expect(await kv.at("thread", ids).all()).toEqual({ plan: { steps: 2 } });
+    const bound = kv.with({ id: "app", env: null });
+    await bound.scope("thread", "t1").set("plan", { steps: 2 });
+
+    expect(await bound.scope("thread", "t1").get("plan")).toEqual({ steps: 2 });
+    expect(await bound.scope("thread", "t1").all()).toEqual({
+      plan: { steps: 2 },
+    });
+    expect(await bound.scope("thread", "t2").all()).toEqual({});
   });
 });

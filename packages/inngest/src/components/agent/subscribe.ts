@@ -1,171 +1,164 @@
 /**
  * @module
- * EXPERIMENTAL: `step.subscribe()`, a durable inbox. It is a non-settling wait
- * on a queue: messages sent to the key while the function is busy are held in
- * the store and delivered one at a time, each as its own memoized step, so
- * nothing sent between turns is lost.
+ * EXPERIMENTAL: `step.subscribe()`, a durable subscription to events.
  *
- * Reading is a step that claims the next message from the store. When there
- * is none, the function waits on a signal (the doorbell) that senders ring
- * after appending, then reads again. The wait has a recheck timeout, so a
- * missed doorbell delays a message by one interval and never loses it.
+ * Opening a subscription asks the executor to keep one pause for the run. The
+ * pause is not consumed when an event matches: the executor saves the event as
+ * the run's next numbered message and queues a discovery request. Messages
+ * that arrive while the function is busy are therefore already in the run's
+ * state when it asks for them, and nothing sent between turns is lost.
+ *
+ * Every read is an ordinary step, so replays, traces and history need nothing
+ * special: message k is the step `<id>:<k>`. If the message is already in
+ * state the step resolves from memo; otherwise the function waits for it.
  */
-import type { InboxMessage, InboxStore } from "./inbox.ts";
-
-export type { InboxMessage } from "./inbox.ts";
-
-/**
- * The key an inbox has in the store. Inboxes are per environment and app, so
- * the same thread key elsewhere does not collide.
- * @param scope Environment and app IDs.
- * @param key Inbox key.
- */
-export function inboxStoreKey(
-  scope: { env: string; app: string },
-  key: string,
-): string {
-  return `${scope.env}:${scope.app}:${key}`;
-}
 
 /**
- * The signal a sender rings to wake a reader of `key`.
- * @param scope Environment and app IDs.
- * @param key Inbox key.
+ * One delivered message.
  */
-export function doorbellSignal(
-  scope: { env: string; app: string },
-  key: string,
-): string {
-  return `inbox:${inboxStoreKey(scope, key)}`;
+export interface InboxMessage<TData = unknown> {
+  /**
+   * Position in the subscription, starting at 1. A message put back by the
+   * trigger event has `seq` 0.
+   */
+  seq: number;
+
+  /**
+   * The event that was sent.
+   */
+  data: TData;
 }
 
 export interface SubscribeOptions {
   /**
-   * The inbox to read. Anything sent to this key (see `threads.get(key)`) is
-   * delivered here.
+   * The event name to subscribe to.
    */
-  key: string;
+  event: string;
 
   /**
-   * How long one empty wait lasts before the inbox is read again. Default
-   * `"5m"`. It only bounds the cost of a missed doorbell.
+   * An expression events must match, like the `if` of `step.waitForEvent()`.
+   * The event is `async`: `async.data.thread == "t1"`.
    */
-  recheck?: string | number;
-
-  /**
-   * End the subscription after this many empty rechecks in a row. Default:
-   * never.
-   */
-  maxRechecks?: number;
-
-  /**
-   * Where messages live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
-   */
-  store?: InboxStore;
+  if?: string;
 }
 
 /**
- * A subscription to an inbox. Iterate it with `for await`. Each message is a
- * memoized step, so a replay sees the same messages in the same order.
+ * A subscription. Iterate it with `for await`; the loop ends once it is
+ * closed and drained.
  */
 export interface Subscription<TData = unknown>
   extends AsyncIterable<InboxMessage<TData>> {
   /**
-   * Waits for the next message, or `null` once `maxRechecks` empty rechecks
-   * have passed.
+   * Waits for the next message, or returns `null` once the subscription is
+   * closed and every saved message has been read.
    */
   next(): Promise<InboxMessage<TData> | null>;
 
   /**
-   * The next message without claiming it, or `null`. Use it to decide
-   * whether to take the message now.
+   * Reads the next message if it has already arrived, without waiting. Use it
+   * between model calls to fold in messages sent while working.
    */
-  peek(): Promise<InboxMessage<TData> | null>;
+  poll(): Promise<InboxMessage<TData> | null>;
 
   /**
-   * Whether a message is waiting, without waiting for one. Use it between
-   * model calls to fold in messages that arrived while working.
+   * Puts a message back, so the next read returns it before anything newer.
+   * Use it for a polled message that is not yours to handle yet.
    */
-  pending(): Promise<boolean>;
+  putBack(message: InboxMessage<TData>): void;
+
+  /**
+   * Stops the subscription: no new messages are saved. Messages that were
+   * saved but not read stay readable, so drain with `next()` until it returns
+   * `null` before the function finishes.
+   * @returns How many messages the subscription saved in total.
+   */
+  close(): Promise<number>;
 }
 
 /**
- * The step tools a subscription is built from.
+ * Runs one op of the subscription as a step.
  */
-export interface SubscribeDeps {
-  run: (id: string, fn: () => Promise<unknown>) => Promise<unknown>;
-  waitForSignal: (
-    id: string,
-    opts: {
-      signal: string;
-      timeout: string | number;
-      onConflict: "replace" | "fail";
-    },
-  ) => Promise<unknown>;
-  store: () => InboxStore;
-  runId: () => string;
-  scope: () => { env: string; app: string };
-}
+export type SubscribeOp = (
+  stepId: string,
+  mode: "open" | "next" | "poll" | "ack" | "close",
+  seq?: number,
+) => Promise<unknown>;
 
 /**
- * Builds a subscription.
- * @param deps Step tools, the store and the run ID.
- * @param id Step ID prefix.
- * @param opts Subscription options.
+ * Opens a subscription.
+ * @param op Runs one subscription op as a step.
+ * @param key The subscription ID; prefix of every step it runs.
+ * @param _opts Subscription options (carried by `op`).
  */
-export function createSubscription<TData = unknown>(
-  deps: SubscribeDeps,
-  id: string,
-  opts: SubscribeOptions,
-): Subscription<TData> {
-  const store = () => {
-    return opts.store ?? deps.store();
-  };
-  const storeKey = () => {
-    return inboxStoreKey(deps.scope(), opts.key);
-  };
-  let reads = 0;
+export async function openSubscription<TData = unknown>(
+  op: SubscribeOp,
+  key: string,
+  _opts: SubscribeOptions,
+): Promise<Subscription<TData>> {
+  await op(`${key}:open`, "open");
+
+  // How many numbered messages have been read, and how many exist once closed.
+  let read = 0;
+  let polls = 0;
+  let total: number | undefined;
+  const putBack: InboxMessage<TData>[] = [];
+
+  async function receive(seq: number, message: unknown) {
+    read = seq;
+    // The ack tells the executor this message was received, so a message that
+    // was saved but never acked is handed to the thread's next run.
+    await op(`${key}:ack:${seq}`, "ack", seq);
+
+    return { seq, data: message as TData };
+  }
 
   async function next(): Promise<InboxMessage<TData> | null> {
-    let empty = 0;
-
-    for (;;) {
-      reads += 1;
-      const owner = `${deps.runId()}:${id}:${reads}`;
-      const message = (await deps.run(`${id}:read`, async () => {
-        return store().claim(storeKey(), owner);
-      })) as InboxMessage<TData> | null;
-
-      if (message) {
-        return message;
-      }
-
-      const rung = await deps.waitForSignal(`${id}:wait`, {
-        signal: doorbellSignal(deps.scope(), opts.key),
-        timeout: opts.recheck ?? "5m",
-        onConflict: "replace",
-      });
-      empty = rung ? 0 : empty + 1;
-
-      if (opts.maxRechecks !== undefined && empty >= opts.maxRechecks) {
-        return null;
-      }
+    const waiting = putBack.pop();
+    if (waiting) {
+      return waiting;
     }
+
+    if (total !== undefined && read >= total) {
+      return null;
+    }
+
+    const seq = read + 1;
+    const message = await op(`${key}:${seq}`, "next", seq);
+
+    return receive(seq, message);
+  }
+
+  async function poll(): Promise<InboxMessage<TData> | null> {
+    const waiting = putBack.pop();
+    if (waiting) {
+      return waiting;
+    }
+
+    if (total !== undefined && read >= total) {
+      return null;
+    }
+
+    const seq = read + 1;
+    polls += 1;
+    const message = await op(`${key}:poll:${polls}`, "poll", seq);
+    if (message === null || message === undefined) {
+      return null;
+    }
+
+    return receive(seq, message);
   }
 
   return {
     next,
-    async peek() {
-      return (await deps.run(`${id}:peek`, async () => {
-        return store().peek(storeKey());
-      })) as InboxMessage<TData> | null;
+    poll,
+    putBack(message) {
+      putBack.push(message);
     },
-    async pending() {
-      return (await deps.run(`${id}:pending`, async () => {
-        const { head, acked } = await store().cursors(storeKey());
+    async close() {
+      const closed = (await op(`${key}:close`, "close")) as { count: number };
+      total = closed.count;
 
-        return head > acked;
-      })) as boolean;
+      return total;
     },
     [Symbol.asyncIterator]() {
       return {

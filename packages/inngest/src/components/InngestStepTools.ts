@@ -34,9 +34,8 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import { defaultInboxStore } from "./agent/inbox.ts";
 import {
-  createSubscription,
+  openSubscription,
   type SubscribeOptions,
   type Subscription,
 } from "./agent/subscribe.ts";
@@ -574,43 +573,58 @@ export const createStepTools = <
    */
   const tools = {
     /**
-     * EXPERIMENTAL: a durable inbox. Returns a subscription to iterate with
-     * `for await`; each message is delivered as one memoized step, so nothing
-     * sent while the function is busy is lost.
+     * EXPERIMENTAL: a durable subscription. Opens a subscription to events
+     * and returns it; iterate it with `for await`. The executor keeps the
+     * subscription for the life of the run and saves every matching event as
+     * a numbered message, so nothing sent while the function is busy is lost.
      */
     subscribe: <TData = unknown>(
       idOrOptions: StepOptionsOrId,
       opts: SubscribeOptions,
-    ): Subscription<TData> => {
+    ): Promise<Subscription<TData>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
-      return createSubscription<TData>(
-        {
-          run: (stepId, fn) => {
-            return tools.run(stepId, fn);
-          },
-          waitForSignal: (stepId, waitOpts) => {
-            return tools.waitForSignal(stepId, waitOpts);
-          },
-          store: defaultInboxStore,
-          scope: () => {
-            return { env: client.env ?? "default", app: client.id };
-          },
-          runId: () => {
-            const runId = getAsyncCtxSync()?.execution?.ctx.runId;
-            if (!runId) {
-              // The run ID makes a claim unique; a constant would hand one
-              // run's message to another.
-              throw new Error("step.subscribe needs the run context.");
-            }
-
-            return runId;
-          },
+      return openSubscription<TData>(
+        function op(stepId, mode, seq) {
+          return tools["~subscribeOp"](stepId, {
+            event: opts.event,
+            if: opts.if,
+            subscribe: { key: id, mode, ...(seq ? { seq } : {}) },
+          });
         },
         id,
         opts,
       );
     },
+
+    /**
+     * One op of a subscription. Used by `subscribe`.
+     */
+    "~subscribeOp": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          event: string;
+          if?: string;
+          subscribe: { key: string; mode: string; seq?: number };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.WaitForEvent,
+        name: opts.event,
+        displayName: name ?? id,
+        opts: {
+          event: opts.event,
+          if: opts.if,
+          timeout: "",
+          subscribe: opts.subscribe,
+        },
+        userland: { id },
+      };
+    }),
 
     /**
      * Send one or many events to Inngest. Should always be used in place of

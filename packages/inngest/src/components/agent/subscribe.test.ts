@@ -1,36 +1,27 @@
 /**
  * @module
- * Tests for `step.subscribe()` over the in-memory inbox store.
+ * Tests for `step.subscribe()` against a fake executor.
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
-import { claimedTail, memoryInboxStore } from "./inbox.ts";
-import { noRing, run } from "./test-helpers.ts";
+import { run } from "./test-helpers.ts";
 
 const client = () => {
   return new Inngest({ id: testClientId });
 };
 
-const scoped = (key: string) => {
-  return `default:${testClientId}:${key}`;
-};
+const subscribeOpts = { event: "msg", if: "async.data.t == 't1'" };
 
 describe("step.subscribe", () => {
-  test("delivers queued messages in order, one memoized step each", async () => {
-    const store = memoryInboxStore();
-    await store.append(scoped("t1"), "a");
-    await store.append(scoped("t1"), { b: 1 });
-
+  test("opens once, then each message is a numbered, acked step", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
         const seen: unknown[] = [];
 
-        for await (const message of step.subscribe("inbox", {
-          key: "t1",
-          store,
-          maxRechecks: 1,
-        })) {
+        await inbox.close();
+        for await (const message of inbox) {
           seen.push([message.seq, message.data]);
         }
 
@@ -38,111 +29,79 @@ describe("step.subscribe", () => {
       },
     );
 
-    const { ran, output } = await run(fn, noRing);
+    const { ops, acked, output } = await run(fn, { saved: ["a", { b: 1 }] });
 
     expect(output).toEqual([
       [1, "a"],
       [2, { b: 1 }],
     ]);
-    expect(ran).toEqual([
-      "inbox:read",
-      "inbox:read",
-      "inbox:read",
-      "inbox:wait",
+    expect(ops).toEqual([
+      { id: "inbox:open", mode: "open" },
+      { id: "inbox:close", mode: "close" },
+      { id: "inbox:1", mode: "next", seq: 1 },
+      { id: "inbox:ack:1", mode: "ack", seq: 1 },
+      { id: "inbox:2", mode: "next", seq: 2 },
+      { id: "inbox:ack:2", mode: "ack", seq: 2 },
     ]);
-    expect(await store.cursors(scoped("t1"))).toEqual({ head: 2, acked: 2 });
+    expect(acked).toEqual([1, 2]);
   });
 
-  test("a ring on the doorbell wakes the reader to read again", async () => {
-    const store = memoryInboxStore();
-
+  test("next() waits when no message has arrived, then continues when it does", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = step.subscribe("inbox", { key: "t1", store });
+        const inbox = await step.subscribe("inbox", subscribeOpts);
 
-        return inbox.next();
+        return (await inbox.next())?.data;
       },
     );
 
-    const { ran, output } = await run(fn, async (op) => {
-      expect(op.opts).toMatchObject({
-        signal: `inbox:${scoped("t1")}`,
-        timeout: "5m",
-        conflict: "replace",
-      });
-      await store.append(scoped("t1"), "late");
+    const waiting = await run(fn);
+    expect(waiting.waiting).toBe(true);
 
-      return true;
-    });
-
-    expect(output).toEqual({ seq: 1, data: "late" });
-    expect(ran).toEqual(["inbox:read", "inbox:wait", "inbox:read"]);
+    const arrived = await run(fn, { incoming: ["late"] });
+    expect(arrived.output).toBe("late");
   });
 
-  test("pending() reports messages without claiming them", async () => {
-    const store = memoryInboxStore();
-    await store.append(scoped("t1"), "a");
-
+  test("poll() reads a message that has arrived and never waits", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = step.subscribe("inbox", { key: "t1", store });
-        const before = await inbox.pending();
-        await inbox.next();
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.poll();
+        const second = await inbox.poll();
 
-        return [before, await inbox.pending()];
+        return [first?.data ?? null, second?.data ?? null];
       },
     );
 
-    const { output } = await run(fn, noRing);
+    const { output, ops } = await run(fn, { saved: ["a"] });
 
-    expect(output).toEqual([true, false]);
+    expect(output).toEqual(["a", null]);
+    expect(ops.map((op) => op.id)).toEqual([
+      "inbox:open",
+      "inbox:poll:1",
+      "inbox:ack:1",
+      "inbox:poll:2",
+    ]);
   });
-});
 
-describe("memory inbox store", () => {
-  test("claiming twice with one owner returns the same message", async () => {
-    const store = memoryInboxStore();
-    await store.append("k", 1);
-    await store.append("k", 2);
+  test("putBack returns a message before newer ones, without another op", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        if (first) {
+          inbox.putBack(first);
+        }
 
-    expect(await store.claim("k", "o1")).toEqual({ seq: 1, data: 1 });
-    expect(await store.claim("k", "o1")).toEqual({ seq: 1, data: 1 });
-    expect(await store.claim("k", "o2")).toEqual({ seq: 2, data: 2 });
-    expect(await store.claim("k", "o3")).toBeNull();
-  });
-});
+        return [(await inbox.next())?.seq, (await inbox.next())?.seq];
+      },
+    );
 
-describe("memory inbox store peek", () => {
-  test("peek shows the next message without claiming it", async () => {
-    const store = memoryInboxStore();
-    expect(await store.peek("k")).toBeNull();
+    const { output } = await run(fn, { saved: ["a", "b"] });
 
-    await store.append("k", "a");
-
-    expect(await store.peek("k")).toEqual({ seq: 1, data: "a" });
-    expect(await store.cursors("k")).toEqual({ head: 1, acked: 0 });
-  });
-});
-
-describe("memory inbox store retention", () => {
-  test("keeps only a tail of claimed messages", async () => {
-    const store = memoryInboxStore();
-
-    for (let i = 1; i <= claimedTail + 5; i++) {
-      await store.append("k", i);
-      await store.claim("k", `o${i}`);
-    }
-
-    // The last claimed messages are still there for a retried claim.
-    expect(await store.claim("k", `o${claimedTail + 5}`)).toEqual({
-      seq: claimedTail + 5,
-      data: claimedTail + 5,
-    });
-    expect(await store.cursors("k")).toEqual({
-      head: claimedTail + 5,
-      acked: claimedTail + 5,
-    });
+    expect(output).toEqual([1, 2]);
   });
 });
