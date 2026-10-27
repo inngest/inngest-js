@@ -154,7 +154,14 @@ export function createAgentFunction(
         async steer() {
           const lines: string[] = [];
 
-          while (await inbox.pending()) {
+          // Only steering messages fold into the running turn; a `send`
+          // stays in the inbox and starts the next turn.
+          for (;;) {
+            const waiting = await inbox.peek();
+            if (!waiting || waiting.data.kind !== "steer") {
+              break;
+            }
+
             const message = (await inbox.next()) as InboxMessage<ThreadMessage>;
             lines.push(message.data.content);
           }

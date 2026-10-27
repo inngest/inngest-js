@@ -164,9 +164,19 @@ export async function connectRedis(url: string): Promise<RedisClient> {
     fail(new Error("Redis connection closed"));
   });
 
+  let dead = false;
+  socket.on("close", () => {
+    dead = true;
+  });
+
   const client: RedisClient = {
     command(...args) {
       return new Promise((resolve, reject) => {
+        if (dead) {
+          reject(new Error("Redis connection closed"));
+
+          return;
+        }
         pending.push({ resolve, reject });
         socket.write(encodeCommand(args));
       });

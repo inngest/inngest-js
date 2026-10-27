@@ -37,6 +37,11 @@ export interface InboxStore {
   claim(key: string, owner: string): Promise<InboxMessage | null>;
 
   /**
+   * The next undelivered message, without claiming it.
+   */
+  peek(key: string): Promise<InboxMessage | null>;
+
+  /**
    * The newest sequence appended and the sequence last claimed (0 when none).
    */
   cursors(key: string): Promise<{ head: number; acked: number }>;
@@ -84,6 +89,14 @@ export function memoryInboxStore(): InboxStore {
 
       return { seq: inbox.acked, data: inbox.msgs[inbox.acked - 1] };
     },
+    async peek(key) {
+      const inbox = inboxOf(key);
+      if (inbox.acked >= inbox.msgs.length) {
+        return null;
+      }
+
+      return { seq: inbox.acked + 1, data: inbox.msgs[inbox.acked] };
+    },
     async cursors(key) {
       const inbox = inboxOf(key);
 
@@ -122,7 +135,10 @@ export function redisInboxStore(url: string): InboxStore {
   let connection: Promise<RedisClient> | undefined;
 
   function client() {
-    connection ??= connectRedis(url);
+    connection ??= connectRedis(url).catch((error) => {
+      connection = undefined;
+      throw error;
+    });
 
     return connection;
   }
@@ -169,6 +185,21 @@ export function redisInboxStore(url: string): InboxStore {
       }
 
       return { seq: Number(reply[0]), data: JSON.parse(String(reply[1])) };
+    },
+    async peek(key) {
+      const k = keys(key);
+      const acked = Number(
+        (await (await client()).command("GET", k.acked)) ?? 0,
+      );
+      const raw = await (await client()).command(
+        "HGET",
+        k.msgs,
+        String(acked + 1),
+      );
+
+      return raw === null
+        ? null
+        : { seq: acked + 1, data: JSON.parse(String(raw)) };
     },
     async cursors(key) {
       const k = keys(key);

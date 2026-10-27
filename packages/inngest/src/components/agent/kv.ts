@@ -74,7 +74,10 @@ export function redisKvAdapter(url: string): KvAdapter {
   let connection: Promise<RedisClient> | undefined;
 
   function client() {
-    connection ??= connectRedis(url);
+    connection ??= connectRedis(url).catch((error) => {
+      connection = undefined;
+      throw error;
+    });
 
     return connection;
   }
@@ -181,7 +184,9 @@ export function kvHash(scope: KvScope, ids: KvScopeIds): string {
   const parts =
     scope === "app" || scope === "function"
       ? [ids.env, ids.app, scope === "function" ? id : ""]
-      : [ids.env, id];
+      : scope === "env"
+        ? [ids.env]
+        : [ids.env, ids.app, id];
 
   return `inngest:kv:${scope}:${parts.filter(Boolean).join(":")}`;
 }
@@ -200,7 +205,7 @@ function handleFor(
       return raw === null ? undefined : (JSON.parse(raw) as T);
     },
     async set(key, value) {
-      await adapter.set(hash, key, JSON.stringify(value));
+      await adapter.set(hash, key, JSON.stringify(value ?? null));
     },
     async delete(key) {
       await adapter.delete(hash, key);

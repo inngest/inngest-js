@@ -60,6 +60,12 @@ export interface Subscription<TData = unknown>
   next(): Promise<InboxMessage<TData> | null>;
 
   /**
+   * The next message without claiming it, or `null`. Use it to decide
+   * whether to take the message now.
+   */
+  peek(): Promise<InboxMessage<TData> | null>;
+
+  /**
    * Whether a message is waiting, without waiting for one. Use it between
    * model calls to fold in messages that arrived while working.
    */
@@ -126,6 +132,11 @@ export function createSubscription<TData = unknown>(
 
   return {
     next,
+    async peek() {
+      return (await deps.run(`${id}:peek`, async () => {
+        return store().peek(opts.key);
+      })) as InboxMessage<TData> | null;
+    },
     async pending() {
       return (await deps.run(`${id}:pending`, async () => {
         const { head, acked } = await store().cursors(opts.key);

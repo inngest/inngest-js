@@ -107,3 +107,15 @@ describe("memory inbox store", () => {
     expect(await store.claim("k", "o3")).toBeNull();
   });
 });
+
+describe("memory inbox store peek", () => {
+  test("peek shows the next message without claiming it", async () => {
+    const store = memoryInboxStore();
+    expect(await store.peek("k")).toBeNull();
+
+    await store.append("k", "a");
+
+    expect(await store.peek("k")).toEqual({ seq: 1, data: "a" });
+    expect(await store.cursors("k")).toEqual({ head: 1, acked: 0 });
+  });
+});

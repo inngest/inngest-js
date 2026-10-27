@@ -54,7 +54,7 @@ describe("kv", () => {
       /no thread id/,
     );
     expect(kvHash("thread", { env: "e", app: "a", thread: "t1" })).toBe(
-      "inngest:kv:thread:e:t1",
+      "inngest:kv:thread:e:a:t1",
     );
     expect(kvHash("function", { env: "e", app: "a", function: "f" })).toBe(
       "inngest:kv:function:e:a:f",
