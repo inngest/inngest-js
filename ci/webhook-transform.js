@@ -15,8 +15,8 @@ function transform(evt, headers, queryParams, raw) {
   var delivery = header("x-github-delivery");
   var name =
     evt && evt.action
-      ? "github/" + event + "." + evt.action
-      : "github/" + event;
+      ? "github-ci/" + event + "." + evt.action
+      : "github-ci/" + event;
   var installationId =
     evt && evt.installation && evt.installation.id
       ? evt.installation.id

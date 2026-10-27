@@ -100,7 +100,7 @@ describe("webhook-transform.js", () => {
       meta: { sessions: { commit: string } };
     };
 
-    assert.equal(event.name, "github/check_suite.rerequested");
+    assert.equal(event.name, "github-ci/check_suite.rerequested");
     assert.equal(event.data.check_suite.head_sha, payload.check_suite.head_sha);
     assert.equal(event.data._github.installationId, 424242);
     assert.equal(event.meta.sessions.commit, payload.check_suite.head_sha);
@@ -117,7 +117,7 @@ describe("webhook-transform.js", () => {
       };
     };
 
-    assert.equal(event.name, "github/check_run.requested_action");
+    assert.equal(event.name, "github-ci/check_run.requested_action");
     assert.equal(event.data.requested_action.identifier, "rerun-fresh");
     assert.equal(event.data.sender.login, "jpwilliams");
     assert.equal(event.data.check_run.external_id, "01K9RUNID:lint");
@@ -131,10 +131,10 @@ describe("webhook-transform.js", () => {
       "",
     );
 
-    assert.equal(event.name, "github/pull_request.opened");
+    assert.equal(event.name, "github-ci/pull_request.opened");
   });
 
   test("a delivery without an event header is not mistaken for another", () => {
-    assert.equal(transform({}, {}, {}, "").name, "github/unknown");
+    assert.equal(transform({}, {}, {}, "").name, "github-ci/unknown");
   });
 });
