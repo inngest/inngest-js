@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { serve } from "../../node.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { Inngest } from "../Inngest.ts";
 import { withMiddlewareFunctions } from "../InngestCommHandler.ts";
@@ -90,5 +91,76 @@ describe("registerFunctions", () => {
     registerFunctions(one.client, [one.agent("a")]);
 
     expect(withMiddlewareFunctions(two.client, [])).toEqual([]);
+  });
+});
+
+describe("serving agents", () => {
+  test("an object with a functions array expands, deduped by ID", () => {
+    const { client, cleanup, agent } = setup();
+    const a = agent("a");
+    const bundle = { functions: [a, cleanup("a-cleanup")] };
+
+    expect(
+      ids(client, withMiddlewareFunctions(client, [bundle, bundle])),
+    ).toEqual(["app-a", "app-a-cleanup"]);
+  });
+
+  test("serve() accepts an agent object in functions", () => {
+    const { client, cleanup, agent } = setup();
+    const bundle = { functions: [agent("a"), cleanup("a-cleanup")] };
+
+    expect(() => {
+      return serve({ client, functions: [bundle] });
+    }).not.toThrow();
+  });
+});
+
+describe("late registration", () => {
+  const withLogger = () => {
+    const warn = vi.fn();
+    const client = new Inngest({
+      id: "app",
+      internalLogger: {
+        warn,
+        info: () => {},
+        debug: () => {},
+        error: () => {},
+      },
+    });
+
+    return { client, warn };
+  };
+
+  test("warns once per ID, naming it, when registered after serving", () => {
+    const { client, warn } = withLogger();
+    const early = client.createFunction(
+      { id: "early", triggers: [{ event: "e" }] },
+      async () => {},
+    );
+    const late = client.createFunction(
+      { id: "late", triggers: [{ event: "l" }] },
+      async () => {},
+    );
+    registerFunctions(client, [early]);
+    withMiddlewareFunctions(client, []);
+
+    registerFunctions(client, [early, late]);
+    registerFunctions(client, [late]);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toEqual({ functionIds: ["app-late"] });
+  });
+
+  test("does not warn when registered before serving", () => {
+    const { client, warn } = withLogger();
+    registerFunctions(client, [
+      client.createFunction(
+        { id: "a", triggers: [{ event: "e" }] },
+        async () => {},
+      ),
+    ]);
+    withMiddlewareFunctions(client, []);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

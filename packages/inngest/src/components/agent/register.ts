@@ -12,6 +12,33 @@ import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { Middleware } from "../middleware/middleware.ts";
 
+const internalLogger = Symbol.for("inngest.internalLogger");
+
+/**
+ * The IDs `serve()` or `connect()` have served for a client so far.
+ */
+const served = new WeakMap<Inngest.Any, Set<string>>();
+
+/**
+ * Records that `serve()` or `connect()` served functions with these IDs, so
+ * later registrations of other IDs can be reported.
+ *
+ * @param client The client that was served.
+ * @param ids The fully qualified function IDs served.
+ */
+export const markServed = (
+  client: Inngest.Any,
+  ids: Iterable<string>,
+): void => {
+  const known = served.get(client) ?? new Set<string>();
+
+  for (const id of ids) {
+    known.add(id);
+  }
+
+  served.set(client, known);
+};
+
 const registries = new WeakMap<Inngest.Any, Map<string, InngestFunction.Any>>();
 
 /**
@@ -25,6 +52,7 @@ const registries = new WeakMap<Inngest.Any, Map<string, InngestFunction.Any>>();
  *
  * `serve()` and `connect()` read the registry once, when they are called, so
  * register before them: declare agents in modules the serving module imports.
+ * A function registered after that is logged as a warning, once per ID.
  *
  * @param client The client the functions belong to.
  * @param fns The functions to serve, such as an agent's cleanup function.
@@ -40,8 +68,30 @@ export const registerFunctions = (
     registries.set(client, registry);
   }
 
+  const known = served.get(client);
+  const late: string[] = [];
+
   for (const fn of fns) {
-    registry.set(fn.id(client.id), fn);
+    const id = fn.id(client.id);
+
+    if (known && !known.has(id)) {
+      late.push(id);
+      known.add(id);
+    }
+
+    registry.set(id, fn);
+  }
+
+  if (late.length > 0) {
+    (
+      client as unknown as Record<
+        symbol,
+        { warn: (...args: unknown[]) => void }
+      >
+    )[internalLogger]?.warn(
+      { functionIds: late },
+      "Functions were registered after serve() or connect() read this client's functions, so they are not served. Declare agents in modules the serving module imports.",
+    );
   }
 };
 

@@ -29,6 +29,7 @@ import {
 } from "../Inngest.ts";
 import {
   InngestCommHandler,
+  type ServedFunctions,
   withMiddlewareFunctions,
 } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -90,7 +91,8 @@ function collectFunctions(
       client: app.client,
       functions: withMiddlewareFunctions(
         client,
-        (app.functions as InngestFunction.Any[]) ?? client.funcs,
+        (app.functions as (InngestFunction.Any | ServedFunctions)[]) ??
+          client.funcs,
       ),
     };
   }

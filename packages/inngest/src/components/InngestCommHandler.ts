@@ -63,6 +63,7 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
+import { markServed } from "./agent/register.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { _internals } from "./execution/engine.ts";
 import {
@@ -113,7 +114,7 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Like[];
+  functions: readonly (InngestFunction.Like | ServedFunctions)[];
 }
 
 /**
@@ -257,7 +258,7 @@ interface InngestCommHandlerOptions<
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions?: readonly InngestFunction.Like[];
+  functions?: readonly (InngestFunction.Like | ServedFunctions)[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -315,8 +316,28 @@ const registerResSchema = z.object({
 });
 
 /**
- * EXPERIMENTAL: `fns` plus the functions the client's middleware provides
- * through its static `functions` hook, such as the sandbox cleanup, unless
+ * EXPERIMENTAL: Anything with a `functions` array, such as an agent, which
+ * `serve()` and `connect()` expand into those functions.
+ *
+ * @experimental
+ */
+export type ServedFunctions = {
+  readonly functions: readonly InngestFunction.Any[];
+};
+
+const isFunctionGroup = (
+  item: InngestFunction.Any | ServedFunctions,
+): item is ServedFunctions => {
+  return (
+    (item as { [Symbol.toStringTag]?: string })[Symbol.toStringTag] !==
+      InngestFunction.Tag && Array.isArray((item as ServedFunctions).functions)
+  );
+};
+
+/**
+ * EXPERIMENTAL: `fns` (functions, or objects with a `functions` array such as
+ * an agent, expanded and deduped by ID) plus the functions the client's
+ * middleware provides through its static `functions` hook, such as the sandbox cleanup, unless
  * `fns` already has them. A client without middleware that provides any gets
  * `fns` back unchanged.
  *
@@ -324,14 +345,32 @@ const registerResSchema = z.object({
  */
 export const withMiddlewareFunctions = (
   client: Inngest.Any,
-  fns: readonly InngestFunction.Any[],
+  given: readonly (InngestFunction.Any | ServedFunctions)[],
 ): InngestFunction.Any[] => {
-  const ids = new Set(fns.map((fn) => fn.id(client.id)));
+  const ids = new Set<string>();
+  const fns: InngestFunction.Any[] = [];
+
+  // Functions you list stay as given, so a duplicate still fails loudly. Members
+  // of a group, such as an agent's, are skipped when already present.
+  for (const item of given) {
+    if (isFunctionGroup(item)) {
+      for (const fn of item.functions) {
+        if (!ids.has(fn.id(client.id))) {
+          ids.add(fn.id(client.id));
+          fns.push(fn);
+        }
+      }
+    } else {
+      ids.add(item.id(client.id));
+      fns.push(item);
+    }
+  }
+
   const added = client.middleware.flatMap((mw) => {
     return mw.functions?.({ client }) ?? [];
   });
 
-  return [
+  const all = [
     ...fns,
     ...added.filter((fn) => {
       const id = fn.id(client.id);
@@ -339,6 +378,9 @@ export const withMiddlewareFunctions = (
       return !ids.has(id) && ids.add(id);
     }),
   ];
+  markServed(client, ids);
+
+  return all;
 };
 
 /**
@@ -518,8 +560,10 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    const servedFns = (options.functions?.filter(Boolean) ??
-      []) as InngestFunction.Any[];
+    const servedFns = (options.functions?.filter(Boolean) ?? []) as (
+      | InngestFunction.Any
+      | ServedFunctions
+    )[];
     this.rawFns = withMiddlewareFunctions(this.client, servedFns);
 
     if (servedFns.length !== (options.functions ?? []).length) {
