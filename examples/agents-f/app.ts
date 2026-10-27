@@ -1,0 +1,14 @@
+/**
+ * @module
+ * Serves the example agent functions and their companions.
+ */
+import { createServer } from "node:http";
+import { serve } from "inngest/node";
+import { chat, client, quick } from "./agents.ts";
+
+const handler = serve({
+  client,
+  functions: [...chat.functions, ...quick.functions],
+});
+
+createServer(handler).listen(Number(process.env.PORT));
