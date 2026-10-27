@@ -239,4 +239,11 @@ export interface IInngestExecution {
     values: Record<string, unknown>,
     opts?: MetadataWriteOptions,
   ): boolean;
+
+  /**
+   * Make every error the function throws from now on final: it is not
+   * retried. For code that has just destroyed something the body needs, such
+   * as a sandbox, so a retry can't run against it.
+   */
+  failFinally(): void;
 }

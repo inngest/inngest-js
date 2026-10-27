@@ -1,35 +1,16 @@
 /**
- * Tests of the Sandboxes API helpers cleanup shares: paged lists read as one
- * stream, and snapshot deletes that tolerate what is already gone.
+ * Tests of the Sandboxes API helpers cleanup shares: snapshot and machine
+ * deletes by ID that tolerate what is already gone.
  *
  * @module
  */
 
 import type { Inngest } from "inngest";
 import { describe, expect, test, vi } from "vitest";
-import { deleteSnapshots, pages } from "./admin.ts";
+import { deleteSnapshots, destroySandboxes } from "./admin.ts";
 
 const notFound = Object.assign(new Error("gone"), {
   code: "sandbox_snapshot_not_found",
-});
-
-describe("pages", () => {
-  test("reads every page in order, passing the cursor on", async () => {
-    const list = vi.fn(async (cursor?: string) => {
-      return cursor === "next"
-        ? { items: [3], page: { hasMore: false } }
-        : { items: [1, 2], page: { hasMore: true, cursor: "next" } };
-    });
-
-    const read: number[] = [];
-
-    for await (const item of pages(list)) {
-      read.push(item);
-    }
-
-    expect(read).toEqual([1, 2, 3]);
-    expect(list.mock.calls).toEqual([[undefined], ["next"]]);
-  });
 });
 
 describe("deleteSnapshots", () => {
@@ -66,5 +47,39 @@ describe("deleteSnapshots", () => {
     expect(result).toEqual({ deleted: ["a", "b"], failed: ["stuck"] });
     expect(deleted).toEqual(["a", "b"]);
     expect(onFailure).toHaveBeenCalledOnce();
+  });
+});
+
+describe("destroySandboxes", () => {
+  test("destroys what it holds, skips what is gone, and throws what else fails", async () => {
+    const destroyed: string[] = [];
+
+    const get = async (id: string) => {
+      if (id === "gone") {
+        throw Object.assign(new Error("gone"), { code: "sandbox_not_found" });
+      }
+
+      if (id === "stuck") {
+        throw new Error("refused");
+      }
+
+      return {
+        destroy: async () => {
+          destroyed.push(id);
+        },
+      };
+    };
+
+    const client = { sandboxes: { get } } as unknown as Inngest.Any;
+
+    await expect(
+      destroySandboxes(client, ["one", "gone", "two"]),
+    ).resolves.toEqual({ destroyed: 2 });
+
+    expect(destroyed).toEqual(["one", "two"]);
+
+    await expect(destroySandboxes(client, ["stuck"])).rejects.toThrow(
+      "refused",
+    );
   });
 });
