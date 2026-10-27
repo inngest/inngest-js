@@ -85,6 +85,25 @@ export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
+  FindOptions,
+  FoundSnapshot,
+  SnapshotCache,
+  SnapshotCacheClient,
+  SnapshotCacheOptions,
+  SnapshotEntry,
+  SnapshotKeyPart,
+  TakenSnapshot,
+  TakeOptions,
+  TakeSnapshot,
+} from "./components/sandbox/snapshotCache.ts";
+export {
+  snapshotCache,
+  snapshotGeneration,
+  snapshotKey,
+  snapshotName,
+  snapshotSlot,
+} from "./components/sandbox/snapshotCache.ts";
+export type {
   JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,
