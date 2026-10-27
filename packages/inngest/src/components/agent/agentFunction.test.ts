@@ -338,3 +338,26 @@ describe("acks", () => {
     expect(order.indexOf("inbox:ack:1")).toBeLessThan(order.indexOf("inbox:2"));
   });
 });
+
+describe("ack order", () => {
+  test("a handled steer is not acked ahead of an earlier message that is still unread", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox, control }) => {
+        await inbox.next();
+        await control.steer();
+
+        return "done";
+      },
+    );
+
+    const { acked } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "later"), message("steer", "left")],
+    });
+
+    // Message 1 is unread, so message 2 must not be acked past it.
+    expect(acked).toEqual([]);
+  });
+});

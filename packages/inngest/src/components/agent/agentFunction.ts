@@ -18,7 +18,6 @@
  * `index.ts` in one line.
  */
 
-import type { ClientOptions } from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -125,13 +124,23 @@ function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
     pending.push(message);
   }
 
-  async function flush() {
-    const done = pending.sort((a, b) => {
-      return a.seq - b.seq;
-    });
-    pending = [];
+  // The executor counts acks as consecutive from 1, so a message is only
+  // acked once every message before it has been: a handled steer that sits
+  // behind a message put back for the next turn waits for that turn.
+  let nextToAck = 1;
 
-    for (const message of done) {
+  async function flush() {
+    pending = pending
+      .filter((message) => {
+        return message.seq >= 1;
+      })
+      .sort((a, b) => {
+        return a.seq - b.seq;
+      });
+
+    while (pending[0] && pending[0].seq === nextToAck) {
+      const message = pending.shift() as InboxMessage<ThreadMessage>;
+      nextToAck += 1;
       await inbox.ack({ seq: message.seq, data: { data: message.data } });
     }
   }
