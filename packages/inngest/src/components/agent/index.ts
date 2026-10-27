@@ -8,6 +8,19 @@ export type {
   CodeToolsOptions,
 } from "../sandbox/codeTools.ts";
 export type {
+  ConfigMode,
+  ConfigModes,
+  ConfigResolver,
+  ConfigValue,
+  ResolvedConfig,
+  ResolvedConfigValue,
+} from "./config.ts";
+export {
+  ConfigResolveError,
+  createConfigResolver,
+  resolveConfigValue,
+} from "./config.ts";
+export type {
   LazySandbox,
   SandboxBinding,
   SandboxBindingOptions,
