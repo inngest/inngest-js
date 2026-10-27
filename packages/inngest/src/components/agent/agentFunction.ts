@@ -17,8 +17,10 @@
  * The public name of this entry point is not settled; it is exported from
  * `index.ts` in one line.
  */
+
+import type { ClientOptions } from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
-import type { Inngest } from "../Inngest.ts";
+import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
@@ -278,3 +280,7 @@ export function createAgentFunction(
     },
   };
 }
+
+// `client.agent()` is defined on the client; this gives it its implementation
+// once this module is loaded (the client cannot import it without a cycle).
+agentHook.create = createAgentFunction;
