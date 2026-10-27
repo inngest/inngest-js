@@ -212,7 +212,9 @@ export const rerunEventFor = async ({
 
     await client.send({
       ...(delivery ? { id: `ci-rerun-${delivery}` } : {}),
-      name: pullRequest ? "github/pull_request.synchronize" : "github/push",
+      name: pullRequest
+        ? "github-ci/pull_request.synchronize"
+        : "github-ci/push",
       data: {
         ...(pullRequest
           ? {

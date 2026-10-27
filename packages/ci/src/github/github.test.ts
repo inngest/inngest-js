@@ -312,7 +312,7 @@ describe("github helpers", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "push", on: [{ event: "github/push" }], check: false },
+      { id: "push", on: [{ event: "github-ci/push" }], check: false },
       async () => {
         await job();
       },
@@ -320,7 +320,7 @@ describe("github helpers", () => {
 
     const result = await runFunction(pipeline, {
       event: {
-        name: "github/push",
+        name: "github-ci/push",
         data: {
           ref: "refs/heads/main",
           after: "abc",
@@ -458,7 +458,7 @@ describe("github helpers", () => {
         resolveWait: (step) => {
           return step.displayName === "Wait for check: vercel"
             ? {
-                name: "github/check_run.completed",
+                name: "github-ci/check_run.completed",
                 data: { check_run: { name: "vercel", conclusion: "failure" } },
               }
             : null;
@@ -701,7 +701,7 @@ describe("re-running from a check suite", () => {
 
     const result = await rerunEventFor({
       event: {
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           action: "rerequested",
           check_suite: { id: 9, head_sha: "abc1234", head_branch: "main" },
@@ -894,7 +894,7 @@ describe("re-running from a check run", () => {
   const checkRunEvent = (checkRun: Record<string, unknown>) => {
     return {
       id: "evt-1",
-      name: "github/check_run.rerequested",
+      name: "github-ci/check_run.rerequested",
       data: {
         action: "rerequested",
         check_run: {
@@ -941,7 +941,7 @@ describe("re-running from a check run", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "github/push",
+        name: "github-ci/push",
         data: expect.objectContaining({
           ref: "refs/heads/feature",
           after: "abc1234",
@@ -960,7 +960,7 @@ describe("re-running from a check run", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "github/pull_request.synchronize",
+        name: "github-ci/pull_request.synchronize",
         data: expect.objectContaining({ number: 12 }),
       }),
     );
@@ -987,7 +987,7 @@ describe("re-running a check from a fork", () => {
     const result = await rerunEventFor({
       event: {
         id: "evt-1",
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           check_suite: {
             head_sha: "abc1234",
@@ -1020,7 +1020,7 @@ describe("re-running a check whose branch moved or is not ours", () => {
     const result = await rerunEventFor({
       event: {
         id: "evt-1",
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           check_suite: { head_sha: "abc1234", head_branch: "main" },
           repository: { full_name: "inngest/inngest-js" },
@@ -1079,7 +1079,7 @@ describe("re-running from buttons and suites", () => {
   const action = (identifier: string, login = "octocat") => {
     return {
       id: "evt-9",
-      name: "github/check_run.requested_action",
+      name: "github-ci/check_run.requested_action",
       data: {
         action: "requested_action",
         requested_action: { identifier },
@@ -1191,7 +1191,7 @@ describe("re-running from buttons and suites", () => {
   test("GitHub's own re-request needs no check", async () => {
     expect(
       await mayRerun({
-        event: { name: "github/check_run.rerequested", data: {} },
+        event: { name: "github-ci/check_run.rerequested", data: {} },
         step,
       }),
     ).toBe(true);
@@ -1210,7 +1210,7 @@ describe("re-running from buttons and suites", () => {
 
     const suite = {
       id: "evt-suite",
-      name: "github/check_suite.rerequested",
+      name: "github-ci/check_suite.rerequested",
       data: {
         action: "rerequested",
         check_suite: { id: 9, head_sha: "abc1234", head_branch: "feature" },
