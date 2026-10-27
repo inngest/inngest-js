@@ -5,10 +5,14 @@
  * @module
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName, slotOf } from "./cache/names.ts";
-import { CiUsageError } from "./errors.ts";
+import { formatName } from "./cache/names.ts";
+import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
   normaliseAnnotation,
@@ -29,6 +33,7 @@ import {
   push,
 } from "./github/triggers.ts";
 import { buildArgv, buildShellString } from "./machine/command.ts";
+import { machineSetupScript } from "./machine/machine.ts";
 import { behaviourFor } from "./pipeline/durable.ts";
 import {
   expandMatrix,
@@ -39,6 +44,8 @@ import {
 import { temporalDuration } from "./testing/temporal.ts";
 import {
   durationToMs,
+  failureLine,
+  fenceFor,
   filterPaths,
   formatDuration,
   formatRelative,
@@ -47,6 +54,7 @@ import {
   shellEscape,
   shortReason,
   stableStringify,
+  stripAnsi,
   truncateLabel,
 } from "./util.ts";
 
@@ -318,9 +326,9 @@ describe("GitHub triggers", () => {
         return trigger.event;
       }),
     ).toEqual([
-      "github/pull_request.opened",
-      "github/pull_request.synchronize",
-      "github/pull_request.reopened",
+      "github-ci/pull_request.opened",
+      "github-ci/pull_request.synchronize",
+      "github-ci/pull_request.reopened",
     ]);
   });
 
@@ -339,7 +347,7 @@ describe("GitHub triggers", () => {
   test("pushes filter refs and exclude deletions", () => {
     const [trigger] = push({ branches: ["main"], tags: ["v*"] });
 
-    expect(trigger?.event).toBe("github/push");
+    expect(trigger?.event).toBe("github-ci/push");
     expect(trigger?.if).toContain('event.data.ref == "refs/heads/main"');
     expect(trigger?.if).toContain('event.data.ref == "refs/tags/v*"');
     expect(trigger?.if).toContain("event.data.deleted != true");
@@ -348,7 +356,7 @@ describe("GitHub triggers", () => {
   test("comments match the command prefix", () => {
     const [trigger] = comment({ command: "/prerelease" });
 
-    expect(trigger?.event).toBe("github/issue_comment.created");
+    expect(trigger?.event).toBe("github-ci/issue_comment.created");
 
     expect(trigger?.if).toContain(
       'event.data.comment.body.startsWith("/prerelease")',
@@ -356,7 +364,9 @@ describe("GitHub triggers", () => {
   });
 
   test("merge groups and check suites have triggers", () => {
-    expect(mergeGroup()[0]?.event).toBe("github/merge_group.checks_requested");
+    expect(mergeGroup()[0]?.event).toBe(
+      "github-ci/merge_group.checks_requested",
+    );
 
     expect(checkSuite({ branch: "main" })[0]?.if).toContain(
       'event.data.check_suite.head_branch == "main"',
@@ -390,7 +400,7 @@ describe("webhook transform", () => {
       { "X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "abc" },
     );
 
-    expect(result.name).toBe("github/pull_request.opened");
+    expect(result.name).toBe("github-ci/pull_request.opened");
 
     expect(result.data._github).toMatchObject({
       event: "pull_request",
@@ -401,7 +411,7 @@ describe("webhook transform", () => {
   test("names events without an action", () => {
     expect(
       transform({ ref: "refs/heads/main" }, { "x-github-event": "push" }).name,
-    ).toBe("github/push");
+    ).toBe("github-ci/push");
   });
 
   test("carries the installation ID", () => {
@@ -410,7 +420,7 @@ describe("webhook transform", () => {
       { "x-github-event": "issue_comment" },
     );
 
-    expect(result.name).toBe("github/issue_comment.created");
+    expect(result.name).toBe("github-ci/issue_comment.created");
     expect(result.data._github).toMatchObject({ installationId: 99 });
   });
 
@@ -466,10 +476,10 @@ describe("webhook transform", () => {
   });
 
   test("the helper agrees with the transform", () => {
-    expect(githubEventName("push", undefined)).toBe("github/push");
+    expect(githubEventName("push", undefined)).toBe("github-ci/push");
 
     expect(githubEventName("pull_request", { action: "opened" })).toBe(
-      "github/pull_request.opened",
+      "github-ci/pull_request.opened",
     );
   });
 });
@@ -479,7 +489,7 @@ describe("repo context", () => {
 
   test("pull requests carry head, base, and number", () => {
     const repo = repoContextFromEvent({
-      name: "github/pull_request.opened",
+      name: "github-ci/pull_request.opened",
       data: {
         repository,
         pull_request: {
@@ -503,7 +513,7 @@ describe("repo context", () => {
 
   test("forks are marked", () => {
     const repo = repoContextFromEvent({
-      name: "github/pull_request.opened",
+      name: "github-ci/pull_request.opened",
       data: {
         repository,
         pull_request: {
@@ -520,7 +530,7 @@ describe("repo context", () => {
   test("pushes use after and before", () => {
     expect(
       repoContextFromEvent({
-        name: "github/push",
+        name: "github-ci/push",
         data: { repository, ref: "refs/heads/main", before: "a", after: "b" },
       }),
     ).toMatchObject({ sha: "b", baseSha: "a", baseRef: "main" });
@@ -916,7 +926,7 @@ describe("snapshot names", () => {
     expect(long).not.toBe(other);
   });
 
-  test("too long a name keeps its slot apart from other slots", () => {
+  test("too long a name keeps its last part and stays apart from other names", () => {
     const name = (jobId: string, ownKey: string) => {
       return formatName({
         kind: "cache",
@@ -926,14 +936,12 @@ describe("snapshot names", () => {
       });
     };
 
-    // Same slot, another key.
-    expect(slotOf(name("j".repeat(300), "a"))).toBe(
-      slotOf(name("j".repeat(300), "b")),
-    );
+    expect(name("j".repeat(300), "a")).toHaveLength(255);
+    expect(name("j".repeat(300), "a").endsWith("/a")).toBe(true);
 
     // Differing only after the cut-off point of a long name.
-    expect(slotOf(name(`${"j".repeat(300)}1`, "a"))).not.toBe(
-      slotOf(name(`${"j".repeat(300)}2`, "a")),
+    expect(name(`${"j".repeat(300)}1`, "a")).not.toBe(
+      name(`${"j".repeat(300)}2`, "a"),
     );
   });
 });
@@ -973,5 +981,192 @@ describe("shortReason", () => {
     expect(shortReason(new Error("a".repeat(100)))).toBe(`${"a".repeat(59)}…`);
 
     expect(shortReason(undefined)).toBe("");
+  });
+});
+
+const dogfoodRun5 = {
+  stderr: [
+    "Testing types with tsc and vue-tsc is an experimental feature.",
+    "(node:605) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities",
+    "No test files found, exiting with code 1",
+    "",
+    "\u23af\u23af\u23af\u23af\u23af\u23af Unhandled Error \u23af\u23af\u23af\u23af\u23af\u23af\u23af",
+    "Error: Dev Server startup timed out after 60 seconds",
+    " \u276f Timeout._onTimeout ../test-harness/src/devServer.ts:75:16",
+    "",
+    "close timed out after 10000ms",
+    "Tests closed successfully but something prevents Vite server from exiting",
+    'You can try to identify the cause by enabling "hanging-process" reporter.',
+  ].join("\n"),
+  stdout: [
+    "Starting Inngest Dev Server...",
+    "Stopping Inngest Dev Server...",
+    "/work/packages/inngest:",
+    " ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  inngest@4.25.0 test:integration: `vitest run`",
+    "Exit status 1",
+  ].join("\n"),
+};
+
+describe("failureLine", () => {
+  test("the first strong error wins over teardown noise that follows it", () => {
+    expect(failureLine(dogfoodRun5.stderr, dogfoodRun5.stdout)).toBe(
+      "Error: Dev Server startup timed out after 60 seconds",
+    );
+  });
+
+  test("a runner's shutdown chatter is never the reason", () => {
+    expect(
+      failureLine(
+        "close timed out after 10000ms\nTests closed successfully but something prevents Vite server from exiting",
+        " ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  x: `vitest`\nExit status 1",
+      ),
+    ).toBe("");
+  });
+
+  const vitestOutput = [
+    "FAIL  src/a.test.ts > adds",
+    "AssertionError: expected 1 to be 2",
+    "",
+    "\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af",
+    "}",
+    "Exit status 1",
+  ].join("\n");
+
+  test.each([
+    ["a closing brace", "ran 3 tests\n}\n", "", "ran 3 tests"],
+    ["a vitest separator", "", vitestOutput, "FAIL  src/a.test.ts > adds"],
+    [
+      "the rmdir TypeError",
+      'TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined\n    at rmdir\n}\nExit status 1',
+      "",
+      'TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined',
+    ],
+    [
+      "a missing binary",
+      "bun: not found\nExit status 127",
+      "",
+      "bun: not found",
+    ],
+    [
+      "a startup timeout",
+      "",
+      "starting\nDev Server startup timed out after 60 seconds\n]",
+      "Dev Server startup timed out after 60 seconds",
+    ],
+    [
+      "ANSI codes",
+      "\u001b[31mError: red\u001b[39m\nExit status 1",
+      "",
+      "Error: red",
+    ],
+    [
+      "stdout when stderr is empty",
+      "",
+      "all quiet\nbuilt nothing",
+      "built nothing",
+    ],
+    ["no output", "", "", ""],
+  ])("%s", (_name, stderr, stdout, expected) => {
+    expect(failureLine(stderr, stdout)).toBe(expected);
+  });
+
+  test("an error in stdout beats a plain last line of stderr", () => {
+    expect(failureLine("done", "Error: boom")).toBe("Error: boom");
+  });
+
+  test("is cut to a status description", () => {
+    expect(failureLine("Error: " + "a".repeat(200), "")).toHaveLength(140);
+  });
+});
+
+describe("stripAnsi", () => {
+  test.each([
+    ["colour codes", "\u001b[31mred\u001b[39m text", "red text"],
+    [
+      "an escape byte that became U+FFFD",
+      "\uFFFD[1m\uFFFD[32mok\uFFFD[0m",
+      "ok",
+    ],
+    ["a tail cut inside a sequence at its start", "[39m done", " done"],
+    ["a tail cut inside a sequence at its end", "done \u001b[3", "done "],
+    ["a tail cut right after the escape", "done \u001b", "done "],
+    [
+      "text that only looks like a code",
+      "[1/2] built 5m ago",
+      "[1/2] built 5m ago",
+    ],
+  ])("%s", (_name, input, expected) => {
+    expect(stripAnsi(input)).toBe(expected);
+  });
+});
+
+describe("fenceFor", () => {
+  test.each([
+    ["none inside", "plain", "```"],
+    ["a fence inside", "a\n```\nb", "````"],
+    ["a longer run inside", "`````", "``````"],
+  ])("%s", (_name, text, fence) => {
+    expect(fenceFor(text)).toBe(fence);
+  });
+});
+
+describe("localhost setup in /etc/hosts", () => {
+  const hostsAfterSetup = (initial: string): string => {
+    const file = join(mkdtempSync(join(tmpdir(), "hosts-")), "hosts");
+
+    writeFileSync(file, initial);
+
+    const lines = machineSetupScript
+      .split(" && ")
+      .filter((line) => {
+        return line.includes("/etc/hosts");
+      })
+      .map((line) => {
+        return line.replaceAll("/etc/hosts", file);
+      });
+
+    execFileSync("bash", ["-c", lines.join(" && ")]);
+
+    return readFileSync(file, "utf8");
+  };
+
+  test("adds both loopback lines when missing", () => {
+    expect(hostsAfterSetup("")).toBe("127.0.0.1 localhost\n::1 localhost\n");
+  });
+
+  test("leaves an existing localhost entry alone", () => {
+    const hosts = "127.0.0.1 localhost\n::1 ip6-localhost localhost\n";
+
+    expect(hostsAfterSetup(hosts)).toBe(hosts);
+  });
+
+  test("an alias such as localhost.localdomain does not count", () => {
+    const hosts = hostsAfterSetup(
+      "127.0.0.1 localhost.localdomain # localhost\n",
+    );
+
+    expect(hosts).toContain("\n127.0.0.1 localhost\n");
+  });
+});
+
+describe("CommandFailedError message", () => {
+  const failure = (stdoutTail: string, stderrTail: string) => {
+    return new CommandFailedError({
+      command: ["pnpm", "test"],
+      exitCode: 1,
+      stdoutTail,
+      stderrTail,
+      jobPath: "a",
+    });
+  };
+
+  test("prefers stderr", () => {
+    expect(failure("out", "err").message).toBe(
+      "`pnpm test` exited with 1\nerr",
+    );
+  });
+
+  test("falls back to stdout when stderr is empty", () => {
+    expect(failure("out", "").message).toBe("`pnpm test` exited with 1\nout");
   });
 });

@@ -299,6 +299,7 @@ describe("step metadata", () => {
 
     expect(tags).toEqual([
       ["github › check:pr:start", { kind: "check" }],
+      ["github › check:built:queued", { kind: "check", job: "built" }],
       ["built › cache:key", { kind: "cache", job: "built" }],
       ["github › check:built:start", { kind: "check", job: "built" }],
       ["built › lookup", { kind: "cache", job: "built" }],

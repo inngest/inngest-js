@@ -4,11 +4,11 @@
  * as one `sandbox` group in the trace.
  */
 
-import type { StepOptions, StepOptionsOrId } from "../../types.ts";
+import type { DeferHandle, StepOptions, StepOptionsOrId } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { withSpan } from "../InngestStepTools.ts";
-import { NonRetriableError } from "../NonRetriableError.ts";
 import { StepError } from "../StepError.ts";
+import { cleanupRegistrarOf } from "./cleanup.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -28,40 +28,31 @@ export type GroupSandbox = <T>(
   callback: (sandbox: DurableSandbox) => Promise<T>,
 ) => Promise<T>;
 
-const retriesRemain = (): boolean => {
-  const ctx = getAsyncCtxSync()?.execution?.ctx;
-
-  return !ctx?.maxAttempts || ctx.attempt < ctx.maxAttempts - 1;
-};
-
-/**
- * Whether an error ends the sandbox. A final error, or any error on the last
- * attempt, does. Any other error is about to be retried, and the retry replays
- * the memoized creation, so the sandbox must stay alive for it.
- */
-const isFinal = (error: unknown): boolean => {
-  return (
-    error instanceof StepError ||
-    error instanceof NonRetriableError ||
-    !retriesRemain()
-  );
-};
-
 /**
  * Destroy a sandbox in a step. A destroy that failed for good is on the trace
  * as a warning, and must not change the outcome of the run.
+ *
+ * A retry of the function couldn't use the destroyed sandbox, so after this an
+ * error the function goes on to throw is final.
+ *
+ * The scope's cleanup defer is aborted once the destroy has succeeded.
  */
 export const destroyQuietly = async (
   sandbox: DurableSandbox,
   idOrOptions: StepOptionsOrId,
+  cleanup?: DeferHandle,
 ): Promise<void> => {
   try {
     await sandbox.destroy(idOrOptions);
+
+    cleanup?.abort();
   } catch (error) {
     if (!(error instanceof StepError)) {
       throw error;
     }
   }
+
+  getAsyncCtxSync()?.execution?.instance.failFinally();
 };
 
 /**
@@ -106,21 +97,24 @@ export const withSandbox = <T>(
     },
     async () => {
       const sandbox = await tools.create({ ...steps.create, id }, options);
-      let failure: { error: unknown } | undefined;
+
+      // Only once the create has succeeded, and by ID: a failed create, such
+      // as a name another run holds, leaves nothing here to destroy.
+      const cleanup = cleanupRegistrarOf(tools)?.(id, {
+        sandboxId: sandbox.id,
+      });
 
       try {
         return await callback(sandbox);
-      } catch (error) {
-        failure = { error };
-
-        throw error;
       } finally {
-        if (!failure || isFinal(failure.error)) {
-          await destroyQuietly(sandbox, {
+        await destroyQuietly(
+          sandbox,
+          {
             ...steps.destroy,
             id: `${id}:destroy`,
-          });
-        }
+          },
+          cleanup,
+        );
       }
     },
   );

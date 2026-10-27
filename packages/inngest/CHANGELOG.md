@@ -1,5 +1,74 @@
 # inngest
 
+## 4.26.1
+
+### Patch Changes
+
+- [#1840](https://github.com/inngest/inngest-js/pull/1840) [`ad7c20d5`](https://github.com/inngest/inngest-js/commit/ad7c20d57eedae9671311fd2cdf709b863e98a81) Thanks [@Linell](https://github.com/Linell)! - Fix memory growth when re-creating functions with the same ID. The new definition now replaces the old one in `client.funcs`. `connect()` without `functions` now warns and uses the latest definition instead of throwing `Duplicate function ID`.
+
+## 4.26.0
+
+### Minor Changes
+
+- [#1764](https://github.com/inngest/inngest-js/pull/1764) [`37ffe071`](https://github.com/inngest/inngest-js/commit/37ffe071e3c42c814f4a73e819320523340489ea) Thanks [@rhino1998](https://github.com/rhino1998)! - Write scores as one `inngest.score.<name>` metadata kind per score name (values `{ value }`) and SDK warnings as one `inngest.warning.<code>` kind per warning code, both sent as `set`.
+
+  `score.experiment()` no longer accepts `stepId`. Experiment scores must be run-scoped, which the REST API already enforces. `createScorer()` ignores (and warns about) a returned `stepId` when the parent was deferred with an experiment, so those scores land on the run where the experiment view reads them.
+
+  Requires an Inngest server (self-hosted or dev server) that accepts per-name score and warning kinds (inngest/inngest#4992). Older servers reject these kinds when they're sent via the API (with a 400) or with a checkpointed step, so those scores and warnings are lost.
+
+- [#1825](https://github.com/inngest/inngest-js/pull/1825) [`eceb780a`](https://github.com/inngest/inngest-js/commit/eceb780afb11e42c208a12b017602cc6fc068755) Thanks [@jpwilliams](https://github.com/jpwilliams)! - You can now hand your sandbox tools straight to a model with `toolDefinitions(tools)`. It returns each tool's name, description and JSON Schema in the shape Anthropic's `tools` parameter takes, with no need to convert Zod schemas yourself.
+
+  ```ts
+  import { toolDefinitions } from "inngest/experimental";
+
+  await anthropic.messages.create({
+    model,
+    max_tokens: 1024,
+    messages,
+    tools: toolDefinitions({ getCustomer }),
+  });
+  ```
+
+- [#1837](https://github.com/inngest/inngest-js/pull/1837) [`2e9fe212`](https://github.com/inngest/inngest-js/commit/2e9fe212ac05254105325c416fb91f6cea270188) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added an experimental `inngest.globals()`, which returns a typed `step` and `group` you can import anywhere instead of passing them around. They include sandbox, fetch and middleware-added tools.
+
+  ```ts
+  // inngest.ts
+  export const { step, group } = inngest.globals();
+
+  // helper.ts
+  import { step } from "./inngest";
+
+  export const build = () => step.sandbox.create("box");
+  ```
+
+### Patch Changes
+
+- [#1836](https://github.com/inngest/inngest-js/pull/1836) [`e93b320c`](https://github.com/inngest/inngest-js/commit/e93b320c1f1f8110a67eb8de710349f101a8f748) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Experimental: middleware can now provide functions. A middleware class with a static `functions({ client })` hook returns functions that `serve()` and `connect()` add to the app's own, unless the app already serves one with the same ID. Without the middleware on the client, nothing is added. `sandboxMiddleware()` uses it to serve the sandbox cleanup function.
+
+- [#1836](https://github.com/inngest/inngest-js/pull/1836) [`e93b320c`](https://github.com/inngest/inngest-js/commit/e93b320c1f1f8110a67eb8de710349f101a8f748) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandboxes created with `await using` or `group.sandbox()` are now destroyed, by ID, even when their run is cancelled or times out. Sandboxes made with a plain `step.sandbox.create()` are still left running for you to keep.
+
+- [#1827](https://github.com/inngest/inngest-js/pull/1827) [`3d222069`](https://github.com/inngest/inngest-js/commit/3d2220696cbedf252e3b09673b27c52fb8b7d2ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox commands show as one `[$]` row each in traces.
+
+- [#1838](https://github.com/inngest/inngest-js/pull/1838) [`791b0fb9`](https://github.com/inngest/inngest-js/commit/791b0fb96ed5028e603115e39d0d08fbc8294e9c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox handles in `inngest/experimental` have a `# inngest that runs a command as one step:
+
+  ```ts
+  await group.sandbox("box", async (sb) => {
+    await sb.$.sh`pnpm install`;
+    const sha = await sb.# inngestgit rev-parse HEAD`.text();
+    await sb.$({ cwd: "/work", timeout: "20m" }).sh`pnpm test`;
+  });
+  ```
+
+  A non-zero exit throws. Pass `exitCodes` to allow others. `getCommandError(err)` reads the command, exit code and output tails from a failed command, which reaches your handler as a `StepError`.
+
+  `commands.run` also takes `exitCodes`. A `timeout` over five minutes now runs the command as a process that the steps follow, and its result's `output.originalBytes` is then optional.
+
+- [#1823](https://github.com/inngest/inngest-js/pull/1823) [`0039df55`](https://github.com/inngest/inngest-js/commit/0039df55fd8753044bed5cc4429e63ed4e3a694f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Environment values passed to `step.sandbox` calls such as `commands.run`, `processes.start` and `create` no longer appear in the run trace; only the variable names are recorded. The sandbox still receives the real values. For tokens, prefer `secrets` on `create`, which injects workspace secrets without exposing them.
+
+- [#1829](https://github.com/inngest/inngest-js/pull/1829) [`9c00b9f8`](https://github.com/inngest/inngest-js/commit/9c00b9f8ac298b634b303fd9d4b436c9ddef3f06) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sandbox command output shows as readable text in traces.
+
+- [#1830](https://github.com/inngest/inngest-js/pull/1830) [`cea481dc`](https://github.com/inngest/inngest-js/commit/cea481dcbdf1b7dfd45e20aaffb030076ecbc2bb) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `await using` on a sandbox and `group.sandbox()` now always destroy the sandbox when their scope ends, and an error thrown after that is not retried, since a retry couldn't use the destroyed sandbox. Before, `await using` destroyed the sandbox on an error that was then retried, and `group.sandbox()` read the attempt count to decide.
+
 ## 4.25.0
 
 ### Minor Changes

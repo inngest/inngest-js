@@ -206,7 +206,6 @@ export const steps = {
   resolveCacheName: named("Resolve cache name"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
-  deleteReplacedCache: named("Delete replaced cache"),
 
   // Sandboxes.
   discardMachine: (stepId: string): StepSpec => {
@@ -263,6 +262,14 @@ export const steps = {
 
   cleanUpEndedRun: fixed("destroy-orphans", "Clean up sandboxes"),
 
+  endCancelledCheck: fixed(
+    "github-check-cancelled",
+    "Complete check: cancelled",
+    {
+      unmarked: true,
+    },
+  ),
+
   cleanUpSnapshots: (attempt: number): StepSpec => {
     return {
       id: cleanupId("cleanup:snapshots", attempt),
@@ -313,6 +320,14 @@ export const steps = {
     };
   },
 
+  resolveMergeCommit: (): StepSpec => {
+    return {
+      id: joinId("github", "pr:merge"),
+      name: "pr:merge",
+      unmarked: true,
+    };
+  },
+
   resolveRef: (key: string): StepSpec => {
     return {
       id: boundedName(joinId("github", `ref:${key}`)),
@@ -334,6 +349,24 @@ export const steps = {
       id: joinId("github", `check:${job ?? check}:start`),
       name:
         job === undefined ? `Create check: ${check}` : report(job, "started"),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
+  queueCheck: (check: string, job?: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? check}:queued`),
+      name: report(job ?? check, "queued"),
+      tag: checkTag(job),
+      unmarked: true,
+    };
+  },
+
+  annotateCheck: (check: string, batch: number, job?: string): StepSpec => {
+    return {
+      id: joinId("github", `check:${job ?? "pipeline"}:annotations:${batch}`),
+      name: report(job ?? check, `annotations ${batch}`),
       tag: checkTag(job),
       unmarked: true,
     };

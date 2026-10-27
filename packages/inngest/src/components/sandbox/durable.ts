@@ -1,6 +1,11 @@
-import type { StepOptionsOrId } from "../../types.ts";
+import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
+import { callRawTool } from "./callRawTool.ts";
+import {
+  type SandboxCleanupRegistrar,
+  setCleanupRegistrar,
+} from "./cleanup.ts";
 import {
   createSandboxForOperation,
   createSandboxSnapshotForOperation,
@@ -12,7 +17,10 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
+import { checkExit, commandText } from "./commandError.ts";
+import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
+import { runManagedCommand } from "./managedCommand.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -27,7 +35,7 @@ import {
   validateSandboxResult,
 } from "./protocol.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
-import { sdkOrigin } from "./trace.ts";
+import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -36,7 +44,7 @@ import {
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
-  type SandboxCommandOutputMetadata,
+  type SandboxCommandResult,
   type SandboxDestroyResult,
   SandboxError,
   type SandboxOutputChunk,
@@ -51,9 +59,13 @@ import {
   canonicalUuidSchema,
   decodeBase64,
   decodeOutputChunk,
+  decodeOutputData,
   decodeUtf8,
   encodeBase64,
+  encodeOutput,
+  exitCodesSchema,
   maxSandboxProcessTimeoutMs,
+  normalizeDurationMs,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
@@ -67,6 +79,7 @@ import {
   normalizeSandboxSnapshotWaitOptions,
   normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
+  type SandboxOutputEncoding,
   sandboxProcessRefSchema,
   sandboxRefSchema,
   sandboxSnapshotRefSchema,
@@ -78,7 +91,7 @@ const fitDurableSandboxExecOutput = (
 ): {
   stdout: Uint8Array;
   stderr: Uint8Array;
-  output: SandboxCommandOutputMetadata;
+  output: SandboxResultForAction<"exec">["result"]["output"];
 } => {
   const originalBytes = {
     stdout: stdout.byteLength,
@@ -136,14 +149,21 @@ const encodeOutputChunk = (
 ): {
   stream: "STDOUT" | "STDERR";
   data: string;
-  encoding: "base64";
+  encoding: SandboxOutputEncoding;
   at?: string;
-} => ({
-  stream: chunk.stream,
-  data: encodeBase64(chunk.data),
-  encoding: "base64",
-  ...(chunk.at !== undefined && { at: chunk.at }),
-});
+} => {
+  const {
+    encoding,
+    values: [data],
+  } = encodeOutput([chunk.data]);
+
+  return {
+    stream: chunk.stream,
+    data: data!,
+    encoding,
+    ...(chunk.at !== undefined && { at: chunk.at }),
+  };
+};
 
 const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
   kind: sandbox.kind,
@@ -194,14 +214,27 @@ export const execOperationResult = (result: {
   exitCode: number;
 }): SandboxOperationResultV1 => {
   const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const {
+    encoding,
+    values: [stdout, stderr],
+  } = encodeOutput([output.stdout, output.stderr], {
+    truncated: output.output.truncated
+      ? [
+          output.output.retainedBytes.stdout <
+            output.output.originalBytes.stdout,
+          output.output.retainedBytes.stderr <
+            output.output.originalBytes.stderr,
+        ]
+      : [],
+  });
 
   return {
     protocolVersion: sandboxProtocolVersion,
     action: "exec",
     result: {
-      stdout: encodeBase64(output.stdout),
-      stderr: encodeBase64(output.stderr),
-      encoding: "base64",
+      stdout: stdout!,
+      stderr: stderr!,
+      encoding,
       exitCode: result.exitCode,
       output: output.output,
     },
@@ -378,10 +411,23 @@ export const executeSandboxOperation = async (
       };
     }
     case "process.wait": {
-      const process = await sandboxProcessForOperation(
-        client,
-        operation.target.process,
-      ).wait({ timeout: operation.input[0].timeoutMs });
+      const { timeoutMs, allowRunning } = operation.input[0];
+      const { process: ref } = operation.target;
+      const process = await sandboxProcessForOperation(client, ref)
+        .wait({ timeout: timeoutMs })
+        .catch((error: unknown) => {
+          // The server reports an elapsed wait window as an error. For a
+          // caller that polls, that is an answer: the process is still RUNNING
+          if (
+            allowRunning &&
+            error instanceof SandboxError &&
+            error.code === "sandbox_process_wait_timed_out"
+          ) {
+            return { ...ref, state: "RUNNING" as const };
+          }
+
+          throw error;
+        });
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -390,7 +436,12 @@ export const executeSandboxOperation = async (
           version: process.version,
           sandboxId: process.sandboxId,
           id: process.id,
-          state: process.state as "EXITED" | "KILLED" | "FAILED" | "LOST",
+          state: process.state as
+            | "RUNNING"
+            | "EXITED"
+            | "KILLED"
+            | "FAILED"
+            | "LOST",
           ...(process.exitCode !== undefined && {
             exitCode: process.exitCode,
           }),
@@ -470,71 +521,6 @@ export const executeSandboxOperation = async (
         result: null,
       };
     }
-  }
-};
-
-/**
- * Run an operation as a step. With `finish`, the step also does that work and
- * its output is what `finish` returns, so a replay returns it unchanged.
- */
-const callRawTool = async <
-  A extends SandboxAction,
-  T = SandboxResultForAction<A>,
->(
-  rawToolResolver: SandboxRawToolResolver,
-  idOrOptions: StepOptionsOrId,
-  operation: SandboxOperationForAction<A>,
-  finish?: (result: SandboxResultForAction<A>) => T | Promise<T>,
-  tools?: SandboxToolsRequest,
-): Promise<T> => {
-  try {
-    const rawTool = await rawToolResolver();
-    if (tools) {
-      return validateSandboxResult(
-        operation,
-        await rawTool(idOrOptions, operation, undefined, tools),
-      ) as T;
-    }
-
-    if (finish) {
-      return (await rawTool(idOrOptions, operation, (result) => {
-        return finish(validateSandboxResult(operation, result));
-      })) as T;
-    }
-
-    return validateSandboxResult(
-      operation,
-      await rawTool(idOrOptions, operation),
-    ) as T;
-  } catch (error) {
-    if (error instanceof SandboxValidationError) {
-      throw error;
-    }
-    const options = findSandboxErrorOptions(error);
-    if (options) {
-      if (options.action !== operation.action) {
-        throw new SandboxValidationError(
-          `Sandbox operation returned a ${options.action} error for ${operation.action}`,
-        );
-      }
-      // A failed step rejects with the engine's own StepError. Rethrow that
-      // exact error so it behaves like any other step: left uncaught, it fails
-      // the function without retrying it.
-      if (error instanceof StepError) {
-        throw error;
-      }
-      throw new SandboxError(options);
-    }
-    if (error instanceof StepError) {
-      throw error;
-    }
-    const validationError = findSandboxValidationError(error);
-    if (validationError) {
-      throw new SandboxValidationError(validationError.message, {
-        cause: error,
-      });
-    }
-    throw error;
   }
 };
 
@@ -763,44 +749,107 @@ export const createDurableSandboxFacade = (
       return createSnapshot(idOrOptions, ...args);
     });
   };
+  const run: DurableSandbox["commands"]["run"] = async (
+    idOrOptions,
+    command,
+    options,
+  ) => {
+    const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
+
+    parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
+
+    if (tools && exitCodes !== undefined) {
+      throw new SandboxValidationError("exitCodes can't be used with tools");
+    }
+
+    const text = commandText(command);
+    const timeoutMs =
+      commandOptions.timeout === undefined
+        ? undefined
+        : normalizeDurationMs(
+            commandOptions.timeout,
+            Number.POSITIVE_INFINITY,
+            "timeout",
+          );
+
+    // A command that may outlive one step's wait runs as a process
+    if (
+      !tools &&
+      timeoutMs !== undefined &&
+      timeoutMs > maxSandboxProcessTimeoutMs
+    ) {
+      const { timeout: _timeout, ...spec } = commandOptions;
+
+      return runManagedCommand({
+        rawToolResolver,
+        sandbox: ref,
+        idOrOptions,
+        spec: { ...spec, command },
+        text,
+        timeoutMs,
+        exitCodes: exitCodes ?? "any",
+      });
+    }
+
+    const normalized = normalizeSandboxCommandOptions(command, {
+      ...commandOptions,
+      ...(tools && {
+        timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+      }),
+    });
+    const { timeout: _timeout, ...input } = normalized;
+    const operation = parseSandboxOperationForAction("exec", {
+      protocolVersion: sandboxProtocolVersion,
+      action: "exec",
+      target: sandboxTarget(ref),
+      input: [input],
+    });
+    const toResult = (
+      wire: SandboxResultForAction<"exec">,
+    ): SandboxCommandResult => {
+      return {
+        stdout: decodeUtf8(
+          decodeOutputData(
+            wire.result.stdout,
+            wire.result.encoding,
+            "sandbox exec stdout",
+          ),
+        ),
+        stderr: decodeUtf8(
+          decodeOutputData(
+            wire.result.stderr,
+            wire.result.encoding,
+            "sandbox exec stderr",
+          ),
+        ),
+        exitCode: wire.result.exitCode,
+        output: wire.result.output,
+      };
+    };
+
+    // The exit is checked inside the step, so a disallowed one fails the step
+    // and a replay throws it again
+    const result = await callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      operation,
+      exitCodes && exitCodes !== "any"
+        ? (wire) => {
+            checkExit(exitCodes, { command: text, ...toResult(wire) });
+
+            return wire;
+          }
+        : undefined,
+      tools && { tools, toolOptions },
+    );
+
+    return toResult(result);
+  };
   const facade: DurableSandbox = {
+    $: createDollar(run),
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
-    commands: Object.freeze({
-      run: async (idOrOptions, command, options) => {
-        const { tools, toolOptions, ...commandOptions } = options ?? {};
-        const normalized = normalizeSandboxCommandOptions(command, {
-          ...commandOptions,
-          ...(tools && {
-            timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
-          }),
-        });
-        const { timeout: _timeout, ...input } = normalized;
-        const operation = parseSandboxOperationForAction("exec", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "exec",
-          target: sandboxTarget(ref),
-          input: [input],
-        });
-        const result = await callRawTool(
-          rawToolResolver,
-          idOrOptions,
-          operation,
-          undefined,
-          tools && { tools, toolOptions },
-        );
-        return {
-          stdout: decodeUtf8(
-            decodeBase64(result.result.stdout, "sandbox exec stdout"),
-          ),
-          stderr: decodeUtf8(
-            decodeBase64(result.result.stderr, "sandbox exec stderr"),
-          ),
-          exitCode: result.result.exitCode,
-          output: result.result.output,
-        };
-      },
-    }),
+    commands: Object.freeze({ run }),
     files: Object.freeze({
       write: async (idOrOptions, { path, data }) => {
         const operation = parseSandboxOperationForAction("file.upload", {
@@ -980,90 +1029,124 @@ export const readParsedFile = <T>(
 
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
-): DurableSandboxTools => ({
-  create: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("create", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "create",
-      input: [normalizeSandboxCreateOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    const sandbox = createDurableSandboxFacade(result.sandbox, rawToolResolver);
-    const { id } = getStepOptions(idOrOptions);
-
-    const disposable = Object.freeze({
-      ...sandbox,
-      [Symbol.asyncDispose]: async () => {
-        await destroyQuietly(sandbox, `${id}:destroy`);
-      },
-    });
-    fileParsers.set(disposable, fileParserOf(sandbox));
-
-    return disposable;
-  },
-  list: async (idOrOptions, options) => {
-    const operation = parseSandboxOperationForAction("list", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "list",
-      input: [normalizeSandboxListOptions(options)],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return {
-      items: result.sandboxes.map((sandbox) =>
-        createDurableSandboxFacade(sandbox, rawToolResolver),
-      ),
-      page: { ...result.page },
-      fetchedAt: result.fetchedAt,
-    };
-  },
-  get: async (idOrOptions, sandboxId) => {
-    const parsedSandboxId = parseWithSchema(
-      canonicalUuidSchema,
-      sandboxId,
-      "sandbox ID",
-    );
-    const operation = parseSandboxOperationForAction("get", {
-      protocolVersion: sandboxProtocolVersion,
-      action: "get",
-      input: [{ sandboxId: parsedSandboxId }],
-    });
-    const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-    return result.sandbox
-      ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
-      : null;
-  },
-  snapshots: {
-    list: async (idOrOptions, options) => {
-      const operation = parseSandboxOperationForAction("snapshot.list", {
+  registerCleanup?: SandboxCleanupRegistrar,
+): DurableSandboxTools => {
+  const tools: DurableSandboxTools = {
+    create: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("create", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.list",
-        input: [normalizeSandboxSnapshotListOptions(options)],
+        action: "create",
+        input: [normalizeSandboxCreateOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      const sandbox = createDurableSandboxFacade(
+        result.sandbox,
+        rawToolResolver,
+      );
+      const { id } = getStepOptions(idOrOptions);
+
+      // `await using` reads the dispose method as it declares the sandbox, so
+      // that read is what marks the sandbox as scoped. A plain create never
+      // reads it and is left running when the run ends.
+      let cleanup: DeferHandle | undefined;
+      const disposable = Object.defineProperty(
+        { ...sandbox },
+        Symbol.asyncDispose,
+        {
+          get: () => {
+            cleanup ??= registerCleanup?.(id, {
+              sandboxId: result.sandbox.id,
+            });
+
+            return async () => {
+              await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
+            };
+          },
+        },
+      ) as DurableSandbox & AsyncDisposable;
+      Object.freeze(disposable);
+      fileParsers.set(disposable, fileParserOf(sandbox));
+
+      return disposable;
+    },
+    list: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("list", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "list",
+        input: [normalizeSandboxListOptions(options)],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return {
-        items: result.snapshots.map((snapshot) =>
-          createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+        items: result.sandboxes.map((sandbox) =>
+          createDurableSandboxFacade(sandbox, rawToolResolver),
         ),
         page: { ...result.page },
         fetchedAt: result.fetchedAt,
       };
     },
-    get: async (idOrOptions, snapshotId) => {
-      const parsedSnapshotId = parseWithSchema(
+    get: async (idOrOptions, sandboxId) => {
+      const parsedSandboxId = parseWithSchema(
         canonicalUuidSchema,
-        snapshotId,
-        "sandbox snapshot ID",
+        sandboxId,
+        "sandbox ID",
       );
-      const operation = parseSandboxOperationForAction("snapshot.get", {
+      const operation = parseSandboxOperationForAction("get", {
         protocolVersion: sandboxProtocolVersion,
-        action: "snapshot.get",
-        target: { snapshotId: parsedSnapshotId },
-        input: [],
+        action: "get",
+        input: [{ sandboxId: parsedSandboxId }],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
-      return result.snapshot
-        ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+      return result.sandbox
+        ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
         : null;
     },
-  },
-});
+    snapshots: {
+      list: async (idOrOptions, options) => {
+        const operation = parseSandboxOperationForAction("snapshot.list", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.list",
+          input: [normalizeSandboxSnapshotListOptions(options)],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return {
+          items: result.snapshots.map((snapshot) =>
+            createDurableSandboxSnapshotFacade(snapshot, rawToolResolver),
+          ),
+          page: { ...result.page },
+          fetchedAt: result.fetchedAt,
+        };
+      },
+      get: async (idOrOptions, snapshotId) => {
+        const parsedSnapshotId = parseWithSchema(
+          canonicalUuidSchema,
+          snapshotId,
+          "sandbox snapshot ID",
+        );
+        const operation = parseSandboxOperationForAction("snapshot.get", {
+          protocolVersion: sandboxProtocolVersion,
+          action: "snapshot.get",
+          target: { snapshotId: parsedSnapshotId },
+          input: [],
+        });
+        const result = await callRawTool(
+          rawToolResolver,
+          idOrOptions,
+          operation,
+        );
+        return result.snapshot
+          ? createDurableSandboxSnapshotFacade(result.snapshot, rawToolResolver)
+          : null;
+      },
+    },
+  };
+
+  if (registerCleanup) {
+    setCleanupRegistrar(tools, registerCleanup);
+  }
+
+  return tools;
+};

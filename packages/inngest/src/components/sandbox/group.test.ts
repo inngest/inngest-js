@@ -46,7 +46,7 @@ describe("group.sandbox", () => {
     expect(calls.destroys).toBe(1);
     expect(steps.map((step) => step.opts?.span)).toEqual([
       [group],
-      [group],
+      [group, { id: "run", name: "echo hi", kind: "$" }],
       [group],
       undefined,
     ]);
@@ -86,41 +86,38 @@ describe("group.sandbox", () => {
       attempt: 0,
       maxAttempts: 5 as number | undefined,
       fail: () => Promise.reject(new Error("boom")),
-      destroys: 0,
     },
     {
       name: "an unknown error with no attempt limit",
       attempt: 0,
       maxAttempts: undefined,
       fail: () => Promise.reject(new Error("boom")),
-      destroys: 0,
     },
     {
       name: "an unknown error on the last attempt",
       attempt: 4,
       maxAttempts: 5,
       fail: () => Promise.reject(new Error("boom")),
-      destroys: 1,
     },
     {
       name: "a non-retriable error",
       attempt: 0,
       maxAttempts: 5,
       fail: () => Promise.reject(new NonRetriableError("boom")),
-      destroys: 1,
     },
   ])(
-    "on $name, destroys $destroys time",
-    async ({ attempt, maxAttempts, fail, destroys }) => {
+    "on $name, destroys once and the failure is final",
+    async ({ attempt, maxAttempts, fail }) => {
       const { client, calls } = createScopeClient();
 
-      const { type } = await runToEnd(buildFailing(client, fail), {
+      const { type, retriable } = await runToEnd(buildFailing(client, fail), {
         attempt,
         maxAttempts,
       });
 
       expect(type).toBe("function-rejected");
-      expect(calls.destroys).toBe(destroys);
+      expect(retriable).toBe(false);
+      expect(calls.destroys).toBe(1);
     },
   );
 
@@ -181,7 +178,7 @@ describe("group.sandbox", () => {
     expect(destroy?.metadata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "inngest.warnings",
+          kind: "inngest.warning.sdk.sandbox.destroy",
           values: {
             "sdk.sandbox.destroy": expect.stringContaining(
               `Sandbox ${sandboxId} couldn't be destroyed: `,
