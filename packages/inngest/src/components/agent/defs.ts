@@ -164,7 +164,10 @@ export interface LazySandbox {
   get(): Promise<DurableSandbox>;
 
   /**
-   * Destroys the sandbox if it was created. Does nothing otherwise.
+   * Destroys the sandbox if it was created. Does nothing otherwise, and a
+   * failed create leaves nothing to destroy. Call it only when the run is
+   * ending: a retry replays the memoized create, so a destroyed sandbox would
+   * not come back.
    */
   close(): Promise<void>;
 }
@@ -183,11 +186,23 @@ const lazySandbox = (
   binding: SandboxBinding,
   sandboxes: DurableSandboxTools,
 ): LazySandbox => {
+  if (!idPattern.test(name)) {
+    throw new SandboxValidationError(
+      `Invalid sandbox name "${name}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
+    );
+  }
+
   const {
     sandbox: definition,
     start = "lazy",
     keepAlive,
   } = bindingOptions(binding);
+  if (keepAlive && !keepAlive.idle) {
+    throw new SandboxValidationError(
+      `keepAlive on sandbox "${name}" needs an idle time, such as { idle: "10m" }`,
+    );
+  }
+
   let created: Promise<DurableSandbox> | undefined;
 
   const get = (): Promise<DurableSandbox> => {
@@ -237,8 +252,12 @@ const lazySandbox = (
     tools,
     get,
     close: async () => {
-      if (created) {
-        await destroyQuietly(await created, `${name}:destroy`);
+      const sandbox = await created?.catch(() => {
+        return undefined;
+      });
+
+      if (sandbox) {
+        await destroyQuietly(sandbox, `${name}:destroy`);
       }
     },
   };
@@ -277,7 +296,21 @@ export const openSandboxes = (
 export const sandboxTools = (
   opened: Record<string, LazySandbox>,
 ): SandboxTools => {
-  return Object.assign({}, ...Object.values(opened).map((s) => s.tools));
+  const all: SandboxTools = {};
+
+  for (const handle of Object.values(opened)) {
+    for (const [key, entry] of Object.entries(handle.tools)) {
+      if (key in all) {
+        throw new SandboxValidationError(
+          `Two sandbox tools are named "${key}"`,
+        );
+      }
+
+      all[key] = entry;
+    }
+  }
+
+  return all;
 };
 
 /**

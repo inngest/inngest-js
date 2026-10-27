@@ -184,3 +184,44 @@ describe("openSandboxes()", () => {
     await expect(opened.data?.get()).rejects.toThrow("no capacity");
   });
 });
+
+describe("validation", () => {
+  const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+  const { sandboxes } = fakeEnvironment();
+
+  test("rejects a bad binding name, a keepAlive without idle, colliding tool names", () => {
+    expect(() => {
+      return openSandboxes({ "my box": def }, sandboxes);
+    }).toThrow("Invalid sandbox name");
+    expect(() => {
+      return openSandboxes(
+        { a: { sandbox: def, keepAlive: {} as { idle: string } } },
+        sandboxes,
+      );
+    }).toThrow("needs an idle time");
+
+    const a = sandbox({
+      id: "a",
+      tools: () => ({ b_c: tool.step({ run: () => 1 }) }),
+    });
+    const b = sandbox({
+      id: "b",
+      tools: () => ({ c: tool.step({ run: () => 1 }) }),
+    });
+
+    expect(() => {
+      return sandboxTools(openSandboxes({ a, a_b: b }, sandboxes));
+    }).toThrow("Two sandbox tools");
+  });
+
+  test("close after a failed create does not throw", async () => {
+    const opened = openSandboxes({ w: def }, {
+      create: async () => {
+        throw new Error("boom");
+      },
+    } as unknown as DurableSandboxTools);
+
+    await expect(opened.w?.get()).rejects.toThrow("boom");
+    await expect(opened.w?.close()).resolves.toBeUndefined();
+  });
+});
