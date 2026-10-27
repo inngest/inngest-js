@@ -94,10 +94,13 @@ export const snapshotName = (entry: SnapshotEntry): string => {
     );
   }
 
-  const slot = bounded(
-    `${scope}/${key}`,
-    maxNameLength - 1 - generation.length,
-  );
+  const room = maxNameLength - 1 - generation.length;
+
+  if (room < 16) {
+    throw new Error("A snapshot generation is too long to fit in a name.");
+  }
+
+  const slot = bounded(`${scope}/${key}`, room);
 
   return `${slot}/${generation}`;
 };
@@ -585,13 +588,7 @@ export const snapshotCache = (
     let attempt = 0;
 
     const named = async (): Promise<TakenSnapshot> => {
-      return taken(await snapshot(name, attempt++), true);
-    };
-
-    let refused = false;
-
-    try {
-      const result = await named();
+      const result = taken(await snapshot(name, attempt++), true);
 
       await memo(idOf("replaced", entry, takeOptions.stepId), async () => {
         await deleteReplaced(result);
@@ -600,6 +597,12 @@ export const snapshotCache = (
       });
 
       return result;
+    };
+
+    let refused = false;
+
+    try {
+      return await named();
     } catch (error) {
       if (hasCode(error, nameTakenCode)) {
         refused = false;
@@ -658,12 +661,20 @@ export const snapshotCache = (
   };
 
   const latest: SnapshotCache["latest"] = async (entry, latestOptions = {}) => {
-    const prefix = snapshotName({ ...entry, generation: "g" }).slice(0, -1);
     const usable = usableFor(latestOptions.maxAge, latestOptions.exclude);
 
     try {
       const matching = await listMatching((snapshot) => {
-        return snapshot.name.startsWith(prefix) && usable(snapshot);
+        // Rebuilding the name from the snapshot's own generation tells this
+        // entry's snapshots from those of a key that merely starts the same.
+        const generation = snapshotGeneration(snapshot.name);
+
+        return (
+          generation !== "" &&
+          !generation.includes("/") &&
+          snapshotName({ ...entry, generation }) === snapshot.name &&
+          usable(snapshot)
+        );
       });
       const newest = matching.sort((a, b) => {
         return a.createdAt < b.createdAt ? 1 : -1;

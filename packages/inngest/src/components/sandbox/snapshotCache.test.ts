@@ -124,6 +124,12 @@ describe("snapshot names", () => {
     expect(a).not.toBe(b);
   });
 
+  test("rejects a generation too long to fit", () => {
+    expect(() =>
+      snapshotName({ ...entry, generation: "g".repeat(250) }),
+    ).toThrow();
+  });
+
   test("rejects empty parts and a generation with a slash", () => {
     expect(() => snapshotName({ ...entry, key: "" })).toThrow();
     expect(() => snapshotName({ ...entry, generation: "a/b" })).toThrow();
@@ -298,6 +304,25 @@ describe("take", () => {
     expect(bad.status).toBe("DELETED");
   });
 
+  test("deletes older generations when the name is taken after a retry", async () => {
+    const api = makeApi();
+    const old = api.add(snapshotName(entry));
+    const stale = api.add(snapshotName({ ...entry, generation: "sha2" }), {
+      createdAt: new Date(Date.now() - 2 * hour).toISOString(),
+    });
+    const cache = snapshotCache(api.client);
+
+    const taken = await cache.take(
+      { ...entry, generation: "sha2" },
+      api.snapshotCall(),
+      { maxAge: "1h" },
+    );
+
+    expect(stale.status).toBe("DELETED");
+    expect(old.status).toBe("DELETED");
+    expect(taken.named).toBe(true);
+  });
+
   test("falls back to an unnamed snapshot when the name is refused", async () => {
     const api = makeApi();
     const cache = snapshotCache(api.client);
@@ -383,6 +408,20 @@ describe("latest and remove", () => {
     const found = await cache.latest({ scope: "thread", key: "t1" });
 
     expect(found?.snapshotId).toBe(newest.id);
+  });
+
+  test("latest does not match a key that merely starts the same", async () => {
+    const api = makeApi();
+    const cache = snapshotCache(api.client);
+
+    api.add("skills/acme/skills/sha1");
+
+    expect(
+      await cache.latest({ scope: "skills", key: "acme" }),
+    ).toBeUndefined();
+    expect(
+      (await cache.latest({ scope: "skills", key: "acme/skills" }))?.name,
+    ).toBe("skills/acme/skills/sha1");
   });
 
   test("remove tolerates a snapshot that is gone", async () => {
