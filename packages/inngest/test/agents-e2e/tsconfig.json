@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "inngest": ["./dist/index"],
+      "inngest/*": ["./dist/*"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}
