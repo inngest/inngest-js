@@ -95,6 +95,8 @@ export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
+  AgentTool,
+  AgentToolDefinition,
   JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,

@@ -186,8 +186,8 @@ export interface ToolDefinition<
 }
 
 /**
- * EXPERIMENTAL: Declares a tool that sandbox code can call.
- * `tool.step()` runs its body as one durable step.
+ * EXPERIMENTAL: `tool.step()` declares a tool that sandbox code can call. It
+ * runs its body as one durable step.
  *
  * @example
  * ```ts
@@ -206,7 +206,7 @@ export interface ToolDefinition<
  * });
  * ```
  */
-export const tool = {
+const toolMethods = {
   step: <
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
@@ -248,6 +248,85 @@ export const tool = {
     return { ...definition, group: true } as SandboxTool;
   },
 };
+
+/**
+ * A tool defined with `tool()`: a tool for an agent, which runs in your
+ * function as one durable step per call.
+ */
+export interface AgentTool extends SandboxTool {
+  readonly kind: "inngest/tool";
+
+  /**
+   * The name the model sees.
+   */
+  readonly id: string;
+
+  /**
+   * The command that sandbox code can run to call this tool.
+   */
+  readonly sandboxCommand?: string;
+}
+
+export interface AgentToolDefinition<
+  TInput extends ToolInput | undefined,
+  TOutput extends StandardSchemaV1 | undefined,
+> extends ToolDefinition<TInput, TOutput> {
+  /**
+   * The tool's name in the model's list. Letters, digits and underscores,
+   * starting with a letter, up to 64 characters.
+   */
+  id: string;
+
+  /**
+   * Also offers the tool to code in a sandbox as this command, such as
+   * `get-org`. The command sends the call home to the function.
+   */
+  sandboxCommand?: string;
+}
+
+const sandboxCommandPattern = /^[a-z][a-z0-9-]{0,63}$/;
+
+const defineTool = <
+  TInput extends ToolInput | undefined = undefined,
+  TOutput extends StandardSchemaV1 | undefined = undefined,
+>(
+  definition: AgentToolDefinition<TInput, TOutput>,
+): AgentTool => {
+  validateTools({ [definition.id]: definition as unknown as SandboxTool });
+
+  if (
+    definition.sandboxCommand !== undefined &&
+    !sandboxCommandPattern.test(definition.sandboxCommand)
+  ) {
+    throw new SandboxValidationError(
+      `Invalid sandboxCommand "${definition.sandboxCommand}": use lowercase letters, digits and hyphens, starting with a letter`,
+    );
+  }
+
+  return Object.freeze({
+    ...definition,
+    kind: "inngest/tool",
+  }) as unknown as AgentTool;
+};
+
+/**
+ * EXPERIMENTAL: Defines a tool for an agent. It runs in your function, where
+ * your clients and secrets are, and each call is a durable step. Define it at
+ * module scope and name it in an agent's `tools`. `tool.step()` and
+ * `tool.group()` declare tools for code in a sandbox.
+ *
+ * @example
+ * ```ts
+ * export const getOrg = tool({
+ *   id: "getOrg",
+ *   input: z.object({ slug: z.string() }),
+ *   run: async ({ slug }) => {
+ *     return orgs.find(slug);
+ *   },
+ * });
+ * ```
+ */
+export const tool = Object.assign(defineTool, toolMethods);
 
 /**
  * The schema of the data a function takes, when its triggers say: that of its
