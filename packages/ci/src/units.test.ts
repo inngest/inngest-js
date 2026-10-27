@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName, slotOf } from "./cache/names.ts";
+import { formatName } from "./cache/names.ts";
 import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -924,7 +924,7 @@ describe("snapshot names", () => {
     expect(long).not.toBe(other);
   });
 
-  test("too long a name keeps its slot apart from other slots", () => {
+  test("too long a name keeps its last part and stays apart from other names", () => {
     const name = (jobId: string, ownKey: string) => {
       return formatName({
         kind: "cache",
@@ -934,14 +934,12 @@ describe("snapshot names", () => {
       });
     };
 
-    // Same slot, another key.
-    expect(slotOf(name("j".repeat(300), "a"))).toBe(
-      slotOf(name("j".repeat(300), "b")),
-    );
+    expect(name("j".repeat(300), "a")).toHaveLength(255);
+    expect(name("j".repeat(300), "a").endsWith("/a")).toBe(true);
 
     // Differing only after the cut-off point of a long name.
-    expect(slotOf(name(`${"j".repeat(300)}1`, "a"))).not.toBe(
-      slotOf(name(`${"j".repeat(300)}2`, "a")),
+    expect(name(`${"j".repeat(300)}1`, "a")).not.toBe(
+      name(`${"j".repeat(300)}2`, "a"),
     );
   });
 });

@@ -19,7 +19,6 @@ import {
   resolveSource,
   targetsRunRepo,
 } from "../github/source.ts";
-import { deleteMatching } from "../machine/admin.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
@@ -43,7 +42,7 @@ import {
   parseRepo,
   stableStringify,
 } from "../util.ts";
-import { formatName, slotOf } from "./names.ts";
+import { formatName } from "./names.ts";
 
 /**
  * Check a static `cache` when the job is defined, so a mistake fails
@@ -862,50 +861,6 @@ export const deleteSnapshot = async (
     // Best effort only.
     return false;
   }
-};
-
-/**
- * Delete the entries a new cache snapshot replaces, as a memoized step: those
- * of the same scope, job, app, repository and input under another key, and
- * older than it. Their key can't be named again, so nothing else would ever
- * remove them. Entries of other scopes (such as the base branch's) and of
- * other inputs stay, and so does a newer one: two builds with different keys
- * that finish together each leave the later snapshot, never both deleted.
- *
- * Best effort: one that can't be deleted is logged and left to expire.
- */
-export const deleteReplacedCache = async (
-  run: CiRunScope,
-  stepId: string,
-  /** The snapshot just taken under its name. */
-  mine: CachedSnapshot,
-): Promise<void> => {
-  const slot = slotOf(mine.name);
-
-  const warn = (snapshotId: string | undefined, error: unknown) => {
-    run.ci.logger?.warn(
-      { snapshotId, error },
-      "Couldn't delete a replaced cache snapshot; it will expire on its own",
-    );
-  };
-
-  await ciRun(run, steps.deleteReplacedCache(stepId), async () => {
-    try {
-      await deleteMatching(
-        run.ci.client,
-        (other) => {
-          return (
-            slotOf(other.name) === slot &&
-            other.name !== mine.name &&
-            other.createdAt <= mine.createdAt
-          );
-        },
-        warn,
-      );
-    } catch (error) {
-      warn(undefined, error);
-    }
-  });
 };
 
 /**

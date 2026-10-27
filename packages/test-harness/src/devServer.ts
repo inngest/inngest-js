@@ -11,7 +11,11 @@ export const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 
 async function isListening(): Promise<boolean> {
   try {
-    return (await fetch(`${DEV_SERVER_URL}/dev`)).ok;
+    return (
+      await fetch(`${DEV_SERVER_URL}/dev`, {
+        signal: AbortSignal.timeout(2000),
+      })
+    ).ok;
   } catch {
     return false;
   }
