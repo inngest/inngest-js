@@ -22,6 +22,7 @@ import { createDefer } from "../DeferredFunction.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
+import { registerFunctions } from "./register.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -319,6 +320,9 @@ export function createAgentFunction(
       return result;
     },
   );
+
+  // Serving the app serves both, whether or not the app lists them.
+  registerFunctions(client, [fn, cleanup]);
 
   return {
     fn,
