@@ -75,7 +75,7 @@ export type EventDataOf<TTriggers> = [PayloadOf<TTriggers>] extends [never]
  * An event as a pipeline handler sees it.
  */
 export interface CiEvent<TData = Record<string, unknown>> {
-  /** The event's name, like `github/pull_request.opened`. */
+  /** The event's name, like `github-ci/pull_request.opened`. */
   name: string;
   /** The event's payload, typed by the pipeline's triggers. */
   data: TData;

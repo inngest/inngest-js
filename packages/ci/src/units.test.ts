@@ -326,9 +326,9 @@ describe("GitHub triggers", () => {
         return trigger.event;
       }),
     ).toEqual([
-      "github/pull_request.opened",
-      "github/pull_request.synchronize",
-      "github/pull_request.reopened",
+      "github-ci/pull_request.opened",
+      "github-ci/pull_request.synchronize",
+      "github-ci/pull_request.reopened",
     ]);
   });
 
@@ -347,7 +347,7 @@ describe("GitHub triggers", () => {
   test("pushes filter refs and exclude deletions", () => {
     const [trigger] = push({ branches: ["main"], tags: ["v*"] });
 
-    expect(trigger?.event).toBe("github/push");
+    expect(trigger?.event).toBe("github-ci/push");
     expect(trigger?.if).toContain('event.data.ref == "refs/heads/main"');
     expect(trigger?.if).toContain('event.data.ref == "refs/tags/v*"');
     expect(trigger?.if).toContain("event.data.deleted != true");
@@ -356,7 +356,7 @@ describe("GitHub triggers", () => {
   test("comments match the command prefix", () => {
     const [trigger] = comment({ command: "/prerelease" });
 
-    expect(trigger?.event).toBe("github/issue_comment.created");
+    expect(trigger?.event).toBe("github-ci/issue_comment.created");
 
     expect(trigger?.if).toContain(
       'event.data.comment.body.startsWith("/prerelease")',
@@ -364,7 +364,9 @@ describe("GitHub triggers", () => {
   });
 
   test("merge groups and check suites have triggers", () => {
-    expect(mergeGroup()[0]?.event).toBe("github/merge_group.checks_requested");
+    expect(mergeGroup()[0]?.event).toBe(
+      "github-ci/merge_group.checks_requested",
+    );
 
     expect(checkSuite({ branch: "main" })[0]?.if).toContain(
       'event.data.check_suite.head_branch == "main"',
@@ -398,7 +400,7 @@ describe("webhook transform", () => {
       { "X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "abc" },
     );
 
-    expect(result.name).toBe("github/pull_request.opened");
+    expect(result.name).toBe("github-ci/pull_request.opened");
 
     expect(result.data._github).toMatchObject({
       event: "pull_request",
@@ -409,7 +411,7 @@ describe("webhook transform", () => {
   test("names events without an action", () => {
     expect(
       transform({ ref: "refs/heads/main" }, { "x-github-event": "push" }).name,
-    ).toBe("github/push");
+    ).toBe("github-ci/push");
   });
 
   test("carries the installation ID", () => {
@@ -418,7 +420,7 @@ describe("webhook transform", () => {
       { "x-github-event": "issue_comment" },
     );
 
-    expect(result.name).toBe("github/issue_comment.created");
+    expect(result.name).toBe("github-ci/issue_comment.created");
     expect(result.data._github).toMatchObject({ installationId: 99 });
   });
 
@@ -474,10 +476,10 @@ describe("webhook transform", () => {
   });
 
   test("the helper agrees with the transform", () => {
-    expect(githubEventName("push", undefined)).toBe("github/push");
+    expect(githubEventName("push", undefined)).toBe("github-ci/push");
 
     expect(githubEventName("pull_request", { action: "opened" })).toBe(
-      "github/pull_request.opened",
+      "github-ci/pull_request.opened",
     );
   });
 });
@@ -487,7 +489,7 @@ describe("repo context", () => {
 
   test("pull requests carry head, base, and number", () => {
     const repo = repoContextFromEvent({
-      name: "github/pull_request.opened",
+      name: "github-ci/pull_request.opened",
       data: {
         repository,
         pull_request: {
@@ -511,7 +513,7 @@ describe("repo context", () => {
 
   test("forks are marked", () => {
     const repo = repoContextFromEvent({
-      name: "github/pull_request.opened",
+      name: "github-ci/pull_request.opened",
       data: {
         repository,
         pull_request: {
@@ -528,7 +530,7 @@ describe("repo context", () => {
   test("pushes use after and before", () => {
     expect(
       repoContextFromEvent({
-        name: "github/push",
+        name: "github-ci/push",
         data: { repository, ref: "refs/heads/main", before: "a", after: "b" },
       }),
     ).toMatchObject({ sha: "b", baseSha: "a", baseRef: "main" });
