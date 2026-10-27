@@ -4,18 +4,19 @@
  * @module
  */
 
+import { generateKeyPairSync } from "node:crypto";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { shard } from "../checkout/shard.ts";
 import { CiUsageError } from "../errors.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
-import { rerunEventFor } from "../pipeline/rerun.ts";
+import { mayRerun, rerunEventFor } from "../pipeline/rerun.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { prEvent, prTrigger } from "../testing/events.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { consoleReporter, githubToken } from "./auth.ts";
+import { consoleReporter, githubApp, githubToken } from "./auth.ts";
 import { github } from "./index.ts";
 
 const setup = (gh: FakeGitHub) => {
@@ -311,7 +312,7 @@ describe("github helpers", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "push", on: [{ event: "github/push" }], check: false },
+      { id: "push", on: [{ event: "github-ci/push" }], check: false },
       async () => {
         await job();
       },
@@ -319,7 +320,7 @@ describe("github helpers", () => {
 
     const result = await runFunction(pipeline, {
       event: {
-        name: "github/push",
+        name: "github-ci/push",
         data: {
           ref: "refs/heads/main",
           after: "abc",
@@ -457,7 +458,7 @@ describe("github helpers", () => {
         resolveWait: (step) => {
           return step.displayName === "Wait for check: vercel"
             ? {
-                name: "github/check_run.completed",
+                name: "github-ci/check_run.completed",
                 data: { check_run: { name: "vercel", conclusion: "failure" } },
               }
             : null;
@@ -700,7 +701,7 @@ describe("re-running from a check suite", () => {
 
     const result = await rerunEventFor({
       event: {
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           action: "rerequested",
           check_suite: { id: 9, head_sha: "abc1234", head_branch: "main" },
@@ -893,7 +894,7 @@ describe("re-running from a check run", () => {
   const checkRunEvent = (checkRun: Record<string, unknown>) => {
     return {
       id: "evt-1",
-      name: "github/check_run.rerequested",
+      name: "github-ci/check_run.rerequested",
       data: {
         action: "rerequested",
         check_run: {
@@ -940,7 +941,7 @@ describe("re-running from a check run", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "github/push",
+        name: "github-ci/push",
         data: expect.objectContaining({
           ref: "refs/heads/feature",
           after: "abc1234",
@@ -959,7 +960,7 @@ describe("re-running from a check run", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "github/pull_request.synchronize",
+        name: "github-ci/pull_request.synchronize",
         data: expect.objectContaining({ number: 12 }),
       }),
     );
@@ -986,7 +987,7 @@ describe("re-running a check from a fork", () => {
     const result = await rerunEventFor({
       event: {
         id: "evt-1",
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           check_suite: {
             head_sha: "abc1234",
@@ -1019,7 +1020,7 @@ describe("re-running a check whose branch moved or is not ours", () => {
     const result = await rerunEventFor({
       event: {
         id: "evt-1",
-        name: "github/check_suite.rerequested",
+        name: "github-ci/check_suite.rerequested",
         data: {
           check_suite: { head_sha: "abc1234", head_branch: "main" },
           repository: { full_name: "inngest/inngest-js" },
@@ -1065,5 +1066,251 @@ describe("re-running a check whose branch moved or is not ours", () => {
 
     expect(result).toMatchObject({ rerun: false });
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("re-running from buttons and suites", () => {
+  const step = {
+    run: async (_id: string, fn: () => Promise<unknown>) => {
+      return fn();
+    },
+  };
+
+  const action = (identifier: string, login = "octocat") => {
+    return {
+      id: "evt-9",
+      name: "github-ci/check_run.requested_action",
+      data: {
+        action: "requested_action",
+        requested_action: { identifier },
+        sender: { login },
+        check_run: {
+          head_sha: "abc1234",
+          name: "pr / lint",
+          external_id: "01RUN:lint",
+          pull_requests: [{ number: 7 }],
+          check_suite: { head_branch: "feature" },
+        },
+        repository: { full_name: "inngest/inngest-js", default_branch: "main" },
+      },
+    };
+  };
+
+  test("a check's button re-runs its pipeline, without the cache for the fresh one", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", { number: 7 });
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    await rerunEventFor({
+      event: action("rerun-fresh"),
+      step,
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          _ci: {
+            rerunOf: "01RUN",
+            pipeline: "pr",
+            noCache: true,
+          },
+        }),
+      }),
+    );
+  });
+
+  test.each([
+    ["write", true],
+    ["read", false],
+  ])(
+    "a click from someone with %s access is allowed: %s",
+    async (permission, allowed) => {
+      setup(gh);
+
+      gh.route(
+        "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+        {
+          permission,
+        },
+      );
+
+      expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(
+        allowed,
+      );
+    },
+  );
+
+  test("a click from someone who can't be found is refused", async () => {
+    setup(gh);
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/collaborators/octocat/permission",
+      { message: "Not Found" },
+      404,
+    );
+
+    expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(false);
+  });
+
+  test("a click is checked for an App with no installation in the event, outside any run", async () => {
+    const privateKey = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    }).privateKey;
+
+    createCi(createCiTestClient(createFakeSandboxApi()), {
+      github: githubApp({
+        appId: "123",
+        privateKey,
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/installation", { id: 77 });
+
+    gh.route("POST /app/installations/77/access_tokens", {
+      token: "tok",
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/collaborators/octocat/permission", {
+      permission: "write",
+    });
+
+    expect(await mayRerun({ event: action("rerun-fresh"), step })).toBe(true);
+  });
+
+  test("GitHub's own re-request needs no check", async () => {
+    expect(
+      await mayRerun({
+        event: { name: "github-ci/check_run.rerequested", data: {} },
+        step,
+      }),
+    ).toBe(true);
+  });
+
+  test("several pipelines on one commit all re-run from one suite re-request, as one event", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/pulls", [
+      { number: 7, state: "open", head: { sha: "abc1234" } },
+    ]);
+
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const suite = {
+      id: "evt-suite",
+      name: "github-ci/check_suite.rerequested",
+      data: {
+        action: "rerequested",
+        check_suite: { id: 9, head_sha: "abc1234", head_branch: "feature" },
+        repository: { full_name: "inngest/inngest-js", default_branch: "main" },
+        _github: { delivery: "delivery-2" },
+      },
+    };
+
+    for (const id of ["pr", "lint"]) {
+      await rerunEventFor({
+        event: suite,
+        step,
+        client: { send } as never,
+        config: { id } as never,
+      });
+    }
+
+    expect(send).toHaveBeenCalledTimes(2);
+
+    const ids = send.mock.calls.map((call) => {
+      return (call as unknown as [{ id: string }])[0].id;
+    });
+
+    expect(new Set(ids)).toEqual(new Set(["ci-rerun-delivery-2"]));
+  });
+});
+
+describe("a run whose event has no installation", () => {
+  const privateKey = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  }).privateKey;
+
+  test("the repository's own installation is found, so a cancelled run's checks are still closed", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const client = createCiTestClient(createFakeSandboxApi());
+
+      const ci = createCi(client, {
+        github: githubApp({
+          appId: "123",
+          privateKey,
+          baseUrl: "https://api.github.test",
+          fetch: gh.fetch,
+        }),
+      });
+
+      gh.route("GET /repos/inngest/inngest-js/installation", { id: 77 });
+
+      gh.route("POST /app/installations/77/access_tokens", {
+        token: "tok",
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      });
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        total_count: 1,
+        check_runs: [{ id: 5, name: "pr", external_id: "01RUN:pipeline" }],
+      });
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/5", { id: 5 });
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      // The event of a cancelled run: the trigger's payload, with no
+      // `_github` and so no installation.
+      const ended = await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: {
+            run_id: "01RUN",
+            event: {
+              ...prEvent,
+              data: { ...prEvent.data, _github: undefined },
+            },
+          },
+        },
+      });
+
+      expect(ended.type).toBe("function-resolved");
+
+      const requests = gh.requests.map((request) => {
+        return `${request.method} ${request.path}`;
+      });
+
+      expect(requests).toContain("GET /repos/inngest/inngest-js/installation");
+      expect(requests).toContain(
+        "PATCH /repos/inngest/inngest-js/check-runs/5",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

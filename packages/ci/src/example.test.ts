@@ -61,7 +61,7 @@ const makeRepo = ({ withBase }: { withBase: boolean }): string => {
 };
 
 const prEvent = {
-  name: "github/pull_request.opened",
+  name: "github-ci/pull_request.opened",
   data: {
     action: "opened",
     repository: { full_name: "inngest/inngest-js" },
@@ -157,7 +157,7 @@ const buildPipeline = () => {
   const pipeline = ci.pipeline(
     {
       id: "pr",
-      on: [{ event: "github/pull_request.opened" }],
+      on: [{ event: "github-ci/pull_request.opened" }],
       singleton: { key: "event.data.pull_request.number", mode: "cancel" },
     },
     async () => {
@@ -314,7 +314,7 @@ describe("the example's pr pipeline", () => {
 
     expect(
       failed.every((entry) => {
-        return entry.title === "`pnpm test` exited with 1";
+        return entry.title?.endsWith("(exit 1)");
       }),
     ).toBe(true);
 
@@ -349,6 +349,6 @@ describe("the example's pr pipeline", () => {
     });
 
     expect(pipelineCheck?.conclusion).toBe("failure");
-    expect(pipelineCheck?.title).toContain("exited with 1");
+    expect(pipelineCheck?.title).toContain("(exit 1)");
   });
 });

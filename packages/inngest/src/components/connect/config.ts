@@ -22,8 +22,15 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
-import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
-import { InngestCommHandler } from "../InngestCommHandler.ts";
+import {
+  type Inngest,
+  internalLoggerSymbol,
+  replacedFnIdsSymbol,
+} from "../Inngest.ts";
+import {
+  InngestCommHandler,
+  withMiddlewareFunctions,
+} from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { sdkFeatureObservations } from "../sdkFeatureObservations.ts";
 import type {
@@ -66,9 +73,25 @@ function collectFunctions(
     if (result[client.id]) {
       throw new Error(`Duplicate app id: ${client.id}`);
     }
+
+    const replacedFnIds = app.functions
+      ? []
+      : client.funcs
+          .map((fn) => fn.id(client.id))
+          .filter((id) => client[replacedFnIdsSymbol].has(id));
+    if (replacedFnIds.length > 0) {
+      client[internalLoggerSymbol].warn(
+        { functionIds: replacedFnIds },
+        "Function IDs were defined more than once on this client; connecting with the last definition of each. If these are different functions, give them unique IDs.",
+      );
+    }
+
     result[client.id] = {
       client: app.client,
-      functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
+      functions: withMiddlewareFunctions(
+        client,
+        (app.functions as InngestFunction.Any[]) ?? client.funcs,
+      ),
     };
   }
 

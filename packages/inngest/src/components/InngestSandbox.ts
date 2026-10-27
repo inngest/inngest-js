@@ -1,5 +1,14 @@
 export type { SandboxClientConfig } from "./sandbox/client.ts";
 export { createSandboxClient } from "./sandbox/client.ts";
+export type { CommandError } from "./sandbox/commandError.ts";
+export { getCommandError } from "./sandbox/commandError.ts";
+export type {
+  DollarOptions,
+  DollarPromise,
+  DollarTag,
+  DollarValue,
+  SandboxDollar,
+} from "./sandbox/dollar.ts";
 export {
   createSandboxTools,
   executeSandboxOperation,
@@ -54,6 +63,7 @@ export type {
   SandboxErrorCode,
   SandboxErrorDetail,
   SandboxErrorOptions,
+  SandboxExitCodes,
   SandboxFileDownloadOptions,
   SandboxFileUploadOptions,
   SandboxFileUploadResult,

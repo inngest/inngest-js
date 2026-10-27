@@ -261,8 +261,8 @@ describe("a chain of cached jobs", () => {
     const api = createFakeSandboxApi();
 
     api.script([
-      { match: "pnpm build", ticks: 5 },
-      { match: "pnpm pack", ticks: 8 },
+      { match: "pnpm build", ticks: 10 },
+      { match: "pnpm pack", ticks: 16 },
     ]);
 
     const result = await chain(api);
@@ -799,7 +799,7 @@ describe("a job that starts from a job in its own app", () => {
     // Slow builds keep every run looking before any of them has built.
     api.script([
       { match: "pnpm install", ticks: 5 },
-      { match: "pnpm build", ticks: 5 },
+      { match: "pnpm build", ticks: 10 },
     ]);
 
     const pipeline = chain(api);

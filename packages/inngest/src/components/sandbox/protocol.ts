@@ -14,6 +14,7 @@ import {
   canonicalUuidSchema,
   normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
+  outputEncodingSchema,
   parseWithSchema,
   sandboxImageSchema,
   sandboxNameSchema,
@@ -149,6 +150,9 @@ const waitInputSchema = z
   .object({ timeoutMs: z.number().int().positive().max(300_000) })
   .strict();
 const lifecycleInputSchema = waitInputSchema;
+const processWaitInputSchema = waitInputSchema
+  .extend({ allowRunning: z.boolean().optional() })
+  .strict();
 const outputInputSchema = z
   .object({
     tailBytes: z
@@ -280,7 +284,7 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("process.wait"),
       target: processTargetSchema,
-      input: z.tuple([waitInputSchema]),
+      input: z.tuple([processWaitInputSchema]),
     })
     .strict(),
   z
@@ -363,7 +367,7 @@ const wireCommandResultSchema = z
   .object({
     stdout: z.string(),
     stderr: z.string(),
-    encoding: z.literal("base64"),
+    encoding: outputEncodingSchema,
     exitCode: z.number().int().min(-0x80000000).max(0x7fffffff),
     output: commandOutputMetadataSchema,
   })
@@ -425,7 +429,7 @@ const wireWaitProcessSchema = z
     version: z.literal(1),
     sandboxId: canonicalUuidSchema,
     id: canonicalUuidSchema,
-    state: z.enum(["EXITED", "KILLED", "FAILED", "LOST"]),
+    state: z.enum(["RUNNING", "EXITED", "KILLED", "FAILED", "LOST"]),
     exitCode: z.number().int().optional(),
     terminationSignal: z.number().int().min(1).max(64).optional(),
   })
@@ -765,26 +769,49 @@ export const restoreEnvironment = (
   return environment ? withEnvironment(recorded, environment) : recorded;
 };
 
-export const findSandboxErrorOptions = (
+/**
+ * The first error in `error`'s chain of causes that matches `schema`. A step's
+ * failure reaches the handler as a `StepError`, with what the step threw
+ * nested in its `cause`.
+ */
+export const findInCauses = <T>(
   error: unknown,
-): SandboxErrorOptions | undefined => {
+  schema: {
+    safeParse(value: unknown): { success: true; data: T } | { success: false };
+  },
+): T | undefined => {
   let current = error;
+
   for (let depth = 0; depth < 6 && current; depth++) {
-    const parsed = sandboxErrorPayloadSchema.safeParse(current);
+    const parsed = schema.safeParse(current);
+
     if (parsed.success) {
-      return {
-        ...parsed.data,
-        code: parsed.data.code,
-        details: parsed.data.details as SandboxErrorDetail[],
-        cause: error,
-      };
+      return parsed.data;
     }
+
     if (typeof current !== "object" || !("cause" in current)) {
       return;
     }
+
     current = (current as { cause?: unknown }).cause;
   }
+
   return;
+};
+
+export const findSandboxErrorOptions = (
+  error: unknown,
+): SandboxErrorOptions | undefined => {
+  const data = findInCauses(error, sandboxErrorPayloadSchema);
+
+  return (
+    data && {
+      ...data,
+      code: data.code,
+      details: data.details as SandboxErrorDetail[],
+      cause: error,
+    }
+  );
 };
 
 /**
@@ -803,18 +830,9 @@ export const getSandboxError = (error: unknown): SandboxError | undefined => {
 export const findSandboxValidationError = (
   error: unknown,
 ): { message: string } | undefined => {
-  let current = error;
-  for (let depth = 0; depth < 6 && current; depth++) {
-    const parsed = sandboxValidationErrorPayloadSchema.safeParse(current);
-    if (parsed.success) {
-      return { message: parsed.data.message };
-    }
-    if (typeof current !== "object" || !("cause" in current)) {
-      return;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return;
+  const data = findInCauses(error, sandboxValidationErrorPayloadSchema);
+
+  return data && { message: data.message };
 };
 
 export const operationSandboxId = (

@@ -429,10 +429,14 @@ export const sandboxProcessRefSchema = z
     }
   });
 
+export const outputEncodingSchema = z.enum(["utf8", "base64"]);
+
+export type SandboxOutputEncoding = z.infer<typeof outputEncodingSchema>;
+
 const outputChunkShape = {
   stream: z.enum(["STDOUT", "STDERR"]),
   data: z.string(),
-  encoding: z.literal("base64"),
+  encoding: outputEncodingSchema,
   at: timestampSchema.optional(),
 };
 
@@ -774,6 +778,30 @@ export const normalizeSandboxCommandOptions = (
   };
 };
 
+export const exitCodesSchema = z.union([
+  z.literal("any"),
+  z.array(z.number().int()),
+]);
+
+/**
+ * Rejects keys a `$` does not take, and bad `exitCodes`.
+ */
+export const validateDollarOptions = (options: unknown): void => {
+  parseWithSchema(
+    z
+      .object({
+        id: z.string().optional(),
+        timeout: z.unknown(),
+        env: z.unknown(),
+        cwd: z.unknown(),
+        exitCodes: exitCodesSchema.optional(),
+      })
+      .strict(),
+    options,
+    "$ options",
+  );
+};
+
 export const normalizeSandboxProcessStartOptions = (
   options: SandboxProcessStartOptions,
 ): Omit<SandboxProcessStartOptions, "command"> & { command: string[] } =>
@@ -938,6 +966,70 @@ export const encodeBase64 = (value: Uint8Array): string => {
   return globalThis.btoa(binary);
 };
 
+/**
+ * Decode output data written with either encoding. Steps memoized before text
+ * output existed are always base64.
+ */
+export const decodeOutputData = (
+  value: string,
+  encoding: SandboxOutputEncoding,
+  context: string,
+): Uint8Array => {
+  if (encoding === "utf8") {
+    return new TextEncoder().encode(value);
+  }
+
+  return decodeBase64(value, context);
+};
+
+// A tail cut can start inside a multi-byte character; its leftover
+// continuation bytes (0b10xxxxxx) are not text.
+const dropLeadingContinuationBytes = (bytes: Uint8Array): Uint8Array => {
+  let start = 0;
+  while (start < 3 && start < bytes.length && (bytes[start]! & 0xc0) === 0x80) {
+    start++;
+  }
+
+  return bytes.subarray(start);
+};
+
+const jsonSize = (values: string[]): number => {
+  const encoder = new TextEncoder();
+
+  return values.reduce((sum, value) => {
+    return sum + encoder.encode(JSON.stringify(value)).byteLength;
+  }, 0);
+};
+
+/**
+ * Encode captured output for a step result: readable text when every value is
+ * valid UTF-8 and no larger as JSON than base64 would be (control characters
+ * escape to six bytes), otherwise base64 for all of them. `truncated[i]` marks
+ * values whose start was cut off by a tail truncation.
+ */
+export const encodeOutput = (
+  values: Uint8Array[],
+  { truncated = [] }: { truncated?: boolean[] } = {},
+): { encoding: SandboxOutputEncoding; values: string[] } => {
+  const base64 = values.map(encodeBase64);
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+  try {
+    const text = values.map((value, i) => {
+      return decoder.decode(
+        truncated[i] ? dropLeadingContinuationBytes(value) : value,
+      );
+    });
+    if (jsonSize(text) <= jsonSize(base64)) {
+      return { encoding: "utf8", values: text };
+    }
+  } catch {
+    // Not valid UTF-8, so base64 below.
+  }
+
+  return { encoding: "base64", values: base64 };
+};
+
 export const decodeOutputChunk = (value: unknown): SandboxOutputChunk => {
   const chunk = parseWithSchema(
     restOutputChunkSchema,
@@ -946,7 +1038,7 @@ export const decodeOutputChunk = (value: unknown): SandboxOutputChunk => {
   );
   return {
     stream: chunk.stream,
-    data: decodeBase64(chunk.data, "sandbox output data"),
+    data: decodeOutputData(chunk.data, chunk.encoding, "sandbox output data"),
     ...(chunk.at !== undefined && { at: chunk.at }),
   };
 };

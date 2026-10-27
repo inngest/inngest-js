@@ -48,6 +48,7 @@ export type {
   GetFunctionOutput,
   GetFunctionOutputRaw,
   GetStepTools,
+  GlobalTools,
 } from "./components/Inngest";
 export { Inngest } from "./components/Inngest.ts";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
