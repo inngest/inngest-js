@@ -1,5 +1,11 @@
 # inngest
 
+## 4.26.1
+
+### Patch Changes
+
+- [#1840](https://github.com/inngest/inngest-js/pull/1840) [`ad7c20d5`](https://github.com/inngest/inngest-js/commit/ad7c20d57eedae9671311fd2cdf709b863e98a81) Thanks [@Linell](https://github.com/Linell)! - Fix memory growth when re-creating functions with the same ID. The new definition now replaces the old one in `client.funcs`. `connect()` without `functions` now warns and uses the latest definition instead of throwing `Duplicate function ID`.
+
 ## 4.26.0
 
 ### Minor Changes
