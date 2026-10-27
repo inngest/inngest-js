@@ -175,6 +175,17 @@ export const lockMachineName = (cacheKey: string): string => {
 };
 
 /**
+ * The environment variable that says which run created a build lock's machine.
+ * The platform's create is name-idempotent: the same name and settings give the
+ * same machine back with a 200, and other settings are refused with
+ * `sandbox_name_taken`. The owner is part of those settings, so a rival run's
+ * create conflicts and waits, and this run's own retried create, even after a
+ * lost response, gets its machine back. It is only ever set on create, never
+ * read back.
+ */
+const lockOwnerKey = "INNGEST_CI_LOCK_OWNER";
+
+/**
  * Thrown by the create of a build's lock machine when another build holds the
  * lock's name, which is how a build that lost the lock finds out. It is thrown
  * by that one create and nothing else.
@@ -305,7 +316,7 @@ const startSandbox = async (
     const step = { id: idOf(stage), name: stages[stage] };
 
     // The build that answers for a lock claims it by creating its job's
-    // machine under the lock's name.
+    // machine under the lock's name, owned by this run.
     const lock =
       stage === "first" && run.buildLock?.path === scope.path
         ? run.buildLock.name
@@ -321,6 +332,7 @@ const startSandbox = async (
           : {
               name,
               ...machineConfig,
+              ...(lock ? { environment: { [lockOwnerKey]: run.runId } } : {}),
             },
       )
       .catch((error: unknown) => {

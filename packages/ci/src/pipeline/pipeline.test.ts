@@ -2290,7 +2290,7 @@ describe("matrix", () => {
 
 describe("cache", () => {
   const pushEvent = {
-    name: "github/push",
+    name: "github-ci/push",
     data: {
       ref: "refs/heads/main",
       after: "abc1234",
@@ -2298,7 +2298,7 @@ describe("cache", () => {
     },
   };
 
-  const pushTrigger = [{ event: "github/push" }];
+  const pushTrigger = [{ event: "github-ci/push" }];
 
   /** How many times a command containing `text` ran. */
   const ran = (api: ReturnType<typeof createFakeSandboxApi>, text: string) => {
@@ -4204,7 +4204,7 @@ describe("repository for repo-less triggers", () => {
 
     const result = await runFunction(pipeline, {
       event: {
-        name: "github/issue_comment.created",
+        name: "github-ci/issue_comment.created",
         data: {
           action: "created",
           repository: { full_name: "inngest/inngest-js" },
@@ -5063,7 +5063,7 @@ describe("the Cancel button", () => {
 
       const result = await runFunction(fn, {
         event: {
-          name: "github/check_run.requested_action",
+          name: "github-ci/check_run.requested_action",
           data: {
             action: "requested_action",
             requested_action: { identifier: "cancel" },
@@ -5616,7 +5616,7 @@ describe("a cancelled run's pipeline check", () => {
 describe("comment permissions", () => {
   const commentEvent = (body: string) => {
     return {
-      name: "github/issue_comment.created",
+      name: "github-ci/issue_comment.created",
       data: {
         action: "created",
         repository: { full_name: "inngest/inngest-js" },
@@ -6884,7 +6884,7 @@ describe("a pull request's test merge", () => {
       ci.pipeline(
         {
           id: "push",
-          on: [{ event: "github/push" }],
+          on: [{ event: "github-ci/push" }],
           check: false,
           childRuns: false,
         },
@@ -6894,7 +6894,7 @@ describe("a pull request's test merge", () => {
       ),
       {
         event: {
-          name: "github/push",
+          name: "github-ci/push",
           data: {
             ref: "refs/heads/main",
             after: "cafe1234",

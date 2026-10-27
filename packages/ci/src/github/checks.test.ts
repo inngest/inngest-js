@@ -31,7 +31,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     pipelineId: "pr",
     checkName: "pr",
     jobChecks: true,
-    event: { name: "github/pull_request.opened" },
+    event: { name: "github-ci/pull_request.opened" },
     repo: {
       owner: "inngest",
       name: "inngest-js",
@@ -678,7 +678,7 @@ describe("dev mode", () => {
     const job = ci.job("build", async () => {});
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: [{ event: "github/pull_request.opened" }] },
+      { id: "pr", on: [{ event: "github-ci/pull_request.opened" }] },
       async () => {
         await job();
       },
@@ -686,7 +686,7 @@ describe("dev mode", () => {
 
     const result = await runFunction(pipeline, {
       event: {
-        name: "github/pull_request.opened",
+        name: "github-ci/pull_request.opened",
         data: {
           action: "opened",
           number: 7,

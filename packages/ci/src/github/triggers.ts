@@ -158,7 +158,7 @@ export const pullRequest = <
 
   return types.map((type) => {
     return trigger<PullRequestEventFor<TTypes[number]>>(
-      `github/pull_request.${type}`,
+      `github-ci/pull_request.${type}`,
       condition,
     );
   });
@@ -214,7 +214,7 @@ export const push = (
     repoCondition(opts.repo),
   ]);
 
-  return [trigger<GitHubEventData<PushEvent>>("github/push", condition)];
+  return [trigger<GitHubEventData<PushEvent>>("github-ci/push", condition)];
 };
 
 export interface CommentOptions {
@@ -257,7 +257,7 @@ export const comment = (
   ]);
 
   const created = trigger<GitHubEventData<IssueCommentCreatedEvent>>(
-    "github/issue_comment.created",
+    "github-ci/issue_comment.created",
     condition,
   );
 
@@ -303,7 +303,7 @@ export const mergeGroup = (
 ): CiTrigger<GitHubEventData<MergeGroupChecksRequestedEvent>>[] => {
   return [
     trigger<GitHubEventData<MergeGroupChecksRequestedEvent>>(
-      "github/merge_group.checks_requested",
+      "github-ci/merge_group.checks_requested",
       repoCondition(opts.repo),
     ),
   ];
@@ -335,7 +335,7 @@ export const checkSuite = (
 
   return [
     trigger<GitHubEventData<CheckSuiteCompletedEvent>>(
-      "github/check_suite.completed",
+      "github-ci/check_suite.completed",
       condition,
     ),
   ];

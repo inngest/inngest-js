@@ -124,7 +124,7 @@ export const fixtures = {
     const number = opts.number ?? 1;
 
     return {
-      name: `github/pull_request.${opts.action ?? "opened"}`,
+      name: `github-ci/pull_request.${opts.action ?? "opened"}`,
       data: {
         action: opts.action ?? "opened",
         number,
@@ -165,7 +165,7 @@ export const fixtures = {
     const repo = await repository(fullName);
 
     return {
-      name: "github/push",
+      name: "github-ci/push",
       data: {
         ref,
         before,
@@ -202,7 +202,7 @@ export const fixtures = {
       "main";
 
     return {
-      name: "github/issue_comment.created",
+      name: "github-ci/issue_comment.created",
       data: {
         action: "created",
         issue: {

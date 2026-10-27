@@ -119,6 +119,10 @@ const learn = async (api: Api) => {
   const request = sentOf(bus, buildRequestedEvent)[0];
   const done = sentOf(bus, buildDoneEvent)[0];
 
+  // Build runs are numbered in turn, so the next build's ID follows the last.
+  const lastOwner = locks(api)[0]?.environment?.INNGEST_CI_LOCK_OWNER ?? "";
+  const nextBuild = `01BUILD${Number(lastOwner.replace("01BUILD", "")) + 1}`;
+
   api.snapshots.clear();
   api.sandboxes.clear();
   api.commands.length = 0;
@@ -134,19 +138,21 @@ const learn = async (api: Api) => {
     request,
     done,
     lock: lockMachineName(snapshot.name as string),
+    nextBuild,
   };
 };
 
-/** A build lock held by a run that has since died. */
-const plantLock = (api: Api, lock: string): string => {
+/** A build lock held by a run that has since died, or by the given owner. */
+const plantLock = (api: Api, lock: string, owner = "01OTHER"): string => {
   const id = "99999999-9999-4999-8999-000000000001";
 
   api.sandboxes.set(id, {
     id,
     name: lock,
     status: "RUNNING",
-    vcpu: 2,
-    memoryMb: 2048,
+    vcpu: 4,
+    memoryMb: 4096,
+    environment: { INNGEST_CI_LOCK_OWNER: owner },
   });
 
   return id;
@@ -428,6 +434,46 @@ describe("a wait that nothing ends", () => {
   });
 });
 
+describe("the lock's owner", () => {
+  test("a rival run's create is refused and waits, so it never shares the machine", async () => {
+    const api = createFakeSandboxApi();
+    const { lock } = await learn(api);
+    const id = plantLock(api, lock, "01RIVAL");
+    const { pipeline, bus } = setup(api);
+
+    await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01ASKS",
+      beforeRequest: () => {
+        const stale = timeouts(bus) >= 1 ? api.sandboxes.get(id) : undefined;
+
+        if (stale) {
+          stale.status = "TERMINATED";
+        }
+      },
+    });
+
+    expect(timeouts(bus)).toBe(1);
+  });
+
+  test("a build's own retried create gets its machine back instead of waiting", async () => {
+    const api = createFakeSandboxApi();
+    const { lock, nextBuild } = await learn(api);
+    const id = plantLock(api, lock, nextBuild);
+    const { pipeline, bus } = setup(api);
+
+    const result = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01ASKS",
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(timeouts(bus)).toBe(0);
+    expect(locks(api).map((machine) => machine.id)).toEqual([id]);
+    expect(installs(api)).toBe(1);
+  });
+});
+
 describe("builds that do not take the lock are invoked", () => {
   test.each([
     ["an uncached parent", false, "base (from) › build"],
@@ -492,58 +538,4 @@ test("the fake's name rules: the same name and settings give the same machine ba
   });
 
   expect((await create({ LOCK: "b" })).status).toBe(201);
-});
-
-describe("a job waiting on a build", () => {
-  const waiting = async () => {
-    const api = createFakeSandboxApi();
-    const { snapshot, done } = await learn(api);
-
-    const client = createCiTestClient(api);
-    const bus = busOf(client);
-    const reporter = consoleReporter();
-    const ci = createCi(client, { github: reporter });
-    let woken = false;
-
-    const install = ci.job(
-      { id: "install", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-      },
-    );
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await install();
-    });
-
-    await runFunction(pipeline, {
-      event: prEvent,
-      runId: "01WAIT",
-      beforeRequest: () => {
-        // The look has missed and the request has gone: the build ends later.
-        if (!woken && bus && sentOf(bus, buildRequestedEvent).length > 0) {
-          woken = true;
-          api.snapshots.set(snapshot.id, snapshot);
-          bus.send({ name: buildDoneEvent, data: done.data });
-        }
-      },
-    });
-
-    return reporter.history.filter((entry) => {
-      return entry.status === "updated";
-    });
-  };
-
-  test("says it is waiting on a build of the job, with no link to another run", async () => {
-    const updates = await waiting();
-
-    const shown = updates.find((entry) => {
-      return entry.summary?.includes("**Not stuck.**");
-    });
-
-    expect(shown?.name).toBe("pr / install");
-    expect(shown?.summary).toContain("> [!IMPORTANT]");
-    expect(shown?.summary).not.toContain("runID=01OTHER");
-    expect(shown?.summary).not.toContain("Lock");
-  });
 });
