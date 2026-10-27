@@ -815,15 +815,31 @@ describe("step.sandbox", () => {
         },
       ],
     });
-    expect(operations[2]).toMatchObject({ action: "process.start" });
-    expect(operations[2]).not.toHaveProperty("input.0.signalId");
+    expect(operations[2]).toMatchObject({
+      action: "process.start",
+      input: [{ command: ["/bin/sh", "-c", "npm run build"] }],
+    });
+    expect(
+      Object.keys((operations[2] as { input: object[] }).input[0]!),
+    ).not.toContain("signalId");
+
+    await sandbox.processes.start("undefined-signal", {
+      command: "true",
+      signalId: undefined,
+    });
+    expect(
+      Object.keys((operations[3] as { input: object[] }).input[0]!),
+    ).not.toContain("signalId");
 
     vi.mocked(rawTool).mockClear();
-    for (const signalId of ["", "x".repeat(257)]) {
+    for (const signalId of ["", "   ", "x".repeat(257), "a\0b", 42 as never]) {
       await expect(
         sandbox.processes.start("invalid", { command: "true", signalId }),
       ).rejects.toBeInstanceOf(SandboxValidationError);
     }
+    await expect(
+      sandbox.commands.run("exec-signal", "true", { signalId: "x" } as never),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
     expect(rawTool).not.toHaveBeenCalled();
   });
 

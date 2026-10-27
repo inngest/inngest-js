@@ -275,7 +275,7 @@ export interface SandboxProcessStartOptions {
    * if the sandbox is lost, so keep a timeout on the wait and fall back to
    * `process.wait()`.
    *
-   * The id belongs to you and must be unique per run, for example
+   * The id belongs to you and is shared across your whole environment, so make it unique per run, for example
    * `build:${event.id}`. Start the wait in the same batch as the start, for
    * example with `Promise.all([step.waitForSignal(...), processes.start(...)])`,
    * so the wait exists before the process can end.

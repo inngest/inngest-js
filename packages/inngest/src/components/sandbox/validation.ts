@@ -807,8 +807,17 @@ export const validateDollarOptions = (options: unknown): void => {
  */
 export const sandboxSignalIdSchema = z
   .string()
-  .min(1, "signalId must not be empty")
-  .max(256, "signalId must not exceed 256 characters");
+  .max(256, "signalId must not exceed 256 characters")
+  .refine((value) => value.trim() !== "", "signalId must not be empty")
+  .refine((value) => !value.includes("\0"), "signalId must not contain NUL")
+  .refine((value) => {
+    try {
+      assertValidUnicode(value, "signalId");
+      return true;
+    } catch {
+      return false;
+    }
+  }, "signalId must be valid Unicode");
 
 export const normalizeSandboxProcessStartOptions = (
   options: SandboxProcessStartOptions,
