@@ -18,6 +18,10 @@ const sleep = (ms: number) => {
   });
 };
 
+const list = (state: Record<string, unknown>, key: string) => {
+  return (state[key] as string[] | undefined) ?? [];
+};
+
 const seen = (state: Record<string, unknown>) => {
   return (state.seen as string[] | undefined) ?? [];
 };
@@ -27,23 +31,25 @@ export const agentsHandoff = scenario({
   owner: "agents-f",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client }) => {
-    const record = async (content: string | undefined) => {
-      await kv.thread.update<string[]>("seen", function (found) {
+    const record = async (key: string, content: string | undefined) => {
+      await kv.thread.update<string[]>(key, function (found) {
         return [...(found ?? []), content ?? ""];
       });
     };
 
     const quick = client.agent({ id: "agents-quick" }, async ({ inbox }) => {
       const message = await inbox.next();
+      await record("started", message?.data.content);
       await sleep(2500);
-      await record(message?.data.content);
+      await record("seen", message?.data.content);
 
       return message?.data.content;
     });
     const boom = client.agent({ id: "agents-boom" }, async ({ inbox }) => {
       const message = await inbox.next();
+      await record("started", message?.data.content);
       await sleep(2000);
-      await record(message?.data.content);
+      await record("seen", message?.data.content);
 
       throw new NonRetriableError("boom");
     });
@@ -69,7 +75,9 @@ export const agentsHandoff = scenario({
     // A message that arrives while a run finishes is handed to the next run.
     const quick = handle("agents-quick");
     await quick.send("one");
-    await sleep(800);
+    await ctx.until(quick.state, (s) => {
+      return list(s, "started").includes("one");
+    });
     await quick.send("two");
     const handed = await ctx.eventually(
       "unread message handed to the next run",
@@ -87,7 +95,9 @@ export const agentsHandoff = scenario({
     // A failed run does not strand messages either.
     const boom = handle("agents-boom");
     await boom.send("a");
-    await sleep(800);
+    await ctx.until(boom.state, (s) => {
+      return list(s, "started").includes("a");
+    });
     await boom.send("b");
     const failed = await ctx.eventually(
       "failed run hands unread messages to the next run",

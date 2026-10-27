@@ -442,5 +442,10 @@
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false
+  "sideEffects": [
+    "./components/agent/agentFunction.js",
+    "./components/agent/agentFunction.cjs",
+    "./experimental/agents/index.js",
+    "./experimental/agents/index.cjs"
+  ]
 }

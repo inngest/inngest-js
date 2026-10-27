@@ -46,6 +46,9 @@ export const agentsChat = scenario({
   functions: ({ client }) => {
     const chat = client.agent({ id: agentId }, async ({ inbox, control }) => {
       for await (const message of inbox) {
+        await kv.thread.update<string[]>("started", function (started) {
+          return [...(started ?? []), message.data.content ?? ""];
+        });
         const history = await kv.thread.get<never[]>("history");
         const result = await agent.loop({
           id: `turn${message.seq}`,
@@ -155,7 +158,9 @@ export const agentsChat = scenario({
 
     const t2 = handle("stopnow");
     await t2.send("long");
-    await sleep(400);
+    await ctx.until(t2.state, (s) => {
+      return ((s.started as string[] | undefined) ?? []).includes("long");
+    });
     await t2.stop({ when: "now" });
     await sleep(3000);
     ctx.check(
