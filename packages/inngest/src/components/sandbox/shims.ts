@@ -436,12 +436,13 @@ const wireResult = (result: ShimResult) => {
   }
 
   if ("exec" in result) {
-    const { argv, env } = result.exec;
+    const { argv, env, stdin } = result.exec;
     if (
       (argv !== undefined &&
         !(
           Array.isArray(argv) && argv.every((arg) => typeof arg === "string")
         )) ||
+      (stdin !== undefined && typeof stdin !== "string") ||
       (env !== undefined &&
         !(
           env !== null &&
@@ -450,7 +451,7 @@ const wireResult = (result: ShimResult) => {
         ))
     ) {
       throw new Error(
-        "run() takes argv as strings and env as a record of strings",
+        "run() takes argv as strings, env as a record of strings and stdin as text",
       );
     }
 
@@ -884,6 +885,13 @@ shim.gitCredentials = (
         host: fields.host ?? "",
         ...(fields.path !== undefined && { path: fields.path }),
       });
+      if (
+        credential.expiresAt !== undefined &&
+        !Number.isFinite(credential.expiresAt)
+      ) {
+        throw new Error("expiresAt must be a number of epoch seconds");
+      }
+
       // A newline would add fields to what git reads.
       if (/[\r\n\0]/.test(credential.username + credential.password)) {
         throw new Error("A git credential can't contain line breaks");

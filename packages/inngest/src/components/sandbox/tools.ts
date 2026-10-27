@@ -108,7 +108,7 @@ export interface SandboxToolOptions {
   /**
    * The longest one wait step blocks before a fresh one continues. It is a
    * ceiling, not a delay: a wait ends soon after the process exits or a tool
-   * is called. Default 20s.
+   * is called. Default 20s, or 60s for a command that may run past five minutes. At most 240s.
    */
   waitWindow?: SandboxDuration;
 
