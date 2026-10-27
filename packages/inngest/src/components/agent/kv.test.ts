@@ -34,6 +34,7 @@ describe("kv", () => {
           total,
         );
         out.push(await kv.get("missing"));
+        out.push(await kv.take("a"), await kv.get("a"));
         await kv.clearRun();
         out.push(await kv.all());
       },
@@ -49,6 +50,8 @@ describe("kv", () => {
       "kv.get:run:a",
       "kv.get:function:a",
       "kv.get:run:missing",
+      "kv.take:run:a",
+      "kv.get:run:a",
       "kv.clearRun",
       "kv.all:run",
     ]);

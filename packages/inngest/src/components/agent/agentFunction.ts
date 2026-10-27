@@ -166,6 +166,9 @@ export function createAgentFunction(
         recheck: config.recheck,
       });
 
+      // A stop from before this run started is not for it.
+      await kv().delete(stopFlagKey, { scope: "thread" });
+
       // Tells thread handles a run is live, so a stop has something to stop.
       await kv().set(liveRunKey, { runId: ctx.runId }, { scope: "thread" });
 
@@ -188,7 +191,8 @@ export function createAgentFunction(
           return lines;
         },
         async stop() {
-          return Boolean(await kv().get(stopFlagKey, { scope: "thread" }));
+          // Consumed, so a stop ends one loop and the next message runs normally.
+          return Boolean(await kv().take(stopFlagKey, { scope: "thread" }));
         },
       };
 
@@ -262,7 +266,7 @@ export function createAgentFunction(
             config.event,
             key,
             sessions?.agent_session ?? key,
-            `handoff:${storeKey}:${head}:${attempts}`,
+            `handoff:${storeKey}:${head}:${data.run_id}:${attempts}`,
           ),
         );
         await step.sleep("handoff-wait", handoffWait);

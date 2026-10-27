@@ -103,6 +103,7 @@ export function parseReply(
 export interface RedisClient {
   command(...args: string[]): Promise<Reply>;
   close(): void;
+  isClosed(): boolean;
 }
 
 /**
@@ -192,20 +193,55 @@ export async function connectRedis(url: string): Promise<RedisClient> {
     close() {
       socket.destroy();
     },
+    isClosed() {
+      return dead;
+    },
   };
 
-  if (parsed.password) {
-    const auth = ["AUTH"];
-    if (parsed.username) {
-      auth.push(decodeURIComponent(parsed.username));
+  try {
+    if (parsed.password) {
+      const auth = ["AUTH"];
+      if (parsed.username) {
+        auth.push(decodeURIComponent(parsed.username));
+      }
+      auth.push(decodeURIComponent(parsed.password));
+      await client.command(...auth);
     }
-    auth.push(decodeURIComponent(parsed.password));
-    await client.command(...auth);
-  }
-  const db = parsed.pathname.replace("/", "");
-  if (db) {
-    await client.command("SELECT", db);
+    const db = parsed.pathname.replace("/", "");
+    if (db) {
+      await client.command("SELECT", db);
+    }
+  } catch (error) {
+    socket.destroy();
+    throw error;
   }
 
   return client;
+}
+
+/**
+ * Returns a function that gives the shared connection to `url`, connecting on
+ * first use and again after the connection fails or closes.
+ * @param url Redis URL.
+ */
+export function redisConnection(url: string): () => Promise<RedisClient> {
+  let connection: Promise<RedisClient> | undefined;
+
+  return async function client() {
+    if (connection) {
+      try {
+        const current = await connection;
+        if (!current.isClosed()) {
+          return current;
+        }
+      } catch {
+        // A failed connect is retried below.
+      }
+    }
+
+    const fresh = connectRedis(url);
+    connection = fresh;
+
+    return fresh;
+  };
 }

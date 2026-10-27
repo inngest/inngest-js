@@ -3,7 +3,12 @@
  * Tests for the minimal Redis client against a fake RESP server.
  */
 import * as net from "node:net";
-import { connectRedis, encodeCommand, parseReply } from "./redis.ts";
+import {
+  connectRedis,
+  encodeCommand,
+  parseReply,
+  redisConnection,
+} from "./redis.ts";
 
 describe("RESP", () => {
   test("encodes commands as bulk string arrays", () => {
@@ -50,6 +55,34 @@ describe("RESP", () => {
     expect(await client.command("GET", "k")).toBe("hi");
 
     client.close();
+    server.close();
+  });
+
+  test("a shared connection reconnects after the socket closes", async () => {
+    const sockets: net.Socket[] = [];
+    const server = net.createServer((socket) => {
+      sockets.push(socket);
+      socket.on("data", () => {
+        socket.write("+PONG\r\n");
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+    const client = redisConnection(`redis://127.0.0.1:${port}`);
+
+    expect(await (await client()).command("PING")).toBe("PONG");
+
+    sockets[0]?.destroy();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+
+    expect(await (await client()).command("PING")).toBe("PONG");
+    expect(sockets).toHaveLength(2);
+
+    (await client()).close();
     server.close();
   });
 });

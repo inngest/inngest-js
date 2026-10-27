@@ -91,9 +91,11 @@ describe("agent function", () => {
     const seen: string[][] = [];
     await store.append(scoped("t1"), { kind: "user", content: "go" });
     await store.append(scoped("t1"), { kind: "steer", content: "left" });
-    await kv
-      .at("thread", { env: "default", app: testClientId, thread: "t1" })
-      .set("__stop", { when: "nextTurn" });
+    const threadState = kv.at("thread", {
+      env: "default",
+      app: testClientId,
+      thread: "t1",
+    });
 
     const { fn } = createAgentFunction(
       client,
@@ -103,6 +105,8 @@ describe("agent function", () => {
 
         return agent.loop({
           model: agent.model(async (request) => {
+            // A stop request arrives while the run works.
+            await threadState.set("__stop", { when: "nextTurn" });
             seen.push(
               request.messages.flatMap((m) => {
                 return m.role === "user" ? [m.content] : [];
@@ -126,6 +130,8 @@ describe("agent function", () => {
 
     expect(output).toMatchObject({ stopped: "stopped", turns: 1 });
     expect(seen).toEqual([["go"]]);
+    // The request is consumed, so it does not stop the next loop too.
+    expect(await threadState.get("__stop")).toBeUndefined();
   });
 });
 

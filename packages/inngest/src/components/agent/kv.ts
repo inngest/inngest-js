@@ -15,7 +15,7 @@
 import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
-import { connectRedis, type RedisClient } from "./redis.ts";
+import { redisConnection } from "./redis.ts";
 
 export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
 
@@ -71,16 +71,7 @@ export function memoryKvAdapter(): KvAdapter {
  * @param url `redis://` or `rediss://` URL.
  */
 export function redisKvAdapter(url: string): KvAdapter {
-  let connection: Promise<RedisClient> | undefined;
-
-  function client() {
-    connection ??= connectRedis(url).catch((error) => {
-      connection = undefined;
-      throw error;
-    });
-
-    return connection;
-  }
+  const client = redisConnection(url);
 
   return {
     async get(hash, field) {
@@ -154,6 +145,12 @@ export interface Kv {
     opts?: KvOptions,
   ): Promise<T>;
   delete(key: string, opts?: KvOptions): Promise<void>;
+
+  /**
+   * Reads a key and deletes it in one step. Use it for flags that are
+   * consumed once.
+   */
+  take<T = unknown>(key: string, opts?: KvOptions): Promise<T | undefined>;
   all<T = unknown>(opts?: KvOptions): Promise<Record<string, T>>;
 
   /**
@@ -326,6 +323,16 @@ export function createKv(options: { adapter?: KvAdapter } = {}): Kv {
       await step.run(`kv.delete:${scope}:${key}`, async () => {
         await handle.delete(key);
       });
+    },
+    async take<T>(key: string, opts?: KvOptions) {
+      const { scope, handle } = target(opts);
+
+      return (await step.run(`kv.take:${scope}:${key}`, async () => {
+        const value = (await handle.get<T>(key)) ?? null;
+        await handle.delete(key);
+
+        return value;
+      })) as T | undefined;
     },
     async all<T>(opts?: KvOptions) {
       const { scope, handle } = target(opts);

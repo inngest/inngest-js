@@ -5,7 +5,7 @@
  * platform-owned inbox can replace it without touching the rest. Today it is
  * Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
-import { connectRedis, type RedisClient } from "./redis.ts";
+import { redisConnection } from "./redis.ts";
 
 /**
  * One delivered inbox message.
@@ -146,16 +146,7 @@ return {acked + 1, msg}
  * @param url `redis://` or `rediss://` URL.
  */
 export function redisInboxStore(url: string): InboxStore {
-  let connection: Promise<RedisClient> | undefined;
-
-  function client() {
-    connection ??= connectRedis(url).catch((error) => {
-      connection = undefined;
-      throw error;
-    });
-
-    return connection;
-  }
+  const client = redisConnection(url);
 
   function keys(key: string) {
     const base = `inngest:inbox:${key}`;
