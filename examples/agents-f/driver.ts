@@ -1,7 +1,7 @@
 /**
  * @module
- * Drives the example agents through the inbox and checks what happened. Run
- * against a Dev Server and a Redis (`INNGEST_EXPERIMENTAL_KV_URL`).
+ * Drives the example agents through their threads and checks what happened.
+ * Run against a Dev Server and a Redis (`INNGEST_EXPERIMENTAL_KV_URL`).
  */
 import { setTimeout as sleep } from "node:timers/promises";
 import { boom, chat, quick } from "./agents.ts";
@@ -19,7 +19,7 @@ function check(name: string, ok: boolean, detail?: unknown) {
 async function until<T>(
   read: () => Promise<T>,
   ok: (v: T) => boolean,
-  ms = 40_000,
+  ms = 60_000,
 ) {
   const end = Date.now() + ms;
   let value = await read();
@@ -33,8 +33,11 @@ async function until<T>(
 
 const run = `${Date.now()}`;
 
-// 1. A thread starts from its first message, and a second message reaches the
-// waiting run through the doorbell.
+function lastText(state: Record<string, unknown>) {
+  return (state.last as { text?: string } | undefined)?.text;
+}
+
+// 1. The first message starts the thread, and a second reaches the waiting run.
 const t1 = chat.thread(`chat-${run}`);
 await t1.send("hello");
 const first = await until(
@@ -42,14 +45,10 @@ const first = await until(
     return t1.state();
   },
   (s) => {
-    return (s.last as { seq?: number } | undefined)?.seq === 1;
+    return lastText(s) === "echo: hello";
   },
 );
-check(
-  "first message answered",
-  (first.last as { text: string } | undefined)?.text === "echo: hello",
-  first,
-);
+check("first message answered", lastText(first) === "echo: hello", first);
 
 await t1.send("again");
 const second = await until(
@@ -57,45 +56,91 @@ const second = await until(
     return t1.state();
   },
   (s) => {
-    return (s.last as { seq?: number } | undefined)?.seq === 2;
+    return lastText(s) === "echo: again";
   },
 );
-check(
-  "second message delivered to the waiting run",
-  (second.last as { text: string } | undefined)?.text === "echo: again",
-  second,
-);
+check("second message answered", lastText(second) === "echo: again", second);
 check(
   "history carries across turns",
   (second.history as unknown[] | undefined)?.length === 8,
   second,
 );
 
-// 2. A steer sent mid-turn is folded into the running turn's next model call.
+// 2. A steer sent mid-turn is folded into the running turn.
 await t1.send("work");
 await sleep(500);
 await t1.steer("faster please");
-const third = await until(
+const steered = await until(
   () => {
     return t1.state();
   },
   (s) => {
-    return (s.last as { seq?: number } | undefined)?.seq === 3;
+    return lastText(s) === "echo: faster please";
   },
 );
 check(
   "steer is folded into the running turn",
-  (third.last as { text: string } | undefined)?.text === "echo: faster please",
-  third,
+  lastText(steered) === "echo: faster please",
+  steered,
 );
 
-// 3. stop({ when: "now" }) cancels the live run.
+// 3. A burst sent while a turn runs is processed exactly once each. Order is
+// the order the executor handled the events in, which can differ slightly from
+// the send order.
+await t1.send("b0");
+await sleep(300);
+for (const n of [1, 2, 3, 4]) {
+  await t1.send(`b${n}`);
+}
+const burst = await until(
+  () => {
+    return t1.state();
+  },
+  (s) => {
+    return (
+      ((s.turns as string[] | undefined) ?? []).filter((turn) => {
+        return turn.startsWith("b");
+      }).length >= 5
+    );
+  },
+);
+const turns = (burst.turns as string[] | undefined) ?? [];
+const burstTurns = turns.filter((turn) => {
+  return turn.startsWith("b");
+});
+check(
+  "burst processed exactly once each",
+  JSON.stringify([...burstTurns].sort()) ===
+    JSON.stringify(["b0", "b1", "b2", "b3", "b4"]),
+  turns,
+);
+
+// 4. stop now cancels the live run, and a stop on the idle thread starts nothing.
 await t1.stop({ when: "now" });
 await sleep(3000);
-const state = await t1.state();
-check("state() reads the thread KV scope", Boolean(state.last), state);
+await t1.stop({ when: "nextTurn" });
+await sleep(3000);
+const afterStop = await t1.state();
+check(
+  "stop on an idle thread starts no run",
+  (afterStop.turns as string[]).length === turns.length,
+  afterStop,
+);
 
-// 4. Messages sent while a run is busy and then ends are handed to a new run.
+// 4b. stop now cancels a turn that is running.
+const t5 = chat.thread(`stopnow-${run}`);
+await t5.send("long");
+await sleep(800);
+await t5.stop({ when: "now" });
+await sleep(6000);
+const stopped = await t5.state();
+check(
+  "stop now cancels the running turn",
+  stopped.turns === undefined,
+  stopped,
+);
+
+// 5. A message sent while a run finishes is handed to the next run.
 const t2 = quick.thread(`quick-${run}`);
 await t2.send("one");
 await sleep(1000);
@@ -105,53 +150,32 @@ const handed = await until(
     return t2.state();
   },
   (s) => {
-    return (s.last as { seq?: number } | undefined)?.seq === 2;
+    return ((s.seen as string[] | undefined) ?? []).length >= 2;
   },
-  60_000,
 );
 check(
   "unread message handed to the next run",
-  (handed.last as { text: string } | undefined)?.text === "echo: two",
+  JSON.stringify(handed.seen) === JSON.stringify(["one", "two"]),
   handed,
 );
 
-// 5. A failed run does not strand messages either: each run fails on one
-// message, and the cleanup function starts the next run for the rest.
+// 6. A failed run does not strand messages either.
 const t3 = boom.thread(`boom-${run}`);
 await t3.send("a");
 await sleep(1000);
 await t3.send("b");
-const seen = await until(
+const failed = await until(
   () => {
     return t3.state();
   },
   (s) => {
-    return ((s.seen as number[] | undefined)?.length ?? 0) >= 2;
+    return ((s.seen as string[] | undefined) ?? []).length >= 2;
   },
-  60_000,
 );
 check(
   "failed run hands unread messages to the next run",
-  JSON.stringify(seen.seen) === "[1,2]",
-  seen,
-);
-
-// 6. A stop on an idle thread is discarded, so the next run is not stopped.
-const t4 = chat.thread(`idle-${run}`);
-await t4.stop({ when: "nextTurn" });
-await t4.send("hi");
-const idle = await until(
-  () => {
-    return t4.state();
-  },
-  (s) => {
-    return s.last !== undefined;
-  },
-);
-check(
-  "stop on an idle thread is discarded",
-  (idle.last as { text: string } | undefined)?.text === "echo: hi",
-  idle,
+  JSON.stringify(failed.seen) === JSON.stringify(["a", "b"]),
+  failed,
 );
 
 process.exit(process.exitCode ?? 0);

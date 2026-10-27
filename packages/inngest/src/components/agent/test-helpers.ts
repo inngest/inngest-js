@@ -35,8 +35,13 @@ export const run = async (
   let state: Parameters<typeof runFnWithStack>[1] = {};
 
   for (let request = 0; request < 80; request++) {
+    // A fresh copy per request: defer functions strip metadata from the event.
+    const event = structuredClone(
+      options.event ?? { name: "sub/run", data: {} },
+    );
     const result = await runFnWithStack(fn, state, {
-      event: options.event ?? { name: "sub/run", data: {} },
+      event,
+      events: [structuredClone(event)],
     });
     const found =
       result.type === "step-ran"

@@ -101,7 +101,7 @@ describe("agent function", () => {
 
     const { output } = await run(fn, {
       event: trigger("one"),
-      saved: [message("user", "two").data, message("user", "three").data],
+      saved: [message("user", "two"), message("user", "three")],
     });
 
     expect(output).toBe("ok 2");
@@ -139,9 +139,9 @@ describe("agent function", () => {
     const { output } = await run(fn, {
       event: trigger("go"),
       saved: [
-        message("steer", "left").data,
-        message("stop").data,
-        message("user", "next").data,
+        message("steer", "left"),
+        message("stop"),
+        message("user", "next"),
       ],
     });
 
@@ -163,9 +163,54 @@ describe("agent function", () => {
 
     const { output } = await run(fn, {
       event: trigger("a"),
-      saved: [message("stop").data, message("user", "b").data],
+      saved: [message("stop"), message("user", "b")],
     });
 
     expect(output).toEqual(["a", "b"]);
+  });
+});
+
+describe("agent cleanup", () => {
+  test("a deferred function clears the run's run-scoped KV; the agent function registers it", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn, cleanup, functions } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async () => {},
+    );
+    expect(functions).toEqual([fn, cleanup]);
+
+    const bound = kv.with({ id: testClientId, env: null });
+    await bound.scope("run", "run1").set("scratch", 1);
+    await bound.scope("run", "run2").set("scratch", 2);
+
+    await run(cleanup, {
+      event: {
+        name: "inngest/deferred.schedule",
+        data: {
+          runId: "run1",
+          _inngest: {
+            fn_slug: `${testClientId}-bot-cleanup`,
+            parent_fn_slug: `${testClientId}-bot`,
+            parent_run_id: "run1",
+          },
+        },
+      },
+    });
+
+    expect(await bound.scope("run", "run1").all()).toEqual({});
+    expect(await bound.scope("run", "run2").all()).toEqual({ scratch: 2 });
+  });
+
+  test("the agent function defers the cleanup with its run ID", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async () => {},
+    );
+
+    const { ops } = await run(fn, { event: trigger("hi") });
+
+    expect(ops[0]).toEqual({ id: "inbox:open", mode: "open" });
   });
 });

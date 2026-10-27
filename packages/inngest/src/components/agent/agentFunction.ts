@@ -17,9 +17,10 @@
  * The public name of this entry point is not settled; it is exported from
  * `index.ts` in one line.
  */
+import { createDefer } from "../DeferredFunction.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
-import type { Kv } from "./kv.ts";
+import { kv as defaultKv, type Kv } from "./kv.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -74,6 +75,17 @@ export interface AgentFunction {
   fn: InngestFunction.Any;
 
   /**
+   * Runs after every run of `fn` ends, whichever way, and removes the run's
+   * run-scoped KV keys.
+   */
+  cleanup: InngestFunction.Any;
+
+  /**
+   * Both functions, ready to pass to `serve()`.
+   */
+  functions: InngestFunction.Any[];
+
+  /**
    * The agent's address, `"<appId>/<functionId>"`.
    */
   ref: string;
@@ -87,16 +99,21 @@ export interface AgentFunction {
 }
 
 /**
- * A view of the inbox that skips stop messages: while the agent is waiting
- * for its next message there is nothing to stop.
- * @param inbox The thread subscription.
+ * The thread's view of its subscription: messages are the `data` of the
+ * events, and stop messages are skipped, because while the agent waits for its
+ * next message there is nothing to stop.
+ * @param inbox The subscription to the thread's events.
  */
-function withoutStops(
-  inbox: Subscription<ThreadMessage>,
+function threadInbox(
+  inbox: Subscription<{ data: ThreadMessage }>,
 ): Subscription<ThreadMessage> {
+  function unwrap(message: InboxMessage<{ data: ThreadMessage }> | null) {
+    return message ? { seq: message.seq, data: message.data.data } : null;
+  }
+
   async function next() {
     for (;;) {
-      const message = await inbox.next();
+      const message = unwrap(await inbox.next());
       if (!message || message.data.kind !== "stop") {
         return message;
       }
@@ -104,8 +121,16 @@ function withoutStops(
   }
 
   return {
-    ...inbox,
     next,
+    async poll() {
+      return unwrap(await inbox.poll());
+    },
+    putBack(message) {
+      inbox.putBack({ seq: message.seq, data: { data: message.data } });
+    },
+    close() {
+      return inbox.close();
+    },
     [Symbol.asyncIterator]() {
       return {
         async next() {
@@ -138,6 +163,17 @@ export function createAgentFunction(
 ): AgentFunction {
   const ref = `${client.id}/${config.id}`;
 
+  const cleanup = createDefer(
+    client,
+    { id: `${config.id}-cleanup` },
+    async ({ event }) => {
+      // The KV call is its own step.
+      await (config.kv ?? defaultKv)
+        .scope("run", (event.data as { runId: string }).runId)
+        .clear();
+    },
+  );
+
   const fn = client.createFunction(
     {
       id: config.id,
@@ -157,20 +193,27 @@ export function createAgentFunction(
         },
       ],
     },
-    async ({ event, step }) => {
+    async ({ event, step, defer, runId }) => {
       const data = event.data as ThreadMessage;
+
+      // Run-scoped KV keys end with the run, whichever way it ends.
+      defer("kv-cleanup", { function: cleanup, data: { runId } });
+
       const thread = getThread(client, ref, data.thread, { kv: config.kv });
 
       // Opened first, so the gap in which a message could be missed is the few
       // milliseconds between the run starting and this op.
-      const subscription = await step.subscribe<ThreadMessage>("inbox", {
-        event: agentMessageEvent,
-        if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
-      });
-      subscription.putBack({ seq: 0, data });
+      const subscription = await step.subscribe<{ data: ThreadMessage }>(
+        "inbox",
+        {
+          event: agentMessageEvent,
+          if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+        },
+      );
+      subscription.putBack({ seq: 0, data: { data } });
 
       let stopRequested = false;
-      const inbox = withoutStops(subscription);
+      const inbox = threadInbox(subscription);
 
       const control = {
         async steer() {
@@ -215,6 +258,8 @@ export function createAgentFunction(
 
   return {
     fn,
+    cleanup,
+    functions: [fn, cleanup],
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });

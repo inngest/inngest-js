@@ -1,6 +1,6 @@
 /**
  * @module
- * Serves the example agent functions and their companions.
+ * Serves the example agent functions.
  */
 import { createServer } from "node:http";
 import { serve } from "inngest/node";

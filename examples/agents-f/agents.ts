@@ -1,15 +1,17 @@
 /**
  * @module
- * Two agent functions on the experimental inbox, each with a scripted model so
- * the example needs no API key.
+ * Three agent functions on `step.subscribe`, each with a scripted model so the
+ * example needs no API key.
  *
- * - `chat` keeps its thread open: every inbox message is a turn, the history
- *   lives in thread KV, and steering and stop requests reach a running turn.
+ * - `chat` keeps its thread open: every message is a turn, the history lives in
+ *   thread KV, and steering and stop messages reach a running turn.
  * - `quick` answers one message and ends, so anything sent while it works is
  *   handed to the thread's next run.
+ * - `boom` fails on every message it reads.
  */
 import { Inngest, NonRetriableError } from "inngest";
-import { agent, createAgentFunction, kv, tool } from "inngest/experimental";
+import { tool } from "inngest/experimental";
+import { agent, createAgentFunction, kv } from "inngest/experimental/agents";
 import { z } from "zod";
 
 export const client = new Inngest({ id: "agents-f" });
@@ -66,73 +68,51 @@ const scriptedModel = () => {
 
 export const chat = createAgentFunction(
   client,
-  { id: "chat", event: "agents-f/chat", recheck: "30s" },
-  async ({ inbox, thread, control }) => {
+  { id: "chat" },
+  async ({ inbox, control }) => {
     for await (const message of inbox) {
-      const history = await kv.get<never[]>("history", { scope: "thread" });
+      const history = await kv.thread.get<never[]>("history");
       const result = await agent.loop({
         id: `turn${message.seq}`,
         model: scriptedModel(),
-        prompt: message.data.content,
+        prompt: message.data.content ?? "",
         history: history ?? [],
         tools: { think },
         ...control,
       });
 
-      await kv.set("history", result.history, { scope: "thread" });
-      await kv.set(
-        "last",
-        { seq: message.seq, text: result.text },
-        {
-          scope: "thread",
-        },
-      );
-      await kv.set("scratch", message.seq);
-      void thread;
+      await kv.thread.set("history", result.history);
+      await kv.thread.set("last", { seq: message.seq, text: result.text });
+      await kv.thread.update<string[]>("turns", function (turns) {
+        return [...(turns ?? []), message.data.content ?? ""];
+      });
     }
   },
 );
 
 export const quick = createAgentFunction(
   client,
-  { id: "quick", event: "agents-f/quick" },
+  { id: "quick" },
   async ({ inbox }) => {
     const message = await inbox.next();
-    if (!message) {
-      return null;
-    }
-
-    const result = await agent.loop({
-      id: `turn${message.seq}`,
-      model: scriptedModel(),
-      prompt: message.data.content,
-      tools: { think },
+    await sleep(3000);
+    await kv.thread.update<string[]>("seen", function (seen) {
+      return [...(seen ?? []), message?.data.content ?? ""];
     });
-    await kv.set(
-      "last",
-      { seq: message.seq, text: result.text },
-      {
-        scope: "thread",
-      },
-    );
 
-    return result.text;
+    return message?.data.content;
   },
 );
 
 export const boom = createAgentFunction(
   client,
-  { id: "boom", event: "agents-f/boom" },
+  { id: "boom" },
   async ({ inbox }) => {
     const message = await inbox.next();
     await sleep(2500);
-    await kv.update<number[]>(
-      "seen",
-      function (seen) {
-        return [...(seen ?? []), message?.seq ?? 0];
-      },
-      { scope: "thread" },
-    );
+    await kv.thread.update<string[]>("seen", function (seen) {
+      return [...(seen ?? []), message?.data.content ?? ""];
+    });
 
     throw new NonRetriableError("boom");
   },
