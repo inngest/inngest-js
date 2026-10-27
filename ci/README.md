@@ -76,3 +76,23 @@ pnpm ci:connect
 ```
 
 The worker logs `Connected 8 functions ACTIVE`. Stop it with Ctrl+C: it drains in-flight runs and disconnects, and events sent while it is down wait for the next connection.
+
+## Run it always-on on Fly
+
+`worker.ts` is the same app as a Connect worker with outbound connections only, so it needs no public port and can restart at any time. `Dockerfile` builds `inngest` and `@inngest/ci` from the repository, then installs `ci/` against them. Build from the repository root:
+
+```sh
+flyctl deploy --config ci/fly.toml --dockerfile ci/Dockerfile --app inngest-js-ci
+```
+
+Secrets, set once with `flyctl secrets set --app inngest-js-ci NAME=...`:
+
+| Secret | Value |
+| --- | --- |
+| `INNGEST_SIGNING_KEY` | The signing key of the Inngest environment. Also authorizes Sandboxes. |
+| `INNGEST_EVENT_KEY` | The environment's event key. |
+| `INNGEST_ENV` | The environment's slug, so check links open the right runs. |
+| `GITHUB_APP_ID` | The App's ID. |
+| `GITHUB_APP_PRIVATE_KEY` | The App's private key, on one line with `\n` for newlines. |
+
+`FLY_MACHINE_ID` is set by Fly and becomes the Connect instance ID. Do not run the Vercel endpoint and the Fly worker for the same environment at once, and stop any local `pnpm ci:connect` first.
