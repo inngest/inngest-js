@@ -4,6 +4,7 @@
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { withMiddlewareFunctions } from "../InngestCommHandler.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent } from "./loop.ts";
@@ -359,5 +360,25 @@ describe("ack order", () => {
 
     // Message 1 is unread, so message 2 must not be acked past it.
     expect(acked).toEqual([]);
+  });
+});
+
+describe("agent registration", () => {
+  test("serving an app serves the agent's function and cleanup, once across agents", () => {
+    const client = makeClient();
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const a = createAgentFunction(client, { id: "a", kv }, async () => {});
+    createAgentFunction(client, { id: "b", kv }, async () => {});
+
+    const served = withMiddlewareFunctions(client, [a.fn]).map((fn) => {
+      return fn.id(client.id);
+    });
+
+    expect(served.sort()).toEqual([
+      `${testClientId}-a`,
+      `${testClientId}-a-cleanup`,
+      `${testClientId}-b`,
+      `${testClientId}-b-cleanup`,
+    ]);
   });
 });

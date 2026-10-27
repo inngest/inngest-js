@@ -66,6 +66,7 @@ import type {
   AgentFunction,
   AgentFunctionConfig,
 } from "./agent/agentFunction.ts";
+import { AgentRegistryMiddleware } from "./agent/register.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
@@ -1419,6 +1420,7 @@ export function builtInMiddleware(baseLogger: Logger) {
         return next().finally(() => this.proxyLogger.flush());
       }
     },
+    AgentRegistryMiddleware,
   ] as const;
 }
 
