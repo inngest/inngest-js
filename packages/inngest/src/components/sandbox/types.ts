@@ -1,8 +1,9 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
-import type { SandboxToolsOptions } from "./tools.ts";
+import type { SandboxTool, SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -580,6 +581,19 @@ export interface SandboxClient {
   };
 }
 
+/**
+ * Tools a model can use in a sandbox, built on the sandbox's own commands and
+ * files.
+ */
+export interface DurableSandboxToolSet {
+  /**
+   * `read`, `write`, `edit`, `search` and `run`, for `agent.loop()`.
+   */
+  code<TName extends CodeToolName = CodeToolName>(
+    options?: CodeToolsOptions<TName>,
+  ): Record<TName, SandboxTool>;
+}
+
 export interface DurableSandbox {
   /**
    * Run a command as one step, from a tagged template. `$.sh` runs a shell
@@ -599,6 +613,7 @@ export interface DurableSandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
+  readonly tools: DurableSandboxToolSet;
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,

@@ -8,9 +8,9 @@
 import { z } from "zod/v4";
 
 import { NonRetriableError } from "../NonRetriableError.ts";
+import type { CodeToolName } from "../sandbox/codeTools.ts";
 import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
-import { type CodeToolName, codeTools } from "./codeTools.ts";
 
 export interface RepoOptions {
   /**
@@ -99,7 +99,7 @@ git -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
  * ```
  */
 export const repo = async (
-  sandbox: DurableSandbox,
+  sandbox: Pick<DurableSandbox, "commands" | "tools">,
   options: RepoOptions,
 ): Promise<Repo> => {
   const { ref, path = "/work" } = options;
@@ -144,7 +144,7 @@ export const repo = async (
     sha: stdout.trim().split("\n").pop() ?? "",
     push,
     tools: {
-      ...codeTools(sandbox, { cwd: path }),
+      ...sandbox.tools.code({ cwd: path }),
       push: tool.group({
         description: "Push a local branch to the remote under the same name.",
         input: z.object({ branch: z.string() }),

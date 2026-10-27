@@ -14,7 +14,6 @@ const say = (text: string): AgentModelResponse => {
     message: { role: "assistant", content: [{ type: "text", text }] },
     text,
     toolCalls: [],
-    done: true,
   };
 };
 
@@ -123,7 +122,6 @@ describe("agent function", () => {
             return {
               message: { role: "assistant", content: [] },
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
-              done: false,
             };
           }),
           prompt: first?.data.content ?? "",
@@ -227,7 +225,6 @@ describe("steering", () => {
             return {
               message: { role: "assistant", content: [] },
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
-              done: false,
             };
           }),
           prompt: first?.data.content ?? "",

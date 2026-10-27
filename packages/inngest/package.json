@@ -19,7 +19,7 @@
     "test:sandbox-live": "pnpm run pb:version && tsx src/components/sandbox/live/run.ts",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
-    "test:types": "tsc --noEmit --project tsconfig.types.json",
+    "test:types": "tsc --noEmit --project tsconfig.types.json && tsc --noEmit --project test/agents-e2e/tsconfig.json",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
