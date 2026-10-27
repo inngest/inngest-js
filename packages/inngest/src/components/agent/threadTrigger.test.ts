@@ -82,7 +82,7 @@ describe("thread key from a trigger", () => {
     expect(agent.functions).toHaveLength(3);
     const sent = (await deliver(agent.starter as never))[0];
 
-    expect(sent?.id).toBe("C1/1.2:evt1");
+    expect(sent?.id).toBe(`${testClientId}/bot:C1/1.2:evt1`);
     expect(sent?.name).toBe("agent/message");
     expect(sent?.data).toMatchObject({
       agent: `${testClientId}/bot`,
@@ -116,6 +116,23 @@ describe("thread key from a trigger", () => {
     expect(sent?.meta).toEqual({
       sessions: { agent_session: "s1", agent_thread: "box:C1" },
     });
+  });
+
+  test("two triggers on one event name are rejected", () => {
+    expect(() => {
+      return createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          kv,
+          on: [
+            { event: "a", thread: () => "t" },
+            { event: "a", thread: () => "u" },
+          ],
+        },
+        async () => {},
+      );
+    }).toThrow(/two triggers/);
   });
 
   test("a trigger with no thread key and no agent thread is rejected when defined", () => {

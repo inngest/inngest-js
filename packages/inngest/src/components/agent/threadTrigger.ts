@@ -15,8 +15,10 @@
  * backend can read it. The singleton key never has to be an expression of the
  * vendor event, so a custom `thread` function needs no CEL.
  */
+
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { type ConfigValue, resolveConfigValue } from "./config.ts";
 import {
   agentMessageEvent,
@@ -125,7 +127,16 @@ export function createThreadStarter(
     return undefined;
   }
 
+  const names = new Set<string>();
+
   for (const trigger of triggers) {
+    if (names.has(trigger.event)) {
+      throw new Error(
+        `Agent "${id}": two triggers on "${trigger.event}"; use one trigger per event name.`,
+      );
+    }
+    names.add(trigger.event);
+
     if (!config.thread && !trigger.thread) {
       throw new Error(
         `Agent "${id}": the trigger "${trigger.event}" supplies no thread key; set \`thread\` on the agent.`,
@@ -163,6 +174,23 @@ export function createThreadStarter(
         ctx,
       );
 
+      for (const [name, key] of [
+        ["thread", thread],
+        ["session", session],
+      ] as const) {
+        if (typeof key !== "string" || key === "") {
+          throw new NonRetriableError(
+            `Agent "${id}": the ${name} key of "${event.name}" must be a non-empty string.`,
+          );
+        }
+      }
+
+      if (!event.id) {
+        throw new NonRetriableError(
+          `Agent "${id}": the trigger event "${event.name}" has no id.`,
+        );
+      }
+
       const data: ThreadMessage = {
         agent: ref,
         thread,
@@ -173,7 +201,7 @@ export function createThreadStarter(
 
       // The ID makes a retry, or the trigger delivered twice, one message.
       await step.sendEvent("deliver", {
-        id: `${thread}:${event.id}`,
+        id: `${ref}:${thread}:${event.id}`,
         name: agentMessageEvent,
         data,
         meta: { sessions: threadSessions(thread, session) },
