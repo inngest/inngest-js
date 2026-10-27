@@ -127,7 +127,7 @@ const assertValidUnicode = (value: string, context: string): void => {
     const codeUnit = value.charCodeAt(index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) {
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
         throw new SandboxValidationError(
           `${context} must not contain an unpaired surrogate`,
         );

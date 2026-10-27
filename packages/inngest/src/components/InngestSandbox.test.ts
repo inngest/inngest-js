@@ -823,16 +823,28 @@ describe("step.sandbox", () => {
       Object.keys((operations[2] as { input: object[] }).input[0]!),
     ).not.toContain("signalId");
 
+    await sandbox.processes.start("longest-signal", {
+      command: "true",
+      signalId: "x".repeat(256),
+    });
+
     await sandbox.processes.start("undefined-signal", {
       command: "true",
       signalId: undefined,
     });
     expect(
-      Object.keys((operations[3] as { input: object[] }).input[0]!),
+      Object.keys((operations[4] as { input: object[] }).input[0]!),
     ).not.toContain("signalId");
 
     vi.mocked(rawTool).mockClear();
-    for (const signalId of ["", "   ", "x".repeat(257), "a\0b", 42 as never]) {
+    for (const signalId of [
+      "",
+      "   ",
+      "x".repeat(257),
+      "a\0b",
+      "\ud800",
+      42 as never,
+    ]) {
       await expect(
         sandbox.processes.start("invalid", { command: "true", signalId }),
       ).rejects.toBeInstanceOf(SandboxValidationError);
