@@ -13,7 +13,7 @@ const client = () => {
 const subscribeOpts = { event: "msg", if: "async.data.t == 't1'" };
 
 describe("step.subscribe", () => {
-  test("opens once, then each message is a numbered, acked step", async () => {
+  test("opens once, then each message is a numbered step; acking is up to the caller", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -23,6 +23,7 @@ describe("step.subscribe", () => {
         await inbox.close();
         for await (const message of inbox) {
           seen.push([message.seq, message.data]);
+          await inbox.ack(message);
         }
 
         return seen;

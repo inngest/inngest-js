@@ -54,6 +54,10 @@ export const run = async (
       return { ops, acked, saved, output: result.data, waiting: false };
     }
 
+    if (result.type === "function-rejected") {
+      return { ops, acked, saved, output: result.error, waiting: false };
+    }
+
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
         return { ops, acked, saved, output: op.data, waiting: false };

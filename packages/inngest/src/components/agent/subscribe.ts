@@ -56,15 +56,16 @@ export interface Subscription<TData = unknown>
 
   /**
    * Reads the next message if it has already arrived, without waiting. Use it
-   * between model calls to fold in messages sent while working. It does not
-   * ack: call `ack()` for a message you handle, or `putBack()` one you don't.
+   * between model calls to fold in messages sent while working. Call `ack()`
+   * for a message you handle, or `putBack()` one you don't.
    */
   poll(): Promise<InboxMessage<TData> | null>;
 
   /**
    * Tells the executor a polled message was handled, so it is not handed to
-   * the thread's next run. `next()` acks the messages it returns; a message
-   * from `poll()` is acked by you, or put back to be read again.
+   * the thread's next run. Neither `next()` nor `poll()` acks: ack a message
+   * once you have handled it, so a run that fails or is cancelled while
+   * handling it leaves it for the next run.
    */
   ack(message: InboxMessage<TData>): Promise<void>;
 
@@ -136,8 +137,6 @@ export async function openSubscription<TData = unknown>(
   async function next(): Promise<InboxMessage<TData> | null> {
     const waiting = held.shift();
     if (waiting) {
-      await ack(waiting);
-
       return waiting;
     }
 
@@ -146,10 +145,7 @@ export async function openSubscription<TData = unknown>(
     }
 
     const seq = read + 1;
-    const message = receive(seq, await op(`${key}:${seq}`, "next", seq));
-    await ack(message);
-
-    return message;
+    return receive(seq, await op(`${key}:${seq}`, "next", seq));
   }
 
   async function poll(): Promise<InboxMessage<TData> | null> {

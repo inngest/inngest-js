@@ -106,51 +106,87 @@ export interface AgentFunction {
  * next message there is nothing to stop.
  * @param inbox The subscription to the thread's events.
  */
-function threadInbox(
-  inbox: Subscription<{ data: ThreadMessage }>,
-): Subscription<ThreadMessage> {
+function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
+  inbox: Subscription<ThreadMessage>;
+  handled: (message: InboxMessage<ThreadMessage>) => void;
+  flush: () => Promise<void>;
+} {
   function unwrap(message: InboxMessage<{ data: ThreadMessage }> | null) {
     return message ? { seq: message.seq, data: message.data.data } : null;
   }
 
+  // Messages the current turn handled. They are acked when the turn is over:
+  // when the agent asks for its next message, or the body returns. A run that
+  // fails or is cancelled mid-turn leaves them unacked, so the executor hands
+  // them to the thread's next run.
+  let pending: InboxMessage<ThreadMessage>[] = [];
+
+  function handled(message: InboxMessage<ThreadMessage>) {
+    pending.push(message);
+  }
+
+  async function flush() {
+    const done = pending.sort((a, b) => {
+      return a.seq - b.seq;
+    });
+    pending = [];
+
+    for (const message of done) {
+      await inbox.ack({ seq: message.seq, data: { data: message.data } });
+    }
+  }
+
   async function next() {
+    await flush();
+
     for (;;) {
       const message = unwrap(await inbox.next());
-      if (!message || message.data.kind !== "stop") {
+      if (!message) {
+        return null;
+      }
+
+      handled(message);
+
+      // While the agent waits for its next message there is nothing to stop.
+      if (message.data.kind !== "stop") {
         return message;
       }
     }
   }
 
   return {
-    next,
-    async poll() {
-      return unwrap(await inbox.poll());
-    },
-    async ack(message) {
-      await inbox.ack({ seq: message.seq, data: { data: message.data } });
-    },
-    putBack(messages) {
-      inbox.putBack(
-        messages.map((message) => {
-          return { seq: message.seq, data: { data: message.data } };
-        }),
-      );
-    },
-    close() {
-      return inbox.close();
-    },
-    [Symbol.asyncIterator]() {
-      return {
-        async next() {
-          const message = await next();
-          if (!message) {
-            return { done: true, value: undefined };
-          }
+    handled,
+    flush,
+    inbox: {
+      next,
+      async poll() {
+        return unwrap(await inbox.poll());
+      },
+      async ack(message) {
+        await inbox.ack({ seq: message.seq, data: { data: message.data } });
+      },
+      putBack(messages) {
+        inbox.putBack(
+          messages.map((message) => {
+            return { seq: message.seq, data: { data: message.data } };
+          }),
+        );
+      },
+      close() {
+        return inbox.close();
+      },
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            const message = await next();
+            if (!message) {
+              return { done: true, value: undefined };
+            }
 
-          return { done: false, value: message };
-        },
-      };
+            return { done: false, value: message };
+          },
+        };
+      },
     },
   };
 }
@@ -222,7 +258,7 @@ export function createAgentFunction(
       subscription.putBack([{ seq: 0, data: { data } }]);
 
       let stopRequested = false;
-      const inbox = threadInbox(subscription);
+      const { inbox, handled, flush } = threadInbox(subscription);
 
       const control = {
         async steer() {
@@ -241,10 +277,10 @@ export function createAgentFunction(
             const kind = message.data.kind;
             if (kind === "steer") {
               lines.push(message.data.content ?? "");
-              await inbox.ack(message);
+              handled(message);
             } else if (kind === "stop") {
               stopRequested = true;
-              await inbox.ack(message);
+              handled(message);
             } else {
               waiting.push(message);
             }
@@ -261,12 +297,17 @@ export function createAgentFunction(
         },
       };
 
-      return body({
+      const result = await body({
         event: event as unknown as AgentBodyContext["event"],
         thread,
         inbox,
         control,
       });
+
+      // The body returned: the last turn is over.
+      await flush();
+
+      return result;
     },
   );
 

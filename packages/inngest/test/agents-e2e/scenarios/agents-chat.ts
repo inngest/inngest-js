@@ -96,7 +96,7 @@ export const agentsChat = scenario({
     );
     ctx.check(
       "history carries across turns",
-      (second.history as unknown[] | undefined)?.length === 6,
+      (second.history as unknown[] | undefined)?.length === 8,
       second,
     );
 
