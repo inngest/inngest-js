@@ -15,6 +15,7 @@ import {
   toolDefinitions,
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
+import { invoke } from "./invoke.ts";
 
 /**
  * One message of the conversation. The loop keeps the `content` of an
@@ -550,4 +551,4 @@ const model = (fn: AgentModel): AgentModel => {
   return fn;
 };
 
-export const agent = { loop, model, toolError };
+export const agent = { loop, model, toolError, invoke };
