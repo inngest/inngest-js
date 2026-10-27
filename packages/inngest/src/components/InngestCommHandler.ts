@@ -315,6 +315,33 @@ const registerResSchema = z.object({
 });
 
 /**
+ * EXPERIMENTAL: `fns` plus the functions the client's middleware provides
+ * through its static `functions` hook, such as the sandbox cleanup, unless
+ * `fns` already has them. A client without middleware that provides any gets
+ * `fns` back unchanged.
+ *
+ * @experimental
+ */
+export const withMiddlewareFunctions = (
+  client: Inngest.Any,
+  fns: readonly InngestFunction.Any[],
+): InngestFunction.Any[] => {
+  const ids = new Set(fns.map((fn) => fn.id(client.id)));
+  const added = client.middleware.flatMap((mw) => {
+    return mw.functions?.({ client }) ?? [];
+  });
+
+  return [
+    ...fns,
+    ...added.filter((fn) => {
+      const id = fn.id(client.id);
+
+      return !ids.has(id) && ids.add(id);
+    }),
+  ];
+};
+
+/**
  * `InngestCommHandler` is a class for handling incoming requests from Inngest (or
  * Inngest's tooling such as the dev server or CLI) and taking appropriate
  * action for any served functions.
@@ -491,10 +518,11 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = (options.functions?.filter(Boolean) ??
+    const servedFns = (options.functions?.filter(Boolean) ??
       []) as InngestFunction.Any[];
+    this.rawFns = withMiddlewareFunctions(this.client, servedFns);
 
-    if (this.rawFns.length !== (options.functions ?? []).length) {
+    if (servedFns.length !== (options.functions ?? []).length) {
       this.client[internalLoggerSymbol].warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );

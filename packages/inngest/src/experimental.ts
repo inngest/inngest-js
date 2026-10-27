@@ -1,6 +1,7 @@
 // AsyncLocalStorage
 
 export * from "./components/agent/index.ts";
+export { registerFunctions } from "./components/agent/register.ts";
 export {
   createDefer,
   DeferredFunction,

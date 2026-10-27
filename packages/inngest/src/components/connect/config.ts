@@ -23,7 +23,10 @@ import {
 import { version } from "../../version.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
-import { InngestCommHandler } from "../InngestCommHandler.ts";
+import {
+  InngestCommHandler,
+  withMiddlewareFunctions,
+} from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { sdkFeatureObservations } from "../sdkFeatureObservations.ts";
 import type {
@@ -68,7 +71,10 @@ function collectFunctions(
     }
     result[client.id] = {
       client: app.client,
-      functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
+      functions: withMiddlewareFunctions(
+        client,
+        (app.functions as InngestFunction.Any[]) ?? client.funcs,
+      ),
     };
   }
 
