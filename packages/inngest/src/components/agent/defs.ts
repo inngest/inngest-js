@@ -93,6 +93,8 @@ export interface SandboxBindingOptions {
 
 export type SandboxBinding = SandboxDefinition | SandboxBindingOptions;
 
+const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 const defineSandbox = (
@@ -186,9 +188,9 @@ const lazySandbox = (
   binding: SandboxBinding,
   sandboxes: DurableSandboxTools,
 ): LazySandbox => {
-  if (!idPattern.test(name)) {
+  if (!namePattern.test(name)) {
     throw new SandboxValidationError(
-      `Invalid sandbox name "${name}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
+      `Invalid sandbox name "${name}": use letters, digits and underscores, starting with a letter, up to 64 characters`,
     );
   }
 
@@ -204,6 +206,7 @@ const lazySandbox = (
   }
 
   let created: Promise<DurableSandbox> | undefined;
+  let closed: Promise<void> | undefined;
 
   const get = (): Promise<DurableSandbox> => {
     created ??= sandboxes.create(name, {
@@ -251,14 +254,18 @@ const lazySandbox = (
     },
     tools,
     get,
-    close: async () => {
-      const sandbox = await created?.catch(() => {
-        return undefined;
-      });
+    close: () => {
+      closed ??= (async () => {
+        const sandbox = await created?.catch(() => {
+          return undefined;
+        });
 
-      if (sandbox) {
-        await destroyQuietly(sandbox, `${name}:destroy`);
-      }
+        if (sandbox) {
+          await destroyQuietly(sandbox, `${name}:destroy`);
+        }
+      })();
+
+      return closed;
     },
   };
 };
@@ -300,7 +307,7 @@ export const sandboxTools = (
 
   for (const handle of Object.values(opened)) {
     for (const [key, entry] of Object.entries(handle.tools)) {
-      if (key in all) {
+      if (Object.hasOwn(all, key)) {
         throw new SandboxValidationError(
           `Two sandbox tools are named "${key}"`,
         );
@@ -320,7 +327,7 @@ export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
   const byId: Record<string, SandboxTool> = {};
 
   for (const entry of tools) {
-    if (entry.id in byId) {
+    if (Object.hasOwn(byId, entry.id)) {
       throw new SandboxValidationError(`Two tools are named "${entry.id}"`);
     }
 

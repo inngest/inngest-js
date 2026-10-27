@@ -191,7 +191,7 @@ describe("validation", () => {
 
   test("rejects a bad binding name, a keepAlive without idle, colliding tool names", () => {
     expect(() => {
-      return openSandboxes({ "my box": def }, sandboxes);
+      return openSandboxes({ "my-box": def }, sandboxes);
     }).toThrow("Invalid sandbox name");
     expect(() => {
       return openSandboxes(
