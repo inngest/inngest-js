@@ -350,8 +350,14 @@ export const withMiddlewareFunctions = (
   const ids = new Set<string>();
   const fns: InngestFunction.Any[] = [];
 
+  for (const item of given) {
+    if (!isFunctionGroup(item)) {
+      ids.add(item.id(client.id));
+    }
+  }
+
   // Functions you list stay as given, so a duplicate still fails loudly. Members
-  // of a group, such as an agent's, are skipped when already present.
+  // of a group, such as an agent's, are skipped when the ID is listed anywhere.
   for (const item of given) {
     if (isFunctionGroup(item)) {
       for (const fn of item.functions) {
@@ -361,7 +367,6 @@ export const withMiddlewareFunctions = (
         }
       }
     } else {
-      ids.add(item.id(client.id));
       fns.push(item);
     }
   }

@@ -105,6 +105,21 @@ describe("serving agents", () => {
     ).toEqual(["app-a", "app-a-cleanup"]);
   });
 
+  test("a group member is skipped when listed explicitly, in either order", () => {
+    const { client, cleanup, agent } = setup();
+    const a = agent("a");
+    const bundle = { functions: [a, cleanup("a-cleanup")] };
+
+    expect(ids(client, withMiddlewareFunctions(client, [bundle, a]))).toEqual([
+      "app-a-cleanup",
+      "app-a",
+    ]);
+    expect(ids(client, withMiddlewareFunctions(client, [a, bundle]))).toEqual([
+      "app-a",
+      "app-a-cleanup",
+    ]);
+  });
+
   test("serve() accepts an agent object in functions", () => {
     const { client, cleanup, agent } = setup();
     const bundle = { functions: [agent("a"), cleanup("a-cleanup")] };
