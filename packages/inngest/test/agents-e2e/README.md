@@ -4,6 +4,8 @@ One way to verify a piece of the agent primitives before it is squash-merged int
 
 The kit fakes everything that is not under test: the model is scripted, Slack, GitHub and the Sandboxes API are fakes that record every call. Redis and the Dev Server are real. There is no live rung: no model key, no real Sandboxes.
 
+This machine is NixOS: a missing binary runs one-off with `, <cmd>` (for example `, sqlite3`, `, python3`, `, flyctl`). Never hunt in `/nix/store` and never skip a check because a tool is missing.
+
 ## The verify ladder
 
 Run in order from the repo root; stop at the first failure. Merge the current `origin/jack/agent-primitives` into your branch first (merge, never rebase).
