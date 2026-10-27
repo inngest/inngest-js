@@ -444,8 +444,7 @@ const wireResult = (result: ShimResult) => {
 
 /**
  * The one tool behind all handler shims. It answers inline in the step that
- * replies to the sandbox, so nothing is stored: a handler may return a
- * credential in `exec.env`. An unknown shim name is an error, since the name
+ * replies to the sandbox, so nothing is stored. An unknown shim name is an error, since the name
  * comes from the sandbox.
  */
 const shimTool = (shims: ProgramShim[]): SandboxTool => {

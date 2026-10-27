@@ -49,7 +49,7 @@ interface Wire {
   exec?: unknown;
 }
 
-describe.skipIf(!backendPath)("tool.shim.git", () => {
+describe.skipIf(!backendPath)("tool.shim.git", { timeout: 60_000 }, () => {
   let remote: GitRemote;
   let root: string;
   const sandbox = localSandbox();
@@ -426,12 +426,93 @@ describe.skipIf(!backendPath)("tool.shim.git", () => {
     ).rejects.toThrow(/listing the remote failed/);
   });
 
+  test("a push of more than 500 commits is refused before the policy runs", async () => {
+    const work = await clone();
+    git(work, "checkout", "--quiet", "-B", "agent/many");
+    for (let at = 0; at < 501; at++) {
+      git(work, "commit", "--quiet", "--allow-empty", "-m", `c${at}`);
+    }
+
+    let asked = false;
+    const out = await call(
+      {
+        policy: () => {
+          asked = true;
+
+          return undefined;
+        },
+      },
+      ["push", "origin", "agent/many"],
+      work,
+    );
+
+    expect(out.exit).toBe(126);
+    expect(out.stderr).toContain("at most 500");
+    expect(asked).toBe(false);
+    expect(remoteHas("refs/heads/agent/many")).toBeUndefined();
+  });
+
+  test("a path git would quote is refused, and a rename shows both paths", async () => {
+    const work = await clone();
+    commit(work, 'src/we"ird.txt', "x\n", "agent/q");
+    const quoted = await call({}, ["push", "origin", "agent/q"], work);
+
+    expect(quoted.exit).toBe(126);
+    expect(quoted.stderr).toContain("can't check");
+
+    git(work, "checkout", "--quiet", "-B", "agent/r", "main");
+    git(work, "mv", "README.md", "src/readme.md");
+    git(work, "commit", "--quiet", "-m", "move");
+    let paths: string[] = [];
+    await call(
+      {
+        policy: (push) => {
+          paths = push.paths;
+
+          return undefined;
+        },
+      },
+      ["push", "origin", "agent/r"],
+      work,
+    );
+
+    expect(paths).toEqual(["README.md", "src/readme.md"]);
+  });
+
+  test("more than one ref at a time is refused", async () => {
+    const work = await clone();
+    commit(work, "src/m.ts", "export const m = 1;\n", "agent/m");
+
+    const out = await call({}, ["push", "origin", "agent/m", "main"], work);
+
+    expect(out.exit).toBe(126);
+    expect(remoteHas("refs/heads/agent/m")).toBeUndefined();
+  });
+
+  test("-u sets the upstream", async () => {
+    const work = await clone();
+    commit(work, "src/u.ts", "export const u = 1;\n", "agent/u");
+
+    await call({}, ["push", "-u", "origin", "agent/u"], work);
+
+    expect(git(work, "config", "branch.agent/u.remote")).toBe("origin");
+  });
+
   test("options are validated", () => {
     expect(() => {
       return tool.shim.git({ remote: "", token: () => "t" });
     }).toThrow("remote URL");
     expect(() => {
-      return tool.shim.git({ remote: "https://x/y.git" } as never);
+      return tool.shim.git({
+        remote: "https://user:secret@x.com/y.git",
+        token: () => "t",
+      });
+    }).toThrow("without a user name or password");
+    expect(() => {
+      return tool.shim.git({ remote: "file:///tmp/y.git", token: () => "t" });
+    }).toThrow("http(s)");
+    expect(() => {
+      return tool.shim.git({ remote: "https://x.com/y.git" } as never);
     }).toThrow("token function");
     expect(() => {
       return tool.shim.git({

@@ -59,7 +59,8 @@ export interface GitPush {
   fastForward: boolean;
 
   /**
-   * The commits the remote does not have yet, newest first (at most 500).
+   * The commits the remote does not have yet, newest first. A push of more
+   * than 500 is refused before the policy runs.
    */
   commits: { sha: string; author: string; subject: string }[];
 
@@ -120,10 +121,19 @@ export interface GitShimOptions {
 
 type Run = { exitCode: number; stdout: string; stderr: string };
 
-const ok = (result: Run, what: string): string => {
+const maskSecrets = (text: string, secrets: string[]): string => {
+  return secrets.reduce((out, secret) => {
+    return out.split(secret).join("***");
+  }, text);
+};
+
+const ok = (result: Run, what: string, secrets: string[] = []): string => {
   if (result.exitCode !== 0) {
     throw new Error(
-      `${what} failed (${result.exitCode}): ${result.stderr.trim().slice(0, 500)}`,
+      maskSecrets(
+        `${what} failed (${result.exitCode}): ${result.stderr.trim().slice(0, 500)}`,
+        secrets,
+      ),
     );
   }
 
@@ -274,6 +284,8 @@ const hostGit = async (
         stderr: Buffer.concat(err).toString("utf8"),
       });
     });
+    // Git may exit before it reads all of a large input.
+    child.stdin.on("error", () => {});
     child.stdin.end(options.input ?? "");
   });
 };
@@ -320,6 +332,23 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
     throw new SandboxValidationError("tool.shim.git needs a remote URL");
   }
 
+  // The URL is shown to the sandbox, so it must carry no credential.
+  let parsedRemote: URL | undefined;
+  try {
+    parsedRemote = new URL(options.remote);
+  } catch {}
+
+  if (
+    !parsedRemote ||
+    !["https:", "http:"].includes(parsedRemote.protocol) ||
+    parsedRemote.username !== "" ||
+    parsedRemote.password !== ""
+  ) {
+    throw new SandboxValidationError(
+      "tool.shim.git needs an http(s) remote URL without a user name or password; give the token in token",
+    );
+  }
+
   if (typeof options.token !== "function") {
     throw new SandboxValidationError("tool.shim.git needs a token function");
   }
@@ -348,11 +377,7 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
     };
   };
 
-  const masked = (text: string, secrets: string[]): string => {
-    return secrets.reduce((out, secret) => {
-      return out.split(secret).join("***");
-    }, text);
-  };
+  const masked = maskSecrets;
 
   const withTemp = async <T>(fn: (dir: string) => Promise<T>): Promise<T> => {
     const { mkdtemp, rm } = await import("node:fs/promises");
@@ -411,11 +436,11 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
       }
 
       const archive = await scratchPath(call.idempotencyKey, "repo.tar");
-      await call.sandbox.files.upload({
-        path: archive,
-        data: new Uint8Array(tar),
-      });
       try {
+        await call.sandbox.files.upload({
+          path: archive,
+          data: new Uint8Array(tar),
+        });
         ok(
           await sandboxRun(call.sandbox, [
             "/bin/sh",
@@ -477,12 +502,13 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
         .pop() ||
         "repo");
     const bare = await scratchPath(call.idempotencyKey, "clone");
-    await sendRepo(call, bare, [
-      ...(depth ? ["--depth", depth, `--no-single-branch`] : []),
-      ...(branch ? ["--branch", branch] : []),
-    ]);
 
     try {
+      await sendRepo(call, bare, [
+        ...(depth ? ["--depth", depth, `--no-single-branch`] : []),
+        ...(branch ? ["--branch", branch] : []),
+      ]);
+
       const result = await sandboxRun(
         call.sandbox,
         [
@@ -531,9 +557,10 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
     }
 
     const bare = await scratchPath(call.idempotencyKey, "fetch");
-    await sendRepo(call, bare, []);
 
     try {
+      await sendRepo(call, bare, []);
+
       const result = await sandboxRun(
         call.sandbox,
         [
@@ -584,6 +611,10 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
     const wanted = specs.length > 0 ? specs : [head];
     if (wanted[0] === "") {
       return "HEAD isn't on a branch; name the branch to push";
+    }
+
+    if (wanted.length > 1) {
+      return unsupported("Pushing more than one ref at once");
     }
 
     const targets: { src: string; dst: string }[] = [];
@@ -692,6 +723,12 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
           await call.sandbox.files.download({ path: bundle })
         ).arrayBuffer(),
       );
+      // The file may have changed since it was measured.
+      if (data.byteLength > maxBytes) {
+        return call.refuse(
+          `the push is more than the ${maxBytes} bytes this shim accepts`,
+        );
+      }
 
       const outcome: PushOutcome = await withTemp<PushOutcome>(async (dir) => {
         const { writeFile } = await import("node:fs/promises");
@@ -724,6 +761,7 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
             signal: call.signal,
           }),
           "listing the remote",
+          auth.mask,
         )
           .split("\n")
           .filter(Boolean)
@@ -732,13 +770,17 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
 
             return { sha, ref };
           });
-        const known = advertised
-          .map((entry) => {
-            return entry.sha;
-          })
-          .filter((sha, at, all) => {
-            return /^[0-9a-f]{40,64}$/.test(sha) && all.indexOf(sha) === at;
-          });
+        const known = [
+          ...new Set(
+            advertised
+              .map((entry) => {
+                return entry.sha;
+              })
+              .filter((sha) => {
+                return /^[0-9a-f]{40,64}$/.test(sha);
+              }),
+          ),
+        ];
         const present = new Set<string>(
           (
             await hostGit(
@@ -776,11 +818,14 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
           const listed = (
             await hostGit(
               [
+                "-c",
+                "core.quotePath=false",
                 "log",
                 "--stdin",
                 "-m",
+                "--no-renames",
                 "-n",
-                "500",
+                "501",
                 "--name-only",
                 "--format=%x01%H%x1f%an%x1f%s",
               ],
@@ -799,6 +844,23 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
                 paths.add(file);
               }
             }
+          }
+
+          // The policy would see only part of a longer push, or a path that git
+          // printed in quotes, so neither is pushed.
+          if (commits.length > 500) {
+            return { refused: "a push may have at most 500 new commits" };
+          }
+
+          if (
+            [...paths].some((path) => {
+              return path.startsWith('"');
+            })
+          ) {
+            return {
+              refused:
+                "a path in this push has characters this shim can't check",
+            };
           }
 
           const fastForward =
@@ -825,12 +887,16 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
                 return (
                   await hostGit(
                     [
+                      "-c",
+                      "core.quotePath=false",
                       "log",
                       "--stdin",
                       "-m",
                       "-p",
+                      "--binary",
+                      "--no-renames",
                       "-n",
-                      "500",
+                      "501",
                       "--format=%H %s",
                     ],
                     { cwd: repo, input: revs },
@@ -880,16 +946,29 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
               : `   ${oldSha.slice(0, 7)}..${sha.slice(0, 7)}  ${target.src} -> ${ref}`,
           );
           if (ref === target.dst && ref.startsWith("refs/heads/")) {
+            const branch = ref.slice("refs/heads/".length);
             await sandboxRun(
               call.sandbox,
-              [
-                "git",
-                "update-ref",
-                `refs/remotes/origin/${ref.slice("refs/heads/".length)}`,
-                sha,
-              ],
+              ["git", "update-ref", `refs/remotes/origin/${branch}`, sha],
               cwd,
             );
+
+            if (
+              (parsed.values["-u"] ?? parsed.values["--set-upstream"]) !==
+                undefined &&
+              target.src.startsWith("refs/heads/")
+            ) {
+              await sandboxRun(
+                call.sandbox,
+                [
+                  "git",
+                  "branch",
+                  `--set-upstream-to=origin/${branch}`,
+                  target.src.slice("refs/heads/".length),
+                ],
+                cwd,
+              );
+            }
           }
         }
 
