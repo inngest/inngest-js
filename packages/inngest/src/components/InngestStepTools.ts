@@ -34,6 +34,11 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import {
+  createSubscription,
+  type SubscribeOptions,
+  type Subscription,
+} from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
@@ -567,6 +572,56 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * EXPERIMENTAL: a durable inbox. Returns a subscription to iterate with
+     * `for await`; each message is delivered as one memoized step from a
+     * server-side queue, so nothing sent while the function is busy is lost.
+     */
+    subscribe: <TData = unknown>(
+      idOrOptions: StepOptionsOrId,
+      opts: SubscribeOptions,
+    ): Subscription<TData> => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+
+      return createSubscription<TData>(
+        function wait(stepId, waitOpts) {
+          return tools["~waitForInbox"](
+            idOrOptions === id
+              ? stepId
+              : ({ ...(idOrOptions as object), id: stepId } as StepOptions),
+            waitOpts,
+          );
+        },
+        id,
+        opts,
+      );
+    },
+
+    /**
+     * Waits for one message of an inbox. Used by `subscribe`.
+     */
+    "~waitForInbox": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { key: string; timeout: string | number },
+      ) => Promise<{ signal: string; data: unknown } | null>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.WaitForSignal,
+        name: `inbox:${opts.key}`,
+        displayName: name ?? id,
+        opts: {
+          signal: `inbox:${opts.key}`,
+          timeout: timeStr(opts.timeout, client[internalLoggerSymbol]),
+          conflict: "replace",
+          inbox: { key: opts.key },
+        },
+        userland: { id },
+      };
+    }),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried
