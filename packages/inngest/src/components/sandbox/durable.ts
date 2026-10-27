@@ -761,7 +761,6 @@ export const createDurableSandboxFacade = (
       toolOptions,
       exitCodes,
       shims,
-      environment: ownEnvironment,
       ...commandOptions
     } = options ?? {};
 
@@ -769,7 +768,7 @@ export const createDurableSandboxFacade = (
 
     const checked = shims === undefined ? [] : validateShims(shims);
     const binary = checked.some((one) => {
-      return one.kind === "program" && one.handle;
+      return one.kind === "program";
     })
       ? await bundledToolBinary()
       : undefined;
@@ -785,22 +784,6 @@ export const createDurableSandboxFacade = (
 
     const tools =
       ownTools || shimmed ? { ...ownTools, ...shimmed?.tools } : undefined;
-    for (const [key, value] of Object.entries(shimmed?.environment ?? {})) {
-      if (
-        ownEnvironment?.[key] !== undefined &&
-        ownEnvironment[key] !== value
-      ) {
-        throw new SandboxValidationError(
-          `environment.${key} conflicts with the shims, which set it`,
-        );
-      }
-    }
-
-    const environment =
-      shimmed || ownEnvironment
-        ? { ...shimmed?.environment, ...ownEnvironment }
-        : undefined;
-
     const text = commandText(command);
     const timeoutMs =
       commandOptions.timeout === undefined
@@ -823,7 +806,7 @@ export const createDurableSandboxFacade = (
         rawToolResolver,
         sandbox: ref,
         idOrOptions,
-        spec: { ...spec, ...(environment && { environment }), command },
+        spec: { ...spec, command },
         text,
         timeoutMs,
         exitCodes: exitCodes ?? "any",
@@ -836,7 +819,6 @@ export const createDurableSandboxFacade = (
     const toolsTimeoutMs = timeoutMs ?? maxSandboxProcessTimeoutMs;
     const normalized = normalizeSandboxCommandOptions(command, {
       ...commandOptions,
-      ...(environment && { environment }),
       ...(tools && {
         timeout: Math.min(toolsTimeoutMs, maxSandboxProcessTimeoutMs),
       }),

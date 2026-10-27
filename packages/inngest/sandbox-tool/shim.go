@@ -27,6 +27,7 @@ type localReply struct {
 type shimSpec struct {
 	Stdin bool                  `json:"stdin"`
 	Local map[string]localReply `json:"local"`
+	Only  []string              `json:"only"`
 }
 
 type shimCall struct {
@@ -179,6 +180,22 @@ func writeOutputs(stdout, stderr string, stdoutB64, stderrB64 string) {
 	emit(os.Stderr, stderr, stderrB64)
 }
 
+// wantsHandler reports whether the call goes to the host: always without an
+// "only" list, otherwise when one of the arguments is on it.
+func wantsHandler(only []string, args []string) bool {
+	if len(only) == 0 {
+		return true
+	}
+	for _, arg := range args {
+		for _, word := range only {
+			if arg == word {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func runShim(name string, args []string) int {
 	spec, err := loadSpec(name)
 	if err != nil {
@@ -192,7 +209,7 @@ func runShim(name string, args []string) int {
 		}
 	}
 	dir := os.Getenv("INNGEST_TOOLS_DIR")
-	if dir == "" {
+	if dir == "" || !wantsHandler(spec.Only, args) {
 		return runReal(name, args, nil, nil)
 	}
 

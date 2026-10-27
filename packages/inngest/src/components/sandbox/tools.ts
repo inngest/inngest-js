@@ -24,7 +24,11 @@ import { EventType } from "../triggers/triggers.ts";
 import { isInternalTool } from "./internalTool.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
-import { type SandboxDuration, SandboxValidationError } from "./types.ts";
+import {
+  type Sandbox,
+  type SandboxDuration,
+  SandboxValidationError,
+} from "./types.ts";
 
 /**
  * The most a request line from the sandbox may weigh.
@@ -62,6 +66,14 @@ export interface SandboxToolContext {
    * The ID of the run that is calling.
    */
   runId?: string;
+
+  /**
+   * The sandbox the command runs in, for reading and writing its files and
+   * running commands while the command waits for this call. Not set for
+   * tools made with `tool.group()`. Calls on it aren't steps of their own:
+   * they belong to the step that answers the call, so a retry repeats them.
+   */
+  sandbox?: Sandbox;
 }
 
 type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
@@ -113,7 +125,8 @@ export interface SandboxToolOptions {
   waitWindow?: SandboxDuration;
 
   /**
-   * How long one `tool.step()` may run before its step fails. Default 30s.
+   * How long one tool call, or one shim handler, may run before its step
+   * fails. Default 30s.
    */
   toolTimeout?: SandboxDuration;
 
@@ -238,10 +251,11 @@ export const tool = {
    * code runs the program, the handler runs here, in your app, and decides
    * what happens: `run()` the real program (as called, or with another
    * `argv`, extra `env` or `stdin`), `reply()` with an exit code and
-   * output, or `refuse()`. See `shims.ts`.
+   * output, or `refuse()`. The handler gets the `sandbox`, so it can do work
+   * that needs a credential in your app and reply with the result. See
+   * `shims.ts`.
    *
-   * `tool.shim.injectEnv()`, `tool.shim.gitCredentials()` and
-   * `tool.shim.hostEnv()` are shims for the common cases.
+   * `tool.shim.git()` and `tool.shim.config()` are shims for the common cases.
    *
    * @example
    * ```ts

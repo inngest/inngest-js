@@ -4,34 +4,41 @@
  * a sandbox command. When code runs it, the shim calls its handler in your app
  * through a tool, and the handler returns one of two things: run the real
  * program (optionally with another argv, extra environment or stdin), or
- * reply with an exit code, stdout and stderr. Declining, faking and running on
- * the host are all replies; injecting a credential and rewriting are runs.
+ * reply with an exit code, stdout and stderr. Declining, faking and doing the
+ * work in your app are all replies; rewriting is a run.
+ *
+ * Credentials never enter the sandbox. A handler that needs one does the work
+ * in your app and replies with the result: it gets the `sandbox` of its
+ * command to move files in and out (see `tool.shim.git()`, which pushes from
+ * your app with a token only your app holds). `run()` is for programs that
+ * need no secret.
  *
  * Shims are made with `tool.shim()` and passed in `shims` on `commands.run()`
- * or `$`. `tool.shim.injectEnv()`, `tool.shim.gitCredentials()` and
- * `tool.shim.hostEnv()` are small shims built on the same pieces.
+ * or `$`. `tool.shim.git()` and `tool.shim.config()` are shims for the common
+ * cases.
  *
  * Shims are built on tools (`tools.ts`, `toolRunner.ts`). They are a
- * convenience, a credential channel and an audit log, not a boundary: code can
- * call the real program by its absolute path.
+ * convenience and an audit log, not a boundary: code can call the real
+ * program by its absolute path, and until egress is closed it can reach the
+ * network without them.
  *
  * A handler runs in the step that replies to the sandbox, so a retry of that
  * step runs it again: keep it safe to repeat (it gets a stable idempotency
- * key), and expect a credential to be minted again. Its time adds to that
- * step, and calls answered in one round wait for the slowest of them.
+ * key). Its time adds to that step, and calls answered in one round wait for
+ * the slowest of them.
  *
- * A shim with a handler is the `inngest-tool` binary under another name
- * (`toolBinary.ts`). A shim that only injects environment is a few lines of
- * `sh` that read each value with `inngest-tool env`. Code in the sandbox finds
- * out what is shimmed with `inngest-tool shims` (every shim and the host
- * values it may read); `INNGEST_SHIMS` lists the shimmed program names.
+ * A shim is the `inngest-tool` binary under another name (`toolBinary.ts`).
+ * Code in the sandbox finds out what is shimmed with `inngest-tool shims`
+ * (every shim and the config it may read); `INNGEST_SHIMS` lists the shimmed
+ * program names.
  */
 import { z } from "zod/v3";
 
+import { type GitShimOptions, gitShimDefinition } from "./gitShim.ts";
 import { internalTool } from "./internalTool.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import type { SandboxTool, SandboxToolContext, SandboxTools } from "./tools.ts";
-import { SandboxValidationError } from "./types.ts";
+import { type Sandbox, SandboxValidationError } from "./types.ts";
 
 /**
  * The tool every handler shim calls. The name of the shim travels in the
@@ -39,14 +46,9 @@ import { SandboxValidationError } from "./types.ts";
  */
 export const shimToolName = "inngestShim";
 
-export const hostEnvToolName = "env";
+export const configToolName = "config";
 
 const envNamePattern = /^(?!__proto__$)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
-
-/**
- * Variables an injecting shim can't set: the launcher itself relies on them.
- */
-const reservedVariables = /^(PATH|IFS|INNGEST_.*)$/;
 
 const shimNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -96,6 +98,14 @@ export type ShimResult = ShimRun | ShimReply | undefined | void;
  */
 export interface ShimCall extends SandboxToolContext {
   /**
+   * The sandbox the command runs in. The command waits for the handler, so it
+   * can run commands in the sandbox and read and write its files meanwhile.
+   * These calls aren't steps of their own: they belong to the step that
+   * answers the shim, so a retry repeats them.
+   */
+  sandbox: Sandbox;
+
+  /**
    * The shim that was run, such as `git` or `fly`.
    */
   name: string;
@@ -130,19 +140,9 @@ export interface ShimCall extends SandboxToolContext {
 export type ShimHandler = (call: ShimCall) => ShimResult | Promise<ShimResult>;
 
 /**
- * A value from the host: a literal, a function that makes one on each read, or
- * a function whose value is kept in host memory for `ttl` per run.
+ * Plain strings code in the sandbox may read with `inngest-tool config NAME`.
  */
-export type HostEnvValue =
-  | string
-  | (() => string | Promise<string>)
-  | {
-      mint: () => string | Promise<string>;
-      ttl: number;
-      scope?: string;
-    };
-
-export type HostEnv = Record<string, HostEnvValue>;
+export type ShimConfig = Record<string, string>;
 
 export interface ShimOptions {
   /**
@@ -163,34 +163,22 @@ export interface ShimOptions {
   local?: Record<string, { exit: number; stdout?: string; stderr?: string }>;
 
   /**
-   * Added to the command's environment, for programs that must be told about
-   * the shim (see `tool.shim.gitCredentials`).
+   * Call the handler only when one of these words is an argument, such as
+   * `["push", "clone"]`. Any other call runs the real program at once, with
+   * no round trip to your app.
    */
-  environment?: Record<string, string>;
+  only?: string[];
 }
 
 /**
- * What a shim does: a handler that decides, or `inject` alone.
+ * What a shim does: a handler that decides.
  */
-export type ShimDefinition = ShimOptions &
-  (
-    | {
-        /**
-         * Decides what the shim does.
-         */
-        handle: ShimHandler;
-        inject?: never;
-      }
-    | {
-        /**
-         * Instead of a handler: environment variables for the real program,
-         * each read from the host just before it runs. No call to a handler,
-         * no binary.
-         */
-        inject: HostEnv;
-        handle?: never;
-      }
-  );
+export interface ShimDefinition extends ShimOptions {
+  /**
+   * Decides what the shim does.
+   */
+  handle: ShimHandler;
+}
 
 /**
  * A program shim, made with `tool.shim()`.
@@ -202,26 +190,25 @@ export type ProgramShim = ShimDefinition & {
 };
 
 /**
- * The values code may read with `inngest-tool env`, made with
- * `tool.shim.hostEnv()`.
+ * The values code may read with `inngest-tool config`, made with
+ * `tool.shim.config()`.
  */
-export interface HostEnvShim {
+export interface ConfigShim {
   readonly shim: true;
-  readonly kind: "hostEnv";
-  readonly allowed: HostEnv;
+  readonly kind: "config";
+  readonly allowed: ShimConfig;
   readonly description?: string;
 }
 
 /**
  * What `shims` accepts, and nothing else.
  */
-export type SandboxShim = ProgramShim | HostEnvShim;
+export type SandboxShim = ProgramShim | ConfigShim;
 
 /**
- * Checks a host environment: variable names, and values that are strings,
- * functions or `{ mint, ttl }`.
+ * Checks a config: variable names and string values.
  */
-export const validateHostEnv = (option: unknown): void => {
+export const validateConfig = (option: unknown): void => {
   const entries: [unknown, unknown][] =
     option && typeof option === "object" && !Array.isArray(option)
       ? Object.entries(option)
@@ -229,23 +216,18 @@ export const validateHostEnv = (option: unknown): void => {
 
   if (entries.length === 0) {
     throw new SandboxValidationError(
-      "A host environment needs at least one name and value",
+      "A config needs at least one name and value",
     );
   }
 
-  for (const [name, source] of entries) {
-    const valid =
-      typeof source === "string" ||
-      typeof source === "function" ||
-      (typeof source === "object" &&
-        source !== null &&
-        typeof (source as { mint?: unknown }).mint === "function" &&
-        Number.isFinite((source as { ttl?: unknown }).ttl) &&
-        (source as { ttl: number }).ttl > 0);
-
-    if (typeof name !== "string" || !envNamePattern.test(name) || !valid) {
+  for (const [name, value] of entries) {
+    if (
+      typeof name !== "string" ||
+      !envNamePattern.test(name) ||
+      typeof value !== "string"
+    ) {
       throw new SandboxValidationError(
-        `Invalid entry "${String(name).slice(0, 64)}": names are variable names, values a string, a function or { mint, ttl }`,
+        `Invalid entry "${String(name).slice(0, 64)}": names are variable names and values are strings`,
       );
     }
   }
@@ -293,18 +275,23 @@ const shim = (
     );
   }
 
-  if (parsed.inject) {
-    validateHostEnv(parsed.inject);
-
-    if (parsed.stdin || parsed.local) {
-      throw new SandboxValidationError(
-        "stdin and local are for shims with a handle",
-      );
-    }
+  if (typeof parsed.handle !== "function") {
+    throw new SandboxValidationError("handle must be a function");
   }
 
-  if (parsed.handle && typeof parsed.handle !== "function") {
-    throw new SandboxValidationError("handle must be a function");
+  if (
+    parsed.only !== undefined &&
+    !(
+      Array.isArray(parsed.only) &&
+      parsed.only.length > 0 &&
+      parsed.only.every((word) => {
+        return typeof word === "string" && word !== "";
+      })
+    )
+  ) {
+    throw new SandboxValidationError(
+      'only is a list of words, such as ["push"]',
+    );
   }
 
   for (const [first, answer] of Object.entries(parsed.local ?? {})) {
@@ -321,97 +308,78 @@ const shim = (
     }
   }
 
-  // The type says so; this catches callers that cast.
-  if (Boolean(parsed.handle) === Boolean(parsed.inject)) {
-    throw new SandboxValidationError(
-      "A shim needs either a handle or inject, not both",
-    );
-  }
-
   return { ...parsed, shim: true, kind: "program", name };
 };
 
 /**
- * EXPERIMENTAL: A shim that only injects environment variables for the real
- * program, each read from the host when the program starts.
+ * EXPERIMENTAL: The `git` action shim. `git clone` and `git fetch` run on the
+ * host and unpack into the sandbox; `git push` is bundled in the sandbox,
+ * brought home, checked by `policy` and pushed from the host. The token is made
+ * on the host for each operation and never enters the sandbox. Other git
+ * commands run the real git in the sandbox. See `gitShim.ts`.
  *
  * @example
  * ```ts
- * await sandbox.$({
- *   shims: [
- *     tool.shim.injectEnv("fly", { FLY_API_TOKEN: () => mintDeployToken(app) }),
- *   ],
- * }).sh`fly deploy`;
+ * const git = tool.shim.git({
+ *   remote: "https://github.com/acme/app.git",
+ *   token: () => installationToken("acme/app"),
+ *   policy: async (push) => {
+ *     if (!push.branch?.startsWith("agent/")) {
+ *       return { refuse: "agents push to agent/* branches" };
+ *     }
+ *   },
+ * });
+ *
+ * await sandbox.$({ shims: [git] }).sh`git clone https://github.com/acme/app.git work`;
  * ```
  */
-shim.injectEnv = (
-  name: string,
-  env: HostEnv,
-  options: Pick<ShimOptions, "description"> = {},
-): ProgramShim => {
-  return shim(name, {
-    inject: env,
-    description:
-      options.description ??
-      `runs with ${Object.keys(env).join(", ")} set by the host`,
-  });
+shim.git = (options: GitShimOptions): ProgramShim => {
+  return shim("git", gitShimDefinition(options));
 };
 
 /**
  * EXPERIMENTAL: The values code in the sandbox may read with
- * `inngest-tool env NAME`, and nothing else. A list of names reads them from
- * the host's environment; an object gives values, functions that mint one on
- * each read, or `{ mint, ttl, scope }` kept in host memory for `ttl`
- * milliseconds per run, name and scope. The values are never stored in the
- * run.
+ * `inngest-tool config NAME`, and nothing else: plain settings such as a
+ * region or a registry URL, never secrets. A list of names reads their values from
+ * the app's environment; an object gives them.
  *
  * @example
  * ```ts
  * await sandbox.$({
- *   shims: [
- *     tool.shim.hostEnv({
- *       REGION: "iad",
- *       GH_TOKEN: { mint: () => ghToken(repo), ttl: 600_000, scope: repo },
- *     }),
- *   ],
- * }).sh`TOKEN=$(inngest-tool -r env GH_TOKEN) ./deploy.sh`;
+ *   shims: [tool.shim.config({ REGION: "iad" })],
+ * }).sh`./deploy.sh "$(inngest-tool -r config REGION)"`;
  * ```
  */
-shim.hostEnv = (
-  source: readonly string[] | HostEnv,
+shim.config = (
+  source: readonly string[] | ShimConfig,
   options: Pick<ShimOptions, "description"> = {},
-): HostEnvShim => {
-  const allowed = hostEnvFrom(source);
-  validateHostEnv(allowed);
+): ConfigShim => {
+  const allowed = configFrom(source);
+  validateConfig(allowed);
 
   return {
     shim: true,
-    kind: "hostEnv",
+    kind: "config",
     allowed,
     description:
       options.description ??
-      `values to read with inngest-tool env NAME: ${Object.keys(allowed).join(", ")}`,
+      `values to read with inngest-tool config NAME: ${Object.keys(allowed).join(", ")}`,
   };
 };
 
-const hostEnvFrom = (option: readonly string[] | HostEnv): HostEnv => {
+const configFrom = (option: readonly string[] | ShimConfig): ShimConfig => {
   if (!Array.isArray(option)) {
-    return option as HostEnv;
+    return option as ShimConfig;
   }
 
   return Object.fromEntries(
     option.map((name: string) => {
-      return [
-        name,
-        () => {
-          const value = process.env[name];
-          if (value === undefined) {
-            throw new Error(`${name} is not set on the host`);
-          }
+      const value = process.env[name];
+      if (value === undefined) {
+        throw new SandboxValidationError(`${name} is not set`);
+      }
 
-          return value;
-        },
-      ];
+      return [name, value];
     }),
   );
 };
@@ -482,8 +450,8 @@ const wireResult = (result: ShimResult) => {
  */
 const shimTool = (shims: ProgramShim[]): SandboxTool => {
   const handlers = new Map(
-    shims.flatMap((one) => {
-      return one.handle ? [[one.name, one.handle] as const] : [];
+    shims.map((one) => {
+      return [one.name, one.handle] as const;
     }),
   );
 
@@ -497,9 +465,14 @@ const shimTool = (shims: ProgramShim[]): SandboxTool => {
         throw new Error(`Unknown shim: ${call.name.slice(0, 64)}`);
       }
 
+      if (!ctx.sandbox) {
+        throw new Error("A shim handler needs the sandbox of its command");
+      }
+
       return wireResult(
         await handle({
           ...ctx,
+          sandbox: ctx.sandbox,
           ...call,
           run,
           reply,
@@ -512,100 +485,27 @@ const shimTool = (shims: ProgramShim[]): SandboxTool => {
   }) as SandboxTool;
 };
 
-const sourceCache = new Map<
-  string,
-  { expires: number; value: Promise<string> }
->();
-
 /**
- * The built-in `env` tool: `inngest-tool env NAME...` returns the value of
- * one name, or an array for several. Only names in `allowed` can be read.
- * A function is called on each read, so it can mint a fresh value; a
- * `{ mint, ttl }` value is kept in host memory for `ttl` milliseconds per run,
- * so repeated reads share one token and a worker change mints again. There is
- * one cached value per name and `scope` per run: give commands that mint
- * different things for one name (a token per repository, say) different
- * scopes. Results are never stored in the run.
+ * The built-in `config` tool: `inngest-tool config NAME...` returns the value
+ * of one name, or an array for several. Only names in `allowed` can be read.
  */
-const hostEnvTool = (allowed: HostEnv): SandboxTool => {
+const configTool = (allowed: ShimConfig): SandboxTool => {
   return internalTool({
-    description: "Reads allowed environment values of the host",
+    description: "Reads the allowed config values of the host",
     memo: "none" as const,
-    run: async (...args: unknown[]) => {
+    run: (...args: unknown[]) => {
       // A tool without an input schema receives its context last.
-      const ctx = args.at(-1) as SandboxToolContext;
-      const values: string[] = [];
-
-      for (const name of args.slice(0, -1)) {
-        const source =
-          typeof name === "string" && Object.hasOwn(allowed, name)
-            ? allowed[name]
-            : undefined;
-        if (source === undefined) {
+      const values = args.slice(0, -1).map((name) => {
+        if (typeof name !== "string" || !Object.hasOwn(allowed, name)) {
           throw new Error(`Not allowed to read: ${String(name).slice(0, 64)}`);
         }
 
-        if (typeof source === "string") {
-          values.push(source);
-        } else if (typeof source === "function") {
-          values.push(await source());
-        } else if (!ctx.runId) {
-          // Without a run there is no one to share a value with.
-          values.push(await source.mint());
-        } else {
-          const key = `${ctx.runId}\0${String(name)}\0${source.scope ?? ""}`;
-          const now = Date.now();
-          let hit = sourceCache.get(key);
-          if (!hit || hit.expires <= now) {
-            for (const [other, entry] of sourceCache) {
-              if (entry.expires <= now) {
-                sourceCache.delete(other);
-              }
-            }
-
-            hit = {
-              expires: now + source.ttl,
-              value: Promise.resolve(source.mint()),
-            };
-            sourceCache.set(key, hit);
-          }
-
-          try {
-            values.push(await hit.value);
-          } catch (error) {
-            sourceCache.delete(key);
-            throw error;
-          }
-        }
-      }
+        return allowed[name] as string;
+      });
 
       return values.length === 1 ? values[0] : values;
     },
   }) as SandboxTool;
-};
-
-/**
- * The launcher of a shim that only injects: reads each variable from the host
- * with `inngest-tool env`, then runs the real program with it.
- */
-const injectLauncher = (name: string, variables: string[]): string => {
-  const lines = [
-    "#!/bin/sh",
-    // Drop the shims directory wherever the code moved it to in PATH.
-    "d=${0%/*}",
-    "set -f",
-    "p=; IFS=:",
-    'for e in $PATH; do [ "$e" = "$d" ] || p="$p${p:+:}$e"; done',
-    "unset IFS",
-    "PATH=$p",
-    ...variables.map((variable) => {
-      return `${variable}=$(inngest-tool -r env ${variable}) || exit 125`;
-    }),
-    `export ${variables.join(" ")}`,
-    `exec ${name} "$@"`,
-  ];
-
-  return `cat > "$S/bin/${name}" <<'INNGEST_SHIM_SH'\n${lines.join("\n")}\nINNGEST_SHIM_SH\nchmod +x "$S/bin/${name}"`;
 };
 
 /**
@@ -637,13 +537,12 @@ const preludeScript = (
 };
 
 /**
- * What a command with shims runs as: the shims around it, the tools they
- * call, and the environment they need.
+ * What a command with shims runs as: the shims around it and the tools they
+ * call.
  */
 export interface ShimmedCommand {
   command: string[];
   tools: SandboxTools;
-  environment: Record<string, string>;
 }
 
 /**
@@ -665,11 +564,11 @@ export const validateShims = (shims: unknown): readonly SandboxShim[] => {
     }
 
     const key =
-      one.kind === "program" ? (one as ProgramShim).name : hostEnvToolName;
+      one.kind === "program" ? (one as ProgramShim).name : configToolName;
     if (seen.has(key)) {
       throw new SandboxValidationError(
-        key === hostEnvToolName
-          ? "Only one tool.shim.hostEnv() can be passed"
+        key === configToolName
+          ? "Only one tool.shim.config() can be passed"
           : `The shim "${key}" is passed twice`,
       );
     }
@@ -681,7 +580,7 @@ export const validateShims = (shims: unknown): readonly SandboxShim[] => {
 };
 
 /**
- * Wraps `command` so that `shims` are first on `PATH` while it runs. Handler
+ * Wraps `command` so that `shims` are first on `PATH` while it runs. Program
  * shims need `binary`.
  */
 export const withShims = (
@@ -692,25 +591,22 @@ export const withShims = (
   const programs = shims.filter((one): one is ProgramShim => {
     return one.kind === "program";
   });
-  const allowed: HostEnv = {};
+  const allowed: ShimConfig = {};
   const lines: string[] = [];
   const launchers: string[] = [];
-  const handlers = programs.filter((one) => {
-    return one.handle;
-  });
 
   for (const one of shims) {
-    if (one.kind === "hostEnv") {
+    if (one.kind === "config") {
       Object.assign(allowed, one.allowed);
       lines.push(
-        `${hostEnvToolName}: ${plainLine(one.description ?? "values you can read with inngest-tool env NAME")}`,
+        `${configToolName}: ${plainLine(one.description ?? "values you can read with inngest-tool config NAME")}`,
       );
     }
   }
 
-  if (handlers.length > 0 && !options.binary) {
+  if (programs.length > 0 && !options.binary) {
     throw new SandboxValidationError(
-      `Shims with a handle (${handlers
+      `Shims (${programs
         .map((one) => {
           return one.name;
         })
@@ -724,36 +620,12 @@ export const withShims = (
     lines.push(
       `${one.name}: ${plainLine(one.description ?? "handled by the host")}`,
     );
-
-    if (one.handle) {
-      launchers.push(`ln -s "${options.binary?.path}" "$S/bin/${one.name}"`);
-
-      continue;
-    }
-
-    const variables = Object.keys(one.inject ?? {});
-    for (const variable of variables) {
-      if (reservedVariables.test(variable)) {
-        throw new SandboxValidationError(
-          `The variable "${variable}" can't be injected: the shims rely on it`,
-        );
-      }
-
-      if (Object.hasOwn(allowed, variable)) {
-        throw new SandboxValidationError(
-          `The variable "${variable}" is set by more than one shim`,
-        );
-      }
-
-      allowed[variable] = (one.inject as HostEnv)[variable] as HostEnvValue;
-    }
-
-    launchers.push(injectLauncher(one.name, variables));
+    launchers.push(`ln -s "${options.binary?.path}" "$S/bin/${one.name}"`);
   }
 
   const config = Object.fromEntries(
-    programs.map(({ name, stdin, local }) => {
-      return [name, { stdin, local }];
+    programs.map(({ name, stdin, local, only }) => {
+      return [name, { stdin, local, only }];
     }),
   );
   const argv =
@@ -767,149 +639,21 @@ export const withShims = (
     }),
     options.binary?.path,
   );
-  const environment: Record<string, string> = {};
-  for (const one of programs) {
-    for (const [key, value] of Object.entries(one.environment ?? {})) {
-      if (Object.hasOwn(environment, key) && environment[key] !== value) {
-        throw new SandboxValidationError(
-          `Shims set ${key} to different values`,
-        );
-      }
-
-      environment[key] = value;
-    }
-  }
 
   return {
     command: ["/bin/sh", "-c", script, "sh", ...argv],
     tools: {
-      ...(handlers.length > 0 && { [shimToolName]: shimTool(handlers) }),
+      ...(programs.length > 0 && { [shimToolName]: shimTool(programs) }),
       ...(Object.keys(allowed).length > 0 && {
-        [hostEnvToolName]: hostEnvTool(allowed),
+        [configToolName]: configTool(allowed),
       }),
     },
-    environment,
   };
 };
 
-const parseCredentialRequest = (text: string): Record<string, string> => {
-  const fields: Record<string, string> = {};
-
-  for (const line of text.split("\n")) {
-    const at = line.indexOf("=");
-    if (at > 0) {
-      fields[line.slice(0, at)] = line.slice(at + 1);
-    }
-  }
-
-  return fields;
-};
-
-export interface GitCredential {
-  username: string;
-  password: string;
-
-  /**
-   * Epoch seconds. Git forgets the credential after this, whatever a cache
-   * helper says.
-   */
-  expiresAt?: number;
-}
-
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-
-  /**
-   * Set when git sends the path, which it does only with
-   * `credential.useHttpPath`.
-   */
-  path?: string;
-}
-
-/**
- * EXPERIMENTAL: A git credential helper backed by your app. Git asks it for a
- * credential when a fetch or push needs one, and the handler for that host
- * mints it, so the real `git` talks to the real remote with a token that lives
- * for one operation. A host without a handler gets no credential.
- *
- * The token is readable by code in the sandbox (`git credential fill` prints
- * it), so mint tokens scoped to one repository that expire quickly. It is
- * never stored in the run.
- *
- * @example
- * ```ts
- * await sandbox.commands.run("ship", "git push origin HEAD", {
- *   shims: [
- *     tool.shim.gitCredentials({
- *       "github.com": async ({ path }) => {
- *         return { username: "x-access-token", password: await mint(path) };
- *       },
- *     }),
- *   ],
- * });
- * ```
- */
-shim.gitCredentials = (
-  hosts: Record<
-    string,
-    (request: GitCredentialRequest) => GitCredential | Promise<GitCredential>
-  >,
-): ProgramShim => {
-  return shim("git-credential-inngest", {
-    description: `git logins for ${Object.keys(hosts).join(", ")}, minted by the host for each operation`,
-    stdin: true,
-    // git calls "store" after a successful operation and "erase" after a
-    // rejected one. Neither needs your app.
-    local: { store: { exit: 0 }, erase: { exit: 0 } },
-    // The empty value resets helpers configured elsewhere.
-    environment: {
-      GIT_CONFIG_COUNT: "2",
-      GIT_CONFIG_KEY_0: "credential.helper",
-      GIT_CONFIG_VALUE_0: "",
-      GIT_CONFIG_KEY_1: "credential.helper",
-      GIT_CONFIG_VALUE_1: "inngest",
-    },
-    handle: async ({ argv, stdin, reply }) => {
-      const fields = parseCredentialRequest(stdin);
-      const mint =
-        argv[0] === "get" && Object.hasOwn(hosts, fields.host ?? "")
-          ? hosts[fields.host ?? ""]
-          : undefined;
-      if (!mint) {
-        return reply(0);
-      }
-
-      const credential = await mint({
-        protocol: fields.protocol ?? "https",
-        host: fields.host ?? "",
-        ...(fields.path !== undefined && { path: fields.path }),
-      });
-      if (
-        credential.expiresAt !== undefined &&
-        !Number.isFinite(credential.expiresAt)
-      ) {
-        throw new Error("expiresAt must be a number of epoch seconds");
-      }
-
-      // A newline would add fields to what git reads.
-      if (/[\r\n\0]/.test(credential.username + credential.password)) {
-        throw new Error("A git credential can't contain line breaks");
-      }
-
-      return reply(0, {
-        stdout: [
-          `username=${credential.username}`,
-          `password=${credential.password}`,
-          ...(credential.expiresAt === undefined
-            ? []
-            : [`password_expiry_utc=${credential.expiresAt}`]),
-          "",
-          "",
-        ].join("\n"),
-      });
-    },
-  });
-};
-
+export type {
+  GitPolicyResult,
+  GitPush,
+  GitShimOptions,
+} from "./gitShim.ts";
 export { shim };

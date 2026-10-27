@@ -1376,15 +1376,15 @@ describe("shims and long commands on commands.run", () => {
     ).rejects.toThrow("only values made with tool.shim()");
   });
 
-  test("an inject shim adds the env tool and wraps the command", async () => {
+  test("a shim adds the shim tool and wraps the command", async () => {
     const { rawTool, sandbox } = facade();
 
     await sandbox.commands.run("x", "fly deploy", {
-      shims: [tool.shim.injectEnv("fly", { FLY_API_TOKEN: "t" })],
+      shims: [tool.shim("fly", ({ reply }) => reply(0))],
     });
 
     const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
-    expect(Object.keys(request?.tools ?? {})).toEqual(["env"]);
+    expect(Object.keys(request?.tools ?? {})).toEqual(["inngestShim"]);
     // The trace shows the user's command; the process runs it in the shims.
     expect(operation).toMatchObject({
       input: [{ command: ["/bin/sh", "-c", "fly deploy"] }],
@@ -1398,6 +1398,18 @@ describe("shims and long commands on commands.run", () => {
       "-c",
       "fly deploy",
     ]);
+  });
+
+  test("$ passes toolOptions to a command with shims", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.$({
+      shims: [tool.shim("fly", ({ reply }) => reply(0))],
+      toolOptions: { toolTimeout: "2m" },
+    }).sh`fly status`;
+
+    const [, , , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(request?.toolOptions).toEqual({ toolTimeout: "2m" });
   });
 
   test("an empty shims object is no shims", async () => {
@@ -1417,10 +1429,36 @@ describe("shims and long commands on commands.run", () => {
 
     await expect(
       sandbox.commands.run("x", "true", {
-        tools: { env: async () => 1 },
-        shims: [tool.shim.hostEnv(["HOME"])],
+        tools: { config: async () => 1 },
+        shims: [tool.shim.config(["HOME"])],
       }),
-    ).rejects.toThrow('"env" is used by shims');
+    ).rejects.toThrow('"config" is used by shims');
+  });
+
+  test("a tool receives the sandbox of its command", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "mine");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const { host } = createHost(sandbox);
+    let seen: unknown;
+
+    await run(host, {
+      mine: {
+        run: async (ctx: { sandbox?: unknown }) => {
+          seen = ctx.sandbox;
+
+          return "ok";
+        },
+      } as never,
+    });
+
+    expect(seen).toBe(sandbox);
+    expect(replies(fake)).toEqual([{ id: 1, result: "ok" }]);
   });
 
   test("a user tool can't turn on memo none", async () => {
@@ -1454,21 +1492,6 @@ describe("shims and long commands on commands.run", () => {
     const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
     expect(request?.timeoutMs).toBe(2 * 60 * 60 * 1000);
     expect(operation).toMatchObject({ input: [{ timeoutMs: 300_000 }] });
-  });
-
-  test("an environment that fights a shim's is rejected", async () => {
-    const { sandbox } = facade();
-
-    await expect(
-      sandbox.commands.run("x", "git fetch", {
-        shims: [
-          tool.shim.gitCredentials({
-            "github.com": () => ({ username: "u", password: "p" }),
-          }),
-        ],
-        environment: { GIT_CONFIG_COUNT: "0" },
-      }),
-    ).rejects.toThrow("conflicts with the shims");
   });
 
   test("a command with tools that outlives its timeout fails as an exec timeout", async () => {

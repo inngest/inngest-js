@@ -367,3 +367,20 @@ func TestShimsListsWhatIsShimmed(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestShimOnlyCallsHomeForListedWords(t *testing.T) {
+	_, _, env := shimFixture(t, `{"fake":{"only":["push","clone"]}}`)
+	h := newHost(t, shimHandlers(func(args []json.RawMessage) (any, error) {
+		return map[string]any{"exit": 9}, nil
+	}))
+	env = append(env, "INNGEST_TOOLS_DIR="+h.dir)
+	if r := execute(t, env, "", "fake", "status"); r.code != 0 || r.stdout != "argv=status\ntok=\n" {
+		t.Fatalf("unlisted words run the real program: %+v", r)
+	}
+	if n := len(h.callsTo(shimToolName)); n != 0 {
+		t.Fatalf("unlisted words made %d calls", n)
+	}
+	if r := execute(t, env, "", "fake", "-C", "dir", "push"); r.code != 9 {
+		t.Fatalf("a listed word anywhere calls home: %+v", r)
+	}
+}

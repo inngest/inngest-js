@@ -20,7 +20,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { internalTool } from "./internalTool.ts";
 import { type SandboxShim, validateShims, withShims } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import { toolCliScript } from "./toolCli.ts";
@@ -31,6 +30,9 @@ import {
   type SandboxTools,
   tool,
 } from "./tools.ts";
+import type { Sandbox } from "./types.ts";
+
+const fakeSandbox = { id: "sandbox-1" } as Sandbox;
 
 const dirs: string[] = [];
 
@@ -128,6 +130,7 @@ const runWrapped = async (
                 .invoke?.({
                   signal: new AbortController().signal,
                   idempotencyKey: "k",
+                  sandbox: fakeSandbox,
                 })
                 .then(
                   (result: unknown) => {
@@ -153,10 +156,11 @@ const shimmed = (
 ) => {
   const built = withShims(command, shims, { binary: testBinary });
 
-  return runWrapped(built.command, built.tools, {
-    ...built.environment,
-    ...(path && { PATH: `${path}:${process.env.PATH}` }),
-  });
+  return runWrapped(
+    built.command,
+    built.tools,
+    path ? { PATH: `${path}:${process.env.PATH}` } : {},
+  );
 };
 
 describe("inngest-tool", () => {
@@ -269,7 +273,7 @@ describe.skipIf(!hasBinary)("shims", () => {
     return dir;
   };
 
-  test("inject: runs the real program with a credential for this call only", async () => {
+  test("run with env: the real program gets extra environment for this call only", async () => {
     const out = await shimmed(
       "fly deploy --app box; echo after: ${FLY_API_TOKEN:-unset}",
       [
@@ -355,6 +359,7 @@ describe.skipIf(!hasBinary)("shims", () => {
           argv: call.argv,
           key: call.idempotencyKey,
           signal: call.signal instanceof AbortSignal,
+          sandbox: call.sandbox,
         };
 
         return call.reply(0);
@@ -366,6 +371,7 @@ describe.skipIf(!hasBinary)("shims", () => {
       argv: ["one", "two"],
       key: "k",
       signal: true,
+      sandbox: fakeSandbox,
     });
   });
 
@@ -395,6 +401,7 @@ describe.skipIf(!hasBinary)("shims", () => {
       resolved.invoke({
         signal: new AbortController().signal,
         idempotencyKey: "k",
+        sandbox: fakeSandbox,
       }),
     ).rejects.toThrow("Unknown shim");
   });
@@ -433,75 +440,34 @@ describe.skipIf(!hasBinary)("shims", () => {
           description: "deploys through the host",
           handle: ({ reply }) => reply(0),
         }),
-        tool.shim.injectEnv("npm", { NODE_AUTH_TOKEN: "t" }),
-        tool.shim.hostEnv({ REGION: "iad" }),
+        tool.shim.config({ REGION: "iad" }),
       ],
     );
 
     expect(out.stdout).toBe(
       [
-        "env: values to read with inngest-tool env NAME: REGION",
+        "config: values to read with inngest-tool config NAME: REGION",
         "fly: deploys through the host",
-        "npm: runs with NODE_AUTH_TOKEN set by the host",
-        "names=fly,npm",
+        "names=fly",
         "",
       ].join("\n"),
     );
   });
 });
 
-describe("inject and hostEnv", () => {
-  let minted = 0;
-  const inject = [
-    tool.shim.injectEnv("fly", {
-      FLY_API_TOKEN: () => {
-        minted++;
-
-        return `minted-${minted}`;
-      },
-    }),
-  ];
-  const fly = (): string => {
-    const dir = temp();
-    const file = join(dir, "fly");
-    writeFileSync(file, '#!/bin/sh\necho "fly $* $FLY_API_TOKEN"\n');
-    chmodSync(file, 0o755);
-
-    return dir;
-  };
-  const envTool = (...shims: SandboxShim[]): SandboxTools => {
-    return withShims("true", shims).tools;
+describe("config", () => {
+  const configTool = (...shims: SandboxShim[]): SandboxTools => {
+    return withShims("true", shims, { binary: testBinary }).tools;
   };
 
-  test("an inject-only shim is plain sh: reads the value from the host and runs the real program", async () => {
-    const out = await shimmed("fly deploy; fly status", inject, fly());
-
-    expect(out.stdout).toMatch(
-      /^fly deploy minted-\d+\nfly status minted-\d+\n$/,
-    );
-    expect(out.calls).toEqual(["env", "env"]);
-  });
-
-  test("an inject shim still finds the real program when the code moves it in PATH", async () => {
-    const out = await shimmed(
-      'PATH="/usr/bin:$PATH" fly deploy; PATH="$PATH:/tmp" fly status',
-      inject,
-      fly(),
-    );
-
-    expect(out.stdout).toMatch(
-      /^fly deploy minted-\d+\nfly status minted-\d+\n$/,
-    );
-  });
-
-  test("hostEnv reads only allowed names, one value or an array", async () => {
+  test("reads only allowed names, one value or an array", async () => {
     const out = await runWrapped(
       [
         "/bin/sh",
         "-c",
-        "inngest-tool -r env A; echo; inngest-tool env A B; inngest-tool env C",
+        "inngest-tool -r config A; echo; inngest-tool config A B; inngest-tool config C",
       ],
-      envTool(tool.shim.hostEnv({ A: "1", B: () => "2" })),
+      configTool(tool.shim.config({ A: "1", B: "2" })),
     );
 
     expect(out.stdout).toBe('1\n["1","2"]\n');
@@ -511,132 +477,72 @@ describe("inject and hostEnv", () => {
   test("a name list reads the host's environment", async () => {
     process.env.SHIM_TEST_VALUE = "from-host";
     const out = await runWrapped(
-      ["inngest-tool", "-r", "env", "SHIM_TEST_VALUE"],
-      envTool(tool.shim.hostEnv(["SHIM_TEST_VALUE"])),
+      ["inngest-tool", "-r", "config", "SHIM_TEST_VALUE"],
+      configTool(tool.shim.config(["SHIM_TEST_VALUE"])),
     );
 
     expect(out.stdout).toBe("from-host");
   });
 
-  test("minted values are shared per run and scope", async () => {
-    let count = 0;
-    const mint = () => {
-      count++;
-
-      return `v${count}`;
-    };
-    const read = async (scope: string, runId: string) => {
-      const env = envTool(
-        tool.shim.hostEnv({ T: { mint, ttl: 60_000, scope } }),
-      ).env as unknown as { run: (...args: unknown[]) => Promise<unknown> };
-
-      return env.run("T", { runId });
-    };
-
-    expect(await read("a", "run-1")).toBe("v1");
-    expect(await read("a", "run-1")).toBe("v1");
-    expect(await read("b", "run-1")).toBe("v2");
-    expect(await read("a", "run-2")).toBe("v3");
+  test("a name that is not set is an error when the shim is made", () => {
+    expect(() => {
+      return tool.shim.config(["SHIM_TEST_UNSET_NAME"]);
+    }).toThrow("is not set");
   });
 
-  test("hostEnv and injectEnv are validated", () => {
+  test("is validated", () => {
     expect(() => {
-      return tool.shim.hostEnv({ A: 1 as never });
+      return tool.shim.config({ A: 1 as never });
     }).toThrow("Invalid entry");
     expect(() => {
-      return tool.shim.hostEnv({ "bad name": "x" });
+      return tool.shim.config({ A: (() => "x") as never });
     }).toThrow("Invalid entry");
     expect(() => {
-      return tool.shim.hostEnv(JSON.parse('{"__proto__":"x"}'));
+      return tool.shim.config({ "bad name": "x" });
     }).toThrow("Invalid entry");
     expect(() => {
-      return tool.shim.injectEnv("fly", {});
+      return tool.shim.config(JSON.parse('{"__proto__":"x"}'));
+    }).toThrow("Invalid entry");
+    expect(() => {
+      return tool.shim.config({});
     }).toThrow("at least one");
   });
 
-  test("two shims can't inject the same variable", () => {
+  test("only one can be passed", () => {
     expect(() => {
-      return withShims("true", [
-        tool.shim.injectEnv("fly", { T: "1" }),
-        tool.shim.injectEnv("flyctl", { T: "1" }),
+      return validateShims([
+        tool.shim.config({ A: "1" }),
+        tool.shim.config({ B: "2" }),
       ]);
-    }).toThrow("more than one shim");
+    }).toThrow("Only one tool.shim.config()");
   });
 });
 
-describe("a credential helper written in sh", () => {
-  test("git calls inngest-tool directly, with no shim and no node", async () => {
-    const helper =
-      '!f() { test "$1" = get || exit 0; inngest-tool -r --stdin gitCredential; }; f';
-    const tools: SandboxTools = {
-      gitCredential: internalTool({
-        memo: "none",
-        run: (stdin: string) => {
-          return stdin.includes("host=github.com")
-            ? "username=x-access-token\npassword=ghs_sh\n\n"
-            : "";
-        },
-      }) as SandboxTools[string],
-    };
-    const out = await runWrapped(
+describe.skipIf(!hasBinary)("only", () => {
+  test("calls the handler only for the listed words", async () => {
+    const dir = temp();
+    const fake = join(dir, "fake");
+    writeFileSync(fake, '#!/bin/sh\necho "real $*"\n');
+    chmodSync(fake, 0o755);
+    const out = await shimmed(
+      "fake status; fake -C x push",
       [
-        "/bin/sh",
-        "-c",
-        "printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill",
+        tool.shim("fake", {
+          only: ["push"],
+          handle: ({ reply }) => reply(0, { stdout: "handled\n" }),
+        }),
       ],
-      tools,
-      {
-        GIT_CONFIG_COUNT: "2",
-        GIT_CONFIG_KEY_0: "credential.helper",
-        GIT_CONFIG_VALUE_0: "",
-        GIT_CONFIG_KEY_1: "credential.helper",
-        GIT_CONFIG_VALUE_1: helper,
-      },
+      dir,
     );
 
-    expect(out.stdout).toContain("password=ghs_sh\n");
-  });
-});
-
-describe.skipIf(!hasBinary)("tool.shim.gitCredentials", () => {
-  const minted: string[] = [];
-  const shims = [
-    tool.shim.gitCredentials({
-      "github.com": ({ path }) => {
-        minted.push(path ?? "");
-
-        return { username: "x-access-token", password: "ghs_short" };
-      },
-    }),
-  ];
-
-  test("git asks the helper, which answers from the host", async () => {
-    const out = await shimmed(
-      `printf 'protocol=https\\nhost=github.com\\npath=acme/app.git\\n\\n' | git -c credential.useHttpPath=true credential fill`,
-      shims,
-    );
-
-    expect(out.stdout).toContain("username=x-access-token\n");
-    expect(out.stdout).toContain("password=ghs_short\n");
-    expect(minted).toEqual(["acme/app.git"]);
+    expect(out.stdout).toBe("real status\nhandled\n");
+    expect(out.calls).toEqual(["inngestShim"]);
   });
 
-  test("a host without a handler gets no credential and git gives up", async () => {
-    const out = await shimmed(
-      `printf 'protocol=https\\nhost=example.com\\n\\n' | GIT_TERMINAL_PROMPT=0 git credential fill`,
-      shims,
-    );
-
-    expect(out.code).not.toBe(0);
-  });
-
-  test("store and erase are answered in the sandbox", async () => {
-    const out = await shimmed(
-      `printf 'protocol=https\\nhost=github.com\\nusername=u\\npassword=p\\n\\n' | git credential approve; git credential-inngest erase </dev/null`,
-      shims,
-    );
-
-    expect(out.calls).toEqual([]);
+  test("is checked when the shim is made", () => {
+    expect(() => {
+      return tool.shim("x", { handle: () => undefined, only: [] });
+    }).toThrow("only is a list of words");
   });
 });
 
@@ -660,6 +566,7 @@ describe("shim validation", () => {
     return resolved.invoke({
       signal: new AbortController().signal,
       idempotencyKey: "k",
+      sandbox: fakeSandbox,
     });
   };
 
@@ -681,40 +588,6 @@ describe("shim validation", () => {
     ).rejects.toThrow("record of strings");
   });
 
-  test("a git credential can't carry a line break", async () => {
-    const shim = tool.shim.gitCredentials({
-      "github.com": () => ({ username: "u", password: "p\nusername=evil" }),
-    });
-    const built = withShims("true", [shim], { binary: testBinary });
-    const resolved = await resolveToolCall(
-      built.tools,
-      {
-        op: "call",
-        id: 1,
-        tool: "inngestShim",
-        args: [
-          {
-            name: "git-credential-inngest",
-            argv: ["get"],
-            cwd: "/",
-            stdin: "host=github.com\n",
-          },
-        ],
-      },
-      "{}",
-    );
-    if (!("invoke" in resolved) || !resolved.invoke) {
-      throw new Error("expected a call to run");
-    }
-
-    await expect(
-      resolved.invoke({
-        signal: new AbortController().signal,
-        idempotencyKey: "k",
-      }),
-    ).rejects.toThrow("line breaks");
-  });
-
   test("local answers are checked when the shim is made", () => {
     expect(() => {
       return tool.shim("x", {
@@ -727,29 +600,12 @@ describe("shim validation", () => {
     }).toThrow("handle must be a function");
   });
 
-  test("inject can't set the variables the launcher relies on", () => {
-    for (const name of ["PATH", "IFS", "INNGEST_TOOLS_DIR"]) {
-      expect(() => {
-        return withShims("true", [tool.shim.injectEnv("fly", { [name]: "x" })]);
-      }).toThrow("can't be injected");
-    }
-  });
-
-  test("a minted value needs a positive ttl", () => {
-    expect(() => {
-      return tool.shim.hostEnv({ A: { mint: () => "x", ttl: 0 } });
-    }).toThrow("Invalid entry");
-  });
-
   test("a hostile description can't break the shim list or the shell", async () => {
     const out = await shimmed("inngest-tool shims", [
-      tool.shim.injectEnv(
-        "npm",
-        { T: "1" },
-        {
-          description: "x\nINNGEST_SHIM_LIST\n$(touch /tmp/pwned-by-shim) `id`",
-        },
-      ),
+      tool.shim("npm", {
+        handle: ({ reply }) => reply(0),
+        description: "x\nINNGEST_SHIM_LIST\n$(touch /tmp/pwned-by-shim) `id`",
+      }),
     ]);
 
     expect(out.code).toBe(0);

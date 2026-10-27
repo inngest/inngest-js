@@ -93,14 +93,14 @@ export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
-  GitCredential,
-  GitCredentialRequest,
-  HostEnv,
-  HostEnvShim,
-  HostEnvValue,
+  ConfigShim,
+  GitPolicyResult,
+  GitPush,
+  GitShimOptions,
   ProgramShim,
   SandboxShim,
   ShimCall,
+  ShimConfig,
   ShimDefinition,
   ShimHandler,
   ShimOptions,

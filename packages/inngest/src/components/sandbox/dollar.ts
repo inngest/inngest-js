@@ -74,6 +74,11 @@ export interface DollarOptions {
    * allows.
    */
   shims?: SandboxToolsOptions["shims"];
+  /**
+   * EXPERIMENTAL: Limits for the calls shims make to your app, such as how
+   * long a handler may take (`toolTimeout`, 30s unless set).
+   */
+  toolOptions?: SandboxToolsOptions["toolOptions"];
 }
 
 export type DollarTag = (
@@ -373,6 +378,7 @@ export const createDollar = (
       timeout = maxSandboxProcessTimeoutMs,
       exitCodes = [0],
       shims,
+      toolOptions,
     } = defaults;
 
     // Planned now, not when awaited, so `Promise.all` of several commands
@@ -383,6 +389,7 @@ export const createDollar = (
       timeout,
       exitCodes,
       ...(shims && { shims }),
+      ...(toolOptions && { toolOptions }),
     }).catch((error: unknown) => {
       throw asCommandTimeout(error, text, timeout);
     });

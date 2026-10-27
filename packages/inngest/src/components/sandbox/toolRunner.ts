@@ -384,7 +384,12 @@ export const runCommandWithTools = async (
           try {
             const signal = AbortSignal.timeout(toolTimeoutMs);
             const value = await Promise.race([
-              resolved.invoke({ signal, idempotencyKey, runId: host.runId }),
+              resolved.invoke({
+                signal,
+                idempotencyKey,
+                runId: host.runId,
+                sandbox,
+              }),
               timeoutAfter(toolTimeoutMs, call.tool, signal),
             ]);
 
@@ -405,7 +410,12 @@ export const runCommandWithTools = async (
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
           const value = await Promise.race([
-            resolved.invoke({ signal, idempotencyKey, runId: host.runId }),
+            resolved.invoke({
+              signal,
+              idempotencyKey,
+              runId: host.runId,
+              sandbox,
+            }),
             timeoutAfter(toolTimeoutMs, call.tool, signal),
           ]);
 
