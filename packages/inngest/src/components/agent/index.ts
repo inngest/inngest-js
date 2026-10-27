@@ -8,6 +8,22 @@ export type {
   CodeToolsOptions,
 } from "../sandbox/codeTools.ts";
 export type {
+  LazySandbox,
+  SandboxBinding,
+  SandboxBindingOptions,
+  SandboxDefinition,
+  SandboxDefinitionOptions,
+  SandboxHandle,
+  SandboxToolsFactory,
+} from "./defs.ts";
+export {
+  agentTools,
+  openSandboxes,
+  sandbox,
+  sandboxTools,
+  toolNamespaceSeparator,
+} from "./defs.ts";
+export type {
   AgentLoopOptions,
   AgentLoopResult,
   AgentMessage,
