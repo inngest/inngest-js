@@ -58,7 +58,8 @@ export interface ConfigResolver<Config, Modes> {
   /**
    * The resolved value of one field. A lazy field starts on the first call;
    * an eager field shares the work `ready()` started. Every call for a field
-   * returns the same promise.
+   * returns the same promise. Await or catch it: a rejection nobody handles
+   * is an unhandled rejection.
    */
   get<K extends keyof Config>(key: K): Promise<ResolvedConfigValue<Config[K]>>;
 }
@@ -105,7 +106,11 @@ export const resolveConfigValue = async <T, Ctx>(
  * Fields that are `undefined` resolve to `undefined` without being called.
  */
 export const createConfigResolver = <
-  Config extends { [K in keyof Config]: ConfigValue<unknown, Ctx> },
+  Config extends {
+    [K in keyof Config]:
+      | Exclude<Config[K], (...args: never[]) => unknown>
+      | ((ctx: Ctx) => unknown);
+  },
   const Modes extends ConfigModes<Config>,
   Ctx,
 >(options: {
@@ -122,7 +127,7 @@ export const createConfigResolver = <
   /**
    * When each field resolves.
    */
-  modes: Modes;
+  modes: Modes & Record<Exclude<keyof Modes, keyof Config>, never>;
 }): ConfigResolver<Config, Modes> => {
   const { config, ctx, modes } = options;
   const started = new Map<keyof Config, Promise<unknown>>();
@@ -138,6 +143,7 @@ export const createConfigResolver = <
     }
 
     const value = config[key];
+
     const resolving = (async () => {
       try {
         return await resolveConfigValue(value, ctx);
@@ -155,9 +161,11 @@ export const createConfigResolver = <
     get,
     ready: () => {
       if (!ready) {
-        const eager = (Object.keys(modes) as (keyof Config)[]).filter((key) => {
-          return modes[key] === "eager";
-        });
+        const eager = (Object.keys(config) as (keyof Config)[]).filter(
+          (key) => {
+            return modes[key] === "eager";
+          },
+        );
 
         ready = Promise.all(
           eager.map(async (key) => {

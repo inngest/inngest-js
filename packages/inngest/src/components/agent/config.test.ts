@@ -36,6 +36,7 @@ describe("resolveConfigValue", () => {
 describe("createConfigResolver", () => {
   const deferred = () => {
     let resolve: (value: string) => void = () => {};
+
     const promise = new Promise<string>((res) => {
       resolve = res;
     });
@@ -63,6 +64,7 @@ describe("createConfigResolver", () => {
       ctx: {},
       modes: { a: "eager", b: "eager" },
     });
+
     const ready = resolver.ready();
 
     await Promise.resolve();
@@ -77,6 +79,7 @@ describe("createConfigResolver", () => {
     const channel = vi.fn(() => {
       return "slack";
     });
+
     const resolver = createConfigResolver({
       config: { model: "m", channel },
       ctx: {},
@@ -95,6 +98,7 @@ describe("createConfigResolver", () => {
     const model = vi.fn(() => {
       return "m";
     });
+
     const resolver = createConfigResolver({
       config: { model, channel: "C1" },
       ctx: {},
@@ -142,6 +146,7 @@ describe("createConfigResolver", () => {
       ctx: {},
       modes: { channel: "eager" },
     });
+
     const err = await resolver.ready().catch((e: unknown) => {
       return e;
     });
@@ -171,6 +176,7 @@ describe("createConfigResolver", () => {
     const channel = vi.fn(() => {
       return "C1";
     });
+
     const make = () => {
       return createConfigResolver({
         config: { channel },
@@ -199,5 +205,22 @@ describe("createConfigResolver", () => {
     expectTypeOf(resolver.get("model")).toEqualTypeOf<Promise<string>>();
     expectTypeOf(resolver.get("turns")).toEqualTypeOf<Promise<number>>();
     expectTypeOf(resolver.ready()).toEqualTypeOf<Promise<{ model: string }>>();
+  });
+});
+
+describe("createConfigResolver misuse", () => {
+  test("types: a function must accept the context, modes must match", () => {
+    createConfigResolver({
+      // @ts-expect-error the function needs a team the context lacks
+      config: { a: (ctx: { team: string }) => ctx.team },
+      ctx: {},
+      modes: { a: "lazy" },
+    });
+    createConfigResolver({
+      config: { a: 1 },
+      ctx: {},
+      // @ts-expect-error z is not a config field
+      modes: { a: "eager", z: "eager" },
+    });
   });
 });
