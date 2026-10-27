@@ -268,6 +268,59 @@ export class InngestApi {
     });
   }
 
+  /**
+   * EXPERIMENTAL: appends a message to a `step.subscribe` inbox.
+   */
+  async appendInbox(
+    key: string,
+    data: unknown,
+    options?: { headers?: Record<string, string> },
+  ): Promise<Result<{ seq: number; delivered: boolean }, ErrorResponse>> {
+    const url = await this.getTargetUrl(
+      `/v1/inbox/${encodeURIComponent(key)}/messages`,
+    );
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this._fetch(),
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify({ data }),
+        headers: {
+          "Content-Type": "application/json",
+          ...this.apiHeaders,
+          ...options?.headers,
+        },
+      },
+    })
+      .then(async (res) => {
+        const text = await res.text();
+        if (!res.ok) {
+          return err({
+            error: `Failed to append inbox message: ${res.status} ${text}`,
+            status: res.status,
+          });
+        }
+
+        const parsed = JSON.parse(text) as {
+          data?: { seq: number; delivered: boolean };
+          seq?: number;
+          delivered?: boolean;
+        };
+        const body = parsed.data ?? parsed;
+
+        return ok({ seq: body.seq ?? 0, delivered: body.delivered ?? false });
+      })
+      .catch((error) => {
+        return err({
+          error: `Failed to append inbox message: ${error}`,
+          status: 500,
+        });
+      });
+  }
+
   async sendSignal(
     signalOptions: InngestApi.SendSignalOptions,
     options?: {
