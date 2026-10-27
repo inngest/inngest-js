@@ -56,15 +56,24 @@ export interface Subscription<TData = unknown>
 
   /**
    * Reads the next message if it has already arrived, without waiting. Use it
-   * between model calls to fold in messages sent while working.
+   * between model calls to fold in messages sent while working. It does not
+   * ack: call `ack()` for a message you handle, or `putBack()` one you don't.
    */
   poll(): Promise<InboxMessage<TData> | null>;
 
   /**
-   * Puts a message back, so the next read returns it before anything newer.
-   * Use it for a polled message that is not yours to handle yet.
+   * Tells the executor a polled message was handled, so it is not handed to
+   * the thread's next run. `next()` acks the messages it returns; a message
+   * from `poll()` is acked by you, or put back to be read again.
    */
-  putBack(message: InboxMessage<TData>): void;
+  ack(message: InboxMessage<TData>): Promise<void>;
+
+  /**
+   * Puts messages back, in order, so the next reads return them before
+   * anything newer. Use it for polled messages that are not yours to handle
+   * yet.
+   */
+  putBack(messages: InboxMessage<TData>[]): void;
 
   /**
    * Stops the subscription: no new messages are saved. Messages that were
@@ -101,20 +110,34 @@ export async function openSubscription<TData = unknown>(
   let read = 0;
   let polls = 0;
   let total: number | undefined;
-  const putBack: InboxMessage<TData>[] = [];
 
-  async function receive(seq: number, message: unknown) {
+  // Messages put back, oldest first.
+  const held: InboxMessage<TData>[] = [];
+  const acked = new Set<number>();
+
+  // The ack tells the executor a message was handled, so a message that was
+  // saved but never acked is handed to the thread's next run. The trigger
+  // (seq 0) is not a saved message.
+  async function ack(message: InboxMessage<TData>) {
+    if (message.seq < 1 || acked.has(message.seq)) {
+      return;
+    }
+
+    acked.add(message.seq);
+    await op(`${key}:ack:${message.seq}`, "ack", message.seq);
+  }
+
+  function receive(seq: number, message: unknown): InboxMessage<TData> {
     read = seq;
-    // The ack tells the executor this message was received, so a message that
-    // was saved but never acked is handed to the thread's next run.
-    await op(`${key}:ack:${seq}`, "ack", seq);
 
     return { seq, data: message as TData };
   }
 
   async function next(): Promise<InboxMessage<TData> | null> {
-    const waiting = putBack.pop();
+    const waiting = held.shift();
     if (waiting) {
+      await ack(waiting);
+
       return waiting;
     }
 
@@ -123,13 +146,14 @@ export async function openSubscription<TData = unknown>(
     }
 
     const seq = read + 1;
-    const message = await op(`${key}:${seq}`, "next", seq);
+    const message = receive(seq, await op(`${key}:${seq}`, "next", seq));
+    await ack(message);
 
-    return receive(seq, message);
+    return message;
   }
 
   async function poll(): Promise<InboxMessage<TData> | null> {
-    const waiting = putBack.pop();
+    const waiting = held.shift();
     if (waiting) {
       return waiting;
     }
@@ -151,8 +175,9 @@ export async function openSubscription<TData = unknown>(
   return {
     next,
     poll,
-    putBack(message) {
-      putBack.push(message);
+    ack,
+    putBack(messages) {
+      held.unshift(...messages);
     },
     async close() {
       const closed = (await op(`${key}:close`, "close")) as { count: number };

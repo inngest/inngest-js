@@ -214,3 +214,59 @@ describe("agent cleanup", () => {
     expect(ops[0]).toEqual({ id: "inbox:open", mode: "open" });
   });
 });
+
+describe("steering", () => {
+  test("a stop sent after a next-turn message still applies to the running turn, and the next-turn message keeps its place", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox, control }) => {
+        const first = await inbox.next();
+        const result = await agent.loop({
+          model: agent.model(async () => {
+            return {
+              message: { role: "assistant", content: [] },
+              toolCalls: [{ id: "c1", name: "missing", input: {} }],
+              done: false,
+            };
+          }),
+          prompt: first?.data.content ?? "",
+          tools: {},
+          ...control,
+        });
+        const next = await inbox.next();
+
+        return [result.stopped, next?.data.content];
+      },
+    );
+
+    const { output, acked } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "next"), message("stop")],
+    });
+
+    expect(output).toEqual(["stopped", "next"]);
+    // The stop was handled by the turn; the next-turn message when it was read.
+    expect(acked.sort()).toEqual([1, 2]);
+  });
+
+  test("a polled next-turn message that is never read again is not acked", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox, control }) => {
+        await inbox.next();
+        await control.steer();
+
+        return "done";
+      },
+    );
+
+    const { acked } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "later")],
+    });
+
+    expect(acked).toEqual([]);
+  });
+});

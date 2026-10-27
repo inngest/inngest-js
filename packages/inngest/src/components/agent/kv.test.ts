@@ -56,14 +56,14 @@ describe("kv", () => {
     const out: unknown[] = [];
 
     const fn = client.createFunction(
-      { id: "kvfn", triggers: [{ event: "kv/run" }] },
+      { id: "kvfn", triggers: [{ event: "agent/message" }] },
       async () => {
         await kv.thread.set("plan", [1]);
         out.push(await kv.scope("thread", "t1").get("plan"));
       },
     );
 
-    await run(fn, { event: { name: "kv/run", data: { thread: "t1" } } });
+    await run(fn, { event: { name: "agent/message", data: { thread: "t1" } } });
 
     expect(out.slice(-1)).toEqual([[1]]);
     expect(

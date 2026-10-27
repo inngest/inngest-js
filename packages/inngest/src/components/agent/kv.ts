@@ -216,7 +216,10 @@ function currentIds(): KvScopeIds | undefined {
     ...ctx.sessions,
   };
   const thread =
-    sessions.agent_thread ?? (ctx.event?.data as { thread?: string })?.thread;
+    sessions.agent_thread ??
+    (ctx.event?.name === "agent/message"
+      ? (ctx.event.data as { thread?: string })?.thread
+      : undefined);
 
   return {
     env: app?.env ?? "default",
@@ -340,9 +343,9 @@ export function createKv(
 
     return {
       async get<T>(key: string) {
-        return ((await run("get", key, (h) => h.get<T>(key))) ?? undefined) as
-          | T
-          | undefined;
+        return ((await run("get", key, async (h) => {
+          return h.get<T>(key);
+        })) ?? undefined) as T | undefined;
       },
       async set(key, value) {
         await run("set", key, async (h) => {
@@ -371,7 +374,9 @@ export function createKv(
         });
       },
       async all<T>() {
-        return run("all", undefined, (h) => h.all<T>());
+        return run("all", undefined, async (h) => {
+          return h.all<T>();
+        });
       },
       async clear() {
         await run("clear", undefined, async (h) => {

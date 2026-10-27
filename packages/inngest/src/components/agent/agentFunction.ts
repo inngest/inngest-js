@@ -125,8 +125,15 @@ function threadInbox(
     async poll() {
       return unwrap(await inbox.poll());
     },
-    putBack(message) {
-      inbox.putBack({ seq: message.seq, data: { data: message.data } });
+    async ack(message) {
+      await inbox.ack({ seq: message.seq, data: { data: message.data } });
+    },
+    putBack(messages) {
+      inbox.putBack(
+        messages.map((message) => {
+          return { seq: message.seq, data: { data: message.data } };
+        }),
+      );
     },
     close() {
       return inbox.close();
@@ -210,7 +217,7 @@ export function createAgentFunction(
           if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
         },
       );
-      subscription.putBack({ seq: 0, data: { data } });
+      subscription.putBack([{ seq: 0, data: { data } }]);
 
       let stopRequested = false;
       const inbox = threadInbox(subscription);
@@ -218,7 +225,11 @@ export function createAgentFunction(
       const control = {
         async steer() {
           const lines: string[] = [];
+          const waiting: InboxMessage<ThreadMessage>[] = [];
 
+          // Read everything that has arrived: steering messages and stops
+          // apply to the turn that is running; messages for the next turn
+          // keep their place in the inbox.
           for (;;) {
             const message = await inbox.poll();
             if (!message) {
@@ -228,14 +239,15 @@ export function createAgentFunction(
             const kind = message.data.kind;
             if (kind === "steer") {
               lines.push(message.data.content ?? "");
+              await inbox.ack(message);
             } else if (kind === "stop") {
               stopRequested = true;
+              await inbox.ack(message);
             } else {
-              // A message for the next turn is not ours to fold in.
-              inbox.putBack(message as InboxMessage<ThreadMessage>);
-              break;
+              waiting.push(message);
             }
           }
+          inbox.putBack(waiting);
 
           return lines;
         },

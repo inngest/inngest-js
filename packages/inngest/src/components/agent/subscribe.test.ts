@@ -69,6 +69,9 @@ describe("step.subscribe", () => {
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const first = await inbox.poll();
+        if (first) {
+          await inbox.ack(first);
+        }
         const second = await inbox.poll();
 
         return [first?.data ?? null, second?.data ?? null];
@@ -93,7 +96,7 @@ describe("step.subscribe", () => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const first = await inbox.next();
         if (first) {
-          inbox.putBack(first);
+          inbox.putBack([first]);
         }
 
         return [(await inbox.next())?.seq, (await inbox.next())?.seq];
