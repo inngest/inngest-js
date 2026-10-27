@@ -9,6 +9,7 @@
  * sandbox is created, in one durable step, by the first thing that needs it.
  */
 
+import type { StepOptionsOrId } from "../../types.ts";
 import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
 import { destroyQuietly, sandboxDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
@@ -221,18 +222,25 @@ const lazySandbox = (
     return created;
   };
 
+  // Step IDs from the definition's tools (`run`, `edit:read`) are prefixed
+  // with the binding name, so two sandboxes never share one.
+  const scoped = (idOrOptions: StepOptionsOrId): StepOptionsOrId => {
+    return typeof idOrOptions === "string"
+      ? `${name}:${idOrOptions}`
+      : { ...idOrOptions, id: `${name}:${idOrOptions.id}` };
+  };
   const handle: SandboxHandle = {
     commands: {
       run: async (...args) => {
-        return (await get()).commands.run(...args);
+        return (await get()).commands.run(scoped(args[0]), args[1], args[2]);
       },
     },
     files: {
       write: async (...args) => {
-        return (await get()).files.write(...args);
+        return (await get()).files.write(scoped(args[0]), args[1]);
       },
       read: async (...args) => {
-        return (await get()).files.read(...args);
+        return (await get()).files.read(scoped(args[0]), args[1]);
       },
     },
   };

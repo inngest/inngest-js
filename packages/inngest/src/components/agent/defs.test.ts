@@ -225,3 +225,35 @@ describe("validation", () => {
     await expect(opened.w?.close()).resolves.toBeUndefined();
   });
 });
+
+describe("step ids", () => {
+  test("a definition's tool steps are prefixed with the binding name", async () => {
+    const ids: unknown[] = [];
+    const def = sandbox({
+      id: "w",
+      tools: sandbox.tools.code({ only: ["run"] }),
+    });
+    const opened = openSandboxes({ work: def, spare: def }, {
+      create: async () => {
+        return {
+          commands: {
+            run: async (id: unknown) => {
+              ids.push(id);
+
+              return { stdout: "", stderr: "", exitCode: 0 };
+            },
+          },
+        } as unknown as DurableSandbox;
+      },
+    } as unknown as DurableSandboxTools);
+    const all = sandboxTools(opened) as unknown as Record<
+      string,
+      { run: (input: { command: string }, ctx: unknown) => Promise<unknown> }
+    >;
+
+    await all.work_run?.run({ command: "a" }, {});
+    await all.spare_run?.run({ command: "b" }, {});
+
+    expect(ids).toMatchObject([{ id: "work:run" }, { id: "spare:run" }]);
+  });
+});
