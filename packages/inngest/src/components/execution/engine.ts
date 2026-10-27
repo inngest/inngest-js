@@ -184,6 +184,7 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private failuresAreFinal = false;
   private middlewareManager: MiddlewareManager;
   /**
    * Close the stream via {@link streamCloseSucceeded}, {@link streamCloseFailed},
@@ -380,6 +381,10 @@ class InngestExecutionEngine
     }
 
     return this.execution;
+  }
+
+  public failFinally(): void {
+    this.failuresAreFinal = true;
   }
 
   public addMetadata(
@@ -1935,12 +1940,18 @@ class InngestExecutionEngine
    * Determine whether the given error is retriable. Returns `false` when the
    * run should not be retried, a duration string for `RetryAfterError`, or
    * `true` for normal retry behavior.
+   *
+   * A step's own failure is retried even after `failFinally()`, which only
+   * ends the retries of the function body.
    */
-  private retriability(error: unknown): boolean | string {
+  private retriability(
+    error: unknown,
+    { step = false }: { step?: boolean } = {},
+  ): boolean | string {
     const areRetriesExhausted =
       this.fnArg.maxAttempts &&
       this.fnArg.maxAttempts - 1 === this.fnArg.attempt;
-    if (areRetriesExhausted) {
+    if (areRetriesExhausted || (this.failuresAreFinal && !step)) {
       return false;
     }
 
@@ -1992,7 +2003,7 @@ class InngestExecutionEngine
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
-    const isFinal = !this.retriability(error);
+    const isFinal = !this.retriability(error, { step: true });
     const metadata = this.state.metadata?.get(id);
 
     await this.middlewareManager.onStepError(
@@ -2706,9 +2717,15 @@ class InngestExecutionEngine
                   if (typeof result.data !== "undefined") {
                     // Validate waitForEvent results against the schema if present
                     // Skip validation if result.data is null (timeout case)
+                    //
+                    // Subscription ops (`step.subscribe`) answer with their own
+                    // shapes (acks, counts), so they are not validated here.
                     if (
                       opId.op === StepOpCode.WaitForEvent &&
-                      result.data !== null
+                      result.data !== null &&
+                      !(
+                        step.rawArgs?.[1] as { subscribe?: unknown } | undefined
+                      )?.subscribe
                     ) {
                       const { event } = (step.rawArgs?.[1] ?? {}) as {
                         event: unknown;

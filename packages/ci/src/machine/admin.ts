@@ -1,81 +1,15 @@
 /**
- * Listing and deleting what CI's cleanup finds in the Sandboxes API: paged
- * lists read as one stream, and snapshot deletes that tolerate what is already
- * gone. Cleanup steps, run cleanup and invalidation all go through these
- * rather than writing the paging and not-found handling again.
+ * Deleting what a run created in the Sandboxes API, by ID: snapshot and
+ * machine deletes that tolerate what is already gone. Cleanup steps and
+ * invalidation go through these rather than writing the not-found handling
+ * again. Nothing here lists the API: a run only ever touches what it holds the
+ * ID of.
  *
  * @module
  */
 
 import type { Inngest } from "inngest";
-import { isSnapshotNotFound } from "../util.ts";
-
-/** A page of a list the Sandboxes API returns. */
-export interface Page<T> {
-  items: T[];
-  page: { hasMore: boolean; cursor?: string };
-}
-
-/** Every item of a paged list, in order, fetching the next page as it is read. */
-export async function* pages<T>(
-  list: (cursor?: string) => Promise<Page<T>>,
-): AsyncGenerator<T> {
-  let cursor: string | undefined;
-
-  do {
-    const { items, page } = await list(cursor);
-
-    yield* items;
-
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-}
-
-/** Every sandbox, whoever made it. */
-export const listSandboxes = (client: Inngest.Any) => {
-  return pages((cursor) => {
-    return client.sandboxes.list({ ...(cursor ? { cursor } : {}), limit: 100 });
-  });
-};
-
-/**
- * Every snapshot that still exists, whoever made it. The API keeps the records
- * of deleted ones in its lists, which are not snapshots any more.
- */
-export async function* listSnapshots(client: Inngest.Any) {
-  const all = pages((cursor) => {
-    return client.sandboxes.snapshots.list({
-      ...(cursor ? { cursor } : {}),
-      limit: 100,
-    });
-  });
-
-  for await (const snapshot of all) {
-    if (!/^DELET/.test(snapshot.status)) {
-      yield snapshot;
-    }
-  }
-}
-
-/**
- * Delete the snapshots whose name matches. Listing has no name filter beyond
- * an exact one, so the comparison happens here.
- */
-export const deleteMatching = async (
-  client: Inngest.Any,
-  matches: (snapshot: { name: string; createdAt: string }) => boolean,
-  onFailure?: (id: string, error: unknown) => void,
-): Promise<{ deleted: string[]; failed: string[] }> => {
-  const ids: string[] = [];
-
-  for await (const snapshot of listSnapshots(client)) {
-    if (snapshot.name && matches({ ...snapshot, name: snapshot.name })) {
-      ids.push(snapshot.id);
-    }
-  }
-
-  return deleteSnapshots(client, ids, onFailure);
-};
+import { isSandboxNotFound, isSnapshotNotFound } from "../util.ts";
 
 /**
  * Delete snapshots by ID. One that is already gone counts for nothing, and one
@@ -111,4 +45,33 @@ export const deleteSnapshots = async (
   }
 
   return { deleted, failed };
+};
+
+/**
+ * Destroy machines by ID. One that is already gone counts for nothing. Any
+ * other error is thrown, so the step that calls this retries.
+ */
+export const destroySandboxes = async (
+  client: Inngest.Any,
+  ids: Iterable<string>,
+): Promise<{ destroyed: number }> => {
+  let destroyed = 0;
+
+  for (const id of ids) {
+    try {
+      const sandbox = await client.sandboxes.get(id);
+
+      if (sandbox) {
+        await sandbox.destroy();
+
+        destroyed++;
+      }
+    } catch (error) {
+      if (!isSandboxNotFound(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return { destroyed };
 };

@@ -5,7 +5,7 @@ import {
   type DeferContext,
   type DeferredFunction,
 } from "./DeferredFunction.ts";
-import type { Inngest } from "./Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import type { ScoreOptions } from "./InngestScore.ts";
 import type { Middleware } from "./middleware/index.ts";
 
@@ -22,7 +22,9 @@ type ScorerResult =
  * return value is forwarded to `client.score(...)` inside a durable
  * `step.run("score", ...)`. `runId` defaults to the parent run's id (from
  * `event.data.parent.runId`) when the handler omits it. A nullish return
- * is a no-op.
+ * is a no-op. When the parent was deferred with an experiment the score is
+ * attributed to it, and any returned `stepId` is ignored since experiment
+ * scores are run-scoped.
  */
 export function createScorer<
   TClient extends Inngest.Any,
@@ -46,10 +48,19 @@ export function createScorer<
         const parent = ctx.parents[0];
         await ctx.step.run("score", async () => {
           if (parent.experiment) {
+            // Experiment scores are run scoped, so a stepId is dropped
+            // (score.experiment() would reject it) and the score lands on
+            // the run where the experiment view reads it.
+            const { stepId, ...runResult } = result;
+            if (stepId !== undefined) {
+              client[internalLoggerSymbol].warn(
+                `createScorer("${options.id}"): ignoring stepId "${stepId}" because the parent was deferred with an experiment; experiment scores are run-scoped`,
+              );
+            }
             await client.score.experiment({
               experiment: parent.experiment,
               runId: parent.runId,
-              ...result,
+              ...runResult,
             });
           } else {
             await client.score({ runId: parent.runId, ...result });

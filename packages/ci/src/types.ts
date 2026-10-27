@@ -75,7 +75,7 @@ export type EventDataOf<TTriggers> = [PayloadOf<TTriggers>] extends [never]
  * An event as a pipeline handler sees it.
  */
 export interface CiEvent<TData = Record<string, unknown>> {
-  /** The event's name, like `github/pull_request.opened`. */
+  /** The event's name, like `github-ci/pull_request.opened`. */
   name: string;
   /** The event's payload, typed by the pipeline's triggers. */
   data: TData;
@@ -137,6 +137,12 @@ export interface RepoContext {
   sha: string;
   /** The branch or tag the run is for, like `refs/heads/main`. */
   ref?: string;
+  /**
+   * The commit GitHub's test merge of a pull request made, which is what
+   * `checkout()` and `files()` use so the run tests the change as it would be
+   * merged. `sha` stays the head, which checks and statuses are posted on.
+   */
+  mergeSha?: string;
   /** The commit the change is based on, for diffs. */
   baseSha?: string;
   /** The branch the change is based on, like `main`. */

@@ -7,6 +7,8 @@ export type {
   CodeToolName,
   CodeToolsOptions,
 } from "../sandbox/codeTools.ts";
+export type { AgentInvokeOptions } from "./invoke.ts";
+export { agentInvokeDepth, agentInvokeInput } from "./invoke.ts";
 export type {
   LazySandbox,
   SandboxBinding,

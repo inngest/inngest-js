@@ -6,8 +6,8 @@
  * and sit in its queue. It listens for `ci/build.done` for the entry's lock,
  * looks the snapshot up, and on a miss sends `ci/build.requested`. The
  * `ci/build` function that receives it tries to create a machine under the
- * lock's name (`ci-build-<hash>`, derived from the cache entry), owned by its
- * run. The platform refuses a name that is taken, so only one builder wins: the
+ * lock's name (`ci-build-<hash>`, derived from the cache entry). The platform
+ * refuses a name that is taken, so only one builder wins: the
  * others end at once, with nothing to wait for or to poll. The winner builds,
  * snapshots, and when its run ends destroys its machine and sends
  * `ci/build.done`, which carries what the build gave back, to everyone
@@ -16,7 +16,7 @@
  *
  * Why no wake-up is missed. The requester saves its wait before it looks, and
  * looks before it sends its request. The builder takes its snapshot, which is
- * findable by name once taken (it checks), before it sends `ci/build.done`. So
+ * findable by name once taken, before it sends `ci/build.done`. So
  * a build that finishes after the wait was saved reaches the wait, and one that
  * finished before it is found by the look. A wait only misses events from
  * before it was saved (there is no lookback), and a look that misses means the
@@ -32,8 +32,8 @@
  *
  * What is left to chance, a builder that died without a trace or an event that
  * was not sent, ends in the wait's timeout: the requester then looks and asks
- * again. A builder that dies is also noticed by the `ci/build` cleanup
- * function, which releases its lock and sends a `failed` `ci/build.done`.
+ * again. A builder whose run ends sends a `failed` `ci/build.done` for its own
+ * lock from its own cleanup.
  *
  * A requester that found the snapshot by its look leaves its wait unawaited and
  * returns: the run completes and the executor drops the wait with it.
@@ -49,7 +49,7 @@ import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { ciStep, traceName } from "./names.ts";
-import type { CiJobScope, CiRunScope } from "./scope.ts";
+import type { CiRunScope } from "./scope.ts";
 import { joinId, rootRunIdOf } from "./scope.ts";
 import { sessionsMeta } from "./sessions.ts";
 
@@ -80,10 +80,9 @@ export type BuildDone = { name: string } & (
 
 /**
  * Whether a build of this job takes the lock. A job that starts `from`
- * another can't: a machine created from a snapshot takes no environment, so
- * nothing on it could say who owns it. A build that takes no name, or replaces
- * a bad snapshot, is not for sharing, and a job without a `cache` is only for
- * its own pipeline run.
+ * another doesn't: its machine starts from a snapshot, under a name of its
+ * own. A build that takes no name, or replaces a bad snapshot, is not for
+ * sharing, and a job without a `cache` is only for its own pipeline run.
  */
 export const takesBuildLock = (
   config: JobConfig,
@@ -233,40 +232,6 @@ export const requestBuild = async ({
     }
 
     run.ci.hooks.activity(run, path, "the build failed, asking again…");
-  }
-};
-
-/**
- * Check that a snapshot the build took can be found by its name, before the
- * build says it is there: a run that looked a moment ago and saw nothing relies
- * on it. A snapshot that is not kept under the name is not shared, so there is
- * nothing to check.
- */
-export const confirmBuilt = async (
-  scope: CiJobScope,
-  target: CacheTarget,
-): Promise<void> => {
-  const { run, config } = scope;
-
-  if (!run.buildLock || !scope.request?.sink.outcome?.cached) {
-    return;
-  }
-
-  const found = await lookupBeforeBuild(
-    run,
-    {
-      id: config.id,
-      path: scope.path,
-      stepPath: joinId(scope.path, "built"),
-    },
-    config.cache,
-    target,
-  );
-
-  if (!found) {
-    throw new NonRetriableError(
-      "The snapshot could not be found by its name after the build.",
-    );
   }
 };
 

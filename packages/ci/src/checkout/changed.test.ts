@@ -204,7 +204,7 @@ describe("changed()", () => {
   };
 
   test("a push that creates a branch is unknown, not unchanged", async () => {
-    const result = await runOn("github/push", {
+    const result = await runOn("github-ci/push", {
       repository,
       ref: "refs/heads/feature",
       before: "0000000000000000000000000000000000000000",
@@ -215,7 +215,7 @@ describe("changed()", () => {
   });
 
   test("a run with no pull request or push range is unknown, not unchanged", async () => {
-    const result = await runOn("github/merge_group.checks_requested", {
+    const result = await runOn("github-ci/merge_group.checks_requested", {
       repository,
       merge_group: { head_sha: "abc123", base_ref: "refs/heads/main" },
     });

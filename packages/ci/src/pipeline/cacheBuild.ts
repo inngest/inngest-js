@@ -27,8 +27,8 @@ import type {
   Ancestor,
   CheckAnnotation,
   MachineConfig,
-  MatrixJob,
   MatrixAxes,
+  MatrixJob,
   RepoContext,
 } from "../types.ts";
 import { answerAppJob } from "./appJob.ts";
@@ -168,6 +168,8 @@ export interface CacheBuildResult {
   warnings: string[];
   /** How often the job used each public API, for the invoking run's metadata. */
   apis?: CiRunScope["apis"];
+  /** How long the reused snapshots it started from took to build, by job ID. */
+  cacheSaved?: Record<string, number>;
   /** What the job reported while it ran, for the invoking job's check. */
   report?: { summaries: string[]; annotations: CheckAnnotation[] };
 }
@@ -403,6 +405,9 @@ const buildSnapshot = async ({
     createdSnapshots: [...(run?.createdSnapshots ?? [])],
     warnings: run?.warnings ?? [],
     ...(run ? { apis: run.apis } : {}),
+    ...(run?.cacheSaved.size
+      ? { cacheSaved: Object.fromEntries(run.cacheSaved) }
+      : {}),
     ...(run?.report ? { report: run.report } : {}),
   });
 };
