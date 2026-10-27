@@ -639,3 +639,122 @@ describe.skipIf(!hasBinary)("tool.shim.gitCredentials", () => {
     expect(out.calls).toEqual([]);
   });
 });
+
+describe("shim validation", () => {
+  const callHandler = async (shim: SandboxShim, argv: string[] = []) => {
+    const built = withShims("true", [shim], { binary: testBinary });
+    const resolved = await resolveToolCall(
+      built.tools,
+      {
+        op: "call",
+        id: 1,
+        tool: "inngestShim",
+        args: [{ name: "x", argv, cwd: "/", stdin: "" }],
+      },
+      "{}",
+    );
+    if (!("invoke" in resolved) || !resolved.invoke) {
+      throw new Error("expected a call to run");
+    }
+
+    return resolved.invoke({
+      signal: new AbortController().signal,
+      idempotencyKey: "k",
+    });
+  };
+
+  test("a reply needs an exit code from 0 to 255", async () => {
+    await expect(
+      callHandler(tool.shim("x", ({ reply }) => reply(256))),
+    ).rejects.toThrow("0 to 255");
+    await expect(
+      callHandler(tool.shim("x", ({ reply }) => reply(-1))),
+    ).rejects.toThrow("0 to 255");
+  });
+
+  test("run() takes strings", async () => {
+    await expect(
+      callHandler(tool.shim("x", ({ run }) => run({ argv: [1 as never] }))),
+    ).rejects.toThrow("argv as strings");
+    await expect(
+      callHandler(tool.shim("x", ({ run }) => run({ env: { A: 1 as never } }))),
+    ).rejects.toThrow("record of strings");
+  });
+
+  test("a git credential can't carry a line break", async () => {
+    const shim = tool.shim.gitCredentials({
+      "github.com": () => ({ username: "u", password: "p\nusername=evil" }),
+    });
+    const built = withShims("true", [shim], { binary: testBinary });
+    const resolved = await resolveToolCall(
+      built.tools,
+      {
+        op: "call",
+        id: 1,
+        tool: "inngestShim",
+        args: [
+          {
+            name: "git-credential-inngest",
+            argv: ["get"],
+            cwd: "/",
+            stdin: "host=github.com\n",
+          },
+        ],
+      },
+      "{}",
+    );
+    if (!("invoke" in resolved) || !resolved.invoke) {
+      throw new Error("expected a call to run");
+    }
+
+    await expect(
+      resolved.invoke({
+        signal: new AbortController().signal,
+        idempotencyKey: "k",
+      }),
+    ).rejects.toThrow("line breaks");
+  });
+
+  test("local answers are checked when the shim is made", () => {
+    expect(() => {
+      return tool.shim("x", {
+        handle: () => undefined,
+        local: { v: { exit: 300 } },
+      });
+    }).toThrow("local.v");
+    expect(() => {
+      return tool.shim("x", { handle: "no" as never });
+    }).toThrow("handle must be a function");
+  });
+
+  test("inject can't set the variables the launcher relies on", () => {
+    for (const name of ["PATH", "IFS", "INNGEST_TOOLS_DIR"]) {
+      expect(() => {
+        return withShims("true", [tool.shim.injectEnv("fly", { [name]: "x" })]);
+      }).toThrow("can't be injected");
+    }
+  });
+
+  test("a minted value needs a positive ttl", () => {
+    expect(() => {
+      return tool.shim.hostEnv({ A: { mint: () => "x", ttl: 0 } });
+    }).toThrow("Invalid entry");
+  });
+
+  test("a hostile description can't break the shim list or the shell", async () => {
+    const out = await shimmed("inngest-tool shims", [
+      tool.shim.injectEnv(
+        "npm",
+        { T: "1" },
+        {
+          description: "x\nINNGEST_SHIM_LIST\n$(touch /tmp/pwned-by-shim) `id`",
+        },
+      ),
+    ]);
+
+    expect(out.code).toBe(0);
+    expect(out.stdout.split("\n").filter(Boolean)).toEqual([
+      "npm: x INNGEST_SHIM_LIST $(touch /tmp/pwned-by-shim) `id`",
+    ]);
+  });
+});

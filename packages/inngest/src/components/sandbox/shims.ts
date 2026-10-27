@@ -23,7 +23,8 @@
  * A shim with a handler is the `inngest-tool` binary under another name
  * (`toolBinary.ts`). A shim that only injects environment is a few lines of
  * `sh` that read each value with `inngest-tool env`. Code in the sandbox finds
- * out what is shimmed with `inngest-tool shims`.
+ * out what is shimmed with `inngest-tool shims` (every shim and the host
+ * values it may read); `INNGEST_SHIMS` lists the shimmed program names.
  */
 import { z } from "zod/v3";
 
@@ -41,6 +42,11 @@ export const shimToolName = "inngestShim";
 export const hostEnvToolName = "env";
 
 const envNamePattern = /^(?!__proto__$)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+/**
+ * Variables an injecting shim can't set: the launcher itself relies on them.
+ */
+const reservedVariables = /^(PATH|IFS|INNGEST_.*)$/;
 
 const shimNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -234,7 +240,8 @@ export const validateHostEnv = (option: unknown): void => {
       (typeof source === "object" &&
         source !== null &&
         typeof (source as { mint?: unknown }).mint === "function" &&
-        Number.isFinite((source as { ttl?: unknown }).ttl));
+        Number.isFinite((source as { ttl?: unknown }).ttl) &&
+        (source as { ttl: number }).ttl > 0);
 
     if (typeof name !== "string" || !envNamePattern.test(name) || !valid) {
       throw new SandboxValidationError(
@@ -292,6 +299,24 @@ const shim = (
     if (parsed.stdin || parsed.local) {
       throw new SandboxValidationError(
         "stdin and local are for shims with a handle",
+      );
+    }
+  }
+
+  if (parsed.handle && typeof parsed.handle !== "function") {
+    throw new SandboxValidationError("handle must be a function");
+  }
+
+  for (const [first, answer] of Object.entries(parsed.local ?? {})) {
+    if (
+      !Number.isInteger(answer?.exit) ||
+      answer.exit < 0 ||
+      answer.exit > 255 ||
+      (answer.stdout !== undefined && typeof answer.stdout !== "string") ||
+      (answer.stderr !== undefined && typeof answer.stderr !== "string")
+    ) {
+      throw new SandboxValidationError(
+        `local.${first} needs an exit code from 0 to 255 and text output`,
       );
     }
   }
@@ -411,12 +436,32 @@ const wireResult = (result: ShimResult) => {
   }
 
   if ("exec" in result) {
+    const { argv, env } = result.exec;
+    if (
+      (argv !== undefined &&
+        !(
+          Array.isArray(argv) && argv.every((arg) => typeof arg === "string")
+        )) ||
+      (env !== undefined &&
+        !(
+          env !== null &&
+          typeof env === "object" &&
+          Object.values(env).every((value) => typeof value === "string")
+        ))
+    ) {
+      throw new Error(
+        "run() takes argv as strings and env as a record of strings",
+      );
+    }
+
     return result;
   }
 
   const { stdout, stderr, exit } = result;
-  if (!Number.isInteger(exit)) {
-    throw new Error("A shim handler must return run(), reply() or refuse()");
+  if (!Number.isInteger(exit) || exit < 0 || exit > 255) {
+    throw new Error(
+      "A shim handler must return run(), reply() or refuse(), with an exit code from 0 to 255",
+    );
   }
 
   return {
@@ -547,6 +592,7 @@ const injectLauncher = (name: string, variables: string[]): string => {
     "#!/bin/sh",
     // Drop the shims directory wherever the code moved it to in PATH.
     "d=${0%/*}",
+    "set -f",
     "p=; IFS=:",
     'for e in $PATH; do [ "$e" = "$d" ] || p="$p${p:+:}$e"; done',
     "unset IFS",
@@ -663,7 +709,13 @@ export const withShims = (
 
   if (handlers.length > 0 && !options.binary) {
     throw new SandboxValidationError(
-      `Shims with a handle (${handlers.map((one) => one.name).join(", ")}) need the inngest-tool binary, which is not available here`,
+      `Shims with a handle (${handlers
+        .map((one) => {
+          return one.name;
+        })
+        .join(
+          ", ",
+        )}) need the inngest-tool binary, which is not available here (run pnpm build:sandbox-tool in packages/inngest, or set INNGEST_SANDBOX_TOOL to its path)`,
     );
   }
 
@@ -680,6 +732,12 @@ export const withShims = (
 
     const variables = Object.keys(one.inject ?? {});
     for (const variable of variables) {
+      if (reservedVariables.test(variable)) {
+        throw new SandboxValidationError(
+          `The variable "${variable}" can't be injected: the shims rely on it`,
+        );
+      }
+
       if (Object.hasOwn(allowed, variable)) {
         throw new SandboxValidationError(
           `The variable "${variable}" is set by more than one shim`,
@@ -826,6 +884,10 @@ shim.gitCredentials = (
         host: fields.host ?? "",
         ...(fields.path !== undefined && { path: fields.path }),
       });
+      // A newline would add fields to what git reads.
+      if (/[\r\n\0]/.test(credential.username + credential.password)) {
+        throw new Error("A git credential can't contain line breaks");
+      }
 
       return reply(0, {
         stdout: [

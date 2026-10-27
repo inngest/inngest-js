@@ -9,6 +9,8 @@ cd "$(dirname "$0")"
 if ! command -v go >/dev/null 2>&1; then
   if [ "${1:-}" = "--package" ]; then
     echo "sandbox-tool: go not found; handler shims will report a missing binary" >&2
+    # A CI build must not publish a package without the binary.
+    [ -z "${CI:-}" ] || [ -f dist/inngest-tool-linux-amd64 ] || exit 1
     [ -f dist/inngest-tool-linux-amd64 ] || exit 0
   else
     echo "sandbox-tool: go not found" >&2
