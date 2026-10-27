@@ -18,7 +18,7 @@ export const ossRepo =
 
 const redisCommand =
   process.env.AGENTS_VERIFY_REDIS_CMD ??
-  'nix shell nixpkgs#redis -c redis-server --bind 127.0.0.1 --port $PORT --save "" --appendonly no';
+  ', valkey-server --bind 127.0.0.1 --port $PORT --save "" --appendonly no';
 
 /**
  * Runs `devstack` and returns what it printed. Rejects with its output when
