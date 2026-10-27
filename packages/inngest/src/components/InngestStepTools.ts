@@ -34,6 +34,11 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import {
+  openSubscription,
+  type SubscribeOptions,
+  type Subscription,
+} from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
@@ -567,6 +572,60 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * EXPERIMENTAL: a durable subscription. Opens a subscription to events
+     * and returns it; iterate it with `for await`. The executor keeps the
+     * subscription for the life of the run and saves every matching event as
+     * a numbered message, so nothing sent while the function is busy is lost.
+     */
+    subscribe: <TData = unknown>(
+      idOrOptions: StepOptionsOrId,
+      opts: SubscribeOptions,
+    ): Promise<Subscription<TData>> => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+
+      return openSubscription<TData>(
+        function op(stepId, mode, seq) {
+          return tools["~subscribeOp"](stepId, {
+            event: opts.event,
+            if: opts.if,
+            subscribe: { key: id, mode, ...(seq ? { seq } : {}) },
+          });
+        },
+        id,
+        opts,
+      );
+    },
+
+    /**
+     * One op of a subscription. Used by `subscribe`.
+     */
+    "~subscribeOp": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          event: string;
+          if?: string;
+          subscribe: { key: string; mode: string; seq?: number };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.WaitForEvent,
+        name: opts.event,
+        displayName: name ?? id,
+        opts: {
+          event: opts.event,
+          if: opts.if,
+          timeout: "",
+          subscribe: opts.subscribe,
+        },
+        userland: { id },
+      };
+    }),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried

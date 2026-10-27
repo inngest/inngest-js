@@ -227,6 +227,14 @@
       "import": "./internals.js",
       "require": "./internals.cjs"
     },
+    "./experimental/agents": {
+      "types": {
+        "import": "./experimental/agents/index.d.ts",
+        "require": "./experimental/agents/index.d.cts"
+      },
+      "import": "./experimental/agents/index.js",
+      "require": "./experimental/agents/index.cjs"
+    },
     "./experimental/durable-endpoints": {
       "types": {
         "import": "./experimental/durable-endpoints/index.d.ts",
@@ -434,5 +442,10 @@
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false
+  "sideEffects": [
+    "./components/agent/agentFunction.js",
+    "./components/agent/agentFunction.cjs",
+    "./experimental/agents/index.js",
+    "./experimental/agents/index.cjs"
+  ]
 }

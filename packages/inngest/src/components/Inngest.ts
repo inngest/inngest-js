@@ -61,6 +61,11 @@ import {
   type SendSignalResponse,
   sendEventResponseSchema,
 } from "../types.ts";
+import type {
+  AgentBody,
+  AgentFunction,
+  AgentFunctionConfig,
+} from "./agent/agentFunction.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
@@ -151,6 +156,17 @@ export const sessionPropagationSymbol = Symbol.for(
 );
 
 const SESSION_PROPAGATION_DEFAULT_ENABLED = true;
+
+/**
+ * Where the agents module installs the implementation of `client.agent()`.
+ */
+export const agentHook: {
+  create?: (
+    client: Inngest.Any,
+    config: AgentFunctionConfig,
+    body: AgentBody,
+  ) => AgentFunction;
+} = {};
 
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
@@ -1249,6 +1265,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   public globals(): GlobalTools<this> {
     return { step, group } as unknown as GlobalTools<this>;
+  }
+
+  /**
+   * EXPERIMENTAL: Defines an agent whose body owns its loop and reads a durable
+   * inbox. Import `inngest/experimental/agents` to use it.
+   * @param config Function ID and KV store.
+   * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
+   */
+  public agent(config: AgentFunctionConfig, body: AgentBody): AgentFunction {
+    if (!agentHook.create) {
+      throw new Error(
+        'client.agent() needs `import "inngest/experimental/agents"`.',
+      );
+    }
+
+    return agentHook.create(this, config, body);
   }
 
   public createFunction: Inngest.CreateFunction<this> = (
