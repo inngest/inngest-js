@@ -345,13 +345,6 @@ const runPipelineAttempt = async ({
       run.repo = await resolvePullRequestHead(run, run.repo);
     }
 
-    // A pull request is tested as it would be merged, as GitHub's own checks
-    // are, so the commit of its test merge is looked up before anything is
-    // cloned or hashed.
-    if (run.repo?.pullRequest && run.repo.sha && !run.repo.local) {
-      run.repo = await resolveMergeCommit(run, run.repo);
-    }
-
     // The check's step carries the run's metadata. With checks off there's no
     // such step, so one of its own does.
     const checkStarted = await checks.pipelineStart({
