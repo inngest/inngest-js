@@ -23,15 +23,19 @@ export {
 export type {
   LazySandbox,
   SandboxBinding,
+  SandboxBindingInput,
   SandboxBindingOptions,
   SandboxDefinition,
   SandboxDefinitionOptions,
+  SandboxesConfig,
   SandboxHandle,
   SandboxToolsFactory,
 } from "./defs.ts";
 export {
   agentTools,
+  getSandbox,
   openSandboxes,
+  resolveSandboxes,
   sandbox,
   sandboxTools,
   toolNamespaceSeparator,
