@@ -244,6 +244,7 @@ const hostGit = async (
   const { spawn } = await import("node:child_process");
 
   return new Promise((resolve, reject) => {
+    const count = Number.parseInt(process.env.GIT_CONFIG_COUNT ?? "0", 10) || 0;
     const child = spawn("git", args, {
       cwd: options.cwd,
       signal: options.signal,
@@ -251,9 +252,9 @@ const hostGit = async (
         ...process.env,
         GIT_TERMINAL_PROMPT: "0",
         ...(options.header && {
-          GIT_CONFIG_COUNT: "1",
-          GIT_CONFIG_KEY_0: "http.extraHeader",
-          GIT_CONFIG_VALUE_0: options.header,
+          GIT_CONFIG_COUNT: String(count + 1),
+          [`GIT_CONFIG_KEY_${count}`]: "http.extraHeader",
+          [`GIT_CONFIG_VALUE_${count}`]: options.header,
         }),
       },
     });
@@ -524,7 +525,8 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
       );
       if (
         result.exitCode === 0 &&
-        !(parsed.values["--quiet"] ?? parsed.values["-q"])
+        parsed.values["--quiet"] === undefined &&
+        parsed.values["-q"] === undefined
       ) {
         result.stderr = `Cloning into '${dir}'...\n${result.stderr}`;
       }
@@ -815,30 +817,38 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
               return `^${have}`;
             })
             .join("\n")}\n`;
-          const listed = (
-            await hostGit(
-              [
-                "-c",
-                "core.quotePath=false",
-                "log",
-                "--stdin",
-                "-m",
-                "--no-renames",
-                "-n",
-                "501",
-                "--name-only",
-                "--format=%x01%H%x1f%an%x1f%s",
-              ],
-              { cwd: repo, input: revs },
-            )
-          ).stdout;
+          const listing = await hostGit(
+            [
+              "-c",
+              "core.quotePath=false",
+              "log",
+              "--stdin",
+              "-m",
+              "--no-renames",
+              "-n",
+              "501",
+              "--name-only",
+              "--format=%x00%H%x1f%an%x1f%s",
+            ],
+            { cwd: repo, input: revs },
+          );
+          // Git doesn't say what it skipped when the history can't be read.
+          if (listing.exitCode !== 0) {
+            return { refused: "this push's history couldn't be read" };
+          }
+
+          const listed = listing.stdout;
           const commits: GitPush["commits"] = [];
           const paths = new Set<string>();
-          for (const record of listed.split("\x01").slice(1)) {
+          for (const record of listed.split("\0").slice(1)) {
             const [head = "", ...files] = record.split("\n");
-            const [commit = "", author = "", subject = ""] = head.split("\x1f");
+            const [commit = "", author = "", ...subject] = head.split("\x1f");
 
-            commits.push({ sha: commit, author, subject });
+            commits.push({
+              sha: commit,
+              author,
+              subject: subject.join("\x1f"),
+            });
             for (const file of files) {
               if (file !== "") {
                 paths.add(file);
@@ -884,24 +894,27 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
               commits,
               paths: [...paths].sort(),
               patch: async () => {
-                return (
-                  await hostGit(
-                    [
-                      "-c",
-                      "core.quotePath=false",
-                      "log",
-                      "--stdin",
-                      "-m",
-                      "-p",
-                      "--binary",
-                      "--no-renames",
-                      "-n",
-                      "501",
-                      "--format=%H %s",
-                    ],
-                    { cwd: repo, input: revs },
-                  )
-                ).stdout;
+                const printed = await hostGit(
+                  [
+                    "-c",
+                    "core.quotePath=false",
+                    "log",
+                    "--stdin",
+                    "-m",
+                    "-p",
+                    "--binary",
+                    "--no-renames",
+                    "-n",
+                    "501",
+                    "--format=%H %s",
+                  ],
+                  { cwd: repo, input: revs },
+                );
+                if (printed.exitCode !== 0) {
+                  throw new Error("the history of this push couldn't be read");
+                }
+
+                return printed.stdout;
               },
             });
             const verdict = decision as Exclude<GitPolicyResult, void>;
@@ -1001,6 +1014,17 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
     handle: async (call) => {
       const { cwd, rest } = splitGlobal(call.argv, call.cwd);
       const [word, ...args] = rest;
+
+      // Other global options come before the word, which the real git would
+      // then run with no credential and fail on in a confusing way.
+      if (
+        word?.startsWith("-") &&
+        rest.some((arg) => {
+          return handledWords.includes(arg);
+        })
+      ) {
+        return call.refuse(unsupported("Global git options other than -C"));
+      }
 
       switch (word) {
         case "clone":

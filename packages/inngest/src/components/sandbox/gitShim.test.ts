@@ -479,6 +479,38 @@ describe.skipIf(!backendPath)("tool.shim.git", { timeout: 60_000 }, () => {
     expect(paths).toEqual(["README.md", "src/readme.md"]);
   });
 
+  test("global options other than -C are refused with a message", async () => {
+    const out = await call({}, ["-c", "x.y=z", "push", "origin", "main"]);
+    const plain = await call({}, ["--version"]);
+
+    expect(out.exit).toBe(126);
+    expect(out.stderr).toContain("Global git options");
+    expect(plain).toEqual({ exec: {} });
+  });
+
+  test("a commit subject can't forge commits", async () => {
+    const work = await clone();
+    commit(work, "src/s.ts", "export const s = 1;\n", "agent/s");
+    git(work, "commit", "--quiet", "--allow-empty", "-m", "a\u0001b\u001fc");
+    let subjects: string[] = [];
+
+    await call(
+      {
+        policy: (push) => {
+          subjects = push.commits.map((one) => {
+            return one.subject;
+          });
+
+          return undefined;
+        },
+      },
+      ["push", "origin", "agent/s"],
+      work,
+    );
+
+    expect(subjects).toEqual(["a\u0001b\u001fc", "change src/s.ts"]);
+  });
+
   test("more than one ref at a time is refused", async () => {
     const work = await clone();
     commit(work, "src/m.ts", "export const m = 1;\n", "agent/m");
