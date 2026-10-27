@@ -6,7 +6,7 @@
  */
 
 export const prEvent = {
-  name: "github/pull_request.opened",
+  name: "github-ci/pull_request.opened",
   data: {
     action: "opened",
     number: 7,
@@ -24,4 +24,4 @@ export const prEvent = {
   },
 };
 
-export const prTrigger = [{ event: "github/pull_request.opened" }];
+export const prTrigger = [{ event: "github-ci/pull_request.opened" }];

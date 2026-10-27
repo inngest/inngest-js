@@ -952,7 +952,7 @@ const checkCommentPermission = async (
 ): Promise<boolean> => {
   const event = run.event as { name?: string } | undefined;
 
-  if (!event?.name?.startsWith("github/issue_comment")) {
+  if (!event?.name?.startsWith("github-ci/issue_comment")) {
     return true;
   }
 
@@ -1085,9 +1085,9 @@ const generatedFunctions = ({
       {
         id: `${config.id}/check-rerequested`,
         triggers: [
-          { event: "github/check_run.rerequested" },
-          { event: "github/check_suite.rerequested" },
-          { event: "github/check_run.requested_action" },
+          { event: "github-ci/check_run.rerequested" },
+          { event: "github-ci/check_suite.rerequested" },
+          { event: "github-ci/check_run.requested_action" },
         ],
       },
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx

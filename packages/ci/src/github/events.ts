@@ -15,13 +15,13 @@ import type { RepoContext } from "../types.ts";
  *
  * The canonical Inngest event name for a GitHub webhook delivery.
  *
- * `github/${X-GitHub-Event}` when the payload has no action, and
- * `github/${X-GitHub-Event}.${action}` when it does. The webhook transform and
+ * `github-ci/${X-GitHub-Event}` when the payload has no action, and
+ * `github-ci/${X-GitHub-Event}.${action}` when it does. The webhook transform and
  * the local forwarder both use this, so events look the same either way.
  *
  * ```ts
- * githubEventName("push", payload);        // "github/push"
- * githubEventName("pull_request", payload) // "github/pull_request.opened"
+ * githubEventName("push", payload);        // "github-ci/push"
+ * githubEventName("pull_request", payload) // "github-ci/pull_request.opened"
  * ```
  */
 export const githubEventName = (
@@ -31,8 +31,8 @@ export const githubEventName = (
   payload: { action?: string } | undefined,
 ): string => {
   return payload?.action
-    ? `github/${event}.${payload.action}`
-    : `github/${event}`;
+    ? `github-ci/${event}.${payload.action}`
+    : `github-ci/${event}`;
 };
 
 /**
@@ -65,7 +65,7 @@ export const githubWebhookTransform = `function transform(evt, headers, queryPar
 
   var event = header("x-github-event") || "unknown";
   var delivery = header("x-github-delivery");
-  var name = evt && evt.action ? "github/" + event + "." + evt.action : "github/" + event;
+  var name = evt && evt.action ? "github-ci/" + event + "." + evt.action : "github-ci/" + event;
   var installationId =
     evt && evt.installation && evt.installation.id ? evt.installation.id : undefined;
 
