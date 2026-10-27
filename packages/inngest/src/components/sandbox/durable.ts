@@ -34,12 +34,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import {
-  hostEnvFrom,
-  hostEnvTool,
-  validateHostEnv,
-  withShims,
-} from "./shims.ts";
+import { validateShims, withShims } from "./shims.ts";
 import { bundledToolBinary } from "./toolBinary.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
@@ -766,52 +761,30 @@ export const createDurableSandboxFacade = (
       toolOptions,
       exitCodes,
       shims,
-      hostEnv,
       environment: ownEnvironment,
       ...commandOptions
     } = options ?? {};
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
-    const shimEntries = Object.entries(shims ?? {});
-    for (const [name, shim] of shimEntries) {
-      if (shim?.shim !== true) {
-        throw new SandboxValidationError(
-          `shims.${name} must be made with tool.shim()`,
-        );
-      }
-    }
-
-    if (hostEnv !== undefined) {
-      validateHostEnv(hostEnv);
-    }
-
-    const allowedHostEnv = hostEnv && hostEnvFrom(hostEnv);
-    const binary = Object.values(shims ?? {}).some((shim) => {
-      return shim.handle;
+    const checked = shims === undefined ? [] : validateShims(shims);
+    const binary = checked.some((one) => {
+      return one.kind === "program" && one.handle;
     })
       ? await bundledToolBinary()
       : undefined;
     const shimmed =
-      shims && shimEntries.length > 0
-        ? withShims(command, shims, { binary, hostEnv: allowedHostEnv })
-        : undefined;
-    const builtTools = {
-      ...(allowedHostEnv && !shimmed && { env: hostEnvTool(allowedHostEnv) }),
-      ...(shimmed && shimmed.tools),
-    };
-    for (const name of Object.keys(builtTools)) {
+      checked.length > 0 ? withShims(command, checked, { binary }) : undefined;
+    for (const name of Object.keys(shimmed?.tools ?? {})) {
       if (ownTools && Object.hasOwn(ownTools, name)) {
         throw new SandboxValidationError(
-          `The tool name "${name}" is used by shims and hostEnv`,
+          `The tool name "${name}" is used by shims`,
         );
       }
     }
 
     const tools =
-      ownTools || Object.keys(builtTools).length > 0
-        ? { ...ownTools, ...builtTools }
-        : undefined;
+      ownTools || shimmed ? { ...ownTools, ...shimmed?.tools } : undefined;
     for (const [key, value] of Object.entries(shimmed?.environment ?? {})) {
       if (
         ownEnvironment?.[key] !== undefined &&

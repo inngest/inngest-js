@@ -17,7 +17,7 @@ import {
   parseSandboxOperationForAction,
   type SandboxRawTool,
 } from "./protocol.ts";
-import { gitCredentials, injectEnv } from "./shims.ts";
+
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
@@ -1371,16 +1371,16 @@ describe("shims and long commands on commands.run", () => {
 
     await expect(
       sandbox.commands.run("x", "true", {
-        shims: { fly: { handle: () => undefined } } as never,
+        shims: [{ name: "fly", handle: () => undefined }] as never,
       }),
-    ).rejects.toThrow("must be made with tool.shim()");
+    ).rejects.toThrow("only values made with tool.shim()");
   });
 
   test("an inject shim adds the env tool and wraps the command", async () => {
     const { rawTool, sandbox } = facade();
 
     await sandbox.commands.run("x", "fly deploy", {
-      shims: { fly: injectEnv({ FLY_API_TOKEN: "t" }) },
+      shims: [tool.shim.injectEnv("fly", { FLY_API_TOKEN: "t" })],
     });
 
     const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
@@ -1403,7 +1403,7 @@ describe("shims and long commands on commands.run", () => {
   test("an empty shims object is no shims", async () => {
     const { rawTool, sandbox } = facade();
 
-    await sandbox.commands.run("x", "true", { shims: {} });
+    await sandbox.commands.run("x", "true", { shims: [] });
 
     expect(rawTool).toHaveBeenCalledExactlyOnceWith(
       "x",
@@ -1418,9 +1418,9 @@ describe("shims and long commands on commands.run", () => {
     await expect(
       sandbox.commands.run("x", "true", {
         tools: { env: async () => 1 },
-        hostEnv: ["HOME"],
+        shims: [tool.shim.hostEnv(["HOME"])],
       }),
-    ).rejects.toThrow('"env" is used by shims and hostEnv');
+    ).rejects.toThrow('"env" is used by shims');
   });
 
   test("a user tool can't turn on memo none", async () => {
@@ -1456,31 +1456,16 @@ describe("shims and long commands on commands.run", () => {
     expect(operation).toMatchObject({ input: [{ timeoutMs: 300_000 }] });
   });
 
-  test("hostEnv is validated", async () => {
-    const { sandbox } = facade();
-    const bad = async (hostEnv: unknown) => {
-      return sandbox.commands
-        .run("x", "true", { hostEnv: hostEnv as never })
-        .catch((error: unknown) => {
-          return error instanceof SandboxValidationError;
-        });
-    };
-
-    expect(await bad("HOME")).toBe(true);
-    expect(await bad({ A: 1 })).toBe(true);
-    expect(await bad(JSON.parse('{"__proto__":"x"}'))).toBe(true);
-    expect(await bad({ "bad name": "x" })).toBe(true);
-    expect(await bad({ A: { mint: () => "x" } })).toBe(true);
-  });
-
   test("an environment that fights a shim's is rejected", async () => {
     const { sandbox } = facade();
 
     await expect(
       sandbox.commands.run("x", "git fetch", {
-        shims: gitCredentials({
-          "github.com": () => ({ username: "u", password: "p" }),
-        }),
+        shims: [
+          tool.shim.gitCredentials({
+            "github.com": () => ({ username: "u", password: "p" }),
+          }),
+        ],
         environment: { GIT_CONFIG_COUNT: "0" },
       }),
     ).rejects.toThrow("conflicts with the shims");

@@ -74,11 +74,6 @@ export interface DollarOptions {
    * allows.
    */
   shims?: SandboxToolsOptions["shims"];
-  /**
-   * EXPERIMENTAL: Host values the command can read with `inngest-tool env
-   * NAME`, and nothing else.
-   */
-  hostEnv?: SandboxToolsOptions["hostEnv"];
 }
 
 export type DollarTag = (
@@ -378,7 +373,6 @@ export const createDollar = (
       timeout = maxSandboxProcessTimeoutMs,
       exitCodes = [0],
       shims,
-      hostEnv,
     } = defaults;
 
     // Planned now, not when awaited, so `Promise.all` of several commands
@@ -389,7 +383,6 @@ export const createDollar = (
       timeout,
       exitCodes,
       ...(shims && { shims }),
-      ...(hostEnv && { hostEnv }),
     }).catch((error: unknown) => {
       throw asCommandTimeout(error, text, timeout);
     });

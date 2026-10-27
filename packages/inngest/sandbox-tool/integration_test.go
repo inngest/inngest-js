@@ -354,3 +354,16 @@ func TestShimReplaysDrainedStdinWhenNotOverridden(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestShimsListsWhatIsShimmed(t *testing.T) {
+	shims := t.TempDir()
+	os.WriteFile(filepath.Join(shims, "shims.txt"), []byte("fly: runs with FLY_API_TOKEN set by the host"), 0o644)
+	r := execute(t, []string{"INNGEST_SHIMS_DIR=" + shims}, "", "", "shims")
+	if r.code != 0 || r.stdout != "fly: runs with FLY_API_TOKEN set by the host\n" {
+		t.Fatalf("%+v", r)
+	}
+	r = execute(t, nil, "", "", "shims")
+	if r.code != 0 || r.stdout != "no shims\n" {
+		t.Fatalf("%+v", r)
+	}
+}

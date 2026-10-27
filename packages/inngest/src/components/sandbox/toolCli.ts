@@ -11,6 +11,7 @@
  *
  * - Arguments are strings. With `-j` they are JSON values, which is how a tool
  *   with an `input` schema gets its one object of named arguments.
+ * - `inngest-tool shims` prints what the command's shims do, one line each.
  * - `--stdin` adds all of stdin as a final string argument. Trailing newlines
  *   are not kept, and control characters other than tab and newline exit 2
  *   (the static binary has neither limit).
@@ -24,6 +25,10 @@ import { maxToolRequestBytes } from "./tools.ts";
 export const toolCliName = "inngest-tool";
 
 export const toolCliScript = String.raw`raw=; json=; stdin=
+if [ "$1" = shims ] && [ $# -eq 1 ]; then
+  cat "$INNGEST_SHIMS_DIR/shims.txt" 2>/dev/null || echo "no shims"
+  exit 0
+fi
 while :; do
   case $1 in
     -r) raw=1; shift;;

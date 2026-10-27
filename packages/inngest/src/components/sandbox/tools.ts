@@ -22,13 +22,7 @@ import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
 import { isInternalTool } from "./internalTool.ts";
-import {
-  createShim,
-  type HostEnv,
-  type SandboxShim,
-  type ShimDefinition,
-  type ShimHandler,
-} from "./shims.ts";
+import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 
@@ -146,18 +140,11 @@ export interface SandboxToolsOptions {
   toolOptions?: SandboxToolOptions;
 
   /**
-   * EXPERIMENTAL: Programs on `PATH` that call a handler in your app. See
-   * `shims.ts`. Counts as a tool for the command's limits.
+   * EXPERIMENTAL: Programs on `PATH` that call a handler in your app, made
+   * with `tool.shim()`, and nothing else. See `shims.ts`. Count as tools for
+   * the command's limits.
    */
-  shims?: Record<string, SandboxShim>;
-
-  /**
-   * EXPERIMENTAL: Host values the code can read with `inngest-tool env NAME`,
-   * and nothing else. A list of names reads them from the host's environment;
-   * an object gives values, or functions that make one per read. Results are
-   * never stored in the run.
-   */
-  hostEnv?: readonly string[] | HostEnv;
+  shims?: readonly SandboxShim[];
 }
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
@@ -247,24 +234,27 @@ export const tool = {
 
   /**
    * EXPERIMENTAL: Declares a program that stands in for the real one inside a
-   * sandbox command. Pass it to `shims` on `commands.run` or `$`. When code
-   * runs the program, `handle` runs here, in your app, and decides what
-   * happens. See `shims.ts`.
+   * sandbox command. Pass it in `shims` on `commands.run()` or `$`. When
+   * code runs the program, the handler runs here, in your app, and decides
+   * what happens: `run()` the real program (as called, or with another
+   * `argv`, extra `env` or `stdin`), `reply()` with an exit code and
+   * output, or `refuse()`. See `shims.ts`.
+   *
+   * `tool.shim.injectEnv()`, `tool.shim.gitCredentials()` and
+   * `tool.shim.hostEnv()` are shims for the common cases.
    *
    * @example
    * ```ts
-   * const terraform = tool.shim((call) => {
-   *   return call.argv[0] === "apply"
-   *     ? refuse("terraform", "apply needs a pull request")
+   * const terraform = tool.shim("terraform", ({ argv, run, refuse }) => {
+   *   return argv[0] === "apply"
+   *     ? refuse("apply goes through a pull request")
    *     : run();
    * });
    *
-   * await sandbox.$({ shims: { terraform } }).sh`terraform plan`;
+   * await sandbox.$({ shims: [terraform] }).sh`terraform plan`;
    * ```
    */
-  shim: (definition: ShimDefinition | ShimHandler): SandboxShim => {
-    return createShim(definition);
-  },
+  shim,
 
   /**
    * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of

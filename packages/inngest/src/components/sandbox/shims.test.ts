@@ -21,17 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { internalTool } from "./internalTool.ts";
-import {
-  gitCredentials,
-  hostEnvFrom,
-  hostEnvTool,
-  injectEnv,
-  refuse,
-  reply,
-  run,
-  type Shims,
-  withShims,
-} from "./shims.ts";
+import { type SandboxShim, validateShims, withShims } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import { toolCliScript } from "./toolCli.ts";
 import { toolsRoot, wrapperScript } from "./toolStubs.ts";
@@ -156,7 +146,11 @@ const runWrapped = async (
   }
 };
 
-const shimmed = (command: string, shims: Shims, path?: string) => {
+const shimmed = (
+  command: string,
+  shims: readonly SandboxShim[],
+  path?: string,
+) => {
   const built = withShims(command, shims, { binary: testBinary });
 
   return runWrapped(built.command, built.tools, {
@@ -278,11 +272,11 @@ describe.skipIf(!hasBinary)("shims", () => {
   test("inject: runs the real program with a credential for this call only", async () => {
     const out = await shimmed(
       "fly deploy --app box; echo after: ${FLY_API_TOKEN:-unset}",
-      {
-        fly: tool.shim(({ argv }) => {
+      [
+        tool.shim("fly", ({ argv, run }) => {
           return run({ env: { FLY_API_TOKEN: `tok-for-${argv[0]}` } });
         }),
-      },
+      ],
       fakeBin(),
     );
 
@@ -295,25 +289,35 @@ describe.skipIf(!hasBinary)("shims", () => {
   test("rewrite: runs the real program with another argv", async () => {
     const out = await shimmed(
       "fly deploy",
-      {
-        fly: tool.shim(({ argv }) => {
+      [
+        tool.shim("fly", ({ argv, run }) => {
           return run({ argv: [...argv, "--dry-run"] });
         }),
-      },
+      ],
       fakeBin(),
     );
 
     expect(out.stdout).toBe("fly deploy --dry-run token=none\n");
   });
 
+  test("returning nothing runs the program as called", async () => {
+    const out = await shimmed(
+      "fly status",
+      [tool.shim("fly", () => undefined)],
+      fakeBin(),
+    );
+
+    expect(out.stdout).toBe("fly status token=none\n");
+  });
+
   test("decline: exits 126 with the message and never runs the program", async () => {
     const out = await shimmed(
       "fly destroy",
-      {
-        fly: tool.shim(({ name }) => {
-          return refuse(name, "destroy is not allowed here");
+      [
+        tool.shim("fly", ({ refuse }) => {
+          return refuse("destroy is not allowed here");
         }),
-      },
+      ],
       fakeBin(),
     );
 
@@ -323,33 +327,52 @@ describe.skipIf(!hasBinary)("shims", () => {
   });
 
   test("fake: answers without the program", async () => {
-    const out = await shimmed("fly status", {
-      fly: tool.shim(() => {
+    const out = await shimmed("fly status", [
+      tool.shim("fly", ({ reply }) => {
         return reply(0, { stdout: "all green\n" });
       }),
-    });
+    ]);
 
     expect(out.stdout).toBe("all green\n");
   });
 
   test("a shim is found by a subprocess, not only the command itself", async () => {
-    const out = await shimmed("sh -c 'sh -c \"fly nested\"'", {
-      fly: tool.shim(() => {
+    const out = await shimmed("sh -c 'sh -c \"fly nested\"'", [
+      tool.shim("fly", ({ reply }) => {
         return reply(0, { stdout: "from host\n" });
       }),
-    });
+    ]);
 
     expect(out.stdout).toBe("from host\n");
+  });
+
+  test("the handler gets the call and the tool context", async () => {
+    let seen: unknown;
+    await shimmed("fly one two", [
+      tool.shim("fly", (call) => {
+        seen = {
+          name: call.name,
+          argv: call.argv,
+          key: call.idempotencyKey,
+          signal: call.signal instanceof AbortSignal,
+        };
+
+        return call.reply(0);
+      }),
+    ]);
+
+    expect(seen).toEqual({
+      name: "fly",
+      argv: ["one", "two"],
+      key: "k",
+      signal: true,
+    });
   });
 
   test("an unknown shim name from the sandbox is an error", async () => {
     const built = withShims(
       "true",
-      {
-        fly: tool.shim(() => {
-          return reply(0);
-        }),
-      },
+      [tool.shim("fly", ({ reply }) => reply(0))],
       { binary: testBinary },
     );
     const resolved = await resolveToolCall(
@@ -378,44 +401,66 @@ describe.skipIf(!hasBinary)("shims", () => {
 
   test("names the prelude relies on can't be shimmed", () => {
     expect(() => {
-      return withShims(
-        "true",
-        {
-          rm: tool.shim(() => {
-            return reply(0);
-          }),
-        },
-        { binary: testBinary },
-      );
+      return tool.shim("rm", ({ reply }) => reply(0));
     }).toThrow("can't be shimmed");
   });
 
   test("shim names that could break the launcher are rejected", () => {
     expect(() => {
-      return withShims(
-        "true",
-        {
-          "a b; rm -rf /": tool.shim(() => {
-            return reply(0);
-          }),
-        },
-        { binary: testBinary },
-      );
+      return tool.shim("a b; rm -rf /", ({ reply }) => reply(0));
     }).toThrow("Invalid shim name");
+  });
+
+  test("a shim passed twice, or a non-shim, is rejected", () => {
+    const fly = tool.shim("fly", ({ reply }) => reply(0));
+
+    expect(() => {
+      return validateShims([fly, fly]);
+    }).toThrow("passed twice");
+    expect(() => {
+      return validateShims([{ name: "fly", handle: () => undefined }]);
+    }).toThrow("only values made with tool.shim()");
+    expect(() => {
+      return validateShims({ fly });
+    }).toThrow("list of tool.shim() values");
+  });
+
+  test("inngest-tool shims lists what is shimmed, and INNGEST_SHIMS names them", async () => {
+    const out = await shimmed(
+      'inngest-tool shims; echo "names=$INNGEST_SHIMS"',
+      [
+        tool.shim("fly", {
+          description: "deploys through the host",
+          handle: ({ reply }) => reply(0),
+        }),
+        tool.shim.injectEnv("npm", { NODE_AUTH_TOKEN: "t" }),
+        tool.shim.hostEnv({ REGION: "iad" }),
+      ],
+    );
+
+    expect(out.stdout).toBe(
+      [
+        "env: values to read with inngest-tool env NAME: REGION",
+        "fly: deploys through the host",
+        "npm: runs with NODE_AUTH_TOKEN set by the host",
+        "names=fly,npm",
+        "",
+      ].join("\n"),
+    );
   });
 });
 
 describe("inject and hostEnv", () => {
   let minted = 0;
-  const inject = {
-    fly: injectEnv({
+  const inject = [
+    tool.shim.injectEnv("fly", {
       FLY_API_TOKEN: () => {
         minted++;
 
         return `minted-${minted}`;
       },
     }),
-  };
+  ];
   const fly = (): string => {
     const dir = temp();
     const file = join(dir, "fly");
@@ -424,11 +469,16 @@ describe("inject and hostEnv", () => {
 
     return dir;
   };
+  const envTool = (...shims: SandboxShim[]): SandboxTools => {
+    return withShims("true", shims).tools;
+  };
 
   test("an inject-only shim is plain sh: reads the value from the host and runs the real program", async () => {
     const out = await shimmed("fly deploy; fly status", inject, fly());
 
-    expect(out.stdout).toBe("fly deploy minted-1\nfly status minted-2\n");
+    expect(out.stdout).toMatch(
+      /^fly deploy minted-\d+\nfly status minted-\d+\n$/,
+    );
     expect(out.calls).toEqual(["env", "env"]);
   });
 
@@ -445,22 +495,27 @@ describe("inject and hostEnv", () => {
   });
 
   test("hostEnv reads only allowed names, one value or an array", async () => {
-    const built = withShims("true", {});
-    const tools: SandboxTools = {
-      env: hostEnvTool(hostEnvFrom({ A: "1", B: () => "2" })),
-    };
     const out = await runWrapped(
       [
         "/bin/sh",
         "-c",
         "inngest-tool -r env A; echo; inngest-tool env A B; inngest-tool env C",
       ],
-      tools,
+      envTool(tool.shim.hostEnv({ A: "1", B: () => "2" })),
     );
 
-    expect(built.tools).toEqual({});
     expect(out.stdout).toBe('1\n["1","2"]\n');
     expect(out.stderr).toContain("Not allowed to read: C");
+  });
+
+  test("a name list reads the host's environment", async () => {
+    process.env.SHIM_TEST_VALUE = "from-host";
+    const out = await runWrapped(
+      ["inngest-tool", "-r", "env", "SHIM_TEST_VALUE"],
+      envTool(tool.shim.hostEnv(["SHIM_TEST_VALUE"])),
+    );
+
+    expect(out.stdout).toBe("from-host");
   });
 
   test("minted values are shared per run and scope", async () => {
@@ -471,11 +526,9 @@ describe("inject and hostEnv", () => {
       return `v${count}`;
     };
     const read = async (scope: string, runId: string) => {
-      const env = hostEnvTool({
-        T: { mint, ttl: 60_000, scope },
-      }) as unknown as {
-        run: (...args: unknown[]) => Promise<unknown>;
-      };
+      const env = envTool(
+        tool.shim.hostEnv({ T: { mint, ttl: 60_000, scope } }),
+      ).env as unknown as { run: (...args: unknown[]) => Promise<unknown> };
 
       return env.run("T", { runId });
     };
@@ -486,15 +539,28 @@ describe("inject and hostEnv", () => {
     expect(await read("a", "run-2")).toBe("v3");
   });
 
-  test("a name list reads the host's environment", async () => {
-    process.env.SHIM_TEST_VALUE = "from-host";
-    const env = hostEnvTool(hostEnvFrom(["SHIM_TEST_VALUE"]));
-    const out = await runWrapped(
-      ["inngest-tool", "-r", "env", "SHIM_TEST_VALUE"],
-      { env },
-    );
+  test("hostEnv and injectEnv are validated", () => {
+    expect(() => {
+      return tool.shim.hostEnv({ A: 1 as never });
+    }).toThrow("Invalid entry");
+    expect(() => {
+      return tool.shim.hostEnv({ "bad name": "x" });
+    }).toThrow("Invalid entry");
+    expect(() => {
+      return tool.shim.hostEnv(JSON.parse('{"__proto__":"x"}'));
+    }).toThrow("Invalid entry");
+    expect(() => {
+      return tool.shim.injectEnv("fly", {});
+    }).toThrow("at least one");
+  });
 
-    expect(out.stdout).toBe("from-host");
+  test("two shims can't inject the same variable", () => {
+    expect(() => {
+      return withShims("true", [
+        tool.shim.injectEnv("fly", { T: "1" }),
+        tool.shim.injectEnv("flyctl", { T: "1" }),
+      ]);
+    }).toThrow("more than one shim");
   });
 });
 
@@ -532,15 +598,17 @@ describe("a credential helper written in sh", () => {
   });
 });
 
-describe.skipIf(!hasBinary)("gitCredentials", () => {
+describe.skipIf(!hasBinary)("tool.shim.gitCredentials", () => {
   const minted: string[] = [];
-  const shims = gitCredentials({
-    "github.com": ({ path }) => {
-      minted.push(path ?? "");
+  const shims = [
+    tool.shim.gitCredentials({
+      "github.com": ({ path }) => {
+        minted.push(path ?? "");
 
-      return { username: "x-access-token", password: "ghs_short" };
-    },
-  });
+        return { username: "x-access-token", password: "ghs_short" };
+      },
+    }),
+  ];
 
   test("git asks the helper, which answers from the host", async () => {
     const out = await shimmed(

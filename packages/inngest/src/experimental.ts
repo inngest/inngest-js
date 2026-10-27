@@ -96,21 +96,17 @@ export type {
   GitCredential,
   GitCredentialRequest,
   HostEnv,
+  HostEnvShim,
   HostEnvValue,
+  ProgramShim,
   SandboxShim,
   ShimCall,
   ShimDefinition,
   ShimHandler,
+  ShimOptions,
   ShimReply,
   ShimResult,
   ShimRun,
-} from "./components/sandbox/shims.ts";
-export {
-  gitCredentials,
-  injectEnv,
-  refuse,
-  reply,
-  run,
 } from "./components/sandbox/shims.ts";
 export type {
   SandboxTool,
