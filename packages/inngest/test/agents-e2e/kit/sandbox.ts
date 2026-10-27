@@ -35,6 +35,10 @@ const now = () => {
 export const fakeSandbox = (options: FakeSandboxOptions) => {
   const realFetch = globalThis.fetch;
   const files = new Map<string, Uint8Array>();
+  const snapshots = new Map<
+    string,
+    Record<string, unknown> & { name?: string }
+  >();
 
   const record = (method: string, body: Record<string, unknown>) => {
     void realFetch(`${options.recordUrl}/record`, {
@@ -63,6 +67,52 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
       "http://fake.invalid",
     );
     const method = init?.method ?? "GET";
+    const snapshotMatch = url.pathname.match(/^\/v2\/snapshots(?:\/([^/]+))?$/);
+
+    if (snapshotMatch) {
+      const [, snapshotId] = snapshotMatch;
+
+      if (!snapshotId && method === "GET") {
+        const name = url.searchParams.get("name");
+        const items = [...snapshots.values()]
+          .filter((snapshot) => {
+            return name === null || snapshot.name === name;
+          })
+          .reverse();
+
+        return Response.json({
+          data: items,
+          page: { hasMore: false, limit: 100 },
+          metadata: { fetchedAt: now() },
+        });
+      }
+
+      const found = snapshotId ? snapshots.get(snapshotId) : undefined;
+
+      if (snapshotId && method === "GET" && found) {
+        return Response.json({ data: found });
+      }
+
+      if (snapshotId && method === "DELETE" && found) {
+        snapshots.delete(snapshotId);
+        record("snapshot.delete", { id: snapshotId, name: found.name });
+
+        return new Response(null, { status: 204 });
+      }
+
+      return Response.json(
+        {
+          errors: [
+            {
+              code: "sandbox_snapshot_not_found",
+              message: "no such snapshot",
+            },
+          ],
+        },
+        { status: 404 },
+      );
+    }
+
     const match = url.pathname.match(/^\/v2\/sandboxes(?:\/([^/]+)(\/.*)?)?$/);
 
     if (!match) {
@@ -70,6 +120,51 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     }
 
     const [, id, rest = ""] = match;
+
+    if (id && rest === "/snapshots" && method === "POST") {
+      const request = JSON.parse(String(init?.body || "{}")) as {
+        name?: string;
+      };
+
+      if (
+        request.name &&
+        [...snapshots.values()].some((snapshot) => {
+          return snapshot.name === request.name;
+        })
+      ) {
+        return Response.json(
+          {
+            errors: [
+              {
+                code: "sandbox_snapshot_name_taken",
+                message: "the snapshot name is taken",
+              },
+            ],
+          },
+          { status: 409 },
+        );
+      }
+
+      const created = {
+        id: randomUUID(),
+        ...(request.name ? { name: request.name } : {}),
+        sourceImageId: "a".repeat(64),
+        status: "READY",
+        compatibilityId: "fake",
+        resources: { vcpu: 2, memoryMb: 2048 },
+        memoryPackCount: 0,
+        diskPackCount: 0,
+        storedBytes: 0,
+        createdAt: now(),
+        updatedAt: now(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      snapshots.set(created.id, created);
+      record("snapshot.create", { id: created.id, name: request.name });
+
+      return Response.json({ data: created }, { status: 201 });
+    }
 
     if (!id && method === "POST") {
       const request = JSON.parse(String(init?.body ?? "{}")) as {
