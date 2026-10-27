@@ -48,6 +48,11 @@ export interface ThreadMessage {
    * For `"stop"`: `"nextTurn"` lets the running model call finish.
    */
   when?: "nextTurn";
+
+  /**
+   * For a message made from a trigger event: that event.
+   */
+  event?: { id?: string; name: string; data: unknown };
 }
 
 export interface ThreadOptions {

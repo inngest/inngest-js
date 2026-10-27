@@ -31,8 +31,9 @@ import {
   type ThreadHandle,
   type ThreadMessage,
 } from "./thread.ts";
+import { createThreadStarter, type ThreadKeyConfig } from "./threadTrigger.ts";
 
-export interface AgentFunctionConfig {
+export interface AgentFunctionConfig extends ThreadKeyConfig {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -83,7 +84,12 @@ export interface AgentFunction {
   cleanup: InngestFunction.Any;
 
   /**
-   * Both functions, ready to pass to `serve()`.
+   * Turns the `on` trigger events into thread messages. Absent without `on`.
+   */
+  starter?: InngestFunction.Any;
+
+  /**
+   * Its functions, ready to pass to `serve()`.
    */
   functions: InngestFunction.Any[];
 
@@ -321,13 +327,17 @@ export function createAgentFunction(
     },
   );
 
-  // Serving the app serves both, whether or not the app lists them.
-  registerFunctions(client, [fn, cleanup]);
+  const starter = createThreadStarter(client, ref, config.id, config);
+  const functions = starter ? [fn, cleanup, starter] : [fn, cleanup];
+
+  // Serving the app serves them all, whether or not the app lists them.
+  registerFunctions(client, functions);
 
   return {
     fn,
     cleanup,
-    functions: [fn, cleanup],
+    starter,
+    functions,
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });

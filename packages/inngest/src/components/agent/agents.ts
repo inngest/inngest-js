@@ -28,3 +28,9 @@ export type {
 } from "./subscribe.ts";
 export type { ThreadHandle, ThreadMessage, ThreadOptions } from "./thread.ts";
 export { agentMessageEvent, agentStopEvent, getThread } from "./thread.ts";
+export type {
+  ThreadKeyConfig,
+  ThreadKeyContext,
+  ThreadTrigger,
+  ThreadTriggerEvent,
+} from "./threadTrigger.ts";
