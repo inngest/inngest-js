@@ -565,7 +565,7 @@ export const waitForChecks = async (opts: {
             name: traceName.waitForCheck(name),
           },
           {
-            event: "github/check_run.completed",
+            event: "github-ci/check_run.completed",
             timeout: durationToMs(opts.timeout ?? "1h", "timeout"),
             if: `async.data.check_run.name == ${JSON.stringify(name)} && async.data.check_run.head_sha == ${JSON.stringify(sha)}`,
           },
@@ -627,7 +627,7 @@ export const waitForWorkflow = async (opts: {
         name: traceName.waitForWorkflow(opts.workflow),
       },
       {
-        event: "github/workflow_run.completed",
+        event: "github-ci/workflow_run.completed",
         timeout: durationToMs(opts.timeout ?? "1h", "timeout"),
         if: `async.data.workflow_run.head_sha == ${JSON.stringify(sha)} && ${workflowMatch}`,
       },

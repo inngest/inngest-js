@@ -1,14 +1,14 @@
 import type { RunMetadata, TraceMetadataNode } from "@inngest/test-harness";
 
-const scoreKind = "inngest.score";
+const scoreKindPrefix = "inngest.score.";
 
+// Each score is its own `inngest.score.<name>` kind w/ values `{ value }`.
 function scoreValues(metadata: RunMetadata[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const md of metadata) {
-    if (md.kind === scoreKind) {
-      for (const [name, entry] of Object.entries(md.values)) {
-        out[name] = (entry as { value: unknown }).value;
-      }
+    if (md.kind.startsWith(scoreKindPrefix)) {
+      const name = md.kind.slice(scoreKindPrefix.length);
+      out[name] = (md.values as { value: unknown }).value;
     }
   }
   return out;

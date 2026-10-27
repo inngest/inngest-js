@@ -626,6 +626,7 @@ export const startFrom = async (
     const snapshotId = built.snapshotId;
 
     scope.fromSnapshotId = snapshotId;
+    scope.fromParent = { id: config.id, reused: built.reused };
 
     scope.startNote =
       built.cached?.snapshotId === snapshotId

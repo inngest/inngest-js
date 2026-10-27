@@ -10,7 +10,13 @@ import { type StepSpec, steps } from "../pipeline/names.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
-import { errorMessage, formatDuration } from "../util.ts";
+import {
+  errorMessage,
+  formatDuration,
+  maxStatusDescription,
+  stripAnsi,
+  truncateLabel,
+} from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
 
 /**
@@ -29,6 +35,27 @@ interface CheckResult {
   summary?: string | undefined;
   annotations?: CheckAnnotation[] | undefined;
 }
+
+/** A button on a failed check, which GitHub sends back as `requested_action`. */
+interface CheckAction {
+  label: string;
+  description: string;
+  identifier: string;
+}
+
+/** What a check that is waiting or running offers: ending the run. */
+const runningActions: CheckAction[] = [
+  { label: "Cancel", description: "Stop this run", identifier: "cancel" },
+];
+
+/** What a failed check offers: running again without the cache. */
+const failedActions: CheckAction[] = [
+  {
+    label: "Re-run, no cache",
+    description: "Run again from scratch",
+    identifier: "rerun-fresh",
+  },
+];
 
 /** A job whose check is completed when the run ends. */
 export interface ClosingJob extends CheckResult {
@@ -59,6 +86,25 @@ export interface CheckReporter {
         result: () => CheckResult;
       },
   ): Promise<void>;
+  /**
+   * Complete every check a cancelled run left in progress, its jobs' as well
+   * as the pipeline's. Jobs run inside the run, so nothing of theirs runs when
+   * it's cancelled; the checks are found on GitHub instead. It isn't a step:
+   * the caller makes it durable, and there is no run to read, so the run is
+   * only what the sinks read.
+   */
+  runCancelled(args: {
+    run: Pick<CiRunScope, "runId" | "checkName" | "repo">;
+  }): Promise<void>;
+  /**
+   * Show a job's check as queued: the job is known but hasn't started. Its
+   * start later moves the same check to in progress.
+   */
+  jobQueued(args: {
+    run: CiRunScope;
+    jobPath: string;
+    name?: string;
+  }): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.
@@ -126,8 +172,13 @@ export interface CheckReporter {
  * shared: step wrapping, naming, truncation, and batching.
  */
 export interface CheckSink {
+  /**
+   * Show a check as `queued` or `in_progress`. A check already shown moves
+   * to the state asked for rather than being made again.
+   */
   start(args: {
     run: CiRunScope;
+    state: "queued" | "in_progress";
     name: string;
     externalId: string;
     detailsUrl: string;
@@ -141,6 +192,28 @@ export interface CheckSink {
     conclusion: CheckConclusion;
     title: string;
     summary: string;
+    /** At most the first batch: the reporter sends the rest through `annotate`. */
+    annotations: NormalisedAnnotation[];
+    actions?: CheckAction[];
+    checkRunId?: number;
+  }): Promise<void>;
+  /** Complete the run's checks that are still in progress, as cancelled. */
+  closeOpen?(args: {
+    run: Pick<CiRunScope, "runId" | "repo">;
+    title: string;
+  }): Promise<void>;
+  /**
+   * Add a batch of annotations to a completed check. GitHub takes 50 a
+   * request and appends them, so the reporter sends each batch past the first
+   * as a step of its own.
+   */
+  annotate?(args: {
+    run: CiRunScope;
+    name: string;
+    externalId: string;
+    detailsUrl: string;
+    title: string;
+    summary: string;
     annotations: NormalisedAnnotation[];
     checkRunId?: number;
   }): Promise<void>;
@@ -148,6 +221,11 @@ export interface CheckSink {
     run: CiRunScope;
     name: string;
     title: string;
+    /** What the check shows below its title. Without it the check keeps its own. */
+    summary?: string;
+    text?: string;
+    /** The buttons the check shows, which an update would otherwise clear. */
+    actions?: CheckAction[];
     checkRunId?: number;
     /** Points the check's link at another run. */
     detailsUrl?: string;
@@ -206,12 +284,14 @@ export const normaliseAnnotation = (
 
   return {
     path: annotation.path,
-    message: annotation.message,
+    message: stripAnsi(annotation.message),
     start_line: start,
     end_line: annotation.end_line ?? start,
     annotation_level: annotation.annotation_level ?? "failure",
-    ...(annotation.title ? { title: annotation.title } : {}),
-    ...(annotation.raw_details ? { raw_details: annotation.raw_details } : {}),
+    ...(annotation.title ? { title: stripAnsi(annotation.title) } : {}),
+    ...(annotation.raw_details
+      ? { raw_details: stripAnsi(annotation.raw_details) }
+      : {}),
   };
 };
 
@@ -272,9 +352,16 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       name,
       ...identity(run, key),
       conclusion: read.conclusion,
-      title: read.title,
-      summary: truncateSummary(read.summary ?? ""),
-      annotations: (read.annotations ?? []).map(normaliseAnnotation),
+      title: stripAnsi(read.title),
+      summary: truncateSummary(stripAnsi(read.summary ?? "")),
+      annotations:
+        batchAnnotations(
+          (read.annotations ?? []).map(normaliseAnnotation),
+        )[0] ?? [],
+      actions:
+        read.conclusion === "failure" || read.conclusion === "timed_out"
+          ? failedActions
+          : [],
       ...idFor(run, key),
     };
   };
@@ -285,14 +372,22 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     name: string,
     job?: string,
     metadata?: () => Record<string, unknown>,
+    state: "queued" | "in_progress" = "in_progress",
   ) => {
     const key = job ?? "pipeline";
 
     const result = await githubStep(
       run,
-      steps.startCheck(name, job),
+      state === "queued"
+        ? steps.queueCheck(name, job)
+        : steps.startCheck(name, job),
       async () => {
-        const started = await sink.start({ run, name, ...identity(run, key) });
+        const started = await sink.start({
+          run,
+          state,
+          name,
+          ...identity(run, key),
+        });
 
         return { ...started, startedAt: Date.now() };
       },
@@ -315,20 +410,53 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
   ): Promise<number> => {
     const key = job?.path ?? "pipeline";
 
-    const endedAt = await githubStep(
+    const done = await githubStep(
       run,
       steps.completeCheck(name, job),
       async () => {
-        await sink.complete(completeArgs(run, key, name, result()));
+        const read = result();
+        const args = completeArgs(run, key, name, read);
 
-        return Date.now();
+        await sink.complete(args);
+
+        // What is past the first batch comes out of the step, so it is the
+        // same on every replay.
+        return {
+          endedAt: Date.now(),
+          rest: batchAnnotations(
+            (read.annotations ?? []).map(normaliseAnnotation),
+          ).slice(1),
+          title: args.title,
+          summary: args.summary,
+        };
       },
       metadata,
     );
 
+    // Each batch is a step of its own, so a retry can't add one twice.
+    for (const [index, batch] of done.rest.entries()) {
+      await githubStep(
+        run,
+        steps.annotateCheck(name, index + 2, job?.path),
+        async () => {
+          await sink.annotate?.({
+            run,
+            name,
+            ...identity(run, key),
+            title: done.title,
+            summary: done.summary,
+            annotations: batch,
+            ...idFor(run, key),
+          });
+
+          return null;
+        },
+      );
+    }
+
     checkRunIds.delete(idKey(run, key));
 
-    return endedAt;
+    return done.endedAt;
   };
 
   return {
@@ -346,6 +474,26 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       }
 
       await complete(run, run.checkName, result, undefined, metadata);
+    },
+
+    runCancelled: async ({ run }) => {
+      if (run.checkName) {
+        await sink.closeOpen?.({ run, title: "Cancelled" });
+      }
+    },
+
+    jobQueued: async ({ run, jobPath, name }) => {
+      if (!run.checkName || !run.jobChecks) {
+        return;
+      }
+
+      await start(
+        run,
+        jobCheckName(run, jobPath, name),
+        jobPath,
+        undefined,
+        "queued",
+      );
     },
 
     jobStart: async ({ run, jobPath, name }) => {
@@ -429,6 +577,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: checkName,
           title,
+          actions: runningActions,
           ...idFor(run, key),
         });
 
@@ -450,6 +599,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: jobCheckName(run, jobPath),
           title: `Attempt ${attempt} of ${of}: ${message}`,
+          actions: runningActions,
           ...idFor(run, jobPath),
         });
 
@@ -481,10 +631,11 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       await githubStep(run, step, async () => {
         await sink.update?.({
-          // The check belongs to the pipeline that invoked this run.
-          run: { ...run, pipelineId: parent.pipelineId },
+          // The check belongs to the pipeline run that invoked this one.
+          run: { ...run, runId: parent.runId, pipelineId: parent.pipelineId },
           name: check.name,
           title: direct ? "Running in its own run" : "Building in its own run",
+          actions: runningActions,
           detailsUrl,
           ...(check.checkRunId === undefined
             ? {}
@@ -530,7 +681,7 @@ export const consoleSink = (
     at: string;
     pipeline: string;
     name: string;
-    status: "in_progress" | "completed";
+    status: "queued" | "in_progress" | "completed";
     conclusion?: string;
     title?: string;
     summary?: string;
@@ -542,16 +693,19 @@ export const consoleSink = (
   };
 
   return {
-    start: async ({ run, name, detailsUrl }) => {
+    start: async ({ run, state, name, detailsUrl }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
         name,
-        status: "in_progress",
+        status: state,
         url: detailsUrl,
       });
 
-      write(`[${run.pipelineId}] … ${name}`, { check: name, url: detailsUrl });
+      write(`[${run.pipelineId}] ${state === "queued" ? "·" : "…"} ${name}`, {
+        check: name,
+        url: detailsUrl,
+      });
 
       return {};
     },
@@ -584,11 +738,13 @@ export const consoleSink = (
 type Repo = NonNullable<CiRunScope["repo"]>;
 
 const clientFor = (provider: GitHubProvider, repo: Repo) => {
-  return provider.octokit(
-    repo.installationId === undefined
+  return provider.octokit({
+    owner: repo.owner,
+    repo: repo.name,
+    ...(repo.installationId === undefined
       ? {}
-      : { installationId: repo.installationId },
-  );
+      : { installationId: repo.installationId }),
+  });
 };
 
 /**
@@ -616,7 +772,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
   };
 
   return {
-    start: async ({ run, name, externalId, detailsUrl }) => {
+    start: async ({ run, state, name, externalId, detailsUrl }) => {
       const repo = run.repo;
 
       if (!repo?.sha) {
@@ -625,8 +781,20 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
       const existingId = await findCheckRun(octokit, repo, name, externalId);
+      const startedAt = new Date().toISOString();
 
       if (existingId !== undefined) {
+        if (state === "in_progress") {
+          await octokit.rest.checks.update({
+            owner: repo.owner,
+            repo: repo.name,
+            check_run_id: existingId,
+            status: "in_progress",
+            started_at: startedAt,
+            actions: runningActions,
+          });
+        }
+
         return { id: existingId };
       }
 
@@ -635,10 +803,11 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         repo: repo.name,
         name,
         head_sha: repo.sha,
-        status: "in_progress",
+        status: state,
         external_id: externalId,
         details_url: detailsUrl,
-        started_at: new Date().toISOString(),
+        ...(state === "in_progress" ? { started_at: startedAt } : {}),
+        actions: runningActions,
       });
 
       return { id: created.data.id };
@@ -650,6 +819,52 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       externalId,
       detailsUrl,
       conclusion,
+      title,
+      summary,
+      annotations,
+      actions,
+      checkRunId,
+    }) => {
+      const repo = run.repo;
+
+      if (!repo?.sha) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      const id =
+        checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
+
+      const completed = {
+        owner: repo.owner,
+        repo: repo.name,
+        name,
+        head_sha: repo.sha,
+        details_url: detailsUrl,
+        external_id: externalId,
+        status: "completed" as const,
+        conclusion,
+        completed_at: new Date().toISOString(),
+        output: {
+          title,
+          summary,
+          ...(annotations.length > 0 ? { annotations } : {}),
+        },
+        ...(actions ? { actions } : {}),
+      };
+
+      if (id === undefined) {
+        await octokit.rest.checks.create(completed);
+      } else {
+        await octokit.rest.checks.update({ ...completed, check_run_id: id });
+      }
+    },
+
+    annotate: async ({
+      run,
+      name,
+      externalId,
       title,
       summary,
       annotations,
@@ -666,48 +881,78 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       const id =
         checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
 
-      const [firstBatch, ...otherBatches] = batchAnnotations(annotations);
+      if (id === undefined) {
+        return;
+      }
 
-      const base = {
+      // GitHub appends annotations, so each batch is an update of its own.
+      await octokit.rest.checks.update({
         owner: repo.owner,
         repo: repo.name,
-        name,
-        head_sha: repo.sha,
-        details_url: detailsUrl,
-        external_id: externalId,
-      };
+        check_run_id: id,
+        output: { title, summary, annotations },
+      });
+    },
 
-      const completed = {
-        ...base,
-        status: "completed" as const,
-        conclusion,
-        completed_at: new Date().toISOString(),
-        output: {
-          title,
-          summary,
-          ...(firstBatch ? { annotations: firstBatch } : {}),
-        },
-      };
+    closeOpen: async ({ run, title }) => {
+      const repo = run.repo;
 
-      const checkRun =
-        id === undefined
-          ? await octokit.rest.checks.create(completed)
-          : await octokit.rest.checks.update({
-              ...completed,
-              check_run_id: id,
-            });
+      if (!repo?.sha) {
+        return;
+      }
 
-      // GitHub appends annotations, so the rest go up in further updates.
-      for (const batch of otherBatches) {
+      const octokit = await clientFor(provider, repo);
+
+      // Every check a run starts has its ID in its external ID. All are read
+      // before any is closed, since closing one moves the pages.
+      const mine = new Map<
+        number,
+        { id: number; name: string; output?: { summary?: string | null } }
+      >();
+
+      for (const status of ["queued", "in_progress"] as const) {
+        const found = await octokit.paginate(octokit.rest.checks.listForRef, {
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          status,
+          per_page: 100,
+        });
+
+        for (const checkRun of found) {
+          if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
+            mine.set(checkRun.id, checkRun);
+          }
+        }
+      }
+
+      for (const checkRun of mine.values()) {
         await octokit.rest.checks.update({
-          ...base,
-          check_run_id: checkRun.data.id,
-          output: { title, summary, annotations: batch },
+          owner: repo.owner,
+          repo: repo.name,
+          check_run_id: checkRun.id,
+          status: "completed",
+          conclusion: "cancelled",
+          completed_at: new Date().toISOString(),
+          actions: [],
+          output: {
+            title,
+            summary: checkRun.output?.summary || checkRun.name,
+          },
         });
       }
     },
 
-    update: async ({ run, name, title, checkRunId, detailsUrl }) => {
+    update: async ({
+      run,
+      name,
+      title,
+      summary,
+      text,
+      actions,
+      checkRunId,
+      detailsUrl,
+    }) => {
       const repo = run.repo;
 
       if (!repo?.sha || checkRunId === undefined) {
@@ -717,19 +962,31 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       const octokit = await clientFor(provider, repo);
 
       // `output.summary` is required on every update and replaces what's
-      // there, so send back what the check already shows.
-      const current = await octokit.rest.checks.get({
-        owner: repo.owner,
-        repo: repo.name,
-        check_run_id: checkRunId,
-      });
+      // there, so without a new one, send back what the check already shows.
+      const current =
+        summary === undefined
+          ? await octokit.rest.checks.get({
+              owner: repo.owner,
+              repo: repo.name,
+              check_run_id: checkRunId,
+            })
+          : undefined;
 
       await octokit.rest.checks.update({
         owner: repo.owner,
         repo: repo.name,
         check_run_id: checkRunId,
         ...(detailsUrl ? { details_url: detailsUrl } : {}),
-        output: { title, summary: current.data.output?.summary || name },
+        ...(actions ? { actions } : {}),
+        output: {
+          title: stripAnsi(title),
+          summary: truncateSummary(
+            stripAnsi(summary ?? current?.data.output?.summary ?? name),
+          ),
+          ...(text === undefined
+            ? {}
+            : { text: truncateSummary(stripAnsi(text)) }),
+        },
       });
     },
   };
@@ -752,11 +1009,12 @@ const statusFor = (conclusion: CheckConclusion): StatusState => {
 };
 
 /**
- * Commit statuses, for token auth. There are no summaries or annotations.
+ * Commit statuses, for token auth. There are no summaries or annotations, so
+ * the description carries the failure's reason.
  */
 export const statusesSink = (provider: GitHubProvider): CheckSink => {
   const post = async (
-    run: CiRunScope,
+    run: Pick<CiRunScope, "repo">,
     name: string,
     detailsUrl: string,
     state: StatusState,
@@ -777,18 +1035,91 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
       state,
       context: name,
       target_url: detailsUrl,
-      description: description.slice(0, 140),
+      description: stripAnsi(description),
     });
   };
 
   return {
-    start: async ({ run, name, detailsUrl }) => {
-      await post(run, name, detailsUrl, "pending", "Running");
+    start: async ({ run, state, name, detailsUrl }) => {
+      await post(
+        run,
+        name,
+        detailsUrl,
+        "pending",
+        state === "queued" ? "Queued" : "Running",
+      );
 
       return {};
     },
+    update: async ({ run, name, title }) => {
+      // The status links to the run that owns it, which is how a run that ends
+      // finds it again, even when a job's own run is the one updating it.
+      await post(
+        run,
+        name,
+        run.ci.runUrl({ runId: run.runId, functionId: run.functionId }),
+        "pending",
+        truncateLabel(title, maxStatusDescription),
+      );
+    },
     complete: async ({ run, name, detailsUrl, conclusion, title }) => {
-      await post(run, name, detailsUrl, statusFor(conclusion), title);
+      await post(
+        run,
+        name,
+        detailsUrl,
+        statusFor(conclusion),
+        truncateLabel(title, maxStatusDescription),
+      );
+    },
+    closeOpen: async ({ run, title }) => {
+      const repo = run.repo;
+
+      if (!repo?.sha) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      // Each status links to its run, which is the only thing tying it to one.
+      // Every page is read before any status is closed.
+      const mine = new Map<
+        string,
+        { context: string; target_url: string | null }
+      >();
+
+      for (let page = 1; ; page++) {
+        const { data } = await octokit.rest.repos.getCombinedStatusForRef({
+          owner: repo.owner,
+          repo: repo.name,
+          ref: repo.sha,
+          per_page: 100,
+          page,
+        });
+
+        for (const status of data.statuses) {
+          if (
+            status.state === "pending" &&
+            status.context &&
+            status.target_url?.includes(run.runId)
+          ) {
+            mine.set(status.context, status);
+          }
+        }
+
+        if (data.statuses.length < 100) {
+          break;
+        }
+      }
+
+      for (const status of mine.values()) {
+        await post(
+          { repo },
+          status.context,
+          status.target_url ?? "",
+          statusFor("cancelled"),
+          title,
+        );
+      }
     },
   };
 };
@@ -797,7 +1128,28 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
  * The markdown summary on the pipeline check: a table of jobs, a trace link,
  * and any snapshots kept for debugging.
  */
+/** How long the run saved by starting from snapshots it didn't have to build. */
+export const savedFromCache = (run: CiRunScope): number => {
+  return [...run.cacheSaved.values()].reduce((sum, ms) => {
+    return sum + ms;
+  }, 0);
+};
+
+/**
+ * How long the run has taken by the clock, from its start. Read it inside the
+ * step that completes the pipeline, so it is the time when the run ended.
+ */
+export const wallTime = (run: CiRunScope): number | undefined => {
+  return run.startedAt === undefined ? undefined : Date.now() - run.startedAt;
+};
+
 export const pipelineSummary = (run: CiRunScope): string => {
+  const wall = wallTime(run);
+
+  const compute = run.summaries.reduce((sum, summary) => {
+    return sum + summary.durationMs;
+  }, 0);
+
   const rows = run.summaries.map((summary) => {
     return `| ${summary.path} | ${summary.conclusion} | ${summary.title} | ${formatDuration(summary.durationMs)} |`;
   });
@@ -811,11 +1163,28 @@ export const pipelineSummary = (run: CiRunScope): string => {
     });
 
   return [
+    ...(wall === undefined
+      ? []
+      : [
+          `**Took ${formatDuration(wall)}**${compute > 0 ? ` (${formatDuration(compute)} of compute across ${run.summaries.length} job${run.summaries.length === 1 ? "" : "s"})` : ""}`,
+          "",
+        ]),
     "| Job | Result | Detail | Duration |",
     "| --- | --- | --- | --- |",
     ...(rows.length > 0 ? rows : ["| _no jobs ran_ |  |  |  |"]),
     "",
     `[View the trace](${run.ci.runUrl({ runId: run.runId, functionId: run.functionId })})`,
+    ...(run.cacheSaved.size > 0
+      ? [
+          "",
+          "| Cached build | Time saved |",
+          "| --- | --- |",
+          ...[...run.cacheSaved].map(([job, ms]) => {
+            return `| ${job} | ${formatDuration(ms)} |`;
+          }),
+          `| **Total** | **${formatDuration(savedFromCache(run))}** |`,
+        ]
+      : []),
     ...(kept.length > 0 ? ["", "**Kept machines**", ...kept] : []),
     ...(run.warnings.length > 0
       ? [

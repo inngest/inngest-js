@@ -136,7 +136,7 @@ describe("client.score validation", () => {
     ).rejects.toThrow("No run context available");
   });
 
-  test("emits inngest.score kind with <name>.value-keyed payload", async () => {
+  test("emits a per-name inngest.score.<name> kind with a value payload", async () => {
     const client = new Inngest({ id: "app" });
     const spy = vi
       .fn<
@@ -161,9 +161,9 @@ describe("client.score validation", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
       {
-        kind: "inngest.score",
-        op: "merge",
-        values: { "click-through rate (variant A)!": { value: 0.23 } },
+        kind: "inngest.score.click-through rate (variant A)!",
+        op: "set",
+        values: { value: 0.23 },
       },
     ]);
   });
@@ -186,11 +186,26 @@ describe("client.score validation", () => {
 
     expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
       {
-        kind: "inngest.score",
-        op: "merge",
-        values: { pass: { value: true } },
+        kind: "inngest.score.pass",
+        op: "set",
+        values: { value: true },
       },
     ]);
+  });
+
+  test("accepts a 128 byte name even though the kind is longer", async () => {
+    const client = new Inngest({ id: "app" });
+    const spy = vi
+      .fn<(args: { metadata: Array<{ kind: string }> }) => Promise<void>>()
+      .mockResolvedValue();
+    (client as unknown as { updateMetadata: typeof spy }).updateMetadata = spy;
+
+    const name = "é".repeat(64);
+    await client.score({ runId: "run-abc", name, value: 1 });
+
+    const kind = spy.mock.calls[0]?.[0]?.metadata[0]?.kind;
+    expect(kind).toBe(`inngest.score.${name}`);
+    expect(new TextEncoder().encode(kind).length).toBe(142);
   });
 });
 
@@ -300,6 +315,26 @@ describe("client.score.experiment", () => {
     ).rejects.toThrow("experiment.experimentName must be a non-empty string");
   });
 
+  test("rejects stepId since experiment scores must be run-scoped", async () => {
+    const client = new Inngest({ id: "app" });
+    const spy = vi.fn().mockResolvedValue(undefined);
+    (client as unknown as { updateMetadata: typeof spy }).updateMetadata = spy;
+
+    await expect(
+      client.score.experiment({
+        experiment: exp,
+        runId: "run_1",
+        // @ts-expect-error stepId isn't allowed for experiment scores
+        stepId: "my-experiment",
+        name: "rating",
+        value: 1,
+      }),
+    ).rejects.toThrow(
+      "score.experiment() does not accept stepId; experiment scores must be run-scoped",
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   test("reuses score validation for name/value", async () => {
     const client = new Inngest({ id: "app" });
     await expect(
@@ -339,10 +374,9 @@ describe("client.score.experiment", () => {
     });
 
     expect(calls).toHaveLength(2);
-    const score = calls.find((c) => c.kind === "inngest.score");
+    const score = calls.find((c) => c.kind === "inngest.score.user-rating");
     const experiment = calls.find((c) => c.kind === "inngest.experiment");
-    // Score uses the constant kind with the name nested under values.
-    expect(score?.values).toEqual({ "user-rating": { value: 0.9 } });
+    expect(score?.values).toEqual({ value: 0.9 });
     expect(experiment?.values).toEqual({
       name: "checkout-flow",
       variant: "control",

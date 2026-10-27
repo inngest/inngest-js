@@ -832,6 +832,50 @@ describe("createFunction", () => {
     );
   });
 
+  describe("function registry", () => {
+    test("re-creating a function replaces it in place without warning", () => {
+      const warn = vi.fn();
+      const inngest = createClient({
+        id: "test",
+        internalLogger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn },
+      });
+      const funcs = inngest.funcs;
+
+      inngest.createFunction(
+        { id: "a", triggers: [{ event: "test" }] },
+        () => "a",
+      );
+      const b = inngest.createFunction(
+        { id: "b", triggers: [{ event: "test" }] },
+        () => "b",
+      );
+      const a2 = inngest.createFunction(
+        { id: "a", triggers: [{ event: "test" }] },
+        () => "a2",
+      );
+
+      expect(funcs).toEqual([a2, b]);
+      expect(inngest.funcs).toBe(funcs);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test("splicing funcs removes a function from the registry", () => {
+      const inngest = createClient({ id: "test" });
+      const a = inngest.createFunction(
+        { id: "a", triggers: [{ event: "test" }] },
+        () => "a",
+      );
+      const b = inngest.createFunction(
+        { id: "b", triggers: [{ event: "test" }] },
+        () => "b",
+      );
+
+      inngest.funcs.splice(inngest.funcs.indexOf(a), 1);
+
+      expect(inngest.funcs).toEqual([b]);
+    });
+  });
+
   describe("types", () => {
     describe("function input", () => {
       const inngest = createClient({ id: "test" });
