@@ -19,13 +19,14 @@ const say = (text: string): AgentModelResponse => {
 };
 
 const message = (
-  kind: "user" | "steer" | "stop",
+  kind: "user" | "steer" | "stop" | "request",
   content?: string,
   thread = "t1",
+  extra: Record<string, unknown> = {},
 ) => {
   return {
     name: "agent/message",
-    data: { agent: `${testClientId}/bot`, thread, kind, content },
+    data: { agent: `${testClientId}/bot`, thread, kind, content, ...extra },
   };
 };
 
@@ -380,5 +381,204 @@ describe("agent registration", () => {
       `${testClientId}-b`,
       `${testClientId}-b-cleanup`,
     ]);
+  });
+});
+
+describe("thread state", () => {
+  const record = (kv: ReturnType<typeof createKv>) => {
+    return kv
+      .with({ id: testClientId, env: null })
+      .scope("thread", "t1")
+      .get("__state");
+  };
+
+  test("the run, each turn and the wait for the next message write what state() shows", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    // The body replays on every request, so a turn's record is kept by seq.
+    const seen = new Map<number, unknown>();
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox, control }) => {
+        for await (const m of inbox) {
+          await agent.loop({
+            id: `turn${m.seq}`,
+            model: agent.model(async () => {
+              return {
+                ...say(`reply to ${m.data.content}`),
+                usage: { input: 10, output: 5 },
+              };
+            }),
+            prompt: m.data.content ?? "",
+            tools: {},
+            ...control,
+          });
+          seen.set(m.seq, await record(kv));
+
+          if (m.seq === 1) {
+            break;
+          }
+        }
+      },
+    );
+
+    await run(fn, { event: trigger("one"), saved: [message("user", "two")] });
+
+    expect([...seen.values()]).toEqual([
+      {
+        status: "running",
+        turn: 1,
+        summary: "reply to one",
+        usage: { input: 10, output: 5 },
+        runId: "run",
+      },
+      {
+        status: "running",
+        turn: 1,
+        summary: "reply to two",
+        usage: { input: 20, output: 10 },
+        runId: "run",
+      },
+    ]);
+    expect(await record(kv)).toMatchObject({ status: "running" });
+  });
+
+  test("a message waited for after the first marks the thread waiting", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.next();
+      },
+    );
+
+    // The second read finds nothing, so the run ends waiting.
+    await run(fn, { event: trigger("one") });
+
+    expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
+  });
+
+  test("honoring a stop request marks the thread stopped", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox, control }) => {
+        await inbox.next();
+        await agent.loop({
+          model: agent.model(async () => {
+            return {
+              message: { role: "assistant", content: [] },
+              toolCalls: [{ id: "c1", name: "missing", input: {} }],
+            };
+          }),
+          prompt: "go",
+          tools: {},
+          ...control,
+        });
+      },
+    );
+
+    await run(fn, { event: trigger("go"), saved: [message("stop")] });
+
+    expect(await record(kv)).toMatchObject({ status: "stopped" });
+  });
+
+  test("a finished run leaves the thread idle, unless it was stopped or a newer run took over", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { cleanup } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async () => {},
+    );
+    const thread = kv
+      .with({ id: testClientId, env: null })
+      .scope("thread", "t1");
+    const finish = (runId: string) => {
+      return run(cleanup, {
+        event: {
+          name: "inngest/deferred.schedule",
+          data: {
+            runId,
+            thread: "t1",
+            _inngest: {
+              fn_slug: `${testClientId}-bot-cleanup`,
+              parent_fn_slug: `${testClientId}-bot`,
+              parent_run_id: runId,
+            },
+          },
+        },
+      });
+    };
+    const base = { turn: 2, usage: { input: 1, output: 1 } };
+
+    await thread.set("__state", { ...base, status: "running", runId: "r1" });
+    await finish("r1");
+    expect(await thread.get("__state")).toMatchObject({ status: "idle" });
+
+    await thread.set("__state", { ...base, status: "running", runId: "r2" });
+    await finish("r1");
+    expect(await thread.get("__state")).toMatchObject({ status: "running" });
+
+    await thread.set("__state", { ...base, status: "stopped", runId: "r1" });
+    await finish("r1");
+    expect(await thread.get("__state")).toMatchObject({ status: "stopped" });
+  });
+});
+
+describe("request and reply", () => {
+  test("a request message replies to the thread that asked, through its signal", async () => {
+    const client = makeClient();
+    const signals: unknown[] = [];
+    client.sendSignal = (async (signal: unknown) => {
+      signals.push(signal);
+
+      return { runId: "r" };
+    }) as typeof client.sendSignal;
+    const { fn } = createAgentFunction(
+      client,
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        for await (const m of inbox) {
+          if (m.data.kind === "request") {
+            await m.reply({ answer: (m.data.payload as { n: number }).n * 2 });
+
+            break;
+          }
+        }
+      },
+    );
+
+    await run(fn, {
+      event: message("request", undefined, "t1", {
+        payload: { n: 21 },
+        replyTo: "sig-1",
+        from: "asker",
+      }),
+    });
+
+    expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
+  });
+
+  test("replying to a message that is not a request throws", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const m = await inbox.next();
+
+        try {
+          await m?.reply({});
+        } catch (error) {
+          return (error as Error).message;
+        }
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("hi") });
+
+    expect(output).toContain("not a request");
   });
 });

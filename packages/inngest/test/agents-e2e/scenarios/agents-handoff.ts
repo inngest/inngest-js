@@ -11,6 +11,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -64,11 +65,10 @@ export const agentsHandoff = scenario({
       isDev: true,
     });
     const handle = (agentId: string) => {
-      return getThread(
-        client,
-        `agents-e2e/${agentId}`,
-        `${agentId}-${Date.now()}`,
-        { kv: store },
+      return withKeys(
+        getThread(client, `agents-e2e/${agentId}`, `${agentId}-${Date.now()}`, {
+          kv: store,
+        }),
       );
     };
 

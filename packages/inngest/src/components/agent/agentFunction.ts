@@ -21,16 +21,22 @@
 import { createDefer } from "../DeferredFunction.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { step } from "../InngestStepTools.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
+import type { AgentTurn } from "./loop.ts";
 import { registerFunctions } from "./register.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
   agentStopEvent,
   getThread,
+  summaryLength,
   type ThreadHandle,
   type ThreadMessage,
+  type ThreadRecord,
+  threadRecordKey,
 } from "./thread.ts";
+import { listThreads, type ThreadList } from "./threadList.ts";
 
 export interface AgentFunctionConfig {
   /**
@@ -55,17 +61,44 @@ export interface AgentBodyContext {
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
-  inbox: Subscription<ThreadMessage>;
+  inbox: ThreadInbox;
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
    * during a turn into the next model call, and `stop` ends the loop when a
    * stop message arrived. Messages that start the next turn stay in the inbox.
+   * `onTurn` records the turn, the usage and a summary for
+   * `thread.state()`: if you pass your own `onTurn`, put `...control` first
+   * and call `control.onTurn(turn)` from yours.
    */
   control: {
     steer: () => Promise<string[]>;
     stop: () => Promise<boolean>;
+    onTurn: (turn: AgentTurn) => Promise<void>;
   };
+}
+
+/**
+ * A message of the thread's inbox. A `"request"` message from another
+ * thread's `handle.request()` is answered with `reply()`.
+ */
+export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
+  /**
+   * Answers a request: sends `data` to the thread that asked. It is a step.
+   * @param data The reply.
+   */
+  reply(data: unknown): Promise<void>;
+}
+
+/**
+ * The thread's inbox: a subscription whose messages can reply.
+ */
+export interface ThreadInbox extends AsyncIterable<ThreadInboxMessage> {
+  next(): Promise<ThreadInboxMessage | null>;
+  poll(): Promise<ThreadInboxMessage | null>;
+  ack(message: InboxMessage<ThreadMessage>): Promise<void>;
+  putBack(messages: InboxMessage<ThreadMessage>[]): void;
+  close: Subscription<ThreadMessage>["close"];
 }
 
 export type AgentBody = (context: AgentBodyContext) => Promise<unknown>;
@@ -98,6 +131,11 @@ export interface AgentFunction {
    * @param session Session the thread belongs to. Default: the thread key.
    */
   thread(key: string, session?: string): ThreadHandle;
+
+  /**
+   * The agent's threads.
+   */
+  threads: ThreadList;
 }
 
 /**
@@ -105,15 +143,48 @@ export interface AgentFunction {
  * events, and stop messages are skipped, because while the agent waits for its
  * next message there is nothing to stop.
  * @param inbox The subscription to the thread's events.
+ * @param client Inngest client, to send replies.
+ * @param waiting Called before the agent waits for a message after the first.
  */
-function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
-  inbox: Subscription<ThreadMessage>;
+function threadInbox(
+  inbox: Subscription<{ data: ThreadMessage }>,
+  client: Inngest.Any,
+  waiting: () => Promise<void>,
+): {
+  inbox: ThreadInbox;
   handled: (message: InboxMessage<ThreadMessage>) => void;
   flush: () => Promise<void>;
 } {
-  function unwrap(message: InboxMessage<{ data: ThreadMessage }> | null) {
-    return message ? { seq: message.seq, data: message.data.data } : null;
+  function unwrap(
+    message: InboxMessage<{ data: ThreadMessage }> | null,
+  ): ThreadInboxMessage | null {
+    if (!message) {
+      return null;
+    }
+
+    const data = message.data.data;
+
+    return {
+      seq: message.seq,
+      data,
+      async reply(answer) {
+        if (!data.replyTo) {
+          throw new Error(
+            "This message is not a request: only a request has a reply.",
+          );
+        }
+
+        await step.run(`reply:${message.seq}`, async () => {
+          await client.sendSignal({
+            signal: data.replyTo as string,
+            data: answer,
+          });
+        });
+      },
+    };
   }
+
+  let delivered = 0;
 
   // Messages the current turn handled. They are acked when the turn is over:
   // when the agent asks for its next message, or the body returns. A run that
@@ -149,12 +220,17 @@ function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
   async function next() {
     await flush();
 
+    if (delivered > 0) {
+      await waiting();
+    }
+
     for (;;) {
       const message = unwrap(await inbox.next());
       if (!message) {
         return null;
       }
 
+      delivered += 1;
       handled(message);
 
       // While the agent waits for its next message there is nothing to stop.
@@ -205,6 +281,10 @@ function quote(value: string) {
   return JSON.stringify(value);
 }
 
+function emptyRecord(): ThreadRecord {
+  return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };
+}
+
 /**
  * EXPERIMENTAL: Defines an agent function.
  * @param client Inngest client.
@@ -218,14 +298,33 @@ export function createAgentFunction(
 ): AgentFunction {
   const ref = `${client.id}/${config.id}`;
 
+  const store = config.kv ?? defaultKv;
+
   const cleanup = createDefer(
     client,
     { id: `${config.id}-cleanup` },
     async ({ event }) => {
-      // The KV call is its own step.
-      await (config.kv ?? defaultKv)
-        .scope("run", (event.data as { runId: string }).runId)
-        .clear();
+      const { runId, thread } = event.data as {
+        runId: string;
+        thread?: string;
+      };
+
+      // Each KV call is its own step.
+      await store.scope("run", runId).clear();
+
+      // The run is over, so the thread is idle, unless a newer run has already
+      // taken over the record or the thread honored a stop request.
+      if (thread) {
+        await store
+          .scope("thread", thread)
+          .update<ThreadRecord>(threadRecordKey, (found) => {
+            const current = found ?? emptyRecord();
+
+            return current.runId === runId && current.status !== "stopped"
+              ? { ...current, status: "idle" }
+              : current;
+          });
+      }
     },
   );
 
@@ -252,9 +351,27 @@ export function createAgentFunction(
       const data = event.data as ThreadMessage;
 
       // Run-scoped KV keys end with the run, whichever way it ends.
-      defer("kv-cleanup", { function: cleanup, data: { runId } });
+      defer("kv-cleanup", {
+        function: cleanup,
+        data: { runId, thread: data.thread },
+      });
 
       const thread = getThread(client, ref, data.thread, { kv: config.kv });
+
+      // Writes what `thread.state()` shows. One step per change.
+      async function record(
+        change: (current: ThreadRecord) => Partial<ThreadRecord>,
+      ) {
+        await store.thread.update<ThreadRecord>(threadRecordKey, (found) => {
+          const current = found ?? emptyRecord();
+
+          return { ...current, ...change(current), runId };
+        });
+      }
+
+      await record(() => {
+        return { status: "running" };
+      });
 
       // Opened first, so the gap in which a message could be missed is the few
       // milliseconds between the run starting and this op.
@@ -268,7 +385,15 @@ export function createAgentFunction(
       subscription.putBack([{ seq: 0, data: { data } }]);
 
       let stopRequested = false;
-      const { inbox, handled, flush } = threadInbox(subscription);
+      const { inbox, handled, flush } = threadInbox(
+        subscription,
+        client,
+        () => {
+          return record(() => {
+            return { status: "waiting" };
+          });
+        },
+      );
 
       const control = {
         async steer() {
@@ -303,7 +428,28 @@ export function createAgentFunction(
           const requested = stopRequested;
           stopRequested = false;
 
+          if (requested) {
+            await record(() => {
+              return { status: "stopped" };
+            });
+          }
+
           return requested;
+        },
+        async onTurn(turn: AgentTurn) {
+          await record((current) => {
+            return {
+              status: "running",
+              turn: turn.turn,
+              summary: turn.text
+                ? turn.text.slice(0, summaryLength)
+                : current.summary,
+              usage: {
+                input: current.usage.input + turn.usage.input,
+                output: current.usage.output + turn.usage.output,
+              },
+            };
+          });
         },
       };
 
@@ -331,6 +477,13 @@ export function createAgentFunction(
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });
+    },
+    threads: {
+      list(options) {
+        return listThreads(client, ref, options, (key, session) => {
+          return getThread(client, ref, key, { session, kv: config.kv });
+        });
+      },
     },
   };
 }

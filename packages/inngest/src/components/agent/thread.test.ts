@@ -2,7 +2,8 @@
  * @module
  * Tests for thread handles with a fake client.
  */
-import type { Inngest } from "../Inngest.ts";
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { Inngest } from "../Inngest.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { getThread } from "./thread.ts";
 
@@ -18,6 +19,8 @@ const fakeClient = () => {
 
   return { client, sent };
 };
+
+import { StepOpCode } from "../../types.ts";
 
 const sessions = { agent_session: "t1", agent_thread: "t1" };
 
@@ -80,14 +83,151 @@ describe("thread handle", () => {
     ]);
   });
 
-  test("state reads the thread KV and hides internal keys", async () => {
+  test("state is the documented shape: status, turn, summary, usage and the user's keys", async () => {
     const { client } = fakeClient();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const thread = getThread(client, "app/bot", "t1", { kv });
     const state = kv.with(client).scope("thread", "t1");
-    await state.set("plan", [1]);
-    await state.set("__internal", 1);
 
-    expect(await thread.state()).toEqual({ plan: [1] });
+    expect(await thread.state()).toEqual({
+      status: "idle",
+      turn: 0,
+      summary: undefined,
+      usage: { input: 0, output: 0 },
+      keys: {},
+    });
+
+    await state.set("plan", [1]);
+    await state.set("status", "mine");
+    await state.set("__state", {
+      status: "waiting",
+      turn: 3,
+      summary: "done so far",
+      usage: { input: 30, output: 15 },
+      runId: "r1",
+    });
+
+    expect(await thread.state()).toEqual({
+      status: "waiting",
+      turn: 3,
+      summary: "done so far",
+      usage: { input: 30, output: 15 },
+      keys: { plan: [1], status: "mine" },
+    });
+  });
+
+  test("request outside a function says why it cannot wait", async () => {
+    const { client } = fakeClient();
+
+    await expect(
+      getThread(client, "app/bot", "t1").request({ question: "q" }),
+    ).rejects.toThrow("inside a function");
+  });
+
+  describe("inside a function", () => {
+    const event = { name: "go", data: {} };
+    const setup = (
+      body: (thread: ReturnType<typeof getThread>) => Promise<unknown>,
+    ) => {
+      const bodies: unknown[] = [];
+      const client = new Inngest({
+        id: testClientId,
+        eventKey: "key",
+        fetch: (async (_url: unknown, init?: { body?: string }) => {
+          bodies.push(JSON.parse(init?.body ?? "null"));
+
+          return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
+        }) as unknown as typeof fetch,
+      });
+      const thread = getThread(client, `${testClientId}/bot`, "t1");
+      const fn = client.createFunction(
+        { id: "caller", triggers: [{ event: "go" }] },
+        async () => {
+          return body(thread);
+        },
+      );
+
+      return { fn, bodies };
+    };
+
+    test("steer is a step: it is sent from the step, with the thread's sessions", async () => {
+      const { fn, bodies } = setup(async (thread) => {
+        await thread.steer("faster");
+      });
+
+      const result = await runFnWithStack(fn, {}, { event });
+
+      expect(result).toMatchObject({
+        type: "step-ran",
+        step: { op: StepOpCode.StepRun, displayName: "thread:t1:steer" },
+      });
+      expect(bodies).toMatchObject([
+        [
+          {
+            name: "agent/message",
+            data: { thread: "t1", kind: "steer", content: "faster" },
+            meta: { sessions },
+          },
+        ],
+      ]);
+    });
+
+    test("request sends the message and waits for the signal, wait first", async () => {
+      const { fn } = setup(async (thread) => {
+        return thread.request({ question: "q" }, { timeout: "5m" });
+      });
+
+      const result = await runFnWithStack(fn, {}, { event });
+
+      expect(result).toMatchObject({
+        type: "steps-found",
+        steps: [
+          {
+            op: StepOpCode.WaitForSignal,
+            opts: { signal: "thread-request:run:1", timeout: "5m" },
+          },
+          { displayName: "thread:t1:request" },
+        ],
+      });
+    });
+
+    test("request resolves to the reply, or null when the wait times out", async () => {
+      const { fn } = setup(async (thread) => {
+        return thread.request({ question: "q" });
+      });
+      const found = (await runFnWithStack(fn, {}, { event })) as {
+        steps: { id: string }[];
+      };
+      const [waitId, sendId] = found.steps.map((step) => {
+        return step.id;
+      }) as [string, string];
+      const sent = { id: sendId, data: { ids: ["1"] } };
+
+      const answered = await runFnWithStack(
+        fn,
+        {
+          [waitId]: {
+            id: waitId,
+            data: { signal: "thread-request:run:1", data: { answer: 42 } },
+          },
+          [sendId]: sent,
+        },
+        { event },
+      );
+      const timedOut = await runFnWithStack(
+        fn,
+        { [waitId]: { id: waitId, data: null }, [sendId]: sent },
+        { event },
+      );
+
+      expect(answered).toMatchObject({
+        type: "function-resolved",
+        data: { answer: 42 },
+      });
+      expect(timedOut).toMatchObject({
+        type: "function-resolved",
+        data: null,
+      });
+    });
   });
 });
