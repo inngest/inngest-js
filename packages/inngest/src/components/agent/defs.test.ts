@@ -347,3 +347,21 @@ describe("getSandbox", () => {
     }).toThrow("this agent has no sandboxes");
   });
 });
+
+describe("openSandboxes with a bad binding", () => {
+  test("starts nothing when a later binding is invalid", () => {
+    const env = fakeEnvironment();
+    const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+
+    expect(() => {
+      return openSandboxes(
+        { a: { sandbox: def, start: "eager" }, "bad-name": def },
+        env.sandboxes,
+      );
+    }).toThrow("Invalid sandbox name");
+    expect(env.created).not.toHaveBeenCalled();
+    expect(() => {
+      return openSandboxes({ a: "nope" as never }, env.sandboxes);
+    }).toThrow("must be a definition");
+  });
+});

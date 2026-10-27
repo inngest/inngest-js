@@ -205,7 +205,9 @@ const bindingOptions = (
   binding: SandboxBinding,
 ): SandboxBindingOptions => {
   const options =
-    binding && "sandbox" in binding ? binding : { sandbox: binding };
+    typeof binding === "object" && binding && "sandbox" in binding
+      ? binding
+      : { sandbox: binding };
 
   if (
     (options.sandbox as SandboxDefinition | undefined)?.kind !==
@@ -344,7 +346,7 @@ export const resolveSandboxes = async <Ctx>(
     Object.entries(bindings).map(async ([name, binding]) => {
       const input = binding as SandboxBindingInput<Ctx>;
 
-      if (!input || !("sandbox" in input)) {
+      if (typeof input !== "object" || !input || !("sandbox" in input)) {
         return [name, input as SandboxDefinition] as const;
       }
 
@@ -397,13 +399,17 @@ export const openSandboxes = (
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
 
+  // Every binding is validated before any eager one starts, so a bad binding
+  // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
     opened[name] = lazySandbox(name, binding, sandboxes);
+  }
 
-    if (opened[name].start === "eager") {
+  for (const handle of Object.values(opened)) {
+    if (handle.start === "eager") {
       // A failure surfaces to whoever calls get(); here it only must not go
       // unhandled.
-      opened[name].get().catch(() => {});
+      handle.get().catch(() => {});
     }
   }
 
