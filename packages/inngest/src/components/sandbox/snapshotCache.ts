@@ -669,12 +669,17 @@ export const snapshotCache = (
         // entry's snapshots from those of a key that merely starts the same.
         const generation = snapshotGeneration(snapshot.name);
 
-        return (
-          generation !== "" &&
-          !generation.includes("/") &&
-          snapshotName({ ...entry, generation }) === snapshot.name &&
-          usable(snapshot)
-        );
+        try {
+          return (
+            generation !== "" &&
+            !generation.includes("/") &&
+            snapshotName({ ...entry, generation }) === snapshot.name &&
+            usable(snapshot)
+          );
+        } catch {
+          // A name this cache could not have made.
+          return false;
+        }
       });
       const newest = matching.sort((a, b) => {
         return a.createdAt < b.createdAt ? 1 : -1;
