@@ -1,0 +1,13 @@
+app = "inngest-js-ci"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# No [http_service]: the machine only connects out to Inngest. One machine, never stopped.
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
