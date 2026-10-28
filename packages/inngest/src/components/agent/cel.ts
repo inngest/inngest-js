@@ -12,6 +12,11 @@
  * (string concatenation or addition), `==`, `!=`, `&&`, `||`, `!`,
  * `condition ? a : b` and parentheses. A path that is missing is an error, as
  * in CEL, so guard optional fields with `has()`.
+ *
+ * The backend's CEL is the authority. This evaluator mirrors it for the subset
+ * above. Where the two could differ (null fields, inherited names, mixed types)
+ * it throws rather than guess, and a key the SDK and the backend disagree on is
+ * a bug here.
  */
 
 type Token =
@@ -111,7 +116,7 @@ function lookup(event: unknown, path: string[], source: string) {
     if (
       typeof current !== "object" ||
       current === null ||
-      !(part in (current as Record<string, unknown>))
+      !Object.hasOwn(current as Record<string, unknown>, part)
     ) {
       throw new Error(
         `"${source}": ${["event", ...path].join(".")} is not set on the event.`,

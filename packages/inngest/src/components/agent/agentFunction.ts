@@ -10,9 +10,11 @@
  * - `control`, which spreads into `agent.loop()` so a running turn takes
  *   steering messages and a stop request.
  *
- * Messages that reach the run but are never read are handed to the thread's
- * next run by the executor when the run ends, so a message that arrives as a
- * run finishes is not lost.
+ * The inbox closes when the body returns. Messages it saved but the body never
+ * read are discarded, and a message that arrives after that, while the thread's
+ * singleton is still in effect, is dropped: it neither starts a new run nor
+ * reaches the finished one. The gap is small (the time between the body
+ * returning and the run ending), and nothing is re-sent at run end.
  */
 
 import { internalEvents } from "../../helpers/consts.ts";
@@ -52,7 +54,6 @@ import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
-  agentStopEvent,
   getThread,
   type ThreadHandle,
   type ThreadMessage,
@@ -200,11 +201,18 @@ export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
 export interface ThreadInbox
   extends Omit<
       Subscription<ThreadMessage>,
-      "next" | "poll" | typeof Symbol.asyncIterator
+      "next" | "poll" | "close" | typeof Symbol.asyncIterator
     >,
     AsyncIterable<ThreadInboxMessage> {
   next(): Promise<ThreadInboxMessage | null>;
   poll(): Promise<ThreadInboxMessage | null>;
+
+  /**
+   * Ends the subscription. See `Subscription.close()`: it only ends the
+   * subscription, and a message that arrives afterwards is dropped.
+   * @returns The messages that were saved but not read.
+   */
+  close(): Promise<ThreadInboxMessage[]>;
 }
 
 export type AgentBody = (context: AgentBodyContext) => Promise<unknown>;
@@ -255,10 +263,8 @@ function threadInbox(
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
 ): {
   inbox: ThreadInbox;
-  handled: (message: InboxMessage<ThreadMessage>) => void;
-  flush: () => Promise<void>;
 } {
-  // The event each message was made from, to ack and put it back as it came.
+  // The event each message was made from, to put it back as it came.
   const raws = new WeakMap<object, InboxMessage<RawEvent>>();
 
   function unwrap(
@@ -272,7 +278,6 @@ function threadInbox(
     const unwrapped: ThreadInboxMessage = {
       seq: message.seq,
       data,
-      source: message.source,
       async reply(answer) {
         if (!data.replyTo) {
           throw new Error(
@@ -304,40 +309,7 @@ function threadInbox(
 
   let delivered = 0;
 
-  // Messages the current turn handled. They are acked when the turn is over:
-  // when the agent asks for its next message, or the body returns. A run that
-  // fails or is cancelled mid-turn leaves them unacked, so the executor hands
-  // them to the thread's next run.
-  let pending: InboxMessage<ThreadMessage>[] = [];
-
-  function handled(message: InboxMessage<ThreadMessage>) {
-    pending.push(message);
-  }
-
-  // The executor counts acks as consecutive from 1, so a message is only
-  // acked once every message before it has been: a handled steer that sits
-  // behind a message put back for the next turn waits for that turn.
-  let nextToAck = 1;
-
-  async function flush() {
-    pending = pending
-      .filter((message) => {
-        return message.seq >= 1;
-      })
-      .sort((a, b) => {
-        return a.seq - b.seq;
-      });
-
-    while (pending[0] && pending[0].seq === nextToAck) {
-      const message = pending.shift() as InboxMessage<ThreadMessage>;
-      nextToAck += 1;
-      await inbox.ack(rawOf(message));
-    }
-  }
-
   async function next() {
-    await flush();
-
     if (delivered > 0) {
       await recorder.waiting();
     }
@@ -349,7 +321,6 @@ function threadInbox(
       }
 
       delivered += 1;
-      handled(message);
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.data.kind !== "stop") {
@@ -363,21 +334,23 @@ function threadInbox(
   }
 
   return {
-    handled,
-    flush,
     inbox: {
       next,
       async poll() {
         return unwrap(await inbox.poll());
       },
-      async ack(message) {
-        await inbox.ack(rawOf(message));
-      },
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
       },
-      close() {
-        return inbox.close();
+      async close() {
+        const unread = await inbox.close();
+
+        return unread.map((message) => {
+          return unwrap(message) as ThreadInboxMessage;
+        });
+      },
+      async [Symbol.asyncDispose]() {
+        await inbox[Symbol.asyncDispose]();
       },
       [Symbol.asyncIterator]() {
         return {
@@ -406,26 +379,6 @@ interface RawEvent {
 
 function quote(value: string) {
   return JSON.stringify(value);
-}
-
-/**
- * The expressions that match a stop to the run a trigger started, one for
- * each distinct thread key (crons share one).
- * @param ref The agent, as `"appId/functionId"`.
- * @param triggers The compiled triggers.
- */
-function stopExpressions(ref: string, triggers: CompiledTrigger[]): string[] {
-  const expressions = triggers.flatMap((trigger) => {
-    const key = trigger.thread.path ?? trigger.thread.constant;
-
-    return key
-      ? [
-          `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${key} == async.data.thread`,
-        ]
-      : [];
-  });
-
-  return [...new Set(expressions)];
 }
 
 /**
@@ -499,17 +452,6 @@ export function createAgentFunction(
         }),
       ],
       singleton: { key: threadExpression, mode: "skip" },
-      cancelOn: [
-        {
-          event: agentStopEvent,
-          if: `event.data.agent == ${quote(ref)} && event.data.thread == async.data.thread`,
-        },
-        // A cancel expression cannot call functions, so only a thread key that
-        // is a plain path of the trigger can be matched against a stop.
-        ...stopExpressions(ref, triggers).map((expression) => {
-          return { event: agentStopEvent, if: expression };
-        }),
-      ],
     },
     async ({ event, step, defer, runId, logger }) => {
       // The thread a run belongs to comes from its trigger: a message names it,
@@ -569,7 +511,9 @@ export function createAgentFunction(
 
         // Opened first, so the gap in which a message could be missed is the few
         // milliseconds between the run starting and this op.
-        const subscription = await step.subscribe<RawEvent>("inbox", {
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the subscription.
+        await using subscription = await step.subscribe<RawEvent>("inbox", {
           events: [
             {
               event: agentMessageEvent,
@@ -652,7 +596,7 @@ export function createAgentFunction(
         );
 
         let stopRequested = false;
-        const { inbox, handled, flush } = threadInbox(
+        const { inbox } = threadInbox(
           subscription,
           function toMessage(raw) {
             const trigger = triggers.find((t) => {
@@ -684,10 +628,8 @@ export function createAgentFunction(
               const kind = message.data.kind;
               if (kind === "steer") {
                 lines.push(message.data.content ?? "");
-                handled(message);
               } else if (kind === "stop") {
                 stopRequested = true;
-                handled(message);
               } else {
                 waiting.push(message);
               }
@@ -743,8 +685,9 @@ export function createAgentFunction(
             control,
           });
 
-          // The body returned: the last turn is over.
-          await flush();
+          // The last thread work is done: end the subscription before the
+          // sandboxes close. A second close, from the scope exit, does nothing.
+          await inbox.close();
         } catch (error) {
           await closeAll();
 

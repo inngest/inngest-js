@@ -13,41 +13,33 @@ const client = () => {
 const subscribeOpts = { event: "msg", if: "async.data.t == 't1'" };
 
 describe("step.subscribe", () => {
-  test("opens once, then each message is a numbered step; acking is up to the caller", async () => {
+  test("a message that is already saved is read without a step", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const seen: unknown[] = [];
 
-        await inbox.close();
-        for await (const message of inbox) {
-          seen.push([message.seq, message.data]);
-          await inbox.ack(message);
+        for (let n = 0; n < 2; n++) {
+          const message = await inbox.next();
+          seen.push([message?.seq, message?.data]);
         }
 
         return seen;
       },
     );
 
-    const { ops, acked, output } = await run(fn, { saved: ["a", { b: 1 }] });
+    const { ops, output } = await run(fn, { saved: ["a", { b: 1 }] });
 
     expect(output).toEqual([
       [1, "a"],
       [2, { b: 1 }],
     ]);
-    expect(ops).toEqual([
-      { id: "inbox:open", mode: "open" },
-      { id: "inbox:close", mode: "close" },
-      { id: "inbox:1", mode: "next", seq: 1 },
-      { id: "inbox:ack:1", mode: "ack", seq: 1 },
-      { id: "inbox:2", mode: "next", seq: 2 },
-      { id: "inbox:ack:2", mode: "ack", seq: 2 },
-    ]);
-    expect(acked).toEqual([1, 2]);
+    // Open is the only step: the messages were in the state.
+    expect(ops).toEqual([{ id: "inbox:open", mode: "open" }]);
   });
 
-  test("next() waits when no message has arrived, then continues when it does", async () => {
+  test("next() blocks with one wait when no message has arrived, then reads it from the state", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -59,20 +51,74 @@ describe("step.subscribe", () => {
 
     const waiting = await run(fn);
     expect(waiting.waiting).toBe(true);
+    expect(waiting.ops.map((op) => op.id)).toEqual(["inbox:open", "inbox:1"]);
 
     const arrived = await run(fn, { incoming: ["late"] });
     expect(arrived.output).toBe("late");
+    // The wait is not asked for again once the message is there.
+    expect(arrived.ops.map((op) => op.mode)).toEqual(["open", "next"]);
   });
 
-  test("poll() reads a message that has arrived and never waits", async () => {
+  test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const unread = await inbox.close();
+        const again = await inbox.close();
+
+        return [first?.data, unread.map((m) => m.data), again.length];
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["a", "b", "c"] });
+
+    expect(output).toEqual(["a", ["b", "c"], 0]);
+    expect(ops.map((op) => op.mode)).toEqual(["open", "close"]);
+  });
+
+  test("await using closes the subscription when the scope ends", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        {
+          await using inbox = await step.subscribe("inbox", subscribeOpts);
+          await inbox.next();
+        }
+
+        return "left";
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["a"] });
+
+    expect(output).toBe("left");
+    expect(ops.map((op) => op.mode)).toEqual(["open", "close"]);
+  });
+
+  test("a closed subscription reads no more", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        await inbox.close();
+
+        return [await inbox.next(), await inbox.poll()];
+      },
+    );
+
+    const { output } = await run(fn, { saved: [] });
+
+    expect(output).toEqual([null, null]);
+  });
+
+  test("poll() is a step, so its answer is the same when the function replays", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const first = await inbox.poll();
-        if (first) {
-          await inbox.ack(first);
-        }
         const second = await inbox.poll();
 
         return [first?.data ?? null, second?.data ?? null];
@@ -85,7 +131,6 @@ describe("step.subscribe", () => {
     expect(ops.map((op) => op.id)).toEqual([
       "inbox:open",
       "inbox:poll:1",
-      "inbox:ack:1",
       "inbox:poll:2",
     ]);
   });
@@ -107,5 +152,48 @@ describe("step.subscribe", () => {
     const { output } = await run(fn, { saved: ["a", "b"] });
 
     expect(output).toEqual([1, 2]);
+  });
+
+  test("several events are one subscription: one open per event, one sequence of messages", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }],
+        });
+
+        return [(await inbox.next())?.data, (await inbox.next())?.data];
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["from-b", "from-a"] });
+
+    expect(output).toEqual(["from-b", "from-a"]);
+    expect(ops).toEqual([
+      { id: "inbox:0:open", mode: "open" },
+      { id: "inbox:1:open", mode: "open" },
+    ]);
+  });
+
+  test("an open for every event is the only step a subscription costs when the messages are there", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }],
+        });
+        const read: unknown[] = [];
+
+        for (let n = 0; n < 5; n++) {
+          read.push((await inbox.next())?.data);
+        }
+
+        return read;
+      },
+    );
+
+    const { ops } = await run(fn, { saved: [1, 2, 3, 4, 5] });
+
+    expect(ops.map((op) => op.mode)).toEqual(["open", "open"]);
   });
 });

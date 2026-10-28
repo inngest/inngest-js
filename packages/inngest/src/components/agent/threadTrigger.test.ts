@@ -28,7 +28,6 @@ const options = (fn: { opts?: unknown }) => {
   return (fn as unknown as { ["opts"]: unknown })["opts"] as {
     triggers: { event: string; if?: string }[];
     singleton: { key: string; mode: string };
-    cancelOn: { if: string }[];
   };
 };
 
@@ -76,22 +75,6 @@ describe("thread key from a trigger", () => {
     expect(opts.singleton.key).toBe(
       `event.name == "slack/message" ? (${slackThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + event.data.pr) : event.data.thread`,
     );
-    // Only a plain path of the trigger can be matched by a cancel expression.
-    expect(opts.cancelOn).toHaveLength(1);
-  });
-
-  test("a thread key that is a plain path can be cancelled by a stop", () => {
-    const agent = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv, on: { event: "e", thread: "event.data.key" } },
-      async () => {},
-    );
-    const opts = agent.fn["opts"] as unknown as ReturnType<typeof options>;
-
-    expect(opts.cancelOn.map((c) => c.if)).toEqual([
-      `event.data.agent == "${testClientId}/bot" && event.data.thread == async.data.thread`,
-      `event.name == "e" && async.data.agent == "${testClientId}/bot" && event.data.key == async.data.thread`,
-    ]);
   });
 
   test("the run starts from the trigger event: its thread, session, message and a subscription per event", async () => {
@@ -122,8 +105,15 @@ describe("thread key from a trigger", () => {
     const { output } = await run(agent.fn, {
       event: slackMessage,
       onOp: (op) => {
-        const opts = op.opts as { event?: string; if?: string };
-        seen.push({ event: opts.event, if: opts.if });
+        const opts = op.opts as {
+          event?: string;
+          if?: string;
+          subscribe?: { mode?: string };
+        };
+
+        if (opts.subscribe?.mode === "open") {
+          seen.push({ event: opts.event, if: opts.if });
+        }
       },
     });
 

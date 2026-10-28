@@ -2,15 +2,20 @@
  * @module
  * EXPERIMENTAL: `step.subscribe()`, a durable subscription to events.
  *
- * Opening a subscription asks the executor to keep one pause for the run. The
+ * Opening a subscription asks the executor to keep a pause for the run. The
  * pause is not consumed when an event matches: the executor saves the event as
- * the run's next numbered message and queues a discovery request. Messages
- * that arrive while the function is busy are therefore already in the run's
- * state when it asks for them, and nothing sent between turns is lost.
+ * a step of the run, named after the subscription and the event, and wakes the
+ * run if it is blocked waiting for it. Messages that arrive while the function
+ * is busy are already in the run's state when it asks for them, and nothing
+ * sent between turns is lost.
  *
- * Every read is an ordinary step, so replays, traces and history need nothing
- * special: message k is the step `<id>:<k>`. If the message is already in
- * state the step resolves from memo; otherwise the function waits for it.
+ * The order of the messages is their order in the run's stack, which the
+ * function receives with every request. A message that is already there is read
+ * without a step. Only a read that has to wait is a step (the executor answers
+ * it once the message exists), so a subscription costs one open and one close
+ * step for each event, a wait when the function was blocked, and a step for every `poll()`.
+ * Several events are several pauses sharing one subscription, so their messages
+ * are one sequence in the order the executor saved them.
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
@@ -33,12 +38,6 @@ export interface InboxMessage<TData = unknown> {
    * The event that was sent.
    */
   data: TData;
-
-  /**
-   * Which stream of a multi-event subscription delivered it, as the index in
-   * `events`, and the position in that stream. Absent on a put-back trigger.
-   */
-  source?: { stream: number; seq: number };
 }
 
 /**
@@ -59,11 +58,9 @@ export interface SubscribeEvent {
 }
 
 /**
- * One event, or several in `events`. Several events are several parallel
- * single-event subscriptions under the hood, each with its own numbered
- * messages, and `next()` hands out whichever message arrived first (a race;
- * the order across events is arrival order as the race sees it, and strict
- * ordering across events is not guaranteed).
+ * One event, or several in `events`. Several events share one sequence of
+ * messages, in the order the executor saved them. That is the order they
+ * arrived in, as far as events arrive in a defined order.
  */
 export type SubscribeOptions =
   | SubscribeEvent
@@ -101,18 +98,7 @@ export function eventNameOf(source: SubscribeEvent["event"]): string {
 }
 
 /**
- * The key of stream `index` of a subscription with `count` streams. A single
- * stream uses the subscription key itself.
- * @param key The subscription ID.
- * @param count How many streams.
- * @param index The stream.
- */
-export function streamKey(key: string, count: number, index: number): string {
-  return count === 1 ? key : `${key}:${index}`;
-}
-
-/**
- * The streams of the options, one per event.
+ * The events of the options.
  * @param opts Subscription options.
  */
 export function streamsOf(opts: SubscribeOptions): readonly SubscribeEvent[] {
@@ -130,7 +116,8 @@ export function streamsOf(opts: SubscribeOptions): readonly SubscribeEvent[] {
  * closed and drained.
  */
 export interface Subscription<TData = unknown>
-  extends AsyncIterable<InboxMessage<TData>> {
+  extends AsyncIterable<InboxMessage<TData>>,
+    AsyncDisposable {
   /**
    * Waits for the next message, or returns `null` once the subscription is
    * closed and every saved message has been read.
@@ -139,18 +126,10 @@ export interface Subscription<TData = unknown>
 
   /**
    * Reads the next message if it has already arrived, without waiting. Use it
-   * between model calls to fold in messages sent while working. Call `ack()`
-   * for a message you handle, or `putBack()` one you don't.
+   * between model calls to fold in messages sent while working. It is a step,
+   * so the answer is the same when the function replays.
    */
   poll(): Promise<InboxMessage<TData> | null>;
-
-  /**
-   * Tells the executor a polled message was handled, so it is not handed to
-   * the thread's next run. Neither `next()` nor `poll()` acks: ack a message
-   * once you have handled it, so a run that fails or is cancelled while
-   * handling it leaves it for the next run.
-   */
-  ack(message: InboxMessage<TData>): Promise<void>;
 
   /**
    * Puts messages back, in order, so the next reads return them before
@@ -160,12 +139,27 @@ export interface Subscription<TData = unknown>
   putBack(messages: InboxMessage<TData>[]): void;
 
   /**
-   * Stops the subscription: no new messages are saved. Messages that were
-   * saved but not read stay readable, so drain with `next()` until it returns
-   * `null` before the function finishes.
-   * @returns How many messages the subscription saved in total.
+   * Ends the subscription: no new messages are saved. It only ends the
+   * subscription. It does not touch the run or the function's singleton, and
+   * nothing is re-sent when the run ends.
+   *
+   * A message that arrives after `close()`, while the function's singleton
+   * still applies, is dropped: it neither starts another run nor reaches this
+   * one. The gap is the time between `close()` and the end of the run.
+   *
+   * Calling it again does nothing and returns no messages.
+   * @returns The messages that were saved but not read, in the order they are
+   * read. They are taken out of the subscription.
    */
-  close(): Promise<number>;
+  close(): Promise<InboxMessage<TData>[]>;
+
+  /**
+   * Closes the subscription when its scope ends, so `await using` needs no
+   * explicit `close()`. `step.subscribe()` returns a promise, so await it
+   * first: `await using inbox = await step.subscribe(...)`. Needs TypeScript
+   * 5.2 or later; the symbol is polyfilled on Node before 20.5.
+   */
+  [Symbol.asyncDispose](): Promise<void>;
 }
 
 /**
@@ -173,111 +167,48 @@ export interface Subscription<TData = unknown>
  */
 export type SubscribeOp = (
   stepId: string,
-  mode: "open" | "next" | "poll" | "ack" | "close",
+  mode: "open" | "next" | "poll" | "close",
   seq: number | undefined,
   stream: number,
 ) => Promise<unknown>;
 
-interface Stream {
-  index: number;
-  key: string;
-
-  // How many numbered messages of this stream have been read, how many polls
-  // it has had, and how many messages it saved once closed.
-  read: number;
-  polls: number;
-  total?: number;
-
-  // The wait for message `seq`, kept until it is consumed so that every
-  // `next()` that races this stream waits on the same step.
-  pending?: { seq: number; wait: Promise<{ stream: Stream; data: unknown }> };
-}
-
 /**
- * Opens a subscription: one stream per event, merged into one message
- * sequence.
+ * Opens a subscription.
  * @param op Runs one subscription op as a step.
  * @param key The subscription ID; prefix of every step it runs.
  * @param opts Subscription options.
+ * @param read Reads the subscription's messages out of the run's state, in
+ * order.
  */
 export async function openSubscription<TData = unknown>(
   op: SubscribeOp,
   key: string,
   opts: SubscribeOptions,
+  read: () => unknown[],
 ): Promise<Subscription<TData>> {
-  const events = streamsOf(opts);
-  const streams: Stream[] = events.map((_event, index) => {
-    return {
-      index,
-      key: streamKey(key, events.length, index),
-      read: 0,
-      polls: 0,
-    };
-  });
+  const streams = streamsOf(opts);
 
-  for (const stream of streams) {
-    await op(`${stream.key}:open`, "open", undefined, stream.index);
+  // The IDs of a single event are the subscription's own, without a stream.
+  const stepId = (stream: number, name: string) => {
+    return streams.length === 1 ? `${key}:${name}` : `${key}:${stream}:${name}`;
+  };
+
+  for (let stream = 0; stream < streams.length; stream++) {
+    await op(stepId(stream, "open"), "open", undefined, stream);
   }
 
-  // The position in the merged sequence, which is what callers ack by.
-  let delivered = 0;
+  // How many messages have been read, how many polls were made, and how many
+  // messages there were once closed.
+  let readCount = 0;
+  let polls = 0;
+  let total: number | undefined;
 
   // Messages put back, oldest first.
   const held: InboxMessage<TData>[] = [];
-  const acked = new Set<number>();
 
-  function drained(stream: Stream) {
-    return stream.total !== undefined && stream.read >= stream.total;
-  }
-
-  // The ack tells the executor a message was handled, so a message that was
-  // saved but never acked is handed to the thread's next run. The trigger
-  // (seq 0) is not a saved message. Acks reach each stream in its own order
-  // as long as the caller acks in merged order.
-  async function ack(message: InboxMessage<TData>) {
-    if (message.seq < 1 || acked.has(message.seq) || !message.source) {
-      return;
-    }
-
-    acked.add(message.seq);
-    const stream = streams[message.source.stream] as Stream;
-    await op(
-      `${stream.key}:ack:${message.source.seq}`,
-      "ack",
-      message.source.seq,
-      stream.index,
-    );
-  }
-
-  function receive(stream: Stream, seq: number, data: unknown) {
-    stream.read = seq;
-    stream.pending = undefined;
-    delivered += 1;
-
-    return {
-      seq: delivered,
-      data: data as TData,
-      source: { stream: stream.index, seq },
-    };
-  }
-
-  function waitFor(stream: Stream) {
-    if (!stream.pending) {
-      const seq = stream.read + 1;
-      const wait = op(`${stream.key}:${seq}`, "next", seq, stream.index).then(
-        (data) => {
-          return { stream, data };
-        },
-      );
-
-      // A wait that loses a race and later fails is not an unhandled error;
-      // the next `next()` that races it sees the failure.
-      wait.catch(() => {});
-      stream.pending = { seq, wait };
-    }
-
-    return stream.pending;
-  }
+  const drained = () => {
+    return total !== undefined && readCount >= total;
+  };
 
   async function next(): Promise<InboxMessage<TData> | null> {
     const waiting = held.shift();
@@ -285,27 +216,27 @@ export async function openSubscription<TData = unknown>(
       return waiting;
     }
 
-    const open = streams.filter((stream) => {
-      return !drained(stream);
-    });
-    if (open.length === 0) {
+    if (drained()) {
       return null;
     }
 
-    // With several streams the waits race; the winner is the message that
-    // arrived first, and the others keep their wait for the next call.
-    const waits = open.map((stream) => {
-      return waitFor(stream);
-    });
-    const won = await Promise.race(
-      waits.map((wait) => {
-        return wait.wait.then((result) => {
-          return { ...result, seq: wait.seq };
-        });
-      }),
-    );
+    const seq = readCount + 1;
 
-    return receive(won.stream, won.seq, won.data);
+    // A message that is already in the state is read without a step. When it
+    // is not, the wait is a step the executor answers once the message exists;
+    // the function then runs again and finds the message here.
+    if (read().length < seq) {
+      await op(`${key}:${seq}`, "next", seq, 0);
+    }
+
+    const message = read()[seq - 1];
+    if (message === undefined) {
+      throw new Error(`Subscription "${key}": message ${seq} is missing.`);
+    }
+
+    readCount = seq;
+
+    return { seq, data: message as TData };
   }
 
   async function poll(): Promise<InboxMessage<TData> | null> {
@@ -314,49 +245,74 @@ export async function openSubscription<TData = unknown>(
       return waiting;
     }
 
-    for (const stream of streams) {
-      if (drained(stream)) {
-        continue;
-      }
-
-      const seq = stream.read + 1;
-      stream.polls += 1;
-      const message = await op(
-        `${stream.key}:poll:${stream.polls}`,
-        "poll",
-        seq,
-        stream.index,
-      );
-      if (message !== null && message !== undefined) {
-        return receive(stream, seq, message);
-      }
+    if (drained()) {
+      return null;
     }
 
-    return null;
+    const seq = readCount + 1;
+    polls += 1;
+    const message = await op(`${key}:poll:${polls}`, "poll", seq, 0);
+    if (message === null || message === undefined) {
+      return null;
+    }
+
+    readCount = seq;
+
+    return { seq, data: message as TData };
+  }
+
+  let closing: Promise<InboxMessage<TData>[]> | undefined;
+
+  // Ends every event's pause, then reads out what was saved but not read. A
+  // second call finds it done and returns nothing, so an explicit `close()` and
+  // the scope exit of `await using` can both run.
+  function close() {
+    if (closing) {
+      return closing.then(() => {
+        return [];
+      });
+    }
+
+    closing = (async () => {
+      let count = 0;
+
+      for (let stream = 0; stream < streams.length; stream++) {
+        const closed = (await op(
+          stepId(stream, "close"),
+          "close",
+          undefined,
+          stream,
+        )) as { count: number };
+
+        // The last close sees every message saved before the last pause went.
+        count = closed.count;
+      }
+
+      total = count;
+
+      const unread: InboxMessage<TData>[] = [];
+      const messages = read();
+
+      for (let seq = readCount + 1; seq <= count; seq++) {
+        unread.push({ seq, data: messages[seq - 1] as TData });
+      }
+      readCount = count;
+
+      return [...held.splice(0), ...unread];
+    })();
+
+    return closing;
   }
 
   return {
     next,
     poll,
-    ack,
     putBack(messages) {
       held.unshift(...messages);
     },
-    async close() {
-      let total = 0;
-
-      for (const stream of streams) {
-        const closed = (await op(
-          `${stream.key}:close`,
-          "close",
-          undefined,
-          stream.index,
-        )) as { count: number };
-        stream.total = closed.count;
-        total += closed.count;
-      }
-
-      return total;
+    close,
+    async [Symbol.asyncDispose]() {
+      await close();
     },
     [Symbol.asyncIterator]() {
       return {
@@ -372,3 +328,8 @@ export async function openSubscription<TData = unknown>(
     },
   };
 }
+
+// Node before 20.5 lacks the symbol that `await using` looks up.
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
+  "Symbol.asyncDispose",
+);

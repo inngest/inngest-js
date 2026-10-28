@@ -11,13 +11,9 @@ import { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
-import { agentMessage, agentStop } from "./events.ts";
+import { agentMessage } from "./events.ts";
 import { skillsBake } from "./skills.ts";
-import {
-  agentMessageEvent,
-  agentStopEvent,
-  type ThreadMessage,
-} from "./thread.ts";
+import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
 import { compileTriggers, singletonKey } from "./threadTrigger.ts";
 
 const order = eventType("shop/order.created", {
@@ -38,7 +34,6 @@ const fnOptions = (fn: { opts?: unknown }) => {
   return (fn as unknown as { ["opts"]: unknown })["opts"] as {
     triggers: unknown[];
     singleton: { key: string };
-    cancelOn: { event: string; if: string }[];
   };
 };
 
@@ -159,11 +154,6 @@ describe("types", () => {
   test("the agent's events are event types with typed data", () => {
     expectTypeOf(agentMessage.name).toEqualTypeOf<"agent/message">();
     expectTypeOf(agentMessageEvent).toEqualTypeOf<"agent/message">();
-    expectTypeOf(agentStopEvent).toEqualTypeOf<"agent/thread.stop">();
-    expectTypeOf(agentStop.create).parameter(0).toEqualTypeOf<{
-      agent: string;
-      thread: string;
-    }>();
     expectTypeOf(agentMessage.create)
       .parameter(0)
       .toEqualTypeOf<ThreadMessage>();
@@ -222,7 +212,6 @@ describe("step.subscribe", () => {
 describe("events", () => {
   test("the agent's events keep their names", () => {
     expect(agentMessage.name).toBe("agent/message");
-    expect(agentStop.name).toBe("agent/thread.stop");
     expect(skillsBake.name).toBe("agent/skills.bake");
   });
 
@@ -307,7 +296,7 @@ describe("triggers", () => {
     ).toHaveLength(2);
   });
 
-  test("the singleton and the stop-now cancel are keyed on the cron's thread", () => {
+  test("the singleton is keyed on the cron's thread", () => {
     const agent = agents.agent({ id: "u2", on: { cron: "0 3 * * *" } }, noop);
     const options = fnOptions(agent.fn);
 
@@ -315,7 +304,6 @@ describe("triggers", () => {
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );
-    expect(options.cancelOn.at(-1)?.if).toContain('"u2" == async.data.thread');
     expect(
       singletonKey(compileTriggers("u2", { on: { cron: "0 3 * * *" } })),
     ).toBe(options.singleton.key);
@@ -360,7 +348,7 @@ describe("triggers", () => {
 
   test("the agent's own events and mixed triggers are refused", () => {
     expect(() => {
-      return compileTriggers("bot", { on: agentStop });
+      return compileTriggers("bot", { on: agentMessage });
     }).toThrow(/other than/);
     expect(() => {
       return compileTriggers("bot", { on: skillsBake });
@@ -383,15 +371,6 @@ describe("triggers", () => {
         on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *", message: () => "x" }],
       });
     }).toThrow(/first cron/);
-  });
-
-  test("several crons add one stop-now cancel, not one each", () => {
-    const agent = agents.agent(
-      { id: "u4", on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *" }] },
-      noop,
-    );
-
-    expect(fnOptions(agent.fn).cancelOn).toHaveLength(2);
   });
 
   test("an event type's name is checked like a name", () => {

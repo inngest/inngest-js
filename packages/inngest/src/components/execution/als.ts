@@ -102,6 +102,12 @@ export interface AsyncContext {
      * does not carry them. Set by the agent function; read by the agent KV.
      */
     agent?: { thread: string; session: string };
+
+    /**
+     * The messages of a `step.subscribe()` subscription, read from the run's
+     * state in the order the executor saved them. Only subscriptions use it.
+     */
+    subscriptionMessages?: (key: string) => unknown[];
   };
 }
 
