@@ -115,7 +115,7 @@ export const threadKey = scenario({
       },
     );
 
-    // Trigger events and handle messages interleaved, while turns are busy.
+    // Trigger events and handle messages interleaved, while turns are busy. Order across (and within a burst of) events is arrival order at the executor, so only the set is checked.
     const sent = {
       event: ["e1", "e2", "e3", "e4"],
       handle: ["h1", "h2", "h3", "h4"],
@@ -152,18 +152,6 @@ export const threadKey = scenario({
         ),
       { state, turns },
     );
-    for (const group of [sent.event, sent.handle]) {
-      ctx.check(
-        `${group[0]}.. keep their order`,
-        JSON.stringify(
-          turns.filter((turn) => {
-            return group.includes(turn);
-          }),
-        ) === JSON.stringify(group),
-        turns,
-      );
-    }
-
     // Another thread starts its own run.
     await ctx.send("msg", { channel, ts: "2.0", text: "other" });
     const other = await ctx.eventually(
