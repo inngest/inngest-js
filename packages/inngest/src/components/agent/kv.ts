@@ -27,10 +27,71 @@ export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
  */
 export interface KvAdapter {
   get(hash: string, field: string): Promise<string | null>;
-  set(hash: string, field: string, value: string): Promise<void>;
+
+  /**
+   * @param ttl Seconds until the field expires. Absent: it never does.
+   */
+  set(hash: string, field: string, value: string, ttl?: number): Promise<void>;
+
+  /**
+   * Writes only when the field has no live value. Returns whether it wrote.
+   * @param ttl Seconds until the field expires. Absent: it never does.
+   */
+  setIfAbsent(
+    hash: string,
+    field: string,
+    value: string,
+    ttl?: number,
+  ): Promise<boolean>;
   delete(hash: string, field: string): Promise<void>;
   all(hash: string): Promise<Record<string, string>>;
+
+  /**
+   * Removes every field and index of the hash.
+   */
   clear(hash: string): Promise<void>;
+  indexAdd(
+    hash: string,
+    index: string,
+    member: string,
+    score: number,
+  ): Promise<void>;
+  indexRange(
+    hash: string,
+    index: string,
+    options: KvIndexRange,
+  ): Promise<KvIndexEntry[]>;
+  indexRemove(hash: string, index: string, member: string): Promise<void>;
+}
+
+/**
+ * One member of a sorted index and its score.
+ */
+export interface KvIndexEntry {
+  member: string;
+  score: number;
+}
+
+export interface KvIndexRange {
+  /**
+   * Lowest score to include. Default: no lower bound.
+   */
+  min?: number;
+
+  /**
+   * Highest score to include. Default: no upper bound.
+   */
+  max?: number;
+
+  /**
+   * Most members to return. Default: all of them.
+   */
+  limit?: number;
+
+  /**
+   * `"asc"` (lowest score first, the default) or `"desc"`.
+   */
+  order?: "asc" | "desc";
 }
 
 /**
@@ -38,6 +99,8 @@ export interface KvAdapter {
  */
 export function memoryKvAdapter(): KvAdapter {
   const hashes = new Map<string, Map<string, string>>();
+  const expiries = new Map<string, number>();
+  const indexes = new Map<string, Map<string, number>>();
 
   function hashOf(hash: string) {
     let found = hashes.get(hash);
@@ -49,21 +112,97 @@ export function memoryKvAdapter(): KvAdapter {
     return found;
   }
 
+  function expiryKey(hash: string, field: string) {
+    return `${hash}|${field}`;
+  }
+
+  // Drops the field once its time is up, so every read gives the same answer.
+  function live(hash: string, field: string) {
+    const at = expiries.get(expiryKey(hash, field));
+    if (at !== undefined && at <= Date.now()) {
+      hashOf(hash).delete(field);
+      expiries.delete(expiryKey(hash, field));
+    }
+
+    return hashOf(hash).has(field);
+  }
+
+  function write(hash: string, field: string, value: string, ttl?: number) {
+    hashOf(hash).set(field, value);
+    if (ttl === undefined) {
+      expiries.delete(expiryKey(hash, field));
+    } else {
+      expiries.set(expiryKey(hash, field), Date.now() + ttl * 1000);
+    }
+  }
+
   return {
     async get(hash, field) {
-      return hashOf(hash).get(field) ?? null;
+      return live(hash, field) ? (hashOf(hash).get(field) ?? null) : null;
     },
-    async set(hash, field, value) {
-      hashOf(hash).set(field, value);
+    async set(hash, field, value, ttl) {
+      write(hash, field, value, ttl);
+    },
+    async setIfAbsent(hash, field, value, ttl) {
+      if (live(hash, field)) {
+        return false;
+      }
+      write(hash, field, value, ttl);
+
+      return true;
     },
     async delete(hash, field) {
       hashOf(hash).delete(field);
+      expiries.delete(expiryKey(hash, field));
     },
     async all(hash) {
+      for (const field of [...hashOf(hash).keys()]) {
+        live(hash, field);
+      }
+
       return Object.fromEntries(hashOf(hash));
     },
     async clear(hash) {
       hashes.delete(hash);
+      for (const key of [...expiries.keys()]) {
+        if (key.startsWith(`${hash}|`)) {
+          expiries.delete(key);
+        }
+      }
+      for (const key of [...indexes.keys()]) {
+        if (key.startsWith(`${hash}|`)) {
+          indexes.delete(key);
+        }
+      }
+    },
+    async indexAdd(hash, index, member, score) {
+      const key = `${hash}|${index}`;
+      const found = indexes.get(key) ?? new Map<string, number>();
+      found.set(member, score);
+      indexes.set(key, found);
+    },
+    async indexRange(hash, index, options) {
+      const entries = [...(indexes.get(`${hash}|${index}`) ?? [])]
+        .map(([member, score]) => {
+          return { member, score };
+        })
+        .filter((entry) => {
+          return (
+            entry.score >= (options.min ?? -Infinity) &&
+            entry.score <= (options.max ?? Infinity)
+          );
+        })
+        .sort((a, b) => {
+          return a.score - b.score || (a.member < b.member ? -1 : 1);
+        });
+      if (options.order === "desc") {
+        entries.reverse();
+      }
+
+      return entries.slice(0, options.limit ?? entries.length);
+    },
+    async indexRemove(hash, index, member) {
+      indexes.get(`${hash}|${index}`)?.delete(member);
     },
   };
 }
@@ -75,41 +214,173 @@ export function memoryKvAdapter(): KvAdapter {
 export function redisKvAdapter(url: string): KvAdapter {
   const client = redisConnection(url);
 
+  // Fields with a time to live are plain keys (older servers cannot expire a
+  // hash field) and each index is a sorted set; both are named after the hash.
+  function expiring(hash: string, field: string) {
+    return `${hash}|t|${field}`;
+  }
+
+  function sorted(hash: string, index: string) {
+    return `${hash}|z|${index}`;
+  }
+
+  async function command(...args: string[]) {
+    return (await client()).command(...args);
+  }
+
+  // Every key of the hash other than the hash itself matching `kind`.
+  async function scan(hash: string, kind: "t" | "z") {
+    const pattern = `${hash.replace(/[\\*?[\]]/g, "\\$&")}|${kind}|*`;
+    const found: string[] = [];
+    let cursor = "0";
+    do {
+      const reply = (await command(
+        "SCAN",
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        "200",
+      )) as [string, string[]];
+      cursor = reply[0];
+      found.push(...reply[1]);
+    } while (cursor !== "0");
+
+    return found;
+  }
+
   return {
     async get(hash, field) {
-      const reply = await (await client()).command("HGET", hash, field);
+      const stored = (await command("HGET", hash, field)) as string | null;
 
-      return reply as string | null;
+      return (
+        stored ??
+        ((await command("GET", expiring(hash, field))) as string | null)
+      );
     },
-    async set(hash, field, value) {
-      await (await client()).command("HSET", hash, field, value);
+    async set(hash, field, value, ttl) {
+      if (ttl === undefined) {
+        await command("HSET", hash, field, value);
+        await command("DEL", expiring(hash, field));
+
+        return;
+      }
+
+      await command("SET", expiring(hash, field), value, "EX", String(ttl));
+      await command("HDEL", hash, field);
+    },
+    async setIfAbsent(hash, field, value, ttl) {
+      if ((await command("HEXISTS", hash, field)) === 1) {
+        return false;
+      }
+
+      const args = ["SET", expiring(hash, field), value];
+      if (ttl !== undefined) {
+        args.push("EX", String(ttl));
+      }
+      args.push("NX");
+
+      return (await command(...args)) === "OK";
     },
     async delete(hash, field) {
-      await (await client()).command("HDEL", hash, field);
+      await command("HDEL", hash, field);
+      await command("DEL", expiring(hash, field));
     },
     async all(hash) {
-      const reply = (await (
-        await client()
-      ).command("HGETALL", hash)) as string[];
+      const reply = (await command("HGETALL", hash)) as string[];
       const out: Record<string, string> = {};
       for (let i = 0; i < reply.length; i += 2) {
         out[reply[i] as string] = reply[i + 1] as string;
       }
 
+      const keys = await scan(hash, "t");
+      if (keys.length > 0) {
+        const values = (await command("MGET", ...keys)) as (string | null)[];
+        const prefix = `${hash}|t|`;
+        keys.forEach((key, i) => {
+          const value = values[i];
+          if (value !== null && value !== undefined) {
+            out[key.slice(prefix.length)] = value;
+          }
+        });
+      }
+
       return out;
     },
     async clear(hash) {
-      await (await client()).command("DEL", hash);
+      const keys = [...(await scan(hash, "t")), ...(await scan(hash, "z"))];
+      await command("DEL", hash, ...keys);
+    },
+    async indexAdd(hash, index, member, score) {
+      await command("ZADD", sorted(hash, index), String(score), member);
+    },
+    async indexRange(hash, index, options) {
+      const low = options.min === undefined ? "-inf" : String(options.min);
+      const high = options.max === undefined ? "+inf" : String(options.max);
+      const desc = options.order === "desc";
+      const args = desc
+        ? ["ZREVRANGEBYSCORE", sorted(hash, index), high, low]
+        : ["ZRANGEBYSCORE", sorted(hash, index), low, high];
+      args.push("WITHSCORES");
+      if (options.limit !== undefined) {
+        args.push("LIMIT", "0", String(options.limit));
+      }
+
+      const reply = (await command(...args)) as string[];
+      const out: KvIndexEntry[] = [];
+      for (let i = 0; i < reply.length; i += 2) {
+        out.push({ member: reply[i] as string, score: Number(reply[i + 1]) });
+      }
+
+      return out;
+    },
+    async indexRemove(hash, index, member) {
+      await command("ZREM", sorted(hash, index), member);
     },
   };
 }
 
+export interface KvSetOptions {
+  /**
+   * Seconds until the key expires. Default: it never does.
+   */
+  ttl?: number;
+}
+
+/**
+ * A sorted index in a scope instance: members ordered by a numeric score,
+ * for example run ids by start time. Inside a function every call is a
+ * memoized step.
+ */
+export interface KvIndex {
+  /**
+   * Adds the member, or moves it to the new score.
+   * @param member The member, for example an id.
+   * @param score What it sorts by, for example a timestamp.
+   */
+  add(member: string, score: number): Promise<void>;
+
+  /**
+   * Members in score order, with their scores.
+   */
+  range(options?: KvIndexRange): Promise<KvIndexEntry[]>;
+  remove(member: string): Promise<void>;
+}
+
 export interface KvHandle {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set(key: string, value: unknown): Promise<void>;
+  set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
+  setIfAbsent(
+    key: string,
+    value: unknown,
+    options?: KvSetOptions,
+  ): Promise<boolean>;
   delete(key: string): Promise<void>;
   all<T = unknown>(): Promise<Record<string, T>>;
   clear(): Promise<void>;
+  indexAdd(index: string, member: string, score: number): Promise<void>;
+  indexRange(index: string, options: KvIndexRange): Promise<KvIndexEntry[]>;
+  indexRemove(index: string, member: string): Promise<void>;
 }
 
 export interface KvScopeIds {
@@ -127,7 +398,30 @@ export interface KvScopeIds {
  */
 export interface KvScopeInstance {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set(key: string, value: unknown): Promise<void>;
+
+  /**
+   * Writes a key. With `{ ttl }` it expires that many seconds later.
+   */
+  set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
+
+  /**
+   * Writes a key only when it has no value, and returns whether it did: the
+   * first caller gets `true`, later ones `false` until the key expires or is
+   * deleted. Atomic across runs. Use one style per key: a key written with
+   * `set` and no `ttl` is seen as present, but a later `set` may replace a claim.
+   */
+  setIfAbsent(
+    key: string,
+    value: unknown,
+    options?: KvSetOptions,
+  ): Promise<boolean>;
+
+  /**
+   * A sorted index named `name`, kept beside the keys of the scope instance
+   * and removed with `clear()`.
+   * @param name Index name.
+   */
+  index(name: string): KvIndex;
 
   /**
    * Reads, transforms and writes a key in one step. Not atomic across runs.
@@ -246,8 +540,21 @@ function handleFor(
 
       return raw === null ? undefined : (JSON.parse(raw) as T);
     },
-    async set(key, value) {
-      await adapter.set(hash, key, JSON.stringify(value ?? null));
+    async set(key, value, options) {
+      await adapter.set(
+        hash,
+        key,
+        JSON.stringify(value ?? null),
+        checkedTtl(options),
+      );
+    },
+    async setIfAbsent(key, value, options) {
+      return adapter.setIfAbsent(
+        hash,
+        key,
+        JSON.stringify(value ?? null),
+        checkedTtl(options),
+      );
     },
     async delete(key) {
       await adapter.delete(hash, key);
@@ -264,7 +571,25 @@ function handleFor(
     async clear() {
       await adapter.clear(hash);
     },
+    async indexAdd(index, member, score) {
+      await adapter.indexAdd(hash, index, member, score);
+    },
+    async indexRange(index, options) {
+      return adapter.indexRange(hash, index, options);
+    },
+    async indexRemove(index, member) {
+      await adapter.indexRemove(hash, index, member);
+    },
   };
+}
+
+function checkedTtl(options?: KvSetOptions): number | undefined {
+  const ttl = options?.ttl;
+  if (ttl !== undefined && !(Number.isInteger(ttl) && ttl > 0)) {
+    throw new Error("kv ttl must be a whole number of seconds above zero.");
+  }
+
+  return ttl;
 }
 
 /**
@@ -339,10 +664,37 @@ export function createKv(
           return h.get<T>(key);
         })) ?? undefined) as T | undefined;
       },
-      async set(key, value) {
+      async set(key, value, setOptions) {
+        checkedTtl(setOptions);
         await run("set", key, async (h) => {
-          await h.set(key, value);
+          await h.set(key, value, setOptions);
         });
+      },
+      async setIfAbsent(key, value, setOptions) {
+        checkedTtl(setOptions);
+
+        return run("setIfAbsent", key, async (h) => {
+          return h.setIfAbsent(key, value, setOptions);
+        });
+      },
+      index(name) {
+        return {
+          async add(member, score) {
+            await run("index.add", `${name}:${member}`, async (h) => {
+              await h.indexAdd(name, member, score);
+            });
+          },
+          async range(rangeOptions = {}) {
+            return run("index.range", name, async (h) => {
+              return h.indexRange(name, rangeOptions);
+            });
+          },
+          async remove(member) {
+            await run("index.remove", `${name}:${member}`, async (h) => {
+              await h.indexRemove(name, member);
+            });
+          },
+        };
       },
       async update<T>(key: string, fn: (current: T | undefined) => T) {
         return run("update", key, async (h) => {

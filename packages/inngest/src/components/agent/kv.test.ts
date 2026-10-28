@@ -5,7 +5,14 @@
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
-import { createKv, kvHash, memoryKvAdapter } from "./kv.ts";
+import { startFakeRedis } from "./fake-redis.ts";
+import {
+  createKv,
+  type KvAdapter,
+  kvHash,
+  memoryKvAdapter,
+  redisKvAdapter,
+} from "./kv.ts";
 import { run } from "./test-helpers.ts";
 
 describe("kv", () => {
@@ -100,5 +107,178 @@ describe("kv", () => {
       plan: { steps: 2 },
     });
     expect(await bound.scope("thread", "t2").all()).toEqual({});
+  });
+});
+
+describe("kv ttl, setIfAbsent and sorted indexes", () => {
+  /**
+   * The same behaviour for every adapter. `advance` moves the clock the
+   * adapter's expiry uses.
+   */
+  function contract(
+    name: string,
+    make: () => Promise<{
+      adapter: KvAdapter;
+      advance: (ms: number) => void;
+      done: () => Promise<void>;
+    }>,
+  ) {
+    describe(name, () => {
+      test("ttl expires a key and set without ttl keeps it", async () => {
+        const { adapter, advance, done } = await make();
+        const kv = createKv({ adapter }).with({ id: "app", env: null });
+        const env = kv.env;
+
+        await env.set("stop", "k", { ttl: 10 });
+        await env.set("plain", 1);
+        expect(await env.get("stop")).toBe("k");
+        expect(await env.all()).toEqual({ stop: "k", plain: 1 });
+
+        advance(11_000);
+
+        expect(await env.get("stop")).toBeUndefined();
+        expect(await env.all()).toEqual({ plain: 1 });
+
+        await env.set("stop", "k", { ttl: 10 });
+        await env.set("stop", "forever");
+        advance(60_000);
+        expect(await env.get("stop")).toBe("forever");
+
+        await expect(env.set("x", 1, { ttl: 0 })).rejects.toThrow(/ttl/);
+        await done();
+      });
+
+      test("setIfAbsent claims once until expiry or delete", async () => {
+        const { adapter, advance, done } = await make();
+        const env = createKv({ adapter }).with({ id: "app", env: null }).env;
+
+        expect(await env.setIfAbsent("card", "a", { ttl: 10 })).toBe(true);
+        expect(await env.setIfAbsent("card", "b", { ttl: 10 })).toBe(false);
+        expect(await env.get("card")).toBe("a");
+
+        advance(11_000);
+        expect(await env.setIfAbsent("card", "b", { ttl: 10 })).toBe(true);
+        expect(await env.get("card")).toBe("b");
+
+        await env.delete("card");
+        expect(await env.get("card")).toBeUndefined();
+        expect(await env.setIfAbsent("card", "c")).toBe(true);
+        expect(await env.setIfAbsent("card", "d")).toBe(false);
+
+        await env.set("plain", 1);
+        expect(await env.setIfAbsent("plain", 2)).toBe(false);
+        await done();
+      });
+
+      test("an index ranges by score, filters, limits and removes", async () => {
+        const { adapter, done } = await make();
+        const kv = createKv({ adapter }).with({ id: "app", env: null });
+        const index = kv.env.index("improve");
+
+        await index.add("a", 10);
+        await index.add("b", 30);
+        await index.add("c", 20);
+        await index.add("a", 40);
+
+        const members = async (options = {}) => {
+          return (await index.range(options)).map((e) => {
+            return e.member;
+          });
+        };
+        expect(await members()).toEqual(["c", "b", "a"]);
+        expect(await members({ order: "desc", limit: 2 })).toEqual(["a", "b"]);
+        expect(await members({ min: 25 })).toEqual(["b", "a"]);
+        expect(await members({ max: 20 })).toEqual(["c"]);
+        expect(await index.range({ max: 20 })).toEqual([
+          { member: "c", score: 20 },
+        ]);
+
+        await index.remove("b");
+        expect(await members()).toEqual(["c", "a"]);
+        expect(await kv.scope("env", "other").index("improve").range()).toEqual(
+          [],
+        );
+
+        await kv.env.clear();
+        expect(await members()).toEqual([]);
+        await done();
+      });
+
+      test("clear removes ttl keys and indexes too", async () => {
+        const { adapter, done } = await make();
+        const kv = createKv({ adapter }).with({ id: "app", env: null });
+        const scope = kv.scope("thread", "t1");
+        const other = kv.scope("thread", "t10");
+
+        await scope.set("a", 1, { ttl: 100 });
+        await scope.index("i").add("m", 1);
+        await other.set("a", 2, { ttl: 100 });
+        await other.index("i").add("m", 1);
+        await scope.clear();
+
+        expect(await scope.all()).toEqual({});
+        expect(await scope.index("i").range()).toEqual([]);
+        expect(await other.all()).toEqual({ a: 2 });
+        expect(await other.index("i").range()).toHaveLength(1);
+        await done();
+      });
+    });
+  }
+
+  contract("memory adapter", async () => {
+    const real = Date.now;
+    let offset = 0;
+    Date.now = () => {
+      return real() + offset;
+    };
+
+    return {
+      adapter: memoryKvAdapter(),
+      advance: (ms) => {
+        offset += ms;
+      },
+      done: async () => {
+        Date.now = real;
+      },
+    };
+  });
+
+  contract("redis adapter against the fake server", async () => {
+    const server = await startFakeRedis();
+
+    return {
+      adapter: redisKvAdapter(server.url),
+      advance: server.advance,
+      done: server.close,
+    };
+  });
+
+  test("inside a function each operation is a memoized step", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const client = new Inngest({ id: testClientId });
+    const out: unknown[] = [];
+
+    const fn = client.createFunction(
+      { id: "kvops", triggers: [{ event: "kv/ops" }] },
+      async () => {
+        out.push(await kv.env.setIfAbsent("claim", "me", { ttl: 30 }));
+        out.push(await kv.env.setIfAbsent("claim", "you", { ttl: 30 }));
+        await kv.env.index("runs").add("r1", 5);
+        out.push(await kv.env.index("runs").range());
+        await kv.env.index("runs").remove("r1");
+      },
+    );
+
+    const { type, ran } = await runToEnd(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(ran).toEqual([
+      "kv.setIfAbsent:env:claim",
+      "kv.setIfAbsent:env:claim",
+      "kv.index.add:env:runs:r1",
+      "kv.index.range:env:runs",
+      "kv.index.remove:env:runs:r1",
+    ]);
+    expect(out.slice(-3)).toEqual([true, false, [{ member: "r1", score: 5 }]]);
   });
 });
