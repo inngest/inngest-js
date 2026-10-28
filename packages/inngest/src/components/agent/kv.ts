@@ -246,6 +246,10 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await client()).command(...args);
   }
 
+  async function transaction(commands: string[][]) {
+    return (await client()).transaction(commands);
+  }
+
   // Redis's own clock, so a host with a skewed clock cannot mis-score entries.
   async function serverNow() {
     const [seconds, micros] = (await command("TIME")) as [string, string];
@@ -274,9 +278,7 @@ export function redisKvAdapter(url: string): KvAdapter {
   return {
     async get(hash, field) {
       // One block, so a field moving between the two forms is never missed.
-      const [stored, timed] = (await (
-        await client()
-      ).transaction([
+      const [stored, timed] = (await transaction([
         ["HGET", main(hash), field],
         ["GET", expiring(hash, field)],
       ])) as [string | null, string | null];
@@ -286,7 +288,7 @@ export function redisKvAdapter(url: string): KvAdapter {
     async set(hash, field, value, ttl) {
       if (ttl === undefined) {
         // One block, so a reader never sees the field in neither form.
-        await (await client()).transaction([
+        await transaction([
           ["DEL", expiring(hash, field)],
           ["HSET", main(hash), field, value],
         ]);
@@ -297,7 +299,7 @@ export function redisKvAdapter(url: string): KvAdapter {
       // Listed before the write in case the process dies in between, and
       // after it so the entry cannot end before the key does.
       await register(hash, `t:${field}`, ttl);
-      await (await client()).transaction([
+      await transaction([
         ["HDEL", main(hash), field],
         ["SET", expiring(hash, field), value, "EX", String(ttl)],
       ]);
