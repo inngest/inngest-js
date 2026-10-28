@@ -1296,9 +1296,22 @@ class InngestExecutionEngine
           // truly done: the executor needs to memoize these and call back.
           // Don't close the stream. `filterNewSteps` excludes lazy ops, so
           // `attachLazyOps` is what folds them in here.
-          const newSteps = await this.filterNewSteps(
+          const found = await this.filterNewSteps(
             Array.from(this.state.steps.values()),
           );
+
+          // A `step.subscribe()` wait the function stopped waiting on (the loser
+          // of a race between streams) has no end: it is woken by a message,
+          // not by the executor. Reporting it would leave the run open for good.
+          const newSteps = found?.filter((op) => {
+            const subscribe = (
+              op.opts as { subscribe?: { mode?: string } } | undefined
+            )?.subscribe;
+
+            return !(
+              op.op === StepOpCode.WaitForEvent && subscribe?.mode === "next"
+            );
+          });
 
           if (newSteps?.length) {
             return this.attachLazyOps({

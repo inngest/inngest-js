@@ -3,6 +3,9 @@
  * Tests for a subscription over several events, against a fake executor that
  * saves messages per stream and answers each op like the real one.
  */
+
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { Inngest } from "../Inngest.ts";
 import { openSubscription, type SubscribeOp } from "./subscribe.ts";
 
 /**
@@ -177,5 +180,39 @@ describe("ack", () => {
 
     await expect(sub.ack({ seq: 3, data: "x" })).rejects.toThrow(/no source/);
     await expect(sub.ack({ seq: 0, data: "trigger" })).resolves.toBeUndefined();
+  });
+});
+
+describe("a function that stops waiting on a subscription stream", () => {
+  test("is done when it returns: the abandoned wait is not scheduled", async () => {
+    const fn = new Inngest({ id: testClientId }).createFunction(
+      { id: "abandon", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const subscribe = (
+          step as unknown as {
+            "~subscribeOp": (
+              id: string,
+              opts: Record<string, unknown>,
+            ) => Promise<unknown>;
+          }
+        )["~subscribeOp"];
+
+        // The loser of a race between streams: started, never awaited again.
+        void subscribe("inbox:0:1", {
+          event: "msg",
+          subscribe: { key: "inbox:0", mode: "next", seq: 1 },
+        });
+
+        return "done";
+      },
+    );
+
+    const result = await runFnWithStack(
+      fn,
+      {},
+      { event: { name: "sub/run", data: {} } },
+    );
+
+    expect(result.type).toBe("function-resolved");
   });
 });
