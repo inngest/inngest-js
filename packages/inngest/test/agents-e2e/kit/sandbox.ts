@@ -6,7 +6,9 @@
  * operation is reported to the fakes server so a scenario can assert on it.
  * Requests for anything but `/v2/sandboxes` go to the real `fetch`.
  */
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 export interface FakeSandboxOptions {
   /**
@@ -22,6 +24,13 @@ export interface FakeSandboxOptions {
     string,
     { stdout?: string; stderr?: string; exitCode?: number }
   >;
+
+  /**
+   * Directories on this machine. A command that matches no canned entry and
+   * runs in one of them runs for real, and files under /tmp/inngest-git- are
+   * served from disk, so a scenario can use real git.
+   */
+  localDirs?: string[];
 }
 
 const encode = (text: string) => {
@@ -30,6 +39,44 @@ const encode = (text: string) => {
 
 const now = () => {
   return new Date().toISOString();
+};
+
+const runLocal = (
+  command: string[],
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
+  return new Promise((resolve) => {
+    execFile(
+      command[0] as string,
+      command.slice(1),
+      {
+        cwd,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "kit",
+          GIT_AUTHOR_EMAIL: "kit@example.com",
+          GIT_COMMITTER_NAME: "kit",
+          GIT_COMMITTER_EMAIL: "kit@example.com",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_TERMINAL_PROMPT: "0",
+        },
+      },
+      (error, stdout, stderr) => {
+        resolve({
+          stdout,
+          stderr,
+          exitCode:
+            error === null
+              ? 0
+              : typeof error.code === "number"
+                ? error.code
+                : 1,
+        });
+      },
+    );
+  });
 };
 
 export const fakeSandbox = (options: FakeSandboxOptions) => {
@@ -203,6 +250,25 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         cwd: request.cwd,
       });
 
+      if (
+        !canned &&
+        request.cwd !== undefined &&
+        options.localDirs?.some((dir) => {
+          return request.cwd?.startsWith(dir);
+        })
+      ) {
+        const ran = await runLocal(request.command, request.cwd);
+
+        return Response.json({
+          data: {
+            stdout: encode(ran.stdout),
+            stderr: encode(ran.stderr),
+            encoding: "base64",
+            exitCode: ran.exitCode,
+          },
+        });
+      }
+
       return Response.json({
         data: {
           stdout: encode(canned?.stdout ?? ""),
@@ -228,7 +294,13 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         return Response.json({ data: { path, bytesWritten: body.length } });
       }
 
-      const found = files.get(path);
+      let found = files.get(path);
+
+      if (!found && path.startsWith("/tmp/inngest-git-")) {
+        try {
+          found = new Uint8Array(readFileSync(path));
+        } catch {}
+      }
 
       return found
         ? new Response(found as BodyInit)
