@@ -2,6 +2,7 @@
  * @module
  * Tests for the scoped KV, using the in-memory adapter.
  */
+import { z } from "zod/v4";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
@@ -10,6 +11,7 @@ import {
   createKv,
   type KvAdapter,
   kvHash,
+  kvKey,
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
@@ -28,7 +30,7 @@ describe("kv", () => {
       async () => {
         await kv.set("a", 1);
         await kv.function.set("a", 2);
-        const total = await kv.app.update<number>("n", function (n) {
+        const total = await kv.app.update(kvKey<number>("n"), function (n) {
           return (n ?? 0) + 5;
         });
         out.push(await kv.get("a"), await kv.function.get("a"), total);
@@ -408,5 +410,59 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
       "kv.index.remove:env:runs:r1",
     ]);
     expect(out.slice(-3)).toEqual([true, false, [{ member: "r1", score: 5 }]]);
+  });
+});
+
+describe("kv typed keys", () => {
+  test("a schema key validates on read and a plain name gives unknown", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() }).with({
+      id: "app",
+      env: null,
+    }).env;
+    const plan = kvKey("plan", z.object({ steps: z.number() }));
+
+    await kv.set(plan, { steps: 3 });
+    const found = await kv.get(plan);
+    expectTypeOf(found).toEqualTypeOf<{ steps: number } | undefined>();
+    expect(found).toEqual({ steps: 3 });
+
+    // A value written under the plain name that breaks the schema is refused,
+    // with an error naming the key.
+    await kv.set("plan", { steps: "three" });
+    await expect(kv.get(plan)).rejects.toThrow(
+      /kv key "plan".*fails its schema/,
+    );
+    const loose = await kv.get("plan");
+    expectTypeOf(loose).toEqualTypeOf<unknown>();
+    expect(loose).toEqual({ steps: "three" });
+
+    await expect(kv.take(plan)).rejects.toThrow(/kv key "plan"/);
+
+    // @ts-expect-error the value must match the key's type
+    await kv.set(plan, { steps: "no" });
+    expect(await kv.get(kvKey("missing", z.string()))).toBeUndefined();
+  });
+
+  test("update gets the validated current value and a key without a schema is trusted", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() }).with({
+      id: "app",
+      env: null,
+    }).env;
+    const turns = kvKey<string[]>("turns");
+    const count = kvKey("count", z.number());
+
+    await kv.update(turns, (found) => {
+      return [...(found ?? []), "a"];
+    });
+    expect(
+      await kv.update(turns, (found) => {
+        return [...(found ?? []), "b"];
+      }),
+    ).toEqual(["a", "b"]);
+
+    await kv.set("count", "oops");
+    await expect(kv.update(count, (n) => (n ?? 0) + 1)).rejects.toThrow(
+      /kv key "count"/,
+    );
   });
 });

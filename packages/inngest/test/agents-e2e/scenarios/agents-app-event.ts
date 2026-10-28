@@ -11,6 +11,7 @@ import {
   createKv,
   getThread,
   kv,
+  kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
@@ -58,12 +59,12 @@ export const agentsAppEvent = scenario({
         ],
       },
       async ({ inbox }) => {
-        await kv.thread.update<number>("runs", (runs) => {
+        await kv.thread.update(kvKey<number>("runs"), (runs) => {
           return (runs ?? 0) + 1;
         });
 
         for await (const message of inbox) {
-          await kv.thread.update<string[]>("turns", (turns) => {
+          await kv.thread.update(kvKey<string[]>("turns"), (turns) => {
             return [...(turns ?? []), message.data.content ?? ""];
           });
           await sleep(100);

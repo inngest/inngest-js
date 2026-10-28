@@ -10,10 +10,12 @@
  * would have to write between the two to be overwritten, and it rewrites the
  * record on its next status change or turn.
  */
-import type { Kv, KvScopeInstance } from "./kv.ts";
+import { type Kv, type KvScopeInstance, kvKey } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
+
+const recordKey = kvKey<ThreadRecord>(threadRecordKey);
 
 const emptyRecord = (): ThreadRecord => {
   return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };
@@ -28,7 +30,7 @@ export const threadRecorder = (store: Kv, runId: string) => {
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
   ) => {
-    return store.thread.update<ThreadRecord>(threadRecordKey, (found) => {
+    return store.thread.update(recordKey, (found) => {
       const current = found ?? emptyRecord();
 
       return { ...current, ...change(current), runId };
@@ -103,15 +105,13 @@ export const markThreadIdle = async (
   thread: string,
   runId: string,
 ): Promise<void> => {
-  await store
-    .scope("thread", thread)
-    .update<ThreadRecord>(threadRecordKey, (found) => {
-      const current = found ?? emptyRecord();
+  await store.scope("thread", thread).update(recordKey, (found) => {
+    const current = found ?? emptyRecord();
 
-      return current.runId === runId && current.status !== "stopped"
-        ? { ...current, status: "idle" }
-        : current;
-    });
+    return current.runId === runId && current.status !== "stopped"
+      ? { ...current, status: "idle" as const }
+      : current;
+  });
 };
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";

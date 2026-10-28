@@ -227,15 +227,23 @@ export { github, githubCommentEvent } from "./github.ts";
 export type {
   Kv,
   KvAdapter,
-  KvHandle,
   KvIndex,
   KvIndexEntry,
   KvIndexRange,
+  KvKey,
+  KvKeyInput,
   KvScope,
   KvScopeInstance,
   KvSetOptions,
+  KvValue,
 } from "./kv.ts";
-export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
+export {
+  createKv,
+  kv,
+  kvKey,
+  memoryKvAdapter,
+  redisKvAdapter,
+} from "./kv.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";
 export type {

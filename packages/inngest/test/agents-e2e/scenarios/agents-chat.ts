@@ -13,6 +13,7 @@ import {
   getThread,
   type Kv,
   kv,
+  kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
@@ -50,10 +51,10 @@ export const agentsChat = scenario({
     const agents = createAgents(client);
     const chat = agents.agent({ id: agentId }, async ({ inbox, control }) => {
       for await (const message of inbox) {
-        await kv.thread.update<string[]>("started", function (started) {
+        await kv.thread.update(kvKey<string[]>("started"), function (started) {
           return [...(started ?? []), message.data.content ?? ""];
         });
-        const history = await kv.thread.get<never[]>("history");
+        const history = await kv.thread.get(kvKey<never[]>("history"));
         const result = await agent.loop({
           id: `turn${message.seq}`,
           model: script([
@@ -68,7 +69,7 @@ export const agentsChat = scenario({
 
         await kv.thread.set("history", result.history);
         await kv.thread.set("last", { seq: message.seq, text: result.text });
-        await kv.thread.update<string[]>("turns", function (turns) {
+        await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
           return [...(turns ?? []), message.data.content ?? ""];
         });
       }
