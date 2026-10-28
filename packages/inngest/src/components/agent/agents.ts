@@ -177,8 +177,7 @@ export type {
   ReportTarget,
 } from "./channels.ts";
 export { askThrough, defineChannel } from "./channels.ts";
-export type { ThreadStop } from "./events.ts";
-export { agentMessage, agentStop } from "./events.ts";
+export { agentMessage } from "./events.ts";
 export type {
   GithubChannelOptions,
   GithubCommentData,
@@ -220,7 +219,7 @@ export type {
   ThreadState,
   ThreadStatus,
 } from "./thread.ts";
-export { agentMessageEvent, agentStopEvent, getThread } from "./thread.ts";
+export { agentMessageEvent, getThread } from "./thread.ts";
 export type {
   InsightsQuery,
   ThreadList,

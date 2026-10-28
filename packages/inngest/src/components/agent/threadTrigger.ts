@@ -38,11 +38,7 @@ import {
 } from "../triggers/triggers.ts";
 import { compileKey, toAsync } from "./cel.ts";
 import { skillsBakeEvent } from "./skills.ts";
-import {
-  agentMessageEvent,
-  agentStopEvent,
-  type ThreadMessage,
-} from "./thread.ts";
+import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
 
 /**
  * The trigger event, as `message` sees it.
@@ -81,6 +77,11 @@ export interface ThreadTriggerFields<TEvent extends ThreadTriggerEvent> {
   /**
    * The thread key, a CEL expression over `event` that gives a string, such
    * as `event.data.channel + "/" + event.data.thread_ts`.
+   *
+   * The key is the thread's address: a message sent through a thread handle
+   * with the same string, or another `on` event whose key is the same string,
+   * reaches the same thread. Prefix the expression (`"slack:" + ...`) to keep
+   * events apart.
    */
   thread?: string;
 
@@ -213,11 +214,7 @@ const cronEvent = internalEvents.ScheduledTimer;
 /**
  * The events the agent layer owns, which cannot trigger an agent.
  */
-const reservedEvents: string[] = [
-  agentMessageEvent,
-  agentStopEvent,
-  skillsBakeEvent,
-];
+const reservedEvents: string[] = [agentMessageEvent, skillsBakeEvent];
 
 /**
  * Quotes a string as a CEL literal.

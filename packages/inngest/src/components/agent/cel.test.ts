@@ -94,6 +94,52 @@ describe("thread key expressions", () => {
   });
 });
 
+describe("where the SDK subset and the backend CEL could differ", () => {
+  test("inherited names are not fields: has() is false and a path throws", () => {
+    for (const name of [
+      "constructor",
+      "toString",
+      "__proto__",
+      "hasOwnProperty",
+    ]) {
+      expect(compileExpression(`has(event.data.${name})`).evaluate(slack)).toBe(
+        false,
+      );
+      expect(() => {
+        return compileKey(`event.data.${name}`).key(slack);
+      }).toThrow(/not set/);
+    }
+  });
+
+  test("a null field is set, but it is not a key", () => {
+    const event = { data: { channel: null } };
+
+    expect(compileExpression("has(event.data.channel)").evaluate(event)).toBe(
+      true,
+    );
+    expect(() => {
+      return compileKey("event.data.channel").key(event);
+    }).toThrow(/non-empty string/);
+  });
+
+  test("a number is not a string key, and + does not mix types", () => {
+    expect(() => {
+      return compileKey("event.data.n").key(slack);
+    }).toThrow(/non-empty string/);
+    expect(() => {
+      return compileExpression('event.data.n + "x"').evaluate(slack);
+    }).toThrow(/two strings or two numbers/);
+  });
+
+  test("a missing field inside the untaken branch of ?: is not evaluated", () => {
+    expect(
+      compileKey(
+        "has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts",
+      ).key({ data: { ts: "9.9" } }),
+    ).toBe("9.9");
+  });
+});
+
 describe("constant expressions", () => {
   test("a lone string literal is constant, anything else is not", () => {
     expect(compileExpression('"nightly"').constant).toBe('"nightly"');

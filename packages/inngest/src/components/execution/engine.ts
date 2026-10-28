@@ -115,6 +115,10 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
+import {
+  subscriptionMessagePrefix,
+  subscriptionMessages,
+} from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -318,6 +322,13 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               functionId: this.options.fn.id(),
+              subscriptionMessages: (key: string) => {
+                return subscriptionMessages(
+                  key,
+                  this.options.stepCompletionOrder,
+                  this.options.stepState,
+                );
+              },
               stream: this.streamTools,
             },
           },
@@ -2227,7 +2238,20 @@ class InngestExecutionEngine
       loop,
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
-      remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
+      // Messages of a subscription are read from the state, never requested as
+      // steps, so they are not waited for. Nor is the wait that was answered with
+      // one: a replay that finds the message already there does not ask for it.
+      remainingStepsToBeSeen: new Set(
+        this.options.stepCompletionOrder.filter((id) => {
+          const data = this.options.stepState[id]?.data;
+
+          return !(
+            id.startsWith(subscriptionMessagePrefix) ||
+            (typeof data === "string" &&
+              data.startsWith(subscriptionMessagePrefix))
+          );
+        }),
+      ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);
 

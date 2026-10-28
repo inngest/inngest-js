@@ -49,3 +49,50 @@ describe("InngestApi environment headers", () => {
     ]);
   });
 });
+
+describe("InngestApi.cancelRun", () => {
+  const apiWith = (respond: () => Response) => {
+    const calls: { url: string; method?: string }[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      calls.push({ url: input.toString(), method: init?.method });
+
+      return respond();
+    });
+    const api = new InngestApi({
+      baseUrl: () => "https://api.example.test",
+      signingKey: () => "signkey-test",
+      signingKeyFallback: () => undefined,
+      environment: () => null,
+      fetch: () => fetchMock,
+    });
+
+    return { api, calls };
+  };
+
+  test("deletes the run", async () => {
+    const { api, calls } = apiWith(() => {
+      return new Response(null, { status: 204 });
+    });
+
+    expect((await api.cancelRun("01ABC/x")).ok).toBe(true);
+    expect(calls).toEqual([
+      { url: "https://api.example.test/v1/runs/01ABC%2Fx", method: "DELETE" },
+    ]);
+  });
+
+  test("a run that is already gone is not an error, any other failure is", async () => {
+    expect(
+      (
+        await apiWith(() => {
+          return new Response(null, { status: 404 });
+        }).api.cancelRun("r")
+      ).ok,
+    ).toBe(true);
+
+    const failed = await apiWith(() => {
+      return new Response("nope", { status: 500 });
+    }).api.cancelRun("r");
+
+    expect(failed.ok).toBe(false);
+  });
+});

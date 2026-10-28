@@ -1,38 +1,62 @@
 /**
  * @module
  * A fake executor for the subscription tests: runs a function request by
- * request and answers the subscription ops the way the executor does.
+ * request and answers the subscription ops the way the executor does. Messages
+ * are steps of the run named after the subscription, in the stack, as the
+ * executor saves them.
  */
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
+import { subscriptionMessageIdPrefix } from "../execution/subscription.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "next" | "poll" | "ack" | "close";
+  mode: "open" | "next" | "poll" | "close";
   seq?: number;
 }
 
 /**
  * Runs `fn`. `incoming` are the events that arrive, in order, one for each
- * message the function waits for; once they run out, a wait ends the run as
- * `waiting`. `saved` are events that were already saved before the run read.
+ * time the function blocks waiting for a message; once they run out, a wait
+ * ends the run as `waiting`. `saved` are events that were already saved as
+ * messages before the run read.
  */
 export const run = async (
   fn: InngestFunction.Any,
   options: {
     event?: { name: string; data: Record<string, unknown> };
+    key?: string;
     saved?: unknown[];
     incoming?: unknown[];
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
   } = {},
 ) => {
-  const saved = [...(options.saved ?? [])];
+  const key = options.key ?? "inbox";
+  const prefix = subscriptionMessageIdPrefix(key);
   const incoming = [...(options.incoming ?? [])];
   const ops: { id: string; mode: string; seq?: number }[] = [];
-  const acked: number[] = [];
+  const saved: unknown[] = [];
+  const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
+
+  // The executor saves a message as a step named after the event.
+  const save = (data: unknown) => {
+    const id = `${prefix}${saved.length + 1}`;
+    saved.push(data);
+    stack.push(id);
+    state = { ...state, [id]: { id, data } };
+  };
+
+  const answer = (id: string, data: unknown) => {
+    stack.push(id);
+    state = { ...state, [id]: { id, data } };
+  };
+
+  for (const data of options.saved ?? []) {
+    save(data);
+  }
 
   for (let request = 0; request < 80; request++) {
     // A fresh copy per request: defer functions strip metadata from the event.
@@ -42,6 +66,7 @@ export const run = async (
     const result = await runFnWithStack(fn, state, {
       event,
       events: [structuredClone(event)],
+      stackOrder: [...stack],
     });
     const found =
       result.type === "step-ran"
@@ -51,50 +76,75 @@ export const run = async (
           : [];
 
     if (result.type === "function-resolved") {
-      return { ops, acked, saved, output: result.data, waiting: false };
+      return { ops, saved, output: result.data, waiting: false };
     }
 
     if (result.type === "function-rejected") {
-      return { ops, acked, saved, output: result.error, waiting: false };
+      return { ops, saved, output: result.error, waiting: false };
     }
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
-        return { ops, acked, saved, output: op.data, waiting: false };
+        return { ops, saved, output: op.data, waiting: false };
       }
 
       const sub = (op.opts as { subscribe?: SubscribeOpts } | undefined)
         ?.subscribe;
+      if (op.op === StepOpCode.StepPlanned) {
+        // A planned step runs in a request of its own, as the executor does.
+        const ran = await runFnWithStack(fn, state, {
+          event: structuredClone(event),
+          events: [structuredClone(event)],
+          stackOrder: [...stack],
+          runStep: op.id,
+        });
+
+        if (ran.type === "step-ran") {
+          state = {
+            ...state,
+            [op.id]: {
+              id: op.id,
+              data: ran.step.data,
+              error: ran.step.error,
+            },
+          };
+          stack.push(op.id);
+        }
+
+        continue;
+      }
+
       if (op.op !== StepOpCode.WaitForEvent || !sub) {
-        state = { ...state, [op.id]: { id: op.id, data: op.data } };
+        state = {
+          ...state,
+          [op.id]: { id: op.id, data: op.data, error: op.error },
+        };
+        stack.push(op.id);
         continue;
       }
 
       ops.push({ id: op.userland?.id ?? op.id, mode: sub.mode, seq: sub.seq });
       options.onOp?.(op, saved);
-      let data: unknown;
 
       if (sub.mode === "open") {
-        data = { opened: true };
-      } else if (sub.mode === "ack") {
-        acked.push(sub.seq as number);
-        data = true;
+        answer(op.id, { opened: true });
       } else if (sub.mode === "close") {
-        data = { count: saved.length };
+        answer(op.id, { count: saved.length });
       } else if (sub.mode === "poll") {
-        data = saved[(sub.seq as number) - 1] ?? null;
+        answer(op.id, saved[(sub.seq as number) - 1] ?? null);
       } else {
-        // next
-        if (saved.length < (sub.seq as number)) {
+        // next: the function is blocked until the message exists.
+        while (saved.length < (sub.seq as number)) {
           if (incoming.length === 0) {
-            return { ops, acked, saved, output: undefined, waiting: true };
+            return { ops, saved, output: undefined, waiting: true };
           }
-          saved.push(incoming.shift());
-        }
-        data = saved[(sub.seq as number) - 1];
-      }
 
-      state = { ...state, [op.id]: { id: op.id, data } };
+          save(incoming.shift());
+        }
+
+        // The executor answers the wait with the ID of the message it waited for.
+        answer(op.id, `${prefix}${sub.seq}`);
+      }
     }
   }
 

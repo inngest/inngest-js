@@ -450,6 +450,34 @@ export class InngestApi {
       });
   }
 
+  /**
+   * Cancels a run: `DELETE /v1/runs/{runId}`. Cancelling a run that has
+   * already ended is not an error.
+   * @param runId The run to cancel.
+   */
+  async cancelRun(runId: string): Promise<Result<void, ErrorResponse>> {
+    const result = await this.req(`/v1/runs/${encodeURIComponent(runId)}`, {
+      method: "DELETE",
+    });
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error cancelling run"),
+        status: 500,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok || res.status === 404) {
+      return ok<void>(undefined);
+    }
+
+    return err({
+      error: `Failed to cancel run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      status: res.status,
+    });
+  }
+
   async updateMetadata(
     args: {
       target: MetadataTarget;

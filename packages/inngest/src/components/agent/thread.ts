@@ -9,10 +9,12 @@
  * thread, so a message sent while a run is live is skipped as a trigger and
  * reaches the run through its subscription instead.
  */
+
+import type { InngestApi } from "../../api/api.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
-import { agentMessage, agentStop } from "./events.ts";
+import { agentMessage } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
@@ -21,11 +23,6 @@ import type { EffectiveLimits } from "./limits.ts";
  * The name of the event every thread message is sent as.
  */
 export const agentMessageEvent = agentMessage.name;
-
-/**
- * The name of the event that cancels a thread's live run.
- */
-export const agentStopEvent = agentStop.name;
 
 /**
  * What a thread message event carries in `data`.
@@ -187,7 +184,9 @@ export interface ThreadHandle {
   /**
    * Stops the thread. `"nextTurn"` lets the running model call finish and
    * stops before the next; `"now"` cancels the live run. It does nothing when
-   * no run is live.
+   * no run is live. `"now"` cancels the run by its run ID through the
+   * Inngest API, so it needs the API reachable from where you call it (the
+   * signing key, or the Dev Server), and works for any thread key.
    */
   stop(options: { when: "now" | "nextTurn" }): Promise<void>;
 
@@ -289,7 +288,7 @@ export function getThread(
   // Inside a function the send is a step, so a replay does not send it again.
   async function sendEvent(
     id: string,
-    event: ReturnType<typeof agentMessage.create | typeof agentStop.create>,
+    event: ReturnType<typeof agentMessage.create>,
   ) {
     if (stepContext()) {
       await step.sendEvent(id, event);
@@ -321,10 +320,24 @@ export function getThread(
     },
     async stop({ when }) {
       if (when === "now") {
-        await sendEvent(
-          `thread:${key}:stop-now`,
-          agentStop.create({ agent, thread: key }),
-        );
+        // The live run is the one the thread record names. A thread with no
+        // live run has nothing to cancel.
+        const record = (await threadKv(client, key, options.kv).get(
+          threadRecordKey,
+        )) as ThreadRecord | undefined;
+
+        if (
+          record?.runId &&
+          (record.status === "running" || record.status === "waiting")
+        ) {
+          const res = await (
+            client as unknown as { inngestApi: InngestApi }
+          ).inngestApi.cancelRun(record.runId);
+
+          if (!res.ok) {
+            throw new Error(res.error?.error ?? "Could not cancel the run.");
+          }
+        }
 
         return;
       }

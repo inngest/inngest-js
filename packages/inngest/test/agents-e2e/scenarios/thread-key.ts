@@ -67,7 +67,7 @@ export const threadKey = scenario({
     const stoppable = agents.agent(
       {
         id: stopId,
-        on: { event: event("stop-msg"), thread: "event.data.key" },
+        on: { event: event("stop-msg"), thread: 'event.data.key + "/s"' },
       },
       async ({ inbox }) => {
         await kv.thread.update<number>("runs", function (runs) {
@@ -166,10 +166,11 @@ export const threadKey = scenario({
     );
     ctx.check("the other thread has its own run", other.runs === 1, other);
 
-    // A stop now cancels the run an event started (the key is a plain path,
-    // which a cancel expression can match); the next event starts a new run.
+    // A stop now cancels the run an event started, by its run ID, even though
+    // the thread key is computed (a path joined with a suffix); the next event
+    // starts a new run.
     const s1 = withKeys(
-      getThread(client, stopRef, `${channel}-stop`, { kv: store }),
+      getThread(client, stopRef, `${channel}-stop/s`, { kv: store }),
     );
     await ctx.send("stop-msg", { key: `${channel}-stop` });
     await ctx.eventually("a path key starts its thread", s1.state, (s) => {
