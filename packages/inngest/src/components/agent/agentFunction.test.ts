@@ -610,3 +610,104 @@ describe("request and reply", () => {
     expect(output).toContain("not a request");
   });
 });
+
+describe("agent limits", () => {
+  const spend = (input: number, output: number): AgentModelResponse => {
+    return {
+      message: { role: "assistant", content: [] },
+      toolCalls: [{ id: "c1", name: "missing", input: {} }],
+      usage: { input, output },
+    };
+  };
+
+  test("the loop stops before the next model call once the budget is spent", async () => {
+    let calls = 0;
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        limits: { budget: { tokens: 20 } },
+      },
+      async ({ inbox, control }) => {
+        const first = await inbox.next();
+        const result = await agent.loop({
+          model: agent.model(async () => {
+            calls += 1;
+
+            return spend(8, 4);
+          }),
+          prompt: first?.data.content ?? "",
+          tools: {},
+          ...control,
+        });
+
+        return [result.stopped, result.turns, result.reason];
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(calls).toBe(2);
+    expect(output).toEqual([
+      "budget",
+      2,
+      "Budget spent: 24 of 20 tokens used.",
+    ]);
+  });
+
+  test("an agent refuses to start a sub-agent past its inherited depth", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async () => {
+        try {
+          await agent.invoke("team/leaf");
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "started";
+      },
+    );
+    const event = trigger("go");
+    const { output } = await run(fn, {
+      event: {
+        ...event,
+        data: { ...event.data, _agent: { depth: 1, limits: { depth: 0 } } },
+      },
+    });
+
+    expect(output).toContain("team/leaf was not started");
+  });
+});
+
+describe("inherited limits persist on the thread", () => {
+  test("a later run started by a plain message keeps the limits the sub-agent inherited", async () => {
+    const store = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: store },
+      async () => {
+        try {
+          await agent.invoke("team/leaf");
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "started";
+      },
+    );
+    const first = trigger("go");
+    await run(fn, {
+      event: {
+        ...first,
+        data: { ...first.data, _agent: { depth: 1, limits: { depth: 0 } } },
+      },
+    });
+
+    const { output } = await run(fn, { event: trigger("again") });
+
+    expect(output).toContain("team/leaf was not started");
+  });
+});

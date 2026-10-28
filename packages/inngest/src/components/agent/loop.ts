@@ -193,6 +193,13 @@ export interface AgentLoopOptions {
   stop?: (turn: number) => Promise<boolean>;
 
   /**
+   * Called before each model call. Return a reason to end the loop with
+   * `stopped: "budget"` and that `reason`, as `control.budget` does when the
+   * agent's `limits.budget` is spent.
+   */
+  budget?: (turn: number) => string | undefined | Promise<string | undefined>;
+
+  /**
    * The text to send on the last turn (the `maxTurns`th call), with no
    * tool use allowed, so the model has to write its answer.
    */
@@ -227,7 +234,12 @@ export interface AgentLoopResult {
    * The text of the last model reply.
    */
   text: string;
-  stopped: "done" | "maxTurns" | "stopped";
+  stopped: "done" | "maxTurns" | "stopped" | "budget";
+
+  /**
+   * Why the loop ended, for `stopped: "budget"`.
+   */
+  reason?: string;
   turns: number;
 
   /**
@@ -382,6 +394,20 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
   let text = "";
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
+    const spent = await options.budget?.(turn);
+
+    if (spent !== undefined) {
+      return {
+        text,
+        stopped: "budget",
+        reason: spent,
+        turns: turn - 1,
+        history: messages,
+        usage,
+        toolCalls: toolRuns,
+      };
+    }
+
     const modelStep = `${id}:model:${turn}`;
     const reply = (await step.run(
       {

@@ -16,6 +16,7 @@
  */
 
 import { createDefer } from "../DeferredFunction.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
@@ -29,6 +30,14 @@ import {
   stepSandboxes,
 } from "./defs.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
+import {
+  type AgentLimits,
+  budgetReason,
+  narrowInherited,
+  narrowLimits,
+  readInheritedLimits,
+  registerLimits,
+} from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
@@ -61,6 +70,14 @@ export interface AgentFunctionConfig {
    * destroys what it created when the body returns.
    */
   sandboxes?: SandboxesConfig<AgentConfigContext>;
+
+  /**
+   * What this agent may start and spend: `depth` (default 1, so it may start
+   * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
+   * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
+   * do not allow; spread `control` into `agent.loop()` to stop on `budget`.
+   */
+  limits?: AgentLimits;
 }
 
 /**
@@ -107,6 +124,7 @@ export interface AgentBodyContext {
     steer: () => Promise<string[]>;
     stop: () => Promise<boolean>;
     onTurn: (turn: AgentTurn) => Promise<void>;
+    budget: () => string | undefined;
   };
 }
 
@@ -381,7 +399,27 @@ export function createAgentFunction(
       // Writes what `thread.state()` shows. One step per change.
       const recorder = threadRecorder(store, runId);
 
-      await recorder.running();
+      // What a sub-agent inherited is kept on its thread, so a later run that
+      // a plain message starts has the same limits.
+      const started = await recorder.running(
+        readInheritedLimits(
+          (data as unknown as Record<string, unknown>)._agent,
+        ),
+      );
+
+      // Limits apply to what `agent.invoke()` starts and to the loop's budget.
+      // The usage is the thread's so far, and each turn adds to it.
+      const instance = getAsyncCtxSync()?.execution?.instance;
+
+      if (!instance) {
+        throw new Error("An agent must run inside an Inngest function");
+      }
+
+      const limits = registerLimits(
+        instance,
+        narrowLimits(config.limits, started.inherited),
+        { ...started.usage },
+      );
 
       // Opened first, so the gap in which a message could be missed is the few
       // milliseconds between the run starting and this op.
@@ -448,8 +486,13 @@ export function createAgentFunction(
 
           return requested;
         },
+        budget() {
+          return budgetReason(limits);
+        },
         async onTurn(turn: AgentTurn) {
-          await recorder.turn(turn);
+          const next = await recorder.turn(turn);
+
+          limits.used = { ...next.usage };
         },
       };
 

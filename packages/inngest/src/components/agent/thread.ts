@@ -14,6 +14,7 @@ import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
+import type { EffectiveLimits } from "./limits.ts";
 
 /**
  * The event every thread message is sent as.
@@ -129,6 +130,13 @@ export interface ThreadRecord {
   turn: number;
   summary?: string;
   usage: { input: number; output: number };
+
+  /**
+   * The limits the agent that started this thread passed down, narrowed over
+   * every start. Every later run of the thread applies them, so a sub-agent
+   * woken by a plain message stays inside them.
+   */
+  inherited?: EffectiveLimits;
 
   /**
    * The run that wrote the record last, so a finished run never overwrites

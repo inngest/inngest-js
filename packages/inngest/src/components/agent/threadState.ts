@@ -11,6 +11,7 @@
  * record on its next status change or turn.
  */
 import type { Kv } from "./kv.ts";
+import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
 
@@ -27,7 +28,7 @@ export const threadRecorder = (store: Kv, runId: string) => {
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
   ) => {
-    await store.thread.update<ThreadRecord>(threadRecordKey, (found) => {
+    return store.thread.update<ThreadRecord>(threadRecordKey, (found) => {
       const current = found ?? emptyRecord();
 
       return { ...current, ...change(current), runId };
@@ -36,11 +37,16 @@ export const threadRecorder = (store: Kv, runId: string) => {
 
   return {
     /**
-     * A turn is running.
+     * A turn is running. A sub-agent's inherited limits are kept on the
+     * record, narrowed over every start, so a later run that a plain message
+     * starts has the same limits.
+     * @param startedWith The limits the invoking agent passed down, if any.
      */
-    running: () => {
-      return record(() => {
-        return { status: "running" };
+    running: (startedWith?: EffectiveLimits) => {
+      return record((current) => {
+        const inherited = narrowInherited(current.inherited, startedWith);
+
+        return { status: "running", ...(inherited && { inherited }) };
       });
     },
 
