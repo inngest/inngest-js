@@ -160,8 +160,6 @@ export type {
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
-export type { ThreadStop } from "./events.ts";
-export { agentMessage, agentStop } from "./events.ts";
 export type {
   Channel,
   ChannelAsk,
@@ -173,6 +171,8 @@ export type {
   ReportTarget,
 } from "./channels.ts";
 export { askThrough, defineChannel } from "./channels.ts";
+export type { ThreadStop } from "./events.ts";
+export { agentMessage, agentStop } from "./events.ts";
 export type {
   GithubChannelOptions,
   GithubCommentData,

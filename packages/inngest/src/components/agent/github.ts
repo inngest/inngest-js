@@ -71,10 +71,12 @@ const comment = async (
   target: GithubTarget,
   body: string,
 ): Promise<void> => {
-  const token = options.token ?? process.env.GITHUB_TOKEN;
+  const token =
+    options.token ??
+    (typeof process === "undefined" ? undefined : process.env.GITHUB_TOKEN);
 
   const res = await fetch(
-    `${options.apiUrl ?? "https://api.github.com"}/repos/${target.owner}/${target.repo}/issues/${target.number}/comments`,
+    `${options.apiUrl ?? "https://api.github.com"}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues/${target.number}/comments`,
     {
       method: "POST",
       headers: {

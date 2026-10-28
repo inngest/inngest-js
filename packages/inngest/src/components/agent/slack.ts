@@ -43,7 +43,7 @@ const slackMessageSchema = objectSchema<SlackMessageData>({
   ts: "string",
   thread_ts: "string?",
   text: "string",
-  user: "string?",
+  user: "nullable",
 });
 
 /**
@@ -74,7 +74,9 @@ const call = async (
   method: string,
   body: Record<string, unknown>,
 ): Promise<void> => {
-  const token = options.token ?? process.env.SLACK_BOT_TOKEN;
+  const token =
+    options.token ??
+    (typeof process === "undefined" ? undefined : process.env.SLACK_BOT_TOKEN);
 
   const res = await fetch(
     `${options.apiUrl ?? "https://slack.com/api"}/${method}`,

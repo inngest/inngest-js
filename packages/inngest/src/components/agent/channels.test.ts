@@ -146,6 +146,14 @@ describe("report validation", () => {
     expect(a.posts).toEqual([]);
   });
 
+  test("a null thread_ts is rejected, so the key and the target agree", () => {
+    expect(() => {
+      return slack.channel({
+        data: { channel: "C1", ts: "1.1", text: "hi", thread_ts: null },
+      });
+    }).toThrow("thread_ts");
+  });
+
   test("a Slack message with a null user is accepted", () => {
     expect(() => {
       return slack.channel({

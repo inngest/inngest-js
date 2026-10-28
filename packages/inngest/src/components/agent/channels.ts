@@ -234,10 +234,10 @@ export const parseWith = <T>(
 /**
  * A Standard Schema for an object whose listed fields are strings (required)
  * or optional strings, or numbers. Other fields pass through.
- * @param fields Field name to `"string"`, `"string?"` or `"number"`.
+ * @param fields Field name to `"string"`, `"string?"` (may be missing), `"nullable"` (a string, missing or null) or `"number"`.
  */
 export const objectSchema = <T>(
-  fields: Record<string, "string" | "string?" | "number">,
+  fields: Record<string, "string" | "string?" | "nullable" | "number">,
 ): StandardSchemaV1<unknown, T> => {
   return {
     "~standard": {
@@ -253,7 +253,11 @@ export const objectSchema = <T>(
         for (const [field, type] of Object.entries(fields)) {
           const found = (value as Record<string, unknown>)[field];
 
-          if ((found === undefined || found === null) && type === "string?") {
+          if (
+            (found === undefined || (found === null && type === "nullable")) &&
+            type !== "string" &&
+            type !== "number"
+          ) {
             continue;
           }
 
