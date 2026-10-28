@@ -277,11 +277,11 @@ export async function startFakeRedis() {
   return {
     url: `redis://127.0.0.1:${port}`,
 
+    commands: commandLog,
     /**
      * Moves the server clock forward.
      * @param ms Milliseconds to add.
      */
-    commands: commandLog,
     advance(ms: number) {
       state.now += ms;
     },

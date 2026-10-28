@@ -271,10 +271,6 @@ export function redisKvAdapter(url: string): KvAdapter {
     )) as string[];
   }
 
-  async function holds(key: string, value: string) {
-    return (await command("GET", key)) === value;
-  }
-
   return {
     async get(hash, field) {
       const stored = (await command("HGET", main(hash), field)) as
@@ -313,8 +309,11 @@ export function redisKvAdapter(url: string): KvAdapter {
       // the key free, so the claim is tried once more.
       for (let attempt = 0; attempt < 2; attempt++) {
         if (ttl === undefined) {
-          if ((await command("EXISTS", expiring(hash, field))) === 1) {
-            return holds(expiring(hash, field), value);
+          const live = (await command("GET", expiring(hash, field))) as
+            | string
+            | null;
+          if (live !== null) {
+            return live === value;
           }
 
           if ((await command("HSETNX", main(hash), field, value)) === 1) {
