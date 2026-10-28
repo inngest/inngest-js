@@ -62,6 +62,25 @@ export interface Agents {
     TReply
   >;
   agent<
+    const TTypes extends readonly EventTypeWithAnySchema<string>[],
+    TOutput = unknown,
+    TRequest = unknown,
+    TReply = unknown,
+  >(
+    config: AgentFunctionConfig<
+      TTypes,
+      ThreadTriggerListEvent<TTypes>,
+      TRequest,
+      TReply
+    >,
+    body: AgentBody<ThreadTriggerListEvent<TTypes>, TOutput, TRequest, TReply>,
+  ): AgentFunction<
+    InvokeInput<ThreadTriggerListEvent<TTypes>>,
+    TOutput,
+    TRequest,
+    TReply
+  >;
+  agent<
     const TOne extends ThreadTriggerEventSource,
     TOutput = unknown,
     TRequest = unknown,

@@ -43,7 +43,8 @@ export interface AgentInvokeOptions {
   id?: string;
 
   /**
-   * The key of the callee's thread (`agent_thread`). Default:
+   * The key of the callee's thread (`agent_thread`), chosen by the caller and
+   * handed to the callee as `data._agent.thread`. Default:
    * `<functionId>:<runId>.<n>`, where `n` counts this run's `agent.invoke()`
    * calls, so a replay gives the same key.
    */

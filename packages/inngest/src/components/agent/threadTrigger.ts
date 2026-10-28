@@ -426,32 +426,71 @@ export function compileTriggers(
 }
 
 /**
- * Checks an event that reached a live run against its trigger's schema, the
- * way core checks the event that starts a run. Resolves to what is wrong with
- * it, or `undefined` when it is fine or there is no schema.
- * @param trigger The compiled trigger the event matched.
+ * What is wrong with data against one schema, or `undefined` when it is fine.
+ * A schema that throws counts as rejecting the data, so one bad schema or
+ * event cannot fail the run on every replay.
+ * @param schema The schema.
+ * @param data The event's data.
+ */
+async function problemOf(
+  schema: StandardSchemaV1,
+  data: unknown,
+): Promise<string | undefined> {
+  try {
+    const result = await schema["~standard"].validate(data ?? {});
+    if (!result.issues) {
+      return undefined;
+    }
+
+    return result.issues
+      .map((issue) => {
+        return issue.path && issue.path.length > 0
+          ? `${issue.path.map(String).join(".")}: ${issue.message}`
+          : issue.message;
+      })
+      .join(", ");
+  } catch (error) {
+    return `the schema threw: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+/**
+ * Checks an event that reached a live run against the schemas of the triggers
+ * it matched (an agent has one trigger per event name today, so this is one
+ * schema; a list keeps the check right if that changes), the way core checks the event that starts a run: it is fine
+ * when any matching trigger has no schema or accepts it. Resolves to what is
+ * wrong with it, or `undefined` when it is fine.
+ *
+ * The check runs again when the run replays, with the schemas of the code
+ * that is replaying. A schema changed while a run is live applies to the
+ * messages that run reads after the change; deploy schema changes for new
+ * runs.
+ * @param triggers The compiled triggers whose event name the event has.
  * @param event The event.
  */
 export async function schemaProblem(
-  trigger: CompiledTrigger | undefined,
+  triggers: CompiledTrigger[],
   event: { data?: unknown },
 ): Promise<string | undefined> {
-  if (!trigger?.schema) {
+  if (triggers.length === 0 || triggers.some((trigger) => !trigger.schema)) {
     return undefined;
   }
 
-  const result = await trigger.schema["~standard"].validate(event.data ?? {});
-  if (!result.issues) {
-    return undefined;
+  const problems: string[] = [];
+
+  for (const trigger of triggers) {
+    const problem = await problemOf(
+      trigger.schema as StandardSchemaV1,
+      event.data,
+    );
+    if (!problem) {
+      return undefined;
+    }
+
+    problems.push(problem);
   }
 
-  return result.issues
-    .map((issue) => {
-      return issue.path && issue.path.length > 0
-        ? `${issue.path.map(String).join(".")}: ${issue.message}`
-        : issue.message;
-    })
-    .join(", ");
+  return problems.join("; ");
 }
 
 /**

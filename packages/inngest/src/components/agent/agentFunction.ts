@@ -20,7 +20,7 @@
 import { internalEvents } from "../../helpers/consts.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
-import type { Inngest } from "../Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { SandboxTools } from "../sandbox/tools.ts";
@@ -298,6 +298,12 @@ export interface AgentFunction<
 }
 
 /**
+ * The messages whose drop was already logged, so a replay does not log it
+ * again.
+ */
+const warned = new Set<string>();
+
+/**
  * The thread's view of its subscription: messages are the `data` of the
  * events, and stop messages are skipped, because while the agent waits for its
  * next message there is nothing to stop.
@@ -313,6 +319,7 @@ function threadInbox(
   client: Inngest.Any,
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
   log: { warn: (message: string) => void },
+  runId: string,
   replySchema?: ThreadRequests["reply"],
 ): {
   inbox: ThreadInbox;
@@ -378,11 +385,29 @@ function threadInbox(
       return false;
     }
 
+    warnOnce(raw, problem);
+
+    return true;
+  }
+
+  // The drop is decided again when the run replays, and the handler's logger
+  // is quiet while a run replays, so the warning goes to the client's own
+  // logger once per message and process.
+  function warnOnce(raw: InboxMessage<RawEvent>, problem: string) {
+    const id = `${runId}:${raw.data.id ?? raw.seq}`;
+    if (warned.has(id)) {
+      return;
+    }
+
+    // Forget the oldest drop once there are many, so the set stays small.
+    if (warned.size >= 1000) {
+      warned.delete(warned.values().next().value as string);
+    }
+
+    warned.add(id);
     log.warn(
       `Dropped ${raw.data.name} from the inbox: it breaks its schema (${problem}).`,
     );
-
-    return true;
   }
 
   async function next() {
@@ -435,10 +460,15 @@ function threadInbox(
       },
       async close() {
         const unread = await inbox.close();
+        const kept: ThreadInboxMessage[] = [];
 
-        return unread.map((message) => {
-          return unwrap(message) as ThreadInboxMessage;
-        });
+        for (const message of unread) {
+          if (!(await skipped(message))) {
+            kept.push(unwrap(message) as ThreadInboxMessage);
+          }
+        }
+
+        return kept;
       },
       async [Symbol.asyncDispose]() {
         await inbox[Symbol.asyncDispose]();
@@ -704,7 +734,7 @@ export function createAgentFunction(
           },
           async function problemOf(raw) {
             return schemaProblem(
-              triggers.find((t) => {
+              triggers.filter((t) => {
                 return t.event === raw.name;
               }),
               raw,
@@ -712,7 +742,8 @@ export function createAgentFunction(
           },
           client,
           recorder,
-          logger,
+          client[internalLoggerSymbol],
+          runId,
           config.requests?.reply,
         );
 

@@ -5,6 +5,7 @@
  * events from them, the agent's own events are event types, and a cron
  * starts a thread of its own.
  */
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
@@ -446,6 +447,97 @@ describe("inbox validation", () => {
     expect(output).toEqual(["order a 1", "order a 3"]);
   });
 
+  test("a schema that throws drops the event and the run carries on", async () => {
+    const throwingEvent = eventType("shop/throwing", {
+      schema: {
+        "~standard": {
+          version: 1,
+          vendor: "test",
+          validate: (value: unknown) => {
+            if ((value as { bad?: boolean }).bad) {
+              throw new Error("refine blew up");
+            }
+
+            return { value };
+          },
+        },
+      } as StandardSchemaV1<{ id: string; bad?: boolean; ok?: number }>,
+    });
+    const { output } = await run(
+      createAgentFunction(
+        client,
+        {
+          id: "throwing",
+          kv: createKv({ adapter: memoryKvAdapter() }),
+          on: { event: throwingEvent, thread: "event.data.id" },
+          message: undefined,
+        } as never,
+        async ({ inbox }) => {
+          await inbox.next();
+
+          return (await inbox.next())?.data.event?.data;
+        },
+      ).fn,
+      {
+        event: { name: "shop/throwing", data: { id: "a" } },
+        saved: [
+          { name: "shop/throwing", data: { id: "a", bad: true } },
+          { name: "shop/throwing", data: { id: "a", ok: 1 } },
+        ],
+      },
+    );
+
+    expect(output).toEqual({ id: "a", ok: 1 });
+  });
+
+  test("a drop is logged once, however often the run replays", async () => {
+    const warn = vi.spyOn(
+      (client as unknown as Record<symbol, { warn: (m: string) => void }>)[
+        Symbol.for("inngest.internalLogger")
+      ] as { warn: (m: string) => void },
+      "warn",
+    );
+
+    await run(makeAgent().fn, {
+      event: event("a", 1),
+      saved: [{ ...event("a", "bad"), id: "evt-warn-once" }, event("a", 3)],
+    });
+
+    expect(
+      warn.mock.calls.filter(([message]) => {
+        return String(message).includes("Dropped");
+      }),
+    ).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  test("close() returns only the unread events that pass their schema", async () => {
+    const { output } = await run(
+      createAgentFunction(
+        client,
+        {
+          id: "closing",
+          kv: createKv({ adapter: memoryKvAdapter() }),
+          on: { event: order, thread: "event.data.id" },
+        },
+        async ({ inbox }) => {
+          await inbox.next();
+          const unread = await inbox.close();
+
+          return unread.map((message) => {
+            return message.data.event?.data;
+          });
+        },
+      ).fn,
+      {
+        event: event("a", 1),
+        saved: [event("a", "bad"), event("a", 4)],
+      },
+    );
+
+    expect(output).toEqual([{ id: "a", total: 4 }]);
+  });
+
   test("an event type without a schema delivers everything", async () => {
     const { output } = await run(
       createAgentFunction(
@@ -472,26 +564,67 @@ describe("inbox validation", () => {
 });
 
 describe("schemaProblem", () => {
-  const [trigger] = compileTriggers("bot", {
+  const triggers = compileTriggers("bot", {
     on: { event: order, thread: "event.data.id" },
   });
 
+  const throwing = (message: string) => {
+    return {
+      "~standard": {
+        version: 1,
+        vendor: "test",
+        validate: () => {
+          throw new Error(message);
+        },
+      },
+    } as never;
+  };
+
   test("names the field and the problem, or nothing when the data is fine", async () => {
     expect(
-      await schemaProblem(trigger, { data: { id: "a", total: 1 } }),
+      await schemaProblem(triggers, { data: { id: "a", total: 1 } }),
     ).toBeUndefined();
     expect(
-      await schemaProblem(trigger, { data: { id: "a", total: "x" } }),
+      await schemaProblem(triggers, { data: { id: "a", total: "x" } }),
     ).toMatch(/total/);
-    expect(await schemaProblem(trigger, {})).toMatch(/id/);
+    expect(await schemaProblem(triggers, {})).toMatch(/id/);
   });
 
   test("a trigger without a schema, or no trigger, has no problem", async () => {
-    const [plain] = compileTriggers("bot", {
+    const plain = compileTriggers("bot", {
       on: { event: "shop/x", thread: "event.data.id" },
     });
 
     expect(await schemaProblem(plain, { data: 1 })).toBeUndefined();
-    expect(await schemaProblem(undefined, { data: 1 })).toBeUndefined();
+    expect(await schemaProblem([], { data: 1 })).toBeUndefined();
+  });
+
+  test("a schema that throws rejects the event instead of throwing", async () => {
+    const [trigger] = triggers;
+    const bad = [{ ...trigger, schema: throwing("boom") }] as never;
+
+    expect(await schemaProblem(bad, { data: {} })).toMatch(
+      /the schema threw: boom/,
+    );
+  });
+
+  test("triggers that share an event name: fine when any accepts, a problem when none does", async () => {
+    const [trigger] = triggers;
+    const strict = trigger as never;
+    const loose = {
+      ...trigger,
+      schema: z.object({ id: z.string() }),
+    } as never;
+    const none = { ...trigger, schema: undefined } as never;
+
+    expect(
+      await schemaProblem([strict, loose], { data: { id: "a", total: "x" } }),
+    ).toBeUndefined();
+    expect(
+      await schemaProblem([strict, strict], { data: { id: "a", total: "x" } }),
+    ).toMatch(/total.*; .*total/);
+    expect(
+      await schemaProblem([strict, none], { data: { id: "a", total: "x" } }),
+    ).toBeUndefined();
   });
 });
