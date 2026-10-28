@@ -10,9 +10,10 @@
  * - `control`, which spreads into `agent.loop()` so a running turn takes
  *   steering messages and a stop request.
  *
- * The inbox closes when the body returns. A message that arrives after that, while
- * the thread's singleton is still in effect, is dropped: it neither starts a new
- * run nor reaches the finished one. The gap is small (the time between the body
+ * The inbox closes when the body returns. Messages it saved but the body never
+ * read are discarded, and a message that arrives after that, while the thread's
+ * singleton is still in effect, is dropped: it neither starts a new run nor
+ * reaches the finished one. The gap is small (the time between the body
  * returning and the run ending), and nothing is re-sent at run end.
  */
 
@@ -635,6 +636,10 @@ export function createAgentFunction(
 
           // The body returned: the last turn is over.
           await flush();
+
+          // The last thread work is done: end the subscription before the
+          // sandboxes close. A second close, from the scope exit, does nothing.
+          await inbox.close();
         } catch (error) {
           await closeAll();
 
