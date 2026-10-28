@@ -144,12 +144,13 @@ export interface AgentFunction {
  * next message there is nothing to stop.
  * @param inbox The subscription to the thread's events.
  * @param client Inngest client, to send replies.
- * @param waiting Called before the agent waits for a message after the first.
+ * @param mark Records the thread's status: `"waiting"` before the agent waits
+ * for a message after the first, `"running"` once one is delivered.
  */
 function threadInbox(
   inbox: Subscription<{ data: ThreadMessage }>,
   client: Inngest.Any,
-  waiting: () => Promise<void>,
+  mark: (status: "waiting" | "running") => Promise<void>,
 ): {
   inbox: ThreadInbox;
   handled: (message: InboxMessage<ThreadMessage>) => void;
@@ -221,7 +222,7 @@ function threadInbox(
     await flush();
 
     if (delivered > 0) {
-      await waiting();
+      await mark("waiting");
     }
 
     for (;;) {
@@ -235,6 +236,10 @@ function threadInbox(
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.data.kind !== "stop") {
+        if (delivered > 1) {
+          await mark("running");
+        }
+
         return message;
       }
     }
@@ -388,9 +393,12 @@ export function createAgentFunction(
       const { inbox, handled, flush } = threadInbox(
         subscription,
         client,
-        () => {
-          return record(() => {
-            return { status: "waiting" };
+        (status) => {
+          // A thread that honored a stop stays stopped until a message runs it.
+          return record((current) => {
+            return status === "waiting" && current.status === "stopped"
+              ? {}
+              : { status };
           });
         },
       );

@@ -74,7 +74,8 @@ export function threadListSql(
       ? []
       : [`${session} = ${literal(options.session)}`]),
   ];
-  const limit = Math.max(1, Math.floor(options.limit ?? 100));
+  const asked = options.limit ?? 100;
+  const limit = Number.isFinite(asked) ? Math.max(1, Math.floor(asked)) : 100;
 
   return [
     `SELECT JSONExtractString(data, 'thread') AS thread, max(${session}) AS session, max(ts) AS last_message_at`,
