@@ -1080,6 +1080,7 @@ export function createKv(
       },
       async set(key, value, setOptions) {
         checkedTtl(setOptions);
+        checkedValue(value);
         const name = nameOf(key);
         await run("set", name, async (h) => {
           await h.set(name, value, setOptions);
@@ -1087,6 +1088,7 @@ export function createKv(
       },
       async setIfAbsent(key, value, setOptions) {
         checkedTtl(setOptions);
+        checkedValue(value);
         const name = nameOf(key);
 
         return run("setIfAbsent", name, async (h) => {

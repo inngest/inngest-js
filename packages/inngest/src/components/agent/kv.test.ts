@@ -473,6 +473,13 @@ describe("kv typed keys", () => {
         out.push(await kv.env.get(count), await kv.env.take(count));
         out.push(await kv.env.get(count));
 
+        // Refused before the step, so it fails at once instead of retrying.
+        out.push(
+          await kv.env.set("u", undefined).catch((error: Error) => {
+            return error.message;
+          }),
+        );
+
         const nullable = kvKey("n", z.string().nullable());
         await kv.env.set(nullable, null);
         out.push(await kv.env.get(nullable), await kv.env.take(nullable));
@@ -489,10 +496,11 @@ describe("kv typed keys", () => {
     const { type } = await runToEnd(fn);
 
     expect(type).toBe("function-resolved");
-    expect(out.slice(-8)).toEqual([
+    expect(out.slice(-9)).toEqual([
       2,
       2,
       undefined,
+      expect.stringContaining("undefined"),
       null,
       null,
       undefined,
