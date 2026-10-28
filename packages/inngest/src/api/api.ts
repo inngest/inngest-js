@@ -268,6 +268,49 @@ export class InngestApi {
     });
   }
 
+  /**
+   * Runs an Insights SQL query. Rows come back as lists of values in the order
+   * of `columns`.
+   * @param query The Insights query.
+   */
+  async queryInsights(
+    query: string,
+  ): Promise<{ columns: string[]; rows: unknown[][] }> {
+    const result = await this.req("/v2/insights/query", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+
+    if (!result.ok) {
+      throw new Error(
+        getErrorMessage(result.error, "Unknown error querying Insights"),
+      );
+    }
+
+    const res = result.value;
+    if (!res.ok) {
+      throw new Error(
+        `Insights query failed: ${res.status} ${res.statusText} - ${await res.text()}`,
+      );
+    }
+
+    const body = (await res.json()) as {
+      data?: {
+        columns?: { name: string }[];
+        rows?: { values: unknown[] }[];
+      };
+    };
+
+    return {
+      columns: (body.data?.columns ?? []).map((column) => {
+        return column.name;
+      }),
+      rows: (body.data?.rows ?? []).map((row) => {
+        return row.values;
+      }),
+    };
+  }
+
   async sendSignal(
     signalOptions: InngestApi.SendSignalOptions,
     options?: {
