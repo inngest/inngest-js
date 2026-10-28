@@ -11,19 +11,21 @@
 
 import type { StepOptionsOrId } from "../../types.ts";
 import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
-import { destroyQuietly, sandboxDefaults } from "../sandbox/group.ts";
+import { destroyQuietly, sandboxCreateDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
 import { image } from "../sandbox/image.ts";
 import {
   type AgentTool,
-  type SandboxTool,
+  type SandboxToolEntry,
   type SandboxTools,
   validateTools,
 } from "../sandbox/tools.ts";
 import {
   type DurableSandbox,
   type DurableSandboxTools,
+  type SandboxCreateFreshOptions,
   type SandboxDuration,
+  type SandboxHandle,
   SandboxValidationError,
 } from "../sandbox/types.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
@@ -49,12 +51,6 @@ const resolveConfigValue = async <T, Ctx>(
 
   return value;
 };
-
-/**
- * The parts of a sandbox that a definition's tools use. Calls through it
- * create the sandbox first if it doesn't exist yet.
- */
-export type SandboxHandle = Pick<DurableSandbox, "commands" | "files">;
 
 /**
  * Builds the tools a sandbox brings, such as `sandbox.tools.code()`.
@@ -94,18 +90,21 @@ export interface SandboxDefinition extends SandboxDefinitionOptions {
   readonly kind: "inngest/sandbox.definition";
 }
 
+export type SandboxStart = "lazy" | "eager";
+
 /**
  * How an agent holds a sandbox: when it starts, and whether it stays up
- * between runs.
+ * between runs. In an agent's config `start` may also be a function of the
+ * run's context, such as `({ event }) => "eager"`.
  */
-export interface SandboxBindingOptions {
+export interface SandboxBinding<TStart = SandboxStart> {
   sandbox: SandboxDefinition;
 
   /**
    * `"lazy"` (default) creates the sandbox on the first call that needs it.
    * `"eager"` starts creating it as soon as the agent opens its sandboxes.
    */
-  start?: "lazy" | "eager";
+  start?: TStart;
 
   /**
    * Keep the sandbox running between runs and stop it after it has been idle
@@ -115,24 +114,15 @@ export interface SandboxBindingOptions {
   keepAlive?: { idle: SandboxDuration };
 }
 
-export type SandboxBinding = SandboxDefinition | SandboxBindingOptions;
-
-/**
- * A binding as written in an agent's config, where `start` may also be a
- * function of the run's context, such as `({ event }) => "eager"`.
- */
-export type SandboxBindingInput<Ctx> =
-  | SandboxDefinition
-  | (Omit<SandboxBindingOptions, "start"> & {
-      start?: ConfigValue<"lazy" | "eager", Ctx>;
-    });
-
 /**
  * An agent's `sandboxes`, by name: a value, or a function of the run's context
  * that picks them.
  */
 export type SandboxesConfig<Ctx> = ConfigValue<
-  Record<string, SandboxBindingInput<Ctx>>,
+  Record<
+    string,
+    SandboxDefinition | SandboxBinding<ConfigValue<SandboxStart, Ctx>>
+  >,
   Ctx
 >;
 
@@ -231,39 +221,41 @@ export interface LazySandbox {
  */
 export const toolNamespaceSeparator = "_";
 
-const bindingOptions = (
+const startModes: readonly unknown[] = ["lazy", "eager"];
+
+/**
+ * A binding as `openSandboxes()` holds it: always the object form, with its
+ * `start` checked. The one place bindings are validated.
+ */
+const toBinding = (
   name: string,
-  binding: SandboxBinding,
-): SandboxBindingOptions => {
+  binding: SandboxDefinition | SandboxBinding,
+): SandboxBinding => {
   const options =
     typeof binding === "object" && binding && "sandbox" in binding
       ? binding
       : { sandbox: binding };
 
-  if (
-    (options.sandbox as SandboxDefinition | undefined)?.kind !==
-    "inngest/sandbox.definition"
-  ) {
+  if (options.sandbox?.kind !== "inngest/sandbox.definition") {
     throw new SandboxValidationError(
       `Sandbox "${name}" must be a definition made with sandbox(), or { sandbox, start, keepAlive }`,
     );
   }
 
-  const start = (options as { start?: unknown }).start;
-  if (start !== undefined && start !== "lazy" && start !== "eager") {
+  if (options.start !== undefined && !startModes.includes(options.start)) {
     throw new SandboxValidationError(
-      `Sandbox "${name}" has start "${String(start)}": use "lazy" or "eager"`,
+      `Sandbox "${name}" has start "${String(options.start)}": use "lazy" or "eager"`,
     );
   }
 
-  return options as SandboxBindingOptions;
+  return options;
 };
 
 const lazySandbox = (
   name: string,
-  binding: SandboxBinding,
+  binding: SandboxDefinition | SandboxBinding,
   sandboxes: DurableSandboxTools,
-): LazySandbox => {
+): { lazy: LazySandbox; begin: () => void } => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
       `Invalid sandbox name "${name}": use letters, digits and underscores, starting with a letter, up to 64 characters`,
@@ -274,7 +266,7 @@ const lazySandbox = (
     sandbox: definition,
     start = "lazy",
     keepAlive,
-  } = bindingOptions(name, binding);
+  } = toBinding(name, binding);
   if (keepAlive && !keepAlive.idle) {
     throw new SandboxValidationError(
       `keepAlive on sandbox "${name}" needs an idle time, such as { idle: "10m" }`,
@@ -284,17 +276,29 @@ const lazySandbox = (
   let created: Promise<DurableSandbox> | undefined;
   let closed: Promise<void> | undefined;
 
-  const get = (): Promise<DurableSandbox> => {
-    created ??= sandboxes.create(name, {
-      ...withoutId(sandboxDefaults(name)),
+  // Whether anything has seen the create's outcome. An eager create that
+  // failed before anything asked for the sandbox is raised by `close()`.
+  let observed = false;
+
+  const create = (): Promise<DurableSandbox> => {
+    const options: SandboxCreateFreshOptions = {
+      ...sandboxCreateDefaults(name),
       ...(definition.image && { from: definition.image }),
       ...(definition.vcpu && { vcpu: definition.vcpu }),
       ...(definition.memoryMb && { memoryMb: definition.memoryMb }),
       ...(definition.environment && { environment: definition.environment }),
       ...(definition.secrets && { secrets: definition.secrets }),
-    } as Parameters<DurableSandboxTools["create"]>[1]);
+    };
+
+    created ??= sandboxes.create(name, options);
 
     return created;
+  };
+
+  const get = (): Promise<DurableSandbox> => {
+    observed = true;
+
+    return create();
   };
 
   // Step IDs from the definition's tools (`run`, `edit:read`) are prefixed
@@ -327,7 +331,7 @@ const lazySandbox = (
 
   validateTools(tools);
 
-  return {
+  const lazy: LazySandbox = {
     name,
     definition,
     start,
@@ -339,7 +343,11 @@ const lazySandbox = (
     get,
     close: () => {
       closed ??= (async () => {
-        const sandbox = await created?.catch(() => {
+        const sandbox = await created?.catch((error) => {
+          if (!observed) {
+            throw error;
+          }
+
           return undefined;
         });
 
@@ -349,6 +357,17 @@ const lazySandbox = (
       })();
 
       return closed;
+    },
+  };
+
+  return {
+    lazy,
+    begin: () => {
+      if (start === "eager") {
+        // The outcome is raised by the first use or by `close()`; here it only
+        // must not go unhandled.
+        create().catch(() => {});
+      }
     },
   };
 };
@@ -364,7 +383,7 @@ const lazySandbox = (
 export const resolveSandboxes = async <Ctx>(
   config: SandboxesConfig<Ctx> | undefined,
   ctx: Ctx,
-): Promise<Record<string, SandboxBinding>> => {
+): Promise<Record<string, SandboxDefinition | SandboxBinding>> => {
   const bindings = (await resolveConfigValue(config ?? {}, ctx)) as unknown;
 
   if (typeof bindings !== "object" || bindings === null) {
@@ -375,15 +394,16 @@ export const resolveSandboxes = async <Ctx>(
 
   const entries = await Promise.all(
     Object.entries(bindings).map(async ([name, binding]) => {
-      const input = binding as SandboxBindingInput<Ctx>;
-
-      if (typeof input !== "object" || !input || !("sandbox" in input)) {
-        return [name, input as SandboxDefinition] as const;
+      if (typeof binding !== "object" || !binding || !("sandbox" in binding)) {
+        return [name, binding as SandboxDefinition] as const;
       }
 
-      const start = await resolveConfigValue(input.start, ctx);
+      const start = await resolveConfigValue(
+        (binding as SandboxBinding<ConfigValue<SandboxStart, Ctx>>).start,
+        ctx,
+      );
 
-      return [name, { ...input, start } as SandboxBindingOptions] as const;
+      return [name, { ...binding, start } as SandboxBinding] as const;
     }),
   );
 
@@ -419,32 +439,53 @@ export const getSandbox = (
 /**
  * EXPERIMENTAL: Opens the sandboxes an agent is allowed to use. Nothing is
  * created yet, except for sandboxes bound with `start: "eager"`, which begin
- * creating at once.
+ * creating at once. If an eager create fails and nothing used the sandbox,
+ * `close()` raises the failure.
  *
  * @param bindings The agent's `sandboxes`, by name.
  * @param sandboxes The `step.sandbox` of the running function.
  */
 export const openSandboxes = (
-  bindings: Record<string, SandboxBinding>,
+  bindings: Record<string, SandboxDefinition | SandboxBinding>,
   sandboxes: DurableSandboxTools,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
+  const begins: (() => void)[] = [];
 
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
-    opened[name] = lazySandbox(name, binding, sandboxes);
+    const { lazy, begin } = lazySandbox(name, binding, sandboxes);
+
+    opened[name] = lazy;
+    begins.push(begin);
   }
 
-  for (const handle of Object.values(opened)) {
-    if (handle.start === "eager") {
-      // A failure surfaces to whoever calls get(); here it only must not go
-      // unhandled.
-      handle.get().catch(() => {});
-    }
+  for (const begin of begins) {
+    begin();
   }
 
   return opened;
+};
+
+/**
+ * Tools by name for `agent.loop()`, failing on two with one name.
+ * @param entries Name and tool pairs.
+ */
+const toolsByName = (
+  entries: Iterable<readonly [string, SandboxToolEntry]>,
+): SandboxTools => {
+  const byName: SandboxTools = {};
+
+  for (const [name, entry] of entries) {
+    if (Object.hasOwn(byName, name)) {
+      throw new SandboxValidationError(`Two tools are named "${name}"`);
+    }
+
+    byName[name] = entry;
+  }
+
+  return byName;
 };
 
 /**
@@ -453,40 +494,38 @@ export const openSandboxes = (
 export const sandboxTools = (
   opened: Record<string, LazySandbox>,
 ): SandboxTools => {
-  const all: SandboxTools = {};
-
-  for (const handle of Object.values(opened)) {
-    for (const [key, entry] of Object.entries(handle.tools)) {
-      if (Object.hasOwn(all, key)) {
-        throw new SandboxValidationError(
-          `Two sandbox tools are named "${key}"`,
-        );
-      }
-
-      all[key] = entry;
-    }
-  }
-
-  return all;
+  return toolsByName(
+    Object.values(opened).flatMap((handle) => {
+      return Object.entries(handle.tools);
+    }),
+  );
 };
 
 /**
  * Agent tools by name, for `agent.loop()`. The name is the tool's `id`.
  */
 export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
-  const byId: Record<string, SandboxTool> = {};
-
-  for (const entry of tools) {
-    if (Object.hasOwn(byId, entry.id)) {
-      throw new SandboxValidationError(`Two tools are named "${entry.id}"`);
-    }
-
-    byId[entry.id] = entry;
-  }
-
-  return byId;
+  return toolsByName(
+    tools.map((entry) => {
+      return [entry.id, entry] as const;
+    }),
+  );
 };
 
-const withoutId = <T extends { id: string }>({ id: _id, ...rest }: T) => {
-  return rest;
+/**
+ * EXPERIMENTAL: The `step.sandbox` of a running function, which only exists
+ * when its client has the sandbox middleware.
+ *
+ * @param step The function's step tools.
+ */
+export const stepSandboxes = (step: object): DurableSandboxTools => {
+  const sandboxes = (step as { sandbox?: DurableSandboxTools }).sandbox;
+
+  if (!sandboxes) {
+    throw new SandboxValidationError(
+      "An agent with sandboxes needs the client's sandbox middleware: new Inngest({ middleware: [sandboxMiddleware()] })",
+    );
+  }
+
+  return sandboxes;
 };

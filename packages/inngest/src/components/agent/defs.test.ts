@@ -158,6 +158,33 @@ describe("openSandboxes()", () => {
     expect(env.destroyed).toEqual(["work:destroy"]);
   });
 
+  test("an eager create that fails and is never used is raised by close()", async () => {
+    const env = fakeEnvironment();
+
+    env.created.mockRejectedValueOnce(new Error("no capacity"));
+
+    const opened = openSandboxes(
+      { work: { sandbox: workbench, start: "eager" } },
+      env.sandboxes,
+    );
+
+    await expect(opened.work?.close()).rejects.toThrow("no capacity");
+  });
+
+  test("an eager create that fails is raised to the caller that used it, once", async () => {
+    const env = fakeEnvironment();
+
+    env.created.mockRejectedValueOnce(new Error("no capacity"));
+
+    const opened = openSandboxes(
+      { work: { sandbox: workbench, start: "eager" } },
+      env.sandboxes,
+    );
+
+    await expect(opened.work?.get()).rejects.toThrow("no capacity");
+    await expect(opened.work?.close()).resolves.toBeUndefined();
+  });
+
   test("eager starts creating at once", async () => {
     const env = fakeEnvironment();
     const opened = openSandboxes(
@@ -218,7 +245,7 @@ describe("validation", () => {
 
     expect(() => {
       return sandboxTools(openSandboxes({ a, a_b: b }, sandboxes));
-    }).toThrow("Two sandbox tools");
+    }).toThrow("Two tools are named");
   });
 
   test("close after a failed create does not throw", async () => {
