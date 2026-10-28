@@ -237,128 +237,12 @@ describe("steering", () => {
       },
     );
 
-    const { output, acked } = await run(fn, {
+    const { output } = await run(fn, {
       event: trigger("go"),
       saved: [message("user", "next"), message("stop")],
     });
 
     expect(output).toEqual(["stopped", "next"]);
-    // The stop was handled by the turn; the next-turn message when it was read.
-    expect(acked.sort()).toEqual([1, 2]);
-  });
-
-  test("a polled next-turn message that is never read again is not acked", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        await inbox.next();
-        await control.steer();
-
-        return "done";
-      },
-    );
-
-    const { acked } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "later")],
-    });
-
-    expect(acked).toEqual([]);
-  });
-});
-
-describe("acks", () => {
-  test("a message is acked when its turn is over, not when it is read", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        await inbox.next();
-        await inbox.next();
-        await inbox.next();
-
-        throw new Error("fails while handling the third message");
-      },
-    );
-
-    const { acked } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "one"), message("user", "two")],
-    });
-
-    // The trigger and message 1 were handled; message 2 was in flight.
-    expect(acked).toEqual([1]);
-  });
-
-  test("when the body returns, the last turn is acked", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        await inbox.next();
-
-        return (await inbox.next())?.data.content;
-      },
-    );
-
-    const { acked, output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "one")],
-    });
-
-    expect(output).toBe("one");
-    expect(acked).toEqual([1]);
-  });
-
-  test("steering messages are acked with the turn that folded them", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        await inbox.next();
-        const lines = await control.steer();
-        await inbox.next();
-
-        return lines;
-      },
-    );
-
-    const { acked, ops } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("steer", "left")],
-      incoming: [message("user", "next")],
-    });
-
-    expect(acked).toEqual([1, 2]);
-    // The steer was acked when the next message was asked for.
-    const order = ops.map((op) => {
-      return op.id;
-    });
-    expect(order.indexOf("inbox:ack:1")).toBeLessThan(order.indexOf("inbox:2"));
-  });
-});
-
-describe("ack order", () => {
-  test("a handled steer is not acked ahead of an earlier message that is still unread", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        await inbox.next();
-        await control.steer();
-
-        return "done";
-      },
-    );
-
-    const { acked } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "later"), message("steer", "left")],
-    });
-
-    // Message 1 is unread, so message 2 must not be acked past it.
-    expect(acked).toEqual([]);
   });
 });
 

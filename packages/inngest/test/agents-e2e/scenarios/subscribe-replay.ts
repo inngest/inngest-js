@@ -1,11 +1,12 @@
 /**
  * @module
- * The winner of a multi-event `next()` is the same on every replay. Each round
- * sends a trigger event (stream 1) and, while its turn runs, a thread message
- * (stream 0), so by the time the turn's later steps replay the `next()` that
- * delivered the trigger, the loser's wait is in history too. A replay that
- * picked the lowest stream index would hand out the thread message first, and
- * the ack and turn steps would no longer match what ran.
+ * Messages of a multi-event subscription keep their order across replays. Each
+ * round sends a trigger event and, while its turn runs, a thread message (two
+ * events of one subscription), so by the time the turn's later steps replay the
+ * `next()` that delivered the trigger, the second message is in the run's state
+ * too. The order is the run's stack, so every replay must hand out the same
+ * message at the same position; one that did not would run steps that no longer
+ * match the ones that ran.
  */
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,15 +63,13 @@ export const subscribeReplay = scenario({
       },
       async ({ inbox, thread }) => {
         for await (const message of inbox) {
-          // The merged position and the stream each message came from.
+          // The position and the event of each message, as every replay sees it.
           appendFileSync(
             seenFile(thread.key),
-            `${message.seq}:${message.source?.stream ?? "trigger"}\n`,
+            `${message.seq}:${message.data.content}\n`,
           );
 
-          const where = message.source
-            ? `${message.seq}:${message.source.stream}`
-            : `${message.seq}:trigger`;
+          const where = message.seq;
 
           await kv.thread.update<string[]>("turns", function (turns) {
             return [...(turns ?? []), `${message.data.content ?? ""}@${where}`];
@@ -116,10 +115,10 @@ export const subscribeReplay = scenario({
 
     await sleep(2000);
     const turns = list(await thread.state());
-    const expected = ["start@0:trigger"];
+    const expected = ["start@0"];
 
     for (let round = 1; round <= rounds; round++) {
-      expected.push(`e${round}@${round * 2 - 1}:1`, `h${round}@${round * 2}:0`);
+      expected.push(`e${round}@${round * 2 - 1}`, `h${round}@${round * 2}`);
     }
 
     const seen = existsSync(seenFile(key))
@@ -128,12 +127,12 @@ export const subscribeReplay = scenario({
     const streamsBySeq = new Map<string, Set<string>>();
 
     for (const line of seen) {
-      const [seq = "", stream = ""] = line.split(":");
-      streamsBySeq.set(seq, (streamsBySeq.get(seq) ?? new Set()).add(stream));
+      const [seq = "", content = ""] = line.split(":");
+      streamsBySeq.set(seq, (streamsBySeq.get(seq) ?? new Set()).add(content));
     }
 
     ctx.check(
-      "every replay saw the same stream for each seq",
+      "every replay saw the same message at each seq",
       streamsBySeq.size === rounds * 2 + 1 &&
         [...streamsBySeq.values()].every((streams) => {
           return streams.size === 1;
@@ -141,11 +140,22 @@ export const subscribeReplay = scenario({
       { seen: [...streamsBySeq] },
     );
     ctx.check(
-      "the body replayed more than once per message",
-      [...streamsBySeq.keys()].every((seq) => {
-        return seen.filter((line) => line.startsWith(`${seq}:`)).length >= 2;
-      }),
-      seen.length,
+      "the body replayed every message but the last at least once more",
+      [...streamsBySeq.keys()]
+        .filter((seq) => {
+          return Number(seq) < rounds * 2;
+        })
+        .every((seq) => {
+          return seen.filter((line) => line.startsWith(`${seq}:`)).length >= 2;
+        }),
+      Object.fromEntries(
+        [...streamsBySeq.keys()].map((seq) => {
+          return [
+            seq,
+            seen.filter((line) => line.startsWith(`${seq}:`)).length,
+          ];
+        }),
+      ),
     );
 
     if (existsSync(seenFile(key))) {
@@ -153,7 +163,7 @@ export const subscribeReplay = scenario({
     }
 
     ctx.check(
-      "every message once, in arrival order, with a stable seq and stream",
+      "every message once, in arrival order, with a stable seq",
       JSON.stringify(turns) === JSON.stringify(expected),
       { turns, expected },
     );

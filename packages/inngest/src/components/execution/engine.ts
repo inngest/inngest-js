@@ -115,6 +115,10 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
+import {
+  subscriptionMessagePrefix,
+  subscriptionMessages,
+} from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -318,6 +322,13 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               functionId: this.options.fn.id(),
+              subscriptionMessages: (key: string) => {
+                return subscriptionMessages(
+                  key,
+                  this.options.stepCompletionOrder,
+                  this.options.stepState,
+                );
+              },
               stream: this.streamTools,
             },
           },
@@ -1296,22 +1307,9 @@ class InngestExecutionEngine
           // truly done: the executor needs to memoize these and call back.
           // Don't close the stream. `filterNewSteps` excludes lazy ops, so
           // `attachLazyOps` is what folds them in here.
-          const found = await this.filterNewSteps(
+          const newSteps = await this.filterNewSteps(
             Array.from(this.state.steps.values()),
           );
-
-          // A `step.subscribe()` wait the function stopped waiting on (the loser
-          // of a race between streams) has no end: it is woken by a message,
-          // not by the executor. Reporting it would leave the run open for good.
-          const newSteps = found?.filter((op) => {
-            const subscribe = (
-              op.opts as { subscribe?: { mode?: string } } | undefined
-            )?.subscribe;
-
-            return !(
-              op.op === StepOpCode.WaitForEvent && subscribe?.mode === "next"
-            );
-          });
 
           if (newSteps?.length) {
             return this.attachLazyOps({
@@ -2240,7 +2238,13 @@ class InngestExecutionEngine
       loop,
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
-      remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
+      // Messages of a subscription are read from the state, never requested as
+      // steps, so they are not waited for.
+      remainingStepsToBeSeen: new Set(
+        this.options.stepCompletionOrder.filter((id) => {
+          return !id.startsWith(subscriptionMessagePrefix);
+        }),
+      ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);
 

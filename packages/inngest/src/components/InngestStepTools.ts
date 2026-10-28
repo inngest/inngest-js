@@ -38,7 +38,6 @@ import {
   openSubscription,
   type SubscribeOptions,
   type Subscription,
-  streamKey,
   streamsOf,
 } from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
@@ -590,30 +589,28 @@ export const createStepTools = <
 
       return openSubscription<TData>(
         function op(stepId, mode, seq, stream) {
-          // Waits of a multi-event subscription race, so whichever message
-          // arrives first is handed out and the others keep their wait.
-          const race = mode === "next" && streams.length > 1;
           const target = streams[stream];
 
           if (!target) {
             throw new Error(`step.subscribe(): no stream ${stream}.`);
           }
 
-          return tools["~subscribeOp"](
-            race ? { id: stepId, parallelMode: "race" } : stepId,
-            {
-              event: target.event,
-              if: target.if,
-              subscribe: {
-                key: streamKey(id, streams.length, stream),
-                mode,
-                ...(seq ? { seq } : {}),
-              },
+          return tools["~subscribeOp"](stepId, {
+            event: target.event,
+            if: target.if,
+            subscribe: {
+              key: id,
+              mode,
+              ...(seq ? { seq } : {}),
+              ...(stream ? { stream } : {}),
             },
-          );
+          });
         },
         id,
         opts,
+        function read() {
+          return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
+        },
       );
     },
 
@@ -626,7 +623,12 @@ export const createStepTools = <
         opts: {
           event: string;
           if?: string;
-          subscribe: { key: string; mode: string; seq?: number };
+          subscribe: {
+            key: string;
+            mode: string;
+            seq?: number;
+            stream?: number;
+          };
         },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {

@@ -218,10 +218,8 @@ function threadInbox(
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
 ): {
   inbox: ThreadInbox;
-  handled: (message: InboxMessage<ThreadMessage>) => void;
-  flush: () => Promise<void>;
 } {
-  // The event each message was made from, to ack and put it back as it came.
+  // The event each message was made from, to put it back as it came.
   const raws = new WeakMap<object, InboxMessage<RawEvent>>();
 
   function unwrap(
@@ -235,7 +233,6 @@ function threadInbox(
     const unwrapped: ThreadInboxMessage = {
       seq: message.seq,
       data,
-      source: message.source,
       async reply(answer) {
         if (!data.replyTo) {
           throw new Error(
@@ -267,39 +264,7 @@ function threadInbox(
 
   let delivered = 0;
 
-  // Messages the current turn handled. They are acked when the turn is over:
-  // when the agent asks for its next message, or the body returns. A run that
-  // fails or is cancelled mid-turn leaves them unacked.
-  let pending: InboxMessage<ThreadMessage>[] = [];
-
-  function handled(message: InboxMessage<ThreadMessage>) {
-    pending.push(message);
-  }
-
-  // The executor counts acks as consecutive from 1, so a message is only
-  // acked once every message before it has been: a handled steer that sits
-  // behind a message put back for the next turn waits for that turn.
-  let nextToAck = 1;
-
-  async function flush() {
-    pending = pending
-      .filter((message) => {
-        return message.seq >= 1;
-      })
-      .sort((a, b) => {
-        return a.seq - b.seq;
-      });
-
-    while (pending[0] && pending[0].seq === nextToAck) {
-      const message = pending.shift() as InboxMessage<ThreadMessage>;
-      nextToAck += 1;
-      await inbox.ack(rawOf(message));
-    }
-  }
-
   async function next() {
-    await flush();
-
     if (delivered > 0) {
       await recorder.waiting();
     }
@@ -311,7 +276,6 @@ function threadInbox(
       }
 
       delivered += 1;
-      handled(message);
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.data.kind !== "stop") {
@@ -325,15 +289,10 @@ function threadInbox(
   }
 
   return {
-    handled,
-    flush,
     inbox: {
       next,
       async poll() {
         return unwrap(await inbox.poll());
-      },
-      async ack(message) {
-        await inbox.ack(rawOf(message));
       },
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
@@ -544,7 +503,7 @@ export function createAgentFunction(
             : {};
 
         let stopRequested = false;
-        const { inbox, handled, flush } = threadInbox(
+        const { inbox } = threadInbox(
           subscription,
           function toMessage(raw) {
             const trigger = triggers.find((t) => {
@@ -576,10 +535,8 @@ export function createAgentFunction(
               const kind = message.data.kind;
               if (kind === "steer") {
                 lines.push(message.data.content ?? "");
-                handled(message);
               } else if (kind === "stop") {
                 stopRequested = true;
-                handled(message);
               } else {
                 waiting.push(message);
               }
@@ -633,9 +590,6 @@ export function createAgentFunction(
             inbox,
             control,
           });
-
-          // The body returned: the last turn is over.
-          await flush();
 
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.

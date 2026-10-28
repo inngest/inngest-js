@@ -2,7 +2,7 @@
 "inngest": minor
 ---
 
-`inngest/experimental/agents` can now run an agent as a long conversation. `step.subscribe()` is a durable inbox that delivers each message as its own step, thread handles `send`, `steer`, `stop` and read `state()` for a conversation that spans runs, and `kv` stores values per run, thread, session, function, app or environment in Redis (`INNGEST_EXPERIMENTAL_KV_URL`).
+`inngest/experimental/agents` can now run an agent as a long conversation. `step.subscribe()` is a durable inbox: messages that arrive while the function is busy are saved and read in order, thread handles `send`, `steer`, `stop` and read `state()` for a conversation that spans runs, and `kv` stores values per run, thread, session, function, app or environment in Redis (`INNGEST_EXPERIMENTAL_KV_URL`).
 
 ```ts
 const agents = createAgents(inngest);
