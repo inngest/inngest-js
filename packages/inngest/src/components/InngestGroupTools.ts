@@ -137,9 +137,10 @@ export interface ExperimentOptions<
 export type VariantResult<
   TConstraint,
   TVariants extends Record<string, () => unknown>,
-> = IsNever<TConstraint> extends true
-  ? Awaited<ReturnType<TVariants[keyof TVariants]>>
-  : TConstraint;
+> =
+  IsNever<TConstraint> extends true
+    ? Awaited<ReturnType<TVariants[keyof TVariants]>>
+    : TConstraint;
 
 /**
  * Metadata values stored alongside the experiment step for UI rendering.

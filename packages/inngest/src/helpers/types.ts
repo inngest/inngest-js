@@ -340,11 +340,10 @@ type Includes<Value extends readonly any[], Item> =
 		: false;
 ```
 */
-export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
-  G,
->() => G extends B ? 1 : 2
-  ? true
-  : false;
+export type IsEqual<A, B> =
+  (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2
+    ? true
+    : false;
 
 /**
  * Returns a boolean for whether the given type `T` is `never`.

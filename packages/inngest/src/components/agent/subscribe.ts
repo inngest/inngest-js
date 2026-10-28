@@ -70,12 +70,13 @@ export type SubscribeOptions =
  * The data of the messages of an event source: the schema's for an
  * `eventType()`, unknown for a name.
  */
-type SourceData<TSource> = TSource extends EventType<string, infer TSchema>
-  ? TSchema extends StandardSchemaV1<infer TData>
-    ? TData
-    : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
-      Record<string, any>
-  : unknown;
+type SourceData<TSource> =
+  TSource extends EventType<string, infer TSchema>
+    ? TSchema extends StandardSchemaV1<infer TData>
+      ? TData
+      : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
+        Record<string, any>
+    : unknown;
 
 /**
  * The data of the messages of a subscription, from the event types in its

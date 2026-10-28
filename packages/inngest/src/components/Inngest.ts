@@ -1630,26 +1630,27 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-> = TFunction extends InngestFunction<
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  any,
-  infer IHandler,
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  any,
-  infer TClient,
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  any
->
-  ? IsNever<
-      VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
-    > extends true
-    ? null
-    : ApplyAllMiddlewareTransforms<
-        ClientOptionsFromInngest<TClient>["middleware"],
-        VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>,
-        "functionOutputTransform"
-      >
-  : unknown;
+> =
+  TFunction extends InngestFunction<
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    any,
+    infer IHandler,
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    any,
+    infer TClient,
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    any
+  >
+    ? IsNever<
+        VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
+      > extends true
+      ? null
+      : ApplyAllMiddlewareTransforms<
+          ClientOptionsFromInngest<TClient>["middleware"],
+          VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>,
+          "functionOutputTransform"
+        >
+    : unknown;
 
 /**
  * A helper type to extract the type of the output of a referenced Inngest
@@ -1663,11 +1664,12 @@ export type GetFunctionOutputFromInngestFunction<
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-> = TFunction extends InngestFunctionReference<any, infer IOutput>
-  ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
-    ? null
-    : SimplifyDeep<Jsonify<IOutput>>
-  : unknown;
+> =
+  TFunction extends InngestFunctionReference<any, infer IOutput>
+    ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
+      ? null
+      : SimplifyDeep<Jsonify<IOutput>>
+    : unknown;
 
 /**
  * A helper type to extract the raw (non-Jsonified) output type of an Inngest
@@ -1689,9 +1691,10 @@ export type GetFunctionOutputRaw<
 export type GetFunctionOutputRawFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
-  ? VoidToNull<Awaited<ReturnType<IHandler>>>
-  : unknown;
+> =
+  TFunction extends InngestFunction<any, infer IHandler, any, any, any>
+    ? VoidToNull<Awaited<ReturnType<IHandler>>>
+    : unknown;
 
 /**
  * @internal
@@ -1699,20 +1702,18 @@ export type GetFunctionOutputRawFromInngestFunction<
 export type GetFunctionOutputRawFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-> = TFunction extends InngestFunctionReference<any, infer IOutput>
-  ? VoidToNull<SimplifyDeep<IOutput>>
-  : unknown;
+> =
+  TFunction extends InngestFunctionReference<any, infer IOutput>
+    ? VoidToNull<SimplifyDeep<IOutput>>
+    : unknown;
 
 /**
  * Helper type that converts void/undefined/never to null.
  * Uses ReturnType trick to check for void without directly using void in type position.
  * @internal
  */
-type VoidToNull<T> = IsNever<T> extends true
-  ? null
-  : T extends ReturnType<() => void>
-    ? null
-    : T;
+type VoidToNull<T> =
+  IsNever<T> extends true ? null : T extends ReturnType<() => void> ? null : T;
 
 /**
  * A helper type to extract the inferred options from a given Inngest instance.

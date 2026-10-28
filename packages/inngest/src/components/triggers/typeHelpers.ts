@@ -24,9 +24,8 @@ type ContainsWildcard<T extends string> = T extends `${string}*${string}`
 /**
  * Converts wildcard event names to `unknown`, preserving literal names.
  */
-type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
-  ? unknown
-  : T;
+type WildcardToUnknown<T extends string> =
+  ContainsWildcard<T> extends true ? unknown : T;
 
 /**
  * Represents the structure of an event as received by function handlers.
@@ -77,14 +76,12 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
  * @template TEventType - The EventType instance to convert
  * @returns ReceivedEvent type with extracted name and data
  */
-type EventTypeToEvent<TEventType> = TEventType extends EventType<
-  infer TName,
-  infer TSchema
->
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
-    ? ReceivedEvent<WildcardToUnknown<TName>, TData>
-    : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
-  : never;
+type EventTypeToEvent<TEventType> =
+  TEventType extends EventType<infer TName, infer TSchema>
+    ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+      ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+      : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
+    : never;
 
 /**
  * Converts a plain event object trigger to a ReceivedEvent type.
@@ -95,12 +92,10 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
  * @template TSchema - Optional schema type
  * @returns ReceivedEvent with typed data from schema, or Record<string, any> if no schema
  */
-type PlainEventToReceivedEvent<
-  TName extends string,
-  TSchema,
-> = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
-  ? ReceivedEvent<WildcardToUnknown<TName>, TData>
-  : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
+type PlainEventToReceivedEvent<TName extends string, TSchema> =
+  TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+    ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+    : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
 
 /**
  * Processes a single trigger and converts it to ReceivedEvent(s).
@@ -109,36 +104,34 @@ type PlainEventToReceivedEvent<
  * @template TSeenCron - Whether we've already seen a cron trigger
  * @returns Tuple of ReceivedEvent(s), or empty array if trigger should be skipped
  */
-type ProcessSingleTrigger<
-  TTrigger,
-  TSeenCron extends boolean,
-> = TTrigger extends EventTypeWithAnySchema<InvokeEventName> // Is this an invoke trigger?
-  ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
-  : TTrigger extends EventTypeWithAnySchema<string> // Is this an event type trigger?
-    ? [EventTypeToEvent<TTrigger>]
-    : TTrigger extends { cron: string } // Is this a cron trigger?
-      ? TSeenCron extends true
-        ? [] // Skip additional cron triggers (they're merged into one)
-        : [ReceivedEvent<CronEventName, CronEventData>]
-      : // Is this an event trigger using an EventType?
-        TTrigger extends {
-            event: EventType<infer TName, infer TSchema>;
-            if?: string;
-          }
-        ? [
-            TSchema extends StandardSchemaV1<
-              infer TData extends BasicDataUnknown
-            >
-              ? ReceivedEvent<WildcardToUnknown<TName>, TData>
-              : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
-          ]
-        : // Is this an event trigger using a string name (i.e. not an EventType)?
+type ProcessSingleTrigger<TTrigger, TSeenCron extends boolean> =
+  TTrigger extends EventTypeWithAnySchema<InvokeEventName> // Is this an invoke trigger?
+    ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
+    : TTrigger extends EventTypeWithAnySchema<string> // Is this an event type trigger?
+      ? [EventTypeToEvent<TTrigger>]
+      : TTrigger extends { cron: string } // Is this a cron trigger?
+        ? TSeenCron extends true
+          ? [] // Skip additional cron triggers (they're merged into one)
+          : [ReceivedEvent<CronEventName, CronEventData>]
+        : // Is this an event trigger using an EventType?
           TTrigger extends {
-              event: infer TName extends string;
-              schema?: infer TSchema;
+              event: EventType<infer TName, infer TSchema>;
+              if?: string;
             }
-          ? [PlainEventToReceivedEvent<TName, TSchema>]
-          : []; // Unknown trigger type, skip it
+          ? [
+              TSchema extends StandardSchemaV1<
+                infer TData extends BasicDataUnknown
+              >
+                ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+                : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
+            ]
+          : // Is this an event trigger using a string name (i.e. not an EventType)?
+            TTrigger extends {
+                event: infer TName extends string;
+                schema?: infer TSchema;
+              }
+            ? [PlainEventToReceivedEvent<TName, TSchema>]
+            : []; // Unknown trigger type, skip it
 
 /**
  * Recursively processes trigger array, converting to event types while tracking

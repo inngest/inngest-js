@@ -166,11 +166,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
 // Export types for convenience
 export {
-  DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectApp,
   type ConnectDebugState,
   type ConnectHandlerOptions,
   ConnectionState,
+  DEFAULT_SHUTDOWN_SIGNALS,
   type InFlightRequest,
   type WorkerConnection,
 };

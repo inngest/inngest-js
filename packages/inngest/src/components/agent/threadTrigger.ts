@@ -64,15 +64,16 @@ export type ThreadTriggerEventSource = string | EventTypeWithAnySchema<string>;
  * The data of the events of a trigger source: the schema's for an
  * `eventType()`, any record for a name.
  */
-export type ThreadTriggerData<T> = T extends EventType<string, infer TSchema>
-  ? TSchema extends StandardSchemaV1<
-      infer TData extends Record<string, unknown>
-    >
-    ? TData
-    : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
-      Record<string, any>
-  : // biome-ignore lint/suspicious/noExplicitAny: an event name carries no schema
-    Record<string, any>;
+export type ThreadTriggerData<T> =
+  T extends EventType<string, infer TSchema>
+    ? TSchema extends StandardSchemaV1<
+        infer TData extends Record<string, unknown>
+      >
+      ? TData
+      : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
+        Record<string, any>
+    : // biome-ignore lint/suspicious/noExplicitAny: an event name carries no schema
+      Record<string, any>;
 
 /**
  * The fields every kind of trigger shares.

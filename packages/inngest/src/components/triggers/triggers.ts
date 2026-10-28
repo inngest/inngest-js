@@ -74,9 +74,8 @@ type EventCreateArgs<
 /**
  * Extract the input type from a StandardSchemaV1.
  */
-type ExtractSchemaData<TData> = TData extends StandardSchemaV1<infer TData>
-  ? TData
-  : undefined;
+type ExtractSchemaData<TData> =
+  TData extends StandardSchemaV1<infer TData> ? TData : undefined;
 
 /**
  * An event that has been created but not validated.
