@@ -43,7 +43,7 @@
 
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { lookupBeforeBuild } from "../cache/cache.ts";
+import { lookupBeforeBuild, targetName } from "../cache/cache.ts";
 import { lockMachineName } from "../machine/machine.ts";
 import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
@@ -122,7 +122,7 @@ export const requestBuild = async ({
   /** What a build gives back for a snapshot that is found. */
   reused: (cached: CachedSnapshot) => CacheBuildResult;
 }): Promise<CacheBuildResult> => {
-  const name = lockMachineName(target.name);
+  const name = lockMachineName(targetName(target));
 
   // The function that takes the request is made once per client, whether or
   // not `functions()` has been called to serve it.

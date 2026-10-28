@@ -204,6 +204,8 @@ export const steps = {
   },
 
   resolveCacheName: named("Resolve cache name"),
+  deleteReplacedCache: named("Delete replaced cache"),
+  evictSnapshots: named("Make room for snapshot"),
   checkSnapshotState: named("Check snapshot state"),
   deleteBadSnapshot: named("Delete bad snapshot"),
 
