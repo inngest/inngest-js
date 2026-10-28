@@ -90,7 +90,8 @@ export function streamsOf(opts: SubscribeOptions): SubscribeEvent[] {
  * closed and drained.
  */
 export interface Subscription<TData = unknown>
-  extends AsyncIterable<InboxMessage<TData>> {
+  extends AsyncIterable<InboxMessage<TData>>,
+    AsyncDisposable {
   /**
    * Waits for the next message, or returns `null` once the subscription is
    * closed and every saved message has been read.
@@ -105,10 +106,9 @@ export interface Subscription<TData = unknown>
   poll(): Promise<InboxMessage<TData> | null>;
 
   /**
-   * Tells the executor a polled message was handled, so it is not handed to
-   * the thread's next run. Neither `next()` nor `poll()` acks: ack a message
-   * once you have handled it, so a run that fails or is cancelled while
-   * handling it leaves it for the next run.
+   * Records that a polled message was handled. Neither `next()` nor `poll()`
+   * acks: ack a message once you have handled it. The record is for the run's
+   * history; nothing is re-sent when a run ends with unacked messages.
    *
    * Pass the message the subscription returned: a hand-built message has no
    * source stream and throws.
@@ -123,12 +123,27 @@ export interface Subscription<TData = unknown>
   putBack(messages: InboxMessage<TData>[]): void;
 
   /**
-   * Stops the subscription: no new messages are saved. Messages that were
-   * saved but not read stay readable, so drain with `next()` until it returns
-   * `null` before the function finishes.
-   * @returns How many messages the subscription saved in total.
+   * Ends the subscription: no new messages are saved. It only ends the
+   * subscription. It does not touch the run or the function's singleton, and
+   * nothing is re-sent when the run ends.
+   *
+   * A message that arrives after `close()`, while the function's singleton
+   * still applies, is dropped: it neither starts another run nor reaches this
+   * one. The gap is the time between `close()` and the end of the run.
+   *
+   * Calling it again does nothing and returns no messages.
+   * @returns The messages that were saved but not read, in the order they are
+   * read. They are taken out of the subscription.
    */
-  close(): Promise<number>;
+  close(): Promise<InboxMessage<TData>[]>;
+
+  /**
+   * Closes the subscription when its scope ends, so `await using` needs no
+   * explicit `close()`. `step.subscribe()` returns a promise, so await it
+   * first: `await using inbox = await step.subscribe(...)`. Needs TypeScript
+   * 5.2 or later; the symbol is polyfilled on Node before 20.5.
+   */
+  [Symbol.asyncDispose](): Promise<void>;
 }
 
 /**
@@ -193,8 +208,7 @@ export async function openSubscription<TData = unknown>(
     return stream.total !== undefined && stream.read >= stream.total;
   }
 
-  // The ack tells the executor a message was handled, so a message that was
-  // saved but never acked is handed to the thread's next run. The trigger
+  // The ack records that a message was handled. The trigger
   // (seq 0) is not a saved message. Acks reach each stream in its own order
   // as long as the caller acks in merged order.
   async function ack(message: InboxMessage<TData>) {
@@ -277,6 +291,44 @@ export async function openSubscription<TData = unknown>(
     return receive(won.stream, won.seq, won.data);
   }
 
+  let closing: Promise<InboxMessage<TData>[]> | undefined;
+
+  // Closes every stream, then reads out what was saved but not read. A second
+  // call finds it done and returns nothing, so an explicit `close()` and the
+  // scope exit of `await using` can both run.
+  function close() {
+    if (closing) {
+      return closing.then(() => {
+        return [];
+      });
+    }
+
+    closing = (async () => {
+      for (const stream of streams) {
+        const closed = (await op(
+          `${stream.key}:close`,
+          "close",
+          undefined,
+          stream.index,
+        )) as { count: number };
+        stream.total = closed.count;
+      }
+
+      const unread: InboxMessage<TData>[] = [];
+
+      for (;;) {
+        const message = await next();
+        if (!message) {
+          return unread;
+        }
+
+        unread.push(message);
+      }
+    })();
+
+    return closing;
+  }
+
   async function poll(): Promise<InboxMessage<TData> | null> {
     const waiting = held.shift();
     if (waiting) {
@@ -311,21 +363,9 @@ export async function openSubscription<TData = unknown>(
     putBack(messages) {
       held.unshift(...messages);
     },
-    async close() {
-      let total = 0;
-
-      for (const stream of streams) {
-        const closed = (await op(
-          `${stream.key}:close`,
-          "close",
-          undefined,
-          stream.index,
-        )) as { count: number };
-        stream.total = closed.count;
-        total += closed.count;
-      }
-
-      return total;
+    close,
+    async [Symbol.asyncDispose]() {
+      await close();
     },
     [Symbol.asyncIterator]() {
       return {
@@ -341,3 +381,8 @@ export async function openSubscription<TData = unknown>(
     },
   };
 }
+
+// Node before 20.5 lacks the symbol that `await using` looks up.
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
+  "Symbol.asyncDispose",
+);

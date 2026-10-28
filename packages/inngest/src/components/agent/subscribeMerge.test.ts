@@ -149,16 +149,16 @@ describe("subscription over several events", () => {
     expect((await sub.next())?.data).toBe("a2");
   });
 
-  test("close drains every stream and then ends the iteration", async () => {
+  test("close returns what every stream saved but did not hand out, and ends the iteration", async () => {
     const exec = fakeExecutor();
     const sub = await openSubscription<string>(exec.op, "inbox", opts);
     exec.arrive(0, "a1");
     exec.arrive(1, "b1");
 
-    expect(await sub.close()).toBe(2);
-    const got = [(await sub.next())?.data, (await sub.next())?.data];
-    expect([...got].sort()).toEqual(["a1", "b1"]);
+    const unread = await sub.close();
+    expect(unread.map((m) => m.data).sort()).toEqual(["a1", "b1"]);
     expect(await sub.next()).toBeNull();
+    expect(await sub.close()).toEqual([]);
   });
 
   test("a single event keeps the plain step IDs", async () => {

@@ -122,8 +122,15 @@ describe("thread key from a trigger", () => {
     const { output } = await run(agent.fn, {
       event: slackMessage,
       onOp: (op) => {
-        const opts = op.opts as { event?: string; if?: string };
-        seen.push({ event: opts.event, if: opts.if });
+        const opts = op.opts as {
+          event?: string;
+          if?: string;
+          subscribe?: { mode?: string };
+        };
+
+        if (opts.subscribe?.mode === "open") {
+          seen.push({ event: opts.event, if: opts.if });
+        }
       },
     });
 

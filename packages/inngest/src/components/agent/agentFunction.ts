@@ -10,9 +10,10 @@
  * - `control`, which spreads into `agent.loop()` so a running turn takes
  *   steering messages and a stop request.
  *
- * Messages that reach the run but are never read are handed to the thread's
- * next run by the executor when the run ends, so a message that arrives as a
- * run finishes is not lost.
+ * The inbox closes when the body returns. A message that arrives after that, while
+ * the thread's singleton is still in effect, is dropped: it neither starts a new
+ * run nor reaches the finished one. The gap is small (the time between the body
+ * returning and the run ending), and nothing is re-sent at run end.
  */
 
 import { createDefer } from "../DeferredFunction.ts";
@@ -154,11 +155,18 @@ export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
 export interface ThreadInbox
   extends Omit<
       Subscription<ThreadMessage>,
-      "next" | "poll" | typeof Symbol.asyncIterator
+      "next" | "poll" | "close" | typeof Symbol.asyncIterator
     >,
     AsyncIterable<ThreadInboxMessage> {
   next(): Promise<ThreadInboxMessage | null>;
   poll(): Promise<ThreadInboxMessage | null>;
+
+  /**
+   * Ends the subscription. See `Subscription.close()`: it only ends the
+   * subscription, and a message that arrives afterwards is dropped.
+   * @returns The messages that were saved but not read.
+   */
+  close(): Promise<ThreadInboxMessage[]>;
 }
 
 export type AgentBody = (context: AgentBodyContext) => Promise<unknown>;
@@ -260,8 +268,7 @@ function threadInbox(
 
   // Messages the current turn handled. They are acked when the turn is over:
   // when the agent asks for its next message, or the body returns. A run that
-  // fails or is cancelled mid-turn leaves them unacked, so the executor hands
-  // them to the thread's next run.
+  // fails or is cancelled mid-turn leaves them unacked.
   let pending: InboxMessage<ThreadMessage>[] = [];
 
   function handled(message: InboxMessage<ThreadMessage>) {
@@ -330,8 +337,15 @@ function threadInbox(
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
       },
-      close() {
-        return inbox.close();
+      async close() {
+        const unread = await inbox.close();
+
+        return unread.map((message) => {
+          return unwrap(message) as ThreadInboxMessage;
+        });
+      },
+      async [Symbol.asyncDispose]() {
+        await inbox[Symbol.asyncDispose]();
       },
       [Symbol.asyncIterator]() {
         return {
@@ -486,7 +500,9 @@ export function createAgentFunction(
 
         // Opened first, so the gap in which a message could be missed is the few
         // milliseconds between the run starting and this op.
-        const subscription = await step.subscribe<RawEvent>("inbox", {
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the subscription.
+        await using subscription = await step.subscribe<RawEvent>("inbox", {
           events: [
             {
               event: agentMessageEvent,

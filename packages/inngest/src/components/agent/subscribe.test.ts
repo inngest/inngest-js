@@ -20,10 +20,10 @@ describe("step.subscribe", () => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const seen: unknown[] = [];
 
-        await inbox.close();
-        for await (const message of inbox) {
-          seen.push([message.seq, message.data]);
-          await inbox.ack(message);
+        for (let n = 0; n < 2; n++) {
+          const message = await inbox.next();
+          seen.push([message?.seq, message?.data]);
+          await inbox.ack(message as never);
         }
 
         return seen;
@@ -38,13 +38,56 @@ describe("step.subscribe", () => {
     ]);
     expect(ops).toEqual([
       { id: "inbox:open", mode: "open" },
-      { id: "inbox:close", mode: "close" },
       { id: "inbox:1", mode: "next", seq: 1 },
       { id: "inbox:ack:1", mode: "ack", seq: 1 },
       { id: "inbox:2", mode: "next", seq: 2 },
       { id: "inbox:ack:2", mode: "ack", seq: 2 },
     ]);
     expect(acked).toEqual([1, 2]);
+  });
+
+  test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const unread = await inbox.close();
+        const again = await inbox.close();
+
+        return [first?.data, unread.map((m) => m.data), again.length];
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["a", "b", "c"] });
+
+    expect(output).toEqual(["a", ["b", "c"], 0]);
+    expect(ops.map((op) => op.mode)).toEqual([
+      "open",
+      "next",
+      "close",
+      "next",
+      "next",
+    ]);
+  });
+
+  test("await using closes the subscription when the scope ends", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        {
+          await using inbox = await step.subscribe("inbox", subscribeOpts);
+          await inbox.next();
+        }
+
+        return "left";
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["a"] });
+
+    expect(output).toBe("left");
+    expect(ops.map((op) => op.mode)).toEqual(["open", "next", "close"]);
   });
 
   test("next() waits when no message has arrived, then continues when it does", async () => {
