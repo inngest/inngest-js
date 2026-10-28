@@ -13,6 +13,12 @@
  * state the step resolves from memo; otherwise the function waits for it.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+} from "../triggers/triggers.ts";
+
 /**
  * One delivered message.
  */
@@ -40,9 +46,10 @@ export interface InboxMessage<TData = unknown> {
  */
 export interface SubscribeEvent {
   /**
-   * The event name to subscribe to.
+   * The event to subscribe to: a name, or an `eventType()`, which types the
+   * messages.
    */
-  event: string;
+  event: string | EventTypeWithAnySchema<string>;
 
   /**
    * An expression events must match, like the `if` of `step.waitForEvent()`.
@@ -58,7 +65,40 @@ export interface SubscribeEvent {
  * the order across events is arrival order as the race sees it, and strict
  * ordering across events is not guaranteed).
  */
-export type SubscribeOptions = SubscribeEvent | { events: SubscribeEvent[] };
+export type SubscribeOptions =
+  | SubscribeEvent
+  | { events: readonly SubscribeEvent[] };
+
+/**
+ * The data of the messages of an event source: the schema's for an
+ * `eventType()`, unknown for a name.
+ */
+type SourceData<TSource> = TSource extends EventType<string, infer TSchema>
+  ? TSchema extends StandardSchemaV1<infer TData>
+    ? TData
+    : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
+      Record<string, any>
+  : unknown;
+
+/**
+ * The data of the messages of a subscription, from the event types in its
+ * options. A name among them makes it `unknown`.
+ */
+export type SubscribeData<TOpts> = TOpts extends {
+  events: readonly (infer TEvent extends SubscribeEvent)[];
+}
+  ? SourceData<TEvent["event"]>
+  : TOpts extends { event: infer TSource }
+    ? SourceData<TSource>
+    : unknown;
+
+/**
+ * The name of an event source.
+ * @param source A name or an event type.
+ */
+export function eventNameOf(source: SubscribeEvent["event"]): string {
+  return typeof source === "string" ? source : source.name;
+}
 
 /**
  * The key of stream `index` of a subscription with `count` streams. A single
@@ -75,7 +115,7 @@ export function streamKey(key: string, count: number, index: number): string {
  * The streams of the options, one per event.
  * @param opts Subscription options.
  */
-export function streamsOf(opts: SubscribeOptions): SubscribeEvent[] {
+export function streamsOf(opts: SubscribeOptions): readonly SubscribeEvent[] {
   const streams = "events" in opts ? opts.events : [opts];
 
   if (streams.length === 0) {

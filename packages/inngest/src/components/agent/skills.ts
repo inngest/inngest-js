@@ -41,11 +41,19 @@ import {
   type DurableSandboxTools,
   SandboxValidationError,
 } from "../sandbox/types.ts";
+import { eventType, staticSchema } from "../triggers/triggers.ts";
 
 /**
  * The event that asks for a skills snapshot to be baked.
  */
-export const skillsBakeEvent = "agent/skills.bake";
+export const skillsBake = eventType("agent/skills.bake", {
+  schema: staticSchema<SkillsBakeRequest>(),
+});
+
+/**
+ * The name of the skills bake event.
+ */
+export const skillsBakeEvent = skillsBake.name;
 
 /**
  * The scope of every skills snapshot, `skills/<repos>/<config>/<sha>`.
@@ -268,7 +276,7 @@ export interface SkillsRuntime {
    */
   sendEvent: (
     id: string,
-    event: { name: string; data: SkillsBakeRequest },
+    event: ReturnType<typeof skillsBake.create>,
   ) => Promise<unknown>;
 
   /**
@@ -280,7 +288,7 @@ export interface SkillsRuntime {
 /**
  * What the bake function is asked to build.
  */
-export interface SkillsBakeRequest {
+export type SkillsBakeRequest = {
   /**
    * The snapshot's name, which names the build.
    */
@@ -299,7 +307,7 @@ export interface SkillsBakeRequest {
     into: string;
     url: string;
   }[];
-}
+};
 
 type CreateOptions = Parameters<DurableSandboxTools["create"]>[1];
 
@@ -423,10 +431,7 @@ export const createWithSkills = async (
 
   if (request) {
     // Builds of one snapshot name run one at a time (the function's singleton).
-    await runtime.sendEvent(`${stepId}:bake`, {
-      name: skillsBakeEvent,
-      data: request,
-    });
+    await runtime.sendEvent(`${stepId}:bake`, skillsBake.create(request));
   }
 
   const sandbox = await options.sandboxes.create(name, fresh);
@@ -573,7 +578,7 @@ export const createSkillsBakeFunction = (
   return client.createFunction(
     {
       id: "agent-skills-bake",
-      triggers: [{ event: skillsBakeEvent }],
+      triggers: [skillsBake],
       singleton: { key: "event.data.name", mode: "skip" },
     },
     async ({ event, step, group, runId }) => {
