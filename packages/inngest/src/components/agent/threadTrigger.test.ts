@@ -59,7 +59,7 @@ describe("thread key from a trigger", () => {
           },
           {
             event: "gh/comment",
-            thread: 'event.data.repo + "#" + string(event.data.pr)',
+            thread: 'event.data.repo + "#" + event.data.pr',
           },
         ],
       },
@@ -74,7 +74,7 @@ describe("thread key from a trigger", () => {
     ]);
     expect(opts.singleton.mode).toBe("skip");
     expect(opts.singleton.key).toBe(
-      `event.name == "slack/message" ? (${slackThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + string(event.data.pr)) : event.data.thread`,
+      `event.name == "slack/message" ? (${slackThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + event.data.pr) : event.data.thread`,
     );
     // Only a plain path of the trigger can be matched by a cancel expression.
     expect(opts.cancelOn).toHaveLength(1);
@@ -90,7 +90,7 @@ describe("thread key from a trigger", () => {
 
     expect(opts.cancelOn.map((c) => c.if)).toEqual([
       `event.data.agent == "${testClientId}/bot" && event.data.thread == async.data.thread`,
-      `async.data.agent == "${testClientId}/bot" && event.data.key == async.data.thread`,
+      `event.name == "e" && async.data.agent == "${testClientId}/bot" && event.data.key == async.data.thread`,
     ]);
   });
 

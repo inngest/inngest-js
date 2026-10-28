@@ -424,7 +424,7 @@ export function createAgentFunction(
             ? [
                 {
                   event: agentStopEvent,
-                  if: `async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
+                  if: `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
                 },
               ]
             : [];
@@ -620,7 +620,8 @@ export function createAgentFunction(
 
       const als = getAsyncCtxSync();
 
-      return als?.execution
+      // A run started by a message keeps what its trigger carries.
+      return als?.execution && found
         ? runWithAsyncCtx(
             {
               ...als,

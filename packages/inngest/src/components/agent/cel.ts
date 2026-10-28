@@ -8,7 +8,7 @@
  * and rejects anything else when the agent is defined.
  *
  * Supported: string and number literals, `true` and `false`, paths from
- * `event` (`event.data.channel`), `has(path)`, `string(expression)`, `+`
+ * `event` (`event.data.channel`), `has(path)`, `+`
  * (string concatenation or addition), `==`, `!=`, `&&`, `||`, `!`,
  * `condition ? a : b` and parentheses. A path that is missing is an error, as
  * in CEL, so guard optional fields with `has()`.
@@ -41,6 +41,12 @@ function tokenize(source: string): Token[] {
       while (j < source.length && source[j] !== char) {
         if (source[j] === "\\") {
           j += 1;
+
+          if (!["\\", '"', "'"].includes(source[j] ?? "")) {
+            throw new Error(
+              `Unsupported escape in "${source}": only \\\\, \\" and \\' are.`,
+            );
+          }
         }
         value += source[j] ?? "";
         j += 1;
@@ -84,7 +90,7 @@ function tokenize(source: string): Token[] {
     });
     if (!op) {
       throw new Error(
-        `Unsupported syntax "${char}" in "${source}". A thread key may use paths from event, strings, numbers, has(), string(), +, ==, !=, &&, ||, !, ?: and parentheses.`,
+        `Unsupported syntax "${char}" in "${source}". A thread key may use paths from event, strings, numbers, has(), +, ==, !=, &&, ||, !, ?: and parentheses.`,
       );
     }
 
@@ -116,6 +122,40 @@ function lookup(event: unknown, path: string[], source: string) {
   }
 
   return current;
+}
+
+/**
+ * CEL's `&&` and `||` absorb an error on one side when the other side decides
+ * the result (`err || true` is `true`).
+ * @param lhs Left side.
+ * @param rhs Right side.
+ * @param event The event.
+ * @param decisive The value that decides: `true` for `||`, `false` for `&&`.
+ */
+function absorb(lhs: Node, rhs: Node, event: unknown, decisive: boolean) {
+  let leftError: unknown;
+  let left: boolean | undefined;
+
+  try {
+    left = Boolean(lhs(event));
+  } catch (err) {
+    leftError = err;
+  }
+
+  if (left === decisive) {
+    return decisive;
+  }
+
+  const right = Boolean(rhs(event));
+  if (right === decisive) {
+    return decisive;
+  }
+
+  if (leftError) {
+    throw leftError;
+  }
+
+  return right;
 }
 
 function parse(source: string): Node {
@@ -212,17 +252,6 @@ function parse(source: string): Node {
         };
       }
 
-      if (token.value === "string") {
-        position += 1;
-        expect("(");
-        const inner = ternary();
-        expect(")");
-
-        return (event) => {
-          return String(inner(event));
-        };
-      }
-
       const target = path();
 
       return (event) => {
@@ -265,9 +294,7 @@ function parse(source: string): Node {
           return a + b;
         }
 
-        throw new Error(
-          `"${source}": + needs two strings or two numbers; use string() to convert.`,
-        );
+        throw new Error(`"${source}": + needs two strings or two numbers.`);
       };
     }
 
@@ -298,7 +325,7 @@ function parse(source: string): Node {
       const lhs = left;
       const rhs = equality();
       left = (event) => {
-        return Boolean(lhs(event)) && Boolean(rhs(event));
+        return absorb(lhs, rhs, event, false);
       };
     }
 
@@ -313,7 +340,7 @@ function parse(source: string): Node {
       const lhs = left;
       const rhs = and();
       left = (event) => {
-        return Boolean(lhs(event)) || Boolean(rhs(event));
+        return absorb(lhs, rhs, event, true);
       };
     }
 

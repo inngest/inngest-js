@@ -25,16 +25,34 @@ describe("thread key expressions", () => {
     expect(key.key({ data: { channel: "C1", ts: "9.9" } })).toBe("C1/9.9");
   });
 
-  test("string(), numbers, comparisons and booleans", () => {
-    expect(compileExpression("string(event.data.n + 1)").evaluate(slack)).toBe(
-      "4",
-    );
+  test("numbers, comparisons and booleans", () => {
+    expect(compileExpression("event.data.n + 1").evaluate(slack)).toBe(4);
     expect(
       compileExpression(
         'event.name == "slack/message" && !(event.data.n != 3)',
       ).evaluate(slack),
     ).toBe(true);
     expect(compileExpression("false || true").evaluate(slack)).toBe(true);
+  });
+
+  test("&& and || absorb an error on one side when the other decides", () => {
+    expect(
+      compileExpression("event.data.nope == 1 || true").evaluate(slack),
+    ).toBe(true);
+    expect(
+      compileExpression("false && event.data.nope == 1").evaluate(slack),
+    ).toBe(false);
+    expect(() => {
+      return compileExpression("event.data.nope == 1 || false").evaluate(slack);
+    }).toThrow(/not set/);
+  });
+
+  test("string() and escapes other than backslash and quotes are rejected", () => {
+    for (const source of ["string(event.data.n)", '"a\\nb"']) {
+      expect(() => {
+        return compileKey(source);
+      }).toThrow();
+    }
   });
 
   test("a missing path is an error, and the key must be a non-empty string", () => {
@@ -49,7 +67,7 @@ describe("thread key expressions", () => {
     }).toThrow(/non-empty string/);
     expect(() => {
       return compileKey('event.data.n + "x"').key(slack);
-    }).toThrow(/string\(\)/);
+    }).toThrow(/two strings or two numbers/);
   });
 
   test("anything outside the subset is rejected when compiled", () => {
