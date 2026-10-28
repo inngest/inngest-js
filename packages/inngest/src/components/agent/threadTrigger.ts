@@ -173,7 +173,7 @@ export function messageOf(
     agent: ref,
     thread: trigger.thread.key(event),
     kind: "user",
-    content: trigger.message?.(event),
+    content: trigger.message?.({ ...event, data: event.data ?? {} }),
     event: { id: event.id, name: event.name, data: event.data },
   };
 }

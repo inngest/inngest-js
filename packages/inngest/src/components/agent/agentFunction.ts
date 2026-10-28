@@ -597,7 +597,7 @@ export function createAgentFunction(
 
         try {
           const result = await body({
-            event: { name: event.name, data } as AgentBodyContext["event"],
+            event: { ...event, data } as AgentBodyContext["event"],
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
