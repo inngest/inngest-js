@@ -166,8 +166,25 @@ export type {
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
+export type {
+  Channel,
+  ChannelAsk,
+  ChannelMessage,
+  ChannelTrigger,
+  ReportConfig,
+  ReportConfigValue,
+  Reporter,
+  ReportTarget,
+} from "./channels.ts";
+export { askThrough, defineChannel } from "./channels.ts";
 export type { ThreadStop } from "./events.ts";
 export { agentMessage, agentStop } from "./events.ts";
+export type {
+  GithubChannelOptions,
+  GithubCommentData,
+  GithubTarget,
+} from "./github.ts";
+export { github } from "./github.ts";
 export type {
   Kv,
   KvAdapter,
@@ -182,6 +199,12 @@ export type {
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";
+export type {
+  SlackChannelOptions,
+  SlackMessageData,
+  SlackTarget,
+} from "./slack.ts";
+export { slack } from "./slack.ts";
 export type {
   InboxMessage,
   SubscribeData,

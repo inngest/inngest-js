@@ -51,7 +51,7 @@ export type ConfigValue<T, Ctx> = T | ((ctx: Ctx) => T | Promise<T>);
  * Resolves a config field: calls it with `ctx` if it is a function, passes
  * anything else through. Functions run on every replay, so they must be pure.
  */
-const resolveConfigValue = async <T, Ctx>(
+export const resolveConfigValue = async <T, Ctx>(
   value: ConfigValue<T, Ctx>,
   ctx: Ctx,
 ): Promise<T> => {
