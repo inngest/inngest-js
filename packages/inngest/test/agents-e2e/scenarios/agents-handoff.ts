@@ -5,6 +5,7 @@
  */
 import { Inngest, NonRetriableError } from "inngest";
 import {
+  createAgents,
   createKv,
   getThread,
   kv,
@@ -32,13 +33,14 @@ export const agentsHandoff = scenario({
   owner: "agents-f",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client }) => {
+    const agents = createAgents(client);
     const record = async (key: string, content: string | undefined) => {
       await kv.thread.update<string[]>(key, function (found) {
         return [...(found ?? []), content ?? ""];
       });
     };
 
-    const quick = client.agent({ id: "agents-quick" }, async ({ inbox }) => {
+    const quick = agents.agent({ id: "agents-quick" }, async ({ inbox }) => {
       const message = await inbox.next();
       await record("started", message?.data.content);
       await sleep(2500);
@@ -46,7 +48,7 @@ export const agentsHandoff = scenario({
 
       return message?.data.content;
     });
-    const boom = client.agent({ id: "agents-boom" }, async ({ inbox }) => {
+    const boom = agents.agent({ id: "agents-boom" }, async ({ inbox }) => {
       const message = await inbox.next();
       await record("started", message?.data.content);
       await sleep(2000);
@@ -55,7 +57,7 @@ export const agentsHandoff = scenario({
       throw new NonRetriableError("boom");
     });
 
-    return [...quick.functions, ...boom.functions];
+    return agents.functions();
   },
   run: async (ctx) => {
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });

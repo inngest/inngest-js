@@ -9,11 +9,11 @@
  * and is told how deep in a chain of agents it is.
  */
 
-import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { currentSessions } from "./sessions.ts";
 
 /**
  * The key of the invoke payload `data` that carries what the SDK tells an
@@ -147,12 +147,7 @@ export const invoke = async <TOutput = unknown>(
 
   calls.set(instance, n + 1);
 
-  // `ctx.sessions` is only set while session propagation is on, so read the
-  // trigger events too.
-  const parent = {
-    ...reduceEventsToPropagatedSessions(ctx.events ?? [ctx.event]),
-    ...ctx.sessions,
-  };
+  const parent = currentSessions(ctx);
   const sessions = {
     agent_session: parent.agent_session ?? ctx.runId,
     agent_thread: options.thread ?? `${functionId}:${ctx.runId}.${n}`,

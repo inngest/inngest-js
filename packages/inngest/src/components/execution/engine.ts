@@ -317,6 +317,7 @@ class InngestExecutionEngine
             execution: {
               ctx: this.fnArg,
               instance: this,
+              functionId: this.options.fn.id(),
               stream: this.streamTools,
             },
           },

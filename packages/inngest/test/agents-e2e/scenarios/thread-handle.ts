@@ -5,8 +5,10 @@
  * another (an inbox message plus a reply signal).
  */
 import { Inngest } from "inngest";
-import { agent, tool } from "inngest/experimental";
+import { tool } from "inngest/experimental";
 import {
+  agent,
+  createAgents,
   createKv,
   getThread,
   kv,
@@ -41,7 +43,8 @@ export const threadHandle = scenario({
   owner: "agents-thread-handle",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client }) => {
-    const worker = client.agent(
+    const agents = createAgents(client);
+    const worker = agents.agent(
       { id: workerId },
       async ({ inbox, thread, control }) => {
         for await (const message of inbox) {
@@ -74,7 +77,7 @@ export const threadHandle = scenario({
     );
 
     // Asks the worker thread named in the message, from inside this function.
-    const asker = client.agent({ id: askerId }, async ({ inbox }) => {
+    const asker = agents.agent({ id: askerId }, async ({ inbox }) => {
       const message = await inbox.next();
       const [key, n] = (message?.data.content ?? "").split(":") as [
         string,
@@ -86,7 +89,7 @@ export const threadHandle = scenario({
       await kv.thread.set("reply", reply);
     });
 
-    return [...worker.functions, ...asker.functions];
+    return agents.functions();
   },
   run: async (ctx) => {
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });

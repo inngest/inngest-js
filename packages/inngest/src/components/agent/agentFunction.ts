@@ -13,13 +13,10 @@
  * Messages that reach the run but are never read are handed to the thread's
  * next run by the executor when the run ends, so a message that arrives as a
  * run finishes is not lost.
- *
- * The public name of this entry point is not settled; it is exported from
- * `index.ts` in one line.
  */
 
 import { createDefer } from "../DeferredFunction.ts";
-import { agentHook, type Inngest } from "../Inngest.ts";
+import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { SandboxTools } from "../sandbox/tools.ts";
@@ -36,7 +33,6 @@ import {
 } from "./defs.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
 import type { AgentTurn } from "./loop.ts";
-import { registerFunctions } from "./register.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -156,11 +152,6 @@ export interface AgentFunction {
    * run-scoped KV keys.
    */
   cleanup: InngestFunction.Any;
-
-  /**
-   * Both functions, ready to pass to `serve()`.
-   */
-  functions: InngestFunction.Any[];
 
   /**
    * The agent's address, `"<appId>/<functionId>"`.
@@ -333,7 +324,7 @@ function emptyRecord(): ThreadRecord {
 }
 
 /**
- * EXPERIMENTAL: Defines an agent function.
+ * Defines an agent function. Use `createAgents(client).agent()`.
  * @param client Inngest client.
  * @param config Function ID and KV store.
  * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
@@ -542,13 +533,9 @@ export function createAgentFunction(
     },
   );
 
-  // Serving the app serves both, whether or not the app lists them.
-  registerFunctions(client, [fn, cleanup]);
-
   return {
     fn,
     cleanup,
-    functions: [fn, cleanup],
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });
@@ -562,7 +549,3 @@ export function createAgentFunction(
     },
   };
 }
-
-// `client.agent()` is defined on the client; this gives it its implementation
-// once this module is loaded (the client cannot import it without a cycle).
-agentHook.create = createAgentFunction;

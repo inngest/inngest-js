@@ -4,8 +4,8 @@
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
-import { withMiddlewareFunctions } from "../InngestCommHandler.ts";
 import { createAgentFunction } from "./agentFunction.ts";
+import { createAgents } from "./agents.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent } from "./loop.ts";
 import { run } from "./test-helpers.ts";
@@ -171,15 +171,13 @@ describe("agent function", () => {
 });
 
 describe("agent cleanup", () => {
-  test("a deferred function clears the run's run-scoped KV; the agent function registers it", async () => {
+  test("a deferred function clears the run's run-scoped KV", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
-    const { fn, cleanup, functions } = createAgentFunction(
+    const { cleanup } = createAgentFunction(
       makeClient(),
       { id: "bot", kv },
       async () => {},
     );
-    expect(functions).toEqual([fn, cleanup]);
-
     const bound = kv.with({ id: testClientId, env: null });
     await bound.scope("run", "run1").set("scratch", 1);
     await bound.scope("run", "run2").set("scratch", 2);
@@ -364,23 +362,36 @@ describe("ack order", () => {
   });
 });
 
-describe("agent registration", () => {
-  test("serving an app serves the agent's function and cleanup, once across agents", () => {
+describe("createAgents", () => {
+  test("functions() lists each agent's function and cleanup, in order", () => {
     const client = makeClient();
     const kv = createKv({ adapter: memoryKvAdapter() });
-    const a = createAgentFunction(client, { id: "a", kv }, async () => {});
-    createAgentFunction(client, { id: "b", kv }, async () => {});
+    const agents = createAgents(client);
 
-    const served = withMiddlewareFunctions(client, [a.fn]).map((fn) => {
-      return fn.id(client.id);
-    });
+    expect(agents.functions()).toEqual([]);
 
-    expect(served.sort()).toEqual([
+    agents.agent({ id: "a", kv }, async () => {});
+    agents.agent({ id: "b", kv }, async () => {});
+
+    expect(
+      agents.functions().map((fn) => {
+        return fn.id(client.id);
+      }),
+    ).toEqual([
       `${testClientId}-a`,
       `${testClientId}-a-cleanup`,
       `${testClientId}-b`,
       `${testClientId}-b-cleanup`,
     ]);
+  });
+
+  test("agents of another factory are not listed", () => {
+    const client = makeClient();
+    const kv = createKv({ adapter: memoryKvAdapter() });
+
+    createAgents(client).agent({ id: "a", kv }, async () => {});
+
+    expect(createAgents(client).functions()).toEqual([]);
   });
 });
 
