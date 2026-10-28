@@ -20,7 +20,10 @@ import { scenario, script } from "../kit/driver.ts";
 import { type GitRemote, startGitRemote } from "../kit/gitRemote.ts";
 
 const token = "ghs_kit_remote_token_4f9a1c";
-const work = join(tmpdir(), "git-push-kit-work");
+// One directory per app process: every kit run on the machine shares the temp
+// directory, and a run that cleared a shared one would pull the repository out
+// from under another run's push.
+const work = join(tmpdir(), `git-push-kit-work-${process.pid}`);
 
 const git = (cwd: string, ...args: string[]): string => {
   return execFileSync("git", args, {
@@ -48,6 +51,9 @@ const prepare = (): Promise<GitRemote> => {
 
     rmSync(work, { recursive: true, force: true });
     mkdirSync(work, { recursive: true });
+    process.on("exit", () => {
+      rmSync(work, { recursive: true, force: true });
+    });
     git(work, "clone", "--quiet", remote.dir, ".");
 
     const branch = (name: string, file: string, text: string) => {

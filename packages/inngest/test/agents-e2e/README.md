@@ -22,7 +22,7 @@ pnpm agents:verify --all                         # 4. the whole suite, required 
 
 A piece that changes run behaviour, KV, inbox, subscribe, channels or sandboxes needs a scenario. A types or docs only piece says "no scenario needed" in its PR.
 
-Scenarios share one stack per `agents:verify` call (Dev Server, Redis, the kit app). The stack is named from the branch and scenarios (`verify-<branch>-<scenarios>-<hash>`), so agents on different branches never collide. With devstack, everything runs inside `devstack with --timeout`, so a crash cannot leak a stack (not with `--keep`, which leaves the stack up on purpose). The direct stack has its own time cap and stops its processes on SIGINT and SIGTERM. Flags: `--bin local@<sha>` to pick the Dev Server build, `--keep` to leave the devstack stack up for debugging (then `devstack stop <name>`; the fakes stop with the CLI, so only runs and the Dev Server UI are useful; not available with the direct stack).
+Scenarios share one stack per `agents:verify` call (Dev Server, Redis, the kit app). The stack is named from the branch and scenarios plus a random suffix (`verify-<branch>-<scenarios>-<hash>-<random>`), so no two runs collide, even on one branch. With devstack, everything runs inside `devstack with --timeout`, so a crash cannot leak a stack (not with `--keep`, which leaves the stack up on purpose). The direct stack has its own time cap and stops its processes on SIGINT and SIGTERM. Flags: `--bin local@<sha>` to pick the Dev Server build, `--keep` to leave the devstack stack up for debugging (then `devstack stop <name>`; the fakes stop with the CLI, so only runs and the Dev Server UI are useful; not available with the direct stack).
 
 ## Adding a scenario
 

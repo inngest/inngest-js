@@ -85,14 +85,21 @@ export const threadSandboxes = scenario({
       return ctx.fakes.posts({ channel: "sandbox", method });
     };
     const runEnded = async (destroyed: number) => {
-      await ctx.eventually(
-        `${destroyed} sandboxes destroyed`,
+      // A cancelled run is finalized and cleaned up by the executor: give that
+      // more than the default wait when the machine is busy.
+      await ctx.until(
         async () => {
           return calls("sandbox.destroy").length;
         },
         (count) => {
           return count >= destroyed;
         },
+        90_000,
+      );
+      ctx.check(
+        `${destroyed} sandboxes destroyed`,
+        calls("sandbox.destroy").length >= destroyed,
+        calls("sandbox.destroy").length,
       );
     };
 
@@ -172,16 +179,24 @@ export const threadSandboxes = scenario({
     const gamma = getThread(client, ref, `gamma-${stamp}`, { kv: store });
 
     await gamma.send("hold:kept through a cancel");
+    // The file is written only once the sandbox exists, its cleanup defer is
+    // registered and it is marked ready; a cancel before that leaves the
+    // sandbox to its own timeout by design.
     await ctx.eventually(
-      "the held run has its sandbox",
+      "the held run wrote its file",
       async () => {
-        return calls("sandbox.create").length;
+        return calls("sandbox.upload").length;
       },
       (count) => {
-        return count >= 4;
+        return count >= 2;
       },
     );
-    await gamma.stop({ when: "now" });
+    const gammaStop = await gamma.stop({ when: "now" });
+    ctx.check(
+      "stop now found the live run",
+      gammaStop.stopped === true,
+      gammaStop,
+    );
     await runEnded(4);
     await ctx.expect
       .posts({ channel: "sandbox", method: "snapshot.create" })

@@ -176,8 +176,23 @@ export const threadKey = scenario({
     await ctx.eventually("a path key starts its thread", s1.state, (s) => {
       return list(s, "turns").length === 1;
     });
-    await s1.stop({ when: "now" });
-    await sleep(4000);
+    const s1Handle = getThread(client, stopRef, `${channel}-stop/s`, {
+      kv: store,
+    });
+    const s1Stop = await s1.stop({ when: "now" });
+    ctx.check("stop now found the live run", s1Stop.stopped === true, s1Stop);
+
+    // The cancelled run is cleaned up before the next event: otherwise the
+    // event would reach it as a message instead of starting a new run.
+    await ctx.until(
+      async () => {
+        return (await s1Handle.state()).status;
+      },
+      (status) => {
+        return status === "idle";
+      },
+      60_000,
+    );
     await ctx.send("stop-msg", { key: `${channel}-stop` });
     const after = await ctx.eventually(
       "an event after a stop now starts a new run",

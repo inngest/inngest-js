@@ -279,8 +279,7 @@ export async function openSubscription<TData = unknown>(
     // is not, the run parks: the executor records a marker (the park carries
     // `seq`, the number of messages this read has seen, plus one) and answers
     // the park when the message exists; the function then runs again and finds
-    // the message here. The state does
-    // not change during a request, so it is read once.
+    // the message here. The state does not change during a request, so it is read once.
     const messages = read();
 
     if (messages.length < seq) {

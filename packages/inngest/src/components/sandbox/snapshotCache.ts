@@ -325,7 +325,11 @@ const defaultReadyWait = "2m";
 const readyPollMs = 1000;
 const nameTakenCode = "sandbox_snapshot_name_taken";
 
-const hasCode = (error: unknown, code: string): boolean => {
+/**
+ * Whether an error, or the error it carries as its cause (a durable sandbox's
+ * step wraps the API's), has this code.
+ */
+export const hasCode = (error: unknown, code: string): boolean => {
   const { code: own, cause } = (error ?? {}) as {
     code?: string;
     cause?: { code?: string };
