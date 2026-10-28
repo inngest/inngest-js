@@ -6,26 +6,28 @@
  * a token that exists nowhere else. The sandbox holds no credential, so there
  * is nothing for a model with a shell to print or copy.
  *
- * It applies the same checks as the `git` shim (`tool.shim.git()`): both call
- * `pushBundle()` in `sandbox/gitPush.ts`.
+ * The checks and the push itself are `pushBundle()` in `sandbox/gitPush.ts`.
  */
+import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
 import {
+  assertHostGit,
   type GitPolicy,
   gitAuth,
+  isPushableRef,
   normalizeUrl,
   type PushedRef,
   pushBundle,
 } from "../sandbox/gitPush.ts";
 import { type AgentTool, tool } from "../sandbox/tools.ts";
-import { SandboxValidationError } from "../sandbox/types.ts";
-import type { SandboxHandle } from "./defs.ts";
+import {
+  type SandboxHandle,
+  SandboxValidationError,
+} from "../sandbox/types.ts";
 import { agent } from "./loop.ts";
 
 const defaultMaxBytes = 1024 * 1024;
-
-const branchPattern = /^[A-Za-z0-9][A-Za-z0-9._/@+-]*$/;
 
 export interface GitPushToolOptions {
   /**
@@ -137,15 +139,17 @@ export const gitPushTool = (
         .describe("The local branch to push, such as agent/fix-typo"),
     }),
     run: async ({ branch }, { idempotencyKey, signal }) => {
-      if (!branchPattern.test(branch) || branch.includes("..")) {
+      const ref = `refs/heads/${branch}`;
+
+      if (branch.startsWith("-") || !isPushableRef(ref)) {
         return agent.toolError(
           `${branch} is not a branch name git_push can push`,
         );
       }
 
-      const ref = `refs/heads/${branch}`;
-      const { createHash } = await import("node:crypto");
-      const path = `/tmp/inngest-git-${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 16)}.bundle`;
+      await assertHostGit();
+
+      const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.bundle`;
 
       try {
         const bundled = await sandbox.commands.run(

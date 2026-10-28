@@ -663,6 +663,17 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return this._sendSignal({ signal, data, headers });
   }
 
+  /**
+   * EXPERIMENTAL: Runs an Insights SQL query. Rows come back as lists of values
+   * in the order of `columns`. Used by `agent.threads.list()`.
+   * @param sql The Insights query.
+   */
+  public queryInsights(
+    sql: string,
+  ): Promise<{ columns: string[]; rows: unknown[][] }> {
+    return this.inngestApi.queryInsights(sql);
+  }
+
   private async _sendSignal({
     signal,
     data,

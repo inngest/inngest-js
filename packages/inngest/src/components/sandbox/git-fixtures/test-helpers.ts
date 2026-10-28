@@ -1,6 +1,6 @@
 /**
  * @module
- * Fixtures for the git shim tests: a git remote served over HTTP that wants a
+ * Fixtures for the git push tests: a git remote served over HTTP that wants a
  * token (the real `git http-backend` behind a basic-auth check), and a
  * sandbox that runs its commands on this machine.
  */

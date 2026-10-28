@@ -14,6 +14,8 @@ import {
   type AgentFunctionConfig,
   createAgentFunction,
 } from "./agentFunction.ts";
+import type { SandboxDefinition } from "./defs.ts";
+import { createSkillsBakeFunction } from "./skills.ts";
 
 export interface Agents {
   /**
@@ -38,6 +40,27 @@ export interface Agents {
   functions(): InngestFunction.Any[];
 }
 
+const mayBakeSkills = (
+  sandboxes: AgentFunctionConfig["sandboxes"],
+): boolean => {
+  if (!sandboxes) {
+    return false;
+  }
+
+  if (typeof sandboxes === "function") {
+    return true;
+  }
+
+  return Object.values(sandboxes).some((binding) => {
+    const definition =
+      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition);
+
+    return (definition.skills ?? []).some((source) => {
+      return source.freshness === "bake";
+    });
+  });
+};
+
 /**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
@@ -53,6 +76,7 @@ export interface Agents {
  */
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
+  let bake: InngestFunction.Any | undefined;
 
   return {
     agent: (config, body) => {
@@ -60,12 +84,21 @@ export const createAgents = (client: Inngest.Any): Agents => {
 
       made.push(created);
 
+      // Baked skills are built by a function of its own, served once however
+      // many agents there are. A sandboxes config that is a function can't be
+      // read ahead, so it counts as possibly having skills.
+      if (mayBakeSkills(config.sandboxes)) {
+        bake ??= createSkillsBakeFunction(client);
+      }
+
       return created;
     },
     functions: () => {
-      return made.flatMap((created) => {
+      const functions = made.flatMap((created) => {
         return [created.fn, created.cleanup];
       });
+
+      return bake ? [...functions, bake] : functions;
     },
   };
 };
@@ -90,6 +123,8 @@ export type {
   KvSetOptions,
 } from "./kv.ts";
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
+export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
+export { skills } from "./skills.ts";
 export type {
   InboxMessage,
   SubscribeOptions,

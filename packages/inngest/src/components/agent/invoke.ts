@@ -13,6 +13,13 @@ import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { nextCount } from "./executionCounter.ts";
+import {
+  checkInvoke,
+  childLimits,
+  limitStateOf,
+  readInheritedLimits,
+} from "./limits.ts";
 import { currentSessions } from "./sessions.ts";
 
 /**
@@ -103,12 +110,6 @@ const parseTarget = (target: string): { appId: string; functionId: string } => {
 };
 
 /**
- * Calls per execution, so each call gets its own thread. An execution runs
- * its function code in the same order every time, so a replay counts the same.
- */
-const calls = new WeakMap<object, number>();
-
-/**
  * EXPERIMENTAL: Starts the agent `target` with `data` and waits for its
  * result. Call it inside a function. `target` is `"appId/functionId"`; the
  * function is assumed to be an agent, one that declares `input` and has no
@@ -118,6 +119,10 @@ const calls = new WeakMap<object, number>();
  * (`agent_thread`). Without a session, the caller's run starts one. Other
  * sessions of the caller reach it through session propagation. The agent
  * can read how deep it is with `agentInvokeDepth(event)`.
+ *
+ * An agent's `limits` apply: a call they refuse throws an `AgentLimitError`
+ * whose message says why, so inside a tool the model reads it as the result.
+ * The agent started inherits the limits, narrowed.
  *
  * @example
  * ```ts
@@ -143,9 +148,17 @@ export const invoke = async <TOutput = unknown>(
   }
 
   const { ctx, instance } = execution;
-  const n = calls.get(instance) ?? 0;
+  const info = (ctx.event as { data?: Record<string, unknown> }).data?.[
+    invokeKey
+  ];
+  const limits = limitStateOf(instance, readInheritedLimits(info));
 
-  calls.set(instance, n + 1);
+  if (limits) {
+    checkInvoke(limits, target);
+    limits.spawned += 1;
+  }
+
+  const n = nextCount(instance, "invoke");
 
   const parent = currentSessions(ctx);
   const sessions = {
@@ -158,16 +171,17 @@ export const invoke = async <TOutput = unknown>(
   );
   const id = options.id ?? `agent:invoke:${target}`;
 
-  const result = await (
-    step.invoke as unknown as (
-      id: { id: string; name: string },
-      opts: Record<string, unknown>,
-    ) => Promise<unknown>
-  )(
+  const result = await step.invoke(
     { id, name: `invoke ${target}` },
     {
       function: referenceFunction({ appId, functionId }),
-      data: { ...data, [invokeKey]: { depth: depth + 1 } },
+      data: {
+        ...data,
+        [invokeKey]: {
+          depth: depth + 1,
+          ...(limits && { limits: childLimits(limits) }),
+        },
+      },
       meta: { ...options.meta, sessions },
       timeout: options.timeout,
     },

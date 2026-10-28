@@ -116,19 +116,17 @@ describe("thread handle", () => {
     });
   });
 
-  test("a thread whose last run ended is idle, unless a newer run wrote the record or it was stopped", async () => {
+  test("state shows the status the record holds, and idle for a thread with no record", async () => {
     const { client } = fakeClient();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const thread = getThread(client, "app/bot", "t1", { kv });
     const state = kv.with(client).scope("thread", "t1");
     const base = { turn: 1, usage: { input: 1, output: 1 } };
 
-    await state.set("__state", { ...base, status: "waiting", runId: "r1" });
-    await state.set("__ended", ["r0", "r1"]);
     expect((await thread.state()).status).toBe("idle");
 
-    await state.set("__state", { ...base, status: "running", runId: "r2" });
-    expect((await thread.state()).status).toBe("running");
+    await state.set("__state", { ...base, status: "waiting", runId: "r1" });
+    expect((await thread.state()).status).toBe("waiting");
 
     await state.set("__state", { ...base, status: "stopped", runId: "r1" });
     expect((await thread.state()).status).toBe("stopped");
