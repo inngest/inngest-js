@@ -552,10 +552,17 @@ export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
  * vouch for.
  */
 export function kvKey<T>(name: string): KvKey<T>;
-export function kvKey<T>(
+export function kvKey<S extends StandardSchemaV1>(
   name: string,
-  schema: StandardSchemaV1<T, T>,
-): KvKey<T>;
+  schema: S &
+    ([StandardSchemaV1.InferInput<S>] extends [StandardSchemaV1.InferOutput<S>]
+      ? [StandardSchemaV1.InferOutput<S>] extends [
+          StandardSchemaV1.InferInput<S>,
+        ]
+        ? unknown
+        : never
+      : never),
+): KvKey<StandardSchemaV1.InferOutput<S>>;
 export function kvKey(name: string, schema?: StandardSchemaV1): KvKey<unknown> {
   return { name, schema };
 }
@@ -883,7 +890,7 @@ function handleFor(adapter: KvAdapter, scope: KvScope, ids: KvScopeIds): RawKv {
       await adapter.set(
         hash,
         key,
-        JSON.stringify(value ?? null),
+        JSON.stringify(checkedValue(value)),
         checkedTtl(options),
       );
     },
@@ -891,7 +898,7 @@ function handleFor(adapter: KvAdapter, scope: KvScope, ids: KvScopeIds): RawKv {
       return adapter.setIfAbsent(
         hash,
         key,
-        JSON.stringify(value ?? null),
+        JSON.stringify(checkedValue(value)),
         checkedTtl(options),
       );
     },
@@ -957,6 +964,16 @@ function checkedRange(options: KvIndexRange) {
       throw new Error("kv index min and max must be numbers.");
     }
   }
+}
+
+function checkedValue(value: unknown): unknown {
+  if (value === undefined) {
+    throw new Error(
+      "kv values cannot be undefined: store null, or delete the key.",
+    );
+  }
+
+  return value;
 }
 
 function checkedTtl(options?: KvSetOptions): number | undefined {
@@ -1091,6 +1108,8 @@ export function createKv(
         const name = nameOf(key);
 
         return run("update", name, async (h) => {
+          // A schema failure here reaches the caller as a step error, not a
+          // NonRetriableError, because it is thrown inside the step.
           const next = fn(await decode(key, await h.get(name)));
           await h.set(name, next);
 

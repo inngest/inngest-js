@@ -459,6 +459,9 @@ describe("kv typed keys", () => {
 
     // @ts-expect-error a transform makes the stored and read types differ
     kvKey("when", z.string().transform(Number));
+    // @ts-expect-error a default makes the input wider than the output
+    kvKey("dflt", z.string().default("x"));
+    await expect(bound.set("u", undefined)).rejects.toThrow(/undefined/);
 
     const client = new Inngest({ id: testClientId });
     const out: unknown[] = [];
@@ -469,12 +472,33 @@ describe("kv typed keys", () => {
         await kv.env.set(count, 2);
         out.push(await kv.env.get(count), await kv.env.take(count));
         out.push(await kv.env.get(count));
+
+        const nullable = kvKey("n", z.string().nullable());
+        await kv.env.set(nullable, null);
+        out.push(await kv.env.get(nullable), await kv.env.take(nullable));
+        out.push(await kv.env.get(nullable));
+
+        await kv.env.set("bad", "text");
+        const bad = kvKey("bad", z.number());
+        const refused = await kv.env.take(bad).catch((error: Error) => {
+          return error.message;
+        });
+        out.push(refused, await kv.env.get("bad"));
       },
     );
     const { type } = await runToEnd(fn);
 
     expect(type).toBe("function-resolved");
-    expect(out.slice(-3)).toEqual([2, 2, undefined]);
+    expect(out.slice(-8)).toEqual([
+      2,
+      2,
+      undefined,
+      null,
+      null,
+      undefined,
+      expect.stringContaining('kv key "bad"'),
+      "text",
+    ]);
   });
 
   test("update gets the validated current value and a key without a schema is trusted", async () => {
