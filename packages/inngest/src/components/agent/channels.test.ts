@@ -603,9 +603,12 @@ describe("adapter safety", () => {
 
   test("github.thread can ignore the agent's own comments", () => {
     expect(
-      github.thread({ repos: ["acme/app"], ignoreAuthors: ["my-bot"] }).if,
+      github.thread({
+        repos: ["acme/app"],
+        ignoreAuthors: ["my-bot", "app[bot]"],
+      }).if,
     ).toBe(
-      '((event.data.owner == "acme" && event.data.repo == "app")) && (!has(event.data.author) || event.data.author != "my-bot")',
+      '((event.data.owner == "acme" && event.data.repo == "app")) && (!has(event.data.author) || event.data.author != "my-bot") && (!has(event.data.author) || event.data.author != "app[bot]")',
     );
 
     expect(() => {

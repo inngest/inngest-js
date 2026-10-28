@@ -308,6 +308,7 @@ export const objectSchema = <T>(
 
         for (const [field, spec] of Object.entries(fields)) {
           const found = (value as Record<string, unknown>)[field];
+
           const optional =
             spec === "string?" ||
             spec === "nullable" ||
@@ -516,6 +517,7 @@ export const postJson = async (
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
+
   const json = (await res.json().catch(() => {
     return {};
   })) as Record<string, unknown>;

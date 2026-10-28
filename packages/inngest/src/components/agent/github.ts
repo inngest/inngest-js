@@ -53,6 +53,10 @@ export const githubCommentEvent = "github/issue_comment";
 
 const name = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
 const issueNumber = /^[1-9]\d{0,9}$/;
+
+// A login is a name, or an app's `name[bot]`.
+const login = /^[A-Za-z0-9_.-]+(\[bot\])?$/;
+
 const repository =
   /^(?!\.{1,2}\/)[A-Za-z0-9_.-]+\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
 
@@ -198,12 +202,12 @@ export const github = {
       return `(event.data.owner == ${JSON.stringify(owner)} && event.data.repo == ${JSON.stringify(repo)})`;
     });
 
-    const ignored = (options.ignoreAuthors ?? []).map((login) => {
-      if (!name.test(login)) {
-        throw new Error(`github.thread: "${login}" is not a login.`);
+    const ignored = (options.ignoreAuthors ?? []).map((who) => {
+      if (!login.test(who)) {
+        throw new Error(`github.thread: "${who}" is not a login.`);
       }
 
-      return ` && (!has(event.data.author) || event.data.author != ${JSON.stringify(login)})`;
+      return ` && (!has(event.data.author) || event.data.author != ${JSON.stringify(who)})`;
     });
 
     return {
