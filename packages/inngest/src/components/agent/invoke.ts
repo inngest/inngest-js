@@ -13,6 +13,7 @@ import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
   childLimits,
@@ -109,12 +110,6 @@ const parseTarget = (target: string): { appId: string; functionId: string } => {
 };
 
 /**
- * Calls per execution, so each call gets its own thread. An execution runs
- * its function code in the same order every time, so a replay counts the same.
- */
-const calls = new WeakMap<object, number>();
-
-/**
  * EXPERIMENTAL: Starts the agent `target` with `data` and waits for its
  * result. Call it inside a function. `target` is `"appId/functionId"`; the
  * function is assumed to be an agent, one that declares `input` and has no
@@ -163,9 +158,7 @@ export const invoke = async <TOutput = unknown>(
     limits.spawned += 1;
   }
 
-  const n = calls.get(instance) ?? 0;
-
-  calls.set(instance, n + 1);
+  const n = nextCount(instance, "invoke");
 
   const parent = currentSessions(ctx);
   const sessions = {
@@ -178,12 +171,7 @@ export const invoke = async <TOutput = unknown>(
   );
   const id = options.id ?? `agent:invoke:${target}`;
 
-  const result = await (
-    step.invoke as unknown as (
-      id: { id: string; name: string },
-      opts: Record<string, unknown>,
-    ) => Promise<unknown>
-  )(
+  const result = await step.invoke(
     { id, name: `invoke ${target}` },
     {
       function: referenceFunction({ appId, functionId }),

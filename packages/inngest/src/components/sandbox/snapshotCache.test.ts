@@ -4,7 +4,6 @@
  */
 
 import {
-  type EvictOptions,
   type SnapshotCacheClient,
   snapshotCache,
   snapshotGeneration,
@@ -328,9 +327,11 @@ describe("take", () => {
     const api = makeApi();
     const cache = snapshotCache(api.client);
     const calls: (string | undefined)[] = [];
+    const numbers: number[] = [];
 
-    const taken = await cache.take(entry, async (name) => {
+    const taken = await cache.take(entry, async (name, n) => {
       calls.push(name);
+      numbers.push(n);
 
       if (name) {
         throw Object.assign(new Error("bad"), { status: 400 });
@@ -342,6 +343,7 @@ describe("take", () => {
     });
 
     expect(calls).toEqual(["skills/acme/skills/sha1", undefined]);
+    expect(numbers).toEqual([0, 1]);
     expect(taken).toMatchObject({ named: false, reused: false });
   });
 
@@ -447,244 +449,5 @@ describe("latest and remove", () => {
     const cache = snapshotCache(api.client);
 
     expect(await cache.remove("missing")).toBe(true);
-  });
-});
-
-describe("making room at the snapshot limit", () => {
-  const limit = 3;
-
-  /** A snapshot call that fails with the limit error while `limit` snapshots live. */
-  const limited = (api: ReturnType<typeof makeApi>) => {
-    const attempts: number[] = [];
-    const call = async (name: string | undefined, attempt: number) => {
-      attempts.push(attempt);
-
-      const live = api.rows.filter((row) => {
-        return row.status !== "DELETED";
-      });
-
-      if (live.length >= limit) {
-        throw Object.assign(new Error("limit"), {
-          code: "sandbox_snapshot_limit_exceeded",
-        });
-      }
-
-      const row = api.add(name);
-
-      return { id: row.id, createdAt: row.createdAt };
-    };
-
-    return { call, attempts };
-  };
-
-  const live = (api: ReturnType<typeof makeApi>): (string | undefined)[] => {
-    return api.rows
-      .filter((row) => {
-        return row.status !== "DELETED";
-      })
-      .map((row) => {
-        return row.name;
-      });
-  };
-
-  const thrown = async (
-    promise: Promise<unknown>,
-  ): Promise<Error & { code?: string; cause?: unknown }> => {
-    try {
-      await promise;
-    } catch (error) {
-      return error as Error;
-    }
-
-    throw new Error("expected a rejection");
-  };
-
-  const setup = (evict?: false | EvictOptions) => {
-    const api = makeApi();
-    const logs: string[] = [];
-    const memoed: string[] = [];
-    const cache = snapshotCache(api.client, {
-      memo: async (id, fn) => {
-        memoed.push(id);
-
-        return fn();
-      },
-      evict:
-        evict === false
-          ? false
-          : {
-              ...evict,
-              log: (message) => {
-                logs.push(message);
-              },
-            },
-    });
-
-    return { api, cache, logs, memoed };
-  };
-
-  test("clears expired and failed snapshots, then retries once", async () => {
-    const { api, cache, logs, memoed } = setup();
-
-    api.add("a/b/g1", { expiresAt: new Date(Date.now() - hour).toISOString() });
-    api.add("c/d/g1", { status: "FAILED" });
-    api.add("e/f/g1");
-
-    const { call, attempts } = limited(api);
-    const taken = await cache.take(entry, call);
-
-    expect(taken.named).toBe(true);
-    expect(attempts).toEqual([0, 1]);
-    expect(live(api)).toEqual(["e/f/g1", "skills/acme/skills/sha1"]);
-    expect(logs).toHaveLength(2);
-    expect(memoed).toContain("snapshot:skills/acme/skills/sha1:evict");
-  });
-
-  test("deletes a superseded generation of a cache entry when nothing is expired", async () => {
-    const { api, cache, logs } = setup();
-
-    api.add("skills/y/old");
-    api.add("skills/y/new");
-    api.add("keep/me/g1");
-
-    const { call } = limited(api);
-
-    await cache.take(entry, call);
-
-    expect(live(api)).toEqual([
-      "skills/y/new",
-      "keep/me/g1",
-      "skills/acme/skills/sha1",
-    ]);
-    expect(logs[0]).toContain("skills/y/old");
-    expect(logs[0]).toContain("superseded");
-  });
-
-  test("evicts the least recently created snapshot in an evictable scope", async () => {
-    const { api, cache } = setup({ scopes: ["ci/pr:*", "thread/*"] });
-
-    api.add("main/repo/g1");
-    api.add("ci/pr:4/job/g1");
-    api.add("thread/t1/g1");
-
-    const { call } = limited(api);
-
-    await cache.take(entry, call);
-
-    expect(live(api)).toEqual([
-      "main/repo/g1",
-      "thread/t1/g1",
-      "skills/acme/skills/sha1",
-    ]);
-  });
-
-  test("never evicts the excluded snapshot or the entry's own newest", async () => {
-    const { api, cache, logs } = setup({ scopes: ["skills", "thread/*"] });
-
-    api.add("skills/acme/skills/sha0");
-    const read = api.add("thread/t1/g1");
-
-    api.add("thread/t2/g1");
-
-    const { call } = limited(api);
-
-    await cache.take(entry, call, { exclude: read.id });
-
-    expect(logs).toHaveLength(1);
-    expect(logs[0]).toContain("thread/t2/g1");
-    expect(live(api)).toContain(read.name);
-    expect(live(api)).not.toContain("thread/t2/g1");
-  });
-
-  test("throws a clear limit error when nothing can be evicted", async () => {
-    const { api, cache } = setup();
-
-    api.add("main/repo/g1");
-    api.add("main/other/g1");
-    api.add("plain-name");
-
-    const { call, attempts } = limited(api);
-    const failure = await thrown(cache.take(entry, call));
-
-    expect(failure.code).toBe("sandbox_snapshot_limit_exceeded");
-    expect(failure.message).toContain("deleted 0");
-    expect(failure.message).toContain("3 left");
-    expect((failure.cause as { code: string }).code).toBe(
-      "sandbox_snapshot_limit_exceeded",
-    );
-    expect(attempts).toEqual([0, 1]);
-    expect(live(api)).toHaveLength(3);
-  });
-
-  test("a scope pattern without a star matches whole scopes only", async () => {
-    const { api, cache } = setup({ scopes: ["main"] });
-
-    api.add("main2/a/g1");
-    api.add("main2/b/g1");
-    api.add("main2/c/g1");
-
-    const { call } = limited(api);
-    const failure = await thrown(cache.take(entry, call));
-
-    expect(failure.message).toContain("snapshot limit");
-    expect(live(api)).toHaveLength(3);
-  });
-
-  test("a star inside a pattern stays in its segment, and other scopes keep superseded generations", async () => {
-    const { api, cache } = setup({ scopes: ["ci/*/main"] });
-
-    api.add("ci/pr:1/key/main");
-    api.add("other/k/g1");
-    api.add("other/k/g2");
-
-    const { call } = limited(api);
-
-    await expect(thrown(cache.take(entry, call))).resolves.toMatchObject({
-      code: "sandbox_snapshot_limit_exceeded",
-    });
-    expect(live(api)).toHaveLength(3);
-  });
-
-  test("deletes at most maxDeletions of the expired ones", async () => {
-    const { api, cache } = setup({ maxDeletions: 2 });
-    const past = new Date(Date.now() - hour).toISOString();
-
-    api.add("a/a/g1", { expiresAt: past });
-    api.add("b/b/g1", { expiresAt: past });
-    api.add("c/c/g1", { expiresAt: past });
-
-    const { call } = limited(api);
-
-    await cache.take(entry, call);
-
-    expect(live(api)).toHaveLength(2);
-  });
-
-  test("other errors and a disabled cache do not evict", async () => {
-    const { api, cache } = setup();
-
-    api.add("a/b/g1", { expiresAt: new Date(Date.now() - hour).toISOString() });
-
-    await expect(
-      cache.take(entry, async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
-    expect(live(api)).toHaveLength(1);
-
-    const off = setup(false);
-
-    off.api.add("a/b/g1", {
-      expiresAt: new Date(Date.now() - hour).toISOString(),
-    });
-    off.api.add("c/d/g1");
-    off.api.add("e/f/g1");
-
-    const { call } = limited(off.api);
-
-    await expect(off.cache.take(entry, call)).rejects.toMatchObject({
-      code: "sandbox_snapshot_limit_exceeded",
-    });
-    expect(live(off.api)).toHaveLength(3);
   });
 });

@@ -497,7 +497,7 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "stopped" });
   });
 
-  test("a finished run marks its end without touching the record", async () => {
+  test("a finished run marks its own record idle and leaves a newer run's alone", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const { cleanup } = createAgentFunction(
       makeClient(),
@@ -525,8 +525,32 @@ describe("thread state", () => {
       },
     });
 
-    expect(await thread.get("__ended")).toEqual(["r1"]);
-    expect(await thread.get("__state")).toMatchObject({ status: "running" });
+    expect(await thread.get("__state")).toMatchObject({
+      status: "idle",
+      runId: "r1",
+      turn: 2,
+    });
+
+    await thread.set("__state", { ...base, status: "running", runId: "r2" });
+    await run(cleanup, {
+      event: {
+        name: "inngest/deferred.schedule",
+        data: {
+          runId: "r1",
+          thread: "t1",
+          _inngest: {
+            fn_slug: `${testClientId}-bot-cleanup`,
+            parent_fn_slug: `${testClientId}-bot`,
+            parent_run_id: "r1",
+          },
+        },
+      },
+    });
+
+    expect(await thread.get("__state")).toMatchObject({
+      status: "running",
+      runId: "r2",
+    });
   });
 });
 

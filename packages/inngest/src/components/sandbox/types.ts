@@ -594,6 +594,11 @@ export interface DurableSandboxToolSet {
   ): Record<TName, SandboxTool>;
 }
 
+/**
+ * The parts of a sandbox that tools use: commands and files.
+ */
+export type SandboxHandle = Pick<DurableSandbox, "commands" | "files">;
+
 export interface DurableSandbox {
   /**
    * Run a command as one step, from a tagged template. `$.sh` runs a shell

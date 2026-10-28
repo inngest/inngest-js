@@ -12,7 +12,13 @@ import {
   git,
   startGitRemote,
 } from "./git-fixtures/test-helpers.ts";
-import { type GitPolicy, gitAuth, pushBundle } from "./gitPush.ts";
+import {
+  assertHostGit,
+  type GitPolicy,
+  gitAuth,
+  isPushableRef,
+  pushBundle,
+} from "./gitPush.ts";
 
 const token = "ghs_secret_token_value";
 
@@ -150,5 +156,22 @@ describe.skipIf(!backendPath)("pushBundle", { timeout: 60_000 }, () => {
 
     await expect(bad).rejects.toThrow(/listing the remote failed/);
     await expect(bad).rejects.not.toThrow(/wrong_token_value/);
+  });
+});
+
+describe("isPushableRef", () => {
+  test("accepts full branch and tag names and rejects the rest", () => {
+    expect(isPushableRef("refs/heads/agent/fix-1")).toBe(true);
+    expect(isPushableRef("refs/tags/v1.0")).toBe(true);
+    expect(isPushableRef("agent/fix")).toBe(false);
+    expect(isPushableRef("refs/heads/a..b")).toBe(false);
+    expect(isPushableRef("refs/heads/a b")).toBe(false);
+    expect(isPushableRef("refs/heads/")).toBe(false);
+  });
+});
+
+describe("assertHostGit", () => {
+  test("passes when the host has git", async () => {
+    await expect(assertHostGit()).resolves.toBeUndefined();
   });
 });

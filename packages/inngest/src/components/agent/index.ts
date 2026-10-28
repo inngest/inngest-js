@@ -12,16 +12,15 @@ export type {
   GitPolicyResult,
   GitPush,
 } from "../sandbox/gitPush.ts";
+export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
   ConfigValue,
   LazySandbox,
   SandboxBinding,
-  SandboxBindingInput,
-  SandboxBindingOptions,
   SandboxDefinition,
   SandboxDefinitionOptions,
   SandboxesConfig,
-  SandboxHandle,
+  SandboxStart,
   SandboxToolsFactory,
 } from "./defs.ts";
 export {

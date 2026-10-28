@@ -4,6 +4,7 @@
  * named in `AGENTS_E2E_SCENARIOS`, with the fake Sandboxes API when a scenario
  * asks for it. Started by `run.ts` through devstack.
  */
+import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Inngest } from "inngest";
 import { sandboxMiddleware } from "inngest/experimental";
@@ -38,9 +39,6 @@ const fakeSandboxes = scenarios.some((s) => {
 const localDirs = scenarios.flatMap((s) => {
   return s.sandboxLocalDirs ?? [];
 });
-const snapshotLimit = scenarios.find((s) => {
-  return s.sandboxSnapshotLimit;
-})?.sandboxSnapshotLimit;
 const commands = Object.assign({}, ...scenarios.map((s) => s.sandboxCommands));
 
 export const client = new Inngest({
@@ -52,7 +50,6 @@ export const client = new Inngest({
           recordUrl: fakesUrl,
           commands,
           localDirs,
-          ...(snapshotLimit ? { snapshotLimit } : {}),
         }).fetch,
       }
     : {}),
@@ -69,4 +66,21 @@ const functions = scenarios.flatMap((s) => {
   });
 });
 
-createServer(serve({ client, functions })).listen(Number(process.env.PORT));
+createServer(serve({ client, functions })).listen(
+  Number(process.env.PORT),
+  () => {
+    // The CLI waits for the Dev Server to know these before it runs anything.
+    const file = process.env.AGENTS_E2E_EXPECT_FILE;
+
+    if (file) {
+      writeFileSync(
+        file,
+        JSON.stringify(
+          functions.map((fn) => {
+            return fn.id(client.id);
+          }),
+        ),
+      );
+    }
+  },
+);
