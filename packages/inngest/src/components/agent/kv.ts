@@ -228,26 +228,18 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await client()).command(...args);
   }
 
-  // Every key of the hash other than the hash itself matching `kind`. A SCAN
-  // walks the whole keyspace, so `all()` and `clear()` cost more as it grows.
-  async function scan(hash: string, kind: "t" | "z") {
-    const pattern = `${hash.replace(/[\\*?[\]]/g, "\\$&")}|${kind}|*`;
-    const found: string[] = [];
-    let cursor = "0";
-    do {
-      const reply = (await command(
-        "SCAN",
-        cursor,
-        "MATCH",
-        pattern,
-        "COUNT",
-        "200",
-      )) as [string, string[]];
-      cursor = reply[0];
-      found.push(...reply[1]);
-    } while (cursor !== "0");
+  // Each hash lists its expiring fields and indexes in a set, so `all()` and
+  // `clear()` touch only that hash. Entries are `t:<field>` or `z:<index>`.
+  function registry(hash: string) {
+    return `${hash}|keys`;
+  }
 
-    return found;
+  async function register(hash: string, entry: string) {
+    await command("SADD", registry(hash), entry);
+  }
+
+  async function members(hash: string) {
+    return (await command("SMEMBERS", registry(hash))) as string[];
   }
 
   return {
@@ -267,6 +259,7 @@ export function redisKvAdapter(url: string): KvAdapter {
         return;
       }
 
+      await register(hash, `t:${field}`);
       await command("SET", expiring(hash, field), value, "EX", String(ttl));
       await command("HDEL", hash, field);
     },
@@ -274,6 +267,8 @@ export function redisKvAdapter(url: string): KvAdapter {
       if ((await command("HEXISTS", hash, field)) === 1) {
         return false;
       }
+
+      await register(hash, `t:${field}`);
 
       const args = ["SET", expiring(hash, field), value];
       if (ttl !== undefined) {
@@ -294,25 +289,46 @@ export function redisKvAdapter(url: string): KvAdapter {
         out[reply[i] as string] = reply[i + 1] as string;
       }
 
-      const keys = await scan(hash, "t");
-      if (keys.length > 0) {
-        const values = (await command("MGET", ...keys)) as (string | null)[];
-        const prefix = `${hash}|t|`;
-        keys.forEach((key, i) => {
+      const fields = (await members(hash))
+        .filter((entry) => {
+          return entry.startsWith("t:");
+        })
+        .map((entry) => {
+          return entry.slice(2);
+        });
+      if (fields.length > 0) {
+        const values = (await command(
+          "MGET",
+          ...fields.map((field) => {
+            return expiring(hash, field);
+          }),
+        )) as (string | null)[];
+        const expired: string[] = [];
+        fields.forEach((field, i) => {
           const value = values[i];
-          if (value !== null && value !== undefined) {
-            out[key.slice(prefix.length)] = value;
+          if (value === null || value === undefined) {
+            expired.push(`t:${field}`);
+          } else {
+            out[field] = value;
           }
         });
+        if (expired.length > 0) {
+          await command("SREM", registry(hash), ...expired);
+        }
       }
 
       return out;
     },
     async clear(hash) {
-      const keys = [...(await scan(hash, "t")), ...(await scan(hash, "z"))];
-      await command("DEL", hash, ...keys);
+      const keys = (await members(hash)).map((entry) => {
+        return entry.startsWith("t:")
+          ? expiring(hash, entry.slice(2))
+          : sorted(hash, entry.slice(2));
+      });
+      await command("DEL", hash, registry(hash), ...keys);
     },
     async indexAdd(hash, index, member, score) {
+      await register(hash, `z:${index}`);
       await command("ZADD", sorted(hash, index), String(score), member);
     },
     async indexRange(hash, index, options) {
@@ -408,7 +424,7 @@ export interface KvScopeInstance {
   /**
    * Writes a key only when it has no value, and returns whether it did: the
    * first caller gets `true`, later ones `false` until the key expires or is
-   * deleted. Atomic across runs, but at least once: if a step retries after
+   * deleted. Atomic against other `setIfAbsent` calls (not against a concurrent `set` of the same key), and at least once: if a step retries after
    * its write, the retry sees the key present and returns `false`. Use one style per key: a key written with
    * `set` and no `ttl` is seen as present, but a later `set` may replace a claim.
    */
@@ -575,18 +591,11 @@ function handleFor(
       await adapter.clear(hash);
     },
     async indexAdd(index, member, score) {
-      if (!Number.isFinite(score)) {
-        throw new Error("kv index scores must be finite numbers.");
-      }
+      checkedScore(score);
       await adapter.indexAdd(hash, index, member, score);
     },
     async indexRange(index, options) {
-      if (
-        options.limit !== undefined &&
-        !(Number.isInteger(options.limit) && options.limit >= 0)
-      ) {
-        throw new Error("kv index limit must be a whole number, zero or more.");
-      }
+      checkedRange(options);
 
       return adapter.indexRange(hash, index, options);
     },
@@ -594,6 +603,22 @@ function handleFor(
       await adapter.indexRemove(hash, index, member);
     },
   };
+}
+
+function checkedScore(score: number) {
+  if (!Number.isFinite(score)) {
+    throw new Error("kv index scores must be finite numbers.");
+  }
+}
+
+function checkedRange(options: KvIndexRange) {
+  const { limit, min, max } = options;
+  if (limit !== undefined && !(Number.isInteger(limit) && limit >= 0)) {
+    throw new Error("kv index limit must be a whole number, zero or more.");
+  }
+  if (Number.isNaN(min) || Number.isNaN(max)) {
+    throw new Error("kv index min and max must be numbers.");
+  }
 }
 
 function checkedTtl(options?: KvSetOptions): number | undefined {
@@ -693,11 +718,13 @@ export function createKv(
       index(name) {
         return {
           async add(member, score) {
+            checkedScore(score);
             await run("index.add", `${name}:${member}`, async (h) => {
               await h.indexAdd(name, member, score);
             });
           },
           async range(rangeOptions = {}) {
+            checkedRange(rangeOptions);
             return run("index.range", name, async (h) => {
               return h.indexRange(name, rangeOptions);
             });

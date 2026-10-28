@@ -150,6 +150,31 @@ export async function startFakeRedis() {
 
         return `:${count}\r\n`;
       }
+      case "SADD": {
+        let set = live(a[0] as string);
+        if (!set) {
+          set = { type: "zset", value: new Map() };
+          data.set(a[0] as string, set);
+        }
+        (set as { value: Map<string, number> }).value.set(a[1] as string, 0);
+
+        return ":1\r\n";
+      }
+      case "SMEMBERS": {
+        const set = live(a[0] as string);
+
+        return array(set?.type === "zset" ? [...set.value.keys()] : []);
+      }
+      case "SREM": {
+        const set = live(a[0] as string);
+        for (const member of a.slice(1)) {
+          if (set?.type === "zset") {
+            set.value.delete(member);
+          }
+        }
+
+        return ":1\r\n";
+      }
       case "SCAN": {
         const pattern = a[a.findIndex((x) => x.toUpperCase() === "MATCH") + 1];
         const matcher = glob(pattern ?? "*");
