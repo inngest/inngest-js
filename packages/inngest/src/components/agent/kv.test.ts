@@ -3,8 +3,10 @@
  * Tests for the scoped KV, using the in-memory adapter.
  */
 import { z } from "zod/v4";
-import { testClientId } from "../../test/helpers.ts";
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { StepOpCode } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
@@ -531,5 +533,85 @@ describe("kv typed keys", () => {
     await expect(kv.update(count, (n) => (n ?? 0) + 1)).rejects.toThrow(
       /kv key "count"/,
     );
+  });
+});
+
+describe("kv replay of legacy read memos", () => {
+  /**
+   * Runs `fn` to the end, but memoizes every `get` and `take` step in the
+   * shape older versions returned: `null` for no value, the raw value
+   * otherwise.
+   */
+  async function runWithLegacyReads(fn: InngestFunction.Any) {
+    let stepState: Parameters<typeof runFnWithStack>[1] = {};
+
+    for (let request = 0; request < 20; request++) {
+      const result = await runFnWithStack(fn, stepState);
+      if (result.type === "function-resolved") {
+        return result.data;
+      }
+
+      const steps =
+        result.type === "step-ran"
+          ? [result.step]
+          : result.type === "steps-found"
+            ? result.steps
+            : [];
+      for (const step of steps) {
+        if (
+          step.op === StepOpCode.DeferAdd ||
+          step.op === StepOpCode.DeferAbort
+        ) {
+          continue;
+        }
+
+        const name = step.userland?.id ?? "";
+        const data = step.data as { found?: boolean; value?: unknown } | null;
+        const legacy =
+          (name.startsWith("kv.get:") || name.startsWith("kv.take:")) && data
+            ? data.found
+              ? data.value
+              : null
+            : step.data;
+        stepState = {
+          ...stepState,
+          [step.id]: { id: step.id, data: legacy },
+        };
+      }
+    }
+
+    throw new Error("The function did not finish");
+  }
+
+  test("a memo that is null, a raw value or an object with a found key still reads", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "kvlegacy", triggers: [{ event: "kv/legacy" }] },
+      async () => {
+        await kv.env.set("plain", { n: 1 });
+        await kv.env.set("lookalike", { found: false });
+        await kv.env.set("text", "hello");
+        await kv.env.set("list", [1, 2]);
+
+        return {
+          plain: await kv.env.get("plain"),
+          lookalike: await kv.env.get("lookalike"),
+          missing: (await kv.env.get("missing")) ?? "none",
+          taken: await kv.env.take("text"),
+          after: (await kv.env.get("text")) ?? "none",
+          list: await kv.env.get(kvKey("list", z.array(z.number()))),
+        };
+      },
+    );
+
+    expect(await runWithLegacyReads(fn)).toEqual({
+      plain: { n: 1 },
+      lookalike: { found: false },
+      missing: "none",
+      taken: "hello",
+      after: "none",
+      list: [1, 2],
+    });
   });
 });

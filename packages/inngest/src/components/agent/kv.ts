@@ -564,6 +564,9 @@ export interface KvSchemaMustRoundTrip {
  * await kv.thread.set(plan, { steps: 3 });
  * const found = await kv.thread.get(plan); // { steps: number } | undefined
  * ```
+ * Values are stored as JSON, so use JSON-representable types only: a
+ * `z.date()` or a `Map` fails the check when read back, and a bigint throws
+ * when written.
  * @param name The key's name in the store.
  * @param schema Validates the value on every read; a value that fails throws
  * an error naming the key. Its input and output types must be the same (no
@@ -617,13 +620,48 @@ async function decode<K extends KvKeyInput>(
 }
 
 /**
- * A read that tells a missing key from a stored `null`, as a step result.
+ * A read as a step result: tells a missing key from a stored `null`. The
+ * marker key keeps the shape apart from any value a user stored.
+ */
+interface KvRead {
+  "~kvRead": true;
+  found: boolean;
+  value?: unknown;
+}
+
+/**
+ * Wraps a stored value as a step result.
  * @param value The stored value, or `undefined` when the key has none.
  */
-function found(
-  value: unknown,
-): { found: false } | { found: true; value: unknown } {
-  return value === undefined ? { found: false } : { found: true, value };
+function found(value: unknown): KvRead {
+  return value === undefined
+    ? { "~kvRead": true, found: false }
+    : { "~kvRead": true, found: true, value };
+}
+
+/**
+ * Reads a memoized read step. A run that started before the result was
+ * wrapped replays the old memo: `null` meant no value, and anything else was
+ * the value itself.
+ * @param memo What the step returned or replayed.
+ */
+function unwrapRead(memo: unknown): unknown {
+  if (memo === null || memo === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof memo === "object" &&
+    !Array.isArray(memo) &&
+    (memo as Partial<KvRead>)["~kvRead"] === true &&
+    typeof (memo as Partial<KvRead>).found === "boolean"
+  ) {
+    const read = memo as KvRead;
+
+    return read.found ? read.value : undefined;
+  }
+
+  return memo;
 }
 
 /**
@@ -745,6 +783,9 @@ export interface KvScopeInstance {
 
   /**
    * Reads a key and deletes it in one step. Use it for flags consumed once.
+   * A value that fails its key's schema is checked before it is removed, so it
+   * stays readable; inside a function that failure surfaces as a step error,
+   * like `update`'s, not as a `NonRetriableError`.
    * @param key Name or typed key.
    */
   take<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined>;
@@ -979,6 +1020,12 @@ function checkedRange(options: KvIndexRange) {
   }
 }
 
+/**
+ * Refuses `undefined`, which JSON cannot store: it would read back as
+ * `null`. `set` and `setIfAbsent` call it before the step so a bad call fails
+ * at once instead of retrying; `update` meets it inside the step.
+ * @param value The value to write.
+ */
 function checkedValue(value: unknown): unknown {
   if (value === undefined) {
     throw new Error(
@@ -1076,7 +1123,7 @@ export function createKv(
           return found(await h.get(name));
         });
 
-        return decode(key, read.found ? read.value : undefined);
+        return decode(key, unwrapRead(read));
       },
       async set(key, value, setOptions) {
         checkedTtl(setOptions);
@@ -1143,7 +1190,7 @@ export function createKv(
           return found(raw);
         });
 
-        return decode(key, read.found ? read.value : undefined);
+        return decode(key, unwrapRead(read));
       },
       async delete(key) {
         const name = nameOf(key);
