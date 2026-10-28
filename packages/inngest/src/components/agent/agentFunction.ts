@@ -428,8 +428,14 @@ export function createAgentFunction(
 
       // Limits apply to what `agent.invoke()` starts and to the loop's budget.
       // The usage is the thread's so far, and each turn adds to it.
+      const instance = getAsyncCtxSync()?.execution?.instance;
+
+      if (!instance) {
+        throw new Error("An agent must run inside an Inngest function");
+      }
+
       const limits = registerLimits(
-        getAsyncCtxSync()?.execution?.instance ?? {},
+        instance,
         narrowLimits(
           config.limits,
           readInheritedLimits(

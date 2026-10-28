@@ -156,7 +156,7 @@ export const narrowLimits = (
   ];
 
   return {
-    depth: lower(own?.depth ?? 1, inherited?.depth),
+    depth: lower(own?.depth, inherited?.depth) ?? 1,
     spawn: lower(own?.spawn, inherited?.spawn),
     ...(mayCall.length > 0 && { mayCall }),
     budget: narrowBudget(own?.budget, inherited?.budget),
@@ -177,10 +177,14 @@ export const readInheritedLimits = (
     return undefined;
   }
 
+  // A field that is there but not a number closes the limit (0), so a bad
+  // payload never widens what an agent may do.
   const number = (value: unknown) => {
-    return typeof value === "number" && Number.isFinite(value)
-      ? value
-      : undefined;
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
   };
   const budget: AgentBudget = {};
 
@@ -195,10 +199,12 @@ export const readInheritedLimits = (
   }
 
   const mayCall = Array.isArray(raw.mayCall)
-    ? raw.mayCall.filter(Array.isArray).map((list: unknown[]) => {
-        return list.filter((pattern): pattern is string => {
-          return typeof pattern === "string";
-        });
+    ? raw.mayCall.map((list: unknown) => {
+        return Array.isArray(list)
+          ? list.filter((pattern): pattern is string => {
+              return typeof pattern === "string";
+            })
+          : [];
       })
     : [];
 

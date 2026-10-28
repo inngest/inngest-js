@@ -67,7 +67,7 @@ describe("narrowLimits", () => {
 });
 
 describe("readInheritedLimits", () => {
-  test("ignores anything malformed", () => {
+  test("closes anything malformed rather than widening it", () => {
     expect(readInheritedLimits(undefined)).toBeUndefined();
     expect(readInheritedLimits({ limits: "x" })).toBeUndefined();
     expect(
@@ -75,12 +75,13 @@ describe("readInheritedLimits", () => {
         limits: {
           depth: "2",
           mayCall: [["a/*", 3], "b"],
-          budget: { tokens: 5 },
+          budget: { tokens: 5, input: "x" },
         },
       }),
     ).toEqual({
-      mayCall: [["a/*"]],
-      budget: { tokens: 5 },
+      depth: 0,
+      mayCall: [["a/*"], []],
+      budget: { tokens: 5, input: 0 },
     });
   });
 });
