@@ -574,6 +574,8 @@ describe("request and reply", () => {
         } catch (error) {
           return (error as Error).message;
         }
+
+        return "replied";
       },
     );
 
