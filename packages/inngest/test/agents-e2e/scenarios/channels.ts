@@ -14,6 +14,7 @@ import {
   getThread,
   github,
   kv,
+  kvKey,
   redisKvAdapter,
   slack,
 } from "inngest/experimental/agents";
@@ -91,7 +92,7 @@ export const channels = scenario({
         for (let i = 0; i < 2; i++) {
           const message = await inbox.next();
 
-          await kv.thread.update<string[]>("texts", (texts) => {
+          await kv.thread.update(kvKey<string[]>("texts"), (texts) => {
             return [...(texts ?? []), message?.data.content ?? ""];
           });
         }

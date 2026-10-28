@@ -47,7 +47,7 @@ import {
   snapshotCache,
 } from "../sandbox/snapshotCache.ts";
 import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
-import type { KvScopeInstance } from "./kv.ts";
+import { type KvScopeInstance, kvKey } from "./kv.ts";
 import {
   newestSandboxGeneration,
   recordSandboxGeneration,
@@ -408,7 +408,7 @@ export const cleanupThreadSandbox = async (
 ): Promise<void> => {
   const { client, ref, thread, runId, scope, sandbox } = options;
   const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
-  const ready = (await scope.get<boolean>(readyKey)) === true;
+  const ready = (await scope.get(kvKey<boolean>(readyKey))) === true;
   const newest = ready
     ? await newestSandboxGeneration(scope, ref, sandbox.name)
     : undefined;

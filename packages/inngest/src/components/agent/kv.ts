@@ -12,13 +12,22 @@
  * thread's, `kv.scope("thread", key).get("plan")` is another's, and plain
  * `kv.get()` is the run's own. A global `kv` finds the current run, session
  * and thread from the function it is called in.
+ *
+ * Keys are plain names (values are `unknown`) or typed `kvKey`s, which carry
+ * their value type and can validate it with a schema.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { redisConnection } from "./redis.ts";
 import { currentSessions } from "./sessions.ts";
 
+/**
+ * How long a value lives and who sees it: `env` (the whole environment),
+ * `app`, `function`, `run` (the default), `session` and `thread`.
+ */
 export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
 
 /**
@@ -70,7 +79,14 @@ export interface KvAdapter {
  * One member of a sorted index and its score.
  */
 export interface KvIndexEntry {
+  /**
+   * The member, for example an id.
+   */
   member: string;
+
+  /**
+   * What the member is sorted by.
+   */
   score: number;
 }
 
@@ -484,8 +500,137 @@ export interface KvIndex {
   remove(member: string): Promise<void>;
 }
 
-export interface KvHandle {
-  get<T = unknown>(key: string): Promise<T | undefined>;
+/**
+ * A key of a scope instance that carries the type of its value. Make one with
+ * `kvKey`: with a schema the value is validated on every read; without one
+ * you vouch for the type.
+ */
+export interface KvKey<T> {
+  /**
+   * The key's name in the store.
+   */
+  readonly name: string;
+
+  /**
+   * Validates what is read. Absent: the stored value is trusted as `T`.
+   */
+  readonly schema?: StandardSchemaV1<unknown, T>;
+
+  /**
+   * Never set; carries `T` for inference.
+   */
+  readonly "~type"?: T;
+}
+
+/**
+ * A key as scope instance methods take it: a plain name (values are
+ * `unknown`) or a typed `KvKey`.
+ */
+export type KvKeyInput = string | KvKey<unknown>;
+
+/**
+ * The value type of a key: `T` for a `KvKey<T>`, `unknown` for a plain name.
+ */
+export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
+  ? T
+  : unknown;
+
+/**
+ * What a `kvKey` schema must satisfy: its input and output types match, so
+ * the value read back is the value that was stored. A schema that does not
+ * (a transform, default or coercion) fails with this type in the message.
+ */
+export type KvRoundTrips<S extends StandardSchemaV1> = [
+  StandardSchemaV1.InferInput<S>,
+] extends [StandardSchemaV1.InferOutput<S>]
+  ? [StandardSchemaV1.InferOutput<S>] extends [StandardSchemaV1.InferInput<S>]
+    ? unknown
+    : KvSchemaMustRoundTrip
+  : KvSchemaMustRoundTrip;
+
+/**
+ * Marks a schema refused by `kvKey`.
+ */
+export interface KvSchemaMustRoundTrip {
+  "kvKey schema: input and output types must match (no transforms, defaults or coercion)": never;
+}
+
+/**
+ * Names a key and types its value.
+ *
+ * @example
+ * ```ts
+ * const plan = kvKey("plan", z.object({ steps: z.number() }));
+ * await kv.thread.set(plan, { steps: 3 });
+ * const found = await kv.thread.get(plan); // { steps: number } | undefined
+ * ```
+ * @param name The key's name in the store.
+ * @param schema Validates the value on every read; a value that fails throws
+ * an error naming the key. Its input and output types must be the same (no
+ * transforms or defaults), because the value is stored as JSON and checked
+ * as stored. Writes are not validated. Without a schema the type is yours to
+ * vouch for.
+ */
+export function kvKey<T>(name: string): KvKey<T>;
+export function kvKey<S extends StandardSchemaV1>(
+  name: string,
+  schema: S & KvRoundTrips<S>,
+): KvKey<StandardSchemaV1.InferOutput<S>>;
+export function kvKey(name: string, schema?: StandardSchemaV1): KvKey<unknown> {
+  return { name, schema };
+}
+
+/**
+ * The name of a key given as a name or a `KvKey`.
+ * @param key The key.
+ */
+function nameOf(key: KvKeyInput): string {
+  return typeof key === "string" ? key : key.name;
+}
+
+/**
+ * Turns a stored value into what a key promises: the value as stored for a
+ * plain name or a key without a schema, the schema's output otherwise.
+ * @param key The key read.
+ * @param raw The stored value, or `undefined` when the key has none.
+ */
+async function decode<K extends KvKeyInput>(
+  key: K,
+  raw: unknown,
+): Promise<KvValue<K> | undefined> {
+  const schema = typeof key === "string" ? undefined : key.schema;
+  if (raw === undefined || !schema) {
+    // A missing value, a plain name (typed `unknown`) or a key whose type the
+    // caller vouches for: nothing to check.
+    return raw as KvValue<K> | undefined;
+  }
+
+  const result = await schema["~standard"].validate(raw);
+  if (result.issues) {
+    const issue = result.issues[0]?.message ?? "invalid value";
+    throw new NonRetriableError(
+      `kv key "${nameOf(key)}" holds a value that fails its schema: ${issue}`,
+    );
+  }
+
+  return result.value as KvValue<K>;
+}
+
+/**
+ * A read that tells a missing key from a stored `null`, as a step result.
+ * @param value The stored value, or `undefined` when the key has none.
+ */
+function found(
+  value: unknown,
+): { found: false } | { found: true; value: unknown } {
+  return value === undefined ? { found: false } : { found: true, value };
+}
+
+/**
+ * Reads and writes one scope instance directly, with values as JSON.
+ */
+interface RawKv {
+  get(key: string): Promise<unknown>;
   set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
   setIfAbsent(
     key: string,
@@ -493,19 +638,45 @@ export interface KvHandle {
     options?: KvSetOptions,
   ): Promise<boolean>;
   delete(key: string): Promise<void>;
-  all<T = unknown>(): Promise<Record<string, T>>;
+  all(): Promise<Record<string, unknown>>;
   clear(): Promise<void>;
   indexAdd(index: string, member: string, score: number): Promise<void>;
   indexRange(index: string, options: KvIndexRange): Promise<KvIndexEntry[]>;
   indexRemove(index: string, member: string): Promise<void>;
 }
 
+/**
+ * The ids that name a scope instance.
+ */
 export interface KvScopeIds {
+  /**
+   * Environment ID.
+   */
   env: string;
+
+  /**
+   * App ID.
+   */
   app: string;
+
+  /**
+   * Function ID, for the `function` scope.
+   */
   function?: string;
+
+  /**
+   * Run ID, for the `run` scope.
+   */
   run?: string;
+
+  /**
+   * Session ID, for the `session` scope.
+   */
   session?: string;
+
+  /**
+   * Thread key, for the `thread` scope.
+   */
   thread?: string;
 }
 
@@ -514,12 +685,25 @@ export interface KvScopeIds {
  * every call is a memoized step; outside one it goes straight to the store.
  */
 export interface KvScopeInstance {
-  get<T = unknown>(key: string): Promise<T | undefined>;
+  /**
+   * Reads a key: `undefined` when it has no value. A `KvKey` gives its
+   * type (checked against its schema, if it has one); a plain name gives
+   * `unknown`.
+   * @param key Name or typed key.
+   */
+  get<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined>;
 
   /**
    * Writes a key. With `{ ttl }` it expires that many seconds later.
+   * @param key Name or typed key.
+   * @param value The value, JSON-serializable.
+   * @param options Expiry.
    */
-  set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
+  set<K extends KvKeyInput>(
+    key: K,
+    value: KvValue<K>,
+    options?: KvSetOptions,
+  ): Promise<void>;
 
   /**
    * Writes a key only when it has no value, and returns whether this call
@@ -536,9 +720,9 @@ export interface KvScopeInstance {
    * const owns = await kv.env.setIfAbsent(`card:${id}`, runId, { ttl: 600 });
    * ```
    */
-  setIfAbsent(
-    key: string,
-    value: unknown,
+  setIfAbsent<K extends KvKeyInput>(
+    key: K,
+    value: KvValue<K>,
     options?: KvSetOptions,
   ): Promise<boolean>;
 
@@ -554,17 +738,27 @@ export interface KvScopeInstance {
    * The result never expires, even if the key had a `ttl`: pass nothing to
    * `set` yourself if you need the expiry kept.
    */
-  update<T = unknown>(
-    key: string,
-    fn: (current: T | undefined) => T,
-  ): Promise<T>;
+  update<K extends KvKeyInput>(
+    key: K,
+    fn: (current: KvValue<K> | undefined) => KvValue<K>,
+  ): Promise<KvValue<K>>;
 
   /**
    * Reads a key and deletes it in one step. Use it for flags consumed once.
+   * @param key Name or typed key.
    */
-  take<T = unknown>(key: string): Promise<T | undefined>;
-  delete(key: string): Promise<void>;
-  all<T = unknown>(): Promise<Record<string, T>>;
+  take<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined>;
+
+  /**
+   * Removes a key.
+   * @param key Name or typed key.
+   */
+  delete(key: KvKeyInput): Promise<void>;
+
+  /**
+   * Every key of the scope instance with its value, as stored (`unknown`).
+   */
+  all(): Promise<Record<string, unknown>>;
 
   /**
    * Removes every key of the scope instance.
@@ -572,6 +766,9 @@ export interface KvScopeInstance {
   clear(): Promise<void>;
 }
 
+/**
+ * The store: the current run's scope instance, plus every other scope.
+ */
 export interface Kv extends KvScopeInstance {
   /**
    * A scope instance. Without `id` it is the current function's (the run, or
@@ -581,11 +778,34 @@ export interface Kv extends KvScopeInstance {
    */
   scope(scope: KvScope, id?: string): KvScopeInstance;
 
+  /**
+   * Shared by every app of the environment.
+   */
   readonly env: KvScopeInstance;
+
+  /**
+   * Shared by every function of the app.
+   */
   readonly app: KvScopeInstance;
+
+  /**
+   * Shared by every run of the current function.
+   */
   readonly function: KvScopeInstance;
+
+  /**
+   * The current run's own keys, removed when it ends.
+   */
   readonly run: KvScopeInstance;
+
+  /**
+   * The current session's keys.
+   */
   readonly session: KvScopeInstance;
+
+  /**
+   * The current thread's keys, kept across the runs of an agent thread.
+   */
   readonly thread: KvScopeInstance;
 
   /**
@@ -670,24 +890,20 @@ function currentIds(): KvScopeIds | undefined {
  * @param scope The scope.
  * @param ids Ids of the scope instances.
  */
-function handleFor(
-  adapter: KvAdapter,
-  scope: KvScope,
-  ids: KvScopeIds,
-): KvHandle {
+function handleFor(adapter: KvAdapter, scope: KvScope, ids: KvScopeIds): RawKv {
   const hash = kvHash(scope, ids);
 
   return {
-    async get<T>(key: string) {
+    async get(key) {
       const raw = await adapter.get(hash, key);
 
-      return raw === null ? undefined : (JSON.parse(raw) as T);
+      return raw === null ? undefined : JSON.parse(raw);
     },
     async set(key, value, options) {
       await adapter.set(
         hash,
         key,
-        JSON.stringify(value ?? null),
+        JSON.stringify(checkedValue(value)),
         checkedTtl(options),
       );
     },
@@ -695,19 +911,19 @@ function handleFor(
       return adapter.setIfAbsent(
         hash,
         key,
-        JSON.stringify(value ?? null),
+        JSON.stringify(checkedValue(value)),
         checkedTtl(options),
       );
     },
     async delete(key) {
       await adapter.delete(hash, key);
     },
-    async all<T>() {
+    async all() {
       const raw = await adapter.all(hash);
 
       return Object.fromEntries(
         Object.entries(raw).map(([key, value]) => {
-          return [key, JSON.parse(value) as T];
+          return [key, JSON.parse(value)];
         }),
       );
     },
@@ -761,6 +977,16 @@ function checkedRange(options: KvIndexRange) {
       throw new Error("kv index min and max must be numbers.");
     }
   }
+}
+
+function checkedValue(value: unknown): unknown {
+  if (value === undefined) {
+    throw new Error(
+      "kv values cannot be undefined: store null, or delete the key.",
+    );
+  }
+
+  return value;
 }
 
 function checkedTtl(options?: KvSetOptions): number | undefined {
@@ -828,7 +1054,7 @@ export function createKv(
     async function run<T>(
       op: string,
       key: string | undefined,
-      fn: (handle: KvHandle) => Promise<T>,
+      fn: (handle: RawKv) => Promise<T>,
     ) {
       const { handle, inFunction } = resolve();
       if (!inFunction) {
@@ -844,22 +1070,29 @@ export function createKv(
     }
 
     return {
-      async get<T>(key: string) {
-        return ((await run("get", key, async (h) => {
-          return h.get<T>(key);
-        })) ?? undefined) as T | undefined;
+      async get(key) {
+        const name = nameOf(key);
+        const read = await run("get", name, async (h) => {
+          return found(await h.get(name));
+        });
+
+        return decode(key, read.found ? read.value : undefined);
       },
       async set(key, value, setOptions) {
         checkedTtl(setOptions);
-        await run("set", key, async (h) => {
-          await h.set(key, value, setOptions);
+        checkedValue(value);
+        const name = nameOf(key);
+        await run("set", name, async (h) => {
+          await h.set(name, value, setOptions);
         });
       },
       async setIfAbsent(key, value, setOptions) {
         checkedTtl(setOptions);
+        checkedValue(value);
+        const name = nameOf(key);
 
-        return run("setIfAbsent", key, async (h) => {
-          return h.setIfAbsent(key, value, setOptions);
+        return run("setIfAbsent", name, async (h) => {
+          return h.setIfAbsent(name, value, setOptions);
         });
       },
       index(name) {
@@ -886,30 +1119,41 @@ export function createKv(
           },
         };
       },
-      async update<T>(key: string, fn: (current: T | undefined) => T) {
-        return run("update", key, async (h) => {
-          const next = fn(await h.get<T>(key));
-          await h.set(key, next);
+      async update(key, fn) {
+        const name = nameOf(key);
+
+        return run("update", name, async (h) => {
+          // A schema failure here reaches the caller as a step error, not a
+          // NonRetriableError, because it is thrown inside the step.
+          const next = fn(await decode(key, await h.get(name)));
+          await h.set(name, next);
 
           return next;
         });
       },
-      async take<T>(key: string) {
-        return ((await run("take", key, async (h) => {
-          const value = (await h.get<T>(key)) ?? null;
-          await h.delete(key);
+      async take(key) {
+        const name = nameOf(key);
+        // Checked before the key is removed, so a value that fails its schema
+        // stays readable.
+        const read = await run("take", name, async (h) => {
+          const raw = await h.get(name);
+          await decode(key, raw);
+          await h.delete(name);
 
-          return value;
-        })) ?? undefined) as T | undefined;
+          return found(raw);
+        });
+
+        return decode(key, read.found ? read.value : undefined);
       },
       async delete(key) {
-        await run("delete", key, async (h) => {
-          await h.delete(key);
+        const name = nameOf(key);
+        await run("delete", name, async (h) => {
+          await h.delete(name);
         });
       },
-      async all<T>() {
+      async all() {
         return run("all", undefined, async (h) => {
-          return h.all<T>();
+          return h.all();
         });
       },
       async clear() {
