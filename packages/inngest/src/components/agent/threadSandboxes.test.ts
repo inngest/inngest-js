@@ -199,7 +199,7 @@ describe("restore and save", () => {
     const w = world();
     const { owner } = setup(w, "01B");
 
-    expect(await owner().restore("work")).toBeUndefined();
+    expect(await owner().restore("work")).toEqual([]);
   });
 
   test("a saved sandbox is restored by the thread's next run", async () => {
@@ -217,7 +217,7 @@ describe("restore and save", () => {
     const next = setup(w, "01B");
     const restored = await next.owner(first.scope).restore("work");
 
-    expect(restored).toBe(w.rows[0]?.id);
+    expect(restored).toEqual([w.rows[0]?.id]);
   });
 
   test("another thread or another sandbox name finds nothing", async () => {
@@ -228,8 +228,8 @@ describe("restore and save", () => {
 
     const otherThread = setup(w, "01B", "other-thread");
 
-    expect(await otherThread.owner().restore("work")).toBeUndefined();
-    expect(await first.owner().restore("data")).toBeUndefined();
+    expect(await otherThread.owner().restore("work")).toEqual([]);
+    expect(await first.owner().restore("data")).toEqual([]);
   });
 
   test("a save deletes generations older than the previous one by name, without listing every snapshot", async () => {
@@ -278,7 +278,7 @@ describe("restore and save", () => {
 
     (w.rows[0] as Row).expiresAt = new Date(Date.now() + 60_000).toISOString();
 
-    expect(await first.owner().restore("work")).toBeUndefined();
+    expect(await first.owner().restore("work")).toEqual([]);
   });
 
   test("a failed snapshot is quiet and records nothing", async () => {
@@ -313,7 +313,7 @@ describe("restore and save", () => {
       );
 
       expect(await newest(base.scope)).toBe("01B");
-      expect(await base.owner().restore("work")).toBeDefined();
+      expect((await base.owner().restore("work")).length).toBeGreaterThan(0);
     }
   });
 });
@@ -443,12 +443,13 @@ describe("cleanupThreadSandbox", () => {
     expect(w.rows[0]?.name?.endsWith("/01A")).toBe(true);
   });
 
-  test("a run that saved or cleaned up leaves no ready key behind", async () => {
+  test("a run that released or cleaned up leaves no ready key behind", async () => {
     const w = world();
     const s = setup(w, "01A");
 
     await s.owner().ready("work");
     await s.owner().save("work", w.durable("sb-1"));
+    await s.owner().release("work");
     expect(
       await s.scope.get(sandboxReadyKey(ref, "work", "01A")),
     ).toBeUndefined();
@@ -473,7 +474,31 @@ describe("cleanupThreadSandbox", () => {
     ).toBeUndefined();
   });
 
-  test("a failed save keeps the ready key, so the cleanup can still save", async () => {
+  test("a cleanup that saves nothing still forgets the ready key", async () => {
+    const w = world();
+    const s = setup(w, "01B");
+
+    await s.owner().save("work", w.durable("sb-2"));
+    await s.owner().ready("work");
+    w.durable("sb-1");
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01B",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(
+      await s.scope.get(sandboxReadyKey(ref, "work", "01B")),
+    ).toBeUndefined();
+  });
+
+  test("a failed save keeps the ready key until the run releases it, so the cleanup can still save", async () => {
     const w = world();
     const s = setup(w, "01A");
     const box = w.durable("sb-1");
@@ -666,11 +691,14 @@ describe("lazy sandboxes of a thread", () => {
     await opened.work?.get();
     await opened.work?.close();
 
-    expect(keep).toHaveBeenCalledWith("work", expect.anything(), {
-      idle: "10m",
-    });
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(w.rows).toHaveLength(0);
+    expect(keep).toHaveBeenCalledWith(
+      "work",
+      expect.anything(),
+      { idle: "10m" },
+      expect.objectContaining({ abort: expect.any(Function) }),
+    );
+    // The sandbox is saved before it is kept, so the thread keeps its state.
+    expect(w.rows).toHaveLength(1);
     expect(w.live.has("sb-1")).toBe(true);
   });
 
@@ -737,6 +765,153 @@ describe("lazy sandboxes of a thread", () => {
 
     expect(w.rows).toHaveLength(1);
     expect(w.live.has("sb-1")).toBe(false);
+  });
+
+  test("a keep that returns anything but true, or throws, or returns a plain boolean, is handled", async () => {
+    const run = async (keep: () => unknown) => {
+      const w = world();
+      const s = setup(w, "01A");
+      const failed: unknown[] = [];
+      const opened = openSandboxes(
+        { work: { sandbox: box, keepAlive: { idle: "10m" } } },
+        {
+          create: vi.fn(async () => {
+            return w.durable("sb-1");
+          }),
+        } as unknown as DurableSandboxTools,
+        undefined,
+        {
+          ...s.owner(),
+          keep: keep as never,
+          keepFailed: (_name: string, error: unknown) => {
+            failed.push(error);
+          },
+        },
+      );
+
+      await opened.work?.get();
+      await opened.work?.close();
+
+      return { live: w.live.has("sb-1"), failed };
+    };
+
+    // A truthy value that is not `true` is declined.
+    expect(await run(() => "yes")).toEqual({ live: false, failed: [] });
+
+    // A throw is declined and reported.
+    const threw = await run(() => {
+      throw new Error("bad hook");
+    });
+
+    expect(threw.live).toBe(false);
+    expect(threw.failed).toHaveLength(1);
+
+    // A plain boolean, not a promise, is accepted.
+    expect((await run(() => true)).live).toBe(true);
+  });
+
+  test("a restore whose newest snapshot is gone tries the next newest before going fresh", async () => {
+    const w = world();
+    const first = setup(w, "01A");
+
+    await first.owner().save("work", w.durable("sb-1"));
+    await setup(w, "01B").owner(first.scope).save("work", w.durable("sb-2"));
+
+    const [newest, spare] = (
+      await setup(w, "01C").owner(first.scope).restore("work")
+    ).map((id) => {
+      return w.rows
+        .find((row) => {
+          return row.id === id;
+        })
+        ?.name?.split("/")
+        .at(-1);
+    });
+
+    expect([newest, spare]).toEqual(["01B", "01A"]);
+
+    const tried: string[] = [];
+    const tools = {
+      create: vi.fn(async (_id: unknown, options: unknown) => {
+        const { snapshotId } = options as { snapshotId?: string };
+
+        if (snapshotId) {
+          tried.push(snapshotId);
+        }
+
+        if (snapshotId === w.rows[1]?.id) {
+          throw Object.assign(new StepError("work", new Error("gone")), {
+            cause: { code: "sandbox_snapshot_not_found" },
+          });
+        }
+
+        return w.durable("sb-x");
+      }),
+    } as unknown as DurableSandboxTools;
+    const warned: string[] = [];
+    const opened = openSandboxes({ work: box }, tools, undefined, {
+      ...setup(w, "01C").owner(first.scope),
+      restoreFailed: (name: string) => {
+        warned.push(name);
+      },
+    });
+
+    await opened.work?.get();
+
+    expect(tried).toEqual([w.rows[1]?.id, w.rows[0]?.id]);
+    expect(warned).toEqual(["work"]);
+  });
+
+  test("a failed save together with a failed destroy keeps the ready key for the cleanup", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const box1 = w.durable("sb-1");
+
+    (box1.snapshot as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new StepError("save", new Error("boom")),
+    );
+    (box1.destroy as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new StepError("destroy", new Error("boom")),
+    );
+
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return box1;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(),
+    );
+
+    await opened.work?.get();
+    await opened.work?.close();
+
+    expect(await s.scope.get(sandboxReadyKey(ref, "work", "01A"))).toBe(true);
+  });
+
+  test("close releases the ready key on the way out", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(),
+    );
+
+    await opened.work?.get();
+    expect(await s.scope.get(sandboxReadyKey(ref, "work", "01A"))).toBe(true);
+
+    await opened.work?.close();
+    expect(
+      await s.scope.get(sandboxReadyKey(ref, "work", "01A")),
+    ).toBeUndefined();
   });
 
   test("a sandbox that was created but never used is destroyed without a snapshot", async () => {
@@ -923,9 +1098,9 @@ describe("lazy sandboxes of a thread", () => {
 
     expect(w.rows).toHaveLength(1);
     expect(await newest(first.scope)).toBe("01A");
-    expect(await setup(w, "01C").owner(first.scope).restore("work")).toBe(
+    expect(await setup(w, "01C").owner(first.scope).restore("work")).toEqual([
       goodId,
-    );
+    ]);
   });
 
   test("the cleanup may save only after setup finished, with one cleanup registered", async () => {

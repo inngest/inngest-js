@@ -179,13 +179,16 @@ export const threadSandboxes = scenario({
     const gamma = getThread(client, ref, `gamma-${stamp}`, { kv: store });
 
     await gamma.send("hold:kept through a cancel");
+    // The file is written only once the sandbox exists, its cleanup defer is
+    // registered and it is marked ready; a cancel before that leaves the
+    // sandbox to its own timeout by design.
     await ctx.eventually(
-      "the held run has its sandbox",
+      "the held run wrote its file",
       async () => {
-        return calls("sandbox.create").length;
+        return calls("sandbox.upload").length;
       },
       (count) => {
-        return count >= 4;
+        return count >= 2;
       },
     );
     const gammaStop = await gamma.stop({ when: "now" });

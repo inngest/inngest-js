@@ -79,11 +79,16 @@ export interface ThreadSandboxCleanup {
  */
 export interface ThreadSandboxOwner {
   /**
-   * The snapshot to create the sandbox `name` from: the thread's newest, or
-   * `undefined` for a fresh sandbox.
+   * The snapshots to create the sandbox `name` from, newest first: the
+   * thread's newest generation and the one before it, whichever of them still
+   * exist. Empty for a fresh sandbox. The sandbox is created from the first, and
+   * from the next when the platform says that one is gone (a save deletes
+   * older generations, and snapshots expire). Keeping the extra generation
+   * costs a second snapshot per thread and sandbox name against the
+   * environment's snapshot limit.
    * @param name The sandbox's name in the agent's `sandboxes`.
    */
-  restore(name: string): Promise<string | undefined>;
+  restore(name: string): Promise<string[]>;
 
   /**
    * Snapshots a sandbox of this run for the thread's next run. A failed
@@ -104,12 +109,25 @@ export interface ThreadSandboxOwner {
    * @param name The sandbox's name in the agent's `sandboxes`.
    * @param sandbox The sandbox, still running.
    * @param keepAlive The binding's `keepAlive`.
+   * @param guard The cleanup defer of the sandbox. Returning `true` is a promise
+   * that the sandbox will be stopped on every way the thread's run can end: the
+   * hook registers its own stop defer first, and only then aborts `guard`,
+   * because nothing else will stop a sandbox left running. Anything but a
+   * `true`, and any throw, makes the run save and destroy as usual.
    */
   keep?(
     name: string,
     sandbox: DurableSandbox,
     keepAlive: { idle: SandboxDuration },
-  ): Promise<boolean>;
+    guard: DeferHandle,
+  ): Promise<boolean> | boolean;
+
+  /**
+   * Called when `keep` threw.
+   * @param name The sandbox's name in the agent's `sandboxes`.
+   * @param error What it threw.
+   */
+  keepFailed?(name: string, error: unknown): void;
 
   /**
    * Called when creating a sandbox from the thread's snapshot failed (for
@@ -128,6 +146,12 @@ export interface ThreadSandboxOwner {
    * @param sandbox The sandbox the run just created.
    */
   guard(name: string, sandbox: DurableSandbox): DeferHandle;
+
+  /**
+   * Forgets the run's ready mark of the sandbox, once the run is done with it.
+   * @param name The sandbox's name in the agent's `sandboxes`.
+   */
+  release(name: string): Promise<void>;
 
   /**
    * Marks the sandbox as finished with its skills and setup, so the cleanup
@@ -231,19 +255,25 @@ export const threadSandboxOwner = (
 
   return {
     restore: async (name) => {
-      const generation = await newestSandboxGeneration(scope, ref, name);
+      const newest = await sandboxGenerations(scope, ref, name).range({
+        order: "desc",
+        limit: 2,
+      });
+      const cache = snapshotCache(client, { memo: options.run });
+      const found: string[] = [];
 
-      if (!generation) {
-        return undefined;
+      for (const { member } of newest) {
+        const snapshot = await cache.find(
+          threadSnapshotEntry(ref, thread, name, member),
+          { stepId: `${name}:thread:restore:${member}` },
+        );
+
+        if (snapshot) {
+          found.push(snapshot.snapshotId);
+        }
       }
 
-      const found = await snapshotCache(client, {
-        memo: options.run,
-      }).find(threadSnapshotEntry(ref, thread, name, generation), {
-        stepId: `${name}:thread:restore`,
-      });
-
-      return found?.snapshotId;
+      return found;
     },
 
     save: async (name, sandbox) => {
@@ -276,8 +306,6 @@ export const threadSandboxOwner = (
         // The newest of the older generations stays as a spare: a run that
         // restored it a moment ago may still be creating from it.
         const older = previous.slice(0, -1);
-
-        await forget(scope, sandboxReadyKey(ref, name, runId));
 
         if (older.length === 0) {
           return;
@@ -321,6 +349,17 @@ export const threadSandboxOwner = (
         name,
         sandboxId: sandbox.id,
       });
+    },
+
+    release: async (name) => {
+      await forget(scope, sandboxReadyKey(ref, name, runId));
+    },
+
+    keepFailed: (name, error) => {
+      options.warn?.(
+        { ref, thread, sandbox: name, error: String(error) },
+        "keepAlive failed; the sandbox is saved and destroyed instead",
+      );
     },
 
     ready: async (name) => {
@@ -399,7 +438,6 @@ export const cleanupThreadSandbox = async (
 
       if (named) {
         await recordSandboxGeneration(scope, ref, sandbox.name, runId);
-        await forget(scope, readyKey);
       }
     } catch (error) {
       if (!(error instanceof StepError)) {
@@ -411,4 +449,7 @@ export const cleanupThreadSandbox = async (
   await options.run(`${sandbox.name}:thread:destroy`, async () => {
     await (await client.sandboxes.get(sandbox.sandboxId))?.destroy();
   });
+
+  // The sandbox is gone, so nothing will read the ready key again.
+  await forget(scope, readyKey);
 };
