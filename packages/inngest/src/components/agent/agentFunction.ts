@@ -572,7 +572,7 @@ export function createAgentFunction(
                 bindings,
                 stepSandboxes(step),
                 {
-                  event,
+                  event: event as unknown as AgentConfigContext["event"],
                   client: client as unknown as SkillsRuntime["client"],
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;

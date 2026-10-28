@@ -29,6 +29,7 @@ import {
   type SandboxHandle,
   SandboxValidationError,
 } from "../sandbox/types.ts";
+import type { AgentConfigContext } from "./agentFunction.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   createWithSkills,
@@ -126,9 +127,9 @@ export interface SandboxSetupContext {
   };
 
   /**
-   * The event that started the run.
+   * The event that started the run, when the agent function passed it.
    */
-  event: unknown;
+  event?: AgentConfigContext["event"];
 
   /**
    * The name the agent gives the sandbox, such as `work`.
@@ -152,7 +153,7 @@ export interface SandboxRuntime extends SkillsRuntime {
   /**
    * The event that started the run.
    */
-  event: unknown;
+  event?: AgentConfigContext["event"];
 }
 
 /**

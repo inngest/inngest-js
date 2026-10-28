@@ -457,7 +457,9 @@ const eventSchema = z.discriminatedUnion("op", [
     tool: z.string().max(128),
     args: z.array(z.unknown()),
     kwargs: z.record(z.unknown()).optional(),
+    h: z.string().max(64).optional(),
   }),
+  z.object({ op: z.literal("yielded") }),
   z.object({
     op: z.literal("exit"),
     code: z.number().int(),
