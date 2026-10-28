@@ -68,6 +68,7 @@ const readBody = async (
 
 export const startFakes = async (): Promise<Fakes> => {
   const calls: Call[] = [];
+  const commits = new Map<string, string>();
   let counter = 0;
 
   const server = createServer(async (req, res) => {
@@ -111,6 +112,28 @@ export const startFakes = async (): Promise<Fakes> => {
         body,
       });
       reply(201, { id: counter, body: body.body });
+
+      return;
+    }
+
+    // The commit a ref points at, for scenarios that resolve a ref to a sha:
+    // GET answers like the GitHub commits API; PUT sets it, body { sha }.
+    const commit = path.match(
+      /^\/github\/repos\/([^/]+\/[^/]+)\/commits\/([^/]+)$/,
+    );
+
+    if (commit) {
+      const key = `${commit[1]}@${decodeURIComponent(commit[2] as string)}`;
+
+      if (req.method === "PUT") {
+        commits.set(key, String(body.sha));
+        reply(200, { ok: true });
+      } else if (commits.has(key)) {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end(commits.get(key));
+      } else {
+        reply(404, { message: "Not Found" });
+      }
 
       return;
     }

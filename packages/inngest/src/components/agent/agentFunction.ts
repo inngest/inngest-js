@@ -39,6 +39,7 @@ import {
   registerLimits,
 } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -437,7 +438,15 @@ export function createAgentFunction(
       });
       const opened =
         Object.keys(bindings).length > 0
-          ? openSandboxes(bindings, stepSandboxes(step))
+          ? openSandboxes(bindings, stepSandboxes(step), {
+              client: client as unknown as SkillsRuntime["client"],
+              run: (id, fn) => {
+                return step.run(id, fn) as ReturnType<typeof fn>;
+              },
+              sendEvent: (id, payload) => {
+                return step.sendEvent(id, payload);
+              },
+            })
           : {};
 
       let stopRequested = false;

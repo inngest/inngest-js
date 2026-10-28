@@ -216,10 +216,14 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     if (!id && method === "POST") {
       const request = JSON.parse(String(init?.body ?? "{}")) as {
         name?: string;
+        snapshotId?: string;
       };
       const created = resource(randomUUID(), request.name);
 
-      record("sandbox.create", { id: created.id });
+      record("sandbox.create", {
+        id: created.id,
+        ...(request.snapshotId && { snapshotId: request.snapshotId }),
+      });
 
       return Response.json({ data: created }, { status: 201 });
     }
