@@ -437,10 +437,44 @@ describe("kv typed keys", () => {
     expect(loose).toEqual({ steps: "three" });
 
     await expect(kv.take(plan)).rejects.toThrow(/kv key "plan"/);
+    // A refused take leaves the value in place.
+    expect(await kv.get("plan")).toEqual({ steps: "three" });
 
     // @ts-expect-error the value must match the key's type
     await kv.set(plan, { steps: "no" });
     expect(await kv.get(kvKey("missing", z.string()))).toBeUndefined();
+  });
+
+  test("null is a value, a transform is refused, and keys work in a function", async () => {
+    const adapter = memoryKvAdapter();
+    const kv = createKv({ adapter });
+    const maybe = kvKey("maybe", z.string().nullable());
+    const bound = kv.with({ id: testClientId, env: null }).env;
+
+    await bound.set(maybe, null);
+    expect(await bound.get(maybe)).toBeNull();
+    expect(
+      await bound.get(kvKey("gone", z.string().nullable())),
+    ).toBeUndefined();
+
+    // @ts-expect-error a transform makes the stored and read types differ
+    kvKey("when", z.string().transform(Number));
+
+    const client = new Inngest({ id: testClientId });
+    const out: unknown[] = [];
+    const fn = client.createFunction(
+      { id: "kvtyped", triggers: [{ event: "kv/typed" }] },
+      async () => {
+        const count = kvKey("count", z.number());
+        await kv.env.set(count, 2);
+        out.push(await kv.env.get(count), await kv.env.take(count));
+        out.push(await kv.env.get(count));
+      },
+    );
+    const { type } = await runToEnd(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(out.slice(-3)).toEqual([2, 2, undefined]);
   });
 
   test("update gets the validated current value and a key without a schema is trusted", async () => {

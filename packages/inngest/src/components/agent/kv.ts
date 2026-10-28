@@ -531,7 +531,7 @@ export type KvKeyInput = string | KvKey<unknown>;
 /**
  * The value type of a key: `T` for a `KvKey<T>`, `unknown` for a plain name.
  */
-export type KvValue<K extends KvKeyInput> = K extends KvKey<infer T>
+export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
   ? T
   : unknown;
 
@@ -546,13 +546,16 @@ export type KvValue<K extends KvKeyInput> = K extends KvKey<infer T>
  * ```
  * @param name The key's name in the store.
  * @param schema Validates the value on every read; a value that fails throws
- * an error naming the key. Without a schema the type is yours to vouch for.
+ * an error naming the key. Its input and output types must be the same (no
+ * transforms or defaults), because the value is stored as JSON and checked
+ * as stored. Writes are not validated. Without a schema the type is yours to
+ * vouch for.
  */
 export function kvKey<T>(name: string): KvKey<T>;
-export function kvKey<S extends StandardSchemaV1>(
+export function kvKey<T>(
   name: string,
-  schema: S,
-): KvKey<StandardSchemaV1.InferOutput<S>>;
+  schema: StandardSchemaV1<T, T>,
+): KvKey<T>;
 export function kvKey(name: string, schema?: StandardSchemaV1): KvKey<unknown> {
   return { name, schema };
 }
@@ -591,6 +594,16 @@ async function decode<K extends KvKeyInput>(
   }
 
   return result.value as KvValue<K>;
+}
+
+/**
+ * A read that tells a missing key from a stored `null`, as a step result.
+ * @param value The stored value, or `undefined` when the key has none.
+ */
+function found(
+  value: unknown,
+): { found: false } | { found: true; value: unknown } {
+  return value === undefined ? { found: false } : { found: true, value };
 }
 
 /**
@@ -1029,11 +1042,11 @@ export function createKv(
     return {
       async get(key) {
         const name = nameOf(key);
-        const raw = await run("get", name, async (h) => {
-          return h.get(name);
+        const read = await run("get", name, async (h) => {
+          return found(await h.get(name));
         });
 
-        return decode(key, raw ?? undefined);
+        return decode(key, read.found ? read.value : undefined);
       },
       async set(key, value, setOptions) {
         checkedTtl(setOptions);
@@ -1086,14 +1099,17 @@ export function createKv(
       },
       async take(key) {
         const name = nameOf(key);
-        const raw = await run("take", name, async (h) => {
-          const value = (await h.get(name)) ?? null;
+        // Checked before the key is removed, so a value that fails its schema
+        // stays readable.
+        const read = await run("take", name, async (h) => {
+          const raw = await h.get(name);
+          await decode(key, raw);
           await h.delete(name);
 
-          return value;
+          return found(raw);
         });
 
-        return decode(key, raw ?? undefined);
+        return decode(key, read.found ? read.value : undefined);
       },
       async delete(key) {
         const name = nameOf(key);

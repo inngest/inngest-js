@@ -10,4 +10,4 @@ await kv.thread.set(plan, { steps: 3 });
 const found = await kv.thread.get(plan); // { steps: number } | undefined
 ```
 
-A value that fails its schema throws an error naming the key. `KvHandle` is no longer exported.
+A value that fails its schema throws an error naming the key; `take` leaves such a value in place. A schema's input and output types must match (no transforms), writes are not validated, and `all()` returns `Record<string, unknown>`. New exports: `kvKey`, `KvKey`, `KvKeyInput`, `KvValue`. `KvHandle` is no longer exported.
