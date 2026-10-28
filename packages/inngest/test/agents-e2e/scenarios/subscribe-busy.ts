@@ -13,6 +13,7 @@ import {
   createKv,
   getThread,
   kv,
+  kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
@@ -55,7 +56,7 @@ export const subscribeBusy = scenario({
             appendFileSync(ranFile(thread.key), `${message.data.content}\n`);
             await sleep(2500);
           });
-          await kv.thread.update<string[]>("done", function (done) {
+          await kv.thread.update(kvKey<string[]>("done"), function (done) {
             return [...(done ?? []), message.data.content ?? ""];
           });
         }
