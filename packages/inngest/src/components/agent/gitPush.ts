@@ -29,6 +29,10 @@ import { agent } from "./loop.ts";
 
 const defaultMaxBytes = 1024 * 1024;
 
+/**
+ * Options of `gitPushTool()` and `sandbox.tools.git()`: where to push, with
+ * what credentials, and which pushes to allow.
+ */
 export interface GitPushToolOptions {
   /**
    * The repository, as the host reaches it: an http(s) URL with no user name

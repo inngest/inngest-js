@@ -68,6 +68,10 @@ const defaultGithub = {
   apiUrl: "https://api.github.com",
 };
 
+/**
+ * Options of `skills.git()`: which ref to use, when to fetch it and where it
+ * lands in the sandbox.
+ */
 export interface SkillsGitOptions {
   /**
    * The branch, tag or commit to use. Default: the repository's default

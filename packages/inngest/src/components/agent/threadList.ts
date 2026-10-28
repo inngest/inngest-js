@@ -21,6 +21,9 @@ export type InsightsQuery = (
   sql: string,
 ) => Promise<{ columns: string[]; rows: unknown[][] }>;
 
+/**
+ * Options of `threads.list()` on an agent.
+ */
 export interface ThreadListOptions {
   /**
    * Only the threads of this session.
@@ -38,6 +41,9 @@ export interface ThreadListOptions {
   query?: InsightsQuery;
 }
 
+/**
+ * The threads of one agent, reached as `.threads` on an agent.
+ */
 export interface ThreadList {
   /**
    * The threads that were sent a message, most recent first, as handles.
