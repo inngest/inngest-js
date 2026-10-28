@@ -57,8 +57,9 @@ export const snapshotEntry = (name: SnapshotName): SnapshotEntry => {
 
 /**
  * The entry a build run is asked for: its `entry`, or for a run invoked by an
- * earlier release, one that has the name its `cacheKey` held (the scope up to
- * the first `/`, the generation after the last).
+ * earlier release, one that has the name its `cacheKey` held (the scope is the
+ * literal `ci` prefix at its start, the generation is what follows the last
+ * `/`).
  *
  * @throws {Error} When the data has neither.
  */

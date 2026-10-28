@@ -167,6 +167,8 @@ describe("isPushableRef", () => {
     expect(isPushableRef("refs/heads/a..b")).toBe(false);
     expect(isPushableRef("refs/heads/a b")).toBe(false);
     expect(isPushableRef("refs/heads/")).toBe(false);
+    expect(isPushableRef("refs/heads/-x")).toBe(false);
+    expect(isPushableRef("refs/heads/a/-x")).toBe(false);
   });
 });
 

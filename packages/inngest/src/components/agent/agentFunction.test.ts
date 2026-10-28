@@ -4,8 +4,10 @@
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { Middleware } from "../middleware/middleware.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
+import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent } from "./loop.ts";
 import { run } from "./test-helpers.ts";
@@ -709,5 +711,81 @@ describe("inherited limits persist on the thread", () => {
     const { output } = await run(fn, { event: trigger("again") });
 
     expect(output).toContain("team/leaf was not started");
+  });
+});
+
+describe("eager sandboxes", () => {
+  const work = sandbox({ id: "work", tools: sandbox.tools.code() });
+  const make = (use: boolean) => {
+    const warnings: string[] = [];
+    const brokenSandboxes = class extends Middleware.BaseMiddleware {
+      readonly id = "test:broken-sandboxes";
+
+      override transformFunctionInput(
+        arg: Middleware.TransformFunctionInputArgs,
+      ) {
+        const sandbox = {
+          create: async () => {
+            throw new Error("no capacity");
+          },
+        };
+        const logger = {
+          ...(arg.ctx as { logger?: object }).logger,
+          warn: (message: unknown) => {
+            warnings.push(String(message));
+          },
+        };
+
+        return {
+          ...arg,
+          ctx: {
+            ...arg.ctx,
+            logger,
+            step: { ...arg.ctx.step, sandbox },
+          },
+        };
+      }
+    };
+    const { fn } = createAgentFunction(
+      new Inngest({ id: testClientId, middleware: [brokenSandboxes] }),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        sandboxes: { work: { sandbox: work, start: "eager" } },
+      },
+      async ({ inbox, sandboxes }) => {
+        await inbox.next();
+
+        if (!use) {
+          return "done";
+        }
+
+        try {
+          await sandboxes.work?.get();
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "done";
+      },
+    );
+
+    return { fn, warnings };
+  };
+
+  test("an unused eager sandbox that failed to create only warns", async () => {
+    const { fn, warnings } = make(false);
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("done");
+    expect(warnings.join("\n")).toContain("no capacity");
+  });
+
+  test("a used eager sandbox that failed to create raises to its user, with no warning", async () => {
+    const { fn, warnings } = make(true);
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("no capacity");
+    expect(warnings).toEqual([]);
   });
 });

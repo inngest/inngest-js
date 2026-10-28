@@ -501,11 +501,14 @@ export const takeStepOf = (
   stepId: string,
   action: SnapshotCacheAction,
 ): StepSpec => {
-  if (action === "replaced") {
-    return steps.deleteReplacedCache(joinId(stepId, "replaced"));
+  switch (action) {
+    case "replaced":
+      return steps.deleteReplacedCache(joinId(stepId, "replaced"));
+    case "name-taken":
+      return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
+    default:
+      throw new Error(`A build has no step for the cache action "${action}"`);
   }
-
-  return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
 };
 
 /**

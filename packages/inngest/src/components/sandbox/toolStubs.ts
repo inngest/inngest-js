@@ -14,6 +14,11 @@
  * - `{"op":"reply","id":1,"result":{...}}` (or `"error":"..."` in place of
  *   `result`) answers request `id`. The waiter appends it, and the stub scans
  *   the log for it from where its own request was written.
+ * - `{"op":"reply","id":1,"yield":true}` tells the stub to exit with code 75
+ *   at once. It answers a call to a tool that waits (see `tool.group({ waits })`).
+ *   The host starts the command again with `INNGEST_TOOLS_JOURNAL` naming a
+ *   file of reply lines, one per earlier call in order, and the stub answers its
+ *   first calls from those without sending requests.
  * - `{"op":"exit","code":0,"stdout":"<base64>","stderr":"<base64>"}` is
  *   appended by the wrapper when the command ends.
  *
@@ -44,6 +49,12 @@ const pythonStub = `import asyncio, json, os
 _dir = os.environ["INNGEST_TOOLS_DIR"]
 _log = os.open(_dir + "/ops.log", os.O_RDWR | os.O_APPEND | os.O_CREAT)
 _seq = 0
+_journal = []
+if os.environ.get("INNGEST_TOOLS_JOURNAL"):
+    with open(os.environ["INNGEST_TOOLS_JOURNAL"]) as _file:
+        _journal = [json.loads(_line) for _line in _file.read().split("\\n") if _line]
+_replayed = 0
+os.environ.pop("INNGEST_TOOLS_JOURNAL", None)
 
 
 def _claim():
@@ -61,12 +72,24 @@ class ToolError(Exception):
     pass
 
 
+def _result(reply):
+    if "error" in reply:
+        raise ToolError(reply["error"])
+    return reply["result"]
+
+
 class _Tools:
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
 
         async def call(*args, **kwargs):
+            global _replayed
+            if _replayed < len(_journal):
+                _replayed += 1
+                if _journal[_replayed - 1].get("tool") != name:
+                    raise ToolError("replay made a different call than the first run: expected " + str(_journal[_replayed - 1].get("tool")) + ", got " + name)
+                return _result(_journal[_replayed - 1])
             id = _claim()
             line = json.dumps({"op": "call", "id": id, "tool": name, "args": args, "kwargs": kwargs}) + "\\n"
             if len(line) > ${maxToolRequestBytes}:
@@ -78,9 +101,9 @@ class _Tools:
                 for found in os.pread(_log, os.fstat(_log).st_size - pos, pos).split(b"\\n")[:-1]:
                     if found.startswith(prefix):
                         reply = json.loads(found)
-                        if "error" in reply:
-                            raise ToolError(reply["error"])
-                        return reply["result"]
+                        if reply.get("yield"):
+                            os._exit(75)
+                        return _result(reply)
                 await asyncio.sleep(0.02)
 
         return call
@@ -94,6 +117,11 @@ const nodeStub = `const fs = require("node:fs");
 const dir = process.env.INNGEST_TOOLS_DIR;
 const log = fs.openSync(dir + "/ops.log", "a+");
 let seq = 0;
+const journal = process.env.INNGEST_TOOLS_JOURNAL
+  ? fs.readFileSync(process.env.INNGEST_TOOLS_JOURNAL, "utf8").split("\\n").filter(Boolean).map((line) => JSON.parse(line))
+  : [];
+let replayed = 0;
+delete process.env.INNGEST_TOOLS_JOURNAL;
 
 const claim = () => {
   for (;;) {
@@ -108,7 +136,21 @@ const claim = () => {
 
 class ToolError extends Error { name = "ToolError"; }
 
+const result = (reply) => {
+  if ("error" in reply) {
+    throw new ToolError(reply.error);
+  }
+  return reply.result;
+};
+
 const call = async (name, args) => {
+  if (replayed < journal.length) {
+    const entry = journal[replayed++];
+    if (entry.tool !== name) {
+      throw new ToolError("replay made a different call than the first run: expected " + entry.tool + ", got " + name);
+    }
+    return result(entry);
+  }
   const id = claim();
   const line = JSON.stringify({ op: "call", id, tool: name, args }) + "\\n";
   if (Buffer.byteLength(line) > ${maxToolRequestBytes}) {
@@ -123,10 +165,10 @@ const call = async (name, args) => {
     for (const found of data.toString().split("\\n").slice(0, -1)) {
       if (found.startsWith(prefix)) {
         const reply = JSON.parse(found);
-        if ("error" in reply) {
-          throw new ToolError(reply.error);
+        if (reply.yield) {
+          process.exit(75);
         }
-        return reply.result;
+        return result(reply);
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 20));

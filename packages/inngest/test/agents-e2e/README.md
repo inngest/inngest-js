@@ -53,7 +53,7 @@ export const myPiece = scenario({
     ];
   },
   run: async (ctx) => {
-    const run = await ctx.finished(await ctx.send("go"));
+    const run = await ctx.finished(await ctx.send("go", {}, { startsRun: true }));
 
     ctx.expect.run(run).toComplete();
     ctx.expect.run(run).toHaveSteps("agent:model:1");
@@ -64,7 +64,7 @@ export const myPiece = scenario({
 
 The driver (`kit/driver.ts`, the `ctx` your `run` gets):
 
-- `ctx.send(name, data)` sends the scenario's event `agents-e2e/<id>/<name>` (use `event(name)` in `functions`) and returns the event ID. `ctx.finished(eventId)` waits for its run to end.
+- `ctx.send(name, data, { startsRun })` sends the scenario's event `agents-e2e/<id>/<name>` (use `event(name)` in `functions`) and returns the event ID; pass `startsRun: true` for an event whose run you wait for with `finished`, so it is resent once if no run starts. `ctx.finished(eventId)` waits for its run to end.
 - `ctx.expect.run(run)`: `toComplete()`, `toHaveSteps(...ids)` (the IDs your function gave them, such as `agent:model:1`), `toOutput(value)`.
 - `ctx.expect.kv(key).toEqual(value)` reads a Redis key (JSON) of the real Redis.
 - `ctx.expect.posts({ channel, method, thread }).toHaveCount(n)` (exactly n, after a 1s settle) and `.toInclude({ field: value })` assert on the calls the fake channels got since your scenario began. Slack posts to `${fakes.url}/slack/api/<method>` (`chat.postMessage`, `chat.update`, `reactions.add`, thread in `thread_ts`); GitHub to `${fakes.url}/github/repos/<o>/<r>/issues/<n>/comments` or `.../pulls/<n>/reviews`. The thread of a GitHub call is `owner/repo#n`.
