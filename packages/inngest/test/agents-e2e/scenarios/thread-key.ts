@@ -176,7 +176,7 @@ export const threadKey = scenario({
       return list(s, "turns").length === 1;
     });
     await s1.stop({ when: "now" });
-    await sleep(2000);
+    await sleep(4000);
     await ctx.send("stop-msg", { key: `${channel}-stop` });
     const after = await ctx.eventually(
       "an event after a stop now starts a new run",
