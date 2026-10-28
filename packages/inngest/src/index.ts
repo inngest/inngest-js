@@ -39,6 +39,11 @@
 
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
+export type {
+  InboxMessage,
+  SubscribeOptions,
+  Subscription,
+} from "./components/agent/subscribe";
 export { experiment } from "./components/ExperimentStrategies.ts";
 export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
