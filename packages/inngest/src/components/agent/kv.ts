@@ -273,14 +273,15 @@ export function redisKvAdapter(url: string): KvAdapter {
 
   return {
     async get(hash, field) {
-      const stored = (await command("HGET", main(hash), field)) as
-        | string
-        | null;
+      // One block, so a field moving between the two forms is never missed.
+      const [stored, timed] = (await (
+        await client()
+      ).transaction([
+        ["HGET", main(hash), field],
+        ["GET", expiring(hash, field)],
+      ])) as [string | null, string | null];
 
-      return (
-        stored ??
-        ((await command("GET", expiring(hash, field))) as string | null)
-      );
+      return stored ?? timed;
     },
     async set(hash, field, value, ttl) {
       if (ttl === undefined) {
@@ -296,8 +297,10 @@ export function redisKvAdapter(url: string): KvAdapter {
       // Listed before the write in case the process dies in between, and
       // after it so the entry cannot end before the key does.
       await register(hash, `t:${field}`, ttl);
-      await command("HDEL", main(hash), field);
-      await command("SET", expiring(hash, field), value, "EX", String(ttl));
+      await (await client()).transaction([
+        ["HDEL", main(hash), field],
+        ["SET", expiring(hash, field), value, "EX", String(ttl)],
+      ]);
       await register(hash, `t:${field}`, ttl);
     },
     async setIfAbsent(hash, field, value, ttl) {
