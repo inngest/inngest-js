@@ -30,7 +30,7 @@ One file in `scenarios/`, named by its id. The CLI and the app find it by the fi
 
 ```ts
 // packages/inngest/test/agents-e2e/scenarios/my-piece.ts
-import { agent } from "inngest/experimental";
+import { agent } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
 
 export const myPiece = scenario({

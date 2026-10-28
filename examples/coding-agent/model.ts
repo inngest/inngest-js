@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NonRetriableError } from "inngest";
-import { agent } from "inngest/experimental";
+import { agent } from "inngest/experimental/agents";
 
 const anthropic = new Anthropic();
 

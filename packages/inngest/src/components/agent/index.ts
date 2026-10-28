@@ -1,6 +1,6 @@
 /**
  * @module
- * EXPERIMENTAL: The coding-agent primitives exported from `inngest/experimental`:
+ * EXPERIMENTAL: The coding-agent primitives exported from `inngest/experimental/agents`:
  * `agent.loop()` and `repo()`.
  */
 export type {
@@ -8,19 +8,12 @@ export type {
   CodeToolsOptions,
 } from "../sandbox/codeTools.ts";
 export type {
-  ConfigMode,
-  ConfigModes,
-  ConfigResolver,
-  ConfigValue,
-  ResolvedConfig,
-  ResolvedConfigValue,
-} from "./config.ts";
-export {
-  ConfigResolveError,
-  createConfigResolver,
-  resolveConfigValue,
-} from "./config.ts";
+  GitPolicy,
+  GitPolicyResult,
+  GitPush,
+} from "../sandbox/gitPush.ts";
 export type {
+  ConfigValue,
   LazySandbox,
   SandboxBinding,
   SandboxBindingInput,

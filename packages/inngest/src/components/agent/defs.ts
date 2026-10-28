@@ -26,8 +26,29 @@ import {
   type SandboxDuration,
   SandboxValidationError,
 } from "../sandbox/types.ts";
-import { type ConfigValue, resolveConfigValue } from "./config.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
+
+/**
+ * A config field: a value, or a function of `Ctx` returning it. A `T` that is
+ * itself a function can't be used as a value, since a function is always
+ * called.
+ */
+export type ConfigValue<T, Ctx> = T | ((ctx: Ctx) => T | Promise<T>);
+
+/**
+ * Resolves a config field: calls it with `ctx` if it is a function, passes
+ * anything else through. Functions run on every replay, so they must be pure.
+ */
+const resolveConfigValue = async <T, Ctx>(
+  value: ConfigValue<T, Ctx>,
+  ctx: Ctx,
+): Promise<T> => {
+  if (typeof value === "function") {
+    return await (value as (ctx: Ctx) => T | Promise<T>)(ctx);
+  }
+
+  return value;
+};
 
 /**
  * The parts of a sandbox that a definition's tools use. Calls through it

@@ -10,7 +10,7 @@ import {
   agent,
   agentInvokeDepth,
   agentInvokeInput,
-} from "inngest/experimental";
+} from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
 
 /**

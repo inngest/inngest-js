@@ -352,7 +352,7 @@ const runTool = async (
  *
  * @example
  * ```ts
- * import { agent } from "inngest/experimental";
+ * import { agent } from "inngest/experimental/agents";
  *
  * const { text } = await agent.loop({
  *   model: claude, // see `agent.model()`
@@ -509,7 +509,7 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
  * @example
  * ```ts
  * import Anthropic from "@anthropic-ai/sdk";
- * import { agent } from "inngest/experimental";
+ * import { agent } from "inngest/experimental/agents";
  *
  * const anthropic = new Anthropic();
  *
