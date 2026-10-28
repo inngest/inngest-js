@@ -25,8 +25,16 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { SandboxTools } from "../sandbox/tools.ts";
 import {
+  type Channel,
+  createReporter,
+  type ReportConfigValue,
+  type Reporter,
+} from "./channels.ts";
+import {
+  type ConfigValue,
   type LazySandbox,
   openSandboxes,
+  resolveConfigValue,
   resolveSandboxes,
   type SandboxesConfig,
   sandboxTools,
@@ -92,6 +100,21 @@ export interface AgentFunctionConfig<TOn = ThreadTriggers>
   sandboxes?: SandboxesConfig<AgentConfigContext>;
 
   /**
+   * The destinations of progress and asks, by name: channels made with
+   * `defineChannel()` or a helper such as `slack.channel(event)`. The object
+   * may be a function of `{ event }`, so a channel can be chosen from the
+   * trigger; it re-runs on every replay, so it must be pure.
+   */
+  channels?: ConfigValue<Record<string, Channel>, AgentConfigContext>;
+
+  /**
+   * Where `report()` posts when it is not told: a channel name, a channel,
+   * or a list of them. Default: the channel named `main`, if there is one.
+   * May be a function of `{ event }`.
+   */
+  report?: ReportConfigValue<AgentConfigContext>;
+
+  /**
    * What this agent may start and spend: `depth` (default 1, so it may start
    * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
    * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
@@ -127,6 +150,16 @@ export interface AgentBodyContext {
    * the `tools` of `agent.loop()`.
    */
   sandboxTools: SandboxTools;
+
+  /**
+   * The agent's channels, by name, as the config resolved them for this run.
+   */
+  channels: Record<string, Channel>;
+
+  /**
+   * Posts progress to the agent's channels. See `Reporter`.
+   */
+  report: Reporter;
 
   /**
    * Messages sent to the thread, one per delivery, in order. The first is the
@@ -518,6 +551,7 @@ export function createAgentFunction(
                 {
                   event: event as unknown as AgentConfigContext["event"],
                   client: client as unknown as SkillsRuntime["client"],
+                  agent: ref,
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;
                   },
@@ -543,6 +577,23 @@ export function createAgentFunction(
                 }),
               )
             : {};
+
+        const configContext = {
+          event: event as unknown as AgentConfigContext["event"],
+        };
+        const channels = await resolveConfigValue(
+          config.channels ?? {},
+          configContext,
+        );
+        const report = createReporter(
+          channels,
+          config.report === undefined
+            ? undefined
+            : await resolveConfigValue(config.report, configContext),
+          (id, run) => {
+            return step.run(id, run);
+          },
+        );
 
         let stopRequested = false;
         const { inbox } = threadInbox(
@@ -628,6 +679,8 @@ export function createAgentFunction(
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
+            channels,
+            report,
             inbox,
             control,
           });

@@ -245,7 +245,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
   tools.run_code = tool.group({
     description:
-      'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run.',
+      'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.',
     input: z.object({
       language: z.enum(["python", "typescript"]),
       code: z.string(),
@@ -293,11 +293,14 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
         return `exit 0\n${result.stdout}${stderr}${returned}`;
       } finally {
-        await sandbox.commands.run(
-          { id: "run_code:cleanup", name: "remove files" },
-          ["rm", "-f", resultPath, `${base}.json`],
-          { cwd },
-        );
+        // Best effort: a gone sandbox mustn't replace the error that got here
+        try {
+          await sandbox.commands.run(
+            { id: "run_code:cleanup", name: "remove files" },
+            ["rm", "-f", resultPath, `${base}.json`],
+            { cwd },
+          );
+        } catch {}
       }
     },
   });

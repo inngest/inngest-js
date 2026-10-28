@@ -51,7 +51,7 @@ export type ConfigValue<T, Ctx> = T | ((ctx: Ctx) => T | Promise<T>);
  * Resolves a config field: calls it with `ctx` if it is a function, passes
  * anything else through. Functions run on every replay, so they must be pure.
  */
-const resolveConfigValue = async <T, Ctx>(
+export const resolveConfigValue = async <T, Ctx>(
   value: ConfigValue<T, Ctx>,
   ctx: Ctx,
 ): Promise<T> => {
@@ -79,10 +79,18 @@ export interface SandboxDefinitionOptions {
   image?: SandboxImage;
   vcpu?: number;
   memoryMb?: number;
+
+  /**
+   * Environment for a fresh sandbox. A sandbox restored from the thread's
+   * snapshot does not get it again: the platform forbids `environment`
+   * together with a snapshot.
+   */
   environment?: Record<string, string>;
 
   /**
-   * Workspace secret names to inject. See the `secrets` create option.
+   * Workspace secret names to inject. See the `secrets` create option. Like
+   * `environment`, they are not applied to a sandbox restored from the
+   * thread's snapshot, because the platform forbids them together with one.
    */
   secrets?: string[];
 
@@ -142,7 +150,7 @@ export interface SandboxSetupContext {
    * earlier run's setup put in is already there, so skip that work; per-run
    * state still needs writing.
    */
-  restored: boolean;
+  restored?: boolean;
 }
 
 export type SandboxSetup = (context: SandboxSetupContext) => Promise<void>;
@@ -343,6 +351,15 @@ export const toolNamespaceSeparator = "_";
 const startModes: readonly unknown[] = ["lazy", "eager"];
 
 /**
+ * The definition of a binding, whichever form it is written in.
+ */
+export const definitionOf = <TStart>(
+  binding: SandboxDefinition | SandboxBinding<TStart>,
+): SandboxDefinition => {
+  return "sandbox" in binding ? binding.sandbox : binding;
+};
+
+/**
  * A binding as `openSandboxes()` holds it: always the object form, with its
  * `start` checked. The one place bindings are validated.
  */
@@ -444,15 +461,19 @@ const lazySandbox = (
   let guard: DeferHandle | undefined;
   let restored = false;
 
+  // Whether anything used the sandbox. One that was only created (an eager
+  // start nothing needed) has nothing worth a snapshot.
+  let used = false;
+
   // Whether anything has seen the create's outcome. An eager create that
   // failed before anything asked for the sandbox is raised by `close()`.
   let observed = false;
 
   // The cleanup that destroys the sandbox if the run ends without closing it.
-  // It may not save it yet: the sandbox is only worth keeping once its skills
-  // and setup have finished.
+  // It saves the sandbox only once `owner.ready()` says its skills and setup
+  // have finished.
   const arm = (sandbox: DurableSandbox) => {
-    guard = owner?.guard(name, sandbox, false);
+    guard = owner?.guard(name, sandbox);
   };
 
   // The bare sandbox: restored from the thread's newest snapshot when it has
@@ -460,6 +481,10 @@ const lazySandbox = (
   const acquire = async (
     options: SandboxCreateFreshOptions,
   ): Promise<DurableSandbox> => {
+    // The platform takes only a name beside a snapshot (no image, size,
+    // environment or secrets), so the definition's environment and secrets are
+    // not applied to a restored sandbox. Platform ask: accept them with a
+    // snapshotId.
     const restoreFrom = owner ? await owner.restore(name) : undefined;
 
     restored = restoreFrom !== undefined;
@@ -524,24 +549,26 @@ const lazySandbox = (
         );
       }
 
-      // Skills and setup are done: from here the run's end may save it.
-      if (owner && guard) {
-        const unsaved = guard;
-
-        guard = owner.guard(name, sandbox, true);
-        unsaved.abort();
-      }
-
       return sandbox;
     });
 
     return created;
   };
 
-  const get = (): Promise<DurableSandbox> => {
-    observed = true;
+  // Marks the sandbox ready to be saved by the run's cleanup: its skills and
+  // setup are done and something used it.
+  let ready: Promise<void> | undefined;
 
-    return create();
+  const get = async (): Promise<DurableSandbox> => {
+    observed = true;
+    used = true;
+
+    const sandbox = await create();
+
+    ready ??= owner?.ready(name);
+    await ready;
+
+    return sandbox;
   };
 
   // Step IDs from the definition's tools (`run`, `edit:read`) are prefixed
@@ -610,7 +637,7 @@ const lazySandbox = (
 
         if (sandbox) {
           // A sandbox whose creation or setup failed is not worth keeping.
-          if (!failed) {
+          if (!failed && used) {
             await owner?.save(name, sandbox);
           }
 

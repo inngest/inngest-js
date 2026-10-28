@@ -305,7 +305,13 @@ describe("codeTools run_code options", () => {
 
   test("refuses tools named like the built-ins", () => {
     expect(() => {
-      return codeTools(sandbox, { tools: { sleep: () => 1 } });
+      return codeTools(sandbox, {
+        tools: {
+          sleep: () => {
+            return 1;
+          },
+        },
+      });
     }).toThrow(/built in/);
   });
 

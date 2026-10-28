@@ -252,6 +252,7 @@ asyncio.run(main())`,
       const second = await segment(command, journal);
 
       expect(second.code).toBe(0);
+      expect(second.log).toContain('{"op":"replayed"}');
       expect(second.stdout).toBe("before 3\nafter 7\n");
       // Only the call after the journal went home
       expect(second.calls).toEqual([{ tool: "add", h: expect.any(String) }]);
@@ -281,12 +282,6 @@ describe("a replay that diverges", () => {
       code: `require("inngest_tools").tools.add(1, 3).catch(() => console.log("caught"))`,
       first: `require("inngest_tools").tools.add(1, 2)`,
       message: "call 1 is add",
-    },
-    {
-      name: "fewer calls than the first run",
-      code: `const { tools } = require("inngest_tools"); tools.add(1, 2).then(() => console.log("done"))`,
-      first: `const { tools } = require("inngest_tools"); tools.add(1, 2).then(() => tools.add(3, 4))`,
-      message: "the script made 1 calls, the first run made 2",
     },
   ])(
     "$name exits 76 where a script's try/catch can't hide it",
@@ -324,11 +319,6 @@ asyncio.run(main())`,
         "    try:\n        await tools.add(1, 3)\n    except Exception:\n        pass",
       message: "call 1 is add",
     },
-    {
-      name: "fewer calls",
-      calls: "    await tools.add(1, 2)",
-      message: "the script made 1 calls, the first run made 2",
-    },
   ])("$name exits 76", async ({ calls, message }) => {
     if (!hasPython) {
       return;
@@ -353,6 +343,61 @@ asyncio.run(main())`,
   });
 });
 
+describe("a replay", () => {
+  test.each([
+    {
+      name: "node",
+      runnable: true,
+      first: `require("inngest_tools").tools.add({ b: 1, a: [2, { y: 1, x: 2 }] })`,
+      again: `require("inngest_tools").tools.add({ a: [2, { x: 2, y: 1 }], b: 1 })`,
+    },
+    {
+      name: "python",
+      runnable: hasPython,
+      first: `import asyncio
+from inngest_tools import tools
+asyncio.run(tools.add({"b": 1, 1: {"y": 1, "x": 2}}))`,
+      again: `import asyncio
+from inngest_tools import tools
+asyncio.run(tools.add({1: {"x": 2, "y": 1}, "b": 1}))`,
+    },
+  ])(
+    "$name hashes arguments whatever their key order",
+    async ({ name, runnable, first, again }) => {
+      if (!runnable) {
+        return;
+      }
+
+      const program = (code: string) => {
+        return name === "node" ? ["node", "-e", code] : ["python3", "-c", code];
+      };
+      const original = await segment(program(first), []);
+      const journal = original.answered.map((line, at) => {
+        return reply(
+          at + 1,
+          JSON.parse(line).result,
+          "add",
+          original.calls[at]?.h,
+        );
+      });
+      const replay = await segment(program(again), journal);
+
+      expect(replay.code).toBe(0);
+      expect(replay.log).toContain('{"op":"replayed"}');
+    },
+  );
+
+  test("that makes fewer calls never writes that it used the whole journal", async () => {
+    const run = await segment(
+      ["node", "-e", `require("inngest_tools")`],
+      [reply(1, 1, "add", "x")],
+    );
+
+    expect(run.code).toBe(0);
+    expect(run.log).not.toContain("replayed");
+  });
+});
+
 describe("the journal file", () => {
   test("is deleted once the stub has read it", async () => {
     const dir = join(root, `run-${count}`);
@@ -360,7 +405,9 @@ describe("the journal file", () => {
 
     await segment(["node", "-e", `require("inngest_tools")`], []);
 
-    expect(() => readFileSync(path)).toThrow();
+    expect(() => {
+      return readFileSync(path);
+    }).toThrow();
   });
 });
 

@@ -460,6 +460,7 @@ const eventSchema = z.discriminatedUnion("op", [
     h: z.string().max(64).optional(),
   }),
   z.object({ op: z.literal("yielded") }),
+  z.object({ op: z.literal("replayed") }),
   z.object({
     op: z.literal("exit"),
     code: z.number().int(),

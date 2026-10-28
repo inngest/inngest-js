@@ -85,4 +85,56 @@ describe("RESP", () => {
     (await client()).close();
     server.close();
   });
+
+  test("a transaction sends one block and keeps replies aligned", async () => {
+    const seen: string[] = [];
+    const server = net.createServer((socket) => {
+      let buffer = Buffer.alloc(0);
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        for (;;) {
+          const parsed = parseReply(buffer);
+          if (!parsed) {
+            return;
+          }
+          buffer = buffer.subarray(parsed.end);
+          const args = parsed.reply as string[];
+          seen.push(args[0] as string);
+          if (args[0] === "MULTI") {
+            socket.write("+OK\r\n");
+          } else if (args[0] === "EXEC") {
+            socket.write(
+              seen.includes("BAD")
+                ? "*2\r\n:1\r\n-WRONGTYPE bad\r\n"
+                : "*2\r\n:1\r\n:1\r\n",
+            );
+          } else if (args[0] === "PING") {
+            socket.write("+PONG\r\n");
+          } else {
+            socket.write("+QUEUED\r\n");
+          }
+        }
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+    const client = await connectRedis(`redis://127.0.0.1:${port}`);
+
+    expect(
+      await client.transaction([
+        ["DEL", "a"],
+        ["HSET", "b"],
+      ]),
+    ).toEqual([1, 1]);
+    expect(await client.command("PING")).toBe("PONG");
+    expect(seen).toEqual(["MULTI", "DEL", "HSET", "EXEC", "PING"]);
+
+    await expect(client.transaction([["BAD"]])).rejects.toThrow(/WRONGTYPE/);
+    expect(await client.command("PING")).toBe("PONG");
+
+    client.close();
+    server.close();
+  });
 });
