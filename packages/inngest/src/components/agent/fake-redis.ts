@@ -253,6 +253,7 @@ export async function startFakeRedis() {
   const server = net.createServer((socket) => {
     sockets.add(socket);
     let buffer = Buffer.alloc(0);
+    let queued: string[][] | undefined;
     socket.on("data", (chunk) => {
       buffer = Buffer.concat([buffer, chunk]);
       for (;;) {
@@ -262,7 +263,21 @@ export async function startFakeRedis() {
         }
         buffer = buffer.subarray(parsed.end);
         commandLog.push(parsed.reply as string[]);
-        socket.write(execute(parsed.reply as string[]));
+        const args = parsed.reply as string[];
+        const name = (args[0] as string).toUpperCase();
+        if (name === "MULTI") {
+          queued = [];
+          socket.write("+OK\r\n");
+        } else if (name === "EXEC") {
+          const replies = (queued ?? []).map(execute);
+          queued = undefined;
+          socket.write(`*${replies.length}\r\n${replies.join("")}`);
+        } else if (queued) {
+          queued.push(args);
+          socket.write("+QUEUED\r\n");
+        } else {
+          socket.write(execute(args));
+        }
       }
     });
     socket.on("close", () => {

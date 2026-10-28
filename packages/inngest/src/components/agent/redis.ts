@@ -101,6 +101,13 @@ export function parseReply(
 
 export interface RedisClient {
   command(...args: string[]): Promise<Reply>;
+
+  /**
+   * Runs the commands as one MULTI/EXEC block, sent in a single write so no
+   * other command on this connection lands inside it. Resolves to the EXEC reply.
+   * @param commands Commands to run, each a list of arguments.
+   */
+  transaction(commands: string[][]): Promise<Reply>;
   close(): void;
   isClosed(): boolean;
 }
@@ -192,6 +199,31 @@ export async function connectRedis(url: string): Promise<RedisClient> {
         }
         pending.push({ resolve, reject });
         socket.write(encodeCommand(args));
+      });
+    },
+    transaction(commands) {
+      return new Promise((resolve, reject) => {
+        if (dead) {
+          reject(new Error("Redis connection closed"));
+
+          return;
+        }
+
+        const all = [["MULTI"], ...commands, ["EXEC"]];
+        let failed = false;
+        all.forEach((_, i) => {
+          const last = i === all.length - 1;
+          pending.push({
+            resolve: last ? resolve : () => {},
+            reject: (error) => {
+              if (!failed) {
+                failed = true;
+                reject(error);
+              }
+            },
+          });
+        });
+        socket.write(Buffer.concat(all.map(encodeCommand)));
       });
     },
     close() {

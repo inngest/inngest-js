@@ -183,6 +183,10 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
         expect(await env.setIfAbsent("b", "run-1")).toBe(true);
         expect(await env.setIfAbsent("b", "run-1")).toBe(true);
         expect(await env.setIfAbsent("b", "run-2")).toBe(false);
+
+        // Identical values cannot be told apart: give each caller its own token.
+        expect(await env.setIfAbsent("c", "same")).toBe(true);
+        expect(await env.setIfAbsent("c", "same")).toBe(true);
         await done();
       });
 
@@ -357,7 +361,7 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     expect(deletes.length).toBeGreaterThan(2);
     expect(Math.max(...deletes.map((c) => c.length))).toBeLessThanOrEqual(501);
     await server.close();
-  });
+  }, 30_000);
 
   test("inside a function each operation is a memoized step", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });

@@ -127,9 +127,9 @@ export function memoryKvAdapter(): KvAdapter {
 
   // Drops the field once its time is up, so every read gives the same answer.
   function live(hash: string, field: string) {
-    const found = hashOf(hash).fields.get(field);
+    const found = hashes.get(hash)?.fields.get(field);
     if (found?.expiresAt !== undefined && found.expiresAt <= Date.now()) {
-      hashOf(hash).fields.delete(field);
+      hashes.get(hash)?.fields.delete(field);
 
       return undefined;
     }
@@ -162,11 +162,11 @@ export function memoryKvAdapter(): KvAdapter {
       return true;
     },
     async delete(hash, field) {
-      hashOf(hash).fields.delete(field);
+      hashes.get(hash)?.fields.delete(field);
     },
     async all(hash) {
       const out: Record<string, string> = {};
-      for (const field of [...hashOf(hash).fields.keys()]) {
+      for (const field of [...(hashes.get(hash)?.fields.keys() ?? [])]) {
         const found = live(hash, field);
         if (found) {
           out[field] = found.value;
@@ -185,7 +185,7 @@ export function memoryKvAdapter(): KvAdapter {
       indexes.set(index, found);
     },
     async indexRange(hash, index, options) {
-      const entries = [...(hashOf(hash).indexes.get(index) ?? [])]
+      const entries = [...(hashes.get(hash)?.indexes.get(index) ?? [])]
         .map(([member, score]) => {
           return { member, score };
         })
@@ -205,7 +205,7 @@ export function memoryKvAdapter(): KvAdapter {
       return entries.slice(0, options.limit ?? entries.length);
     },
     async indexRemove(hash, index, member) {
-      hashOf(hash).indexes.get(index)?.delete(member);
+      hashes.get(hash)?.indexes.get(index)?.delete(member);
     },
   };
 }
@@ -284,8 +284,11 @@ export function redisKvAdapter(url: string): KvAdapter {
     },
     async set(hash, field, value, ttl) {
       if (ttl === undefined) {
-        await command("DEL", expiring(hash, field));
-        await command("HSET", main(hash), field, value);
+        // One block, so a reader never sees the field in neither form.
+        await (await client()).transaction([
+          ["DEL", expiring(hash, field)],
+          ["HSET", main(hash), field, value],
+        ]);
 
         return;
       }
@@ -320,14 +323,17 @@ export function redisKvAdapter(url: string): KvAdapter {
             return true;
           }
 
-          const now = await command("HGET", main(hash), field);
-          if (now !== null) {
-            return now === value;
+          const current = await command("HGET", main(hash), field);
+          if (current !== null) {
+            return current === value;
           }
 
           continue;
         }
 
+        // Not listed before the claim: a lost claim must not list the winner's
+        // key under this call's score. A crash before listing is repaired by the
+        // retry, which finds its own value and lists it.
         const claimed = await command(
           "SET",
           expiring(hash, field),
@@ -336,17 +342,17 @@ export function redisKvAdapter(url: string): KvAdapter {
           String(ttl),
           "NX",
         );
-        const now =
+        const current =
           claimed === "OK"
             ? value
             : await command("GET", expiring(hash, field));
-        if (now === value) {
+        if (current === value) {
           // Also on a retry, which may have died before listing the key.
           await register(hash, `t:${field}`, ttl);
 
           return true;
         }
-        if (now !== null) {
+        if (current !== null) {
           return false;
         }
       }
@@ -518,6 +524,12 @@ export interface KvScopeInstance {
    * holds exactly its value; put an owner token (such as the run id) in the
    * value so a different caller never matches. Use one style per key: a
    * concurrent `set`, or a claim with and without a `ttl`, is not arbitrated.
+   *
+   * @example
+   * ```ts
+   * // Only the first run to ask owns the card; a retry of that run still does.
+   * const owns = await kv.env.setIfAbsent(`card:${id}`, runId, { ttl: 600 });
+   * ```
    */
   setIfAbsent(
     key: string,
