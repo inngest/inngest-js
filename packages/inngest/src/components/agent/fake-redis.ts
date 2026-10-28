@@ -18,6 +18,7 @@ export async function startFakeRedis() {
   const data = new Map<string, Value>();
   const state = { now: 0 };
   const sockets = new Set<net.Socket>();
+  const commandLog: string[][] = [];
 
   function live(key: string) {
     const found = data.get(key);
@@ -43,6 +44,17 @@ export async function startFakeRedis() {
   }
 
   function execute(args: string[]): string {
+    const reply = run(args);
+    for (const [key, value] of [...data]) {
+      if (value.type !== "string" && value.value.size === 0) {
+        data.delete(key);
+      }
+    }
+
+    return reply;
+  }
+
+  function run(args: string[]): string {
     const [name, ...rest] = args;
     const a = rest as string[];
     switch ((name as string).toUpperCase()) {
@@ -249,6 +261,7 @@ export async function startFakeRedis() {
           return;
         }
         buffer = buffer.subarray(parsed.end);
+        commandLog.push(parsed.reply as string[]);
         socket.write(execute(parsed.reply as string[]));
       }
     });
@@ -268,6 +281,7 @@ export async function startFakeRedis() {
      * Moves the server clock forward.
      * @param ms Milliseconds to add.
      */
+    commands: commandLog,
     advance(ms: number) {
       state.now += ms;
     },

@@ -294,9 +294,12 @@ export function redisKvAdapter(url: string): KvAdapter {
         return;
       }
 
+      // Listed before the write in case the process dies in between, and
+      // after it so the entry cannot end before the key does.
       await register(hash, `t:${field}`, ttl);
       await command("HDEL", main(hash), field);
       await command("SET", expiring(hash, field), value, "EX", String(ttl));
+      await register(hash, `t:${field}`, ttl);
     },
     async setIfAbsent(hash, field, value, ttl) {
       const stored = (await command("HGET", main(hash), field)) as
@@ -306,31 +309,47 @@ export function redisKvAdapter(url: string): KvAdapter {
         return stored === value;
       }
 
-      if (ttl === undefined) {
-        if ((await command("EXISTS", expiring(hash, field))) === 1) {
-          return holds(expiring(hash, field), value);
+      // A holder that vanishes between our failed write and our read leaves
+      // the key free, so the claim is tried once more.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (ttl === undefined) {
+          if ((await command("EXISTS", expiring(hash, field))) === 1) {
+            return holds(expiring(hash, field), value);
+          }
+
+          if ((await command("HSETNX", main(hash), field, value)) === 1) {
+            return true;
+          }
+
+          const now = await command("HGET", main(hash), field);
+          if (now !== null) {
+            return now === value;
+          }
+
+          continue;
         }
 
-        if ((await command("HSETNX", main(hash), field, value)) === 1) {
+        const claimed = await command(
+          "SET",
+          expiring(hash, field),
+          value,
+          "EX",
+          String(ttl),
+          "NX",
+        );
+        const now =
+          claimed === "OK"
+            ? value
+            : await command("GET", expiring(hash, field));
+        if (now === value) {
+          // Also on a retry, which may have died before listing the key.
+          await register(hash, `t:${field}`, ttl);
+
           return true;
         }
-
-        return (await command("HGET", main(hash), field)) === value;
-      }
-
-      const claimed = await command(
-        "SET",
-        expiring(hash, field),
-        value,
-        "EX",
-        String(ttl),
-        "NX",
-      );
-      if (claimed === "OK" || (await holds(expiring(hash, field), value))) {
-        // Also on a retry, which may have died before listing the key.
-        await register(hash, `t:${field}`, ttl);
-
-        return true;
+        if (now !== null) {
+          return false;
+        }
       }
 
       return false;
@@ -385,8 +404,11 @@ export function redisKvAdapter(url: string): KvAdapter {
       await command("DEL", registry(hash), main(hash));
     },
     async indexAdd(hash, index, member, score) {
+      // Listed before the write in case the process dies in between, and
+      // after it so a racing removal that unlisted the index cannot win.
       await register(hash, `z:${index}`);
       await command("ZADD", sorted(hash, index), String(score), member);
+      await register(hash, `z:${index}`);
     },
     async indexRange(hash, index, options) {
       const low = options.min === undefined ? "-inf" : String(options.min);

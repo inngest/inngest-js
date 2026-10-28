@@ -351,6 +351,11 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     await env.clear();
 
     expect(server.keys()).toEqual([]);
+    const deletes = server.commands.filter((c) => {
+      return c[0] === "DEL";
+    });
+    expect(deletes.length).toBeGreaterThan(2);
+    expect(Math.max(...deletes.map((c) => c.length))).toBeLessThanOrEqual(501);
     await server.close();
   });
 

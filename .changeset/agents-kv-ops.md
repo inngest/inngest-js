@@ -14,5 +14,6 @@ const newest = await kv.env.index("improve").range({ order: "desc", limit: 20 })
 - `ttl` is a whole number of seconds, at most 2^31. `update` writes without a `ttl`, so it drops one.
 - `setIfAbsent` returns whether the caller holds the key. A retry of the same call gets `true` because the key already holds its value, so put an owner token such as the run ID in the value.
 - Index members are strings and scores are finite numbers.
+- Stored key names use `{hash}` cluster tags and a new layout, so values written by earlier pre-releases of the KV are not read.
 - Ids that contain `%`, `:`, `|`, `{` or `}` are now escaped in stored key names.
 - Custom `KvAdapter`s must implement the new methods. The Redis adapter needs Redis 6.2 or newer and reads time from the server.
