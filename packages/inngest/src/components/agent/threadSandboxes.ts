@@ -46,7 +46,7 @@ import {
   type SnapshotEntry,
   snapshotCache,
 } from "../sandbox/snapshotCache.ts";
-import type { DurableSandbox } from "../sandbox/types.ts";
+import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
 import type { KvScopeInstance } from "./kv.ts";
 import {
   newestSandboxGeneration,
@@ -92,6 +92,24 @@ export interface ThreadSandboxOwner {
    * @param sandbox The sandbox, still running.
    */
   save(name: string, sandbox: DurableSandbox): Promise<void>;
+
+  /**
+   * Leaves a `keepAlive` sandbox running for the thread's next run instead of
+   * saving and destroying it, and returns whether it did. Optional: with no
+   * `keep`, or one that returns false, the run saves and destroys the
+   * sandbox as usual. Nothing implements it yet, because stopping the sandbox
+   * after `idle` needs an idle timeout on the platform's sandbox, which does
+   * not exist (platform ask). It will have to stop the sandbox on every
+   * terminal state of the thread's run, with no sweeper.
+   * @param name The sandbox's name in the agent's `sandboxes`.
+   * @param sandbox The sandbox, still running.
+   * @param keepAlive The binding's `keepAlive`.
+   */
+  keep?(
+    name: string,
+    sandbox: DurableSandbox,
+    keepAlive: { idle: SandboxDuration },
+  ): Promise<boolean>;
 
   /**
    * Called when creating a sandbox from the thread's snapshot failed (for

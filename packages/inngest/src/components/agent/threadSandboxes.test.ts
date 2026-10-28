@@ -615,6 +615,130 @@ describe("lazy sandboxes of a thread", () => {
     expect(w.live.has("sb-1")).toBe(false);
   });
 
+  test("keepAlive does nothing yet: the sandbox is saved and destroyed like any other", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const tools = {
+      create: vi.fn(async () => {
+        return w.durable("sb-1");
+      }),
+    } as unknown as DurableSandboxTools;
+    const opened = openSandboxes(
+      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
+      tools,
+      undefined,
+      s.owner(),
+    );
+
+    await opened.work?.get();
+    await opened.work?.close();
+
+    expect(w.rows).toHaveLength(1);
+    expect(w.live.has("sb-1")).toBe(false);
+  });
+
+  test("an owner that keeps a keepAlive sandbox leaves it running and drops its cleanup", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const abort = vi.fn();
+    const keep = vi.fn(async () => {
+      return true;
+    });
+    const owner = {
+      ...s.owner(),
+      keep,
+      guard: () => {
+        return { abort };
+      },
+    };
+    const tools = {
+      create: vi.fn(async () => {
+        return w.durable("sb-1");
+      }),
+    } as unknown as DurableSandboxTools;
+    const opened = openSandboxes(
+      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
+      tools,
+      undefined,
+      owner,
+    );
+
+    await opened.work?.get();
+    await opened.work?.close();
+
+    expect(keep).toHaveBeenCalledWith("work", expect.anything(), {
+      idle: "10m",
+    });
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(w.rows).toHaveLength(0);
+    expect(w.live.has("sb-1")).toBe(true);
+  });
+
+  test("a keep that declines, or a sandbox that is unused, falls back to save and destroy or just destroy", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const keep = vi.fn(async () => {
+      return false;
+    });
+    const tools = {
+      create: vi.fn(async () => {
+        return w.durable("sb-1");
+      }),
+    } as unknown as DurableSandboxTools;
+    const used = openSandboxes(
+      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
+      tools,
+      undefined,
+      { ...s.owner(), keep },
+    );
+
+    await used.work?.get();
+    await used.work?.close();
+
+    expect(keep).toHaveBeenCalledTimes(1);
+    expect(w.rows).toHaveLength(1);
+    expect(w.live.has("sb-1")).toBe(false);
+
+    const unused = openSandboxes(
+      { work: { sandbox: box, keepAlive: { idle: "10m" }, start: "eager" } },
+      tools,
+      undefined,
+      { ...setup(w, "01B").owner(), keep },
+    );
+
+    await unused.work?.close();
+
+    expect(keep).toHaveBeenCalledTimes(1);
+    expect(w.rows).toHaveLength(1);
+  });
+
+  test("a keep that fails for good counts as declined", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const tools = {
+      create: vi.fn(async () => {
+        return w.durable("sb-1");
+      }),
+    } as unknown as DurableSandboxTools;
+    const opened = openSandboxes(
+      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
+      tools,
+      undefined,
+      {
+        ...s.owner(),
+        keep: async () => {
+          throw new StepError("keep", new Error("boom"));
+        },
+      },
+    );
+
+    await opened.work?.get();
+    await opened.work?.close();
+
+    expect(w.rows).toHaveLength(1);
+    expect(w.live.has("sb-1")).toBe(false);
+  });
+
   test("a sandbox that was created but never used is destroyed without a snapshot", async () => {
     const w = world();
     const s = setup(w, "01A");

@@ -191,8 +191,15 @@ export interface SandboxBinding<TStart = SandboxStart> {
 
   /**
    * Keep the sandbox running between runs and stop it after it has been idle
-   * this long. Off by default. The idle check itself belongs to the thread
-   * that owns the sandbox; here it is validated and carried.
+   * this long. Off by default.
+   *
+   * It is validated and wired to the thread's sandbox owner, but it does
+   * nothing yet: stopping an idle sandbox needs an idle timeout on the
+   * platform's sandbox (a sandbox option such as `idleTimeout`), which does
+   * not exist, and the SDK runs no idle check of its own. Until it does, a
+   * sandbox with `keepAlive` is snapshotted and destroyed at run end like
+   * any other, and the thread's next run restores it.
+   * @deprecated Needs a platform idle timeout, which is not available yet.
    */
   keepAlive?: { idle: SandboxDuration };
 }
@@ -685,11 +692,30 @@ const lazySandbox = (
 
         if (sandbox) {
           // A sandbox whose creation or setup failed is not worth keeping.
-          if (!failed && used) {
-            await owner?.save(name, sandbox);
-          }
+          const keep = !failed && used && keepAlive;
 
-          await destroyQuietly(sandbox, `${name}:destroy`, guard);
+          // The owner may keep a keepAlive sandbox running for the thread's
+          // next run. None does yet (see `keepAlive`).
+          // A keep that fails for good counts as declined.
+          const kept = keep
+            ? await owner?.keep?.(name, sandbox, keepAlive).catch((error) => {
+                if (!(error instanceof StepError)) {
+                  throw error;
+                }
+
+                return false;
+              })
+            : false;
+
+          if (kept) {
+            guard?.abort();
+          } else {
+            if (!failed && used) {
+              await owner?.save(name, sandbox);
+            }
+
+            await destroyQuietly(sandbox, `${name}:destroy`, guard);
+          }
         }
 
         if (failed && !observed) {
