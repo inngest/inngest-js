@@ -4,9 +4,12 @@
  * pull request comment, a ticket. Progress reports and asks both go through a
  * channel. A channel is an adapter written with `defineChannel`; an agent
  * names its channels in config (a value, or a function of the trigger) and
- * the body reports to them with `report()`.
+ * the body reports to them with `report()`. This file also holds what the
+ * Slack and GitHub adapters share: field validation, text limits, the HTTP
+ * call and its error classes.
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { ConfigValue } from "./defs.ts";
 
 /**
@@ -16,8 +19,8 @@ export interface ChannelMessage {
   text: string;
 
   /**
-   * What the message is, so an adapter can render a result differently from a
-   * progress line. Default: `"progress"`.
+   * What the message is. The Slack and GitHub adapters mark `"error"`
+   * messages; `"progress"` (the default) and `"result"` look the same.
    */
   kind?: "progress" | "result" | "error";
 }
@@ -57,19 +60,27 @@ export interface ChannelAsk {
  */
 export interface Channel {
   /**
-   * Posts a message. Runs inside a step, so it may be retried: make it safe to
-   * repeat or fail loudly.
-   * @param message What to post.
+   * Posts a message. Runs inside a step, so it may be retried: a post whose
+   * answer is lost is posted again, so delivery is at least once.
    */
-  post(message: ChannelMessage): Promise<void>;
+  post(
+    /**
+     * What to post.
+     */
+    message: ChannelMessage,
+  ): Promise<void>;
 
   /**
    * Renders a question and returns once it is shown. The answer does not come
    * back from here: it arrives later as the signal `ask.signal`. A channel that
    * can post but not ask leaves this out.
-   * @param ask The question.
    */
-  ask?(ask: ChannelAsk): Promise<void>;
+  ask?(
+    /**
+     * The question.
+     */
+    ask: ChannelAsk,
+  ): Promise<void>;
 }
 
 /**
@@ -82,10 +93,13 @@ export interface Channel {
  *   },
  * });
  * ```
- *
- * @param adapter How to post, and optionally how to render an ask.
  */
-export const defineChannel = (adapter: Channel): Channel => {
+export const defineChannel = (
+  /**
+   * How to post, and optionally how to render an ask.
+   */
+  adapter: Channel,
+): Channel => {
   if (typeof adapter?.post !== "function") {
     throw new Error("A channel needs a `post` function.");
   }
@@ -98,18 +112,23 @@ export const defineChannel = (adapter: Channel): Channel => {
 };
 
 /**
- * Renders an ask through a channel. This is the hook `thread.ask` will call; a channel
- * without `ask` is an error that says so, never a silent skip. Call it inside
- * a step, so a replay of the run does not render the question twice.
- * @param channel The channel to ask through.
- * @param ask The question.
+ * Renders an ask through a channel. This is the hook `thread.ask` will call; a
+ * channel without `ask` is an error that says so, never a silent skip. Call it
+ * inside a step, so a replay of the run does not render the question twice.
  */
 export const askThrough = async (
+  /**
+   * The channel to ask through.
+   */
   channel: Channel,
+
+  /**
+   * The question.
+   */
   ask: ChannelAsk,
 ): Promise<void> => {
   if (!channel.ask) {
-    throw new Error(
+    throw new NonRetriableError(
       "This channel cannot ask: its adapter has no `ask` function.",
     );
   }
@@ -139,24 +158,38 @@ export interface Reporter {
    * Posts `message` to the destinations: `options.to`, else the `report`
    * config, else the channel named `main`. With no destination it does
    * nothing. Each post is a step, so a replay never posts twice.
-   * @param message The text, or a message with a kind.
-   * @param options.to Overrides the configured destinations for this report.
    */
   (
+    /**
+     * The text, or a message with a kind.
+     */
     message: string | ChannelMessage,
-    options?: { to?: ReportConfig },
+    options?: {
+      /**
+       * Overrides the configured destinations for this report.
+       */
+      to?: ReportConfig;
+    },
   ): Promise<void>;
 }
 
 /**
  * Makes the `report` function of a run.
- * @param channels The run's channels by name.
- * @param configured The resolved `report` config, if the agent set one.
- * @param runStep Runs a durable step, `step.run`.
  */
 export const createReporter = (
+  /**
+   * The run's channels by name.
+   */
   channels: Record<string, Channel>,
+
+  /**
+   * The resolved `report` config, if the agent set one.
+   */
   configured: ReportConfig | undefined,
+
+  /**
+   * Runs a durable step, `step.run`.
+   */
   runStep: (id: string, fn: () => Promise<void>) => Promise<unknown>,
 ): Reporter => {
   let reports = 0;
@@ -184,7 +217,7 @@ export const createReporter = (
       }
 
       if (!channel) {
-        throw new Error(
+        throw new NonRetriableError(
           `report: there is no channel named "${target}". The agent's channels are: ${Object.keys(channels).join(", ") || "none"}.`,
         );
       }
@@ -202,14 +235,23 @@ export const createReporter = (
 
 /**
  * Checks `value` against a Standard Schema synchronously, for the small
- * hand-written schemas of the trigger helpers.
- * @param schema A schema whose validation is synchronous.
- * @param value The value to check.
- * @param what Names the value in the error.
+ * hand-written schemas of the trigger helpers. A value that does not fit is a
+ * `NonRetriableError`: retrying cannot change the event.
  */
 export const parseWith = <T>(
+  /**
+   * A schema whose validation is synchronous.
+   */
   schema: StandardSchemaV1<unknown, T>,
+
+  /**
+   * The value to check.
+   */
   value: unknown,
+
+  /**
+   * Names the value in the error.
+   */
   what: string,
 ): T => {
   const result = schema["~standard"].validate(value);
@@ -219,7 +261,7 @@ export const parseWith = <T>(
   }
 
   if (result.issues) {
-    throw new Error(
+    throw new NonRetriableError(
       `${what}: ${result.issues
         .map((issue) => {
           return issue.message;
@@ -232,12 +274,26 @@ export const parseWith = <T>(
 };
 
 /**
- * A Standard Schema for an object whose listed fields are strings (required)
- * or optional strings, or numbers. Other fields pass through.
- * @param fields Field name to `"string"`, `"string?"` (may be missing), `"nullable"` (a string, missing or null) or `"number"`.
+ * What a field of `objectSchema` must be.
+ *
+ * - `"string"` and `"number"`: required.
+ * - `"string?"`: a string, or missing.
+ * - `"nullable"`: a string, missing or null.
+ * - `{ pattern }`: a string the pattern matches; with `optional`, or missing.
+ */
+export type FieldSpec =
+  | "string"
+  | "string?"
+  | "nullable"
+  | "number"
+  | { pattern: RegExp; optional?: boolean };
+
+/**
+ * A Standard Schema for an object with the listed fields. Other fields pass
+ * through.
  */
 export const objectSchema = <T>(
-  fields: Record<string, "string" | "string?" | "nullable" | "number">,
+  fields: Record<string, FieldSpec>,
 ): StandardSchemaV1<unknown, T> => {
   return {
     "~standard": {
@@ -250,20 +306,35 @@ export const objectSchema = <T>(
 
         const issues: StandardSchemaV1.Issue[] = [];
 
-        for (const [field, type] of Object.entries(fields)) {
+        for (const [field, spec] of Object.entries(fields)) {
           const found = (value as Record<string, unknown>)[field];
+          const optional =
+            spec === "string?" ||
+            spec === "nullable" ||
+            (typeof spec === "object" && spec.optional === true);
 
-          if (
-            (found === undefined || (found === null && type === "nullable")) &&
-            type !== "string" &&
-            type !== "number"
-          ) {
+          if (found === undefined && optional) {
             continue;
           }
 
-          if (typeof found !== (type === "number" ? "number" : "string")) {
+          if (found === null && spec === "nullable") {
+            continue;
+          }
+
+          const wanted = spec === "number" ? "number" : "string";
+
+          if (typeof found !== wanted) {
             issues.push({
-              message: `\`${field}\` must be a ${type === "number" ? "number" : "string"}`,
+              message: `\`${field}\` must be a ${wanted}`,
+              path: [field],
+            });
+
+            continue;
+          }
+
+          if (typeof spec === "object" && !spec.pattern.test(found as string)) {
+            issues.push({
+              message: `\`${field}\` is not a valid value`,
               path: [field],
             });
           }
@@ -306,3 +377,126 @@ export interface ChannelTrigger<TData = unknown> {
    */
   schema: StandardSchemaV1<unknown, TData>;
 }
+
+/**
+ * Throws a `NonRetriableError` unless `value` is in the allow list. The
+ * triggers filter on the same list, but an event can reach a channel by
+ * another route, so the channel checks it again.
+ */
+export const assertAllowed = (
+  /**
+   * What is checked, for the error: `"channel"`, `"repository"`.
+   */
+  what: string,
+
+  /**
+   * The value from the event.
+   */
+  value: string,
+
+  /**
+   * The allowed values.
+   */
+  allowed: readonly string[],
+): void => {
+  if (!allowed.includes(value)) {
+    throw new NonRetriableError(
+      `The ${what} "${value}" is not in the allow list, so nothing is posted there.`,
+    );
+  }
+};
+
+/**
+ * Cuts `text` to at most `max` characters, ending in an ellipsis, without
+ * splitting a surrogate pair.
+ */
+export const truncate = (
+  /**
+   * The text.
+   */
+  text: string,
+
+  /**
+   * The most characters (UTF-16 units) to keep, the ellipsis included.
+   */
+  max: number,
+): string => {
+  if (text.length <= max) {
+    return text;
+  }
+
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+
+  // A high surrogate at the cut would leave half of a pair.
+  if (last >= 0xd800 && last <= 0xdbff) {
+    end -= 1;
+  }
+
+  return `${text.slice(0, end)}…`;
+};
+
+/**
+ * The longest an adapter waits for its API.
+ */
+export const requestTimeoutMs = 10_000;
+
+/**
+ * Makes the error for a failed API call: a `NonRetriableError` when trying
+ * again cannot help (a client error other than a timeout or a rate limit), a
+ * plain `Error` when it can.
+ */
+export const apiError = (
+  /**
+   * The message.
+   */
+  message: string,
+
+  /**
+   * Whether a retry could succeed.
+   */
+  retryable: boolean,
+): Error => {
+  return retryable ? new Error(message) : new NonRetriableError(message);
+};
+
+/**
+ * Whether an HTTP status is worth retrying: a timeout, a rate limit or a
+ * server error.
+ */
+export const retryableStatus = (status: number): boolean => {
+  return status === 408 || status === 429 || status >= 500;
+};
+
+/**
+ * POSTs JSON with a timeout. Returns the status and the parsed body (`{}` when
+ * the body is not JSON).
+ */
+export const postJson = async (
+  /**
+   * The URL.
+   */
+  url: string,
+
+  /**
+   * The request headers; `content-type` is added.
+   */
+  headers: Record<string, string>,
+
+  /**
+   * The JSON body.
+   */
+  body: unknown,
+): Promise<{ status: number; ok: boolean; json: Record<string, unknown> }> => {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  const json = (await res.json().catch(() => {
+    return {};
+  })) as Record<string, unknown>;
+
+  return { status: res.status, ok: res.ok, json };
+};

@@ -3,14 +3,27 @@
  * EXPERIMENTAL: a small GitHub-like trigger helper and channel adapter. First
  * party GitHub integration is parked; this is the hand-written version it will
  * replace behind the same interface. The event is `github/issue_comment` with
- * the fields below, which your route sends from GitHub's webhook.
+ * the fields below, which your route sends from GitHub's webhook. Anything
+ * that can send that event can steer the agent, so the route must verify
+ * GitHub's signature before it sends one.
+ *
+ * Text the agent writes is made inert: an `@mention` is broken so nobody is
+ * notified, and an HTML comment cannot forge the ask marker the answer route
+ * reads.
  */
 import {
+  apiError,
+  assertAllowed,
   type Channel,
+  type ChannelAsk,
+  type ChannelMessage,
   type ChannelTrigger,
   defineChannel,
   objectSchema,
   parseWith,
+  postJson,
+  retryableStatus,
+  truncate,
 } from "./channels.ts";
 
 /**
@@ -34,10 +47,15 @@ export interface GithubCommentData {
  */
 export const githubCommentEvent = "github/issue_comment";
 
+const name = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
+const issueNumber = /^[1-9]\d{0,9}$/;
+const repository =
+  /^(?!\.{1,2}\/)[A-Za-z0-9_.-]+\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
+
 const githubCommentSchema = objectSchema<GithubCommentData>({
-  owner: "string",
-  repo: "string",
-  number: "string",
+  owner: { pattern: name },
+  repo: { pattern: name },
+  number: { pattern: issueNumber },
   body: "string",
   author: "string?",
 });
@@ -47,12 +65,20 @@ const githubCommentSchema = objectSchema<GithubCommentData>({
  */
 export interface GithubChannelOptions {
   /**
+   * The repositories the agent may comment in, as `"owner/repo"`. The same
+   * list as the trigger's `repos`: an event for any other repository is an
+   * error.
+   */
+  repos: string[];
+
+  /**
    * Token. Default: `GITHUB_TOKEN`, read when a comment is posted.
    */
   token?: string;
 
   /**
-   * REST API base URL. Default: `https://api.github.com`.
+   * REST API base URL. Default: `https://api.github.com`. It receives the
+   * token, so it must come from your config, never from an event.
    */
   apiUrl?: string;
 }
@@ -66,6 +92,35 @@ export interface GithubTarget {
   number: number;
 }
 
+/**
+ * The options of `github.thread`.
+ */
+export interface GithubThreadOptions {
+  /**
+   * The repositories to listen to, as `"owner/repo"`. Required: listening
+   * everywhere would let any event steer the agent into any repository its
+   * token can reach.
+   */
+  repos: string[];
+}
+
+const maxBody = 65_000;
+
+/**
+ * Makes model text inert in a comment: `@name` becomes `@` and a zero-width
+ * space then `name`, so nobody is mentioned, and `<!--` is broken so the text
+ * cannot open an HTML comment (the ask marker is one).
+ */
+const inert = (text: string): string => {
+  return text.replace(/@(?=[A-Za-z0-9_-])/g, "@​").replace(/<!--/g, "<​!--");
+};
+
+const render = (message: ChannelMessage): string => {
+  const text = inert(message.text);
+
+  return message.kind === "error" ? `**Error:** ${text}` : text;
+};
+
 const comment = async (
   options: GithubChannelOptions,
   target: GithubTarget,
@@ -75,22 +130,33 @@ const comment = async (
     options.token ??
     (typeof process === "undefined" ? undefined : process.env.GITHUB_TOKEN);
 
-  const res = await fetch(
-    `${options.apiUrl ?? "https://api.github.com"}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues/${target.number}/comments`,
+  const res = await postJson(
+    `${options.apiUrl ?? "https://api.github.com"}/repos/${target.owner}/${target.repo}/issues/${target.number}/comments`,
     {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/vnd.github+json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ body }),
+      accept: "application/vnd.github+json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
+    { body: truncate(body, maxBody) },
   );
 
   if (!res.ok) {
-    throw new Error(`GitHub comment failed: HTTP ${res.status}`);
+    throw apiError(
+      `GitHub comment failed: HTTP ${res.status}`,
+      retryableStatus(res.status),
+    );
   }
+};
+
+const askBody = (ask: ChannelAsk): string => {
+  const lines = [
+    inert(ask.question),
+    ...(ask.options ?? []).map((option) => {
+      return `- ${inert(option)}${option === ask.recommended ? " (recommended)" : ""}`;
+    }),
+  ];
+
+  // Last, and after the text was made inert, so it is the only marker.
+  return `${truncate(lines.join("\n"), maxBody - 200)}\n<!-- inngest-ask:${ask.signal} -->`;
 };
 
 /**
@@ -100,33 +166,27 @@ export const github = {
   /**
    * A trigger for comments on an issue or pull request. The comments on one
    * issue are one agent thread.
-   * @param options.repos Repositories to listen to as `"owner/repo"`.
-   * Default: every repository.
    */
-  comment: (
-    options: { repos?: string[] } = {},
-  ): ChannelTrigger<GithubCommentData> => {
-    if (options.repos?.length === 0) {
+  thread: (options: GithubThreadOptions): ChannelTrigger<GithubCommentData> => {
+    if (!options?.repos?.length) {
       throw new Error(
-        "github.comment: `repos` is empty; leave it out to listen everywhere.",
+        "github.thread: `repos` lists the repositories to listen to and cannot be empty.",
       );
     }
 
-    const repos = options.repos?.map((full) => {
-      const [owner, repo] = full.split("/");
-
-      if (!owner || !repo) {
-        throw new Error(
-          `github.comment: "${full}" is not an "owner/repo" repository.`,
-        );
+    const repos = options.repos.map((full) => {
+      if (!repository.test(full)) {
+        throw new Error(`github.thread: "${full}" is not an "owner/repo".`);
       }
+
+      const [owner, repo] = full.split("/");
 
       return `(event.data.owner == ${JSON.stringify(owner)} && event.data.repo == ${JSON.stringify(repo)})`;
     });
 
     return {
       event: githubCommentEvent,
-      ...(repos?.length ? { if: `(${repos.join(" || ")})` } : {}),
+      if: `(${repos.join(" || ")})`,
       thread:
         '"github:" + event.data.owner + "/" + event.data.repo + "#" + event.data.number',
       message: (event) => {
@@ -137,56 +197,50 @@ export const github = {
   },
 
   /**
-   * The channel that comments on an issue or pull request.
-   * @param source A `github/issue_comment` event, or the target itself.
-   * @param options Token and API URL.
+   * The channel that comments on an issue or pull request. It throws when the
+   * event's repository is not in `options.repos`.
    */
   channel: (
+    /**
+     * A `github/issue_comment` event, or the target itself.
+     */
     source: { data: unknown } | GithubTarget,
-    options: GithubChannelOptions = {},
+    options: GithubChannelOptions,
   ): Channel => {
+    if (!options?.repos?.length) {
+      throw new Error(
+        "github.channel: `repos` lists the repositories it may comment in and cannot be empty.",
+      );
+    }
+
     const target: GithubTarget = (() => {
-      if ("number" in source && typeof source.number === "number") {
-        if (!Number.isInteger(source.number) || source.number < 1) {
-          throw new Error(
-            `github.channel: ${source.number} is not an issue number.`,
-          );
-        }
-
-        return source;
-      }
-
       const data = parseWith(
         githubCommentSchema,
-        (source as { data: unknown }).data,
-        "github.channel: the event is not a github/issue_comment",
+        "number" in source
+          ? { ...source, number: String(source.number), body: "" }
+          : source.data,
+        "github.channel: the event or target is not valid",
       );
 
-      const number = Number(data.number);
-
-      if (!/^[1-9]\d*$/.test(data.number)) {
-        throw new Error(
-          `github.channel: "${data.number}" is not an issue number.`,
-        );
-      }
-
-      return { owner: data.owner, repo: data.repo, number };
+      return {
+        owner: data.owner,
+        repo: data.repo,
+        number: Number(data.number),
+      };
     })();
+
+    assertAllowed(
+      "repository",
+      `${target.owner}/${target.repo}`,
+      options.repos,
+    );
 
     return defineChannel({
       post: async (message) => {
-        await comment(options, target, message.text);
+        await comment(options, target, render(message));
       },
       ask: async (ask) => {
-        const lines = [
-          ask.question,
-          ...(ask.options ?? []).map((option) => {
-            return `- ${option}${option === ask.recommended ? " (recommended)" : ""}`;
-          }),
-          `<!-- inngest-ask:${ask.signal} -->`,
-        ];
-
-        await comment(options, target, lines.join("\n"));
+        await comment(options, target, askBody(ask));
       },
     });
   },

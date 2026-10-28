@@ -30,7 +30,7 @@ export const channels = scenario({
     agents.agent(
       {
         id: "channels-agent",
-        on: { ...slack.thread(), event: event("slack") },
+        on: { ...slack.thread({ in: ["C42"] }), event: event("slack") },
         channels: ({ event: trigger }): Record<string, Channel> => {
           // The event is the Slack one; its text names the pull request: "acme/app#7".
           const data = trigger.data as unknown as { text: string };
@@ -39,6 +39,7 @@ export const channels = scenario({
             /([\w-]+)\/([\w-]+)#(\d+)/.exec(data.text) ?? [];
 
           const main = slack.channel(trigger, {
+            in: ["C42"],
             apiUrl: `${fakes.url}/slack/api`,
           });
 
@@ -47,7 +48,7 @@ export const channels = scenario({
                 main,
                 pr: github.channel(
                   { owner, repo, number: Number(number) },
-                  { apiUrl: `${fakes.url}/github` },
+                  { repos: ["acme/app"], apiUrl: `${fakes.url}/github` },
                 ),
               }
             : { main };
@@ -84,7 +85,7 @@ export const channels = scenario({
     agents.agent(
       {
         id: "channels-github-agent",
-        on: { ...github.comment(), event: event("gh") },
+        on: { ...github.thread({ repos: ["acme/keys"] }), event: event("gh") },
       },
       async ({ inbox, thread }) => {
         for (let i = 0; i < 2; i++) {
@@ -104,6 +105,19 @@ export const channels = scenario({
   run: async (ctx) => {
     const ts = `${Date.now()}.000100`;
 
+    // A message from a bot, and one from a channel outside `in`, start nothing.
+    const bot = await ctx.send("slack", {
+      channel: "C42",
+      ts: `${Date.now()}.000200`,
+      text: "bot says hi",
+      botId: "B1",
+    });
+    const stranger = await ctx.send("slack", {
+      channel: "C99",
+      ts: `${Date.now()}.000300`,
+      text: "wrong place",
+    });
+
     const run = await ctx.finished(
       await ctx.send("slack", {
         channel: "C42",
@@ -114,6 +128,12 @@ export const channels = scenario({
 
     ctx.expect.run(run).toComplete();
     ctx.expect.run(run).toOutput({ text: "all done" });
+
+    ctx.check(
+      "a bot message and a message outside the allow list start no run",
+      (await ctx.runsOf(bot)).length === 0 &&
+        (await ctx.runsOf(stranger)).length === 0,
+    );
 
     await ctx.expect
       .posts({ channel: "slack", method: "chat.postMessage", thread: ts })

@@ -183,8 +183,9 @@ export type {
   GithubChannelOptions,
   GithubCommentData,
   GithubTarget,
+  GithubThreadOptions,
 } from "./github.ts";
-export { github } from "./github.ts";
+export { github, githubCommentEvent } from "./github.ts";
 export type {
   Kv,
   KvAdapter,
@@ -203,8 +204,9 @@ export type {
   SlackChannelOptions,
   SlackMessageData,
   SlackTarget,
+  SlackThreadOptions,
 } from "./slack.ts";
-export { slack } from "./slack.ts";
+export { slack, slackMessageEvent } from "./slack.ts";
 export type {
   InboxMessage,
   SubscribeData,
