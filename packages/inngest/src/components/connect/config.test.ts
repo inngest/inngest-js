@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { context, trace } from "@opentelemetry/api";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ExecutionVersion } from "../../helpers/consts.ts";
@@ -12,7 +15,9 @@ import {
   SendEventsReadinessReason,
 } from "../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../../test/helpers.ts";
+import type { FunctionConfig } from "../../types.ts";
 import { extendedTracesMiddleware } from "../execution/otel/middleware.ts";
+import { Middleware } from "../middleware/middleware.ts";
 import { sdkFeatureObservations } from "../sdkFeatureObservations.ts";
 import { prepareConnectionConfig } from "./config.ts";
 
@@ -20,6 +25,109 @@ describe("prepareConnectionConfig", () => {
   afterEach(() => {
     trace.disable();
     context.disable();
+  });
+
+  test.each(["explicit", "automatic"])(
+    "produces identical configs regardless of %s function registration order",
+    (mode) => {
+      const payloads = [
+        ["zebra", "alpha", "alpha-0"],
+        ["alpha-0", "alpha", "zebra"],
+        ["alpha", "zebra", "alpha-0"],
+      ].map((ids) => {
+        const client = createClient({ id: "test", isDev: true });
+        const functions = ids.map((id) =>
+          client.createFunction(
+            {
+              id,
+              triggers: [{ event: `demo/${id}` }],
+              onFailure: () => "failed",
+            },
+            () => "ok",
+          ),
+        );
+        const originalRegistry = [...client.funcs];
+        const originalFunctions = [...functions];
+        const { connectionData } = prepareConnectionConfig(
+          [mode === "explicit" ? { client, functions } : { client }],
+          client,
+        );
+        expect(client.funcs).toEqual(originalRegistry);
+        expect(functions).toEqual(originalFunctions);
+        return new TextDecoder().decode(connectionData.apps[0]?.functions);
+      });
+
+      expect(new Set(payloads).size).toBe(1);
+      const configs: FunctionConfig[] = JSON.parse(payloads[0]!);
+      expect(configs.map(({ id }) => id)).toEqual([
+        "test-alpha",
+        "test-alpha-0",
+        "test-alpha-0-failure",
+        "test-alpha-failure",
+        "test-zebra",
+        "test-zebra-failure",
+      ]);
+    },
+  );
+
+  test("produces identical automatic configs across fresh processes with concurrent discovery", () => {
+    const require = createRequire(import.meta.url);
+    const fixture = fileURLToPath(
+      new URL("../../test/fixtures/connect-config.ts", import.meta.url),
+    );
+    const payloads = Array.from({ length: 4 }, () =>
+      execFileSync(
+        process.execPath,
+        [
+          require.resolve("tsx/cli"),
+          "--eval",
+          `require(${JSON.stringify(fixture)})`,
+        ],
+        {
+          cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+          encoding: "utf8",
+          timeout: 15_000,
+          env: { ...process.env, NODE_NO_WARNINGS: "1" },
+        },
+      ),
+    );
+    expect(new Set(payloads).size).toBe(1);
+    const configs: FunctionConfig[] = JSON.parse(payloads[0]!);
+    expect(configs.map(({ id }) => id)).toEqual(
+      Array.from({ length: 16 }, (_, i) => `test-function-${i}`).sort(),
+    );
+  }, 30_000);
+
+  test("sorts middleware-provided configs together with explicit configs", () => {
+    class ExtraFunctions extends Middleware.BaseMiddleware {
+      readonly id = "extra-functions";
+
+      static override functions({ client }: Middleware.FunctionsArgs) {
+        return [
+          client.createFunction(
+            { id: "alpha", triggers: [{ event: "demo/alpha" }] },
+            () => "ok",
+          ),
+        ];
+      }
+    }
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      middleware: [ExtraFunctions],
+    });
+    const fn = client.createFunction(
+      { id: "zebra", triggers: [{ event: "demo/zebra" }] },
+      () => "ok",
+    );
+    const { connectionData } = prepareConnectionConfig(
+      [{ client, functions: [fn] }],
+      client,
+    );
+    const configs: FunctionConfig[] = JSON.parse(
+      new TextDecoder().decode(connectionData.apps[0]?.functions),
+    );
+    expect(configs.map(({ id }) => id)).toEqual(["test-alpha", "test-zebra"]);
   });
 
   test("includes SDK feature observations in Connect app configuration", () => {

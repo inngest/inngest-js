@@ -142,13 +142,17 @@ export function prepareConnectionConfig(
   for (const [appId, { client, functions: fns }] of Object.entries(functions)) {
     functionConfigs[appId] = {
       client: client,
-      functions: fns.flatMap((f) =>
-        f["getConfig"]({
-          baseUrl: new URL("wss://connect"),
-          appPrefix: client.id,
-          isConnect: true,
-        }),
-      ),
+      functions: fns
+        .flatMap((f) =>
+          f["getConfig"]({
+            baseUrl: new URL("wss://connect"),
+            appPrefix: client.id,
+            isConnect: true,
+          }),
+        )
+        // Connect hashes this array. Discovery order must not create a new
+        // worker group for an otherwise identical app configuration.
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     };
   }
 
