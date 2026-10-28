@@ -484,7 +484,7 @@ export const directTarget = (run: CiRunScope, path: string): CacheTarget => {
  * CI's own steps, named by `stepOf` from the ID the cache gives it.
  *
  * Making room for a snapshot at the environment's limit deletes only snapshots
- * of pull requests and runs, never a branch's, which other runs start from.
+ * of pull requests, never a branch's or a run's, which other runs start from.
  */
 export const snapshotCacheOf = (
   run: CiRunScope,
@@ -494,7 +494,7 @@ export const snapshotCacheOf = (
     memo: (id, fn) => {
       return ciRun(run, stepOf(id), fn);
     },
-    evict: { scopes: ["ci/pr:*", "ci/run:*"] },
+    evict: { scopes: ["ci/pr:*"] },
   });
 };
 
