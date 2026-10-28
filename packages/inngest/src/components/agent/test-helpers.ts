@@ -13,7 +13,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "next" | "poll" | "close";
+  mode: "open" | "park" | "poll" | "close";
   seq?: number;
 }
 
