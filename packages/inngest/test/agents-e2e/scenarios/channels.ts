@@ -112,6 +112,7 @@ export const channels = scenario({
       text: "bot says hi",
       botId: "B1",
     });
+
     const stranger = await ctx.send("slack", {
       channel: "C99",
       ts: `${Date.now()}.000300`,
@@ -127,6 +128,7 @@ export const channels = scenario({
     );
 
     ctx.expect.run(run).toComplete();
+
     ctx.expect.run(run).toOutput({ text: "all done" });
 
     ctx.check(

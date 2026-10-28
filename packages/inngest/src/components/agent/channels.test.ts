@@ -56,6 +56,7 @@ describe("defineChannel and askThrough", () => {
     });
 
     await askThrough(asking, { signal: "s1", question: "ok?" });
+
     expect(asks).toEqual([{ signal: "s1", question: "ok?" }]);
 
     await expect(
@@ -67,6 +68,7 @@ describe("defineChannel and askThrough", () => {
 describe("report", () => {
   test("posts to main by default, as a step per destination", async () => {
     const main = recorder();
+
     const ids: string[] = [];
 
     const report = createReporter(
@@ -101,6 +103,7 @@ describe("report", () => {
     const a = recorder();
     const b = recorder();
     const c = recorder();
+
     const channels = { a: a.channel, b: b.channel };
 
     const report = createReporter(channels, ["a", c.channel], direct);
@@ -168,6 +171,7 @@ describe("trigger helpers", () => {
     );
 
     expect(trigger.thread).toContain("has(event.data.threadTs)");
+
     expect(trigger.message({ data: { text: "hi" } })).toBe("hi");
 
     expect(slack.thread({ in: ["C1"], allowBots: true }).if).toBe(
@@ -308,6 +312,7 @@ describe("adapters", () => {
   const calls: {
     url: string;
     body: Record<string, unknown>;
+
     signal: unknown;
   }[] = [];
 
@@ -356,6 +361,7 @@ describe("adapters", () => {
 
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(calls[1]?.body.thread_ts).toBe("1.1");
+
     expect(calls[1]?.body.parse).toBe("none");
 
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain('"value":"yes"');
@@ -363,6 +369,7 @@ describe("adapters", () => {
 
   test("Slack text is escaped and errors are marked", async () => {
     await slackChannel().post({ text: "<!channel> <@U1> <https://x|y> & z" });
+
     await slackChannel().post({ text: "boom", kind: "error" });
 
     await slackChannel().ask?.({
@@ -376,6 +383,7 @@ describe("adapters", () => {
     );
 
     expect(calls[1]?.body.text).toBe(":warning: boom");
+
     expect(calls[2]?.body.text).toBe("&lt;!here&gt; ok?");
 
     expect(JSON.stringify(calls[2]?.body.blocks)).toContain(
@@ -404,6 +412,7 @@ describe("adapters", () => {
     );
 
     expect(JSON.stringify(calls[0]?.body.blocks)).toContain('"type":"button"');
+
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain("static_select");
 
     expect(JSON.stringify(calls[1]?.body.blocks)).not.toContain(
@@ -442,7 +451,9 @@ describe("adapters", () => {
     expect(calls[0]?.url).toBe(
       "http://gh.test/repos/acme/app/issues/7/comments",
     );
+
     expect(calls[0]?.body).toEqual({ body: "progress" });
+
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
 
     expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
@@ -457,6 +468,7 @@ describe("adapters", () => {
     await channel.post({
       text: "cc @octocat and @org/team <!-- inngest-ask:x -->",
     });
+
     await channel.post({ text: "bad", kind: "error" });
 
     await channel.ask?.({
@@ -466,12 +478,14 @@ describe("adapters", () => {
     });
 
     const first = String(calls[0]?.body.body);
+
     const ask = String(calls[2]?.body.body);
 
     expect(first).not.toMatch(/@(?=[A-Za-z])/);
     expect(first).not.toContain("<!--");
     expect(calls[1]?.body.body).toBe("**Error:** bad");
     expect(ask.match(/<!-- inngest-ask:/g)).toHaveLength(1);
+
     expect(ask.endsWith("<!-- inngest-ask:real -->")).toBe(true);
   });
 
@@ -620,6 +634,7 @@ describe("adapter safety", () => {
 describe("text limits", () => {
   test("truncate never splits a surrogate pair", () => {
     expect(truncate("abc", 5)).toBe("abc");
+
     expect(truncate("abcdef", 4)).toBe("abc…");
 
     // "ab" then an emoji (two units): cutting inside it drops the half.
@@ -630,6 +645,7 @@ describe("text limits", () => {
 describe("agent function wiring", () => {
   test("channels may be a function of the trigger and report reaches them", async () => {
     const main = recorder();
+
     const seen: string[] = [];
 
     const { fn } = createAgentFunction(
@@ -658,6 +674,7 @@ describe("agent function wiring", () => {
     });
 
     expect(seen.length).toBeGreaterThan(0);
+
     expect(main.posts).toEqual([{ text: "starting" }]);
 
     expect(result).toBeDefined();

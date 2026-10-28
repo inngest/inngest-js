@@ -174,7 +174,7 @@ const askBody = (ask: ChannelAsk): string => {
   ];
 
   // Last, and after the text was made inert, so it is the only marker.
-  return `${truncate(lines.join("\n"), maxBody - 200)}\n<!-- inngest-ask:${ask.signal} -->`;
+  return `${truncate(lines.join("\n"), maxBody - 300)}\n<!-- inngest-ask:${ask.signal} -->`;
 };
 
 /**
