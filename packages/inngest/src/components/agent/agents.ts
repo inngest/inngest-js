@@ -139,7 +139,7 @@ export type {
   ThreadState,
   ThreadStatus,
 } from "./thread.ts";
-export { agentMessageEvent, agentStopEvent, getThread } from "./thread.ts";
+export { agentMessageEvent, getThread } from "./thread.ts";
 export type {
   InsightsQuery,
   ThreadList,

@@ -9,15 +9,23 @@ import { getThread } from "./thread.ts";
 
 const fakeClient = () => {
   const sent: unknown[] = [];
+  const cancelled: string[] = [];
   const client = {
     id: "app",
     env: null,
     async send(arg: unknown) {
       sent.push(arg);
     },
+    inngestApi: {
+      async cancelRun(runId: string) {
+        cancelled.push(runId);
+
+        return { ok: true };
+      },
+    },
   } as unknown as Inngest.Any;
 
-  return { client, sent };
+  return { client, sent, cancelled };
 };
 
 import { StepOpCode } from "../../types.ts";
@@ -61,12 +69,11 @@ describe("thread handle", () => {
     ]);
   });
 
-  test("stop nextTurn is a stop message and stop now cancels the run", async () => {
+  test("stop nextTurn is a stop message", async () => {
     const { client, sent } = fakeClient();
     const thread = getThread(client, "app/bot", "t1");
 
     await thread.stop({ when: "nextTurn" });
-    await thread.stop({ when: "now" });
 
     expect(sent).toEqual([
       {
@@ -79,8 +86,28 @@ describe("thread handle", () => {
         },
         meta: { sessions },
       },
-      { name: "agent/thread.stop", data: { agent: "app/bot", thread: "t1" } },
     ]);
+  });
+
+  test("stop now cancels the live run by its run ID, whatever the thread key looks like", async () => {
+    const { client, sent, cancelled } = fakeClient();
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const thread = getThread(client, "app/bot", "C1/1.2", { kv });
+    const state = kv.with(client).scope("thread", "C1/1.2");
+
+    // No live run: nothing to cancel.
+    await thread.stop({ when: "now" });
+    expect(cancelled).toEqual([]);
+
+    await state.set("__state", { status: "waiting", turn: 0, runId: "run-1" });
+    await thread.stop({ when: "now" });
+    expect(cancelled).toEqual(["run-1"]);
+
+    // A finished run is not cancelled again.
+    await state.set("__state", { status: "idle", turn: 0, runId: "run-1" });
+    await thread.stop({ when: "now" });
+    expect(cancelled).toEqual(["run-1"]);
+    expect(sent).toEqual([]);
   });
 
   test("state is the documented shape: status, turn, summary, usage and the user's keys", async () => {

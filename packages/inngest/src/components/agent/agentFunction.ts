@@ -45,7 +45,6 @@ import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
-  agentStopEvent,
   getThread,
   type ThreadHandle,
   type ThreadMessage,
@@ -388,24 +387,6 @@ export function createAgentFunction(
         }),
       ],
       singleton: { key: threadExpression, mode: "skip" },
-      cancelOn: [
-        {
-          event: agentStopEvent,
-          if: `event.data.agent == ${quote(ref)} && event.data.thread == async.data.thread`,
-        },
-        // A cancel expression cannot call functions, so only a thread key that
-        // is a plain path of the trigger can be matched against a stop.
-        ...triggers.flatMap((trigger) => {
-          return trigger.thread.path
-            ? [
-                {
-                  event: agentStopEvent,
-                  if: `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
-                },
-              ]
-            : [];
-        }),
-      ],
     },
     async ({ event, step, defer, runId }) => {
       // The thread a run belongs to comes from its trigger: a message names it,
