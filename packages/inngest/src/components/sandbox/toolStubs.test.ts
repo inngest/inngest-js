@@ -142,7 +142,14 @@ const segment = async (command: string[], journal: string[]) => {
   const path = `${dir}.journal`;
   const wrapper = wrapperScript.replaceAll(toolsRoot, root);
 
-  writeFileSync(path, journal.map((line) => `${line}\n`).join(""));
+  writeFileSync(
+    path,
+    journal
+      .map((line) => {
+        return `${line}\n`;
+      })
+      .join(""),
+  );
 
   const child = spawn("/bin/sh", ["-c", wrapper, "sh", dir, ...command], {
     env: { ...process.env, INNGEST_TOOLS_JOURNAL: path },
@@ -182,7 +189,9 @@ const segment = async (command: string[], journal: string[]) => {
           JSON.stringify({ op: "reply", id: event.id, yield: true }),
         );
       } else if (event?.op === "call") {
-        const sum = (event.args as number[]).reduce((a, b) => a + b, 0);
+        const sum = (event.args as number[]).reduce((a, b) => {
+          return a + b;
+        }, 0);
         answered.push(reply(event.id, sum, "add", event.h));
         replies.push(reply(event.id, sum));
       }
