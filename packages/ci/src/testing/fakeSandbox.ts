@@ -88,6 +88,8 @@ export interface FakeSandboxApi {
   timeline: string[];
   /** Every request path, in order. */
   requests: string[];
+  /** The query of every listing of snapshots that is not by name. */
+  fullSnapshotListings: string[];
   script(scripts: CommandScript[]): void;
   /** Make snapshot creation fail the way an environment without it would. */
   disableSnapshots(): void;
@@ -266,6 +268,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const commands: string[][] = [];
   const timeline: string[] = [];
   const requests: string[] = [];
+  /** The listings of every snapshot, which have no name to look for. */
+  const fullSnapshotListings: string[] = [];
 
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
@@ -834,6 +838,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     requests.push(`${method} ${url.pathname}`);
 
+    if (
+      method === "GET" &&
+      url.pathname === "/v2/snapshots" &&
+      !url.searchParams.get("name")
+    ) {
+      fullSnapshotListings.push(url.search);
+    }
+
     // File uploads send bytes, so only JSON bodies are parsed.
     const contentType = String(
       (init?.headers as Record<string, string> | undefined)?.["Content-Type"] ??
@@ -871,6 +883,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     commands,
     timeline,
     requests,
+    fullSnapshotListings,
     script: (next) => {
       scripts = next;
     },

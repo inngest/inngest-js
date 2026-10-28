@@ -115,8 +115,12 @@ export type {
   Kv,
   KvAdapter,
   KvHandle,
+  KvIndex,
+  KvIndexEntry,
+  KvIndexRange,
   KvScope,
   KvScopeInstance,
+  KvSetOptions,
 } from "./kv.ts";
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
