@@ -2836,6 +2836,73 @@ describe("cache", () => {
     expect(child?.snapshotId).toBe(winner?.id);
   });
 
+  test("a changed cache key replaces the old snapshot, in a step of its own", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (key: string) => {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job({ id: "lint", from: base }, async () => {
+        await $`pnpm lint`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
+          await lint();
+        }),
+        { event: prEvent },
+      );
+
+      expect(result.type).toBe("function-resolved");
+
+      return result;
+    };
+
+    const named = () => {
+      return [...api.snapshots.values()].filter((snapshot) => {
+        return snapshot.name?.startsWith("ci/pr:7/base/");
+      });
+    };
+
+    await run("v1");
+    const [old] = named();
+
+    await run("v2");
+
+    // One snapshot under the entry, the new one, and the old one deleted.
+    expect(named()).toHaveLength(1);
+    expect(named()[0]?.id).not.toBe(old?.id);
+    expect(api.snapshots.has(old?.id ?? "")).toBe(false);
+    expect(api.fullSnapshotListings.length).toBeGreaterThan(0);
+
+    // A run's own snapshots have one generation, so taking one never lists
+    // every snapshot to find older ones.
+    const listingsBefore = api.fullSnapshotListings.length;
+    const { ci } = setup({ api });
+
+    const uncached = ci.job({ id: "uncached" }, async () => {
+      await $`pnpm build`;
+    });
+
+    const child = ci.job({ id: "child", from: uncached }, async () => {
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, childRuns: false }, async () => {
+        await child();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.fullSnapshotListings).toHaveLength(listingsBefore);
+  });
+
   test("a cached snapshot that won't start is deleted, and the job re-runs its parent", async () => {
     const api = createFakeSandboxApi();
 
@@ -5975,6 +6042,43 @@ describe("cache builds in their own run", () => {
         return fn.opts.id === "ci/build";
       }),
     ).toHaveLength(1);
+  });
+
+  test("a build invoked by an earlier release, with a cacheKey and no entry, still takes its snapshot", async () => {
+    const { api, ci } = setup();
+
+    ci.job({ id: "legacy", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const build = ci.functions().find((fn) => {
+      return fn.opts.id === "ci/build";
+    });
+
+    const result = await runFunction(build as NonNullable<typeof build>, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          jobId: "legacy",
+          ownKey: "slot0001/key00001",
+          cacheKey: "ci/pr:7/legacy/slot0001/key00001",
+          rootRunId: "01ROOT",
+          parent: {
+            runId: "01ROOT",
+            pipelineId: "pr",
+            jobPath: "legacy",
+            trigger: "manual",
+          },
+        },
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
+    expect(
+      [...api.snapshots.values()].map((snapshot) => {
+        return snapshot.name;
+      }),
+    ).toContain("ci/pr:7/legacy/slot0001/key00001");
   });
 
   test("a build of a job the worker doesn't know fails without retrying, naming it", async () => {
