@@ -13,6 +13,7 @@ import {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+import { connectRedis } from "./redis.ts";
 import { run } from "./test-helpers.ts";
 
 describe("kv", () => {
@@ -183,6 +184,10 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
         expect(await env.setIfAbsent("b", "run-1")).toBe(true);
         expect(await env.setIfAbsent("b", "run-1")).toBe(true);
         expect(await env.setIfAbsent("b", "run-2")).toBe(false);
+
+        // Identical values cannot be told apart: give each caller its own token.
+        expect(await env.setIfAbsent("c", "same")).toBe(true);
+        expect(await env.setIfAbsent("c", "same")).toBe(true);
         await done();
       });
 
@@ -345,9 +350,20 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
       env: null,
     }).env;
 
-    for (let i = 0; i < 1200; i++) {
-      await env.set(`k${i}`, i, { ttl: 100 });
-    }
+    // Seeded in one burst of pipelined commands, as the adapter would leave it.
+    const seed = await connectRedis(server.url);
+    const hash = "{inngest:kv:env:default}";
+    await Promise.all(
+      Array.from({ length: 1200 }, (_, i) => {
+        return Promise.all([
+          seed.command("SET", `${hash}|t|k${i}`, "1", "EX", "100"),
+          seed.command("ZADD", `${hash}|keys`, "+inf", `t:k${i}`),
+        ]);
+      }),
+    );
+    seed.close();
+    expect(server.keys()).toHaveLength(1201);
+
     await env.clear();
 
     expect(server.keys()).toEqual([]);
