@@ -486,7 +486,7 @@ class CommandBuilder implements Command {
         throw error;
       });
 
-      await collectReports(
+      const reported = await collectReports(
         scope,
         {
           argv: this.state.argv,
@@ -495,6 +495,11 @@ class CommandBuilder implements Command {
         },
         result,
       );
+
+      // A failed attempt that is retried leaves nothing on the job.
+      if (result.exitCode === 0 || this.state.nothrow || attempt >= attempts) {
+        scope.found.push(...reported);
+      }
 
       row.state =
         result.exitCode === 0 || this.state.nothrow ? "done" : "failed";

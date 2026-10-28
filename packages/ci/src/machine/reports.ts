@@ -38,15 +38,13 @@ export const parseReport = (format: ReportFormat, text: string): Found[] => {
   }
 };
 
-/** Put what was found on the job, with each file as a path in the repository. */
-const keep = (scope: CiJobScope, found: Found[], cwd: string): void => {
-  for (const item of found) {
+/** What was found, with each file as a path in the repository. */
+const inRepository = (found: Found[], cwd: string): Found[] => {
+  return found.flatMap((item) => {
     const file = repoPathOf(item.file, cwd);
 
-    if (file) {
-      scope.found.push({ ...item, file });
-    }
-  }
+    return file ? [{ ...item, file }] : [];
+  });
 };
 
 const readText = async (
@@ -70,12 +68,14 @@ const readText = async (
 /**
  * Look for what a finished command reported: the JSON a known tool was asked
  * to write or print, or else type errors in the output of one that failed.
+ * Returns it for the caller to keep, since a command that is retried keeps
+ * only what its last attempt found.
  */
 export const collectReports = async (
   scope: CiJobScope,
   command: { argv: string[]; stepId: string; cwd?: string },
   result: CommandResult,
-): Promise<void> => {
+): Promise<Found[]> => {
   const cwd = command.cwd ?? scope.cwd ?? defaultCwd;
 
   try {
@@ -99,9 +99,10 @@ export const collectReports = async (
       found = parseTsc(result.merged ?? `${result.stderr}\n${result.stdout}`);
     }
 
-    keep(scope, found, cwd);
+    return inRepository(found, cwd);
   } catch {
     // A report that can't be read is not a reason to fail the job.
+    return [];
   }
 };
 
@@ -129,5 +130,5 @@ export const readReportFile = async (
     );
   }
 
-  keep(scope, parseReport(format, text), cwd);
+  scope.found.push(...inRepository(parseReport(format, text), cwd));
 };

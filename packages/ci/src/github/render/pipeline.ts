@@ -391,21 +391,23 @@ export const pipelineCheck = (input: PipelineInput): CheckPayload => {
         };
       }
 
+      // A handler may catch a job's failure and still pass the pipeline, so
+      // say how many jobs failed.
+      const jobsPassed =
+        counts.failed > 0
+          ? `${counts.passed} of ${plural(counts.total, "job")} passed, ${counts.failed} failed (handled by the pipeline)`
+          : `${plural(counts.total, "job")} passed`;
+
       return {
-        title: `✅ Passed: ${plural(counts.total, "job")} in ${time}${saved > 0 ? ` · ⚡ ${formatDuration(saved)} saved by cache` : ""}`,
+        title: `✅ Passed: ${plural(counts.total, "job")}${counts.failed > 0 ? `, ${counts.failed} failed` : ""} in ${time}${saved > 0 ? ` · ⚡ ${formatDuration(saved)} saved by cache` : ""}`,
         summary: sections(
           saved > 0
             ? callout(
                 "tip",
                 `⚡ **${formatDuration(saved)} of build time skipped by caching.** ${savedBuilds} of ${builds} builds restored.${onPath > 0 ? `\nOn the critical path that is **${formatDuration(onPath)}** faster.` : ""}`,
               )
-            : callout(
-                "note",
-                `✅ **${plural(counts.total, "job")} passed** in **${time}**.`,
-              ),
-          saved > 0
-            ? `✅ **${plural(counts.total, "job")} passed** in **${time}**`
-            : undefined,
+            : callout("note", `✅ **${jobsPassed}** in **${time}**.`),
+          saved > 0 ? `✅ **${jobsPassed}** in **${time}**` : undefined,
           closingRow(input, "🔗"),
           savedTable(input),
           pathLine(input, critical),

@@ -127,6 +127,35 @@ describe("pipeline check", () => {
     ]);
   });
 
+  it("passed: still counts a job the pipeline let fail", () => {
+    const check = render({
+      state: "passed",
+      jobs: [
+        {
+          id: "a",
+          name: "a",
+          parents: [],
+          startMs: 0,
+          endMs: 3000,
+          state: "ok",
+        },
+        {
+          id: "b",
+          name: "b",
+          parents: [],
+          startMs: 0,
+          endMs: 3000,
+          state: "failed",
+        },
+      ],
+    });
+
+    expect(check.title).toBe("✅ Passed: 2 jobs, 1 failed in 6m 48s");
+    expect(check.summary).toContain(
+      "1 of 2 jobs passed, 1 failed (handled by the pipeline)",
+    );
+  });
+
   it("failed with no flakes does not suggest flakes", () => {
     const check = render({
       state: "failed",
