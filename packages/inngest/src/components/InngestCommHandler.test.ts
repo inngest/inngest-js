@@ -145,6 +145,74 @@ describe("ServeHandler", () => {
     });
   });
 
+  describe("streaming: option precedence over env var", () => {
+    const inngest = createClient({ id: "test", isDev: true });
+
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+
+    const noStreamSupport = { transformStreamingResponse: undefined };
+
+    test("streaming: false overrides INNGEST_STREAMING=true", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: false,
+      });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+        actionOverrides: noStreamSupport,
+      });
+
+      expect(result.status).not.toBe(500);
+    });
+
+    test("streaming: false overrides INNGEST_STREAMING=force", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: false,
+      });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "force" },
+        actionOverrides: noStreamSupport,
+      });
+
+      expect(result.status).not.toBe(500);
+    });
+
+    test("env var alone enables streaming", async () => {
+      const handler = serve({ client: inngest, functions: [fn] });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+        actionOverrides: noStreamSupport,
+      });
+
+      expect(result.status).toBe(500);
+      expect(result.body).toMatch(/streaming/i);
+    });
+
+    test("streaming: true enables streaming without env var", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: true,
+      });
+
+      const result = await runHandler(handler, {
+        actionOverrides: noStreamSupport,
+      });
+
+      expect(result.status).toBe(500);
+      expect(result.body).toMatch(/streaming/i);
+    });
+  });
+
   describe("streaming: deprecation warnings", () => {
     afterEach(() => {
       vi.resetModules();
