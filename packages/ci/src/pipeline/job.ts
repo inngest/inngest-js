@@ -8,6 +8,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError, StepError } from "inngest";
+import { snapshotName } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import {
   cacheTarget,
@@ -529,7 +530,7 @@ const invokeBuildRun = async (args: BuildArgs): Promise<CacheBuildResult> => {
     ...(origin ? { matrix: origin } : {}),
     ...(input === undefined ? {} : { input }),
     ownKey: target.ownKey,
-    cacheKey: target.name,
+    entry: target.entry,
     ...(Object.keys(target.key).length ? { key: target.key } : {}),
     ...(chain.length ? { chain } : {}),
     ...(exclude ? { exclude } : {}),
@@ -890,7 +891,10 @@ const jobSteps = async ({
   // claims it with the machine its first command creates, and tells them how
   // it ended when its run does.
   if (isBuild && run.build?.locked && takesBuildLock(config, request ?? {})) {
-    run.buildLock = { name: lockMachineName(run.build.cacheKey), path };
+    run.buildLock = {
+      name: lockMachineName(snapshotName(run.build.entry)),
+      path,
+    };
   }
 
   const found = builtAs
