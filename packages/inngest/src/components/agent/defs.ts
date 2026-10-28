@@ -27,6 +27,12 @@ import {
   SandboxValidationError,
 } from "../sandbox/types.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
+import {
+  createWithSkills,
+  isSkillsSource,
+  type SkillsRuntime,
+  type SkillsSource,
+} from "./skills.ts";
 
 /**
  * A config field: a value, or a function of `Ctx` returning it. A `T` that is
@@ -85,6 +91,14 @@ export interface SandboxDefinitionOptions {
    * `sandbox.tools.code()`.
    */
   tools?: SandboxToolsFactory;
+
+  /**
+   * Git sources of skills, made with `skills.git()`. Each is fetched when the
+   * sandbox is created or baked into a snapshot, by its `freshness`. A baked
+   * source can't be combined with `environment` or `secrets`: a sandbox
+   * started from a snapshot takes neither.
+   */
+  skills?: SkillsSource[];
 }
 
 /**
@@ -147,6 +161,23 @@ const defineSandbox = (
     throw new SandboxValidationError(
       `Invalid sandbox id "${options.id}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
     );
+  }
+
+  for (const source of options.skills ?? []) {
+    if (!isSkillsSource(source)) {
+      throw new SandboxValidationError(
+        `Sandbox "${options.id}" has skills that were not made with skills.git()`,
+      );
+    }
+
+    if (
+      source.freshness === "bake" &&
+      (options.environment || options.secrets)
+    ) {
+      throw new SandboxValidationError(
+        `Sandbox "${options.id}" bakes skills, which can't be combined with environment or secrets: use freshness "boot" for "${source.repo}"`,
+      );
+    }
   }
 
   return Object.freeze({ ...options, kind: "inngest/sandbox.definition" });
@@ -263,6 +294,7 @@ const lazySandbox = (
   name: string,
   binding: SandboxBinding,
   sandboxes: DurableSandboxTools,
+  skillsRuntime?: SkillsRuntime,
 ): LazySandbox => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
@@ -285,14 +317,36 @@ const lazySandbox = (
   let closed: Promise<void> | undefined;
 
   const get = (): Promise<DurableSandbox> => {
-    created ??= sandboxes.create(name, {
+    const fresh = {
       ...withoutId(sandboxDefaults(name)),
       ...(definition.image && { from: definition.image }),
       ...(definition.vcpu && { vcpu: definition.vcpu }),
       ...(definition.memoryMb && { memoryMb: definition.memoryMb }),
       ...(definition.environment && { environment: definition.environment }),
       ...(definition.secrets && { secrets: definition.secrets }),
-    } as Parameters<DurableSandboxTools["create"]>[1]);
+    };
+
+    if (definition.skills?.length && !skillsRuntime) {
+      return Promise.reject(
+        new SandboxValidationError(
+          `Sandbox "${name}" has skills, which need the agent's run: open it through an agent's sandboxes`,
+        ),
+      );
+    }
+
+    created ??= definition.skills?.length
+      ? createWithSkills({
+          name,
+          sources: definition.skills,
+          fresh,
+          image: definition.image,
+          sandboxes,
+          runtime: skillsRuntime as SkillsRuntime,
+        })
+      : sandboxes.create(
+          name,
+          fresh as Parameters<DurableSandboxTools["create"]>[1],
+        );
 
     return created;
   };
@@ -423,17 +477,19 @@ export const getSandbox = (
  *
  * @param bindings The agent's `sandboxes`, by name.
  * @param sandboxes The `step.sandbox` of the running function.
+ * @param skillsRuntime What sandboxes with skills need from the run.
  */
 export const openSandboxes = (
   bindings: Record<string, SandboxBinding>,
   sandboxes: DurableSandboxTools,
+  skillsRuntime?: SkillsRuntime,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
 
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
-    opened[name] = lazySandbox(name, binding, sandboxes);
+    opened[name] = lazySandbox(name, binding, sandboxes, skillsRuntime);
   }
 
   for (const handle of Object.values(opened)) {

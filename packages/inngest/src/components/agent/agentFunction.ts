@@ -33,6 +33,7 @@ import {
 } from "./defs.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
 import type { AgentTurn } from "./loop.ts";
+import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -435,6 +436,15 @@ export function createAgentFunction(
       const opened = openSandboxes(
         bindings,
         sandboxSteps as DurableSandboxTools,
+        {
+          client: client as unknown as SkillsRuntime["client"],
+          run: (id, fn) => {
+            return step.run(id, fn) as ReturnType<typeof fn>;
+          },
+          sendEvent: (id, payload) => {
+            return step.sendEvent(id, payload);
+          },
+        },
       );
 
       let stopRequested = false;

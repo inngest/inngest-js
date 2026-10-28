@@ -14,6 +14,7 @@ import {
   type AgentFunctionConfig,
   createAgentFunction,
 } from "./agentFunction.ts";
+import { createSkillsBakeFunction } from "./skills.ts";
 
 export interface Agents {
   /**
@@ -53,6 +54,7 @@ export interface Agents {
  */
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
+  let bake: InngestFunction.Any | undefined;
 
   return {
     agent: (config, body) => {
@@ -60,12 +62,20 @@ export const createAgents = (client: Inngest.Any): Agents => {
 
       made.push(created);
 
+      // Sandboxes can have baked skills, which a function of its own builds,
+      // served once however many agents there are.
+      if (config.sandboxes) {
+        bake ??= createSkillsBakeFunction(client);
+      }
+
       return created;
     },
     functions: () => {
-      return made.flatMap((created) => {
+      const functions = made.flatMap((created) => {
         return [created.fn, created.cleanup];
       });
+
+      return bake ? [...functions, bake] : functions;
     },
   };
 };
@@ -86,6 +96,8 @@ export type {
   KvScopeInstance,
 } from "./kv.ts";
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
+export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
+export { skills } from "./skills.ts";
 export type {
   InboxMessage,
   SubscribeOptions,
