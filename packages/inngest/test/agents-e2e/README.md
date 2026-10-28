@@ -16,6 +16,7 @@ pnpm -C packages/inngest test agent              # 1. unit
 pnpm -C packages/inngest test:types              # 2. types (includes the kit)
 pnpm -C packages/inngest lint                    #    lint
 pnpm -C packages/inngest build                   #    build (the kit runs against dist, rebuild after SDK changes)
+pnpm agents:examples                             #    biome and tsc for every examples/agents-* and coding-agent; installs each against the built dist, so build first
 pnpm agents:verify <scenario>                    # 3. your scenario(s), 30-60s each
 pnpm agents:verify --all                         # 4. the whole suite, required before squash
 ```

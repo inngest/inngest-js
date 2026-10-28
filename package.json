@@ -7,6 +7,7 @@
     "release:publish": "pnpm run --if-present --recursive release",
     "release:tag": "node scripts/release/tag.js",
     "log": "pnpm run --if-present --recursive log",
+    "agents:examples": "npx biome check examples/agents-* examples/coding-agent && for dir in examples/agents-* examples/coding-agent; do pnpm --dir $dir install --ignore-workspace --config.lockfile=false && pnpm --dir $dir run typecheck || exit 1; done",
     "agents:verify": "pnpm --filter inngest exec tsx --tsconfig test/agents-e2e/tsconfig.json test/agents-e2e/run.ts"
   },
   "devDependencies": {

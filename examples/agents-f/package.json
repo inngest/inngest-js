@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "tsx app.ts",
-    "drive": "tsx driver.ts"
+    "drive": "tsx driver.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "inngest": "link:../../packages/inngest/dist",

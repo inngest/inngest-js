@@ -4,6 +4,7 @@
  * Run against a Dev Server and a Redis (`INNGEST_EXPERIMENTAL_KV_URL`).
  */
 import { setTimeout as sleep } from "node:timers/promises";
+import type { ThreadState } from "inngest/experimental/agents";
 import { boom, chat, quick } from "./agents.ts";
 
 function check(name: string, ok: boolean, detail?: unknown) {
@@ -33,8 +34,29 @@ async function until<T>(
 
 const run = `${Date.now()}`;
 
-function lastText(state: Record<string, unknown>) {
-  return (state.last as { text?: string } | undefined)?.text;
+/**
+ * The strings of a list the agent keeps in the thread's KV.
+ */
+function listOf(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => {
+    return typeof item === "string";
+  });
+}
+
+/**
+ * The text of the last turn the agent kept in the thread's KV.
+ */
+function lastText(state: ThreadState): string | undefined {
+  const last = state.keys.last;
+  if (typeof last !== "object" || last === null || !("text" in last)) {
+    return undefined;
+  }
+
+  return typeof last.text === "string" ? last.text : undefined;
 }
 
 // 1. The first message starts the thread, and a second reaches the waiting run.
@@ -62,7 +84,7 @@ const second = await until(
 check("second message answered", lastText(second) === "echo: again", second);
 check(
   "history carries across turns",
-  (second.history as unknown[] | undefined)?.length === 8,
+  (Array.isArray(second.keys.history) ? second.keys.history.length : 0) === 8,
   second,
 );
 
@@ -98,13 +120,13 @@ const burst = await until(
   },
   (s) => {
     return (
-      ((s.turns as string[] | undefined) ?? []).filter((turn) => {
+      listOf(s.keys.turns).filter((turn) => {
         return turn.startsWith("b");
       }).length >= 5
     );
   },
 );
-const turns = (burst.turns as string[] | undefined) ?? [];
+const turns = listOf(burst.keys.turns);
 const burstTurns = turns.filter((turn) => {
   return turn.startsWith("b");
 });
@@ -123,7 +145,7 @@ await sleep(3000);
 const afterStop = await t1.state();
 check(
   "stop on an idle thread starts no run",
-  (afterStop.turns as string[]).length === turns.length,
+  listOf(afterStop.keys.turns).length === turns.length,
   afterStop,
 );
 
@@ -136,7 +158,7 @@ await sleep(6000);
 const stopped = await t5.state();
 check(
   "stop now cancels the running turn",
-  stopped.turns === undefined,
+  stopped.keys.turns === undefined,
   stopped,
 );
 
@@ -150,12 +172,12 @@ const handed = await until(
     return t2.state();
   },
   (s) => {
-    return ((s.seen as string[] | undefined) ?? []).length >= 2;
+    return listOf(s.keys.seen).length >= 2;
   },
 );
 check(
   "unread message handed to the next run",
-  JSON.stringify(handed.seen) === JSON.stringify(["one", "two"]),
+  JSON.stringify(handed.keys.seen) === JSON.stringify(["one", "two"]),
   handed,
 );
 
@@ -169,12 +191,12 @@ const failed = await until(
     return t3.state();
   },
   (s) => {
-    return ((s.seen as string[] | undefined) ?? []).length >= 2;
+    return listOf(s.keys.seen).length >= 2;
   },
 );
 check(
   "failed run hands unread messages to the next run",
-  JSON.stringify(failed.seen) === JSON.stringify(["a", "b"]),
+  JSON.stringify(failed.keys.seen) === JSON.stringify(["a", "b"]),
   failed,
 );
 
