@@ -9,6 +9,7 @@ import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import { buildEntryOf } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import type { CommandState } from "../machine/command.ts";
@@ -139,7 +140,11 @@ export const cacheRefreshIdPrefix = "ci/cache-refresh/";
 /** What a build run is asked to build, from the data it was invoked with. */
 export const requestOf = (data: CacheBuildData): BuildRequest => {
   return {
-    target: { ownKey: data.ownKey, key: data.key ?? {}, entry: data.entry },
+    target: {
+      ownKey: data.ownKey,
+      key: data.key ?? {},
+      entry: buildEntryOf(data),
+    },
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),

@@ -14,8 +14,9 @@ import { NonRetriableError } from "inngest";
 import type {
   FoundSnapshot,
   SnapshotCache,
+  SnapshotCacheAction,
   SnapshotEntry,
-  SnapshotKeyPart,
+  SnapshotKeyEntry,
 } from "inngest/experimental";
 import { snapshotCache, snapshotKey, snapshotName } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
@@ -30,7 +31,13 @@ import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, joinId, localRepo, rootRunIdOf } from "../pipeline/scope.ts";
+import {
+  countApi,
+  joinId,
+  localRepo,
+  rootRunIdOf,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -47,7 +54,7 @@ import {
   parseRepo,
   stableStringify,
 } from "../util.ts";
-import { snapshotEntry } from "./names.ts";
+import { entryScope, ownKeyOf, snapshotEntry } from "./names.ts";
 
 /**
  * Check a static `cache` when the job is defined, so a mistake fails
@@ -134,30 +141,18 @@ export const resolveCacheKey = async (
   run: CiRunScope,
   key: CacheKey | undefined,
 ): Promise<{ hash: string; named: Record<string, string> }> => {
-  const parts = keyParts(key);
-  const resolve = (part: CacheKeyValue): SnapshotKeyPart => {
-    if (typeof part === "object") {
-      return () => {
-        return resolveFilesPart(run, part);
-      };
-    }
-
-    return part;
-  };
-
-  if (parts.length && parts.every(([name]) => name !== undefined)) {
-    return snapshotKey(
-      Object.fromEntries(
-        parts.map(([name, part]) => {
-          return [name, resolve(part)];
-        }),
-      ),
-    );
-  }
-
   return snapshotKey(
-    parts.map(([, part]) => {
-      return resolve(part);
+    keyParts(key).map(([name, part]): SnapshotKeyEntry => {
+      if (typeof part === "object") {
+        return [
+          name,
+          () => {
+            return resolveFilesPart(run, part);
+          },
+        ];
+      }
+
+      return [name, part];
     }),
   );
 };
@@ -337,7 +332,10 @@ export const jobCacheKey = async (
   );
 
   return {
-    ownKey: `${slot}/${identityKey(hash(`${resolved}\0${owner}`), input, base)}`,
+    ownKey: ownKeyOf(
+      slot,
+      identityKey(hash(`${resolved}\0${owner}`), input, base),
+    ),
     key: named,
   };
 };
@@ -485,13 +483,29 @@ export const directTarget = (run: CiRunScope, path: string): CacheTarget => {
  */
 export const snapshotCacheOf = (
   run: CiRunScope,
-  stepOf: (id: string) => StepSpec,
+  stepOf: (action: SnapshotCacheAction) => StepSpec,
 ): SnapshotCache => {
   return snapshotCache(run.ci.client, {
-    memo: (id, fn) => {
-      return ciRun(run, stepOf(id), fn);
+    memo: (_id, fn, action) => {
+      return ciRun(run, stepOf(action), fn);
     },
   });
+};
+
+/**
+ * The steps of a build's cache calls, from the action each is. The lookup is
+ * not a step of the build, so it has none here.
+ */
+export const takeStepOf = (
+  /** The ID of the build's snapshot step, which the others are named after. */
+  stepId: string,
+  action: SnapshotCacheAction,
+): StepSpec => {
+  if (action === "replaced") {
+    return steps.deleteReplacedCache(joinId(stepId, "replaced"));
+  }
+
+  return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
 };
 
 /**
@@ -532,9 +546,7 @@ const lookUp = (
   }).find(target.entry, {
     ...(cache
       ? {
-          read: cacheScopes(run.repo, cache.scope).read.map((scope) => {
-            return `ci/${scope}`;
-          }),
+          read: cacheScopes(run.repo, cache.scope).read.map(entryScope),
           ...(cache.maxAge === undefined ? {} : { maxAge: cache.maxAge }),
         }
       : {}),

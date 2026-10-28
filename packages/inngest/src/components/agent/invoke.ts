@@ -162,7 +162,8 @@ export const invoke = async <TOutput = unknown>(
 
   const parent = currentSessions(ctx);
   const sessions = {
-    agent_session: parent.agent_session ?? ctx.runId,
+    agent_session:
+      execution.agent?.session ?? parent.agent_session ?? ctx.runId,
     agent_thread: options.thread ?? `${functionId}:${ctx.runId}.${n}`,
     ...options.meta?.sessions,
   };

@@ -114,6 +114,15 @@ export const snapshotName = (entry: SnapshotEntry): string => {
 export type SnapshotKeyPart = string | (() => string | Promise<string>);
 
 /**
+ * A part with its name, or without one: the form a key of both kinds is passed
+ * in, as `[name, part]`. A part without a name is hashed by its value alone.
+ */
+export type SnapshotKeyEntry = [
+  name: string | undefined,
+  part: SnapshotKeyPart,
+];
+
+/**
  * Hash the parts of a key into one string, which changes when any part does.
  * Named parts (an object) are told apart by their names, and also come back
  * resolved, for a builder that needs their values. Functions are called once,
@@ -125,11 +134,14 @@ export type SnapshotKeyPart = string | (() => string | Promise<string>);
  * ```
  */
 export const snapshotKey = async (
-  parts: SnapshotKeyPart[] | Record<string, SnapshotKeyPart>,
+  parts:
+    | SnapshotKeyPart[]
+    | Record<string, SnapshotKeyPart>
+    | SnapshotKeyEntry[],
 ): Promise<{ hash: string; named: Record<string, string> }> => {
-  const entries: [string | undefined, SnapshotKeyPart][] = Array.isArray(parts)
+  const entries: SnapshotKeyEntry[] = Array.isArray(parts)
     ? parts.map((part) => {
-        return [undefined, part];
+        return Array.isArray(part) ? part : [undefined, part];
       })
     : Object.entries(parts);
 
@@ -195,6 +207,12 @@ export interface TakeOptions {
   broken?: boolean;
   /** The ID steps are given. Defaults to one made from the entry. */
   stepId?: string;
+  /**
+   * Whether the new snapshot deletes the older generations of its entry.
+   * Defaults to `true`. Turn it off for an entry that has a single generation,
+   * where there is nothing to replace and the listing would be wasted.
+   */
+  replace?: boolean;
 }
 
 /**
@@ -208,13 +226,26 @@ export type TakeSnapshot = (
   n: number,
 ) => Promise<{ id: string; createdAt: string }>;
 
+/**
+ * What a memoized call of the cache does: `find` looks an entry up,
+ * `name-taken` settles who holds a name a take couldn't get, and `replaced`
+ * deletes the older generations a new snapshot replaces.
+ */
+export type SnapshotCacheAction = "find" | "name-taken" | "replaced";
+
 /** Options for `snapshotCache`. */
 export interface SnapshotCacheOptions {
   /**
    * Run a lookup or cleanup so it happens once per run, such as
-   * `(id, fn) => step.run(id, fn)`. Without it, each runs directly.
+   * `(id, fn) => step.run(id, fn)`. `action` says which call it is, for a
+   * caller that names its steps by what they do. Without it, each runs
+   * directly.
    */
-  memo?: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
+  memo?: <T>(
+    id: string,
+    fn: () => Promise<T>,
+    action: SnapshotCacheAction,
+  ) => Promise<T>;
   /**
    * How long before it expires a snapshot stops being reused, long enough for
    * what starts from it to get its sandbox. Defaults to 15 minutes.
@@ -449,7 +480,11 @@ export const snapshotCache = (
     }
   };
 
-  const idOf = (action: string, entry: SnapshotEntry, stepId?: string) => {
+  const idOf = (
+    action: SnapshotCacheAction,
+    entry: SnapshotEntry,
+    stepId?: string,
+  ) => {
     return `${stepId ?? `snapshot:${snapshotName(entry)}`}:${action}`;
   };
 
@@ -472,6 +507,7 @@ export const snapshotCache = (
 
         return null;
       },
+      "find",
     );
 
     return found ?? undefined;
@@ -619,11 +655,19 @@ export const snapshotCache = (
     const named = async (): Promise<TakenSnapshot> => {
       const result = taken(await snapshot(name), true);
 
-      await memo(idOf("replaced", entry, takeOptions.stepId), async () => {
-        await deleteReplaced(result);
+      if (takeOptions.replace === false) {
+        return result;
+      }
 
-        return null;
-      });
+      await memo(
+        idOf("replaced", entry, takeOptions.stepId),
+        async () => {
+          await deleteReplaced(result);
+
+          return null;
+        },
+        "replaced",
+      );
 
       return result;
     };
@@ -653,6 +697,7 @@ export const snapshotCache = (
             takeOptions.broken,
           );
         },
+        "name-taken",
       );
 
       if (holder.winner) {

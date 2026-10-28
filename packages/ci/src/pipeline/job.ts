@@ -19,6 +19,7 @@ import {
   lookupCache,
   runTarget,
 } from "../cache/cache.ts";
+import { buildEntryOf } from "../cache/names.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -892,7 +893,7 @@ const jobSteps = async ({
   // it ended when its run does.
   if (isBuild && run.build?.locked && takesBuildLock(config, request ?? {})) {
     run.buildLock = {
-      name: lockMachineName(snapshotName(run.build.entry)),
+      name: lockMachineName(snapshotName(buildEntryOf(run.build))),
       path,
     };
   }

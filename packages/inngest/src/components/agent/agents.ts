@@ -127,6 +127,7 @@ export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills } from "./skills.ts";
 export type {
   InboxMessage,
+  SubscribeEvent,
   SubscribeOptions,
   Subscription,
 } from "./subscribe.ts";
@@ -145,3 +146,8 @@ export type {
   ThreadListOptions,
 } from "./threadList.ts";
 export { listThreads } from "./threadList.ts";
+export type {
+  ThreadKeyConfig,
+  ThreadTrigger,
+  ThreadTriggerEvent,
+} from "./threadTrigger.ts";

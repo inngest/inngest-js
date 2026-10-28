@@ -27,9 +27,18 @@ export interface InboxMessage<TData = unknown> {
    * The event that was sent.
    */
   data: TData;
+
+  /**
+   * Which stream of a multi-event subscription delivered it, as the index in
+   * `events`, and the position in that stream. Absent on a put-back trigger.
+   */
+  source?: { stream: number; seq: number };
 }
 
-export interface SubscribeOptions {
+/**
+ * One event a subscription listens for.
+ */
+export interface SubscribeEvent {
   /**
    * The event name to subscribe to.
    */
@@ -40,6 +49,40 @@ export interface SubscribeOptions {
    * The event is `async`: `async.data.thread == "t1"`.
    */
   if?: string;
+}
+
+/**
+ * One event, or several in `events`. Several events are several parallel
+ * single-event subscriptions under the hood, each with its own numbered
+ * messages, and `next()` hands out whichever message arrived first (a race;
+ * the order across events is arrival order as the race sees it, and strict
+ * ordering across events is not guaranteed).
+ */
+export type SubscribeOptions = SubscribeEvent | { events: SubscribeEvent[] };
+
+/**
+ * The key of stream `index` of a subscription with `count` streams. A single
+ * stream uses the subscription key itself.
+ * @param key The subscription ID.
+ * @param count How many streams.
+ * @param index The stream.
+ */
+export function streamKey(key: string, count: number, index: number): string {
+  return count === 1 ? key : `${key}:${index}`;
+}
+
+/**
+ * The streams of the options, one per event.
+ * @param opts Subscription options.
+ */
+export function streamsOf(opts: SubscribeOptions): SubscribeEvent[] {
+  const streams = "events" in opts ? opts.events : [opts];
+
+  if (streams.length === 0) {
+    throw new Error("`step.subscribe()` needs at least one event.");
+  }
+
+  return streams;
 }
 
 /**
@@ -91,47 +134,109 @@ export interface Subscription<TData = unknown>
 export type SubscribeOp = (
   stepId: string,
   mode: "open" | "next" | "poll" | "ack" | "close",
-  seq?: number,
+  seq: number | undefined,
+  stream: number,
 ) => Promise<unknown>;
 
+interface Stream {
+  index: number;
+  key: string;
+
+  // How many numbered messages of this stream have been read, how many polls
+  // it has had, and how many messages it saved once closed.
+  read: number;
+  polls: number;
+  total?: number;
+
+  // The wait for message `seq`, kept until it is consumed so that every
+  // `next()` that races this stream waits on the same step.
+  pending?: { seq: number; wait: Promise<{ stream: Stream; data: unknown }> };
+}
+
 /**
- * Opens a subscription.
+ * Opens a subscription: one stream per event, merged into one message
+ * sequence.
  * @param op Runs one subscription op as a step.
  * @param key The subscription ID; prefix of every step it runs.
- * @param _opts Subscription options (carried by `op`).
+ * @param opts Subscription options.
  */
 export async function openSubscription<TData = unknown>(
   op: SubscribeOp,
   key: string,
-  _opts: SubscribeOptions,
+  opts: SubscribeOptions,
 ): Promise<Subscription<TData>> {
-  await op(`${key}:open`, "open");
+  const events = streamsOf(opts);
+  const streams: Stream[] = events.map((_event, index) => {
+    return {
+      index,
+      key: streamKey(key, events.length, index),
+      read: 0,
+      polls: 0,
+    };
+  });
 
-  // How many numbered messages have been read, and how many exist once closed.
-  let read = 0;
-  let polls = 0;
-  let total: number | undefined;
+  for (const stream of streams) {
+    await op(`${stream.key}:open`, "open", undefined, stream.index);
+  }
+
+  // The position in the merged sequence, which is what callers ack by.
+  let delivered = 0;
 
   // Messages put back, oldest first.
   const held: InboxMessage<TData>[] = [];
   const acked = new Set<number>();
 
+  function drained(stream: Stream) {
+    return stream.total !== undefined && stream.read >= stream.total;
+  }
+
   // The ack tells the executor a message was handled, so a message that was
   // saved but never acked is handed to the thread's next run. The trigger
-  // (seq 0) is not a saved message.
+  // (seq 0) is not a saved message. Acks reach each stream in its own order
+  // as long as the caller acks in merged order.
   async function ack(message: InboxMessage<TData>) {
-    if (message.seq < 1 || acked.has(message.seq)) {
+    if (message.seq < 1 || acked.has(message.seq) || !message.source) {
       return;
     }
 
     acked.add(message.seq);
-    await op(`${key}:ack:${message.seq}`, "ack", message.seq);
+    const stream = streams[message.source.stream] as Stream;
+    await op(
+      `${stream.key}:ack:${message.source.seq}`,
+      "ack",
+      message.source.seq,
+      stream.index,
+    );
   }
 
-  function receive(seq: number, message: unknown): InboxMessage<TData> {
-    read = seq;
+  function receive(stream: Stream, seq: number, data: unknown) {
+    stream.read = seq;
+    stream.pending = undefined;
+    delivered += 1;
 
-    return { seq, data: message as TData };
+    return {
+      seq: delivered,
+      data: data as TData,
+      source: { stream: stream.index, seq },
+    };
+  }
+
+  function waitFor(stream: Stream) {
+    if (!stream.pending) {
+      const seq = stream.read + 1;
+      const wait = op(`${stream.key}:${seq}`, "next", seq, stream.index).then(
+        (data) => {
+          return { stream, data };
+        },
+      );
+
+      // A wait that loses a race and later fails is not an unhandled error;
+      // the next `next()` that races it sees the failure.
+      wait.catch(() => {});
+      stream.pending = { seq, wait };
+    }
+
+    return stream.pending;
   }
 
   async function next(): Promise<InboxMessage<TData> | null> {
@@ -140,12 +245,27 @@ export async function openSubscription<TData = unknown>(
       return waiting;
     }
 
-    if (total !== undefined && read >= total) {
+    const open = streams.filter((stream) => {
+      return !drained(stream);
+    });
+    if (open.length === 0) {
       return null;
     }
 
-    const seq = read + 1;
-    return receive(seq, await op(`${key}:${seq}`, "next", seq));
+    // With several streams the waits race; the winner is the message that
+    // arrived first, and the others keep their wait for the next call.
+    const waits = open.map((stream) => {
+      return waitFor(stream);
+    });
+    const won = await Promise.race(
+      waits.map((wait) => {
+        return wait.wait.then((result) => {
+          return { ...result, seq: wait.seq };
+        });
+      }),
+    );
+
+    return receive(won.stream, won.seq, won.data);
   }
 
   async function poll(): Promise<InboxMessage<TData> | null> {
@@ -154,18 +274,25 @@ export async function openSubscription<TData = unknown>(
       return waiting;
     }
 
-    if (total !== undefined && read >= total) {
-      return null;
+    for (const stream of streams) {
+      if (drained(stream)) {
+        continue;
+      }
+
+      const seq = stream.read + 1;
+      stream.polls += 1;
+      const message = await op(
+        `${stream.key}:poll:${stream.polls}`,
+        "poll",
+        seq,
+        stream.index,
+      );
+      if (message !== null && message !== undefined) {
+        return receive(stream, seq, message);
+      }
     }
 
-    const seq = read + 1;
-    polls += 1;
-    const message = await op(`${key}:poll:${polls}`, "poll", seq);
-    if (message === null || message === undefined) {
-      return null;
-    }
-
-    return receive(seq, message);
+    return null;
   }
 
   return {
@@ -176,8 +303,18 @@ export async function openSubscription<TData = unknown>(
       held.unshift(...messages);
     },
     async close() {
-      const closed = (await op(`${key}:close`, "close")) as { count: number };
-      total = closed.count;
+      let total = 0;
+
+      for (const stream of streams) {
+        const closed = (await op(
+          `${stream.key}:close`,
+          "close",
+          undefined,
+          stream.index,
+        )) as { count: number };
+        stream.total = closed.count;
+        total += closed.count;
+      }
 
       return total;
     },

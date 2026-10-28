@@ -153,6 +153,22 @@ describe("snapshot keys", () => {
     expect(a.named).toEqual({ sha: "1", node: "22" });
     expect(a.hash).not.toBe(b.hash);
   });
+
+  test("entries hash the same as the array and record forms", async () => {
+    const array = await snapshotKey(["x", "y"]);
+    const entries = await snapshotKey([
+      [undefined, "x"],
+      [undefined, "y"],
+    ]);
+    const record = await snapshotKey({ sha: "1", node: "22" });
+    const named = await snapshotKey([
+      ["sha", "1"],
+      ["node", "22"],
+    ]);
+
+    expect(entries.hash).toBe(array.hash);
+    expect(named).toEqual(record);
+  });
 });
 
 describe("find", () => {
@@ -236,6 +252,43 @@ describe("find", () => {
     await cache.find(entry, { stepId: "look" });
 
     expect(ids).toEqual(["look:find"]);
+  });
+
+  test("replace: false skips looking for older generations", async () => {
+    const api = makeApi();
+    const actions: string[] = [];
+    const cache = snapshotCache(api.client, {
+      memo: (_id, fn, action) => {
+        actions.push(action);
+
+        return fn();
+      },
+    });
+    const old = api.add(snapshotName({ ...entry, generation: "sha0" }));
+
+    await cache.take(entry, api.snapshotCall(), { replace: false });
+
+    expect(actions).toEqual([]);
+    expect(old.status).toBe("READY");
+  });
+
+  test("tells memo which action each call is", async () => {
+    const api = makeApi();
+    const actions: string[] = [];
+    const cache = snapshotCache(api.client, {
+      memo: (_id, fn, action) => {
+        actions.push(action);
+
+        return fn();
+      },
+    });
+
+    await cache.find(entry);
+    await cache.take(entry, async (name) => {
+      return api.snapshotCall()(name);
+    });
+
+    expect(actions).toEqual(["find", "replaced"]);
   });
 });
 
