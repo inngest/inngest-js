@@ -9,6 +9,7 @@ import {
   childLimits,
   type LimitState,
   matchesTarget,
+  narrowInherited,
   narrowLimits,
   readInheritedLimits,
 } from "./limits.ts";
@@ -69,7 +70,7 @@ describe("narrowLimits", () => {
 describe("readInheritedLimits", () => {
   test("closes anything malformed rather than widening it", () => {
     expect(readInheritedLimits(undefined)).toBeUndefined();
-    expect(readInheritedLimits({ limits: "x" })).toBeUndefined();
+    expect(readInheritedLimits({ limits: "x" })).toEqual({ depth: 0 });
     expect(
       readInheritedLimits({
         limits: {
@@ -158,5 +159,19 @@ describe("budget", () => {
       mayCall: [["a/*"]],
       budget: { tokens: 50 },
     });
+  });
+});
+
+describe("hardening", () => {
+  test("a present but malformed container closes the limit", () => {
+    expect(
+      readInheritedLimits({ limits: { mayCall: "x", budget: "y" } }),
+    ).toEqual({ mayCall: [[]], budget: { tokens: 0 } });
+  });
+
+  test("starting a thread again with the same limits adds no duplicate list", () => {
+    const limits = { mayCall: [["a/*"]] };
+
+    expect(narrowInherited(limits, limits)?.mayCall).toEqual([["a/*"]]);
   });
 });

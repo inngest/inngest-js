@@ -47,7 +47,7 @@ export interface AgentLimits {
   /**
    * What the thread may spend. The loop stops with `stopped: "budget"` before
    * its next model call once it is spent. A sub-agent gets what is left at
-   * most.
+   * most; the sub-agents' total is not capped, so pair it with `spawn`.
    */
   budget?: AgentBudget;
 }
@@ -177,7 +177,20 @@ export const narrowInherited = (
     return a ?? b;
   }
 
-  const mayCall = [...(a.mayCall ?? []), ...(b.mayCall ?? [])];
+  const seen = new Set<string>();
+  const mayCall = [...(a.mayCall ?? []), ...(b.mayCall ?? [])].filter(
+    (list) => {
+      const key = JSON.stringify([...list].sort());
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    },
+  );
   const budget = narrowBudget(a.budget, b.budget);
 
   return {
@@ -198,6 +211,10 @@ export const readInheritedLimits = (
 ): EffectiveLimits | undefined => {
   const raw = isRecord(info) ? info.limits : undefined;
 
+  if (raw !== undefined && !isRecord(raw)) {
+    return { depth: 0 };
+  }
+
   if (!isRecord(raw)) {
     return undefined;
   }
@@ -213,7 +230,9 @@ export const readInheritedLimits = (
   };
   const budget: AgentBudget = {};
 
-  if (isRecord(raw.budget)) {
+  if (raw.budget !== undefined && !isRecord(raw.budget)) {
+    budget.tokens = 0;
+  } else if (isRecord(raw.budget)) {
     for (const field of budgetFields) {
       const value = number(raw.budget[field]);
 
@@ -223,15 +242,16 @@ export const readInheritedLimits = (
     }
   }
 
-  const mayCall = Array.isArray(raw.mayCall)
-    ? raw.mayCall.map((list: unknown) => {
-        return Array.isArray(list)
-          ? list.filter((pattern): pattern is string => {
-              return typeof pattern === "string";
-            })
-          : [];
-      })
-    : [];
+  const mayCall =
+    raw.mayCall !== undefined && !Array.isArray(raw.mayCall)
+      ? [[]]
+      : (raw.mayCall ?? []).map((list: unknown) => {
+          return Array.isArray(list)
+            ? list.filter((pattern): pattern is string => {
+                return typeof pattern === "string";
+              })
+            : [];
+        });
 
   return {
     depth: number(raw.depth),
