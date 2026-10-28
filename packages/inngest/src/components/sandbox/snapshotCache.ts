@@ -379,38 +379,6 @@ const isCacheName = (name: string): boolean => {
   return parts.length >= 3 && parts.every(Boolean);
 };
 
-const limitCode = "sandbox_snapshot_limit_exceeded";
-const defaultMaxDeletions = 20;
-
-/** Whether a take failed for the environment's snapshot limit. */
-const isLimitReached = (error: unknown): boolean => {
-  return hasCode(error, limitCode);
-};
-
-const escapeRegExp = (text: string): string => {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-};
-
-/** Whether a name starts with one of the scope patterns, ending where a scope does. */
-const inScopes = (name: string, patterns: string[]): boolean => {
-  return patterns.some((pattern) => {
-    // A trailing star runs to the end of the name; one inside stays in its segment.
-    const trailing = pattern.endsWith("*");
-    const body = trailing ? pattern.slice(0, -1) : pattern;
-    const source = body.split("*").map(escapeRegExp).join("[^/]*");
-    const end = trailing ? "" : "/";
-
-    return new RegExp(`^${source}${end}`).test(name);
-  });
-};
-
-/** Whether a name has the `<scope>/<key>/<generation>` shape of the cache's. */
-const isCacheName = (name: string): boolean => {
-  const parts = name.split("/");
-
-  return parts.length >= 3 && parts.every(Boolean);
-};
-
 const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
