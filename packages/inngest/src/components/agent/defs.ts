@@ -27,6 +27,7 @@ import {
   SandboxValidationError,
 } from "../sandbox/types.ts";
 import { type ConfigValue, resolveConfigValue } from "./config.ts";
+import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 
 /**
  * The parts of a sandbox that a definition's tools use. Calls through it
@@ -153,6 +154,15 @@ export const sandbox = Object.assign(defineSandbox, {
     code: (options?: CodeToolsOptions): SandboxToolsFactory => {
       return (handle) => {
         return codeTools(handle, options);
+      };
+    },
+    /**
+     * `git_push`: the model pushes a branch, checked by your policy and sent
+     * with a token only your app holds. See `gitPushTool()`.
+     */
+    git: (options: GitPushToolOptions): SandboxToolsFactory => {
+      return (handle) => {
+        return { git_push: gitPushTool(handle, options) };
       };
     },
   },

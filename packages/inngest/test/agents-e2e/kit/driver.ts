@@ -120,6 +120,12 @@ export interface Scenario {
     string,
     { stdout?: string; stderr?: string; exitCode?: number }
   >;
+
+  /**
+   * Commands in these directories that no `sandboxCommands` entry matches run
+   * on this machine, so a scenario can use real git.
+   */
+  sandboxLocalDirs?: string[];
   functions: (env: AppEnv) => InngestFunction.Any[];
   run: (ctx: Ctx) => Promise<void>;
 }

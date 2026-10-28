@@ -40,6 +40,8 @@ export {
   sandboxTools,
   toolNamespaceSeparator,
 } from "./defs.ts";
+export type { GitPushToolOptions } from "./gitPush.ts";
+export { gitPushTool } from "./gitPush.ts";
 export type { AgentInvokeOptions } from "./invoke.ts";
 export { agentInvokeDepth, agentInvokeInput } from "./invoke.ts";
 export type {
