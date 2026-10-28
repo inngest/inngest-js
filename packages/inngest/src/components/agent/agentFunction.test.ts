@@ -2,9 +2,11 @@
  * @module
  * Tests for the agent function body against a fake executor.
  */
+import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
+import { staticSchema } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { sandbox } from "./defs.ts";
@@ -503,6 +505,48 @@ describe("request and reply", () => {
     });
 
     expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
+  });
+
+  test("a reply that does not fit the requests schema throws and sends nothing", async () => {
+    const client = makeClient();
+    const signals: unknown[] = [];
+    client.sendSignal = (async (signal: unknown) => {
+      signals.push(signal);
+
+      return { runId: "r" };
+    }) as typeof client.sendSignal;
+    const { fn } = createAgentFunction(
+      client,
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        requests: {
+          request: staticSchema<{ n: number }>(),
+          reply: z.object({ answer: z.number() }),
+        },
+      },
+      async ({ inbox }) => {
+        const m = await inbox.next();
+
+        try {
+          await m?.reply({ answer: "forty-two" } as never);
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "replied";
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: message("request", undefined, "t1", {
+        payload: { n: 21 },
+        replyTo: "sig-1",
+      }),
+    });
+
+    expect(output).toContain("message.reply() data");
+    expect(signals).toEqual([]);
   });
 
   test("replying to a message that is not a request throws", async () => {

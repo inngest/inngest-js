@@ -27,6 +27,7 @@ import type { SandboxTools } from "../sandbox/tools.ts";
 import {
   type Channel,
   createReporter,
+  parseWith,
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
@@ -57,6 +58,7 @@ import {
   getThread,
   type ThreadHandle,
   type ThreadMessage,
+  type ThreadRequests,
   type TriggerEvent,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
@@ -80,6 +82,8 @@ import {
 export interface AgentFunctionConfig<
   TOn = ThreadTriggers,
   TEvent = TriggerEvent,
+  TRequest = unknown,
+  TReply = unknown,
 > extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
@@ -90,6 +94,15 @@ export interface AgentFunctionConfig<
    * KV store for thread state. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: Kv;
+
+  /**
+   * The types of the requests other threads send this agent with
+   * `handle.request()`: schemas for what they ask and what you reply. They
+   * type `payload` of a `"request"` message, `message.reply()`, and
+   * `request()` on the handle from `agent.thread()`, which also checks its
+   * payload against `request`. `reply()` checks its data against `reply`.
+   */
+  requests?: ThreadRequests<TRequest, TReply>;
 
   /**
    * The sandboxes this agent may use, by name: definitions made with
@@ -139,9 +152,13 @@ export interface AgentConfigContext<TEvent = TriggerEvent> {
 /**
  * What the body gets, besides the usual function context.
  */
-export interface AgentBodyContext<TEvent = TriggerEvent> {
-  event: { name: string; data: ThreadMessage<TEvent> };
-  thread: ThreadHandle;
+export interface AgentBodyContext<
+  TEvent = TriggerEvent,
+  TRequest = unknown,
+  TReply = unknown,
+> {
+  event: { name: string; data: ThreadMessage<TEvent, TRequest> };
+  thread: ThreadHandle<TRequest, TReply>;
 
   /**
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
@@ -169,7 +186,7 @@ export interface AgentBodyContext<TEvent = TriggerEvent> {
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
-  inbox: ThreadInbox<TEvent>;
+  inbox: ThreadInbox<TEvent, TRequest, TReply>;
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
@@ -191,46 +208,58 @@ export interface AgentBodyContext<TEvent = TriggerEvent> {
  * A message of the thread's inbox. A `"request"` message from another
  * thread's `handle.request()` is answered with `reply()`.
  */
-export interface ThreadInboxMessage<TEvent = TriggerEvent>
-  extends InboxMessage<ThreadMessage<TEvent>> {
+export interface ThreadInboxMessage<
+  TEvent = TriggerEvent,
+  TRequest = unknown,
+  TReply = unknown,
+> extends InboxMessage<ThreadMessage<TEvent, TRequest>> {
   /**
-   * Answers a request: sends `data` to the thread that asked. It is a step.
+   * Answers a request: sends `data` to the thread that asked. It is a step,
+   * and it throws for a message that is not a `"request"`.
    * @param data The reply.
    */
-  reply(data: unknown): Promise<void>;
+  reply(data: TReply): Promise<void>;
 }
 
 /**
  * The thread's inbox: a subscription whose messages can reply.
  */
-export interface ThreadInbox<TEvent = TriggerEvent>
-  extends Omit<
-      Subscription<ThreadMessage<TEvent>>,
+export interface ThreadInbox<
+  TEvent = TriggerEvent,
+  TRequest = unknown,
+  TReply = unknown,
+> extends Omit<
+      Subscription<ThreadMessage<TEvent, TRequest>>,
       "next" | "poll" | "close" | typeof Symbol.asyncIterator
     >,
-    AsyncIterable<ThreadInboxMessage<TEvent>> {
-  next(): Promise<ThreadInboxMessage<TEvent> | null>;
-  poll(): Promise<ThreadInboxMessage<TEvent> | null>;
+    AsyncIterable<ThreadInboxMessage<TEvent, TRequest, TReply>> {
+  next(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
+  poll(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
 
   /**
    * Ends the subscription. See `Subscription.close()`: it only ends the
    * subscription, and a message that arrives afterwards is dropped.
    * @returns The messages that were saved but not read.
    */
-  close(): Promise<ThreadInboxMessage<TEvent>[]>;
+  close(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
 }
 
 /**
  * The body of an agent. `TEvent` is the events of its `on` triggers and
  * `TOutput` what it returns.
  */
-export type AgentBody<TEvent = TriggerEvent, TOutput = unknown> = (
-  context: AgentBodyContext<TEvent>,
-) => Promise<TOutput>;
+export type AgentBody<
+  TEvent = TriggerEvent,
+  TOutput = unknown,
+  TRequest = unknown,
+  TReply = unknown,
+> = (context: AgentBodyContext<TEvent, TRequest, TReply>) => Promise<TOutput>;
 
 export interface AgentFunction<
   TInput = Record<string, unknown>,
   TOutput = unknown,
+  TRequest = unknown,
+  TReply = unknown,
 > {
   /**
    * Types only: what `agent.invoke(thisAgent, input)` takes and returns. The
@@ -260,7 +289,7 @@ export interface AgentFunction<
    * @param key Thread key.
    * @param session Session the thread belongs to. Default: the thread key.
    */
-  thread(key: string, session?: string): ThreadHandle;
+  thread(key: string, session?: string): ThreadHandle<TRequest, TReply>;
 
   /**
    * The agent's threads.
@@ -284,6 +313,7 @@ function threadInbox(
   client: Inngest.Any,
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
   log: { warn: (message: string) => void },
+  replySchema?: ThreadRequests["reply"],
 ): {
   inbox: ThreadInbox;
 } {
@@ -302,16 +332,20 @@ function threadInbox(
       seq: message.seq,
       data,
       async reply(answer) {
-        if (!data.replyTo) {
+        if (data.kind !== "request") {
           throw new Error(
             "This message is not a request: only a request has a reply.",
           );
         }
 
+        const checked = replySchema
+          ? parseWith(replySchema, answer, "message.reply() data")
+          : answer;
+
         await step.run(`reply:${message.seq}`, async () => {
           await client.sendSignal({
-            signal: data.replyTo as string,
-            data: answer,
+            signal: data.replyTo,
+            data: checked,
           });
         });
       },
@@ -530,6 +564,7 @@ export function createAgentFunction(
       const thread = getThread(client, ref, data.thread, {
         session,
         kv: config.kv,
+        requests: config.requests,
       });
 
       // The KV scopes of the thread and session come from the trigger, which
@@ -678,6 +713,7 @@ export function createAgentFunction(
           client,
           recorder,
           logger,
+          config.requests?.reply,
         );
 
         const control = {
@@ -803,12 +839,20 @@ export function createAgentFunction(
     cleanup,
     ref,
     thread(key, session) {
-      return getThread(client, ref, key, { session, kv: config.kv });
+      return getThread(client, ref, key, {
+        session,
+        kv: config.kv,
+        requests: config.requests,
+      });
     },
     threads: {
       list(options) {
         return listThreads(client, ref, options, (key, session) => {
-          return getThread(client, ref, key, { session, kv: config.kv });
+          return getThread(client, ref, key, {
+            session,
+            kv: config.kv,
+            requests: config.requests,
+          });
         });
       },
     },
