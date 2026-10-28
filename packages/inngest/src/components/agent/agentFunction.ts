@@ -36,6 +36,7 @@ import { kv as defaultKv, type Kv } from "./kv.ts";
 import {
   type AgentLimits,
   budgetReason,
+  narrowInherited,
   narrowLimits,
   readInheritedLimits,
   registerLimits,
@@ -422,8 +423,15 @@ export function createAgentFunction(
         });
       }
 
-      const started = await record(() => {
-        return { status: "running" };
+      // What a sub-agent inherited is kept on its thread, so a later run that
+      // a plain message starts has the same limits.
+      const startedWith = readInheritedLimits(
+        (data as unknown as Record<string, unknown>)._agent,
+      );
+      const started = await record((current) => {
+        const inherited = narrowInherited(current.inherited, startedWith);
+
+        return { status: "running", ...(inherited && { inherited }) };
       });
 
       // Limits apply to what `agent.invoke()` starts and to the loop's budget.
@@ -436,12 +444,7 @@ export function createAgentFunction(
 
       const limits = registerLimits(
         instance,
-        narrowLimits(
-          config.limits,
-          readInheritedLimits(
-            (data as unknown as Record<string, unknown>)._agent,
-          ),
-        ),
+        narrowLimits(config.limits, started.inherited),
         { ...started.usage },
       );
 

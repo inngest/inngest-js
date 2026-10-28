@@ -164,6 +164,31 @@ export const narrowLimits = (
 };
 
 /**
+ * Combines two sets of inherited limits into the tighter of both, so a thread
+ * started again by another agent never ends up with more than it had.
+ * @param a The limits stored on the thread, if any.
+ * @param b The limits of the new start, if any.
+ */
+export const narrowInherited = (
+  a: EffectiveLimits | undefined,
+  b: EffectiveLimits | undefined,
+): EffectiveLimits | undefined => {
+  if (!a || !b) {
+    return a ?? b;
+  }
+
+  const mayCall = [...(a.mayCall ?? []), ...(b.mayCall ?? [])];
+  const budget = narrowBudget(a.budget, b.budget);
+
+  return {
+    depth: lower(a.depth, b.depth),
+    spawn: lower(a.spawn, b.spawn),
+    ...(mayCall.length > 0 && { mayCall }),
+    ...(budget && { budget }),
+  };
+};
+
+/**
  * Reads the limits an invoking agent passed down, if any. It trusts only
  * well-formed numbers and strings, so a malformed payload never widens limits.
  * @param info The `_agent` entry of the invoke payload.

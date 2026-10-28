@@ -657,3 +657,33 @@ describe("agent limits", () => {
     expect(output).toContain("team/leaf was not started");
   });
 });
+
+describe("inherited limits persist on the thread", () => {
+  test("a later run started by a plain message keeps the limits the sub-agent inherited", async () => {
+    const store = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: store },
+      async () => {
+        try {
+          await agent.invoke("team/leaf");
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "started";
+      },
+    );
+    const first = trigger("go");
+    await run(fn, {
+      event: {
+        ...first,
+        data: { ...first.data, _agent: { depth: 1, limits: { depth: 0 } } },
+      },
+    });
+
+    const { output } = await run(fn, { event: trigger("again") });
+
+    expect(output).toContain("team/leaf was not started");
+  });
+});
