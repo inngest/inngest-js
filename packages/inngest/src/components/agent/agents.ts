@@ -9,6 +9,8 @@ export type {
   AgentBodyContext,
   AgentFunction,
   AgentFunctionConfig,
+  ThreadInbox,
+  ThreadInboxMessage,
 } from "./agentFunction.ts";
 // The public name of the agent function entry point is not settled; this is
 // the one line to rename.
@@ -26,5 +28,18 @@ export type {
   SubscribeOptions,
   Subscription,
 } from "./subscribe.ts";
-export type { ThreadHandle, ThreadMessage, ThreadOptions } from "./thread.ts";
+export type {
+  RequestOptions,
+  ThreadHandle,
+  ThreadMessage,
+  ThreadOptions,
+  ThreadState,
+  ThreadStatus,
+} from "./thread.ts";
 export { agentMessageEvent, agentStopEvent, getThread } from "./thread.ts";
+export type {
+  InsightsQuery,
+  ThreadList,
+  ThreadListOptions,
+} from "./threadList.ts";
+export { listThreads } from "./threadList.ts";

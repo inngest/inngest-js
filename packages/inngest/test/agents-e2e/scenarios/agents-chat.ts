@@ -15,6 +15,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
+import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -80,7 +81,9 @@ export const agentsChat = scenario({
       isDev: true,
     });
     const handle = (key: string) => {
-      return getThread(client, ref, `${key}-${Date.now()}`, { kv: store });
+      return withKeys(
+        getThread(client, ref, `${key}-${Date.now()}`, { kv: store }),
+      );
     };
 
     // A thread starts from its first message; the second reaches the waiting run.
