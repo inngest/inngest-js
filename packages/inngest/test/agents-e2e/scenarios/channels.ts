@@ -4,16 +4,21 @@
  * Slack thread it started in and to a GitHub comment chosen from the event,
  * and renders an ask through the Slack channel. Slack and GitHub are the fakes.
  */
-import { step } from "inngest";
+import { Inngest, step } from "inngest";
 import {
   agent,
   askThrough,
   type Channel,
   createAgents,
+  createKv,
+  getThread,
   github,
+  kv,
+  redisKvAdapter,
   slack,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { withKeys } from "../kit/threads.ts";
 
 export const channels = scenario({
   id: "channels",
@@ -71,6 +76,26 @@ export const channels = scenario({
       },
     );
 
+    // A GitHub comment trigger: its thread key is evaluated by the Dev Server
+    // (singleton, inbox filter) and by the SDK, and the two must agree.
+    agents.agent(
+      {
+        id: "channels-github-agent",
+        on: { ...github.comment(), event: event("gh") },
+      },
+      async ({ inbox, thread }) => {
+        for (let i = 0; i < 2; i++) {
+          const message = await inbox.next();
+
+          await kv.thread.update<string[]>("texts", (texts) => {
+            return [...(texts ?? []), message?.data.content ?? ""];
+          });
+        }
+
+        return { thread: thread.key };
+      },
+    );
+
     return agents.functions();
   },
   run: async (ctx) => {
@@ -101,5 +126,39 @@ export const channels = scenario({
     await ctx.expect
       .posts({ channel: "github", thread: "acme/app#7" })
       .toInclude({ body: "all done" });
+
+    const client = new Inngest({
+      id: "agents-e2e",
+      baseUrl: ctx.devUrl,
+      isDev: true,
+    });
+    const issue = { owner: "acme", repo: "keys", number: "12" };
+    const handle = withKeys(
+      getThread(
+        client,
+        "agents-e2e/channels-github-agent",
+        "github:acme/keys#12",
+        {
+          kv: createKv({ adapter: redisKvAdapter(ctx.redisUrl) }),
+        },
+      ),
+    );
+
+    await ctx.send("gh", { ...issue, body: "one" });
+    await ctx.eventually(
+      "the first comment is a turn",
+      handle.state,
+      (state) => {
+        return JSON.stringify(state.texts) === '["one"]';
+      },
+    );
+    await ctx.send("gh", { ...issue, body: "two" });
+    await ctx.eventually(
+      "the second comment reaches the same thread's run",
+      handle.state,
+      (state) => {
+        return JSON.stringify(state.texts) === '["one","two"]';
+      },
+    );
   },
 });

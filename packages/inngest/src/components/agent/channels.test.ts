@@ -150,7 +150,7 @@ describe("trigger helpers", () => {
     expect(trigger.if).toBe(
       '((event.data.owner == "acme" && event.data.repo == "app"))',
     );
-    expect(trigger.thread).toContain("string(event.data.number)");
+    expect(trigger.thread).toContain('#" + event.data.number');
   });
 });
 
@@ -191,6 +191,40 @@ describe("adapters", () => {
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain('"value":"yes"');
   });
 
+  test("slack ask shows the timeout and uses a menu past 25 options", async () => {
+    const channel = slack.channel(
+      { channel: "C1", thread_ts: "1.1" },
+      { apiUrl: "http://slack.test" },
+    );
+    const many = Array.from({ length: 30 }, (_, i) => {
+      return `o${i}`;
+    });
+
+    await channel.ask?.({
+      signal: "s",
+      question: "q",
+      options: ["a"],
+      timeout: "7d",
+    });
+    await channel.ask?.({ signal: "s", question: "q", options: many });
+
+    expect(JSON.stringify(calls[0]?.body.blocks)).toContain(
+      "Answer within 7d.",
+    );
+    expect(JSON.stringify(calls[0]?.body.blocks)).toContain('"type":"button"');
+    expect(JSON.stringify(calls[1]?.body.blocks)).toContain("static_select");
+    expect(JSON.stringify(calls[1]?.body.blocks)).not.toContain(
+      '"type":"button"',
+    );
+    await expect(
+      channel.ask?.({
+        signal: "s",
+        question: "q",
+        options: Array.from({ length: 101 }, String),
+      }),
+    ).rejects.toThrow("at most 100");
+  });
+
   test("slack.channel rejects an event of the wrong shape", () => {
     expect(() => {
       return slack.channel({ data: { text: 1 } });
@@ -199,7 +233,7 @@ describe("adapters", () => {
 
   test("github.channel comments on the event's issue", async () => {
     const channel = github.channel(
-      { data: { owner: "acme", repo: "app", number: 7, body: "b" } },
+      { data: { owner: "acme", repo: "app", number: "7", body: "b" } },
       { apiUrl: "http://gh.test" },
     );
 

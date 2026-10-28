@@ -7,6 +7,7 @@
  */
 import {
   type Channel,
+  type ChannelAsk,
   type ChannelTrigger,
   defineChannel,
   objectSchema,
@@ -92,6 +93,70 @@ const call = async (
   }
 };
 
+/**
+ * Slack allows 25 elements in an actions block and 100 options in a select.
+ */
+const maxButtons = 25;
+const maxSelectOptions = 100;
+
+/**
+ * The blocks of an ask: the question, its options as buttons (as a menu when
+ * there are more than Slack allows buttons), and the time left to answer.
+ * `approvers` is not enforced here: the route that receives the answer checks
+ * who sent it.
+ * @param ask The question.
+ */
+const askBlocks = (ask: ChannelAsk) => {
+  const options = ask.options ?? [];
+
+  if (options.length > maxSelectOptions) {
+    throw new Error(
+      `slack ask: ${options.length} options; Slack allows at most ${maxSelectOptions}.`,
+    );
+  }
+
+  const element =
+    options.length > maxButtons
+      ? [
+          {
+            type: "static_select",
+            action_id: ask.signal,
+            placeholder: { type: "plain_text", text: "Choose" },
+            options: options.map((option) => {
+              return {
+                text: { type: "plain_text", text: option.slice(0, 75) },
+                value: option,
+              };
+            }),
+          },
+        ]
+      : options.map((option) => {
+          return {
+            type: "button",
+            action_id: `${ask.signal}:${option}`.slice(0, 255),
+            text: { type: "plain_text", text: option.slice(0, 75) },
+            value: option,
+          };
+        });
+
+  return [
+    { type: "section", text: { type: "mrkdwn", text: ask.question } },
+    ...(element.length > 0
+      ? [{ type: "actions", block_id: ask.signal, elements: element }]
+      : []),
+    ...(ask.timeout
+      ? [
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: `Answer within ${ask.timeout}.` },
+            ],
+          },
+        ]
+      : []),
+  ];
+};
+
 export const slack = {
   /**
    * A trigger for messages in a Slack thread. A message that starts a thread
@@ -154,25 +219,7 @@ export const slack = {
           channel: target.channel,
           thread_ts: target.thread_ts,
           text: ask.question,
-          blocks: [
-            { type: "section", text: { type: "mrkdwn", text: ask.question } },
-            ...(ask.options?.length
-              ? [
-                  {
-                    type: "actions",
-                    block_id: ask.signal,
-                    elements: ask.options.map((option) => {
-                      return {
-                        type: "button",
-                        action_id: `${ask.signal}:${option}`,
-                        text: { type: "plain_text", text: option },
-                        value: option,
-                      };
-                    }),
-                  },
-                ]
-              : []),
-          ],
+          blocks: askBlocks(ask),
         });
       },
     });

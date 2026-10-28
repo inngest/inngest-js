@@ -21,9 +21,10 @@ export interface GithubCommentData {
   repo: string;
 
   /**
-   * The issue or pull request number.
+   * The issue or pull request number, as a string: a thread key is built
+   * from strings only.
    */
-  number: number;
+  number: string;
   body: string;
   author?: string;
 }
@@ -33,7 +34,7 @@ export const githubCommentEvent = "github/issue_comment";
 const githubCommentSchema = objectSchema<GithubCommentData>({
   owner: "string",
   repo: "string",
-  number: "number",
+  number: "string",
   body: "string",
   author: "string?",
 });
@@ -110,7 +111,7 @@ export const github = {
       event: githubCommentEvent,
       ...(repos?.length ? { if: `(${repos.join(" || ")})` } : {}),
       thread:
-        '"github:" + event.data.owner + "/" + event.data.repo + "#" + string(event.data.number)',
+        '"github:" + event.data.owner + "/" + event.data.repo + "#" + event.data.number',
       message: (event) => {
         return (event.data as unknown as GithubCommentData).body;
       },
@@ -138,7 +139,11 @@ export const github = {
         "github.channel: the event is not a github/issue_comment",
       );
 
-      return { owner: data.owner, repo: data.repo, number: data.number };
+      return {
+        owner: data.owner,
+        repo: data.repo,
+        number: Number(data.number),
+      };
     })();
 
     return defineChannel({
