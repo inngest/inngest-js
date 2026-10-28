@@ -4,18 +4,21 @@
  *
  * Opening a subscription asks the executor to keep a pause for the run. The
  * pause is not consumed when an event matches: the executor saves the event as
- * a step of the run, named after the subscription and the event, and wakes the
- * run if it is blocked waiting for it. Messages that arrive while the function
- * is busy are already in the run's state when it asks for them, and nothing
- * sent between turns is lost.
+ * a step of the run, named after the subscription and the event. Messages only
+ * accumulate there; saving a message does nothing else. Messages that arrive
+ * while the function is busy are already in the run's state when it asks for
+ * them, and nothing sent between turns is lost.
  *
  * The order of the messages is their order in the run's stack, which the
- * function receives with every request. A message that is already there is read
- * without a step. Only a read that has to wait is a step (the executor answers
- * it once the message exists), so a subscription costs one open and one close
- * step for each event, a wait when the function was blocked, and a step for every `poll()`.
- * Several events are several pauses sharing one subscription, so their messages
- * are one sequence in the order the executor saved them.
+ * function receives with every request: the k-th `next()` returns the k-th
+ * message. A message that is already there is read without a step. When there is
+ * none, the function parks: the executor records a marker and wakes the run
+ * when a message arrives. Only a parked run is woken; a busy run reads
+ * everything on its next request. A subscription costs one open and one close
+ * step for each event, a park (and a wake) whenever the function had to wait,
+ * and a step for every `poll()`. Several events are several pauses sharing one
+ * subscription, so their messages are one sequence in the order the executor
+ * saved them.
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
@@ -121,6 +124,13 @@ export interface Subscription<TData = unknown>
   /**
    * Waits for the next message, or returns `null` once the subscription is
    * closed and every saved message has been read.
+   *
+   * A `next()` that is waiting still takes its message, even if you stopped
+   * awaiting it: do not race `next()` against a timer or another step in a
+   * plain `Promise.race` and then read again, because the dropped call eats a
+   * message and the next read waits for the one after it. Race a step against
+   * `poll()`, or wait with `group.parallel({ mode: "race" })`. `close()` ends a
+   * wait that is still open.
    */
   next(): Promise<InboxMessage<TData> | null>;
 
@@ -226,41 +236,8 @@ export async function openSubscription<TData = unknown>(
     return result;
   }
 
-  // The read of the last next() call while it is unfinished. `fresh` holds
-  // until the end of the tick that started it.
-  let waiting:
-    | { result: Promise<InboxMessage<TData> | null>; fresh: boolean }
-    | undefined;
-
   function next(): Promise<InboxMessage<TData> | null> {
-    // A call made in a later tick while the previous read is still parked means
-    // the caller dropped that read (a `Promise.race` it lost). Joining it gives
-    // this caller its message, so the message is not eaten and the run is not
-    // left parked behind a read nobody awaits. Calls made in the same tick
-    // (`Promise.all([next(), next()])`) are separate reads.
-    if (waiting && !waiting.fresh) {
-      return waiting.result;
-    }
-
-    const entry = {
-      result: inOrder(readNext),
-      fresh: true,
-    };
-
-    waiting = entry;
-    queueMicrotask(() => {
-      entry.fresh = false;
-    });
-
-    const done = () => {
-      if (waiting === entry) {
-        waiting = undefined;
-      }
-    };
-
-    entry.result.then(done, done);
-
-    return entry.result;
+    return inOrder(readNext);
   }
 
   async function readNext(): Promise<InboxMessage<TData> | null> {
@@ -290,7 +267,9 @@ export async function openSubscription<TData = unknown>(
 
     const message = messages[seq - 1];
     if (message === undefined) {
-      throw new Error(`Subscription "${key}": message ${seq} is missing.`);
+      // The park ended without a message: the subscription was closed while this
+      // read was waiting.
+      return null;
     }
 
     readCount = seq;

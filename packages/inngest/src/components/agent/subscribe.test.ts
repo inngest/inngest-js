@@ -251,7 +251,7 @@ describe("step.subscribe", () => {
     ).toEqual(["open", "open"]);
   });
 
-  test("a read dropped by a lost Promise.race does not eat the message or wedge the next read", async () => {
+  test("a read that was dropped still takes its message, in the first run and on replay alike", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -259,23 +259,30 @@ describe("step.subscribe", () => {
         // Already settled, so it beats the read in every run.
         const slow = Promise.resolve("timeout");
         const winner = await Promise.race([inbox.next(), slow]);
+
+        // A macrotask gap: the dropped read has settled by now if it can.
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 5);
+        });
+
         const next = await inbox.next();
 
-        return [typeof winner === "string" ? winner : winner?.data, next?.data];
+        return [winner, next?.data];
       },
     );
 
+    // The dropped read parks; the second read waits behind it, not beside it.
     const waiting = await run(fn);
     expect(waiting.waiting).toBe(true);
-    // One park, not a second one queued behind it.
     expect(
       waiting.ops.map((op) => {
         return op.mode;
       }),
     ).toEqual(["open", "park"]);
 
-    // The dropped read and the next one are one read: "a" is not eaten.
+    // On replay the dropped read finds "a" in the state and takes it; the next
+    // read gets "b". The same answer however the timing of the first run went.
     const arrived = await run(fn, { incoming: ["a", "b"] });
-    expect(arrived.output).toEqual(["timeout", "a"]);
+    expect(arrived.output).toEqual(["timeout", "b"]);
   });
 });
