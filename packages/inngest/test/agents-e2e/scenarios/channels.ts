@@ -25,7 +25,7 @@ export const channels = scenario({
       {
         id: "channels-agent",
         on: { ...slack.thread(), event: event("slack") },
-        channels: ({ event: trigger }) => {
+        channels: ({ event: trigger }): Record<string, Channel> => {
           // The event is the Slack one; its text names the pull request: "acme/app#7".
           const data = trigger.data as unknown as { text: string };
           const [, owner, repo, number] =
