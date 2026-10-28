@@ -7,7 +7,14 @@ import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import * as z from "zod/v4";
 import { tool } from "../sandbox/tools.ts";
 import type { DurableSandbox, DurableSandboxTools } from "../sandbox/types.ts";
-import { agentTools, openSandboxes, sandbox, sandboxTools } from "./defs.ts";
+import {
+  agentTools,
+  getSandbox,
+  openSandboxes,
+  resolveSandboxes,
+  sandbox,
+  sandboxTools,
+} from "./defs.ts";
 
 const fakeEnvironment = () => {
   const runs: string[] = [];
@@ -255,5 +262,106 @@ describe("step ids", () => {
     await all.spare_run?.run({ command: "b" }, {});
 
     expect(ids).toMatchObject([{ id: "work:run" }, { id: "spare:run" }]);
+  });
+});
+
+describe("resolveSandboxes", () => {
+  const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+  const ctx = { event: { data: { plan: "enterprise" } } };
+
+  test("start is a value or a function of the context, resolved before opening", async () => {
+    const resolved = await resolveSandboxes<typeof ctx>(
+      {
+        quick: def,
+        data: {
+          sandbox: def,
+          start: ({ event }) => {
+            return event.data.plan === "enterprise" ? "eager" : "lazy";
+          },
+        },
+        later: { sandbox: def, start: async () => "lazy" as const },
+      },
+      ctx,
+    );
+    const env = fakeEnvironment();
+    const opened = openSandboxes(resolved, env.sandboxes);
+
+    expect(opened.quick?.start).toBe("lazy");
+    expect(opened.data?.start).toBe("eager");
+    expect(opened.later?.start).toBe("lazy");
+    expect(env.created).toHaveBeenCalledTimes(1);
+    expect(env.created.mock.calls[0]?.[0]).toBe("data");
+  });
+
+  test("the whole config can be a function of the context", async () => {
+    const resolved = await resolveSandboxes<typeof ctx>(({ event }) => {
+      const found: Record<string, typeof def> = {};
+
+      if (event.data.plan === "enterprise") {
+        found.big = def;
+      }
+
+      return found;
+    }, ctx);
+
+    expect(Object.keys(resolved)).toEqual(["big"]);
+    expect(await resolveSandboxes(undefined, ctx)).toEqual({});
+  });
+
+  test("rejects a bad start, a non-definition, and a non-object config", async () => {
+    await expect(
+      resolveSandboxes(
+        { a: { sandbox: def, start: () => "now" as "lazy" } },
+        ctx,
+      ).then((resolved) => {
+        return openSandboxes(resolved, fakeEnvironment().sandboxes);
+      }),
+    ).rejects.toThrow('has start "now"');
+    expect(() => {
+      return openSandboxes(
+        { a: { sandbox: {} as typeof def } },
+        fakeEnvironment().sandboxes,
+      );
+    }).toThrow("must be a definition");
+    await expect(
+      resolveSandboxes("nope" as unknown as Record<string, never>, ctx),
+    ).rejects.toThrow("object of sandbox bindings");
+  });
+});
+
+describe("getSandbox", () => {
+  test("names the sandboxes the agent has when the name is unknown", () => {
+    const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+    const opened = openSandboxes({ work: def, data: def }, {
+      create: async () => {
+        throw new Error("unused");
+      },
+    } as unknown as DurableSandboxTools);
+
+    expect(getSandbox(opened, "work").name).toBe("work");
+    expect(() => {
+      return getSandbox(opened, "wrok");
+    }).toThrow('Unknown sandbox "wrok": this agent has work, data');
+    expect(() => {
+      return getSandbox({}, "toString");
+    }).toThrow("this agent has no sandboxes");
+  });
+});
+
+describe("openSandboxes with a bad binding", () => {
+  test("starts nothing when a later binding is invalid", () => {
+    const env = fakeEnvironment();
+    const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+
+    expect(() => {
+      return openSandboxes(
+        { a: { sandbox: def, start: "eager" }, "bad-name": def },
+        env.sandboxes,
+      );
+    }).toThrow("Invalid sandbox name");
+    expect(env.created).not.toHaveBeenCalled();
+    expect(() => {
+      return openSandboxes({ a: "nope" as never }, env.sandboxes);
+    }).toThrow("must be a definition");
   });
 });

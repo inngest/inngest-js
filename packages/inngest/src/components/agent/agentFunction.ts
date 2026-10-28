@@ -22,6 +22,18 @@ import { createDefer } from "../DeferredFunction.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
+import {
+  type DurableSandboxTools,
+  SandboxValidationError,
+} from "../sandbox/types.ts";
+import {
+  type LazySandbox,
+  openSandboxes,
+  resolveSandboxes,
+  type SandboxesConfig,
+  sandboxTools,
+} from "./defs.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
 import type { AgentTurn } from "./loop.ts";
 import { registerFunctions } from "./register.ts";
@@ -48,6 +60,23 @@ export interface AgentFunctionConfig {
    * KV store for thread state. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: Kv;
+
+  /**
+   * The sandboxes this agent may use, by name: definitions made with
+   * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
+   * tool call that needs it (`start: "lazy"`, the default), or as soon as the
+   * run begins (`"eager"`). Either the object or a `start` may be a function
+   * of `{ event }`; it re-runs on every replay, so it must be pure. The run
+   * destroys what it created when the body returns.
+   */
+  sandboxes?: SandboxesConfig<AgentConfigContext>;
+}
+
+/**
+ * What a config function receives.
+ */
+export interface AgentConfigContext {
+  event: { name: string; data: ThreadMessage };
 }
 
 /**
@@ -56,6 +85,18 @@ export interface AgentFunctionConfig {
 export interface AgentBodyContext {
   event: { name: string; data: ThreadMessage };
   thread: ThreadHandle;
+
+  /**
+   * The agent's sandboxes, by name. Nothing is created until a call needs it,
+   * except `start: "eager"` ones, which are already being created.
+   */
+  sandboxes: Record<string, LazySandbox>;
+
+  /**
+   * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
+   * the `tools` of `agent.loop()`.
+   */
+  sandboxTools: SandboxTools;
 
   /**
    * Messages sent to the thread, one per delivery, in order. The first is the
@@ -389,6 +430,23 @@ export function createAgentFunction(
       );
       subscription.putBack([{ seq: 0, data: { data } }]);
 
+      const bindings = await resolveSandboxes(config.sandboxes, {
+        event: event as unknown as AgentConfigContext["event"],
+      });
+      const sandboxSteps = (
+        step as unknown as { sandbox?: DurableSandboxTools }
+      ).sandbox;
+      if (Object.keys(bindings).length > 0 && !sandboxSteps) {
+        throw new SandboxValidationError(
+          "An agent with sandboxes needs the client's sandbox middleware: new Inngest({ middleware: [sandboxMiddleware()] })",
+        );
+      }
+
+      const opened = openSandboxes(
+        bindings,
+        sandboxSteps as DurableSandboxTools,
+      );
+
       let stopRequested = false;
       const { inbox, handled, flush } = threadInbox(
         subscription,
@@ -461,17 +519,27 @@ export function createAgentFunction(
         },
       };
 
-      const result = await body({
-        event: event as unknown as AgentBodyContext["event"],
-        thread,
-        inbox,
-        control,
-      });
+      try {
+        const result = await body({
+          event: event as unknown as AgentBodyContext["event"],
+          thread,
+          sandboxes: opened,
+          sandboxTools: sandboxTools(opened),
+          inbox,
+          control,
+        });
 
-      // The body returned: the last turn is over.
-      await flush();
+        // The body returned: the last turn is over.
+        await flush();
 
-      return result;
+        return result;
+      } finally {
+        await Promise.all(
+          Object.values(opened).map((handle) => {
+            return handle.close();
+          }),
+        );
+      }
     },
   );
 
