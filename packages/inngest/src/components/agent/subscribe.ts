@@ -167,7 +167,7 @@ export interface Subscription<TData = unknown>
  */
 export type SubscribeOp = (
   stepId: string,
-  mode: "open" | "next" | "poll" | "close",
+  mode: "open" | "park" | "poll" | "close",
   seq: number | undefined,
   stream: number,
 ) => Promise<unknown>;
@@ -213,7 +213,57 @@ export async function openSubscription<TData = unknown>(
     return total !== undefined && readCount >= total;
   };
 
-  async function next(): Promise<InboxMessage<TData> | null> {
+  // The executor keeps one parked marker per subscription, so reads of one
+  // subscription run one after another, in the order they were called.
+  let reads: Promise<unknown> = Promise.resolve();
+
+  function inOrder<T>(read: () => Promise<T>): Promise<T> {
+    const result = reads.then(read);
+    reads = result.catch(() => {
+      return undefined;
+    });
+
+    return result;
+  }
+
+  // The read of the last next() call while it is unfinished. `fresh` holds
+  // until the end of the tick that started it.
+  let waiting:
+    | { result: Promise<InboxMessage<TData> | null>; fresh: boolean }
+    | undefined;
+
+  function next(): Promise<InboxMessage<TData> | null> {
+    // A call made in a later tick while the previous read is still parked means
+    // the caller dropped that read (a `Promise.race` it lost). Joining it gives
+    // this caller its message, so the message is not eaten and the run is not
+    // left parked behind a read nobody awaits. Calls made in the same tick
+    // (`Promise.all([next(), next()])`) are separate reads.
+    if (waiting && !waiting.fresh) {
+      return waiting.result;
+    }
+
+    const entry = {
+      result: inOrder(readNext),
+      fresh: true,
+    };
+
+    waiting = entry;
+    queueMicrotask(() => {
+      entry.fresh = false;
+    });
+
+    const done = () => {
+      if (waiting === entry) {
+        waiting = undefined;
+      }
+    };
+
+    entry.result.then(done, done);
+
+    return entry.result;
+  }
+
+  async function readNext(): Promise<InboxMessage<TData> | null> {
     const waiting = held.shift();
     if (waiting) {
       return waiting;
@@ -226,13 +276,14 @@ export async function openSubscription<TData = unknown>(
     const seq = readCount + 1;
 
     // A message that is already in the state is read without a step. When it
-    // is not, the wait is a step the executor answers once the message exists;
-    // the function then runs again and finds the message here. The state does
-    // not change during a request, so it is read once.
+    // is not, the run parks: the executor records a marker (the park carries
+    // `seq`, the number of messages this read has seen, plus one) and answers
+    // the park when the message exists; the function then runs again and finds
+    // the message here. The state does not change during a request, so it is read once.
     const messages = read();
 
     if (messages.length < seq) {
-      await op(`${key}:${seq}`, "next", seq, 0);
+      await op(`${key}:${seq}`, "park", seq, 0);
     } else {
       await skip(`${key}:${seq}`);
     }
@@ -247,7 +298,11 @@ export async function openSubscription<TData = unknown>(
     return { seq, data: message as TData };
   }
 
-  async function poll(): Promise<InboxMessage<TData> | null> {
+  function poll(): Promise<InboxMessage<TData> | null> {
+    return inOrder(readPoll);
+  }
+
+  async function readPoll(): Promise<InboxMessage<TData> | null> {
     const waiting = held.shift();
     if (waiting) {
       return waiting;

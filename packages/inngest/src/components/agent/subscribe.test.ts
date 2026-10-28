@@ -64,7 +64,35 @@ describe("step.subscribe", () => {
       arrived.ops.map((op) => {
         return op.mode;
       }),
-    ).toEqual(["open", "next"]);
+    ).toEqual(["open", "park"]);
+  });
+
+  test("reads of one subscription run in call order, so one park is outstanding at a time", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const both = await Promise.all([inbox.next(), inbox.next()]);
+
+        return both.map((m) => {
+          return [m?.seq, m?.data];
+        });
+      },
+    );
+
+    const waiting = await run(fn);
+    expect(waiting.waiting).toBe(true);
+    expect(
+      waiting.ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "park"]);
+
+    const arrived = await run(fn, { incoming: ["a", "b"] });
+    expect(arrived.output).toEqual([
+      [1, "a"],
+      [2, "b"],
+    ]);
   });
 
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
@@ -221,5 +249,33 @@ describe("step.subscribe", () => {
         return op.mode;
       }),
     ).toEqual(["open", "open"]);
+  });
+
+  test("a read dropped by a lost Promise.race does not eat the message or wedge the next read", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        // Already settled, so it beats the read in every run.
+        const slow = Promise.resolve("timeout");
+        const winner = await Promise.race([inbox.next(), slow]);
+        const next = await inbox.next();
+
+        return [typeof winner === "string" ? winner : winner?.data, next?.data];
+      },
+    );
+
+    const waiting = await run(fn);
+    expect(waiting.waiting).toBe(true);
+    // One park, not a second one queued behind it.
+    expect(
+      waiting.ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "park"]);
+
+    // The dropped read and the next one are one read: "a" is not eaten.
+    const arrived = await run(fn, { incoming: ["a", "b"] });
+    expect(arrived.output).toEqual(["timeout", "a"]);
   });
 });
