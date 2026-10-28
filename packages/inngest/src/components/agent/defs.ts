@@ -95,6 +95,55 @@ export interface SandboxDefinitionOptions {
    * started from a snapshot takes neither.
    */
   skills?: SkillsSource[];
+
+  /**
+   * Runs once, right after the sandbox is created and ready, before anything
+   * else uses it: write files, restore a workspace, install packages. Use the
+   * `sandbox` and `step` it receives, which are durable and need only a short
+   * name per call (`"restore"`). A failure fails the `get()` that created the
+   * sandbox.
+   */
+  setup?: SandboxSetup;
+}
+
+/**
+ * What a sandbox's `setup` receives.
+ */
+export interface SandboxSetupContext {
+  /**
+   * The new sandbox. Step IDs are prefixed with `<name>:setup:sandbox:`.
+   */
+  sandbox: SandboxHandle;
+
+  /**
+   * Runs `fn` once per run, memoized, such as reading a saved workspace from
+   * your store. Its ID is prefixed like the sandbox's.
+   */
+  step: {
+    run: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
+  };
+
+  /**
+   * The event that started the run.
+   */
+  event: unknown;
+
+  /**
+   * The name the agent gives the sandbox, such as `work`.
+   */
+  name: string;
+}
+
+export type SandboxSetup = (context: SandboxSetupContext) => Promise<void>;
+
+/**
+ * What a sandbox's skills and `setup` need from the running function.
+ */
+export interface SandboxRuntime extends SkillsRuntime {
+  /**
+   * The event that started the run.
+   */
+  event: unknown;
 }
 
 /**
@@ -300,11 +349,53 @@ const toBinding = (
   return options;
 };
 
+const setupContext = (
+  name: string,
+  sandbox: DurableSandbox,
+  runtime: SandboxRuntime,
+): SandboxSetupContext => {
+  // Sandbox calls and steps get prefixes of their own, so one short name
+  // can be used for each. Tool step IDs may not start with `setup:`.
+  const prefixed = (rest: string) => {
+    return `${name}:setup:sandbox:${rest}`;
+  };
+  const scoped = (idOrOptions: StepOptionsOrId): StepOptionsOrId => {
+    return typeof idOrOptions === "string"
+      ? prefixed(idOrOptions)
+      : { ...idOrOptions, id: prefixed(idOrOptions.id) };
+  };
+
+  return {
+    name,
+    event: runtime.event,
+    step: {
+      run: (id, fn) => {
+        return runtime.run(`${name}:setup:step:${id}`, fn);
+      },
+    },
+    sandbox: {
+      commands: {
+        run: (...args) => {
+          return sandbox.commands.run(scoped(args[0]), args[1], args[2]);
+        },
+      },
+      files: {
+        write: (...args) => {
+          return sandbox.files.write(scoped(args[0]), args[1]);
+        },
+        read: (...args) => {
+          return sandbox.files.read(scoped(args[0]), args[1]);
+        },
+      },
+    },
+  };
+};
+
 const lazySandbox = (
   name: string,
   binding: SandboxDefinition | SandboxBinding,
   sandboxes: DurableSandboxTools,
-  skillsRuntime?: SkillsRuntime,
+  runtime?: SandboxRuntime,
 ): { lazy: LazySandbox; begin: () => void } => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
@@ -323,6 +414,7 @@ const lazySandbox = (
     );
   }
 
+  let raw: Promise<DurableSandbox> | undefined;
   let created: Promise<DurableSandbox> | undefined;
   let closed: Promise<void> | undefined;
 
@@ -340,24 +432,41 @@ const lazySandbox = (
       ...(definition.secrets && { secrets: definition.secrets }),
     };
 
-    if (definition.skills?.length && !skillsRuntime) {
+    if (created) {
+      return created;
+    }
+
+    if ((definition.skills?.length || definition.setup) && !runtime) {
       return Promise.reject(
         new SandboxValidationError(
-          `Sandbox "${name}" has skills, which need the agent's run: open it through an agent's sandboxes`,
+          `Sandbox "${name}" has skills or a setup, which need the agent's run: open it through an agent's sandboxes`,
         ),
       );
     }
 
-    created ??= definition.skills?.length
+    const setup = definition.setup;
+
+    raw = definition.skills?.length
       ? createWithSkills({
           name,
           sources: definition.skills,
           fresh: options,
           image: definition.image,
           sandboxes,
-          runtime: skillsRuntime as SkillsRuntime,
+          runtime: runtime as SandboxRuntime,
         })
       : sandboxes.create(name, options);
+
+    // Setup runs after the sandbox exists, so after skills are in place.
+    // `raw` stays the bare sandbox, so close() destroys it even when setup
+    // failed.
+    created = setup
+      ? raw.then(async (sandbox) => {
+          await setup(setupContext(name, sandbox, runtime as SandboxRuntime));
+
+          return sandbox;
+        })
+      : raw;
 
     return created;
   };
@@ -371,6 +480,14 @@ const lazySandbox = (
   // Step IDs from the definition's tools (`run`, `edit:read`) are prefixed
   // with the binding name, so two sandboxes never share one.
   const scoped = (idOrOptions: StepOptionsOrId): StepOptionsOrId => {
+    const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+
+    if (id.startsWith("setup:")) {
+      throw new SandboxValidationError(
+        `Step ID "${id}" on sandbox "${name}" is reserved: IDs starting with "setup:" belong to its setup`,
+      );
+    }
+
     return typeof idOrOptions === "string"
       ? `${name}:${idOrOptions}`
       : { ...idOrOptions, id: `${name}:${idOrOptions.id}` };
@@ -404,22 +521,32 @@ const lazySandbox = (
     start,
     ...(keepAlive && { keepAlive }),
     get started() {
-      return created !== undefined;
+      return raw !== undefined;
     },
     tools,
     get,
     close: () => {
       closed ??= (async () => {
-        const sandbox = await created?.catch((error) => {
-          if (!observed) {
-            throw error;
-          }
+        // A setup still running must settle first, so its steps never meet a
+        // destroyed sandbox.
+        let failure: unknown;
+        let failed = false;
 
+        await created?.catch((error) => {
+          failure = error;
+          failed = true;
+        });
+
+        const sandbox = await raw?.catch(() => {
           return undefined;
         });
 
         if (sandbox) {
           await destroyQuietly(sandbox, `${name}:destroy`);
+        }
+
+        if (failed && !observed) {
+          throw failure;
         }
       })();
 
@@ -511,12 +638,12 @@ export const getSandbox = (
  *
  * @param bindings The agent's `sandboxes`, by name.
  * @param sandboxes The `step.sandbox` of the running function.
- * @param skillsRuntime What sandboxes with skills need from the run.
+ * @param runtime What sandboxes with skills or a setup need from the run.
  */
 export const openSandboxes = (
   bindings: Record<string, SandboxDefinition | SandboxBinding>,
   sandboxes: DurableSandboxTools,
-  skillsRuntime?: SkillsRuntime,
+  runtime?: SandboxRuntime,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
   const begins: (() => void)[] = [];
@@ -524,12 +651,7 @@ export const openSandboxes = (
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
-    const { lazy, begin } = lazySandbox(
-      name,
-      binding,
-      sandboxes,
-      skillsRuntime,
-    );
+    const { lazy, begin } = lazySandbox(name, binding, sandboxes, runtime);
 
     opened[name] = lazy;
     begins.push(begin);

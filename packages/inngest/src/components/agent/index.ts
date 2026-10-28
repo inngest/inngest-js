@@ -20,6 +20,9 @@ export type {
   SandboxDefinition,
   SandboxDefinitionOptions,
   SandboxesConfig,
+  SandboxRuntime,
+  SandboxSetup,
+  SandboxSetupContext,
   SandboxStart,
   SandboxToolsFactory,
 } from "./defs.ts";
