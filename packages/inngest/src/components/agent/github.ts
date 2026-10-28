@@ -126,7 +126,9 @@ const maxBody = 65_000;
  * Makes model text inert in a comment: `&` is escaped, so an entity such as
  * `&#64;` cannot spell a mention, `@name` becomes `@` and a zero-width space
  * then `name`, so nobody is mentioned, and `<!--` is broken so the text cannot
- * open an HTML comment (the ask marker is one).
+ * open an HTML comment (the ask marker is one). Code spans get the same
+ * treatment: a safe comment matters more than exact code, so `a && b` shows
+ * as `a &amp;&amp; b` and an `@` in code carries an invisible character.
  */
 const inert = (text: string): string => {
   return text
