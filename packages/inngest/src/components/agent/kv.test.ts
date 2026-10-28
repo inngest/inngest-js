@@ -592,6 +592,7 @@ describe("kv replay of legacy read memos", () => {
         await kv.env.set("plain", { n: 1 });
         await kv.env.set("lookalike", { found: false });
         await kv.env.set("text", "hello");
+        await kv.env.set("list", [1, 2]);
 
         return {
           plain: await kv.env.get("plain"),
@@ -599,6 +600,7 @@ describe("kv replay of legacy read memos", () => {
           missing: (await kv.env.get("missing")) ?? "none",
           taken: await kv.env.take("text"),
           after: (await kv.env.get("text")) ?? "none",
+          list: await kv.env.get(kvKey("list", z.array(z.number()))),
         };
       },
     );
@@ -609,6 +611,7 @@ describe("kv replay of legacy read memos", () => {
       missing: "none",
       taken: "hello",
       after: "none",
+      list: [1, 2],
     });
   });
 });

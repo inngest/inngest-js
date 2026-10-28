@@ -565,7 +565,8 @@ export interface KvSchemaMustRoundTrip {
  * const found = await kv.thread.get(plan); // { steps: number } | undefined
  * ```
  * Values are stored as JSON, so use JSON-representable types only: a
- * `z.date()`, a bigint or a `Map` fails the check when read back.
+ * `z.date()` or a `Map` fails the check when read back, and a bigint throws
+ * when written.
  * @param name The key's name in the store.
  * @param schema Validates the value on every read; a value that fails throws
  * an error naming the key. Its input and output types must be the same (no
@@ -652,7 +653,8 @@ function unwrapRead(memo: unknown): unknown {
   if (
     typeof memo === "object" &&
     !Array.isArray(memo) &&
-    (memo as Partial<KvRead>)["~kvRead"] === true
+    (memo as Partial<KvRead>)["~kvRead"] === true &&
+    typeof (memo as Partial<KvRead>).found === "boolean"
   ) {
     const read = memo as KvRead;
 
@@ -1020,8 +1022,8 @@ function checkedRange(options: KvIndexRange) {
 
 /**
  * Refuses `undefined`, which JSON cannot store: it would read back as
- * `null`. Called before the step so a bad call fails at once instead of
- * retrying.
+ * `null`. `set` and `setIfAbsent` call it before the step so a bad call fails
+ * at once instead of retrying; `update` meets it inside the step.
  * @param value The value to write.
  */
 function checkedValue(value: unknown): unknown {
