@@ -139,6 +139,12 @@ export interface ThreadRecord {
 export const threadRecordKey = "__state";
 
 /**
+ * Thread KV key holding the ID of the last run that ended. The cleanup writes
+ * it; `state()` shows the thread idle while the record is still that run's.
+ */
+export const threadEndedKey = "__ended";
+
+/**
  * The longest `summary` kept.
  */
 export const summaryLength = 500;
@@ -248,8 +254,12 @@ export function threadStateOf(
   record: ThreadRecord | undefined,
   all: Record<string, unknown>,
 ): ThreadState {
+  const ended =
+    record?.runId !== undefined && all[threadEndedKey] === record.runId;
+  const status = record?.status ?? "idle";
+
   return {
-    status: record?.status ?? "idle",
+    status: ended && status !== "stopped" ? "idle" : status,
     turn: record?.turn ?? 0,
     summary: record?.summary,
     usage: record?.usage ?? { input: 0, output: 0 },

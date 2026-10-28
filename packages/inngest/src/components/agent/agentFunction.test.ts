@@ -486,7 +486,7 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "stopped" });
   });
 
-  test("a finished run leaves the thread idle, unless it was stopped or a newer run took over", async () => {
+  test("a finished run marks its end without touching the record", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const { cleanup } = createAgentFunction(
       makeClient(),
@@ -496,35 +496,26 @@ describe("thread state", () => {
     const thread = kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1");
-    const finish = (runId: string) => {
-      return run(cleanup, {
-        event: {
-          name: "inngest/deferred.schedule",
-          data: {
-            runId,
-            thread: "t1",
-            _inngest: {
-              fn_slug: `${testClientId}-bot-cleanup`,
-              parent_fn_slug: `${testClientId}-bot`,
-              parent_run_id: runId,
-            },
+    const base = { turn: 2, usage: { input: 1, output: 1 } };
+    await thread.set("__state", { ...base, status: "running", runId: "r1" });
+
+    await run(cleanup, {
+      event: {
+        name: "inngest/deferred.schedule",
+        data: {
+          runId: "r1",
+          thread: "t1",
+          _inngest: {
+            fn_slug: `${testClientId}-bot-cleanup`,
+            parent_fn_slug: `${testClientId}-bot`,
+            parent_run_id: "r1",
           },
         },
-      });
-    };
-    const base = { turn: 2, usage: { input: 1, output: 1 } };
+      },
+    });
 
-    await thread.set("__state", { ...base, status: "running", runId: "r1" });
-    await finish("r1");
-    expect(await thread.get("__state")).toMatchObject({ status: "idle" });
-
-    await thread.set("__state", { ...base, status: "running", runId: "r2" });
-    await finish("r1");
+    expect(await thread.get("__ended")).toBe("r1");
     expect(await thread.get("__state")).toMatchObject({ status: "running" });
-
-    await thread.set("__state", { ...base, status: "stopped", runId: "r1" });
-    await finish("r1");
-    expect(await thread.get("__state")).toMatchObject({ status: "stopped" });
   });
 });
 

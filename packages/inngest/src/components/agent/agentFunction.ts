@@ -46,6 +46,7 @@ import {
   type ThreadHandle,
   type ThreadMessage,
   type ThreadRecord,
+  threadEndedKey,
   threadRecordKey,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
@@ -358,18 +359,11 @@ export function createAgentFunction(
       // Each KV call is its own step.
       await store.scope("run", runId).clear();
 
-      // The run is over, so the thread is idle, unless a newer run has already
-      // taken over the record or the thread honored a stop request.
+      // The run is over. The record is only ever written by the live run, so
+      // this marks the end on its own key and `state()` shows the thread idle
+      // while the record is still this run's. A newer run's record wins.
       if (thread) {
-        await store
-          .scope("thread", thread)
-          .update<ThreadRecord>(threadRecordKey, (found) => {
-            const current = found ?? emptyRecord();
-
-            return current.runId === runId && current.status !== "stopped"
-              ? { ...current, status: "idle" }
-              : current;
-          });
+        await store.scope("thread", thread).set(threadEndedKey, runId);
       }
     },
   );
