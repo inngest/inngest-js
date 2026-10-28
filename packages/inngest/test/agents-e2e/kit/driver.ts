@@ -121,6 +121,13 @@ export interface Scenario {
   needs?: { oss?: string };
 
   /**
+   * How long the scenario may run, in milliseconds. Default 110s. A scenario
+   * that waits for a cron tick (at most a minute away, several times) needs
+   * more.
+   */
+  capMs?: number;
+
+  /**
    * `"fake"` serves the Sandboxes API from memory in the app.
    */
   sandbox?: "fake";
