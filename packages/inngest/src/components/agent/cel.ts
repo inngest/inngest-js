@@ -14,9 +14,9 @@
  * in CEL, so guard optional fields with `has()`.
  *
  * The backend's CEL is the authority. This evaluator mirrors it for the subset
- * above and is checked against it by the kit scenarios, but where the two could
- * differ (number formatting, null fields, inherited names) it errs on the side
- * of throwing, and a key the SDK and the backend disagree on is a bug here.
+ * above. Where the two could differ (null fields, inherited names, mixed types)
+ * it throws rather than guess, and a key the SDK and the backend disagree on is
+ * a bug here.
  */
 
 type Token =

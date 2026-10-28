@@ -7,7 +7,7 @@
  * picked the lowest stream index would hand out the thread message first, and
  * the ack and turn steps would no longer match what ran.
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Inngest, step } from "inngest";
@@ -27,6 +27,7 @@ const rounds = 4;
 
 // Every replay of the body appends what it saw, outside any step, so a replay
 // that picked a different winner shows up here even if its steps are memoized.
+// The worker and the CLI share a machine, so they share this file.
 const seenFile = (thread: string) => {
   return join(tmpdir(), `subscribe-replay-${thread}.log`);
 };
@@ -77,7 +78,7 @@ export const subscribeReplay = scenario({
           // The turn takes a while, as a step: the other stream's message
           // arrives meanwhile and is in history when this `next()` replays.
           await step.run("turn-work", async () => {
-            await sleep(1200);
+            await sleep(3000);
           });
         }
       },
@@ -141,9 +142,15 @@ export const subscribeReplay = scenario({
     );
     ctx.check(
       "the body replayed more than once per message",
-      seen.length > rounds * 4,
+      [...streamsBySeq.keys()].every((seq) => {
+        return seen.filter((line) => line.startsWith(`${seq}:`)).length >= 2;
+      }),
       seen.length,
     );
+
+    if (existsSync(seenFile(key))) {
+      unlinkSync(seenFile(key));
+    }
 
     ctx.check(
       "every message once, in arrival order, with a stable seq and stream",
