@@ -493,9 +493,10 @@ describe("kv typed keys", () => {
         out.push(refused, await kv.env.get("bad"));
       },
     );
-    const { type } = await runToEnd(fn);
+    const { type, ran } = await runToEnd(fn);
 
     expect(type).toBe("function-resolved");
+    expect(ran).not.toContain("kv.set:env:u");
     expect(out.slice(-9)).toEqual([
       2,
       2,
