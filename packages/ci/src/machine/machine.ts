@@ -8,9 +8,10 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import { snapshotCacheOf, snapshotState } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
+import type { StepSpec } from "../pipeline/names.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
 import type {
   BuildInfo,
@@ -778,79 +779,64 @@ const createNamedSnapshot = async (
   stepId: string,
   { target, exclude, broken, ephemeral, cache }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
-  const name = target.name;
+  const taken = await snapshotCacheOf(run, (id) => {
+    return takeStepOf(stepId, id);
+  }).take(
+    target.entry,
+    (name, attempt) => {
+      const id = !name
+        ? `${stepId} (unnamed)`
+        : attempt === 0
+          ? stepId
+          : `${stepId} (retry)`;
 
-  const attempt = async (id: string): Promise<TakenSnapshot> => {
-    const snapshot = await handle.sandbox.snapshot(snapshotStep(jobPath, id), {
-      name,
-    });
+      const step = snapshotStep(jobPath, id);
 
+      return name
+        ? handle.sandbox.snapshot(step, { name })
+        : handle.sandbox.snapshot(step);
+    },
+    {
+      stepId,
+      ...(cache?.maxAge === undefined ? {} : { maxAge: cache.maxAge }),
+      ...(exclude ? { exclude } : {}),
+      ...(broken ? { broken } : {}),
+    },
+  );
+
+  if (taken.named) {
     return {
-      snapshotId: snapshot.id,
-      named: { snapshotId: snapshot.id, name, createdAt: snapshot.createdAt },
-      reused: false,
+      snapshotId: taken.snapshotId,
+      named: {
+        snapshotId: taken.snapshotId,
+        name: taken.name,
+        createdAt: taken.createdAt,
+      },
+      reused: taken.reused,
     };
-  };
-
-  let refusal: unknown;
-
-  try {
-    return await attempt(stepId);
-  } catch (error) {
-    if (!hasCode(error, nameTakenCode)) {
-      if (!isNameRefused(error)) {
-        throw error;
-      }
-
-      refusal = error;
-    }
-  }
-
-  if (!refusal) {
-    const taken = await resolveTakenName(
-      run,
-      `${stepId}${scopeSeparator}name-taken`,
-      name,
-      cache,
-      exclude,
-      broken,
-    );
-
-    if (taken.winner) {
-      // Another build got there first, with the same key, so its snapshot is
-      // as good as this one.
-      return {
-        snapshotId: taken.winner.snapshotId,
-        named: taken.winner,
-        reused: true,
-      };
-    }
-
-    if (taken.cleared) {
-      try {
-        return await attempt(`${stepId} (retry)`);
-      } catch (error) {
-        refusal = error;
-      }
-    }
   }
 
   if (!ephemeral) {
     run.warnings.push(
-      `not cached: the snapshot of \`${jobPath}\` couldn't be named${refusal ? ` (${errorMessage(refusal)})` : ""}, so later runs build it again`,
+      `not cached: the snapshot of \`${jobPath}\` couldn't be named, so later runs build it again`,
     );
   }
-
-  const unnamed = await handle.sandbox.snapshot(
-    snapshotStep(jobPath, `${stepId} (unnamed)`),
-  );
 
   // The name was refused or couldn't be freed, so the job's snapshot falls
   // back to an unnamed one that no later run can find. The run that invoked
   // the build deletes it at its own end, like any run-only snapshot: the
   // build's own cleanup would delete it while that run still starts jobs from
   // it.
-  return { snapshotId: unnamed.id, reused: false };
+  return { snapshotId: taken.snapshotId, reused: false };
+};
+
+/** The step each of the cache's cleanups is, from the ID it asked for. */
+const takeStepOf = (stepId: string, id: string): StepSpec => {
+  if (id.endsWith(":replaced")) {
+    return steps.deleteReplacedCache(joinId(stepId, "replaced"));
+  }
+
+  return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
 };
 
 /**
@@ -865,27 +851,6 @@ const createRunSnapshot = async (
   const snapshot = await handle.sandbox.snapshot(snapshotStep(jobPath, stepId));
 
   return { snapshotId: snapshot.id, reused: false };
-};
-
-/** The code a create gets when another snapshot holds the name. */
-const nameTakenCode = "sandbox_snapshot_name_taken";
-
-/**
- * Whether a named snapshot was refused for its name, so taking it without one
- * may work.
- *
- * WORKAROUND (Sandboxes API): a server without snapshot names, such as an
- * older Dev Server, refuses a create with a name as a bad request. Delete this
- * once none is left.
- */
-const isNameRefused = (error: unknown): boolean => {
-  const status = errorStatus(error);
-
-  return (
-    status === 400 ||
-    status === 422 ||
-    (error as { name?: string } | undefined)?.name === "SandboxValidationError"
-  );
 };
 
 /**

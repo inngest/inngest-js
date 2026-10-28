@@ -345,6 +345,23 @@ describe("take", () => {
     expect(taken).toMatchObject({ named: false, reused: false });
   });
 
+  test("a name refused as the cause of a step error falls back too", async () => {
+    const api = makeApi();
+    const cache = snapshotCache(api.client);
+
+    const taken = await cache.take(entry, async (name) => {
+      if (name) {
+        throw new Error("step failed", { cause: { status: 400 } });
+      }
+
+      const row = api.add(undefined);
+
+      return { id: row.id, createdAt: row.createdAt };
+    });
+
+    expect(taken.named).toBe(false);
+  });
+
   test("other errors are thrown", async () => {
     const cache = snapshotCache(makeApi().client);
 
