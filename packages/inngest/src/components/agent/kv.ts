@@ -381,7 +381,8 @@ export function redisKvAdapter(url: string): KvAdapter {
         )) as (string | null)[];
         fields.forEach((field, i) => {
           const value = values[i];
-          if (value !== null && value !== undefined) {
+          // The hash wins, as in get().
+          if (value !== null && value !== undefined && !(field in out)) {
             out[field] = value;
           }
         });
