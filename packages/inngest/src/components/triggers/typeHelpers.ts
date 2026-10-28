@@ -5,6 +5,7 @@ import type { AsTuple } from "../../helpers/types.ts";
 import type { DeferFn, ReceivedEventMeta } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
 import type {
+  EventData,
   EventType,
   EventTypeWithAnySchema,
   StaticTypeError,
@@ -69,7 +70,7 @@ export type ExactNameThis<TName extends string> =
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type EventShape<TName, TData extends BasicDataUnknown> = {
+export type EventShape<TName, TData extends EventData> = {
   data: TData;
   id: string;
   name: TName;
@@ -105,7 +106,7 @@ export type EventIs = {
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<TName, TData extends BasicDataUnknown> = EventShape<
+export type ReceivedEvent<TName, TData extends EventData> = EventShape<
   TName,
   TData
 > &
@@ -126,7 +127,7 @@ export type EventTypeToShape<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+  ? TSchema extends StandardSchemaV1<infer TData extends EventData>
     ? EventShape<WildcardToUnknown<TName>, TData>
     : EventShape<WildcardToUnknown<TName>, BasicDataAny>
   : never;
@@ -162,7 +163,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+  ? TSchema extends StandardSchemaV1<infer TData extends EventData>
     ? ReceivedEvent<WildcardToUnknown<TName>, TData>
     : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
   : never;
@@ -179,7 +180,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
 type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
-> = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+> = TSchema extends StandardSchemaV1<infer TData extends EventData>
   ? ReceivedEvent<WildcardToUnknown<TName>, TData>
   : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
 
@@ -207,9 +208,7 @@ type ProcessSingleTrigger<
             if?: string;
           }
         ? [
-            TSchema extends StandardSchemaV1<
-              infer TData extends BasicDataUnknown
-            >
+            TSchema extends StandardSchemaV1<infer TData extends EventData>
               ? ReceivedEvent<WildcardToUnknown<TName>, TData>
               : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
           ]
