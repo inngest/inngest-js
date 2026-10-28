@@ -13,6 +13,13 @@
  *   is no watcher and no schedule: a snapshot is built because a sandbox
  *   missed it.
  *
+ * Limits: sources are public GitHub repositories (a token would have to be in
+ * the sandbox, and so in the snapshot). A baked snapshot is a whole sandbox, so
+ * its name is `skills/<repos>/<config hash>/<sha>`: the config hash tells apart
+ * the image, size, ref and place the skills go to. A baked source can't go with
+ * `environment` or `secrets`. Superseded snapshots are replaced when the new
+ * one is saved; the rest expire.
+ *
  * The ref is resolved to a sha in a memoized step, so a running thread keeps
  * the sha it started with however often the ref moves.
  */
@@ -466,7 +473,6 @@ export const createSkillsBakeFunction = (
         memo: (id, fn) => {
           return step.run(id, fn);
         },
-        evict: { scopes: [`${skillsScope}/*`] },
       });
       const sandboxGroup = group as unknown as { sandbox: GroupSandbox };
 
