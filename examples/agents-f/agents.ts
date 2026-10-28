@@ -11,7 +11,7 @@
  */
 import { Inngest, NonRetriableError } from "inngest";
 import { tool } from "inngest/experimental";
-import { agent, createAgents, kv } from "inngest/experimental/agents";
+import { agent, createAgents, kv, kvKey } from "inngest/experimental/agents";
 import { z } from "zod";
 
 export const client = new Inngest({ id: "agents-f" });
@@ -69,7 +69,7 @@ const scriptedModel = () => {
 
 export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
   for await (const message of inbox) {
-    const history = await kv.thread.get<never[]>("history");
+    const history = await kv.thread.get(kvKey<never[]>("history"));
     const result = await agent.loop({
       id: `turn${message.seq}`,
       model: scriptedModel(),
@@ -81,7 +81,7 @@ export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
 
     await kv.thread.set("history", result.history);
     await kv.thread.set("last", { seq: message.seq, text: result.text });
-    await kv.thread.update<string[]>("turns", function (turns) {
+    await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
       return [...(turns ?? []), message.data.content ?? ""];
     });
   }
@@ -90,7 +90,7 @@ export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
 export const quick = agents.agent({ id: "quick" }, async ({ inbox }) => {
   const message = await inbox.next();
   await sleep(3000);
-  await kv.thread.update<string[]>("seen", function (seen) {
+  await kv.thread.update(kvKey<string[]>("seen"), function (seen) {
     return [...(seen ?? []), message?.data.content ?? ""];
   });
 
@@ -100,7 +100,7 @@ export const quick = agents.agent({ id: "quick" }, async ({ inbox }) => {
 export const boom = agents.agent({ id: "boom" }, async ({ inbox }) => {
   const message = await inbox.next();
   await sleep(2500);
-  await kv.thread.update<string[]>("seen", function (seen) {
+  await kv.thread.update(kvKey<string[]>("seen"), function (seen) {
     return [...(seen ?? []), message?.data.content ?? ""];
   });
 

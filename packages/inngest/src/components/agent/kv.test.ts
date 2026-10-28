@@ -2,14 +2,18 @@
  * @module
  * Tests for the scoped KV, using the in-memory adapter.
  */
-import { testClientId } from "../../test/helpers.ts";
+import { z } from "zod/v4";
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { StepOpCode } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
   createKv,
   type KvAdapter,
   kvHash,
+  kvKey,
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
@@ -28,7 +32,7 @@ describe("kv", () => {
       async () => {
         await kv.set("a", 1);
         await kv.function.set("a", 2);
-        const total = await kv.app.update<number>("n", function (n) {
+        const total = await kv.app.update(kvKey<number>("n"), function (n) {
           return (n ?? 0) + 5;
         });
         out.push(await kv.get("a"), await kv.function.get("a"), total);
@@ -408,5 +412,206 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
       "kv.index.remove:env:runs:r1",
     ]);
     expect(out.slice(-3)).toEqual([true, false, [{ member: "r1", score: 5 }]]);
+  });
+});
+
+describe("kv typed keys", () => {
+  test("a schema key validates on read and a plain name gives unknown", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() }).with({
+      id: "app",
+      env: null,
+    }).env;
+    const plan = kvKey("plan", z.object({ steps: z.number() }));
+
+    await kv.set(plan, { steps: 3 });
+    const found = await kv.get(plan);
+    expectTypeOf(found).toEqualTypeOf<{ steps: number } | undefined>();
+    expect(found).toEqual({ steps: 3 });
+
+    // A value written under the plain name that breaks the schema is refused,
+    // with an error naming the key.
+    await kv.set("plan", { steps: "three" });
+    await expect(kv.get(plan)).rejects.toThrow(
+      /kv key "plan".*fails its schema/,
+    );
+    const loose = await kv.get("plan");
+    expectTypeOf(loose).toEqualTypeOf<unknown>();
+    expect(loose).toEqual({ steps: "three" });
+
+    await expect(kv.take(plan)).rejects.toThrow(/kv key "plan"/);
+    // A refused take leaves the value in place.
+    expect(await kv.get("plan")).toEqual({ steps: "three" });
+
+    // @ts-expect-error the value must match the key's type
+    await kv.set(plan, { steps: "no" });
+    expect(await kv.get(kvKey("missing", z.string()))).toBeUndefined();
+  });
+
+  test("null is a value, a transform is refused, and keys work in a function", async () => {
+    const adapter = memoryKvAdapter();
+    const kv = createKv({ adapter });
+    const maybe = kvKey("maybe", z.string().nullable());
+    const bound = kv.with({ id: testClientId, env: null }).env;
+
+    await bound.set(maybe, null);
+    expect(await bound.get(maybe)).toBeNull();
+    expect(
+      await bound.get(kvKey("gone", z.string().nullable())),
+    ).toBeUndefined();
+
+    // @ts-expect-error a transform makes the stored and read types differ
+    kvKey("when", z.string().transform(Number));
+    // @ts-expect-error a default makes the input wider than the output
+    kvKey("dflt", z.string().default("x"));
+    await expect(bound.set("u", undefined)).rejects.toThrow(/undefined/);
+
+    const client = new Inngest({ id: testClientId });
+    const out: unknown[] = [];
+    const fn = client.createFunction(
+      { id: "kvtyped", triggers: [{ event: "kv/typed" }] },
+      async () => {
+        const count = kvKey("count", z.number());
+        await kv.env.set(count, 2);
+        out.push(await kv.env.get(count), await kv.env.take(count));
+        out.push(await kv.env.get(count));
+
+        // Refused before the step, so it fails at once instead of retrying.
+        out.push(
+          await kv.env.set("u", undefined).catch((error: Error) => {
+            return error.message;
+          }),
+        );
+
+        const nullable = kvKey("n", z.string().nullable());
+        await kv.env.set(nullable, null);
+        out.push(await kv.env.get(nullable), await kv.env.take(nullable));
+        out.push(await kv.env.get(nullable));
+
+        await kv.env.set("bad", "text");
+        const bad = kvKey("bad", z.number());
+        const refused = await kv.env.take(bad).catch((error: Error) => {
+          return error.message;
+        });
+        out.push(refused, await kv.env.get("bad"));
+      },
+    );
+    const { type, ran } = await runToEnd(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(ran).not.toContain("kv.set:env:u");
+    expect(out.slice(-9)).toEqual([
+      2,
+      2,
+      undefined,
+      expect.stringContaining("undefined"),
+      null,
+      null,
+      undefined,
+      expect.stringContaining('kv key "bad"'),
+      "text",
+    ]);
+  });
+
+  test("update gets the validated current value and a key without a schema is trusted", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() }).with({
+      id: "app",
+      env: null,
+    }).env;
+    const turns = kvKey<string[]>("turns");
+    const count = kvKey("count", z.number());
+
+    await kv.update(turns, (found) => {
+      return [...(found ?? []), "a"];
+    });
+    expect(
+      await kv.update(turns, (found) => {
+        return [...(found ?? []), "b"];
+      }),
+    ).toEqual(["a", "b"]);
+
+    await kv.set("count", "oops");
+    await expect(kv.update(count, (n) => (n ?? 0) + 1)).rejects.toThrow(
+      /kv key "count"/,
+    );
+  });
+});
+
+describe("kv replay of legacy read memos", () => {
+  /**
+   * Runs `fn` to the end, but memoizes every `get` and `take` step in the
+   * shape older versions returned: `null` for no value, the raw value
+   * otherwise.
+   */
+  async function runWithLegacyReads(fn: InngestFunction.Any) {
+    let stepState: Parameters<typeof runFnWithStack>[1] = {};
+
+    for (let request = 0; request < 20; request++) {
+      const result = await runFnWithStack(fn, stepState);
+      if (result.type === "function-resolved") {
+        return result.data;
+      }
+
+      const steps =
+        result.type === "step-ran"
+          ? [result.step]
+          : result.type === "steps-found"
+            ? result.steps
+            : [];
+      for (const step of steps) {
+        if (
+          step.op === StepOpCode.DeferAdd ||
+          step.op === StepOpCode.DeferAbort
+        ) {
+          continue;
+        }
+
+        const name = step.userland?.id ?? "";
+        const data = step.data as { found?: boolean; value?: unknown } | null;
+        const legacy =
+          (name.startsWith("kv.get:") || name.startsWith("kv.take:")) && data
+            ? data.found
+              ? data.value
+              : null
+            : step.data;
+        stepState = {
+          ...stepState,
+          [step.id]: { id: step.id, data: legacy },
+        };
+      }
+    }
+
+    throw new Error("The function did not finish");
+  }
+
+  test("a memo that is null, a raw value or an object with a found key still reads", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "kvlegacy", triggers: [{ event: "kv/legacy" }] },
+      async () => {
+        await kv.env.set("plain", { n: 1 });
+        await kv.env.set("lookalike", { found: false });
+        await kv.env.set("text", "hello");
+        await kv.env.set("list", [1, 2]);
+
+        return {
+          plain: await kv.env.get("plain"),
+          lookalike: await kv.env.get("lookalike"),
+          missing: (await kv.env.get("missing")) ?? "none",
+          taken: await kv.env.take("text"),
+          after: (await kv.env.get("text")) ?? "none",
+          list: await kv.env.get(kvKey("list", z.array(z.number()))),
+        };
+      },
+    );
+
+    expect(await runWithLegacyReads(fn)).toEqual({
+      plain: { n: 1 },
+      lookalike: { found: false },
+      missing: "none",
+      taken: "hello",
+      after: "none",
+      list: [1, 2],
+    });
   });
 });

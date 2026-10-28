@@ -12,6 +12,7 @@ import {
   createKv,
   getThread,
   kv,
+  kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
@@ -51,12 +52,12 @@ export const threadKey = scenario({
         },
       },
       async ({ inbox }) => {
-        await kv.thread.update<number>("runs", function (runs) {
+        await kv.thread.update(kvKey<number>("runs"), function (runs) {
           return (runs ?? 0) + 1;
         });
 
         for await (const message of inbox) {
-          await kv.thread.update<string[]>("turns", function (turns) {
+          await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
             return [...(turns ?? []), message.data.content ?? ""];
           });
           await sleep(150);
@@ -70,12 +71,12 @@ export const threadKey = scenario({
         on: { event: event("stop-msg"), thread: 'event.data.key + "/s"' },
       },
       async ({ inbox }) => {
-        await kv.thread.update<number>("runs", function (runs) {
+        await kv.thread.update(kvKey<number>("runs"), function (runs) {
           return (runs ?? 0) + 1;
         });
 
         for await (const message of inbox) {
-          await kv.thread.update<string[]>("turns", function (turns) {
+          await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
             return [...(turns ?? []), message.data.event?.name ?? ""];
           });
           await sleep(60_000);

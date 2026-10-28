@@ -17,6 +17,7 @@ import {
   createKv,
   getThread,
   kv,
+  kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
@@ -71,7 +72,7 @@ export const subscribeReplay = scenario({
 
           const where = message.seq;
 
-          await kv.thread.update<string[]>("turns", function (turns) {
+          await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
             return [...(turns ?? []), `${message.data.content ?? ""}@${where}`];
           });
           // The turn takes a while, as a step: the other stream's message
