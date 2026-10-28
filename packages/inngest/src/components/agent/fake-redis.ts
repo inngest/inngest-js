@@ -42,24 +42,6 @@ export async function startFakeRedis() {
     return `*${items.length}\r\n${items.map(bulk).join("")}`;
   }
 
-  function glob(pattern: string) {
-    let source = "";
-    for (let i = 0; i < pattern.length; i++) {
-      const c = pattern[i] as string;
-      if (c === "\\") {
-        source += (pattern[++i] ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      } else if (c === "*") {
-        source += ".*";
-      } else if (c === "?") {
-        source += ".";
-      } else {
-        source += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-      }
-    }
-
-    return new RegExp(`^${source}$`);
-  }
-
   function execute(args: string[]): string {
     const [name, ...rest] = args;
     const a = rest as string[];
@@ -149,15 +131,6 @@ export async function startFakeRedis() {
         }
 
         return `:${count}\r\n`;
-      }
-      case "SCAN": {
-        const pattern = a[a.findIndex((x) => x.toUpperCase() === "MATCH") + 1];
-        const matcher = glob(pattern ?? "*");
-        const keys = [...data.keys()].filter((key) => {
-          return live(key) && matcher.test(key);
-        });
-
-        return `*2\r\n${bulk("0")}${array(keys)}`;
       }
       case "ZREMRANGEBYSCORE": {
         const z = live(a[0] as string);
