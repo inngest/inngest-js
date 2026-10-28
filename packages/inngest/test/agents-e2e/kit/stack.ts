@@ -46,8 +46,9 @@ export const devstack = (args: string[]) => {
 };
 
 /**
- * A stack name unique to the branch and the scenarios being run, so agents
- * working on different branches (or scenarios) never share a stack.
+ * A stack name for the branch and the scenarios being run, readable in the
+ * devstack list. It is the same for the same branch and scenarios, so a caller
+ * that needs a stack of its own adds something unique.
  */
 export const stackName = (branch: string, label: string) => {
   const slug = (text: string, max: number) => {
@@ -118,7 +119,7 @@ export interface StartOptions {
 export const startStack = async (options: StartOptions): Promise<Stack> => {
   const { name } = options;
 
-  // A leftover stack from a crashed run of this same branch and scenario.
+  // A stack left under this name, which a random name makes very unlikely.
   await devstack(["stop", name]).catch(() => {
     return "";
   });

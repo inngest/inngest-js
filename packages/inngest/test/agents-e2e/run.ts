@@ -7,6 +7,7 @@
  * stops the stack. Exits non-zero when anything fails.
  */
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -134,7 +135,9 @@ const branch = (() => {
     return process.env.GITHUB_REF_NAME ?? "local";
   }
 })();
-const name = stackName(branch, all ? "all" : ids.join("-"));
+// Unique to this process, so two runs of the same branch and scenarios on one
+// machine never share (or stop) a stack or an expect file.
+const name = `${stackName(branch, all ? "all" : ids.join("-"))}-${randomBytes(3).toString("hex")}`;
 
 /**
  * The Dev Server build: `--bin` wins, else the backend pin the scenarios need
@@ -316,6 +319,7 @@ if (!inner) {
     }
 
     await fakes.close();
+    rmSync(join(tmpdir(), `agents-e2e-expect-${name}.json`), { force: true });
   }
 
   console.log(failed ? "agents:verify FAILED" : "agents:verify PASSED");
