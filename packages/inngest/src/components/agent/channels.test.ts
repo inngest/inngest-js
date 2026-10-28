@@ -302,12 +302,31 @@ describe("adapters", () => {
     expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
   });
 
+  test("an empty allow-list is an error, not everything", () => {
+    expect(() => {
+      return slack.thread({ in: [] });
+    }).toThrow("empty");
+    expect(() => {
+      return github.comment({ repos: [] });
+    }).toThrow("empty");
+  });
+
   test("github.channel rejects a number that is not a number", () => {
     expect(() => {
       return github.channel({
         data: { owner: "o", repo: "r", number: "abc", body: "b" },
       });
     }).toThrow("not an issue number");
+  });
+
+  test("github.channel accepts only plain positive issue numbers", () => {
+    for (const number of ["", " ", "1e1", "0x10", "-5", "0"]) {
+      expect(() => {
+        return github.channel({
+          data: { owner: "o", repo: "r", number, body: "b" },
+        });
+      }).toThrow("not an issue number");
+    }
   });
 
   test("an API failure throws", async () => {

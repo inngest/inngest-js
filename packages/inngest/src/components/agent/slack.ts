@@ -30,7 +30,7 @@ export interface SlackMessageData {
    */
   thread_ts?: string;
   text: string;
-  user?: string;
+  user?: string | null;
 }
 
 /**
@@ -178,6 +178,12 @@ export const slack = {
   thread: (
     options: { in?: string[] } = {},
   ): ChannelTrigger<SlackMessageData> => {
+    if (options.in?.length === 0) {
+      throw new Error(
+        "slack.thread: `in` is empty; leave it out to listen everywhere.",
+      );
+    }
+
     const channels = options.in?.map((id) => {
       return `event.data.channel == ${JSON.stringify(id)}`;
     });

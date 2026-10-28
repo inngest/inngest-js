@@ -106,6 +106,12 @@ export const github = {
   comment: (
     options: { repos?: string[] } = {},
   ): ChannelTrigger<GithubCommentData> => {
+    if (options.repos?.length === 0) {
+      throw new Error(
+        "github.comment: `repos` is empty; leave it out to listen everywhere.",
+      );
+    }
+
     const repos = options.repos?.map((full) => {
       const [owner, repo] = full.split("/");
 
@@ -152,7 +158,7 @@ export const github = {
 
       const number = Number(data.number);
 
-      if (!Number.isInteger(number)) {
+      if (!/^[1-9]\d*$/.test(data.number)) {
         throw new Error(
           `github.channel: "${data.number}" is not an issue number.`,
         );
