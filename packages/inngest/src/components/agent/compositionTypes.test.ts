@@ -129,18 +129,23 @@ describe("composition", () => {
     >().toEqualTypeOf<{ ok: true }>();
   });
 
-  test("an explicit subscription type wins, and any stays any", () => {
+  test("an explicit subscription type is for named events, and any stays any", () => {
     const check = async () => {
-      const explicit = await step.subscribe<{ q: 1 }>("e", { event: order });
+      const explicit = await step.subscribe<{ q: 1 }>("e", {
+        event: "shop/order.created",
+      });
 
       expectTypeOf((await explicit.next())?.data).toEqualTypeOf<
         { q: 1 } | undefined
       >();
 
       // biome-ignore lint/suspicious/noExplicitAny: the test is that any stays any
-      const loose = await step.subscribe<any>("l", { event: order });
+      const loose = await step.subscribe<any>("l", { event: "shop/x" });
 
       expectTypeOf((await loose.next())?.data).toBeAny();
+
+      // @ts-expect-error an event type gives the message data, so it is not overridden
+      await step.subscribe<{ q: 1 }>("o", { event: order });
     };
 
     expect(check).toBeTypeOf("function");
