@@ -226,8 +226,41 @@ export async function openSubscription<TData = unknown>(
     return result;
   }
 
+  // The read of the last next() call while it is unfinished. `fresh` holds
+  // until the end of the tick that started it.
+  let waiting:
+    | { result: Promise<InboxMessage<TData> | null>; fresh: boolean }
+    | undefined;
+
   function next(): Promise<InboxMessage<TData> | null> {
-    return inOrder(readNext);
+    // A call made in a later tick while the previous read is still parked means
+    // the caller dropped that read (a `Promise.race` it lost). Joining it gives
+    // this caller its message, so the message is not eaten and the run is not
+    // left parked behind a read nobody awaits. Calls made in the same tick
+    // (`Promise.all([next(), next()])`) are separate reads.
+    if (waiting && !waiting.fresh) {
+      return waiting.result;
+    }
+
+    const entry = {
+      result: inOrder(readNext),
+      fresh: true,
+    };
+
+    waiting = entry;
+    queueMicrotask(() => {
+      entry.fresh = false;
+    });
+
+    const done = () => {
+      if (waiting === entry) {
+        waiting = undefined;
+      }
+    };
+
+    entry.result.then(done, done);
+
+    return entry.result;
   }
 
   async function readNext(): Promise<InboxMessage<TData> | null> {

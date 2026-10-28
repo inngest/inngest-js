@@ -250,4 +250,32 @@ describe("step.subscribe", () => {
       }),
     ).toEqual(["open", "open"]);
   });
+
+  test("a read dropped by a lost Promise.race does not eat the message or wedge the next read", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        // Already settled, so it beats the read in every run.
+        const slow = Promise.resolve("timeout");
+        const winner = await Promise.race([inbox.next(), slow]);
+        const next = await inbox.next();
+
+        return [typeof winner === "string" ? winner : winner?.data, next?.data];
+      },
+    );
+
+    const waiting = await run(fn);
+    expect(waiting.waiting).toBe(true);
+    // One park, not a second one queued behind it.
+    expect(
+      waiting.ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "park"]);
+
+    // The dropped read and the next one are one read: "a" is not eaten.
+    const arrived = await run(fn, { incoming: ["a", "b"] });
+    expect(arrived.output).toEqual(["timeout", "a"]);
+  });
 });
