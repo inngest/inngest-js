@@ -59,11 +59,21 @@ describe("InngestApi.cancelRun", () => {
       return respond();
     });
     const api = new InngestApi({
-      baseUrl: () => "https://api.example.test",
-      signingKey: () => "signkey-test",
-      signingKeyFallback: () => undefined,
-      environment: () => null,
-      fetch: () => fetchMock,
+      baseUrl: () => {
+        return "https://api.example.test";
+      },
+      signingKey: () => {
+        return "signkey-test";
+      },
+      signingKeyFallback: () => {
+        return undefined;
+      },
+      environment: () => {
+        return null;
+      },
+      fetch: () => {
+        return fetchMock;
+      },
     });
 
     return { api, calls };
@@ -80,19 +90,35 @@ describe("InngestApi.cancelRun", () => {
     ]);
   });
 
-  test("a run that is already gone is not an error, any other failure is", async () => {
-    expect(
-      (
-        await apiWith(() => {
-          return new Response(null, { status: 404 });
-        }).api.cancelRun("r")
-      ).ok,
-    ).toBe(true);
-
+  test("a run that is gone is a 404 error, so the caller decides; a request with no answer has status 0", async () => {
+    const gone = await apiWith(() => {
+      return new Response(null, { status: 404 });
+    }).api.cancelRun("r");
     const failed = await apiWith(() => {
       return new Response("nope", { status: 500 });
     }).api.cancelRun("r");
+    const noAnswer = await new InngestApi({
+      baseUrl: () => {
+        return "https://api.example.test";
+      },
+      signingKey: () => {
+        return "signkey-test";
+      },
+      signingKeyFallback: () => {
+        return undefined;
+      },
+      environment: () => {
+        return null;
+      },
+      fetch: () => {
+        return (async () => {
+          throw new Error("offline");
+        }) as unknown as typeof fetch;
+      },
+    }).cancelRun("r");
 
-    expect(failed.ok).toBe(false);
+    expect(!gone.ok && gone.error?.status).toBe(404);
+    expect(!failed.ok && failed.error?.status).toBe(500);
+    expect(!noAnswer.ok && noAnswer.error?.status).toBe(0);
   });
 });

@@ -179,12 +179,15 @@ export type SubscribeOp = (
  * @param opts Subscription options.
  * @param read Reads the subscription's messages out of the run's state, in
  * order.
+ * @param skip Tells the engine a wait was not asked for because its message
+ * was already there.
  */
 export async function openSubscription<TData = unknown>(
   op: SubscribeOp,
   key: string,
   opts: SubscribeOptions,
   read: () => unknown[],
+  skip: (id: string) => Promise<void>,
 ): Promise<Subscription<TData>> {
   const streams = streamsOf(opts);
 
@@ -224,12 +227,17 @@ export async function openSubscription<TData = unknown>(
 
     // A message that is already in the state is read without a step. When it
     // is not, the wait is a step the executor answers once the message exists;
-    // the function then runs again and finds the message here.
-    if (read().length < seq) {
+    // the function then runs again and finds the message here. The state does
+    // not change during a request, so it is read once.
+    const messages = read();
+
+    if (messages.length < seq) {
       await op(`${key}:${seq}`, "next", seq, 0);
+    } else {
+      await skip(`${key}:${seq}`);
     }
 
-    const message = read()[seq - 1];
+    const message = messages[seq - 1];
     if (message === undefined) {
       throw new Error(`Subscription "${key}": message ${seq} is missing.`);
     }

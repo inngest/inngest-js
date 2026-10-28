@@ -2,7 +2,11 @@
  * @module
  * Tests for reading subscription messages out of a run's state.
  */
+import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { Inngest } from "../Inngest.ts";
+import { Middleware } from "../middleware/middleware.ts";
 import {
+  stepsToBeSeen,
   subscriptionMessageIdPrefix,
   subscriptionMessagePrefix,
   subscriptionMessages,
@@ -39,5 +43,55 @@ describe("subscription messages", () => {
     ]);
     expect(subscriptionMessages("other", stack, state)).toEqual(["elsewhere"]);
     expect(subscriptionMessages("missing", stack, state)).toEqual([]);
+  });
+});
+
+describe("steps to be seen", () => {
+  test("only the IDs of messages are left out, whatever a step returned", () => {
+    const message = `${subscriptionMessageIdPrefix("inbox")}evt-1`;
+
+    expect(stepsToBeSeen(["a", message, "b"])).toEqual(["a", "b"]);
+  });
+
+  test("a step that returns a string that looks like a message ID is still seen", async () => {
+    let memoizationEnds = 0;
+    const counting = class extends Middleware.BaseMiddleware {
+      readonly id = "test:counting";
+
+      override onMemoizationEnd() {
+        memoizationEnds += 1;
+      }
+    };
+    const fn = new Inngest({
+      id: testClientId,
+      middleware: [counting],
+    }).createFunction(
+      { id: "looks-like", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        return step.run("a", () => {
+          return `${subscriptionMessagePrefix}looks-like-a-message`;
+        });
+      },
+    );
+
+    const first = await runFnWithStack(
+      fn,
+      {},
+      { event: { name: "sub/run", data: {} } },
+    );
+    if (first.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${first.type}`);
+    }
+
+    const second = await runFnWithStack(
+      fn,
+      {
+        [first.step.id]: { id: first.step.id, data: first.step.data },
+      },
+      { event: { name: "sub/run", data: {} } },
+    );
+
+    expect(second.type).toBe("function-resolved");
+    expect(memoizationEnds).toBeGreaterThan(0);
   });
 });

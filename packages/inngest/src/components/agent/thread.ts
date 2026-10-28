@@ -187,8 +187,12 @@ export interface ThreadHandle {
    * no run is live. `"now"` cancels the run by its run ID through the
    * Inngest API, so it needs the API reachable from where you call it (the
    * signing key, or the Dev Server), and works for any thread key.
+   *
+   * It returns `{ stopped: false }` when there was nothing to stop: with `"now"`,
+   * a thread with no record or no live run. A message for `"nextTurn"` is always
+   * sent. A KV store that is not configured throws.
    */
-  stop(options: { when: "now" | "nextTurn" }): Promise<void>;
+  stop(options: { when: "now" | "nextTurn" }): Promise<{ stopped: boolean }>;
 
   /**
    * What the thread is doing and has used. It reads the thread's KV scope, so
@@ -321,28 +325,35 @@ export function getThread(
     async stop({ when }) {
       if (when === "now") {
         // The live run is the one the thread record names. A thread with no
-        // live run has nothing to cancel.
+        // record, or whose record says no run is live, has nothing to cancel,
+        // and the answer says so. A KV store that is not configured throws.
         const record = (await threadKv(client, key, options.kv).get(
           threadRecordKey,
         )) as ThreadRecord | undefined;
 
         if (
-          record?.runId &&
-          (record.status === "running" || record.status === "waiting")
+          !record?.runId ||
+          (record.status !== "running" && record.status !== "waiting")
         ) {
-          const res = await (
-            client as unknown as { inngestApi: InngestApi }
-          ).inngestApi.cancelRun(record.runId);
-
-          if (!res.ok) {
-            throw new Error(res.error?.error ?? "Could not cancel the run.");
-          }
+          return { stopped: false };
         }
 
-        return;
+        const res = await (
+          client as unknown as { inngestApi: InngestApi }
+        ).inngestApi.cancelRun(record.runId);
+
+        // The record said the run was live: a run that has just ended is a 404,
+        // and it is stopped.
+        if (!res.ok && res.error?.status !== 404) {
+          throw new Error(res.error?.error ?? "Could not cancel the run.");
+        }
+
+        return { stopped: true };
       }
 
       await post({ agent, thread: key, kind: "stop", when });
+
+      return { stopped: true };
     },
     async state() {
       const all = await threadKv(client, key, options.kv).all();

@@ -9,3 +9,7 @@ A subscription is cheaper. Each message is saved as a step named after the subsc
 Nothing is re-sent when a run ends. A message that arrives after the inbox closes, while the thread's singleton still applies, is dropped: it starts no new run and does not reach the finished one. The gap is the time between the body returning and the run ending. An agent's inbox closes when its body returns, and the messages it saved but the body never read are discarded.
 
 `thread.stop({ when: "now" })` now cancels the thread's live run by its run ID through the Inngest API, so it works for any thread key, including a computed one. It needs the API reachable from where you call it (your signing key, or the Dev Server).
+
+`thread.stop()` now returns `{ stopped }`: `"now"` answers `{ stopped: false }` when the thread has no record or no live run, instead of doing nothing silently, and throws when the cancel fails.
+
+Removed from `inngest/experimental/agents`: the `agentStop` event type, `agentStopEvent` and the `ThreadStop` type (nothing sends or listens for a stop event any more), `Subscription.ack()` and `InboxMessage.source`.

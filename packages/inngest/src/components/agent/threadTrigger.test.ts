@@ -40,7 +40,11 @@ describe("thread key from a trigger", () => {
     );
     const opts = agent.fn["opts"] as unknown as ReturnType<typeof options>;
 
-    expect(opts.triggers.map((t) => t.event)).toEqual(["agent/message"]);
+    expect(
+      opts.triggers.map((t) => {
+        return t.event;
+      }),
+    ).toEqual(["agent/message"]);
     expect(opts.singleton.key).toBe("event.data.thread");
   });
 
@@ -126,11 +130,14 @@ describe("thread key from a trigger", () => {
       event: { name: "slack/message", id: "evt1" },
     });
 
-    const opened = seen.filter((s) => s.event);
-    expect(opened.map((s) => s.event)).toEqual([
-      "agent/message",
-      "slack/message",
-    ]);
+    const opened = seen.filter((s) => {
+      return s.event;
+    });
+    expect(
+      opened.map((s) => {
+        return s.event;
+      }),
+    ).toEqual(["agent/message", "slack/message"]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
     expect(opened[1]?.if).toBe(
       `(event.data.bot != true) && (${slackThread}) == "C1/1.2"`.replaceAll(

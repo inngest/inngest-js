@@ -51,12 +51,20 @@ describe("step.subscribe", () => {
 
     const waiting = await run(fn);
     expect(waiting.waiting).toBe(true);
-    expect(waiting.ops.map((op) => op.id)).toEqual(["inbox:open", "inbox:1"]);
+    expect(
+      waiting.ops.map((op) => {
+        return op.id;
+      }),
+    ).toEqual(["inbox:open", "inbox:1"]);
 
     const arrived = await run(fn, { incoming: ["late"] });
     expect(arrived.output).toBe("late");
     // The wait is not asked for again once the message is there.
-    expect(arrived.ops.map((op) => op.mode)).toEqual(["open", "next"]);
+    expect(
+      arrived.ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "next"]);
   });
 
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
@@ -68,14 +76,24 @@ describe("step.subscribe", () => {
         const unread = await inbox.close();
         const again = await inbox.close();
 
-        return [first?.data, unread.map((m) => m.data), again.length];
+        return [
+          first?.data,
+          unread.map((m) => {
+            return m.data;
+          }),
+          again.length,
+        ];
       },
     );
 
     const { ops, output } = await run(fn, { saved: ["a", "b", "c"] });
 
     expect(output).toEqual(["a", ["b", "c"], 0]);
-    expect(ops.map((op) => op.mode)).toEqual(["open", "close"]);
+    expect(
+      ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "close"]);
   });
 
   test("await using closes the subscription when the scope ends", async () => {
@@ -94,7 +112,11 @@ describe("step.subscribe", () => {
     const { ops, output } = await run(fn, { saved: ["a"] });
 
     expect(output).toBe("left");
-    expect(ops.map((op) => op.mode)).toEqual(["open", "close"]);
+    expect(
+      ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "close"]);
   });
 
   test("a closed subscription reads no more", async () => {
@@ -128,11 +150,11 @@ describe("step.subscribe", () => {
     const { output, ops } = await run(fn, { saved: ["a"] });
 
     expect(output).toEqual(["a", null]);
-    expect(ops.map((op) => op.id)).toEqual([
-      "inbox:open",
-      "inbox:poll:1",
-      "inbox:poll:2",
-    ]);
+    expect(
+      ops.map((op) => {
+        return op.id;
+      }),
+    ).toEqual(["inbox:open", "inbox:poll:1", "inbox:poll:2"]);
   });
 
   test("putBack returns a message before newer ones, without another op", async () => {
@@ -194,6 +216,10 @@ describe("step.subscribe", () => {
 
     const { ops } = await run(fn, { saved: [1, 2, 3, 4, 5] });
 
-    expect(ops.map((op) => op.mode)).toEqual(["open", "open"]);
+    expect(
+      ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "open"]);
   });
 });

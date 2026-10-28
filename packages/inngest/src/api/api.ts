@@ -451,8 +451,9 @@ export class InngestApi {
   }
 
   /**
-   * Cancels a run: `DELETE /v1/runs/{runId}`. Cancelling a run that has
-   * already ended is not an error.
+   * Cancels a run: `DELETE /v1/runs/{runId}`. A run that is gone answers 404,
+   * which is the error returned here, so the caller decides whether that
+   * matters. A request that never got an answer has status 0.
    * @param runId The run to cancel.
    */
   async cancelRun(runId: string): Promise<Result<void, ErrorResponse>> {
@@ -463,12 +464,12 @@ export class InngestApi {
     if (!result.ok) {
       return err({
         error: getErrorMessage(result.error, "Unknown error cancelling run"),
-        status: 500,
+        status: 0,
       });
     }
 
     const res = result.value;
-    if (res.ok || res.status === 404) {
+    if (res.ok) {
       return ok<void>(undefined);
     }
 
