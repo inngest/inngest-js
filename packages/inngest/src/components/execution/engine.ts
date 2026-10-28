@@ -115,10 +115,7 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import {
-  subscriptionMessagePrefix,
-  subscriptionMessages,
-} from "./subscription.ts";
+import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -314,6 +311,10 @@ class InngestExecutionEngine
 
       const tracer = trace.getTracer("inngest", version);
 
+      // The state of a request does not change, so a subscription's messages are
+      // read out of it once.
+      const subscriptionMessagesByKey = new Map<string, unknown[]>();
+
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
           {
@@ -323,11 +324,25 @@ class InngestExecutionEngine
               instance: this,
               functionId: this.options.fn.id(),
               subscriptionMessages: (key: string) => {
-                return subscriptionMessages(
-                  key,
-                  this.options.stepCompletionOrder,
-                  this.options.stepState,
-                );
+                let messages = subscriptionMessagesByKey.get(key);
+
+                if (!messages) {
+                  messages = subscriptionMessages(
+                    key,
+                    this.options.stepCompletionOrder,
+                    this.options.stepState,
+                  );
+                  subscriptionMessagesByKey.set(key, messages);
+                }
+
+                return messages;
+              },
+              skipStep: async (id: string) => {
+                this.state.remainingStepsToBeSeen.delete(hashId(id));
+
+                if (this.state.allStateUsed()) {
+                  await this.middlewareManager.onMemoizationEnd();
+                }
               },
               stream: this.streamTools,
             },
@@ -2239,18 +2254,9 @@ class InngestExecutionEngine
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       // Messages of a subscription are read from the state, never requested as
-      // steps, so they are not waited for. Nor is the wait that was answered with
-      // one: a replay that finds the message already there does not ask for it.
+      // steps, so they are not waited for.
       remainingStepsToBeSeen: new Set(
-        this.options.stepCompletionOrder.filter((id) => {
-          const data = this.options.stepState[id]?.data;
-
-          return !(
-            id.startsWith(subscriptionMessagePrefix) ||
-            (typeof data === "string" &&
-              data.startsWith(subscriptionMessagePrefix))
-          );
-        }),
+        stepsToBeSeen(this.options.stepCompletionOrder),
       ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);

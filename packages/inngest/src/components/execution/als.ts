@@ -108,6 +108,12 @@ export interface AsyncContext {
      * state in the order the executor saved them. Only subscriptions use it.
      */
     subscriptionMessages?: (key: string) => unknown[];
+
+    /**
+     * Tells the engine that a step was skipped because its answer was already
+     * in the state, so it is not waited for. Only subscriptions use it.
+     */
+    skipStep?: (id: string) => Promise<void>;
   };
 }
 

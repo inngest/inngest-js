@@ -45,3 +45,15 @@ export const subscriptionMessages = (
       return stepState[id]?.data;
     });
 };
+
+/**
+ * The steps of a run that are waited for when its state is replayed: every
+ * step but the messages of a subscription, which are read from the state and
+ * never requested. Only the ID counts, never what a step returned.
+ * @param stack The run's stack: step IDs in the order they were saved.
+ */
+export const stepsToBeSeen = (stack: readonly string[]): string[] => {
+  return stack.filter((id) => {
+    return !id.startsWith(subscriptionMessagePrefix);
+  });
+};

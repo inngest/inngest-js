@@ -7,7 +7,11 @@ import { Inngest } from "../Inngest.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { getThread } from "./thread.ts";
 
-const fakeClient = () => {
+const fakeClient = (
+  cancelAnswer: { ok: boolean; error?: { error: string; status: number } } = {
+    ok: true,
+  },
+) => {
   const sent: unknown[] = [];
   const cancelled: string[] = [];
   const client = {
@@ -20,7 +24,7 @@ const fakeClient = () => {
       async cancelRun(runId: string) {
         cancelled.push(runId);
 
-        return { ok: true };
+        return cancelAnswer;
       },
     },
   } as unknown as Inngest.Any;
@@ -73,7 +77,7 @@ describe("thread handle", () => {
     const { client, sent } = fakeClient();
     const thread = getThread(client, "app/bot", "t1");
 
-    await thread.stop({ when: "nextTurn" });
+    expect(await thread.stop({ when: "nextTurn" })).toEqual({ stopped: true });
 
     expect(sent).toMatchObject([
       {
@@ -95,19 +99,49 @@ describe("thread handle", () => {
     const thread = getThread(client, "app/bot", "C1/1.2", { kv });
     const state = kv.with(client).scope("thread", "C1/1.2");
 
-    // No live run: nothing to cancel.
-    await thread.stop({ when: "now" });
+    // No record: nothing to cancel, and the answer says so.
+    expect(await thread.stop({ when: "now" })).toEqual({ stopped: false });
     expect(cancelled).toEqual([]);
 
     await state.set("__state", { status: "waiting", turn: 0, runId: "run-1" });
-    await thread.stop({ when: "now" });
+    expect(await thread.stop({ when: "now" })).toEqual({ stopped: true });
     expect(cancelled).toEqual(["run-1"]);
 
     // A finished run is not cancelled again.
     await state.set("__state", { status: "idle", turn: 0, runId: "run-1" });
-    await thread.stop({ when: "now" });
+    expect(await thread.stop({ when: "now" })).toEqual({ stopped: false });
     expect(cancelled).toEqual(["run-1"]);
     expect(sent).toEqual([]);
+  });
+
+  test("a run that ended just before the cancel (404) is stopped; any other failure throws", async () => {
+    const record = { status: "running", turn: 0, runId: "run-1" };
+    const store = createKv({ adapter: memoryKvAdapter() });
+
+    const gone = fakeClient({
+      ok: false,
+      error: { error: "not found", status: 404 },
+    });
+    await store.with(gone.client).scope("thread", "t1").set("__state", record);
+    expect(
+      await getThread(gone.client, "app/bot", "t1", { kv: store }).stop({
+        when: "now",
+      }),
+    ).toEqual({ stopped: true });
+
+    const broken = fakeClient({
+      ok: false,
+      error: { error: "server error", status: 500 },
+    });
+    await store
+      .with(broken.client)
+      .scope("thread", "t2")
+      .set("__state", record);
+    await expect(
+      getThread(broken.client, "app/bot", "t2", { kv: store }).stop({
+        when: "now",
+      }),
+    ).rejects.toThrow(/server error/);
   });
 
   test("state is the documented shape: status, turn, summary, usage and the user's keys", async () => {

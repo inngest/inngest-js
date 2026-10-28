@@ -146,13 +146,19 @@ export const subscribeReplay = scenario({
           return Number(seq) < rounds * 2;
         })
         .every((seq) => {
-          return seen.filter((line) => line.startsWith(`${seq}:`)).length >= 2;
+          return (
+            seen.filter((line) => {
+              return line.startsWith(`${seq}:`);
+            }).length >= 2
+          );
         }),
       Object.fromEntries(
         [...streamsBySeq.keys()].map((seq) => {
           return [
             seq,
-            seen.filter((line) => line.startsWith(`${seq}:`)).length,
+            seen.filter((line) => {
+              return line.startsWith(`${seq}:`);
+            }).length,
           ];
         }),
       ),

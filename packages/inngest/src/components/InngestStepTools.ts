@@ -621,6 +621,9 @@ export const createStepTools = <
         function read() {
           return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
         },
+        async function skip(stepId) {
+          await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
+        },
       );
     },
 
