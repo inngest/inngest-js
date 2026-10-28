@@ -329,12 +329,22 @@ const hasCode = (error: unknown, code: string): boolean => {
 /**
  * Whether a named snapshot was refused for its name, so taking it without one
  * may work. A server without snapshot names, such as an older Dev Server,
- * refuses the create as a bad request.
+ * refuses the create as a bad request, on the error or its cause.
  */
 const isNameRefused = (error: unknown): boolean => {
-  const { status, name } = (error ?? {}) as { status?: number; name?: string };
+  const refused = (value: unknown): boolean => {
+    const { status, name } = (value ?? {}) as {
+      status?: number;
+      name?: string;
+    };
 
-  return status === 400 || status === 422 || name === "SandboxValidationError";
+    return (
+      status === 400 || status === 422 || name === "SandboxValidationError"
+    );
+  };
+
+  // A durable sandbox's step wraps the API's error as its cause.
+  return refused(error) || refused((error as { cause?: unknown })?.cause);
 };
 
 const limitCode = "sandbox_snapshot_limit_exceeded";
