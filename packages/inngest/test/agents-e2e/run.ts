@@ -7,7 +7,7 @@
  * stops the stack. Exits non-zero when anything fails.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -251,6 +251,8 @@ if (!inner) {
 
   try {
     const expectFile = join(tmpdir(), `agents-e2e-expect-${name}.json`);
+    rmSync(expectFile, { force: true });
+
     const stack = await startStack({
       name,
       bin,
