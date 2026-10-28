@@ -134,11 +134,12 @@ export type ThreadMessage<TEvent = TriggerEvent, TRequest = unknown> =
  * the agent replies. The schemas give the types (`staticSchema()` for types
  * only). A request is checked against `request` when it is sent through the
  * agent's own `agent.thread()` handle, and a reply against `reply` when the
- * agent sends it.
+ * agent sends it. A schema must accept the value it outputs, so one that
+ * transforms its input is a type error.
  */
 export interface ThreadRequests<TRequest = unknown, TReply = unknown> {
-  request: StandardSchemaV1<unknown, TRequest>;
-  reply: StandardSchemaV1<unknown, TReply>;
+  request: StandardSchemaV1<TRequest, TRequest>;
+  reply: StandardSchemaV1<TReply, TReply>;
 }
 
 export interface ThreadOptions<TRequest = unknown, TReply = unknown> {

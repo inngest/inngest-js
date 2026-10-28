@@ -8,7 +8,11 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { staticSchema } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
-import { getThread, type ThreadMessage } from "./thread.ts";
+import {
+  getThread,
+  type ThreadMessage,
+  type ThreadRequests,
+} from "./thread.ts";
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
@@ -68,6 +72,17 @@ describe("thread message kinds", () => {
 });
 
 describe("requests", () => {
+  test("a schema that transforms its input is refused", () => {
+    const transforming = z.string().transform(Number);
+
+    expectTypeOf(transforming).not.toExtend<
+      ThreadRequests<number, number>["request"]
+    >();
+    expectTypeOf(z.number()).toExtend<
+      ThreadRequests<number, number>["request"]
+    >();
+  });
+
   const reviewer = agents.agent(
     {
       id: "reviewer",
@@ -133,7 +148,17 @@ describe("requests", () => {
       },
     );
 
-    expectTypeOf(typed.thread("t").request<{ double: 2 }>).toBeFunction();
+    // Never called: the test is the types.
+    const types = async () => {
+      expectTypeOf(typed.thread("t").request)
+        .parameter(0)
+        .toEqualTypeOf<{ n: number }>();
+
+      // @ts-expect-error the reply is a double
+      await typed.thread("t").request<{ other: 1 }>({ n: 1 });
+    };
+
+    expect(types).toBeTypeOf("function");
   });
 
   test("without requests everything is unknown", async () => {
