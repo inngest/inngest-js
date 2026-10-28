@@ -19,6 +19,7 @@
  */
 
 import { createDefer } from "../DeferredFunction.ts";
+import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
@@ -31,7 +32,13 @@ import {
   type ThreadHandle,
   type ThreadMessage,
 } from "./thread.ts";
-import { createThreadStarter, type ThreadKeyConfig } from "./threadTrigger.ts";
+import {
+  compileTriggers,
+  messageOf,
+  singletonKey,
+  type ThreadKeyConfig,
+  type ThreadTriggerEvent,
+} from "./threadTrigger.ts";
 
 export interface AgentFunctionConfig extends ThreadKeyConfig {
   /**
@@ -84,12 +91,7 @@ export interface AgentFunction {
   cleanup: InngestFunction.Any;
 
   /**
-   * Turns the `on` trigger events into thread messages. Absent without `on`.
-   */
-  starter?: InngestFunction.Any;
-
-  /**
-   * Its functions, ready to pass to `serve()`.
+   * Both functions, ready to pass to `serve()`.
    */
   functions: InngestFunction.Any[];
 
@@ -112,13 +114,39 @@ export interface AgentFunction {
  * next message there is nothing to stop.
  * @param inbox The subscription to the thread's events.
  */
-function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
+function threadInbox(
+  inbox: Subscription<RawEvent>,
+  toMessage: (raw: RawEvent) => ThreadMessage,
+): {
   inbox: Subscription<ThreadMessage>;
   handled: (message: InboxMessage<ThreadMessage>) => void;
   flush: () => Promise<void>;
 } {
-  function unwrap(message: InboxMessage<{ data: ThreadMessage }> | null) {
-    return message ? { seq: message.seq, data: message.data.data } : null;
+  // The event each message was made from, to ack and put it back as it came.
+  const raws = new WeakMap<object, InboxMessage<RawEvent>>();
+
+  function unwrap(message: InboxMessage<RawEvent> | null) {
+    if (!message) {
+      return null;
+    }
+
+    const unwrapped = {
+      seq: message.seq,
+      data: toMessage(message.data),
+      source: message.source,
+    };
+    raws.set(unwrapped, message);
+
+    return unwrapped;
+  }
+
+  function rawOf(message: InboxMessage<ThreadMessage>) {
+    return (
+      raws.get(message) ?? {
+        seq: message.seq,
+        data: { name: "", data: message.data },
+      }
+    );
   }
 
   // Messages the current turn handled. They are acked when the turn is over:
@@ -148,7 +176,7 @@ function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
     while (pending[0] && pending[0].seq === nextToAck) {
       const message = pending.shift() as InboxMessage<ThreadMessage>;
       nextToAck += 1;
-      await inbox.ack({ seq: message.seq, data: { data: message.data } });
+      await inbox.ack(rawOf(message));
     }
   }
 
@@ -179,14 +207,10 @@ function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
         return unwrap(await inbox.poll());
       },
       async ack(message) {
-        await inbox.ack({ seq: message.seq, data: { data: message.data } });
+        await inbox.ack(rawOf(message));
       },
       putBack(messages) {
-        inbox.putBack(
-          messages.map((message) => {
-            return { seq: message.seq, data: { data: message.data } };
-          }),
-        );
+        inbox.putBack(messages.map(rawOf));
       },
       close() {
         return inbox.close();
@@ -207,6 +231,15 @@ function threadInbox(inbox: Subscription<{ data: ThreadMessage }>): {
   };
 }
 
+/**
+ * An event as the subscription saves it.
+ */
+interface RawEvent {
+  id?: string;
+  name: string;
+  data: unknown;
+}
+
 function quote(value: string) {
   return JSON.stringify(value);
 }
@@ -223,6 +256,8 @@ export function createAgentFunction(
   body: AgentBody,
 ): AgentFunction {
   const ref = `${client.id}/${config.id}`;
+  const triggers = compileTriggers(config.id, config);
+  const threadExpression = singletonKey(triggers);
 
   const cleanup = createDefer(
     client,
@@ -245,36 +280,98 @@ export function createAgentFunction(
           // does nothing.
           if: `event.data.agent == ${quote(ref)} && event.data.kind != "stop"`,
         },
+        ...triggers.map((trigger) => {
+          return trigger.if
+            ? { event: trigger.event, if: trigger.if }
+            : { event: trigger.event };
+        }),
       ],
-      singleton: { key: "event.data.thread", mode: "skip" },
+      singleton: { key: threadExpression, mode: "skip" },
       cancelOn: [
         {
           event: agentStopEvent,
           if: `event.data.agent == ${quote(ref)} && event.data.thread == async.data.thread`,
         },
+        // A cancel expression cannot call functions, so only a thread key that
+        // is a plain path of the trigger can be matched against a stop.
+        ...triggers.flatMap((trigger) => {
+          return trigger.thread.path
+            ? [
+                {
+                  event: agentStopEvent,
+                  if: `async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
+                },
+              ]
+            : [];
+        }),
       ],
     },
     async ({ event, step, defer, runId }) => {
-      const data = event.data as ThreadMessage;
+      // The thread a run belongs to comes from its trigger: a message names it,
+      // any other trigger event gives it by the expression of its trigger.
+      const found = triggers.find((t) => {
+        return t.event === event.name;
+      });
+      const data = found
+        ? messageOf(ref, found, event as unknown as ThreadTriggerEvent)
+        : (event.data as ThreadMessage);
+      const session = found?.session?.key(event);
 
       // Run-scoped KV keys end with the run, whichever way it ends.
       defer("kv-cleanup", { function: cleanup, data: { runId } });
 
-      const thread = getThread(client, ref, data.thread, { kv: config.kv });
+      const thread = getThread(client, ref, data.thread, {
+        session,
+        kv: config.kv,
+      });
 
       // Opened first, so the gap in which a message could be missed is the few
       // milliseconds between the run starting and this op.
-      const subscription = await step.subscribe<{ data: ThreadMessage }>(
-        "inbox",
+      const subscription = await step.subscribe<RawEvent>("inbox", {
+        events: [
+          {
+            event: agentMessageEvent,
+            if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+          },
+          ...triggers.map((trigger) => {
+            const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+            return {
+              event: trigger.event,
+              if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+            };
+          }),
+        ],
+      });
+      subscription.putBack([
         {
-          event: agentMessageEvent,
-          if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+          seq: 0,
+          data: { id: event.id, name: event.name, data: event.data },
         },
-      );
-      subscription.putBack([{ seq: 0, data: { data } }]);
+      ]);
+
+      function runBody() {
+        return body({
+          event: { name: event.name, data } as AgentBodyContext["event"],
+          thread,
+          inbox,
+          control,
+        });
+      }
 
       let stopRequested = false;
-      const { inbox, handled, flush } = threadInbox(subscription);
+      const { inbox, handled, flush } = threadInbox(
+        subscription,
+        function toMessage(raw) {
+          const trigger = triggers.find((t) => {
+            return t.event === raw.name;
+          });
+
+          return trigger
+            ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
+            : (raw.data as ThreadMessage);
+        },
+      );
 
       const control = {
         async steer() {
@@ -313,12 +410,21 @@ export function createAgentFunction(
         },
       };
 
-      const result = await body({
-        event: event as unknown as AgentBodyContext["event"],
-        thread,
-        inbox,
-        control,
-      });
+      // The KV scopes of the thread and session come from the trigger, which
+      // for an event of `on` does not carry them.
+      const als = getAsyncCtxSync();
+      const result = await (als?.execution
+        ? runWithAsyncCtx(
+            {
+              ...als,
+              execution: {
+                ...als.execution,
+                agent: { thread: thread.key, session: thread.session },
+              },
+            },
+            runBody,
+          )
+        : runBody());
 
       // The body returned: the last turn is over.
       await flush();
@@ -327,17 +433,13 @@ export function createAgentFunction(
     },
   );
 
-  const starter = createThreadStarter(client, ref, config.id, config);
-  const functions = starter ? [fn, cleanup, starter] : [fn, cleanup];
-
-  // Serving the app serves them all, whether or not the app lists them.
-  registerFunctions(client, functions);
+  // Serving the app serves both, whether or not the app lists them.
+  registerFunctions(client, [fn, cleanup]);
 
   return {
     fn,
     cleanup,
-    starter,
-    functions,
+    functions: [fn, cleanup],
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });

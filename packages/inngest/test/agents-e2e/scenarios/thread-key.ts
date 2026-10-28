@@ -1,8 +1,10 @@
 /**
  * @module
- * A thread key from the trigger: two trigger events for the same thread start
- * one run and the second is delivered to it; another thread starts its own
- * run; the key is stamped on the messages as sessions.
+ * A thread key from the trigger, as an expression the backend reads. Trigger
+ * events for the same thread start one run and reach it as messages, mixed
+ * with messages sent through the thread handle, none lost and none repeated;
+ * another thread starts its own run; a stop now cancels the run an event
+ * started and the next event starts a new one.
  */
 import { Inngest } from "inngest";
 import {
@@ -15,9 +17,17 @@ import { scenario } from "../kit/driver.ts";
 
 const agentId = "thread-key-agent";
 const ref = `agents-e2e/${agentId}`;
+const stopId = "thread-key-stop-agent";
+const stopRef = `agents-e2e/${stopId}`;
 
 const list = (state: Record<string, unknown>, key: string) => {
   return (state[key] as string[] | undefined) ?? [];
+};
+
+const sleep = (ms: number) => {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 };
 
 export const threadKey = scenario({
@@ -30,10 +40,9 @@ export const threadKey = scenario({
         id: agentId,
         on: {
           event: event("msg"),
-          thread: ({ event: trigger }) => {
-            return `${trigger.data.channel}/${trigger.data.thread_ts ?? trigger.data.ts}`;
-          },
-          message: ({ event: trigger }) => {
+          thread:
+            'event.data.channel + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)',
+          message: (trigger) => {
             return trigger.data.text as string;
           },
         },
@@ -47,11 +56,31 @@ export const threadKey = scenario({
           await kv.thread.update<string[]>("turns", function (turns) {
             return [...(turns ?? []), message.data.content ?? ""];
           });
+          await sleep(150);
         }
       },
     );
 
-    return bot.functions;
+    const stoppable = client.agent(
+      {
+        id: stopId,
+        on: { event: event("stop-msg"), thread: "event.data.key" },
+      },
+      async ({ inbox }) => {
+        await kv.thread.update<number>("runs", function (runs) {
+          return (runs ?? 0) + 1;
+        });
+
+        for await (const message of inbox) {
+          await kv.thread.update<string[]>("turns", function (turns) {
+            return [...(turns ?? []), message.data.event?.name ?? ""];
+          });
+          await sleep(60_000);
+        }
+      },
+    );
+
+    return [...bot.functions, ...stoppable.functions];
   },
   run: async (ctx) => {
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });
@@ -60,14 +89,14 @@ export const threadKey = scenario({
       baseUrl: ctx.devUrl,
       isDev: true,
     });
-    const stamp = Date.now();
-    const channel = `C${stamp}`;
+    const channel = `C${Date.now()}`;
     const handle = (key: string) => {
       return getThread(client, ref, key, { kv: store });
     };
     const t1 = handle(`${channel}/1.0`);
     const t2 = handle(`${channel}/2.0`);
 
+    // Two trigger events for one thread: one run, the second delivered.
     await ctx.send("msg", { channel, thread_ts: "1.0", text: "first" });
     await ctx.eventually("first message starts the thread", t1.state, (s) => {
       return list(s, "turns").includes("first");
@@ -78,22 +107,64 @@ export const threadKey = scenario({
       thread_ts: "1.0",
       text: "second",
     });
-    const state = await ctx.eventually(
-      "second message is delivered to the live run",
+    await ctx.eventually(
+      "second trigger is delivered to the live run",
       t1.state,
       (s) => {
         return list(s, "turns").includes("second");
       },
     );
 
-    ctx.check("one run for the thread", state.runs === 1, state);
-    ctx.check(
-      "each message is one turn, in order",
-      JSON.stringify(list(state, "turns")) ===
-        JSON.stringify(["first", "second"]),
-      state,
-    );
+    // Trigger events and handle messages interleaved, while turns are busy.
+    const sent = {
+      event: ["e1", "e2", "e3", "e4"],
+      handle: ["h1", "h2", "h3", "h4"],
+    };
+    for (let i = 0; i < 4; i++) {
+      await ctx.send("msg", {
+        channel,
+        ts: `9.${i}`,
+        thread_ts: "1.0",
+        text: sent.event[i],
+      });
+      await (i % 2 === 0
+        ? t1.send(sent.handle[i] as string)
+        : t1.steer(sent.handle[i] as string));
+    }
 
+    const state = await ctx.until(
+      t1.state,
+      (s) => {
+        return list(s, "turns").length >= 10;
+      },
+      40_000,
+    );
+    await sleep(2000);
+    const settled = await t1.state();
+    const turns = list(settled, "turns");
+
+    ctx.check("still one run for the thread", settled.runs === 1, settled);
+    ctx.check(
+      "every message is one turn: none lost, none repeated",
+      JSON.stringify([...turns].sort()) ===
+        JSON.stringify(
+          ["first", "second", ...sent.event, ...sent.handle].sort(),
+        ),
+      { state, turns },
+    );
+    for (const group of [sent.event, sent.handle]) {
+      ctx.check(
+        `${group[0]}.. keep their order`,
+        JSON.stringify(
+          turns.filter((turn) => {
+            return group.includes(turn);
+          }),
+        ) === JSON.stringify(group),
+        turns,
+      );
+    }
+
+    // Another thread starts its own run.
     await ctx.send("msg", { channel, ts: "2.0", text: "other" });
     const other = await ctx.eventually(
       "another thread starts its own run",
@@ -102,7 +173,25 @@ export const threadKey = scenario({
         return list(s, "turns").includes("other");
       },
     );
-
     ctx.check("the other thread has its own run", other.runs === 1, other);
+
+    // A stop now cancels the run an event started (the key is a plain path,
+    // which a cancel expression can match); the next event starts a new run.
+    const s1 = getThread(client, stopRef, `${channel}-stop`, { kv: store });
+    await ctx.send("stop-msg", { key: `${channel}-stop` });
+    await ctx.eventually("a path key starts its thread", s1.state, (s) => {
+      return list(s, "turns").length === 1;
+    });
+    await s1.stop({ when: "now" });
+    await sleep(2000);
+    await ctx.send("stop-msg", { key: `${channel}-stop` });
+    const after = await ctx.eventually(
+      "an event after a stop now starts a new run",
+      s1.state,
+      (s) => {
+        return s.runs === 2;
+      },
+    );
+    ctx.check("two runs, two turns", list(after, "turns").length === 2, after);
   },
 });

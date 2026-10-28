@@ -215,7 +215,9 @@ function currentIds(): KvScopeIds | undefined {
     ...reduceEventsToPropagatedSessions(ctx.events ?? [ctx.event]),
     ...ctx.sessions,
   };
+  const agent = execution.agent;
   const thread =
+    agent?.thread ??
     sessions.agent_thread ??
     (ctx.event?.name === "agent/message"
       ? (ctx.event.data as { thread?: string })?.thread
@@ -230,7 +232,7 @@ function currentIds(): KvScopeIds | undefined {
       instance as unknown as { options?: { fn?: { id(): string } } }
     ).options?.fn?.id(),
     run: ctx.runId,
-    session: sessions.agent_session,
+    session: agent?.session ?? sessions.agent_session,
     thread,
   };
 }

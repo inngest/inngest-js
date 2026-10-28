@@ -23,6 +23,7 @@ export type {
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
 export type {
   InboxMessage,
+  SubscribeEvent,
   SubscribeOptions,
   Subscription,
 } from "./subscribe.ts";
@@ -30,7 +31,6 @@ export type { ThreadHandle, ThreadMessage, ThreadOptions } from "./thread.ts";
 export { agentMessageEvent, agentStopEvent, getThread } from "./thread.ts";
 export type {
   ThreadKeyConfig,
-  ThreadKeyContext,
   ThreadTrigger,
   ThreadTriggerEvent,
 } from "./threadTrigger.ts";

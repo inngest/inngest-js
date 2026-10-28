@@ -1,33 +1,27 @@
 /**
  * @module
  * EXPERIMENTAL: starting a thread from a trigger. An agent's `on` lists the
- * events that talk to it (a Slack message, a pull request comment). Each one
- * is turned into an `agent/message` for the thread its event belongs to, so
- * the first message of a thread starts a run and every later one reaches the
- * live run's inbox, through the singleton per thread the agent function
- * already has.
+ * events that talk to it (a Slack message, a pull request comment). The agent
+ * function triggers on them directly:
  *
- * The thread key is a JavaScript function of the trigger event, supplied by
- * the trigger (a helper for a vendor event knows how to derive it) or by the
- * agent's `thread` option, which wins. The turn into `agent/message` runs in
- * the SDK, so the key is stamped on the message (`data.thread` and the
- * `agent_thread` and `agent_session` entries of `meta.sessions`) where the
- * backend can read it. The singleton key never has to be an expression of the
- * vendor event, so a custom `thread` function needs no CEL.
+ * - the thread key is an expression over the trigger event, supplied by the
+ *   trigger (a helper for a vendor event knows how to derive it) or by the
+ *   agent's `thread` option, which wins;
+ * - the function's singleton is keyed on that expression, so a trigger for a
+ *   thread with a live run starts nothing;
+ * - the live run's inbox subscribes to the same events, filtered by the same
+ *   expression equalling its thread key, so that trigger is delivered to the
+ *   run as a message.
+ *
+ * The expression is CEL, in the subset of `cel.ts`, because the backend
+ * evaluates it as written and the run evaluates it too. A JavaScript function
+ * cannot be a thread key: the backend could not read it.
  */
-
-import type { Inngest } from "../Inngest.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
-import { NonRetriableError } from "../NonRetriableError.ts";
-import { type ConfigValue, resolveConfigValue } from "./config.ts";
-import {
-  agentMessageEvent,
-  type ThreadMessage,
-  threadSessions,
-} from "./thread.ts";
+import { compileKey, toAsync } from "./cel.ts";
+import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
 
 /**
- * The trigger event, as the thread functions see it.
+ * The trigger event, as `message` sees it.
  */
 export interface ThreadTriggerEvent {
   id?: string;
@@ -36,19 +30,12 @@ export interface ThreadTriggerEvent {
 }
 
 /**
- * What a thread function receives.
- */
-export interface ThreadKeyContext {
-  event: ThreadTriggerEvent;
-}
-
-/**
  * An event that talks to an agent. A trigger helper returns one of these with
  * `thread` filled in.
  */
 export interface ThreadTrigger {
   /**
-   * The event name.
+   * The event name. A plain name: no wildcard, and not `agent/message`.
    */
   event: string;
 
@@ -58,20 +45,22 @@ export interface ThreadTrigger {
   if?: string;
 
   /**
-   * The thread key of an event. Pure: it re-runs on replay.
+   * The thread key, a CEL expression over `event` that gives a string, such
+   * as `event.data.channel + "/" + event.data.thread_ts`.
    */
-  thread?: (ctx: ThreadKeyContext) => string | Promise<string>;
+  thread?: string;
 
   /**
-   * The session the thread belongs to. Default: the thread key.
+   * The session the thread belongs to, an expression like `thread`. Default:
+   * the thread key.
    */
-  session?: (ctx: ThreadKeyContext) => string | Promise<string>;
+  session?: string;
 
   /**
    * The text of the message the event carries. Default: none; the body reads
-   * the event itself from `data.event`.
+   * the event itself from `data.event`. Runs in the SDK, not in the backend.
    */
-  message?: (ctx: ThreadKeyContext) => string | undefined;
+  message?: (event: ThreadTriggerEvent) => string | undefined;
 }
 
 /**
@@ -84,52 +73,40 @@ export interface ThreadKeyConfig {
   on?: ThreadTrigger | ThreadTrigger[];
 
   /**
-   * The thread key of a trigger event. Overrides the key the triggers supply,
-   * and is needed for a trigger that supplies none. A string is one thread.
+   * The thread key expression, overriding the one the triggers supply. It is
+   * needed for a trigger that supplies none. It is a CEL expression, not a
+   * function.
    */
-  thread?: ConfigValue<string, ThreadKeyContext>;
+  thread?: string;
 
   /**
-   * The session of a trigger event. Default: the thread key.
+   * The session expression. Default: the thread key.
    */
-  session?: ConfigValue<string, ThreadKeyContext>;
+  session?: string;
+}
+
+export interface CompiledTrigger {
+  event: string;
+  if?: string;
+  asyncIf?: string;
+  thread: ReturnType<typeof compileKey>;
+  session?: ReturnType<typeof compileKey>;
+  message?: ThreadTrigger["message"];
 }
 
 /**
- * The triggers of a config, as a list.
- * @param on The `on` option.
- */
-export function triggersOf(on: ThreadKeyConfig["on"]): ThreadTrigger[] {
-  if (!on) {
-    return [];
-  }
-
-  return Array.isArray(on) ? on : [on];
-}
-
-/**
- * Creates the function that turns trigger events into thread messages, or
- * `undefined` when the agent has no `on`.
- * @param client Inngest client.
- * @param ref The agent, as `"appId/functionId"`.
+ * Validates and compiles the triggers of a config.
  * @param id The agent's function ID.
  * @param config The thread options.
  */
-export function createThreadStarter(
-  client: Inngest.Any,
-  ref: string,
+export function compileTriggers(
   id: string,
   config: ThreadKeyConfig,
-): InngestFunction.Any | undefined {
-  const triggers = triggersOf(config.on);
-
-  if (triggers.length === 0) {
-    return undefined;
-  }
-
+): CompiledTrigger[] {
+  const triggers = config.on ? [config.on].flat() : [];
   const names = new Set<string>();
 
-  for (const trigger of triggers) {
+  return triggers.map((trigger) => {
     if (trigger.event === agentMessageEvent || trigger.event.includes("*")) {
       throw new Error(
         `Agent "${id}": the trigger "${trigger.event}" must be a plain event name other than "${agentMessageEvent}".`,
@@ -143,77 +120,60 @@ export function createThreadStarter(
     }
     names.add(trigger.event);
 
-    if (!config.thread && !trigger.thread) {
+    const thread = config.thread ?? trigger.thread;
+    if (!thread) {
       throw new Error(
         `Agent "${id}": the trigger "${trigger.event}" supplies no thread key; set \`thread\` on the agent.`,
       );
     }
-  }
 
-  return client.createFunction(
-    {
-      id: `${id}-start`,
-      triggers: triggers.map((trigger) => {
-        return trigger.if
-          ? { event: trigger.event, if: trigger.if }
-          : { event: trigger.event };
-      }),
-    },
-    async ({ event, step }) => {
-      const ctx = { event: event as ThreadTriggerEvent };
-      const trigger = triggers.find((t) => {
-        return t.event === event.name;
-      }) as ThreadTrigger;
+    const session = config.session ?? trigger.session;
 
-      const thread = await resolveConfigValue(
-        (config.thread ?? trigger.thread) as ConfigValue<
-          string,
-          ThreadKeyContext
-        >,
-        ctx,
-      );
-      const session = await resolveConfigValue(
-        (config.session ?? trigger.session ?? thread) as ConfigValue<
-          string,
-          ThreadKeyContext
-        >,
-        ctx,
-      );
-
-      for (const [name, key] of [
-        ["thread", thread],
-        ["session", session],
-      ] as const) {
-        if (typeof key !== "string" || key === "") {
-          throw new NonRetriableError(
-            `Agent "${id}": the ${name} key of "${event.name}" must be a non-empty string.`,
-          );
-        }
-      }
-
-      if (!event.id) {
-        throw new NonRetriableError(
-          `Agent "${id}": the trigger event "${event.name}" has no id.`,
-        );
-      }
-
-      const data: ThreadMessage = {
-        agent: ref,
-        thread,
-        kind: "user",
-        content: trigger.message?.(ctx),
-        event: { id: event.id, name: event.name, data: event.data },
+    try {
+      return {
+        event: trigger.event,
+        if: trigger.if,
+        asyncIf: trigger.if ? toAsync(trigger.if) : undefined,
+        thread: compileKey(thread),
+        session: session ? compileKey(session) : undefined,
+        message: trigger.message,
       };
+    } catch (err) {
+      throw new Error(
+        `Agent "${id}": the trigger "${trigger.event}": ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
+  });
+}
 
-      // The ID makes a retry, or the trigger delivered twice, one message.
-      await step.sendEvent("deliver", {
-        id: `${ref}:${thread}:${event.id}`,
-        name: agentMessageEvent,
-        data,
-        meta: { sessions: threadSessions(thread, session) },
-      });
+/**
+ * The singleton key of an agent function: a message uses its `thread`, and
+ * each trigger event its own expression.
+ * @param triggers The compiled triggers.
+ */
+export function singletonKey(triggers: CompiledTrigger[]): string {
+  return triggers.reduceRight((rest, trigger) => {
+    return `event.name == ${JSON.stringify(trigger.event)} ? (${trigger.thread.source}) : ${rest}`;
+  }, "event.data.thread");
+}
 
-      return { thread };
-    },
-  );
+/**
+ * The message a trigger event is, for the thread it belongs to.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param trigger The compiled trigger the event matched.
+ * @param event The trigger event.
+ */
+export function messageOf(
+  ref: string,
+  trigger: CompiledTrigger,
+  event: ThreadTriggerEvent,
+): ThreadMessage {
+  return {
+    agent: ref,
+    thread: trigger.thread.key(event),
+    kind: "user",
+    content: trigger.message?.(event),
+    event: { id: event.id, name: event.name, data: event.data },
+  };
 }
