@@ -110,7 +110,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
  * @param a One cap.
  * @param b Another.
  */
-const lower = (a: number | undefined, b: number | undefined) => {
+const lower = (x: number | undefined, y: number | undefined) => {
+  // `Infinity` means no cap, and cannot travel in JSON, so it is left out.
+  const a = x !== undefined && Number.isFinite(x) ? x : undefined;
+  const b = y !== undefined && Number.isFinite(y) ? y : undefined;
+
   if (a === undefined) {
     return b;
   }

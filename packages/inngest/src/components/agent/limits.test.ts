@@ -175,3 +175,12 @@ describe("hardening", () => {
     expect(narrowInherited(limits, limits)?.mayCall).toEqual([["a/*"]]);
   });
 });
+
+test("Infinity in a config limit means no cap", () => {
+  expect(
+    narrowLimits({ depth: Number.POSITIVE_INFINITY }, undefined).depth,
+  ).toBe(1);
+  expect(
+    narrowLimits({ spawn: Number.POSITIVE_INFINITY }, { spawn: 3 }).spawn,
+  ).toBe(3);
+});
