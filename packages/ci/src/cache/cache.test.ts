@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot, resolveCacheKey, snapshotCacheOf } from "./cache.ts";
+import { deleteSnapshot, resolveCacheKey } from "./cache.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -101,57 +101,5 @@ describe("resolveCacheKey", () => {
     const { named } = await resolveCacheKey(run, { kind: "release" });
 
     expect(named).toEqual({ kind: "release" });
-  });
-});
-
-describe("snapshotCacheOf", () => {
-  test("at the snapshot limit it deletes a pull request's snapshot and never a branch's", async () => {
-    const deleted: string[] = [];
-    const old = "2020-01-01T00:00:00.000Z";
-    const rows = [
-      { id: "main", name: "ci/main/job/a/1", status: "READY", createdAt: old },
-      { id: "pr", name: "ci/pr:4/job/a/1", status: "READY", createdAt: old },
-    ];
-
-    const snapshots = {
-      list: async () => {
-        return { items: rows, page: { hasMore: false } };
-      },
-      get: async (id: string) => {
-        return {
-          delete: async () => {
-            deleted.push(id);
-          },
-        };
-      },
-    };
-
-    const run = {
-      ci: { client: { sandboxes: { snapshots } } },
-      step: {
-        run: async (_options: unknown, body: () => Promise<unknown>) => {
-          return body();
-        },
-      },
-      // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
-    } as any;
-
-    let calls = 0;
-
-    await snapshotCacheOf(run, (id) => {
-      return { id, name: id };
-    }).take({ scope: "ci/pr:9", key: "job/b", generation: "2" }, async () => {
-      calls++;
-
-      if (calls === 1) {
-        throw Object.assign(new Error("limit"), {
-          code: "sandbox_snapshot_limit_exceeded",
-        });
-      }
-
-      return { id: "new", createdAt: new Date().toISOString() };
-    });
-
-    expect(deleted).toEqual(["pr"]);
   });
 });

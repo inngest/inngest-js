@@ -54,11 +54,6 @@ describe("the step catalog", () => {
       "test › snapshot › replaced",
       "Delete replaced cache",
     ],
-    [
-      steps.evictSnapshots("test › snapshot › evict"),
-      "test › snapshot › evict",
-      "Make room for snapshot",
-    ],
     [steps.githubHelper("id", "comment"), "id", "github.comment"],
     [
       steps.recordTime("start:test", "test", "ended"),

@@ -836,10 +836,6 @@ const takeStepOf = (stepId: string, id: string): StepSpec => {
     return steps.deleteReplacedCache(joinId(stepId, "replaced"));
   }
 
-  if (id.endsWith(":evict")) {
-    return steps.evictSnapshots(joinId(stepId, "evict"));
-  }
-
   return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
 };
 
