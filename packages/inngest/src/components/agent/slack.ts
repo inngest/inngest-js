@@ -33,6 +33,9 @@ export interface SlackMessageData {
   user?: string;
 }
 
+/**
+ * The event a Slack message is sent as.
+ */
 export const slackMessageEvent = "slack/message";
 
 const slackMessageSchema = objectSchema<SlackMessageData>({
@@ -43,6 +46,9 @@ const slackMessageSchema = objectSchema<SlackMessageData>({
   user: "string?",
 });
 
+/**
+ * Where and as whom a Slack channel posts.
+ */
 export interface SlackChannelOptions {
   /**
    * Bot token. Default: `SLACK_BOT_TOKEN`, read when a message is posted.
@@ -120,7 +126,7 @@ const askBlocks = (ask: ChannelAsk) => {
       ? [
           {
             type: "static_select",
-            action_id: ask.signal,
+            action_id: `${ask.signal}:select`,
             placeholder: { type: "plain_text", text: "Choose" },
             options: options.map((option) => {
               return {
@@ -130,10 +136,10 @@ const askBlocks = (ask: ChannelAsk) => {
             }),
           },
         ]
-      : options.map((option) => {
+      : options.map((option, index) => {
           return {
             type: "button",
-            action_id: `${ask.signal}:${option}`.slice(0, 255),
+            action_id: `${ask.signal}:${index}`,
             text: { type: "plain_text", text: option.slice(0, 75) },
             value: option,
           };
@@ -157,6 +163,9 @@ const askBlocks = (ask: ChannelAsk) => {
   ];
 };
 
+/**
+ * EXPERIMENTAL: the Slack trigger helper and channel adapter.
+ */
 export const slack = {
   /**
    * A trigger for messages in a Slack thread. A message that starts a thread

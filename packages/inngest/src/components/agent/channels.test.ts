@@ -45,6 +45,7 @@ describe("defineChannel and askThrough", () => {
 
   test("askThrough renders through ask, and names a channel that cannot", async () => {
     const asks: unknown[] = [];
+
     const asking = defineChannel({
       post: async () => {},
       ask: async (ask) => {
@@ -54,6 +55,7 @@ describe("defineChannel and askThrough", () => {
 
     await askThrough(asking, { signal: "s1", question: "ok?" });
     expect(asks).toEqual([{ signal: "s1", question: "ok?" }]);
+
     await expect(
       askThrough(recorder().channel, { signal: "s", question: "q" }),
     ).rejects.toThrow("cannot ask");
@@ -64,6 +66,7 @@ describe("report", () => {
   test("posts to main by default, as a step per destination", async () => {
     const main = recorder();
     const ids: string[] = [];
+
     const report = createReporter(
       { main: main.channel },
       undefined,
@@ -75,12 +78,14 @@ describe("report", () => {
     );
 
     await report("one");
+
     await report({ text: "two", kind: "result" });
 
     expect(main.posts).toEqual([
       { text: "one" },
       { text: "two", kind: "result" },
     ]);
+
     expect(ids).toEqual(["report:1:0:main", "report:2:0:main"]);
   });
 
@@ -95,9 +100,11 @@ describe("report", () => {
     const b = recorder();
     const c = recorder();
     const channels = { a: a.channel, b: b.channel };
+
     const report = createReporter(channels, ["a", c.channel], direct);
 
     await report("x");
+
     await report("y", { to: "b" });
 
     expect(
@@ -105,22 +112,46 @@ describe("report", () => {
         return m.text;
       }),
     ).toEqual(["x"]);
+
     expect(
       c.posts.map((m) => {
         return m.text;
       }),
     ).toEqual(["x"]);
+
     expect(
       b.posts.map((m) => {
         return m.text;
       }),
     ).toEqual(["y"]);
+
     await expect(report("z", { to: "nope" })).rejects.toThrow(
       'no channel named "nope"',
     );
+
     await expect(
       createReporter(channels, "missing", direct)("z"),
     ).rejects.toThrow('no channel named "missing"');
+  });
+});
+
+describe("report validation", () => {
+  test("a wrong name fails before any destination is posted to", async () => {
+    const a = recorder();
+
+    const report = createReporter({ a: a.channel }, ["a", "missing"], direct);
+
+    await expect(report("x")).rejects.toThrow('no channel named "missing"');
+
+    expect(a.posts).toEqual([]);
+  });
+
+  test("a Slack message with a null user is accepted", () => {
+    expect(() => {
+      return slack.channel({
+        data: { channel: "C1", ts: "1.1", text: "hi", user: null },
+      });
+    }).not.toThrow();
   });
 });
 
@@ -129,11 +160,14 @@ describe("trigger helpers", () => {
     const trigger = slack.thread({ in: ["C1", "C2"] });
 
     expect(trigger.event).toBe("slack/message");
+
     expect(trigger.if).toBe(
       '(event.data.channel == "C1" || event.data.channel == "C2")',
     );
+
     expect(trigger.thread).toContain("has(event.data.thread_ts)");
     expect(trigger.message({ data: { text: "hi" } })).toBe("hi");
+
     expect(slack.thread().if).toBeUndefined();
   });
 
@@ -147,9 +181,11 @@ describe("trigger helpers", () => {
     const trigger = github.comment({ repos: ["acme/app"] });
 
     expect(trigger.event).toBe("github/issue_comment");
+
     expect(trigger.if).toBe(
       '((event.data.owner == "acme" && event.data.repo == "app"))',
     );
+
     expect(trigger.thread).toContain('#" + event.data.number');
   });
 });
@@ -159,6 +195,7 @@ describe("adapters", () => {
 
   beforeEach(() => {
     calls.length = 0;
+
     vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
       calls.push({ url, body: JSON.parse(init.body) });
 
@@ -177,6 +214,7 @@ describe("adapters", () => {
     );
 
     await channel.post({ text: "working" });
+
     await channel.ask?.({
       signal: "sig",
       question: "go?",
@@ -187,7 +225,9 @@ describe("adapters", () => {
       url: "http://slack.test/chat.postMessage",
       body: { channel: "C1", thread_ts: "1.1", text: "working" },
     });
+
     expect(calls[1]?.body.thread_ts).toBe("1.1");
+
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain('"value":"yes"');
   });
 
@@ -196,6 +236,7 @@ describe("adapters", () => {
       { channel: "C1", thread_ts: "1.1" },
       { apiUrl: "http://slack.test" },
     );
+
     const many = Array.from({ length: 30 }, (_, i) => {
       return `o${i}`;
     });
@@ -206,16 +247,20 @@ describe("adapters", () => {
       options: ["a"],
       timeout: "7d",
     });
+
     await channel.ask?.({ signal: "s", question: "q", options: many });
 
     expect(JSON.stringify(calls[0]?.body.blocks)).toContain(
       "Answer within 7d.",
     );
+
     expect(JSON.stringify(calls[0]?.body.blocks)).toContain('"type":"button"');
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain("static_select");
+
     expect(JSON.stringify(calls[1]?.body.blocks)).not.toContain(
       '"type":"button"',
     );
+
     await expect(
       channel.ask?.({
         signal: "s",
@@ -238,12 +283,14 @@ describe("adapters", () => {
     );
 
     await channel.post({ text: "progress" });
+
     await channel.ask?.({ signal: "sig", question: "ok?", options: ["a"] });
 
     expect(calls[0]).toEqual({
       url: "http://gh.test/repos/acme/app/issues/7/comments",
       body: { body: "progress" },
     });
+
     expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
   });
 
@@ -262,6 +309,7 @@ describe("agent function wiring", () => {
   test("channels may be a function of the trigger and report reaches them", async () => {
     const main = recorder();
     const seen: string[] = [];
+
     const { fn } = createAgentFunction(
       new Inngest({ id: testClientId }),
       {
@@ -289,6 +337,7 @@ describe("agent function wiring", () => {
 
     expect(seen.length).toBeGreaterThan(0);
     expect(main.posts).toEqual([{ text: "starting" }]);
+
     expect(result).toBeDefined();
   });
 });

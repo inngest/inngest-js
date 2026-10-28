@@ -98,7 +98,7 @@ export const defineChannel = (adapter: Channel): Channel => {
 };
 
 /**
- * Renders an ask through a channel. This is what `thread.ask` calls; a channel
+ * Renders an ask through a channel. This is the hook `thread.ask` will call; a channel
  * without `ask` is an error that says so, never a silent skip. Call it inside
  * a step, so a replay of the run does not render the question twice.
  * @param channel The channel to ask through.
@@ -169,32 +169,32 @@ export const createReporter = (
     const targets = [wanted].flat();
     const n = ++reports;
 
-    for (const [index, target] of targets.entries()) {
-      let name: string;
-      let channel: Channel | undefined;
-
-      if (typeof target === "string") {
-        name = target;
-        channel = channels[target];
-
-        // The default destination is optional; a name somebody wrote is not.
-        if (!channel && wanted === "main" && !options?.to && !configured) {
-          continue;
-        }
-
-        if (!channel) {
-          throw new Error(
-            `report: there is no channel named "${target}". The agent's channels are: ${Object.keys(channels).join(", ") || "none"}.`,
-          );
-        }
-      } else {
-        name = `inline${index}`;
-        channel = target;
+    // Every name is checked before anything is posted, so a wrong name fails
+    // the report before it has half happened.
+    const destinations = targets.flatMap((target, index) => {
+      if (typeof target !== "string") {
+        return [{ name: `inline${index}`, channel: target, index }];
       }
 
-      const destination = channel;
+      const channel = channels[target];
+
+      // The default destination is optional; a name somebody wrote is not.
+      if (!channel && wanted === "main" && !options?.to && !configured) {
+        return [];
+      }
+
+      if (!channel) {
+        throw new Error(
+          `report: there is no channel named "${target}". The agent's channels are: ${Object.keys(channels).join(", ") || "none"}.`,
+        );
+      }
+
+      return [{ name: target, channel, index }];
+    });
+
+    for (const { name, channel, index } of destinations) {
       await runStep(`report:${n}:${index}:${name}`, async () => {
-        await destination.post(normalized);
+        await channel.post(normalized);
       });
     }
   };
@@ -253,7 +253,7 @@ export const objectSchema = <T>(
         for (const [field, type] of Object.entries(fields)) {
           const found = (value as Record<string, unknown>)[field];
 
-          if (found === undefined && type === "string?") {
+          if ((found === undefined || found === null) && type === "string?") {
             continue;
           }
 

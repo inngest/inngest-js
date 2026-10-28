@@ -111,18 +111,23 @@ export const channels = scenario({
 
     ctx.expect.run(run).toComplete();
     ctx.expect.run(run).toOutput({ text: "all done" });
+
     await ctx.expect
       .posts({ channel: "slack", method: "chat.postMessage", thread: ts })
       .toHaveCount(3);
+
     await ctx.expect
       .posts({ channel: "slack", thread: ts })
       .toInclude({ text: "starting", channel: "C42" });
+
     await ctx.expect
       .posts({ channel: "slack", thread: ts })
       .toInclude({ text: "Open the PR?" });
+
     await ctx.expect
       .posts({ channel: "github", thread: "acme/app#7" })
       .toHaveCount(2);
+
     await ctx.expect
       .posts({ channel: "github", thread: "acme/app#7" })
       .toInclude({ body: "all done" });
@@ -132,7 +137,9 @@ export const channels = scenario({
       baseUrl: ctx.devUrl,
       isDev: true,
     });
+
     const issue = { owner: "acme", repo: "keys", number: "12" };
+
     const handle = withKeys(
       getThread(
         client,
@@ -145,6 +152,7 @@ export const channels = scenario({
     );
 
     await ctx.send("gh", { ...issue, body: "one" });
+
     await ctx.eventually(
       "the first comment is a turn",
       handle.state,
@@ -152,7 +160,9 @@ export const channels = scenario({
         return JSON.stringify(state.texts) === '["one"]';
       },
     );
+
     await ctx.send("gh", { ...issue, body: "two" });
+
     await ctx.eventually(
       "the second comment reaches the same thread's run",
       handle.state,

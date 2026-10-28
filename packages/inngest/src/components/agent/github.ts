@@ -29,6 +29,9 @@ export interface GithubCommentData {
   author?: string;
 }
 
+/**
+ * The event a GitHub comment is sent as.
+ */
 export const githubCommentEvent = "github/issue_comment";
 
 const githubCommentSchema = objectSchema<GithubCommentData>({
@@ -39,6 +42,9 @@ const githubCommentSchema = objectSchema<GithubCommentData>({
   author: "string?",
 });
 
+/**
+ * Where and as whom a GitHub channel comments.
+ */
 export interface GithubChannelOptions {
   /**
    * Token. Default: `GITHUB_TOKEN`, read when a comment is posted.
@@ -85,6 +91,9 @@ const comment = async (
   }
 };
 
+/**
+ * EXPERIMENTAL: the GitHub trigger helper and channel adapter.
+ */
 export const github = {
   /**
    * A trigger for comments on an issue or pull request. The comments on one

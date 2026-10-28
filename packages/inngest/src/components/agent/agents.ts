@@ -117,6 +117,7 @@ export type {
   ChannelMessage,
   ChannelTrigger,
   ReportConfig,
+  ReportConfigValue,
   Reporter,
   ReportTarget,
 } from "./channels.ts";
