@@ -52,8 +52,9 @@ export interface AgentLimits {
    * What the thread may spend. The loop stops with `stopped: "budget"` before
    * its next model call once it is spent. This only applies to a loop that is
    * passed `...control` (or `budget` and `onTurn` from it): a body that
-   * calls `agent.loop()` without them runs with no budget at all. A sub-agent gets what is left at
-   * most; the sub-agents' total is not capped, so pair it with `spawn`.
+   * calls `agent.loop()` without them runs with no budget at all. A
+   * sub-agent gets what is left at most; the sub-agents' total is not capped,
+   * so pair it with `spawn`.
    */
   budget?: AgentBudget;
 }

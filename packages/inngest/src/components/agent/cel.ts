@@ -380,6 +380,12 @@ export interface Expression {
   path?: string;
 
   /**
+   * The expression when it is only a string literal, which a cancel
+   * expression can compare against like a path.
+   */
+  constant?: string;
+
+  /**
    * The expression as written, over `event`.
    */
   source: string;
@@ -421,6 +427,9 @@ export function compileExpression(source: string): Expression {
   return {
     source,
     path: /^event(\.[A-Za-z_]\w*)+$/.test(source.trim())
+      ? source.trim()
+      : undefined,
+    constant: /^\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*$/.test(source)
       ? source.trim()
       : undefined,
     asAsync: toAsync(source),

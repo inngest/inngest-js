@@ -11,7 +11,11 @@ import { step } from "../InngestStepTools.ts";
 import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
 import { type SandboxTool, type SandboxTools, tool } from "./tools.ts";
-import type { DurableSandbox, SandboxDuration } from "./types.ts";
+import {
+  type DurableSandbox,
+  type SandboxDuration,
+  SandboxValidationError,
+} from "./types.ts";
 
 export type CodeToolName =
   | "read"
@@ -28,7 +32,9 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
   cwd?: string;
 
   /**
-   * The longest one command may run. Default 5 minutes.
+   * The longest one command may run. For `run_code` it is the longest one
+   * run of the script between waits: the clock starts again each time the
+   * script runs again after a wait. Default 5 minutes.
    */
   timeout?: SandboxDuration;
 
@@ -43,6 +49,8 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
    * `tools.sleep({ duration })` and `tools.now()`. A tool declared with
    * `waits` may wait for as long as it likes: the script exits meanwhile, and
    * runs again from the top with its earlier calls answered from a journal.
+   * Anything the script does outside tool calls (writing files, starting
+   * processes) happens again on each run. `now` and `sleep` are taken.
    */
   tools?: SandboxTools;
 }
@@ -104,6 +112,24 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m" } = options;
+
+  for (const name of Object.keys(scriptTools)) {
+    if (options.tools && Object.hasOwn(options.tools, name)) {
+      throw new SandboxValidationError(
+        `The tool name "${name}" is built in to run_code; give yours another name`,
+      );
+    }
+  }
+
+  if (
+    options.tools &&
+    options.only &&
+    !options.only.includes("run_code" as TName)
+  ) {
+    throw new SandboxValidationError(
+      "tools are for run_code, but only leaves it out",
+    );
+  }
 
   const exec = async (
     id: CodeToolName,
@@ -219,7 +245,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
   tools.run_code = tool.group({
     description:
-      'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls in the same order: get the time from tools.now(), not the clock.',
+      'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run.',
     input: z.object({
       language: z.enum(["python", "typescript"]),
       code: z.string(),
@@ -241,30 +267,38 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         );
       }
 
-      const result = await sandbox.commands.run(
-        { id: "run_code", name: "run code" },
-        plan.command,
-        {
-          cwd,
-          timeout,
-          tools: { ...scriptTools, ...options.tools },
-        },
-      );
-      const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
+      try {
+        const result = await sandbox.commands.run(
+          { id: "run_code", name: "run code" },
+          plan.command,
+          {
+            cwd,
+            timeout,
+            tools: { ...scriptTools, ...options.tools },
+          },
+        );
+        const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
 
-      if (result.exitCode !== 0) {
-        return `exit ${result.exitCode}\n${result.stdout}${stderr}`;
+        if (result.exitCode !== 0) {
+          return `exit ${result.exitCode}\n${result.stdout}${stderr}`;
+        }
+
+        const bytes = await sandbox.files.read(
+          { id: "run_code:result", name: "read result" },
+          resultPath,
+        );
+        const value = parseRunnerResult(new TextDecoder().decode(bytes));
+        const returned =
+          value === undefined ? "" : `\nreturned:\n${JSON.stringify(value)}`;
+
+        return `exit 0\n${result.stdout}${stderr}${returned}`;
+      } finally {
+        await sandbox.commands.run(
+          { id: "run_code:cleanup", name: "remove files" },
+          ["rm", "-f", resultPath, `${base}.json`],
+          { cwd },
+        );
       }
-
-      const bytes = await sandbox.files.read(
-        { id: "run_code:result", name: "read result" },
-        resultPath,
-      );
-      const value = parseRunnerResult(new TextDecoder().decode(bytes));
-      const returned =
-        value === undefined ? "" : `\nreturned:\n${JSON.stringify(value)}`;
-
-      return `exit 0\n${result.stdout}${stderr}${returned}`;
     },
   });
 

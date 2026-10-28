@@ -8,6 +8,7 @@
 
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import {
   type AgentBody,
   type AgentFunction,
@@ -15,7 +16,17 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import type { SandboxDefinition } from "./defs.ts";
-import { createSkillsBakeFunction } from "./skills.ts";
+import {
+  allowBake,
+  createSkillsBakeFunction,
+  newBakeAllowance,
+} from "./skills.ts";
+import type {
+  ThreadCronTrigger,
+  ThreadEventTrigger,
+  ThreadTriggerEventSource,
+  ThreadTriggerList,
+} from "./threadTrigger.ts";
 
 export interface Agents {
   /**
@@ -24,7 +35,20 @@ export interface Agents {
    * @param config Function ID and KV store.
    * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
    */
-  agent(config: AgentFunctionConfig, body: AgentBody): AgentFunction;
+  agent<const TOne extends ThreadTriggerEventSource>(
+    config: AgentFunctionConfig<
+      ThreadEventTrigger<TOne> | EventTypeWithAnySchema<string>
+    >,
+    body: AgentBody,
+  ): AgentFunction;
+  agent(
+    config: AgentFunctionConfig<ThreadCronTrigger>,
+    body: AgentBody,
+  ): AgentFunction;
+  agent<const TMany extends readonly unknown[]>(
+    config: AgentFunctionConfig<ThreadTriggerList<TMany>>,
+    body: AgentBody,
+  ): AgentFunction;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
@@ -61,6 +85,24 @@ const mayBakeSkills = (
   });
 };
 
+const allowBakes = (
+  allowance: ReturnType<typeof newBakeAllowance>,
+  sandboxes: AgentFunctionConfig["sandboxes"],
+): void => {
+  if (typeof sandboxes === "function") {
+    allowance.dynamic = true;
+
+    return;
+  }
+
+  for (const binding of Object.values(sandboxes ?? {})) {
+    allowBake(
+      allowance,
+      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition),
+    );
+  }
+};
+
 /**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
@@ -77,10 +119,15 @@ const mayBakeSkills = (
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
   let bake: InngestFunction.Any | undefined;
+  const allowance = newBakeAllowance();
 
   return {
-    agent: (config, body) => {
-      const created = createAgentFunction(client, config, body);
+    agent: (config: AgentFunctionConfig<unknown>, body: AgentBody) => {
+      const created = createAgentFunction(
+        client,
+        config as AgentFunctionConfig,
+        body,
+      );
 
       made.push(created);
 
@@ -88,8 +135,10 @@ export const createAgents = (client: Inngest.Any): Agents => {
       // many agents there are. A sandboxes config that is a function can't be
       // read ahead, so it counts as possibly having skills.
       if (mayBakeSkills(config.sandboxes)) {
-        bake ??= createSkillsBakeFunction(client);
+        bake ??= createSkillsBakeFunction(client, allowance);
       }
+
+      allowBakes(allowance, config.sandboxes);
 
       return created;
     },
@@ -111,6 +160,8 @@ export type {
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
+export type { ThreadStop } from "./events.ts";
+export { agentMessage, agentStop } from "./events.ts";
 export type {
   Kv,
   KvAdapter,
@@ -124,9 +175,10 @@ export type {
 } from "./kv.ts";
 export { createKv, kv, memoryKvAdapter, redisKvAdapter } from "./kv.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
-export { skills } from "./skills.ts";
+export { skills, skillsBake } from "./skills.ts";
 export type {
   InboxMessage,
+  SubscribeData,
   SubscribeEvent,
   SubscribeOptions,
   Subscription,
@@ -147,7 +199,13 @@ export type {
 } from "./threadList.ts";
 export { listThreads } from "./threadList.ts";
 export type {
+  ThreadCronTrigger,
+  ThreadEventTrigger,
   ThreadKeyConfig,
   ThreadTrigger,
+  ThreadTriggerData,
   ThreadTriggerEvent,
+  ThreadTriggerEventSource,
+  ThreadTriggerList,
+  ThreadTriggers,
 } from "./threadTrigger.ts";

@@ -20,6 +20,7 @@ import {
   sandbox,
   sandboxTools,
 } from "./defs.ts";
+import { skills } from "./skills.ts";
 
 const fakeEnvironment = () => {
   const runs: string[] = [];
@@ -518,5 +519,24 @@ describe("sandbox step ID namespaces", () => {
     await expect(captured?.commands.run("setup:x", "true")).rejects.toThrow(
       "reserved",
     );
+  });
+});
+
+describe("baked skills size", () => {
+  test("a sandbox that bakes skills can't ask for more than a bake may", () => {
+    expect(() => {
+      return sandbox({
+        id: "big",
+        vcpu: 64,
+        skills: [skills.git("a/b")],
+      });
+    }).toThrow("at most");
+    expect(
+      sandbox({
+        id: "big",
+        vcpu: 64,
+        skills: [skills.git("a/b", { freshness: "boot" })],
+      }).id,
+    ).toBe("big");
   });
 });

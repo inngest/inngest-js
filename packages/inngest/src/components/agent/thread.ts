@@ -12,24 +12,25 @@
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
+import { agentMessage, agentStop } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
 
 /**
- * The event every thread message is sent as.
+ * The name of the event every thread message is sent as.
  */
-export const agentMessageEvent = "agent/message";
+export const agentMessageEvent = agentMessage.name;
 
 /**
- * The event that cancels a thread's live run.
+ * The name of the event that cancels a thread's live run.
  */
-export const agentStopEvent = "agent/thread.stop";
+export const agentStopEvent = agentStop.name;
 
 /**
  * What a thread message event carries in `data`.
  */
-export interface ThreadMessage {
+export type ThreadMessage = {
   /**
    * The agent, as `"appId/functionId"`.
    */
@@ -73,7 +74,7 @@ export interface ThreadMessage {
    * For a message made from a trigger event: that event.
    */
   event?: { id?: string; name: string; data: unknown };
-}
+};
 
 export interface ThreadOptions {
   /**
@@ -288,23 +289,24 @@ export function getThread(
   // Inside a function the send is a step, so a replay does not send it again.
   async function sendEvent(
     id: string,
-    event: { name: string; data: unknown; meta?: unknown },
+    event: ReturnType<typeof agentMessage.create | typeof agentStop.create>,
   ) {
     if (stepContext()) {
-      await step.sendEvent(id, event as never);
+      await step.sendEvent(id, event);
 
       return;
     }
 
-    await client.send(event as never);
+    await client.send(event);
   }
 
   async function post(message: ThreadMessage) {
-    await sendEvent(`thread:${key}:${message.kind}`, {
-      name: agentMessageEvent,
-      data: message,
-      meta: { sessions: threadSessions(key, session) },
-    });
+    await sendEvent(
+      `thread:${key}:${message.kind}`,
+      agentMessage.create(message, {
+        meta: { sessions: threadSessions(key, session) },
+      }),
+    );
   }
 
   return {
@@ -319,10 +321,10 @@ export function getThread(
     },
     async stop({ when }) {
       if (when === "now") {
-        await sendEvent(`thread:${key}:stop-now`, {
-          name: agentStopEvent,
-          data: { agent, thread: key },
-        });
+        await sendEvent(
+          `thread:${key}:stop-now`,
+          agentStop.create({ agent, thread: key }),
+        );
 
         return;
       }

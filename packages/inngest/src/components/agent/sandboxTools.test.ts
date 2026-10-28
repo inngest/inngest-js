@@ -299,3 +299,19 @@ describe("codeTools run_code", () => {
     ]);
   });
 });
+
+describe("codeTools run_code options", () => {
+  const sandbox = {} as DurableSandbox;
+
+  test("refuses tools named like the built-ins", () => {
+    expect(() => {
+      return codeTools(sandbox, { tools: { sleep: () => 1 } });
+    }).toThrow(/built in/);
+  });
+
+  test("refuses tools when only leaves run_code out", () => {
+    expect(() => {
+      return codeTools(sandbox, { tools: {}, only: ["run"] });
+    }).toThrow(/only leaves it out/);
+  });
+});

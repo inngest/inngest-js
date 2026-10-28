@@ -32,7 +32,7 @@ describe("thread handle", () => {
     await thread.send("hi");
     await thread.steer("faster");
 
-    expect(sent).toEqual([
+    expect(sent).toMatchObject([
       {
         name: "agent/message",
         data: { agent: "app/bot", thread: "t1", kind: "user", content: "hi" },
@@ -68,7 +68,7 @@ describe("thread handle", () => {
     await thread.stop({ when: "nextTurn" });
     await thread.stop({ when: "now" });
 
-    expect(sent).toEqual([
+    expect(sent).toMatchObject([
       {
         name: "agent/message",
         data: {

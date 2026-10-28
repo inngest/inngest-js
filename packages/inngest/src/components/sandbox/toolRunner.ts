@@ -135,14 +135,24 @@ interface Round {
    * The exit code in the log, set with `result`.
    */
   exitCode?: number;
+
+  /**
+   * Whether a stub wrote its yield line in these lines.
+   */
+  yielded?: boolean;
 }
 
 /**
- * A reply line as the journal keeps it, with the tool it answered, so a replay
- * that makes different calls fails instead of getting another call's reply.
+ * A reply line as the journal keeps it, with the tool it answered and the
+ * stub's hash of the arguments, so a replay that makes different calls ends
+ * (exit 76) instead of getting another call's reply.
  */
-const journaled = (line: string, tool: string): string => {
-  return JSON.stringify({ ...JSON.parse(line), tool });
+const journaled = (line: string, request: ToolRequest): string => {
+  return JSON.stringify({
+    ...JSON.parse(line),
+    tool: request.tool,
+    h: request.h,
+  });
 };
 
 const errorMessage = (error: unknown): string => {
@@ -291,11 +301,14 @@ export const runCommandWithTools = async (
     const requests: Round["requests"] = [];
     let result: SandboxOperationResultV1 | undefined;
     let exitCode: number | undefined;
+    let yielded = false;
 
     for (const line of log) {
       const event = parseToolEvent(line);
       if (event?.op === "call") {
         requests.push({ request: event, line });
+      } else if (event?.op === "yielded") {
+        yielded = true;
       } else if (event?.op === "exit") {
         exitCode = event.code;
         result = execOperationResult({
@@ -312,6 +325,7 @@ export const runCommandWithTools = async (
       requests,
       result,
       exitCode,
+      yielded,
     };
   };
 
@@ -454,10 +468,15 @@ export const runCommandWithTools = async (
   const journal: string[] = [];
   // The call to a tool that waits, once the process has been told to exit
   let suspended: { request: ToolRequest; line: string } | undefined;
+  // Whether the stub confirmed it exited to suspend, not on its own
+  let yielded = false;
 
   for (;;) {
-    if (state.result && suspended && state.exitCode === 75) {
-      journal.push(journaled(await answer(suspended), suspended.request.tool));
+    yielded ||= state.yielded === true;
+
+    if (state.result && suspended && yielded && state.exitCode === 75) {
+      journal.push(journaled(await answer(suspended), suspended.request));
+      yielded = false;
       segment += 1;
       suspended = undefined;
       seen = new Set();
@@ -524,7 +543,7 @@ export const runCommandWithTools = async (
       ...replies.map((reply, at) => {
         return journaled(
           reply,
-          (answerable[at] as (typeof pending)[number]).request.tool,
+          (answerable[at] as (typeof pending)[number]).request,
         );
       }),
     );

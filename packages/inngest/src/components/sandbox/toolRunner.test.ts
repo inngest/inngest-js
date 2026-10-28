@@ -1447,7 +1447,10 @@ describe("commands.run with tools that wait", () => {
    * the first calls from the journal it was started with, sends a request for
    * each of the rest, exits 75 when told to yield, and exits 0 after the last.
    */
-  const createReplaySandbox = (calls: string[], exitCode = 75) => {
+  const createReplaySandbox = (
+    calls: string[],
+    { exitCode = 75, marker = true } = {},
+  ) => {
     const log: string[] = [];
     const uploads = new Map<string, string>();
     const dirs = new Set<string>();
@@ -1491,6 +1494,9 @@ describe("commands.run with tools that wait", () => {
 
             if (line.yield) {
               current.done = true;
+              if (marker) {
+                log.push('{"op":"yielded"}\n');
+              }
               log.push(
                 `${JSON.stringify({ op: "exit", code: exitCode, stdout: "", stderr: "" })}\n`,
               );
@@ -1619,7 +1625,9 @@ describe("commands.run with tools that wait", () => {
   });
 
   test("a process that exits with another code than 75 is not resumed", async () => {
-    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], 0);
+    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
+      exitCode: 0,
+    });
     const { host } = createHost(sandbox);
     const ran: string[] = [];
     const pause = tool.group({
@@ -1638,6 +1646,21 @@ describe("commands.run with tools that wait", () => {
     expect(starts).toHaveLength(1);
     expect(ran).toEqual([]);
     expect(result).toMatchObject({ result: { exitCode: 0 } });
+  });
+
+  test("an exit 75 the stub didn't write a yield for is the script's own", async () => {
+    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
+      marker: false,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({ waits: true, run: async () => 1 });
+
+    const result = await inFunction(() => {
+      return run(host, { a: () => 1, pause, b: () => 2 });
+    });
+
+    expect(starts).toHaveLength(1);
+    expect(result).toMatchObject({ result: { exitCode: 75 } });
   });
 
   test("a tool that waits needs a group", () => {

@@ -15,6 +15,7 @@
  * run finishes is not lost.
  */
 
+import { internalEvents } from "../../helpers/consts.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
@@ -56,14 +57,17 @@ import {
 } from "./threadSandboxes.ts";
 import { markThreadIdle, threadRecorder } from "./threadState.ts";
 import {
+  type CompiledTrigger,
   compileTriggers,
   messageOf,
   singletonKey,
   type ThreadKeyConfig,
   type ThreadTriggerEvent,
+  type ThreadTriggers,
 } from "./threadTrigger.ts";
 
-export interface AgentFunctionConfig extends ThreadKeyConfig {
+export interface AgentFunctionConfig<TOn = ThreadTriggers>
+  extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -372,6 +376,26 @@ function quote(value: string) {
 }
 
 /**
+ * The expressions that match a stop to the run a trigger started, one for
+ * each distinct thread key (crons share one).
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param triggers The compiled triggers.
+ */
+function stopExpressions(ref: string, triggers: CompiledTrigger[]): string[] {
+  const expressions = triggers.flatMap((trigger) => {
+    const key = trigger.thread.path ?? trigger.thread.constant;
+
+    return key
+      ? [
+          `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${key} == async.data.thread`,
+        ]
+      : [];
+  });
+
+  return [...new Set(expressions)];
+}
+
+/**
  * Defines an agent function. Use `createAgents(client).agent()`.
  * @param client Inngest client.
  * @param config Function ID and KV store.
@@ -438,9 +462,7 @@ export function createAgentFunction(
           if: `event.data.agent == ${quote(ref)} && event.data.kind != "stop"`,
         },
         ...triggers.map((trigger) => {
-          return trigger.if
-            ? { event: trigger.event, if: trigger.if }
-            : { event: trigger.event };
+          return trigger.fnTrigger;
         }),
       ],
       singleton: { key: threadExpression, mode: "skip" },
@@ -451,15 +473,8 @@ export function createAgentFunction(
         },
         // A cancel expression cannot call functions, so only a thread key that
         // is a plain path of the trigger can be matched against a stop.
-        ...triggers.flatMap((trigger) => {
-          return trigger.thread.path
-            ? [
-                {
-                  event: agentStopEvent,
-                  if: `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
-                },
-              ]
-            : [];
+        ...stopExpressions(ref, triggers).map((expression) => {
+          return { event: agentStopEvent, if: expression };
         }),
       ],
     },
@@ -496,7 +511,12 @@ export function createAgentFunction(
         // a plain message starts has the same limits.
         const started = await recorder.running(
           readInheritedLimits(
-            (data as unknown as Record<string, unknown>)._agent,
+            // An invoked agent is told its limits in the event's own data.
+            (
+              (found?.event === internalEvents.FunctionInvoked
+                ? event.data
+                : data) as Record<string, unknown>
+            )._agent,
           ),
         );
 
@@ -522,14 +542,18 @@ export function createAgentFunction(
               event: agentMessageEvent,
               if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
             },
-            ...triggers.map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+            ...triggers
+              .filter((trigger) => {
+                return trigger.listen;
+              })
+              .map((trigger) => {
+                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
 
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
+                return {
+                  event: trigger.event,
+                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+                };
+              }),
           ],
         });
         subscription.putBack([
@@ -548,7 +572,7 @@ export function createAgentFunction(
                 bindings,
                 stepSandboxes(step),
                 {
-                  event,
+                  event: event as unknown as AgentConfigContext["event"],
                   client: client as unknown as SkillsRuntime["client"],
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;
