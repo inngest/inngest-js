@@ -88,7 +88,20 @@ const runLocal = (
 
 export const fakeSandbox = (options: FakeSandboxOptions) => {
   const realFetch = globalThis.fetch;
-  const files = new Map<string, Uint8Array>();
+  // Files by sandbox, and the copy a snapshot keeps, so a sandbox created from
+  // a snapshot starts with the files its source had.
+  const files = new Map<string, Map<string, Uint8Array>>();
+  const snapshotFiles = new Map<string, Map<string, Uint8Array>>();
+  const filesOf = (sandboxId: string) => {
+    let found = files.get(sandboxId);
+
+    if (!found) {
+      found = new Map();
+      files.set(sandboxId, found);
+    }
+
+    return found;
+  };
   const toolsDir = mkdtempSync(join(tmpdir(), "fake-sandbox-tools-"));
   // Where a path or command of the sandbox lives on this machine
   const local = (text: string) => {
@@ -226,7 +239,12 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
       };
 
       snapshots.set(created.id, created);
-      record("snapshot.create", { id: created.id, name: request.name });
+      snapshotFiles.set(created.id, new Map(filesOf(id)));
+      record("snapshot.create", {
+        id: created.id,
+        name: request.name,
+        sandboxId: id,
+      });
 
       return Response.json({ data: created }, { status: 201 });
     }
@@ -237,6 +255,13 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         snapshotId?: string;
       };
       const created = resource(randomUUID(), request.name);
+
+      if (request.snapshotId) {
+        files.set(
+          created.id,
+          new Map(snapshotFiles.get(request.snapshotId) ?? []),
+        );
+      }
 
       record("sandbox.create", {
         id: created.id,
@@ -366,7 +391,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
           mkdirSync(dirname(local(path)), { recursive: true });
           writeFileSync(local(path), body);
         }
-        files.set(path, body);
+        filesOf(id).set(path, body);
         record("sandbox.upload", {
           id,
           path,
@@ -376,7 +401,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         return Response.json({ data: { path, bytesWritten: body.length } });
       }
 
-      let found = files.get(path);
+      let found = filesOf(id).get(path);
 
       if (!found && (path.startsWith("/tmp/inngest-git-") || onDisk(path))) {
         try {

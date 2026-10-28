@@ -317,6 +317,13 @@ export interface CreateWithSkillsOptions {
   image?: SandboxImage;
   sandboxes: DurableSandboxTools;
   runtime: SkillsRuntime;
+
+  /**
+   * A snapshot of this sandbox to start from, such as the thread's. It holds
+   * the skills it was saved with, so no baked snapshot is looked up or asked
+   * for; `"boot"` sources are fetched again.
+   */
+  restoreFrom?: string;
 }
 
 /**
@@ -336,7 +343,7 @@ export const createWithSkills = async (
   let shas: (string | undefined)[] = [];
   let request: SkillsBakeRequest | undefined;
 
-  if (baked.length > 0) {
+  if (baked.length > 0 && !options.restoreFrom) {
     shas = await runtime.run(`${stepId}:resolve`, async () => {
       return Promise.all(
         baked.map((source) => {
@@ -383,10 +390,12 @@ export const createWithSkills = async (
     }),
   );
 
-  if (found) {
+  const snapshotId = options.restoreFrom ?? found?.snapshotId;
+
+  if (snapshotId) {
     const sandbox = await options.sandboxes.create(name, {
       name: fresh.name,
-      snapshotId: found.snapshotId,
+      snapshotId,
     } as CreateOptions);
 
     await fetchSources(

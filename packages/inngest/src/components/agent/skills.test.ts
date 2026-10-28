@@ -74,8 +74,10 @@ const setup = (options: { sha?: string | null; snapshots?: string[] } = {}) => {
   };
   const create = (
     sources: Parameters<typeof createWithSkills>[0]["sources"],
+    restoreFrom?: string,
   ) => {
     return createWithSkills({
+      restoreFrom,
       name: "work",
       sources,
       fresh: { name: "run-work", vcpu: 2, memoryMb: 2048 },
@@ -228,6 +230,24 @@ describe("createWithSkills()", () => {
 
     expect(commands).toHaveLength(1);
     expect(commands[0]).toContain("c/d");
+  });
+
+  test("a restore starts from its snapshot, looks up no bake and fetches only boot sources", async () => {
+    const { create, created, commands, events, fetchImpl } = setup();
+
+    await create(
+      [
+        skills.git("a/b", { into: "/skills/a" }),
+        skills.git("c/d", { freshness: "boot", ref: "dev" }),
+      ],
+      "thread-snap",
+    );
+
+    expect(created).toEqual([{ name: "run-work", snapshotId: "thread-snap" }]);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("c/d");
+    expect(events).toHaveLength(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

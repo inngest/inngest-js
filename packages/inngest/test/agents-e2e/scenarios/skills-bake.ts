@@ -82,12 +82,18 @@ export const skillsBake = scenario({
           return String(call.body.command).includes("git fetch");
         });
     };
-    const baked = (sha: string) => {
+    // The thread's own snapshots, taken when a run ends, are not the bakes.
+    const bakes = () => {
       return ctx.fakes
         .posts({ channel: "sandbox", method: "snapshot.create" })
-        .some((call) => {
-          return String(call.body.name).endsWith(`/${sha}`);
+        .filter((call) => {
+          return String(call.body.name).startsWith("skills/");
         });
+    };
+    const baked = (sha: string) => {
+      return bakes().some((call) => {
+        return String(call.body.name).endsWith(`/${sha}`);
+      });
     };
 
     await point(sha1);
@@ -113,14 +119,9 @@ export const skillsBake = scenario({
     await ctx.expect
       .posts({ channel: "sandbox", method: "sandbox.create" })
       .toInclude({
-        snapshotId: ctx.fakes.posts({
-          channel: "sandbox",
-          method: "snapshot.create",
-        })[0]?.body.id,
+        snapshotId: bakes()[0]?.body.id,
       });
-    await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
-      .toHaveCount(1);
+    ctx.check("one snapshot is baked", bakes().length === 1);
     ctx.check("the second sandbox fetches nothing", fetches().length === 2);
 
     await point(sha2);

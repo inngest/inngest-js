@@ -10,7 +10,7 @@
  * would have to write between the two to be overwritten, and it rewrites the
  * record on its next status change or turn.
  */
-import type { Kv } from "./kv.ts";
+import type { Kv, KvScopeInstance } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
@@ -112,4 +112,38 @@ export const markThreadIdle = async (
         ? { ...current, status: "idle" }
         : current;
     });
+};
+
+/**
+ * The thread KV key holding the generation of the newest snapshot of one of
+ * the thread's sandboxes. It is a key of its own, not part of the record: the
+ * record is rewritten whole by whichever run writes it, and a cleanup may save
+ * a snapshot after a newer run has started. The `__` prefix hides it from
+ * `state().keys`.
+ * @param ref The agent, as `"appId/functionId"`: threads of two agents may share a key.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ */
+export const sandboxGenerationKey = (ref: string, name: string): string => {
+  return `__sandbox:${ref}:${name}`;
+};
+
+/**
+ * Notes that `generation` is the newest snapshot of a thread's sandbox. A
+ * generation is a run ID, which sorts by time, so an older one (a cleanup of
+ * a run that a newer run has overtaken) never replaces a newer one, and
+ * writing the same one twice changes nothing.
+ * @param scope The thread's KV scope.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ * @param generation The run that took the snapshot.
+ */
+export const recordSandboxGeneration = async (
+  scope: KvScopeInstance,
+  ref: string,
+  name: string,
+  generation: string,
+): Promise<void> => {
+  await scope.update<string>(sandboxGenerationKey(ref, name), (found) => {
+    return found && found >= generation ? found : generation;
+  });
 };

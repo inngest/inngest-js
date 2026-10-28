@@ -101,6 +101,7 @@ export const sandboxSetup = scenario({
           `sandbox.upload:"${workspace}"`,
           'sandbox.exec:["/bin/sh","-c","echo setup-init"]',
           'sandbox.exec:["/bin/sh","-c","echo tool-ran"]',
+          'snapshot.create:""',
           'sandbox.destroy:""',
         ]),
       calls,

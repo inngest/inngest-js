@@ -49,6 +49,11 @@ import {
   type ThreadMessage,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
+import {
+  cleanupThreadSandbox,
+  type ThreadSandboxCleanup,
+  threadSandboxOwner,
+} from "./threadSandboxes.ts";
 import { markThreadIdle, threadRecorder } from "./threadState.ts";
 import {
   compileTriggers,
@@ -74,8 +79,10 @@ export interface AgentFunctionConfig extends ThreadKeyConfig {
    * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
    * tool call that needs it (`start: "lazy"`, the default), or as soon as the
    * run begins (`"eager"`). Either the object or a `start` may be a function
-   * of `{ event }`; it re-runs on every replay, so it must be pure. The run
-   * destroys what it created when the body returns.
+   * of `{ event }`; it re-runs on every replay, so it must be pure. A sandbox
+   * belongs to the thread: it is restored from the thread's newest snapshot
+   * when first used and snapshotted when the run ends, whichever way, then
+   * destroyed. Only files survive between runs.
    */
   sandboxes?: SandboxesConfig<AgentConfigContext>;
 
@@ -384,11 +391,32 @@ export function createAgentFunction(
   const cleanup = createDefer(
     client,
     { id: `${config.id}-cleanup` },
-    async ({ event }) => {
-      const { runId, thread } = event.data as {
+    async ({ event, step }) => {
+      const { runId, thread, sandbox } = event.data as {
         runId: string;
         thread?: string;
+        sandbox?: ThreadSandboxCleanup;
       };
+
+      // A sandbox the run created and did not close: save it for the
+      // thread's next run and destroy it.
+      if (sandbox && thread) {
+        await cleanupThreadSandbox({
+          client: client as unknown as Parameters<
+            typeof cleanupThreadSandbox
+          >[0]["client"],
+          ref,
+          thread,
+          runId,
+          scope: store.scope("thread", thread),
+          sandbox,
+          run: (id, fn) => {
+            return step.run(id, fn) as ReturnType<typeof fn>;
+          },
+        });
+
+        return;
+      }
 
       // Each KV call is its own step.
       await store.scope("run", runId).clear();
@@ -516,16 +544,36 @@ export function createAgentFunction(
         });
         const opened =
           Object.keys(bindings).length > 0
-            ? openSandboxes(bindings, stepSandboxes(step), {
-                event,
-                client: client as unknown as SkillsRuntime["client"],
-                run: (id, fn) => {
-                  return step.run(id, fn) as ReturnType<typeof fn>;
+            ? openSandboxes(
+                bindings,
+                stepSandboxes(step),
+                {
+                  event,
+                  client: client as unknown as SkillsRuntime["client"],
+                  run: (id, fn) => {
+                    return step.run(id, fn) as ReturnType<typeof fn>;
+                  },
+                  sendEvent: (id, payload) => {
+                    return step.sendEvent(id, payload);
+                  },
                 },
-                sendEvent: (id, payload) => {
-                  return step.sendEvent(id, payload);
-                },
-              })
+                threadSandboxOwner({
+                  client: client as unknown as SkillsRuntime["client"],
+                  ref,
+                  thread: data.thread,
+                  runId,
+                  scope: store.thread,
+                  run: (id, fn) => {
+                    return step.run(id, fn) as ReturnType<typeof fn>;
+                  },
+                  defer: (id, sandbox) => {
+                    return defer(id, {
+                      function: cleanup,
+                      data: { runId, thread: data.thread, sandbox },
+                    });
+                  },
+                }),
+              )
             : {};
 
         let stopRequested = false;

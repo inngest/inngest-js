@@ -9,7 +9,7 @@
  * sandbox is created, in one durable step, by the first thing that needs it.
  */
 
-import type { StepOptionsOrId } from "../../types.ts";
+import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
 import { destroyQuietly, sandboxCreateDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
@@ -24,6 +24,7 @@ import {
   type DurableSandbox,
   type DurableSandboxTools,
   type SandboxCreateFreshOptions,
+  type SandboxCreateOptions,
   type SandboxDuration,
   type SandboxHandle,
   SandboxValidationError,
@@ -35,6 +36,7 @@ import {
   type SkillsRuntime,
   type SkillsSource,
 } from "./skills.ts";
+import type { ThreadSandboxOwner } from "./threadSandboxes.ts";
 
 /**
  * A config field: a value, or a function of `Ctx` returning it. A `T` that is
@@ -132,6 +134,13 @@ export interface SandboxSetupContext {
    * The name the agent gives the sandbox, such as `work`.
    */
   name: string;
+
+  /**
+   * Whether the sandbox was restored from the thread's snapshot. What an
+   * earlier run's setup put in is already there, so skip that work; per-run
+   * state still needs writing.
+   */
+  restored: boolean;
 }
 
 export type SandboxSetup = (context: SandboxSetupContext) => Promise<void>;
@@ -353,6 +362,7 @@ const setupContext = (
   name: string,
   sandbox: DurableSandbox,
   runtime: SandboxRuntime,
+  restored: boolean,
 ): SandboxSetupContext => {
   // Sandbox calls and steps get prefixes of their own, so one short name
   // can be used for each. Tool step IDs may not start with `setup:`.
@@ -367,6 +377,7 @@ const setupContext = (
 
   return {
     name,
+    restored,
     event: runtime.event,
     step: {
       run: (id, fn) => {
@@ -396,6 +407,7 @@ const lazySandbox = (
   binding: SandboxDefinition | SandboxBinding,
   sandboxes: DurableSandboxTools,
   runtime?: SandboxRuntime,
+  owner?: ThreadSandboxOwner,
 ): { lazy: LazySandbox; begin: () => void } => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
@@ -417,10 +429,44 @@ const lazySandbox = (
   let raw: Promise<DurableSandbox> | undefined;
   let created: Promise<DurableSandbox> | undefined;
   let closed: Promise<void> | undefined;
+  let guard: DeferHandle | undefined;
+  let restored = false;
 
   // Whether anything has seen the create's outcome. An eager create that
   // failed before anything asked for the sandbox is raised by `close()`.
   let observed = false;
+
+  // The bare sandbox: restored from the thread's newest snapshot when it has
+  // one, else fresh. Once it exists, the run registers the cleanup that saves
+  // and destroys it if the run ends without closing it.
+  const acquire = async (
+    options: SandboxCreateFreshOptions,
+  ): Promise<DurableSandbox> => {
+    const restoreFrom = owner ? await owner.restore(name) : undefined;
+
+    restored = restoreFrom !== undefined;
+    const sandbox = definition.skills?.length
+      ? await createWithSkills({
+          name,
+          sources: definition.skills,
+          fresh: options,
+          image: definition.image,
+          sandboxes,
+          runtime: runtime as SandboxRuntime,
+          restoreFrom,
+        })
+      : restoreFrom
+        ? await sandboxes.create(name, {
+            name: options.name,
+            snapshotId: restoreFrom,
+          } as SandboxCreateOptions)
+        : await sandboxes.create(name, options);
+
+    // With a setup, the sandbox may only be saved once the setup has finished.
+    guard = owner?.guard(name, sandbox, !definition.setup);
+
+    return sandbox;
+  };
 
   const create = (): Promise<DurableSandbox> => {
     const options: SandboxCreateFreshOptions = {
@@ -446,23 +492,23 @@ const lazySandbox = (
 
     const setup = definition.setup;
 
-    raw = definition.skills?.length
-      ? createWithSkills({
-          name,
-          sources: definition.skills,
-          fresh: options,
-          image: definition.image,
-          sandboxes,
-          runtime: runtime as SandboxRuntime,
-        })
-      : sandboxes.create(name, options);
+    raw = acquire(options);
 
     // Setup runs after the sandbox exists, so after skills are in place.
     // `raw` stays the bare sandbox, so close() destroys it even when setup
     // failed.
     created = setup
       ? raw.then(async (sandbox) => {
-          await setup(setupContext(name, sandbox, runtime as SandboxRuntime));
+          await setup(
+            setupContext(name, sandbox, runtime as SandboxRuntime, restored),
+          );
+
+          if (owner && guard) {
+            const unsaved = guard;
+
+            guard = owner.guard(name, sandbox, true);
+            unsaved.abort();
+          }
 
           return sandbox;
         })
@@ -542,7 +588,12 @@ const lazySandbox = (
         });
 
         if (sandbox) {
-          await destroyQuietly(sandbox, `${name}:destroy`);
+          // A sandbox whose creation or setup failed is not worth keeping.
+          if (!failed) {
+            await owner?.save(name, sandbox);
+          }
+
+          await destroyQuietly(sandbox, `${name}:destroy`, guard);
         }
 
         if (failed && !observed) {
@@ -640,11 +691,15 @@ export const getSandbox = (
  * @param bindings The agent's `sandboxes`, by name.
  * @param sandboxes The `step.sandbox` of the running function.
  * @param runtime What sandboxes with skills or a setup need from the run.
+ * @param owner The thread the sandboxes belong to. With it, each sandbox is
+ * restored from the thread's newest snapshot on first use, and snapshotted
+ * when the run closes it.
  */
 export const openSandboxes = (
   bindings: Record<string, SandboxDefinition | SandboxBinding>,
   sandboxes: DurableSandboxTools,
   runtime?: SandboxRuntime,
+  owner?: ThreadSandboxOwner,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
   const begins: (() => void)[] = [];
@@ -652,7 +707,13 @@ export const openSandboxes = (
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
-    const { lazy, begin } = lazySandbox(name, binding, sandboxes, runtime);
+    const { lazy, begin } = lazySandbox(
+      name,
+      binding,
+      sandboxes,
+      runtime,
+      owner,
+    );
 
     opened[name] = lazy;
     begins.push(begin);
