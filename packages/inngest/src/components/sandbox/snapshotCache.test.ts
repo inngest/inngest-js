@@ -526,8 +526,8 @@ describe("making room at the snapshot limit", () => {
   test("deletes a superseded generation of a cache entry when nothing is expired", async () => {
     const { api, cache, logs } = setup();
 
-    api.add("x/y/old");
-    api.add("x/y/new");
+    api.add("skills/y/old");
+    api.add("skills/y/new");
     api.add("keep/me/g1");
 
     const { call } = limited(api);
@@ -535,11 +535,11 @@ describe("making room at the snapshot limit", () => {
     await cache.take(entry, call);
 
     expect(live(api)).toEqual([
-      "x/y/new",
+      "skills/y/new",
       "keep/me/g1",
       "skills/acme/skills/sha1",
     ]);
-    expect(logs[0]).toContain("x/y/old");
+    expect(logs[0]).toContain("skills/y/old");
     expect(logs[0]).toContain("superseded");
   });
 
@@ -610,6 +610,21 @@ describe("making room at the snapshot limit", () => {
     const failure = await thrown(cache.take(entry, call));
 
     expect(failure.message).toContain("snapshot limit");
+    expect(live(api)).toHaveLength(3);
+  });
+
+  test("a star inside a pattern stays in its segment, and other scopes keep superseded generations", async () => {
+    const { api, cache } = setup({ scopes: ["ci/*/main"] });
+
+    api.add("ci/pr:1/key/main");
+    api.add("other/k/g1");
+    api.add("other/k/g2");
+
+    const { call } = limited(api);
+
+    await expect(thrown(cache.take(entry, call))).resolves.toMatchObject({
+      code: "sandbox_snapshot_limit_exceeded",
+    });
     expect(live(api)).toHaveLength(3);
   });
 

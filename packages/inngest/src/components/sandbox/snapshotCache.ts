@@ -234,9 +234,10 @@ export interface SnapshotCacheOptions {
 export interface EvictOptions {
   /**
    * Scopes whose snapshots may be deleted, least recently created first, when
-   * nothing else frees room. A pattern matches the start of a name, and `*`
-   * matches any characters: `ci/pr:*`, `thread/*`, `skills`. A pattern with no
-   * trailing `*` matches whole scopes only (`main` is not `main2`). Without
+   * nothing else frees room. A pattern matches the start of a name. A trailing `*`
+   * matches anything after it (`ci/pr:*`, `thread/*`); a `*` inside matches
+   * within one path segment (as in `ci/pr:*-x/main`). Without a trailing `*` the pattern
+   * must be followed by a `/` (`main` is not `main2`). Without
    * any, live snapshots are never deleted.
    */
   scopes?: string[];
@@ -351,10 +352,13 @@ const escapeRegExp = (text: string): string => {
 /** Whether a name starts with one of the scope patterns, ending where a scope does. */
 const inScopes = (name: string, patterns: string[]): boolean => {
   return patterns.some((pattern) => {
-    const source = pattern.split("*").map(escapeRegExp).join(".*");
-    const boundary = pattern.endsWith("*") ? "" : "(?:/|$)";
+    // A trailing star runs to the end of the name; one inside stays in its segment.
+    const trailing = pattern.endsWith("*");
+    const body = trailing ? pattern.slice(0, -1) : pattern;
+    const source = body.split("*").map(escapeRegExp).join("[^/]*");
+    const end = trailing ? "" : "/";
 
-    return new RegExp(`^${source}${boundary}`).test(name);
+    return new RegExp(`^${source}${end}`).test(name);
   });
 };
 
@@ -642,7 +646,7 @@ export const snapshotCache = (
     });
 
   const oldestFirst = (a: SnapshotInfo, b: SnapshotInfo): number => {
-    return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+    return Date.parse(a.createdAt) - Date.parse(b.createdAt);
   };
 
   /**
@@ -690,7 +694,7 @@ export const snapshotCache = (
     const ready = all.filter((snapshot) => {
       return (
         snapshot.status === "READY" &&
-        !gone.has(snapshot.id) &&
+        !garbage.includes(snapshot) &&
         snapshot.id !== keep &&
         snapshot.name !== undefined &&
         isCacheName(snapshot.name)
@@ -702,15 +706,23 @@ export const snapshotCache = (
       const slot = snapshotSlot(snapshot.name as string);
       const newest = newestOfSlot.get(slot);
 
-      if (!newest || newest.createdAt < snapshot.createdAt) {
+      if (
+        !newest ||
+        Date.parse(newest.createdAt) < Date.parse(snapshot.createdAt)
+      ) {
         newestOfSlot.set(slot, snapshot);
       }
     }
 
+    // Only the entry's own scope and the scopes the caller allows.
+    const mine = [`${entry.scope}/*`, ...(evictOptions?.scopes ?? [])];
     const superseded = ready.filter((snapshot) => {
       const slot = snapshotSlot(snapshot.name as string);
 
-      return newestOfSlot.get(slot)?.id !== snapshot.id;
+      return (
+        newestOfSlot.get(slot)?.id !== snapshot.id &&
+        inScopes(snapshot.name as string, mine)
+      );
     });
 
     for (const snapshot of superseded.sort(oldestFirst)) {
@@ -842,7 +854,11 @@ export const snapshotCache = (
       if (holder.cleared) {
         try {
           return await named();
-        } catch {
+        } catch (error) {
+          if (isLimitReached(error)) {
+            throw error;
+          }
+
           // Falls back to a snapshot without the name.
         }
       }
