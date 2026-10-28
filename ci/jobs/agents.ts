@@ -58,7 +58,7 @@ export const agentsBase = ci.job(
       goversion=$(awk '/^go /{print $2}' go.mod)
       arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
       curl -fsSL "https://go.dev/dl/go$goversion.linux-$arch.tar.gz" | tar -C /usr/local -xz
-      /usr/local/go/bin/go build -o ${ossDevServerBin} ./cmd/main.go
+      /usr/local/go/bin/go build -o ${ossDevServerBin} ./cmd
       ${ossDevServerBin} version
     `.as("build the pinned Dev Server");
   },
