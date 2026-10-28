@@ -15,14 +15,16 @@
  *   `result`) answers request `id`. The waiter appends it, and the stub scans
  *   the log for it from where its own request was written.
  * - `{"op":"reply","id":1,"yield":true}` tells the stub to write
- *   `{"op":"yielded"}` and exit with code 75 at once; the host resumes only on
+ *   `{"op":"yielded"}` and exit with code 75 at once. The host resumes only on
  *   both, so a script's own exit 75 is never taken for a suspension. It answers a call to a tool that waits (see `tool.group({ waits })`).
  *   The host starts the command again with `INNGEST_TOOLS_JOURNAL` naming a
  *   file of reply lines, one per earlier call in order, and the stub answers its
  *   first calls from those without sending requests. Each request carries `h`,
  *   a hash of its arguments, which the journal keeps. A replay that calls a
- *   different tool or arguments, or ends before using the whole journal, writes
- *   to stderr and exits 76. The stub deletes the journal once it has read it.
+ *   different tool or arguments writes to stderr and exits 76. The stub writes
+ *   `{"op":"replayed"}` when it has used the whole journal; the host fails a
+ *   replay that exits 0 without it. The stub deletes the journal once it has
+ *   read it, and the host removes it when the command ends.
  * - `{"op":"exit","code":0,"stdout":"<base64>","stderr":"<base64>"}` is
  *   appended by the wrapper when the command ends.
  *
@@ -48,7 +50,7 @@ export const toolsRoot = "/inngest/tools";
  */
 const append = `dd of="$d/ops.log" oflag=append conv=notrunc iflag=fullblock bs=32M status=none`;
 
-const pythonStub = `import asyncio, atexit, hashlib, json, os, sys
+const pythonStub = `import asyncio, hashlib, json, os, sys
 
 _dir = os.environ["INNGEST_TOOLS_DIR"]
 _log = os.open(_dir + "/ops.log", os.O_RDWR | os.O_APPEND | os.O_CREAT)
@@ -62,7 +64,6 @@ if os.environ.get("INNGEST_TOOLS_JOURNAL"):
     except OSError:
         pass
 _replayed = 0
-_failed = False
 os.environ.pop("INNGEST_TOOLS_JOURNAL", None)
 
 
@@ -72,22 +73,12 @@ def _diverged(message):
     os._exit(76)
 
 
-def _finished():
-    if not _failed and _replayed < len(_journal):
-        _diverged("the script made " + str(_replayed) + " calls, the first run made " + str(len(_journal)))
-
-
-_hook = sys.excepthook
-
-
-def _excepthook(*info):
-    global _failed
-    _failed = True
-    _hook(*info)
-
-
-sys.excepthook = _excepthook
-atexit.register(_finished)
+def _canon(value):
+    if isinstance(value, dict):
+        return {"o": sorted([[str(key), _canon(item)] for key, item in value.items()], key=lambda pair: pair[0])}
+    if isinstance(value, (list, tuple)):
+        return [_canon(item) for item in value]
+    return value
 
 
 def _claim():
@@ -118,12 +109,14 @@ class _Tools:
 
         async def call(*args, **kwargs):
             global _replayed
-            digest = hashlib.sha256(json.dumps([args, kwargs], default=str).encode()).hexdigest()[:16]
+            digest = hashlib.sha256(json.dumps(_canon([args, kwargs]), default=str).encode()).hexdigest()[:16]
             if _replayed < len(_journal):
                 _replayed += 1
                 entry = _journal[_replayed - 1]
                 if entry.get("tool") != name or entry.get("h") != digest:
                     _diverged("call " + str(_replayed) + " is " + name + " with other arguments than the first run's " + str(entry.get("tool")))
+                if _replayed == len(_journal):
+                    os.write(_log, b'{"op":"replayed"}\\n')
                 return _result(entry)
             id = _claim()
             line = json.dumps({"op": "call", "id": id, "tool": name, "args": args, "kwargs": kwargs, "h": digest}) + "\\n"
@@ -170,12 +163,15 @@ const diverged = (message) => {
   process.exit(76);
 };
 
-process.on("exit", (code) => {
-  if (code === 0 && replayed < journal.length) {
-    fs.writeSync(2, "inngest: replay diverged: the script made " + replayed + " calls, the first run made " + journal.length + "\\n");
-    process.exitCode = 76;
+const canon = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(canon);
   }
-});
+  if (value && typeof value === "object") {
+    return { o: Object.keys(value).sort().map((key) => [key, canon(value[key])]) };
+  }
+  return value;
+};
 
 const claim = () => {
   for (;;) {
@@ -198,11 +194,14 @@ const result = (reply) => {
 };
 
 const call = async (name, args) => {
-  const digest = crypto.createHash("sha256").update(JSON.stringify(args)).digest("hex").slice(0, 16);
+  const digest = crypto.createHash("sha256").update(JSON.stringify(canon(JSON.parse(JSON.stringify(args))))).digest("hex").slice(0, 16);
   if (replayed < journal.length) {
     const entry = journal[replayed++];
     if (entry.tool !== name || entry.h !== digest) {
       diverged("call " + replayed + " is " + name + " with other arguments than the first run's " + entry.tool);
+    }
+    if (replayed === journal.length) {
+      fs.writeSync(log, '{"op":"replayed"}\\n');
     }
     return result(entry);
   }

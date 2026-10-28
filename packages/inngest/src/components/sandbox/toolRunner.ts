@@ -140,6 +140,11 @@ interface Round {
    * Whether a stub wrote its yield line in these lines.
    */
   yielded?: boolean;
+
+  /**
+   * Whether a replaying stub wrote that it used the whole journal.
+   */
+  replayed?: boolean;
 }
 
 /**
@@ -302,6 +307,7 @@ export const runCommandWithTools = async (
     let result: SandboxOperationResultV1 | undefined;
     let exitCode: number | undefined;
     let yielded = false;
+    let replayed = false;
 
     for (const line of log) {
       const event = parseToolEvent(line);
@@ -309,6 +315,8 @@ export const runCommandWithTools = async (
         requests.push({ request: event, line });
       } else if (event?.op === "yielded") {
         yielded = true;
+      } else if (event?.op === "replayed") {
+        replayed = true;
       } else if (event?.op === "exit") {
         exitCode = event.code;
         result = execOperationResult({
@@ -326,6 +334,7 @@ export const runCommandWithTools = async (
       result,
       exitCode,
       yielded,
+      replayed,
     };
   };
 
@@ -334,7 +343,7 @@ export const runCommandWithTools = async (
       await sandbox.commands.run([
         "/bin/sh",
         "-c",
-        'tree() { echo $1; for c in $(pgrep -P $1); do tree $c; done; }; kill -9 $(tree "$(cat "$1/pid")")',
+        'tree() { echo $1; for c in $(pgrep -P $1); do tree $c; done; }; kill -9 $(tree "$(cat "$1/pid")"); rm -f "$1.journal"',
         "sh",
         dir,
       ]);
@@ -346,6 +355,72 @@ export const runCommandWithTools = async (
   };
 
   let segment = 0;
+
+  /**
+   * The result of a replay that made fewer calls than the run it replays: exit
+   * 76, with the output the command had (already within the output limit).
+   */
+  const diverged = (
+    result: SandboxOperationResultV1,
+  ): SandboxOperationResultV1 => {
+    const wire = (
+      result as {
+        result: {
+          stdout: string;
+          stderr: string;
+          encoding: "utf8" | "base64";
+          output?: {
+            truncated?: boolean;
+            originalBytes: { stdout: number; stderr: number };
+          };
+        };
+      }
+    ).result;
+    const bytes = (text: string) => {
+      return wire.encoding === "utf8"
+        ? new TextEncoder().encode(text)
+        : decodeBase64(text, "output");
+    };
+    const note = new TextEncoder().encode(
+      "inngest: replay diverged: the script made fewer calls than the first run\n",
+    );
+    const stderr = bytes(wire.stderr);
+    const fitted = execOperationResult({
+      stdout: bytes(wire.stdout),
+      stderr: new Uint8Array([...stderr, ...note]),
+      exitCode: 76,
+    }) as { result: { output?: object } };
+
+    // The output was already cut once: keep saying how much there was
+    return wire.output?.truncated
+      ? ({
+          ...fitted,
+          result: {
+            ...fitted.result,
+            output: {
+              ...fitted.result.output,
+              truncated: true,
+              originalBytes: {
+                stdout: wire.output.originalBytes.stdout,
+                stderr: wire.output.originalBytes.stderr + note.length,
+              },
+            },
+          },
+        } as unknown as SandboxOperationResultV1)
+      : (fitted as unknown as SandboxOperationResultV1);
+  };
+
+  /**
+   * Best effort: the stub deletes the journal once it has read it, so this is
+   * for a process that ended before it did.
+   */
+  const removeJournal = (dir: string): Promise<void> => {
+    return host.run(sdkStep(`${id}:journal`, "Remove files"), async () => {
+      try {
+        await sandbox.commands.run(["rm", "-f", `${dir}.journal`]);
+      } catch {}
+    });
+  };
 
   const answer = async ({
     request: call,
@@ -470,13 +545,17 @@ export const runCommandWithTools = async (
   let suspended: { request: ToolRequest; line: string } | undefined;
   // Whether the stub confirmed it exited to suspend, not on its own
   let yielded = false;
+  // Whether this segment's stub said it used the whole journal
+  let replayed = false;
 
   for (;;) {
     yielded ||= state.yielded === true;
+    replayed ||= state.replayed === true;
 
     if (state.result && suspended && yielded && state.exitCode === 75) {
       journal.push(journaled(await answer(suspended), suspended.request));
       yielded = false;
+      replayed = false;
       segment += 1;
       suspended = undefined;
       seen = new Set();
@@ -494,7 +573,17 @@ export const runCommandWithTools = async (
     }
 
     if (state.result) {
-      return state.result;
+      if (segment === 0) {
+        return state.result;
+      }
+
+      await removeJournal(dir);
+
+      // A replay that ends before using the whole journal made fewer calls
+      // than the run it replays
+      return state.exitCode === 0 && !replayed
+        ? diverged(state.result)
+        : state.result;
     }
 
     if (state.now - startedAt > timeoutMs) {
