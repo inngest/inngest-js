@@ -55,8 +55,12 @@ export interface Agents {
   /**
    * Every function to pass to `serve()`: each agent's function and its
    * cleanup. Call it after the agents are defined. The function that bakes
-   * skills snapshots is one per client: the instance that made the first agent
-   * with baked skills lists it, so serve that instance's functions.
+   * skills snapshots is one per client, however many `createAgents()` calls it
+   * has: an instance with an agent that may bake lists it, so serving
+   * any one of them is enough. Spreading the lists of several such instances
+   * together repeats it (drop repeats by `id`). One client
+   * instance per app ID: two clients with the same ID each have a bake
+   * function with the same function ID.
    *
    * ```ts
    * export const { GET, POST, PUT } = serve({
@@ -123,8 +127,8 @@ const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
  */
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
-  let bake: InngestFunction.Any | undefined;
   const allowance = bakeAllowanceOf(client);
+  let bakes = false;
 
   return {
     agent: (config: AgentFunctionConfig<unknown>, body: AgentBody) => {
@@ -139,9 +143,15 @@ export const createAgents = (client: Inngest.Any): Agents => {
       // Baked skills are built by a function of its own, served once however
       // many agents there are. A sandboxes config that is a function can't be
       // read ahead, so it counts as possibly having skills.
-      if (mayBakeSkills(config.sandboxes) && !bakeFunctions.has(client)) {
-        bake = createSkillsBakeFunction(client, allowance);
-        bakeFunctions.set(client, bake);
+      if (mayBakeSkills(config.sandboxes)) {
+        bakes = true;
+
+        if (!bakeFunctions.has(client)) {
+          bakeFunctions.set(
+            client,
+            createSkillsBakeFunction(client, allowance),
+          );
+        }
       }
 
       allowBakes(allowance, created.ref, config.sandboxes);
@@ -152,8 +162,9 @@ export const createAgents = (client: Inngest.Any): Agents => {
       const functions = made.flatMap((created) => {
         return [created.fn, created.cleanup];
       });
+      const shared = bakeFunctions.get(client);
 
-      return bake ? [...functions, bake] : functions;
+      return bakes && shared ? [...functions, shared] : functions;
     },
   };
 };

@@ -370,8 +370,14 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     const deletes = server.commands.filter((c) => {
       return c[0] === "DEL";
     });
-    expect(deletes.length).toBeGreaterThan(2);
-    expect(Math.max(...deletes.map((c) => c.length))).toBeLessThanOrEqual(501);
+    // 1200 keys in batches of 500, then the registry and the rest.
+    const sizes = deletes.map((c) => {
+      return c.length - 1;
+    });
+
+    expect(sizes.slice(0, 2)).toEqual([500, 500]);
+    expect(Math.max(...sizes)).toBe(500);
+    expect(sizes.reduce((a, b) => a + b, 0)).toBe(1202);
     await server.close();
   });
 

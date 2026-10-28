@@ -10,6 +10,7 @@ import { createAgents } from "./agents.ts";
 import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent } from "./loop.ts";
+import { skills } from "./skills.ts";
 import { run } from "./test-helpers.ts";
 
 const say = (text: string): AgentModelResponse => {
@@ -278,6 +279,36 @@ describe("createAgents", () => {
     createAgents(client).agent({ id: "a", kv }, async () => {});
 
     expect(createAgents(client).functions()).toEqual([]);
+  });
+
+  test("every instance with an agent that bakes skills lists the client's one bake function", () => {
+    const client = makeClient();
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const baking = {
+      id: "b",
+      kv,
+      sandboxes: {
+        work: sandbox({
+          id: "w",
+          skills: [skills.git("a/b")],
+        }),
+      },
+    };
+    const first = createAgents(client);
+    const second = createAgents(client);
+
+    first.agent(baking, async () => {});
+    second.agent({ ...baking, id: "c" }, async () => {});
+    createAgents(client).agent({ id: "plain", kv }, async () => {});
+
+    const bakeOf = (agents: ReturnType<typeof createAgents>) => {
+      return agents.functions().filter((fn) => {
+        return fn.id(client.id).endsWith("agent-skills-bake");
+      });
+    };
+
+    expect(bakeOf(first)).toHaveLength(1);
+    expect(bakeOf(second)).toEqual(bakeOf(first));
   });
 });
 

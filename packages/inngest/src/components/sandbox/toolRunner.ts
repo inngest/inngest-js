@@ -577,13 +577,15 @@ export const runCommandWithTools = async (
         return state.result;
       }
 
-      await removeJournal(dir);
-
-      // A replay that ends before using the whole journal made fewer calls
-      // than the run it replays
-      return state.exitCode === 0 && !replayed
-        ? diverged(state.result)
-        : state.result;
+      try {
+        // A replay that exits 0 before using the whole journal made fewer
+        // calls than the run it replays
+        return state.exitCode === 0 && !replayed
+          ? diverged(state.result)
+          : state.result;
+      } finally {
+        await removeJournal(dir);
+      }
     }
 
     if (state.now - startedAt > timeoutMs) {

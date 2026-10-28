@@ -137,4 +137,79 @@ describe("RESP", () => {
     client.close();
     server.close();
   });
+
+  test("a command refused when queued rejects once and leaves the connection aligned", async () => {
+    const server = net.createServer((socket) => {
+      let buffer = Buffer.alloc(0);
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        for (;;) {
+          const parsed = parseReply(buffer);
+          if (!parsed) {
+            return;
+          }
+          buffer = buffer.subarray(parsed.end);
+          const name = (parsed.reply as string[])[0];
+          if (name === "MULTI") {
+            socket.write("+OK\r\n");
+          } else if (name === "NOPE") {
+            socket.write("-ERR unknown command 'NOPE'\r\n");
+          } else if (name === "EXEC") {
+            socket.write("-EXECABORT Transaction discarded\r\n");
+          } else if (name === "PING") {
+            socket.write("+PONG\r\n");
+          } else {
+            socket.write("+QUEUED\r\n");
+          }
+        }
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+    const client = await connectRedis(`redis://127.0.0.1:${port}`);
+
+    await expect(
+      client.transaction([["DEL", "a"], ["NOPE"], ["DEL", "b"]]),
+    ).rejects.toThrow(/unknown command/);
+    expect(await client.command("PING")).toBe("PONG");
+
+    client.close();
+    server.close();
+  });
+
+  test("a socket that closes in the middle of a block rejects it", async () => {
+    const server = net.createServer((socket) => {
+      let buffer = Buffer.alloc(0);
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        for (;;) {
+          const parsed = parseReply(buffer);
+          if (!parsed) {
+            return;
+          }
+          buffer = buffer.subarray(parsed.end);
+          const name = (parsed.reply as string[])[0];
+          if (name === "EXEC") {
+            socket.destroy();
+          } else if (name === "MULTI") {
+            socket.write("+OK\r\n");
+          } else {
+            socket.write("+QUEUED\r\n");
+          }
+        }
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+    const client = await connectRedis(`redis://127.0.0.1:${port}`);
+
+    await expect(client.transaction([["DEL", "a"]])).rejects.toThrow();
+
+    client.close();
+    server.close();
+  });
 });

@@ -55,7 +55,9 @@ export const client = new Inngest({
     : {}),
 });
 
-const functions = scenarios.flatMap((s) => {
+// Scenarios each make agents on the one client, and each instance lists the
+// client's shared bake function, so repeats are dropped.
+const listed = scenarios.flatMap((s) => {
   return s.functions({
     client,
     fakes: { url: fakesUrl },
@@ -65,6 +67,7 @@ const functions = scenarios.flatMap((s) => {
     },
   });
 });
+const functions = [...new Set(listed)];
 
 createServer(serve({ client, functions })).listen(
   Number(process.env.PORT),
