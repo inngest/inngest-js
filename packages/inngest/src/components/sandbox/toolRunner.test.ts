@@ -24,6 +24,23 @@ import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
 import { type Sandbox, SandboxValidationError } from "./types.ts";
 
+vi.mock("./toolBinary.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./toolBinary.ts")>();
+
+  return {
+    ...actual,
+    bundledToolBinary: async () => {
+      return {
+        path: "/inngest/tools/bin/inngest-tool-test",
+        sha256: "test",
+        load: async () => {
+          return new Uint8Array();
+        },
+      };
+    },
+  };
+});
+
 const sandboxRef = {
   kind: "inngest/sandbox" as const,
   version: 1 as const,
