@@ -6,7 +6,7 @@
  * runs, and asserts on runs, steps, Redis keys and what the fake channels
  * received. Every assertion prints a PASS or FAIL line.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
@@ -127,11 +127,6 @@ export interface Scenario {
    */
   sandboxLocalDirs?: string[];
 
-  /**
-   * Snapshots named under `prefix` stop at `max` with the platform's
-   * snapshot limit error.
-   */
-  sandboxSnapshotLimit?: { prefix: string; max: number };
   functions: (env: AppEnv) => InngestFunction.Any[];
   run: (ctx: Ctx) => Promise<void>;
 }
@@ -304,10 +299,84 @@ export const createCtx = (
     });
   };
 
+  // What each event was sent as, to send it once more if it started no run.
+  // Only events that trigger a function are resent: the copy carries the same
+  // `id`, and the Dev Server starts one run per `id` (a repeat is stored as
+  // another event but starts no second run; checked on Dev Server 1.49). A
+  // message for a running thread would be delivered twice, so those are never
+  // resent. Each copy is a separate stored event, so the runs of every copy
+  // are read.
+  const triggersARun = async (name: string) => {
+    const res = await fetch(`${devUrl}/dev`);
+    const info = (await res.json()) as {
+      functions?: { triggers?: { event?: string }[] }[];
+    };
+
+    return (info.functions ?? []).some((fn) => {
+      return (fn.triggers ?? []).some((trigger) => {
+        return trigger.event === name;
+      });
+    });
+  };
+  const sent = new Map<
+    string,
+    {
+      event: { id: string; name: string; data: Record<string, unknown> };
+      copies: string[];
+    }
+  >();
+
   const finished: Ctx["finished"] = async (eventId) => {
+    const again = sent.get(eventId);
+    const runsOfCopies = async () => {
+      const found = await Promise.all(
+        [eventId, ...(again?.copies ?? [])].map((copy) => {
+          // A lookup that fails is no runs yet, so the resend can still happen.
+          return runsOf(copy).catch((error) => {
+            console.log(
+              `note ${id}: looking up the runs of event ${copy} failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+
+            return [];
+          });
+        }),
+      );
+      const byId = new Map(
+        found.flat().map((run) => {
+          return [run.id, run] as const;
+        }),
+      );
+
+      return [...byId.values()];
+    };
+    const began = await until(
+      () => {
+        return runsOfCopies();
+      },
+      (found) => {
+        return found.length > 0;
+      },
+      15_000,
+    );
+    // The app is synced before a scenario starts, so this is a backstop: an
+    // event that started no run within the window is sent once more.
+    if (began.length === 0 && again) {
+      if (!(await triggersARun(again.event.name))) {
+        throw new Error(
+          `Event ${again.event.name} started no run and triggers no function, so it is not resent (a thread message would be delivered twice)`,
+        );
+      }
+
+      console.log(
+        `note ${id}: event ${eventId} (${again.event.name}) started no run in 15s; sending it once more with the same id`,
+      );
+
+      again.copies.push((await client.send(again.event)).ids[0] as string);
+    }
+
     const runs = await until(
       () => {
-        return runsOf(eventId);
+        return runsOfCopies();
       },
       (found) => {
         return (
@@ -345,9 +414,12 @@ export const createCtx = (
       return eventName(id, name);
     },
     send: async (name, data = {}) => {
-      const sent = await client.send({ name: eventName(id, name), data });
+      const event = { id: randomUUID(), name: eventName(id, name), data };
+      const eventId = (await client.send(event)).ids[0] as string;
 
-      return sent.ids[0] as string;
+      sent.set(eventId, { event, copies: [] });
+
+      return eventId;
     },
     finished,
     runsOf,

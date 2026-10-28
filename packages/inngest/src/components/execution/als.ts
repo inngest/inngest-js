@@ -96,6 +96,12 @@ export interface AsyncContext {
      * nested step, which is not allowed.
      */
     insideExperimentSelect?: boolean;
+
+    /**
+     * If present, the thread and session of an agent run whose trigger event
+     * does not carry them. Set by the agent function; read by the agent KV.
+     */
+    agent?: { thread: string; session: string };
   };
 }
 

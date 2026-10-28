@@ -38,6 +38,8 @@ import {
   openSubscription,
   type SubscribeOptions,
   type Subscription,
+  streamKey,
+  streamsOf,
 } from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
@@ -584,13 +586,26 @@ export const createStepTools = <
     ): Promise<Subscription<TData>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
+      const streams = streamsOf(opts);
+
       return openSubscription<TData>(
-        function op(stepId, mode, seq) {
-          return tools["~subscribeOp"](stepId, {
-            event: opts.event,
-            if: opts.if,
-            subscribe: { key: id, mode, ...(seq ? { seq } : {}) },
-          });
+        function op(stepId, mode, seq, stream) {
+          // Waits of a multi-event subscription race, so whichever message
+          // arrives first is handed out and the others keep their wait.
+          const race = mode === "next" && streams.length > 1;
+
+          return tools["~subscribeOp"](
+            race ? { id: stepId, parallelMode: "race" } : stepId,
+            {
+              event: (streams[stream] as { event: string }).event,
+              if: streams[stream]?.if,
+              subscribe: {
+                key: streamKey(id, streams.length, stream),
+                mode,
+                ...(seq ? { seq } : {}),
+              },
+            },
+          );
         },
         id,
         opts,
