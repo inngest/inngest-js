@@ -88,6 +88,9 @@ describe("kv", () => {
     expect(kvHash("thread", { env: "e", app: "a", thread: "t1" })).toBe(
       "inngest:kv:thread:e:a:t1",
     );
+    expect(kvHash("thread", { env: "e", app: "a", thread: "t:1|{x}" })).toBe(
+      "inngest:kv:thread:e:a:t%3A1%7C%7Bx%7D",
+    );
     expect(kvHash("function", { env: "e", app: "a", function: "f" })).toBe(
       "inngest:kv:function:e:a:f",
     );
@@ -167,6 +170,45 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
 
         await env.set("plain", 1);
         expect(await env.setIfAbsent("plain", 2)).toBe(false);
+        await done();
+      });
+
+      test("a retried setIfAbsent holds its own claim, others do not", async () => {
+        const { adapter, done } = await make();
+        const env = createKv({ adapter }).with({ id: "app", env: null }).env;
+
+        expect(await env.setIfAbsent("a", "run-1", { ttl: 10 })).toBe(true);
+        expect(await env.setIfAbsent("a", "run-1", { ttl: 10 })).toBe(true);
+        expect(await env.setIfAbsent("a", "run-2", { ttl: 10 })).toBe(false);
+        expect(await env.setIfAbsent("b", "run-1")).toBe(true);
+        expect(await env.setIfAbsent("b", "run-1")).toBe(true);
+        expect(await env.setIfAbsent("b", "run-2")).toBe(false);
+        await done();
+      });
+
+      test("ids with separators never share keys", async () => {
+        const { adapter, done } = await make();
+        const kv = createKv({ adapter }).with({ id: "app", env: null });
+        const names = ["a", "a|b", "a:b", "a{b}", "a%3Ab"];
+
+        for (const name of names) {
+          const scope = kv.scope("thread", name);
+          await scope.set("x", name, { ttl: 100 });
+          await scope.index("i").add(name, 1);
+        }
+        for (const name of names) {
+          const scope = kv.scope("thread", name);
+          expect(await scope.all()).toEqual({ x: name });
+          expect(await scope.index("i").range()).toEqual([
+            { member: name, score: 1 },
+          ]);
+        }
+
+        await kv.scope("thread", "a").clear();
+
+        for (const name of names.slice(1)) {
+          expect(await kv.scope("thread", name).all()).toEqual({ x: name });
+        }
         await done();
       });
 
@@ -258,33 +300,57 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     };
   });
 
-  test("the redis registry forgets expired keys on write", async () => {
+  test("the redis registry stays small and in one slot", async () => {
+    const server = await startFakeRedis();
+    const env = createKv({ adapter: redisKvAdapter(server.url) }).with({
+      id: "app",
+      env: null,
+    }).env;
+    const registry = () => {
+      const key = server.keys().find((name) => {
+        return name.endsWith("|keys");
+      });
+
+      return key === undefined ? [] : server.members(key);
+    };
+
+    await env.set("a", 1, { ttl: 10 });
+    await env.setIfAbsent("c", "x", { ttl: 10 });
+    await env.setIfAbsent("c", "y", { ttl: 10 });
+    await env.setIfAbsent("plain", "x");
+    await env.index("i").add("m", 1);
+    expect(registry()).toEqual(["t:a", "t:c", "z:i"]);
+
+    await env.delete("a");
+    await env.index("i").remove("m");
+    expect(registry()).toEqual(["t:c"]);
+
+    // Entries expire by the server's clock, and writes prune them.
+    server.advance(11_000);
+    await env.set("b", 2, { ttl: 10 });
+    expect(registry()).toEqual(["t:b"]);
+    expect(await env.all()).toEqual({ plain: "x", b: 2 });
+
+    // Every key shares the hash tag, so a cluster keeps them in one slot.
+    for (const key of server.keys()) {
+      expect(key).toMatch(/^\{inngest:kv:env:default\}/);
+    }
+    await server.close();
+  });
+
+  test("clear removes a large scope in batches", async () => {
     const server = await startFakeRedis();
     const env = createKv({ adapter: redisKvAdapter(server.url) }).with({
       id: "app",
       env: null,
     }).env;
 
-    await env.set("a", 1, { ttl: 10 });
-    expect(await env.all()).toEqual({ a: 1 });
-
-    // Server time moves; the client clock must pass the slack too.
-    server.advance(11_000);
-    const real = Date.now;
-    Date.now = () => {
-      return real() + 200_000;
-    };
-    try {
-      await env.set("b", 2, { ttl: 10 });
-    } finally {
-      Date.now = real;
+    for (let i = 0; i < 1200; i++) {
+      await env.set(`k${i}`, i, { ttl: 100 });
     }
+    await env.clear();
 
-    const registry = server.keys().find((key) => {
-      return key.endsWith("|keys");
-    }) as string;
-    expect(server.members(registry)).toEqual(["t:b"]);
-    expect(await env.all()).toEqual({ b: 2 });
+    expect(server.keys()).toEqual([]);
     await server.close();
   });
 

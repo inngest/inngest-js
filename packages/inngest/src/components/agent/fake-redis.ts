@@ -132,6 +132,34 @@ export async function startFakeRedis() {
 
         return `:${count}\r\n`;
       }
+      case "TIME": {
+        return array([
+          String(Math.floor(state.now / 1000)),
+          String((state.now % 1000) * 1000),
+        ]);
+      }
+      case "HSETNX": {
+        let h = live(a[0] as string);
+        if (!h) {
+          h = { type: "hash", value: new Map() };
+          data.set(a[0] as string, h);
+        }
+        const hash = (h as { value: Map<string, string> }).value;
+        if (hash.has(a[1] as string)) {
+          return ":0\r\n";
+        }
+        hash.set(a[1] as string, a[2] as string);
+
+        return ":1\r\n";
+      }
+      case "EXISTS": {
+        return `:${a.filter((key) => live(key)).length}\r\n`;
+      }
+      case "ZCARD": {
+        const z = live(a[0] as string);
+
+        return `:${z?.type === "zset" ? z.value.size : 0}\r\n`;
+      }
       case "ZREMRANGEBYSCORE": {
         const z = live(a[0] as string);
         let count = 0;
