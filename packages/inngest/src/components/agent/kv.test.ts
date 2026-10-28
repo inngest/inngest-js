@@ -177,6 +177,9 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
 
         await expect(index.add("x", Number.NaN)).rejects.toThrow(/finite/);
         await expect(index.range({ limit: -1 })).rejects.toThrow(/limit/);
+        await expect(
+          index.range({ order: "descending" as "desc" }),
+        ).rejects.toThrow(/order/);
         await index.add("a", 10);
         await index.add("b", 30);
         await index.add("c", 20);

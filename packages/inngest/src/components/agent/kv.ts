@@ -633,6 +633,13 @@ function checkedRange(options: KvIndexRange) {
   if (limit !== undefined && !(Number.isInteger(limit) && limit >= 0)) {
     throw new Error("kv index limit must be a whole number, zero or more.");
   }
+  if (
+    options.order !== undefined &&
+    options.order !== "asc" &&
+    options.order !== "desc"
+  ) {
+    throw new Error('kv index order must be "asc" or "desc".');
+  }
   if (Number.isNaN(min) || Number.isNaN(max)) {
     throw new Error("kv index min and max must be numbers.");
   }
