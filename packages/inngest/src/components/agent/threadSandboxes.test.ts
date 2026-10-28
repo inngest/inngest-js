@@ -8,6 +8,7 @@ import { StepError } from "../StepError.ts";
 import type { DurableSandbox, DurableSandboxTools } from "../sandbox/types.ts";
 import { openSandboxes, sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
+import { skills } from "./skills.ts";
 import {
   cleanupThreadSandbox,
   threadSandboxOwner,
@@ -407,7 +408,7 @@ describe("lazy sandboxes of a thread", () => {
     await one.opened.work?.close();
 
     expect(w.rows).toHaveLength(1);
-    expect(first.defer).toHaveBeenCalledTimes(1);
+    expect(first.defer).toHaveBeenCalledTimes(2);
 
     const unused = open(w, setup(w, "01B"));
 
@@ -574,5 +575,39 @@ describe("lazy sandboxes of a thread", () => {
       sandboxId: "sb-x",
       save: true,
     });
+  });
+
+  test("a failed skills fetch leaves a cleanup armed that cannot save", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const broken = w.durable("sb-x");
+
+    (broken.commands.run as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("fetch failed"),
+    );
+
+    const opened = openSandboxes(
+      {
+        work: sandbox({
+          id: "skilled",
+          skills: [skills.git("a/b", { freshness: "boot", into: "/skills/a" })],
+        }),
+      },
+      { create: vi.fn(async () => broken) } as unknown as DurableSandboxTools,
+      {
+        event: {},
+        client: w.client,
+        run: (_id: string, fn: () => Promise<unknown>) => {
+          return fn();
+        },
+        sendEvent: async () => {},
+      } as never,
+      s.owner(),
+    );
+
+    await expect(opened.work?.get()).rejects.toThrow("fetch failed");
+    expect(s.defer.mock.calls.map((call) => call[1])).toEqual([
+      { name: "work", sandboxId: "sb-x", save: false },
+    ]);
   });
 });

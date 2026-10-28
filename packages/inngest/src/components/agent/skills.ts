@@ -324,6 +324,13 @@ export interface CreateWithSkillsOptions {
    * for; `"boot"` sources are fetched again.
    */
   restoreFrom?: string;
+
+  /**
+   * Called as soon as the sandbox exists, before its skills are fetched, so
+   * the caller can arrange its cleanup: a fetch that fails or a run that ends
+   * during it would otherwise leave the sandbox running.
+   */
+  onCreated?: (sandbox: DurableSandbox) => void;
 }
 
 /**
@@ -398,6 +405,8 @@ export const createWithSkills = async (
       snapshotId,
     } as CreateOptions);
 
+    options.onCreated?.(sandbox);
+
     await fetchSources(
       sandbox,
       stepId,
@@ -421,6 +430,8 @@ export const createWithSkills = async (
   }
 
   const sandbox = await options.sandboxes.create(name, fresh);
+
+  options.onCreated?.(sandbox);
 
   await fetchSources(sandbox, stepId, sources, (source) => {
     return shaOf.get(source) ?? source.ref;

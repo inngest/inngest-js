@@ -436,9 +436,15 @@ const lazySandbox = (
   // failed before anything asked for the sandbox is raised by `close()`.
   let observed = false;
 
+  // The cleanup that destroys the sandbox if the run ends without closing it.
+  // It may not save it yet: the sandbox is only worth keeping once its skills
+  // and setup have finished.
+  const arm = (sandbox: DurableSandbox) => {
+    guard = owner?.guard(name, sandbox, false);
+  };
+
   // The bare sandbox: restored from the thread's newest snapshot when it has
-  // one, else fresh. Once it exists, the run registers the cleanup that saves
-  // and destroys it if the run ends without closing it.
+  // one, else fresh. Its cleanup is armed as soon as it exists.
   const acquire = async (
     options: SandboxCreateFreshOptions,
   ): Promise<DurableSandbox> => {
@@ -454,6 +460,7 @@ const lazySandbox = (
           sandboxes,
           runtime: runtime as SandboxRuntime,
           restoreFrom,
+          onCreated: arm,
         })
       : restoreFrom
         ? await sandboxes.create(name, {
@@ -462,8 +469,9 @@ const lazySandbox = (
           } as SandboxCreateOptions)
         : await sandboxes.create(name, options);
 
-    // With a setup, the sandbox may only be saved once the setup has finished.
-    guard = owner?.guard(name, sandbox, !definition.setup);
+    if (!definition.skills?.length) {
+      arm(sandbox);
+    }
 
     return sandbox;
   };
@@ -497,22 +505,23 @@ const lazySandbox = (
     // Setup runs after the sandbox exists, so after skills are in place.
     // `raw` stays the bare sandbox, so close() destroys it even when setup
     // failed.
-    created = setup
-      ? raw.then(async (sandbox) => {
-          await setup(
-            setupContext(name, sandbox, runtime as SandboxRuntime, restored),
-          );
+    created = raw.then(async (sandbox) => {
+      if (setup) {
+        await setup(
+          setupContext(name, sandbox, runtime as SandboxRuntime, restored),
+        );
+      }
 
-          if (owner && guard) {
-            const unsaved = guard;
+      // Skills and setup are done: from here the run's end may save it.
+      if (owner && guard) {
+        const unsaved = guard;
 
-            guard = owner.guard(name, sandbox, true);
-            unsaved.abort();
-          }
+        guard = owner.guard(name, sandbox, true);
+        unsaved.abort();
+      }
 
-          return sandbox;
-        })
-      : raw;
+      return sandbox;
+    });
 
     return created;
   };
