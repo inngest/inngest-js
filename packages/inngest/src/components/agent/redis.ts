@@ -214,7 +214,21 @@ export async function connectRedis(url: string): Promise<RedisClient> {
         all.forEach((_, i) => {
           const last = i === all.length - 1;
           pending.push({
-            resolve: last ? resolve : () => {},
+            resolve: last
+              ? (reply) => {
+                  // A command that failed when run comes back inside the array.
+                  const failedReply = Array.isArray(reply)
+                    ? reply.find((item) => {
+                        return item instanceof Error;
+                      })
+                    : undefined;
+                  if (failedReply) {
+                    reject(failedReply as Error);
+                  } else {
+                    resolve(reply);
+                  }
+                }
+              : () => {},
             reject: (error) => {
               if (!failed) {
                 failed = true;
