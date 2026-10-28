@@ -97,13 +97,14 @@ const gitSource = (
   repo: string,
   options: SkillsGitOptions = {},
 ): SkillsSource => {
-  if (!repoPattern.test(repo)) {
+  if (!repoPattern.test(repo) || repo.split("/").includes("..")) {
     throw new SandboxValidationError(
       `Invalid skills repository "${repo}": use "owner/name"`,
     );
   }
 
   const freshness = options.freshness ?? "bake";
+
   if (freshness !== "bake" && freshness !== "boot") {
     throw new SandboxValidationError(
       `Skills "${repo}" has freshness "${String(freshness)}": use "bake" or "boot"`,
@@ -111,14 +112,20 @@ const gitSource = (
   }
 
   const ref = options.ref ?? "HEAD";
-  if (!ref || /\s/.test(ref)) {
+
+  if (!ref || /\s/.test(ref) || ref.startsWith("-")) {
     throw new SandboxValidationError(
       `Skills "${repo}" has an invalid ref "${ref}"`,
     );
   }
 
   const into = options.into ?? `/skills/${repo.split("/")[1]}`;
-  if (!into.startsWith("/") || into === "/") {
+
+  if (
+    !into.startsWith("/") ||
+    into.split("/").some((part) => part === ".." || part === ".") ||
+    into.replace(/\/+/g, "/") === "/"
+  ) {
     throw new SandboxValidationError(
       `Skills "${repo}" must go into an absolute path other than "/", not "${into}"`,
     );
@@ -245,7 +252,7 @@ export interface SkillsRuntime {
    */
   sendEvent: (
     id: string,
-    event: { id: string; name: string; data: SkillsBakeRequest },
+    event: { name: string; data: SkillsBakeRequest },
   ) => Promise<unknown>;
 
   /**
@@ -329,10 +336,7 @@ export const createWithSkills = async (
         options.image,
         fresh,
       );
-      const cache = snapshotCache(runtime.client, {
-        memo: runtime.run,
-        evict: { scopes: [`${skillsScope}/*`] },
-      });
+      const cache = snapshotCache(runtime.client, { memo: runtime.run });
 
       found = await cache.find(entry, { stepId });
       request = {
@@ -380,9 +384,8 @@ export const createWithSkills = async (
   }
 
   if (request) {
-    // One event per snapshot name, however many sandboxes miss it.
+    // Builds of one snapshot name run one at a time (the function's singleton).
     await runtime.sendEvent(`${stepId}:bake`, {
-      id: `skills-bake:${request.name}`,
       name: skillsBakeEvent,
       data: request,
     });

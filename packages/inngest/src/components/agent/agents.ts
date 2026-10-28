@@ -14,6 +14,7 @@ import {
   type AgentFunctionConfig,
   createAgentFunction,
 } from "./agentFunction.ts";
+import type { SandboxDefinition } from "./defs.ts";
 import { createSkillsBakeFunction } from "./skills.ts";
 
 export interface Agents {
@@ -39,6 +40,27 @@ export interface Agents {
   functions(): InngestFunction.Any[];
 }
 
+const mayBakeSkills = (
+  sandboxes: AgentFunctionConfig["sandboxes"],
+): boolean => {
+  if (!sandboxes) {
+    return false;
+  }
+
+  if (typeof sandboxes === "function") {
+    return true;
+  }
+
+  return Object.values(sandboxes).some((binding) => {
+    const definition =
+      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition);
+
+    return (definition.skills ?? []).some((source) => {
+      return source.freshness === "bake";
+    });
+  });
+};
+
 /**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
@@ -62,9 +84,10 @@ export const createAgents = (client: Inngest.Any): Agents => {
 
       made.push(created);
 
-      // Sandboxes can have baked skills, which a function of its own builds,
-      // served once however many agents there are.
-      if (config.sandboxes) {
+      // Baked skills are built by a function of its own, served once however
+      // many agents there are. A sandboxes config that is a function can't be
+      // read ahead, so it counts as possibly having skills.
+      if (mayBakeSkills(config.sandboxes)) {
         bake ??= createSkillsBakeFunction(client);
       }
 

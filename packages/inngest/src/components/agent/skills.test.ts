@@ -22,7 +22,7 @@ const sha2 = "b".repeat(40);
 const setup = (options: { sha?: string | null; snapshots?: string[] } = {}) => {
   const commands: string[] = [];
   const created: unknown[] = [];
-  const events: { id: string; name: string; data: SkillsBakeRequest }[] = [];
+  const events: { name: string; data: SkillsBakeRequest }[] = [];
   const snapshots = (options.snapshots ?? []).map((name, index) => {
     return {
       id: `snap-${index}`,
@@ -141,7 +141,6 @@ describe("createWithSkills()", () => {
     expect(commands[0]).toContain(sha1);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      id: `skills-bake:skills/a/b/${events[0]?.data.entry.key.split("/")[2]}/${sha1}`,
       name: skillsBakeEvent,
       data: { entry: { scope: "skills", generation: sha1 } },
     });
