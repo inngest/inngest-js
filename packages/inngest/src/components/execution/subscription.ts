@@ -9,11 +9,11 @@
  */
 import hashjs from "hash.js";
 
+const { sha1 } = hashjs;
+
 /**
  * Starts the ID of every message step.
  */
-const { sha1 } = hashjs;
-
 export const subscriptionMessagePrefix = "inngest-sub:";
 
 /**

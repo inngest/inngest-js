@@ -2239,10 +2239,17 @@ class InngestExecutionEngine
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       // Messages of a subscription are read from the state, never requested as
-      // steps, so they are not waited for.
+      // steps, so they are not waited for. Nor is the wait that was answered with
+      // one: a replay that finds the message already there does not ask for it.
       remainingStepsToBeSeen: new Set(
         this.options.stepCompletionOrder.filter((id) => {
-          return !id.startsWith(subscriptionMessagePrefix);
+          const data = this.options.stepState[id]?.data;
+
+          return !(
+            id.startsWith(subscriptionMessagePrefix) ||
+            (typeof data === "string" &&
+              data.startsWith(subscriptionMessagePrefix))
+          );
         }),
       ),
       setCheckpoint: (checkpoint: Checkpoint) => {

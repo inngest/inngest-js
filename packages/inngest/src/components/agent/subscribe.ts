@@ -13,7 +13,7 @@
  * function receives with every request. A message that is already there is read
  * without a step. Only a read that has to wait is a step (the executor answers
  * it once the message exists), so a subscription costs one open and one close
- * step, a wait when the function was blocked, and a step for every `poll()`.
+ * step for each event, a wait when the function was blocked, and a step for every `poll()`.
  * Several events are several pauses sharing one subscription, so their messages
  * are one sequence in the order the executor saved them.
  */
