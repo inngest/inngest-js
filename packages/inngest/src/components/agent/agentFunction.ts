@@ -300,6 +300,7 @@ function threadInbox(
     const data = toMessage(message.data);
     const unwrapped: ThreadInboxMessage = {
       seq: message.seq,
+      name: message.name,
       data,
       async reply(answer) {
         if (!data.replyTo) {
@@ -325,7 +326,8 @@ function threadInbox(
     return (
       raws.get(message) ?? {
         seq: message.seq,
-        data: { name: "", data: message.data },
+        name: message.name,
+        data: { name: message.name, data: message.data },
       }
     );
   }
@@ -593,6 +595,7 @@ export function createAgentFunction(
         subscription.putBack([
           {
             seq: 0,
+            name: event.name,
             data: { id: event.id, name: event.name, data: event.data },
           },
         ]);

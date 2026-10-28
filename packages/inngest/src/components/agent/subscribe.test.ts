@@ -95,6 +95,28 @@ describe("step.subscribe", () => {
     ]);
   });
 
+  test("a message carries the name of its event", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const second = await inbox.poll();
+
+        return [first?.name, second?.name];
+      },
+    );
+
+    const { output } = await run(fn, {
+      saved: [
+        { name: "shop/order.created", data: { id: 1 } },
+        { name: "shop/refund.created", data: { id: 2 } },
+      ],
+    });
+
+    expect(output).toEqual(["shop/order.created", "shop/refund.created"]);
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
