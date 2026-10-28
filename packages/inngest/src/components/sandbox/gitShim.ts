@@ -291,6 +291,50 @@ const hostGit = async (
   });
 };
 
+/**
+ * The body of a response, or `undefined` once it passes `maxBytes`, without
+ * holding more than that in memory.
+ */
+const readUpTo = async (
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array | undefined> => {
+  if (!response.body) {
+    const data = new Uint8Array(await response.arrayBuffer());
+
+    return data.byteLength > maxBytes ? undefined : data;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+
+      return undefined;
+    }
+
+    chunks.push(value);
+  }
+
+  const data = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return data;
+};
+
 const hostTar = async (args: string[], input?: Uint8Array) => {
   const { spawn } = await import("node:child_process");
 
@@ -506,7 +550,10 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
 
     try {
       await sendRepo(call, bare, [
-        ...(depth ? ["--depth", depth, `--no-single-branch`] : []),
+        ...(depth ? ["--depth", depth] : []),
+        parsed.values["--single-branch"] === undefined
+          ? "--no-single-branch"
+          : "--single-branch",
         ...(branch ? ["--branch", branch] : []),
       ]);
 
@@ -575,7 +622,10 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
             : []),
           `file://${bare}/repo.git`,
           "+refs/heads/*:refs/remotes/origin/*",
-          "+refs/tags/*:refs/tags/*",
+          ...(parsed.values["--tags"] !== undefined ||
+          parsed.values["-t"] !== undefined
+            ? ["refs/tags/*:refs/tags/*"]
+            : []),
         ],
         cwd,
       );
@@ -720,13 +770,13 @@ export const gitShimDefinition = (options: GitShimOptions): ShimDefinition => {
         );
       }
 
-      const data = new Uint8Array(
-        await (
-          await call.sandbox.files.download({ path: bundle })
-        ).arrayBuffer(),
+      // The file may have changed since it was measured, so read no more than
+      // the limit allows.
+      const data = await readUpTo(
+        await call.sandbox.files.download({ path: bundle }),
+        maxBytes,
       );
-      // The file may have changed since it was measured.
-      if (data.byteLength > maxBytes) {
+      if (data === undefined) {
         return call.refuse(
           `the push is more than the ${maxBytes} bytes this shim accepts`,
         );

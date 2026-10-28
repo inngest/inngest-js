@@ -5,7 +5,14 @@
  * sandbox that runs its commands on this machine.
  */
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -18,7 +25,8 @@ export const backendPath = ((): string | undefined => {
       execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim(),
       "git-http-backend",
     );
-    execFileSync(path, ["--help"], { stdio: "ignore" });
+    // A CGI program that doesn't take arguments, so check the file instead.
+    accessSync(path, constants.X_OK);
 
     return path;
   } catch {

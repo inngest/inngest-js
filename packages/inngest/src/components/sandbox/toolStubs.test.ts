@@ -138,9 +138,41 @@ describe("the wrapper", () => {
     expect(start().status).toBe(0);
     expect(readFileSync(marks, "utf8")).toBe("ran\n");
     expect(readFileSync(join(dir, "ops.log"), "utf8").split("\n")).toEqual([
-      '{"op":"exit","code":0,"stdout":"","stderr":""}',
+      '{"op":"exit","code":0,"stdout":"","stderr":"","stdoutBytes":0,"stderrBytes":0}',
       "",
     ]);
+  });
+});
+
+describe("the wrapper's exit", () => {
+  test("keeps the tail of the output and reports the full sizes", () => {
+    const dir = join(root, `run-${count++}`);
+    const wrapper = wrapperScript.replaceAll(toolsRoot, root);
+
+    spawnSync(
+      "/bin/sh",
+      [
+        "-c",
+        wrapper,
+        "sh",
+        dir,
+        "/bin/sh",
+        "-c",
+        "head -c 300000 /dev/zero | tr '\\0' x; echo done >&2",
+      ],
+      { encoding: "utf8" },
+    );
+    const exit = readFileSync(join(dir, "ops.log"), "utf8")
+      .split("\n")
+      .map(parseToolEvent)
+      .find((event) => {
+        return event?.op === "exit";
+      });
+
+    expect(exit).toMatchObject({ stdoutBytes: 300000, stderrBytes: 5 });
+    expect(
+      Buffer.from((exit as { stdout: string }).stdout, "base64").length,
+    ).toBe(262144);
   });
 });
 

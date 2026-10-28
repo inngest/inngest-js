@@ -304,6 +304,10 @@ export const runCommandWithTools = async (
           stdout: decodeBase64(event.stdout, "stdout"),
           stderr: decodeBase64(event.stderr, "stderr"),
           exitCode: event.code,
+          originalBytes:
+            event.stdoutBytes === undefined || event.stderrBytes === undefined
+              ? undefined
+              : { stdout: event.stdoutBytes, stderr: event.stderrBytes },
         });
       }
     }

@@ -390,6 +390,8 @@ const eventSchema = z.discriminatedUnion("op", [
     code: z.number().int(),
     stdout: z.string(),
     stderr: z.string(),
+    stdoutBytes: z.number().int().nonnegative().optional(),
+    stderrBytes: z.number().int().nonnegative().optional(),
   }),
 ]);
 

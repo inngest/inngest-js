@@ -14,8 +14,10 @@
  * - `{"op":"reply","id":1,"result":{...}}` (or `"error":"..."` in place of
  *   `result`) answers request `id`. The waiter appends it, and the stub scans
  *   the log for it from where its own request was written.
- * - `{"op":"exit","code":0,"stdout":"<base64>","stderr":"<base64>"}` is
- *   appended by the wrapper when the command ends.
+ * - `{"op":"exit","code":0,"stdout":"<base64>","stderr":"<base64>",`
+ *   `"stdoutBytes":12,"stderrBytes":0}` is appended by the wrapper when the
+ *   command ends. The output is the last 256 KiB of each stream, and the byte
+ *   counts are the full sizes, so the host can tell when it was cut.
  *
  * While the command runs, its output stays in the files `out` and `err`, since
  * it can be large. Every line is appended with a single `write()` to a file
@@ -167,7 +169,7 @@ chmod +x ${toolsRoot}/bin/${toolCliName}
 export INNGEST_TOOLS_DIR=$d PYTHONUNBUFFERED=1 PATH="${toolsRoot}/bin:$PATH"
 export PYTHONPATH="${toolsRoot}/py\${PYTHONPATH:+:$PYTHONPATH}" NODE_PATH="${toolsRoot}/js\${NODE_PATH:+:$NODE_PATH}"
 "$@" > "$d/out" 2> "$d/err"
-printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s"}\\n' $? "$(tail -c 262144 "$d/out" | base64 -w0)" "$(tail -c 262144 "$d/err" | base64 -w0)" | ${append}
+printf '{"op":"exit","code":%s,"stdout":"%s","stderr":"%s","stdoutBytes":%s,"stderrBytes":%s}\\n' $? "$(tail -c 262144 "$d/out" | base64 -w0)" "$(tail -c 262144 "$d/err" | base64 -w0)" $(($(wc -c < "$d/out"))) $(($(wc -c < "$d/err"))) | ${append}
 `;
 
 /**

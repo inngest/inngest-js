@@ -177,6 +177,38 @@ describe.skipIf(!backendPath)("tool.shim.git", { timeout: 60_000 }, () => {
     expect(git(join(root, "shallow"), "rev-list", "--count", "HEAD")).toBe("1");
   });
 
+  test("clone --single-branch brings only that branch, and a fetch keeps local tags", async () => {
+    git(remote.dir, "branch", "other", "main");
+
+    const all = await call({}, ["clone", remote.url, "all"]);
+    const single = await call({}, [
+      "clone",
+      "--single-branch",
+      "--branch",
+      "main",
+      remote.url,
+      "single",
+    ]);
+
+    expect(all.exit).toBe(0);
+    expect(single.exit).toBe(0);
+    expect(git(join(root, "all"), "branch", "-r")).toContain("origin/other");
+    expect(git(join(root, "single"), "branch", "-r")).not.toContain(
+      "origin/other",
+    );
+
+    const work = join(root, "single");
+    git(work, "tag", "v1");
+    git(remote.dir, "tag", "v1", "main");
+    commit(work, "src/c.ts", "export const c = 3;\n");
+    git(work, "tag", "-f", "v1");
+    const before = git(work, "rev-parse", "v1");
+    const fetched = await call({}, ["fetch", "origin"], work);
+
+    expect(fetched.exit).toBe(0);
+    expect(git(work, "rev-parse", "v1")).toBe(before);
+  });
+
   test("clone refuses another repository and unknown options", async () => {
     const other = await call({}, ["clone", "https://example.com/x/y.git"]);
     const flag = await call({}, ["clone", "--mirror", remote.url]);

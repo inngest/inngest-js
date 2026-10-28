@@ -214,18 +214,35 @@ export const execOperationResult = (result: {
   stdout: Uint8Array;
   stderr: Uint8Array;
   exitCode: number;
+  /**
+   * The full sizes of the output, when the bytes given are only a tail of it.
+   */
+  originalBytes?: { stdout: number; stderr: number };
 }): SandboxOperationResultV1 => {
-  const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const fitted = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const { originalBytes } = result;
+  const output: typeof fitted.output =
+    originalBytes &&
+    (originalBytes.stdout > fitted.stdout.byteLength ||
+      originalBytes.stderr > fitted.stderr.byteLength)
+      ? {
+          truncated: true,
+          strategy: "tail",
+          originalBytes,
+          retainedBytes: {
+            stdout: fitted.stdout.byteLength,
+            stderr: fitted.stderr.byteLength,
+          },
+        }
+      : fitted.output;
   const {
     encoding,
     values: [stdout, stderr],
-  } = encodeOutput([output.stdout, output.stderr], {
-    truncated: output.output.truncated
+  } = encodeOutput([fitted.stdout, fitted.stderr], {
+    truncated: output.truncated
       ? [
-          output.output.retainedBytes.stdout <
-            output.output.originalBytes.stdout,
-          output.output.retainedBytes.stderr <
-            output.output.originalBytes.stderr,
+          output.retainedBytes.stdout < output.originalBytes.stdout,
+          output.retainedBytes.stderr < output.originalBytes.stderr,
         ]
       : [],
   });
@@ -238,7 +255,7 @@ export const execOperationResult = (result: {
       stderr: stderr!,
       encoding,
       exitCode: result.exitCode,
-      output: output.output,
+      output,
     },
   };
 };
