@@ -228,6 +228,8 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await client()).command(...args);
   }
 
+  // The registry is cleaned of expired fields only by `all()`, and a write
+  // racing `all()` or `clear()` can leave a key unlisted.
   // Each hash lists its expiring fields and indexes in a set, so `all()` and
   // `clear()` touch only that hash. Entries are `t:<field>` or `z:<index>`.
   function registry(hash: string) {
@@ -605,6 +607,12 @@ function handleFor(
   };
 }
 
+function checkedMember(member: string) {
+  if (typeof member !== "string") {
+    throw new Error("kv index members must be strings.");
+  }
+}
+
 function checkedScore(score: number) {
   if (!Number.isFinite(score)) {
     throw new Error("kv index scores must be finite numbers.");
@@ -623,7 +631,10 @@ function checkedRange(options: KvIndexRange) {
 
 function checkedTtl(options?: KvSetOptions): number | undefined {
   const ttl = options?.ttl;
-  if (ttl !== undefined && !(Number.isInteger(ttl) && ttl > 0)) {
+  if (
+    ttl !== undefined &&
+    !(Number.isInteger(ttl) && ttl > 0 && ttl <= 2 ** 31)
+  ) {
     throw new Error("kv ttl must be a whole number of seconds above zero.");
   }
 
@@ -718,6 +729,7 @@ export function createKv(
       index(name) {
         return {
           async add(member, score) {
+            checkedMember(member);
             checkedScore(score);
             await run("index.add", `${name}:${member}`, async (h) => {
               await h.indexAdd(name, member, score);
@@ -730,6 +742,7 @@ export function createKv(
             });
           },
           async remove(member) {
+            checkedMember(member);
             await run("index.remove", `${name}:${member}`, async (h) => {
               await h.indexRemove(name, member);
             });
