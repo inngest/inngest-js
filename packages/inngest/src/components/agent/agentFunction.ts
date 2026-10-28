@@ -332,7 +332,7 @@ function threadInbox(
       seq: message.seq,
       data,
       async reply(answer) {
-        if (data.kind !== "request") {
+        if (data.kind !== "request" || !data.replyTo) {
           throw new Error(
             "This message is not a request: only a request has a reply.",
           );

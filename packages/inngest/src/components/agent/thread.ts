@@ -141,7 +141,7 @@ export interface ThreadRequests<TRequest = unknown, TReply = unknown> {
   reply: StandardSchemaV1<unknown, TReply>;
 }
 
-export interface ThreadOptions {
+export interface ThreadOptions<TRequest = unknown, TReply = unknown> {
   /**
    * Session the thread belongs to. Default: the thread key.
    */
@@ -157,7 +157,7 @@ export interface ThreadOptions {
    * The agent's request and reply schemas: `request()` checks its payload
    * against `request` before sending it.
    */
-  requests?: ThreadRequests;
+  requests?: ThreadRequests<TRequest, TReply>;
 }
 
 /**
@@ -362,7 +362,7 @@ export function getThread<TRequest = unknown, TReply = unknown>(
   client: Inngest.Any,
   agent: string,
   key: string,
-  options: ThreadOptions = {},
+  options: ThreadOptions<TRequest, TReply> = {},
 ): ThreadHandle<TRequest, TReply> {
   const session = options.session ?? key;
 
