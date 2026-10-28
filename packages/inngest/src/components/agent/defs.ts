@@ -163,6 +163,24 @@ const defineSandbox = (
     );
   }
 
+  const places = (options.skills ?? []).map((source) => {
+    return source.into;
+  });
+  const overlapping = places.find((place, index) => {
+    return places.some((other, otherIndex) => {
+      return (
+        otherIndex !== index &&
+        (other === place || place.startsWith(`${other}/`))
+      );
+    });
+  });
+
+  if (overlapping) {
+    throw new SandboxValidationError(
+      `Sandbox "${options.id}" has skills that overlap at "${overlapping}": give each its own \`into\``,
+    );
+  }
+
   for (const source of options.skills ?? []) {
     if (!isSkillsSource(source)) {
       throw new SandboxValidationError(

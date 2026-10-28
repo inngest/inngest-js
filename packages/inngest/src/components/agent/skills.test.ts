@@ -92,7 +92,7 @@ describe("skills.git()", () => {
       kind: "inngest/skills.git",
       freshness: "bake",
       ref: "HEAD",
-      into: "/skills/inngest-skills",
+      into: "/skills/inngest/inngest-skills",
     });
   });
 
@@ -102,6 +102,19 @@ describe("skills.git()", () => {
       "freshness",
     );
     expect(() => skills.git("a/b", { into: "rel" })).toThrow("absolute path");
+    expect(() => skills.git("a/b", { into: "/usr" })).toThrow("two levels");
+  });
+
+  test("two sources can't share a place", () => {
+    expect(() => {
+      return sandbox({
+        id: "x",
+        skills: [
+          skills.git("a/b", { into: "/s/x" }),
+          skills.git("c/d", { into: "/s/x/y" }),
+        ],
+      });
+    }).toThrow("overlap");
   });
 
   test("a baked source can't go with environment or secrets", () => {

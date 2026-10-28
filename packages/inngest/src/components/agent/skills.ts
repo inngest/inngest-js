@@ -71,7 +71,8 @@ export interface SkillsGitOptions {
   freshness?: "bake" | "boot";
 
   /**
-   * Where the skills land in the sandbox. Default: `/skills/<repository name>`.
+   * Where the skills land in the sandbox. Default: `/skills/<owner>/<name>`. At least two
+   * levels deep, since the directory is replaced on every fetch.
    */
   into?: string;
 
@@ -126,15 +127,15 @@ const gitSource = (
     );
   }
 
-  const into = options.into ?? `/skills/${repo.split("/")[1]}`;
+  const into = options.into ?? `/skills/${repo}`;
 
   if (
     !into.startsWith("/") ||
     into.split("/").some((part) => part === ".." || part === ".") ||
-    into.replace(/\/+/g, "/") === "/"
+    into.split("/").filter(Boolean).length < 2
   ) {
     throw new SandboxValidationError(
-      `Skills "${repo}" must go into an absolute path other than "/", not "${into}"`,
+      `Skills "${repo}" must go into an absolute path at least two levels deep, not "${into}"`,
     );
   }
 
