@@ -110,8 +110,8 @@ export interface Subscription<TData = unknown>
    * once you have handled it, so a run that fails or is cancelled while
    * handling it leaves it for the next run.
    *
-   * Pass the message the subscription returned: a copy or hand-built message
-   * has no source stream and throws.
+   * Pass the message the subscription returned: a hand-built message has no
+   * source stream and throws.
    */
   ack(message: InboxMessage<TData>): Promise<void>;
 
