@@ -85,14 +85,21 @@ export const threadSandboxes = scenario({
       return ctx.fakes.posts({ channel: "sandbox", method });
     };
     const runEnded = async (destroyed: number) => {
-      await ctx.eventually(
-        `${destroyed} sandboxes destroyed`,
+      // A cancelled run is finalized and cleaned up by the executor: give that
+      // more than the default wait when the machine is busy.
+      await ctx.until(
         async () => {
           return calls("sandbox.destroy").length;
         },
         (count) => {
           return count >= destroyed;
         },
+        90_000,
+      );
+      ctx.check(
+        `${destroyed} sandboxes destroyed`,
+        calls("sandbox.destroy").length >= destroyed,
+        calls("sandbox.destroy").length,
       );
     };
 
@@ -181,7 +188,12 @@ export const threadSandboxes = scenario({
         return count >= 4;
       },
     );
-    await gamma.stop({ when: "now" });
+    const gammaStop = await gamma.stop({ when: "now" });
+    ctx.check(
+      "stop now found the live run",
+      gammaStop.stopped === true,
+      gammaStop,
+    );
     await runEnded(4);
     await ctx.expect
       .posts({ channel: "sandbox", method: "snapshot.create" })
