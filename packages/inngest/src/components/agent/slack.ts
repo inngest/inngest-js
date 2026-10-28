@@ -13,6 +13,7 @@
 import {
   apiError,
   assertAllowed,
+  assertSignal,
   type Channel,
   type ChannelAsk,
   type ChannelMessage,
@@ -49,7 +50,7 @@ export interface SlackMessageData {
   /**
    * Set on a message a bot posted. `slack.thread` ignores these.
    */
-  botId?: string | null;
+  botId?: string;
 }
 
 /**
@@ -66,7 +67,7 @@ const slackMessageSchema = objectSchema<SlackMessageData>({
   threadTs: { pattern: timestamp, optional: true },
   text: "string",
   user: "nullable",
-  botId: "nullable",
+  botId: "string?",
 });
 
 /**
@@ -154,6 +155,7 @@ const render = (message: ChannelMessage): string => {
 const maxButtons = 25;
 const maxSelectOptions = 100;
 const maxSelectValue = 150;
+const maxButtonValue = 2000;
 const maxSectionText = 3000;
 const maxLabel = 75;
 
@@ -180,12 +182,14 @@ const call = async (
     );
   }
 
-  if (res.json.ok === false) {
-    const error = String(res.json.error ?? "unknown_error");
+  // A 200 that is not Slack's `{ ok: true }` (an empty or cut-off body) is
+  // not a post that landed.
+  if (res.json.ok !== true) {
+    const error = String(res.json.error ?? "unreadable_response");
 
     throw apiError(
       `Slack ${method} failed: ${error}`,
-      transientErrors.has(error),
+      error === "unreadable_response" || transientErrors.has(error),
     );
   }
 };
@@ -197,6 +201,8 @@ const call = async (
  * who sent it.
  */
 const askBlocks = (ask: ChannelAsk) => {
+  assertSignal(ask.signal);
+
   const options = ask.options ?? [];
 
   if (options.length > maxSelectOptions) {
@@ -214,6 +220,17 @@ const askBlocks = (ask: ChannelAsk) => {
   ) {
     throw apiError(
       `slack ask: with more than ${maxButtons} options an option may be at most ${maxSelectValue} characters.`,
+      false,
+    );
+  }
+
+  if (
+    options.some((option) => {
+      return option.length > maxButtonValue;
+    })
+  ) {
+    throw apiError(
+      `slack ask: an option may be at most ${maxButtonValue} characters.`,
       false,
     );
   }

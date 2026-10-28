@@ -14,6 +14,7 @@
 import {
   apiError,
   assertAllowed,
+  assertSignal,
   type Channel,
   type ChannelAsk,
   type ChannelMessage,
@@ -39,6 +40,9 @@ export interface GithubCommentData {
    */
   number: string;
   body: string;
+  /**
+   * The commenter's login. Set it so `ignoreAuthors` can work.
+   */
   author?: string;
 }
 
@@ -102,6 +106,14 @@ export interface GithubThreadOptions {
    * token can reach.
    */
   repos: string[];
+
+  /**
+   * Logins whose comments start nothing, such as the account the agent posts
+   * as: its own comments come back as events and would answer themselves. The
+   * route puts the commenter's login in `author`. Names are matched exactly as
+   * written, like `repos`.
+   */
+  ignoreAuthors?: string[];
 }
 
 const maxBody = 65_000;
@@ -142,12 +154,14 @@ const comment = async (
   if (!res.ok) {
     throw apiError(
       `GitHub comment failed: HTTP ${res.status}`,
-      retryableStatus(res.status),
+      retryableStatus(res.status) || (res.status === 403 && res.limited),
     );
   }
 };
 
 const askBody = (ask: ChannelAsk): string => {
+  assertSignal(ask.signal);
+
   const lines = [
     inert(ask.question),
     ...(ask.options ?? []).map((option) => {
@@ -184,9 +198,17 @@ export const github = {
       return `(event.data.owner == ${JSON.stringify(owner)} && event.data.repo == ${JSON.stringify(repo)})`;
     });
 
+    const ignored = (options.ignoreAuthors ?? []).map((login) => {
+      if (!name.test(login)) {
+        throw new Error(`github.thread: "${login}" is not a login.`);
+      }
+
+      return ` && (!has(event.data.author) || event.data.author != ${JSON.stringify(login)})`;
+    });
+
     return {
       event: githubCommentEvent,
-      if: `(${repos.join(" || ")})`,
+      if: `(${repos.join(" || ")})${ignored.join("")}`,
       thread:
         '"github:" + event.data.owner + "/" + event.data.repo + "#" + event.data.number',
       message: (event) => {

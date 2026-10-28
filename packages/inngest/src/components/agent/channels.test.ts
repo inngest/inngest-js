@@ -253,6 +253,7 @@ describe("event validation", () => {
       { channel: "general", ts: "1.1", text: "x" },
       { channel: "C1", ts: "x", text: "x" },
       { channel: "C1", ts: "1.1", threadTs: null, text: "x" },
+      { channel: "C1", ts: "1.1", botId: null, text: "x" },
       { channel: "C1", ts: "1.1", text: 1 },
     ];
 
@@ -264,7 +265,7 @@ describe("event validation", () => {
 
     expect(() => {
       return slack.channel(
-        { data: { ...slackEvent.data, user: null, botId: null } },
+        { data: { ...slackEvent.data, user: null } },
         { in: ["C1"] },
       );
     }).not.toThrow();
@@ -524,6 +525,92 @@ describe("adapters", () => {
     await expect(slackChannel().post({ text: "x" })).rejects.toThrow(
       NonRetriableError,
     );
+  });
+});
+
+describe("adapter safety", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("a Slack 200 that is not ok:true is a retryable failure", async () => {
+    const channel = slack.channel(slackEvent, { in: ["C1"] });
+
+    for (const body of ["", "not json", "{}"]) {
+      vi.stubGlobal("fetch", async () => {
+        return new Response(body, { status: 200 });
+      });
+
+      const error = await channel.post({ text: "x" }).catch((err) => {
+        return err;
+      });
+
+      expect(error.message).toContain("unreadable_response");
+      expect(error).not.toBeInstanceOf(NonRetriableError);
+    }
+  });
+
+  test("a GitHub 403 is retried only when it is a rate limit", async () => {
+    const channel = github.channel(githubEvent, { repos: ["acme/app"] });
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response("{}", {
+        status: 403,
+        headers: { "retry-after": "5" },
+      });
+    });
+
+    expect(
+      await channel.post({ text: "x" }).catch((err) => {
+        return err;
+      }),
+    ).not.toBeInstanceOf(NonRetriableError);
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response("{}", { status: 403 });
+    });
+
+    await expect(channel.post({ text: "x" })).rejects.toThrow(
+      NonRetriableError,
+    );
+  });
+
+  test("an unsafe ask signal is refused before anything is posted", async () => {
+    const calls: unknown[] = [];
+
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+
+      return new Response('{"ok":true}', { status: 200 });
+    });
+
+    for (const signal of ["a-->b", "x\ny", "", "s".repeat(201)]) {
+      await expect(
+        slack
+          .channel(slackEvent, { in: ["C1"] })
+          .ask?.({ signal, question: "q" }),
+      ).rejects.toThrow(NonRetriableError);
+
+      await expect(
+        github
+          .channel(githubEvent, { repos: ["acme/app"] })
+          .ask?.({ signal, question: "q" }),
+      ).rejects.toThrow(NonRetriableError);
+    }
+
+    expect(calls).toEqual([]);
+  });
+
+  test("github.thread can ignore the agent's own comments", () => {
+    expect(
+      github.thread({ repos: ["acme/app"], ignoreAuthors: ["my-bot"] }).if,
+    ).toBe(
+      '((event.data.owner == "acme" && event.data.repo == "app")) && (!has(event.data.author) || event.data.author != "my-bot")',
+    );
+
+    expect(() => {
+      return github.thread({ repos: ["acme/app"], ignoreAuthors: ["a b"] });
+    }).toThrow("not a login");
   });
 });
 

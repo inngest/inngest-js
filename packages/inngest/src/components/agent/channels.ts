@@ -461,6 +461,23 @@ export const apiError = (
 };
 
 /**
+ * Throws a `NonRetriableError` unless `signal` is safe to put in a button, a
+ * block ID or a comment marker.
+ */
+export const assertSignal = (
+  /**
+   * The ask's signal.
+   */
+  signal: string,
+): void => {
+  if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(signal)) {
+    throw new NonRetriableError(
+      "An ask signal is 1 to 200 letters, digits, and the characters _ . : -.",
+    );
+  }
+};
+
+/**
  * Whether an HTTP status is worth retrying: a timeout, a rate limit or a
  * server error.
  */
@@ -487,7 +504,12 @@ export const postJson = async (
    * The JSON body.
    */
   body: unknown,
-): Promise<{ status: number; ok: boolean; json: Record<string, unknown> }> => {
+): Promise<{
+  status: number;
+  ok: boolean;
+  json: Record<string, unknown>;
+  limited: boolean;
+}> => {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
@@ -498,5 +520,10 @@ export const postJson = async (
     return {};
   })) as Record<string, unknown>;
 
-  return { status: res.status, ok: res.ok, json };
+  // GitHub answers a secondary rate limit with 403 and one of these.
+  const limited =
+    res.headers.get("retry-after") !== null ||
+    res.headers.get("x-ratelimit-remaining") === "0";
+
+  return { status: res.status, ok: res.ok, json, limited };
 };
