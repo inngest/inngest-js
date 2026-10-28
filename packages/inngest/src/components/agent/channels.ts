@@ -516,6 +516,9 @@ export const postJson = async (
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(requestTimeoutMs),
+
+    // A redirect would turn the POST into a GET and report the post as sent.
+    redirect: "manual",
   });
 
   const parsed: unknown = await res.json().catch(() => {

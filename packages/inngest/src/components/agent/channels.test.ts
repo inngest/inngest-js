@@ -514,6 +514,33 @@ describe("adapters", () => {
     );
   });
 
+  test("a redirect is a permanent failure, never followed", async () => {
+    const inits: { redirect?: string }[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      async (_url: string, init: { redirect?: string }) => {
+        inits.push(init);
+
+        return new Response("{}", { status: 301 });
+      },
+    );
+
+    await expect(
+      github.channel(githubEvent, { repos: ["acme/app"] }).post({ text: "x" }),
+    ).rejects.toThrow(NonRetriableError);
+
+    await expect(
+      slack.channel(slackEvent, { in: ["C1"] }).post({ text: "x" }),
+    ).rejects.toThrow(NonRetriableError);
+
+    expect(
+      inits.map((init) => {
+        return init.redirect;
+      }),
+    ).toEqual(["manual", "manual"]);
+  });
+
   test("Slack API errors are classified", async () => {
     vi.stubGlobal("fetch", async () => {
       return new Response(JSON.stringify({ ok: false, error: "ratelimited" }), {
