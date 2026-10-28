@@ -183,8 +183,7 @@ export interface ThreadHandle {
 
   /**
    * Stops the thread. `"nextTurn"` lets the running model call finish and
-   * stops before the next; `"now"` cancels the live run. It does nothing when
-   * no run is live. `"now"` cancels the run by its run ID through the
+   * stops before the next; `"now"` cancels the live run by its run ID through the
    * Inngest API, so it needs the API reachable from where you call it (the
    * signing key, or the Dev Server), and works for any thread key.
    *

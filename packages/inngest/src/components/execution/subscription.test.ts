@@ -55,6 +55,7 @@ describe("steps to be seen", () => {
 
   test("a step that returns a string that looks like a message ID is still seen", async () => {
     let memoizationEnds = 0;
+    let endsBeforeTheBody = -1;
     const counting = class extends Middleware.BaseMiddleware {
       readonly id = "test:counting";
 
@@ -68,6 +69,8 @@ describe("steps to be seen", () => {
     }).createFunction(
       { id: "looks-like", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
+        endsBeforeTheBody = memoizationEnds;
+
         return step.run("a", () => {
           return `${subscriptionMessagePrefix}looks-like-a-message`;
         });
@@ -82,6 +85,7 @@ describe("steps to be seen", () => {
     if (first.type !== "step-ran") {
       throw new Error(`Expected step-ran, got ${first.type}`);
     }
+    memoizationEnds = 0;
 
     const second = await runFnWithStack(
       fn,
@@ -92,6 +96,9 @@ describe("steps to be seen", () => {
     );
 
     expect(second.type).toBe("function-resolved");
+    // The step is waited for: the state is only all used once the function has
+    // asked for it, not before the body runs.
+    expect(endsBeforeTheBody).toBe(0);
     expect(memoizationEnds).toBeGreaterThan(0);
   });
 });
