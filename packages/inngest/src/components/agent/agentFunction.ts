@@ -22,16 +22,35 @@ import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { agentHook, type Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { step } from "../InngestStepTools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
+import {
+  type DurableSandboxTools,
+  SandboxValidationError,
+} from "../sandbox/types.ts";
+import {
+  type LazySandbox,
+  openSandboxes,
+  resolveSandboxes,
+  type SandboxesConfig,
+  sandboxTools,
+} from "./defs.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
+import type { AgentTurn } from "./loop.ts";
 import { registerFunctions } from "./register.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
   agentStopEvent,
   getThread,
+  summaryLength,
   type ThreadHandle,
   type ThreadMessage,
+  type ThreadRecord,
+  threadEndedKey,
+  threadRecordKey,
 } from "./thread.ts";
+import { listThreads, type ThreadList } from "./threadList.ts";
 import {
   compileTriggers,
   messageOf,
@@ -50,6 +69,23 @@ export interface AgentFunctionConfig extends ThreadKeyConfig {
    * KV store for thread state. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: Kv;
+
+  /**
+   * The sandboxes this agent may use, by name: definitions made with
+   * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
+   * tool call that needs it (`start: "lazy"`, the default), or as soon as the
+   * run begins (`"eager"`). Either the object or a `start` may be a function
+   * of `{ event }`; it re-runs on every replay, so it must be pure. The run
+   * destroys what it created when the body returns.
+   */
+  sandboxes?: SandboxesConfig<AgentConfigContext>;
+}
+
+/**
+ * What a config function receives.
+ */
+export interface AgentConfigContext {
+  event: { name: string; data: ThreadMessage };
 }
 
 /**
@@ -60,20 +96,59 @@ export interface AgentBodyContext {
   thread: ThreadHandle;
 
   /**
+   * The agent's sandboxes, by name. Nothing is created until a call needs it,
+   * except `start: "eager"` ones, which are already being created.
+   */
+  sandboxes: Record<string, LazySandbox>;
+
+  /**
+   * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
+   * the `tools` of `agent.loop()`.
+   */
+  sandboxTools: SandboxTools;
+
+  /**
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
-  inbox: Subscription<ThreadMessage>;
+  inbox: ThreadInbox;
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
    * during a turn into the next model call, and `stop` ends the loop when a
    * stop message arrived. Messages that start the next turn stay in the inbox.
+   * `onTurn` records the turn, the usage and a summary for
+   * `thread.state()`: if you pass your own `onTurn`, put `...control` first
+   * and call `control.onTurn(turn)` from yours.
    */
   control: {
     steer: () => Promise<string[]>;
     stop: () => Promise<boolean>;
+    onTurn: (turn: AgentTurn) => Promise<void>;
   };
+}
+
+/**
+ * A message of the thread's inbox. A `"request"` message from another
+ * thread's `handle.request()` is answered with `reply()`.
+ */
+export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
+  /**
+   * Answers a request: sends `data` to the thread that asked. It is a step.
+   * @param data The reply.
+   */
+  reply(data: unknown): Promise<void>;
+}
+
+/**
+ * The thread's inbox: a subscription whose messages can reply.
+ */
+export interface ThreadInbox extends AsyncIterable<ThreadInboxMessage> {
+  next(): Promise<ThreadInboxMessage | null>;
+  poll(): Promise<ThreadInboxMessage | null>;
+  ack(message: InboxMessage<ThreadMessage>): Promise<void>;
+  putBack(messages: InboxMessage<ThreadMessage>[]): void;
+  close: Subscription<ThreadMessage>["close"];
 }
 
 export type AgentBody = (context: AgentBodyContext) => Promise<unknown>;
@@ -106,6 +181,11 @@ export interface AgentFunction {
    * @param session Session the thread belongs to. Default: the thread key.
    */
   thread(key: string, session?: string): ThreadHandle;
+
+  /**
+   * The agent's threads.
+   */
+  threads: ThreadList;
 }
 
 /**
@@ -113,27 +193,49 @@ export interface AgentFunction {
  * events, and stop messages are skipped, because while the agent waits for its
  * next message there is nothing to stop.
  * @param inbox The subscription to the thread's events.
+ * @param client Inngest client, to send replies.
+ * @param mark Records the thread's status: `"waiting"` before the agent waits
+ * for a message after the first, `"running"` once one is delivered.
  */
 function threadInbox(
   inbox: Subscription<RawEvent>,
   toMessage: (raw: RawEvent) => ThreadMessage,
+  client: Inngest.Any,
+  mark: (status: "waiting" | "running") => Promise<void>,
 ): {
-  inbox: Subscription<ThreadMessage>;
+  inbox: ThreadInbox;
   handled: (message: InboxMessage<ThreadMessage>) => void;
   flush: () => Promise<void>;
 } {
   // The event each message was made from, to ack and put it back as it came.
   const raws = new WeakMap<object, InboxMessage<RawEvent>>();
 
-  function unwrap(message: InboxMessage<RawEvent> | null) {
+  function unwrap(
+    message: InboxMessage<RawEvent> | null,
+  ): ThreadInboxMessage | null {
     if (!message) {
       return null;
     }
 
-    const unwrapped = {
+    const data = toMessage(message.data);
+    const unwrapped: ThreadInboxMessage = {
       seq: message.seq,
-      data: toMessage(message.data),
+      data,
       source: message.source,
+      async reply(answer) {
+        if (!data.replyTo) {
+          throw new Error(
+            "This message is not a request: only a request has a reply.",
+          );
+        }
+
+        await step.run(`reply:${message.seq}`, async () => {
+          await client.sendSignal({
+            signal: data.replyTo as string,
+            data: answer,
+          });
+        });
+      },
     };
     raws.set(unwrapped, message);
 
@@ -148,6 +250,8 @@ function threadInbox(
       }
     );
   }
+
+  let delivered = 0;
 
   // Messages the current turn handled. They are acked when the turn is over:
   // when the agent asks for its next message, or the body returns. A run that
@@ -183,16 +287,25 @@ function threadInbox(
   async function next() {
     await flush();
 
+    if (delivered > 0) {
+      await mark("waiting");
+    }
+
     for (;;) {
       const message = unwrap(await inbox.next());
       if (!message) {
         return null;
       }
 
+      delivered += 1;
       handled(message);
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.data.kind !== "stop") {
+        if (delivered > 1) {
+          await mark("running");
+        }
+
         return message;
       }
     }
@@ -244,6 +357,10 @@ function quote(value: string) {
   return JSON.stringify(value);
 }
 
+function emptyRecord(): ThreadRecord {
+  return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };
+}
+
 /**
  * EXPERIMENTAL: Defines an agent function.
  * @param client Inngest client.
@@ -259,14 +376,31 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
+  const store = config.kv ?? defaultKv;
+
   const cleanup = createDefer(
     client,
     { id: `${config.id}-cleanup` },
     async ({ event }) => {
-      // The KV call is its own step.
-      await (config.kv ?? defaultKv)
-        .scope("run", (event.data as { runId: string }).runId)
-        .clear();
+      const { runId, thread } = event.data as {
+        runId: string;
+        thread?: string;
+      };
+
+      // Each KV call is its own step.
+      await store.scope("run", runId).clear();
+
+      // The run is over. The record is only ever written by the live run, so
+      // this marks the end on its own key and `state()` shows the thread idle
+      // while the record is still this run's. A newer run's record wins.
+      if (thread) {
+        await store
+          .scope("thread", thread)
+          .update<string[]>(threadEndedKey, (ended) => {
+            // A list, so cleanups that run out of order cannot hide each other.
+            return [...(ended ?? []), runId].slice(-20);
+          });
+      }
     },
   );
 
@@ -318,102 +452,184 @@ export function createAgentFunction(
       const session = found?.session?.key(event);
 
       // Run-scoped KV keys end with the run, whichever way it ends.
-      defer("kv-cleanup", { function: cleanup, data: { runId } });
+      defer("kv-cleanup", {
+        function: cleanup,
+        data: { runId, thread: data.thread },
+      });
 
       const thread = getThread(client, ref, data.thread, {
         session,
         kv: config.kv,
       });
 
-      // Opened first, so the gap in which a message could be missed is the few
-      // milliseconds between the run starting and this op.
-      const subscription = await step.subscribe<RawEvent>("inbox", {
-        events: [
-          {
-            event: agentMessageEvent,
-            if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
-          },
-          ...triggers.map((trigger) => {
-            const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+      // The KV scopes of the thread and session come from the trigger, which
+      // for an event of `on` does not carry them: the whole run reads them
+      // from here.
+      async function main() {
+        // Writes what `thread.state()` shows. One step per change.
+        async function record(
+          change: (current: ThreadRecord) => Partial<ThreadRecord>,
+        ) {
+          await store.thread.update<ThreadRecord>(threadRecordKey, (found) => {
+            const current = found ?? emptyRecord();
 
-            return {
-              event: trigger.event,
-              if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-            };
-          }),
-        ],
-      });
-      subscription.putBack([
-        {
-          seq: 0,
-          data: { id: event.id, name: event.name, data: event.data },
-        },
-      ]);
+            return { ...current, ...change(current), runId };
+          });
+        }
 
-      function runBody() {
-        return body({
-          event: { name: event.name, data } as AgentBodyContext["event"],
-          thread,
-          inbox,
-          control,
+        await record(() => {
+          return { status: "running" };
         });
-      }
 
-      let stopRequested = false;
-      const { inbox, handled, flush } = threadInbox(
-        subscription,
-        function toMessage(raw) {
-          const trigger = triggers.find((t) => {
-            return t.event === raw.name;
+        // Opened first, so the gap in which a message could be missed is the few
+        // milliseconds between the run starting and this op.
+        const subscription = await step.subscribe<RawEvent>("inbox", {
+          events: [
+            {
+              event: agentMessageEvent,
+              if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+            },
+            ...triggers.map((trigger) => {
+              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+              return {
+                event: trigger.event,
+                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+              };
+            }),
+          ],
+        });
+        subscription.putBack([
+          {
+            seq: 0,
+            data: { id: event.id, name: event.name, data: event.data },
+          },
+        ]);
+
+        const bindings = await resolveSandboxes(config.sandboxes, {
+          event: event as unknown as AgentConfigContext["event"],
+        });
+        const sandboxSteps = (
+          step as unknown as { sandbox?: DurableSandboxTools }
+        ).sandbox;
+        if (Object.keys(bindings).length > 0 && !sandboxSteps) {
+          throw new SandboxValidationError(
+            "An agent with sandboxes needs the client's sandbox middleware: new Inngest({ middleware: [sandboxMiddleware()] })",
+          );
+        }
+
+        const opened = openSandboxes(
+          bindings,
+          sandboxSteps as DurableSandboxTools,
+        );
+
+        let stopRequested = false;
+        const { inbox, handled, flush } = threadInbox(
+          subscription,
+          function toMessage(raw) {
+            const trigger = triggers.find((t) => {
+              return t.event === raw.name;
+            });
+
+            return trigger
+              ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
+              : (raw.data as ThreadMessage);
+          },
+          client,
+          (status) => {
+            // A thread that honored a stop stays stopped until a message runs it.
+            return record((current) => {
+              return status === "waiting" && current.status === "stopped"
+                ? {}
+                : { status };
+            });
+          },
+        );
+
+        const control = {
+          async steer() {
+            const lines: string[] = [];
+            const waiting: InboxMessage<ThreadMessage>[] = [];
+
+            // Read everything that has arrived: steering messages and stops
+            // apply to the turn that is running; messages for the next turn
+            // keep their place in the inbox.
+            for (;;) {
+              const message = await inbox.poll();
+              if (!message) {
+                break;
+              }
+
+              const kind = message.data.kind;
+              if (kind === "steer") {
+                lines.push(message.data.content ?? "");
+                handled(message);
+              } else if (kind === "stop") {
+                stopRequested = true;
+                handled(message);
+              } else {
+                waiting.push(message);
+              }
+            }
+            inbox.putBack(waiting);
+
+            return lines;
+          },
+          async stop() {
+            const requested = stopRequested;
+            stopRequested = false;
+
+            if (requested) {
+              await record(() => {
+                return { status: "stopped" };
+              });
+            }
+
+            return requested;
+          },
+          async onTurn(turn: AgentTurn) {
+            await record((current) => {
+              return {
+                status: "running",
+                turn: turn.turn,
+                summary: turn.text
+                  ? turn.text.slice(0, summaryLength)
+                  : current.summary,
+                usage: {
+                  input: current.usage.input + turn.usage.input,
+                  output: current.usage.output + turn.usage.output,
+                },
+              };
+            });
+          },
+        };
+
+        try {
+          const result = await body({
+            event: { name: event.name, data } as AgentBodyContext["event"],
+            thread,
+            sandboxes: opened,
+            sandboxTools: sandboxTools(opened),
+            inbox,
+            control,
           });
 
-          return trigger
-            ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
-            : (raw.data as ThreadMessage);
-        },
-      );
+          // The body returned: the last turn is over.
+          await flush();
 
-      const control = {
-        async steer() {
-          const lines: string[] = [];
-          const waiting: InboxMessage<ThreadMessage>[] = [];
+          return result;
+        } finally {
+          await Promise.all(
+            Object.values(opened).map((handle) => {
+              return handle.close();
+            }),
+          );
+        }
+      }
 
-          // Read everything that has arrived: steering messages and stops
-          // apply to the turn that is running; messages for the next turn
-          // keep their place in the inbox.
-          for (;;) {
-            const message = await inbox.poll();
-            if (!message) {
-              break;
-            }
-
-            const kind = message.data.kind;
-            if (kind === "steer") {
-              lines.push(message.data.content ?? "");
-              handled(message);
-            } else if (kind === "stop") {
-              stopRequested = true;
-              handled(message);
-            } else {
-              waiting.push(message);
-            }
-          }
-          inbox.putBack(waiting);
-
-          return lines;
-        },
-        async stop() {
-          const requested = stopRequested;
-          stopRequested = false;
-
-          return requested;
-        },
-      };
-
-      // The KV scopes of the thread and session come from the trigger, which
-      // for an event of `on` does not carry them.
       const als = getAsyncCtxSync();
-      const result = await (als?.execution
+
+      return als?.execution
         ? runWithAsyncCtx(
             {
               ...als,
@@ -422,14 +638,9 @@ export function createAgentFunction(
                 agent: { thread: thread.key, session: thread.session },
               },
             },
-            runBody,
+            main,
           )
-        : runBody());
-
-      // The body returned: the last turn is over.
-      await flush();
-
-      return result;
+        : main();
     },
   );
 
@@ -443,6 +654,13 @@ export function createAgentFunction(
     ref,
     thread(key, session) {
       return getThread(client, ref, key, { session, kv: config.kv });
+    },
+    threads: {
+      list(options) {
+        return listThreads(client, ref, options, (key, session) => {
+          return getThread(client, ref, key, { session, kv: config.kv });
+        });
+      },
     },
   };
 }

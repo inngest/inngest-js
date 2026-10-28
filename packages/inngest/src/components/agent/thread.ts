@@ -9,7 +9,9 @@
  * thread, so a message sent while a run is live is skipped as a trigger and
  * reaches the run through its subscription instead.
  */
+import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
+import { step } from "../InngestStepTools.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
 
 /**
@@ -38,11 +40,27 @@ export interface ThreadMessage {
 
   /**
    * `"user"` messages start the next turn; `"steer"` messages are folded into
-   * the turn that is running; `"stop"` asks the thread to stop. A stop never
-   * starts a run, so stopping an idle thread does nothing.
+   * the turn that is running; `"stop"` asks the thread to stop; `"request"`
+   * is a question from another thread, answered with `message.reply()`. A
+   * stop never starts a run, so stopping an idle thread does nothing.
    */
-  kind: "user" | "steer" | "stop";
+  kind: "user" | "steer" | "stop" | "request";
   content?: string;
+
+  /**
+   * For `"request"`: what the other thread asks.
+   */
+  payload?: unknown;
+
+  /**
+   * For `"request"`: the signal the reply is sent to.
+   */
+  replyTo?: string;
+
+  /**
+   * For `"request"`: the key of the thread that asked, when it is a thread.
+   */
+  from?: string;
 
   /**
    * For `"stop"`: `"nextTurn"` lets the running model call finish.
@@ -68,6 +86,81 @@ export interface ThreadOptions {
   kv?: Kv;
 }
 
+/**
+ * What a thread is doing.
+ *
+ * - `running`: a run is live and a turn is in flight.
+ * - `waiting`: a run is live and waiting for its next message.
+ * - `stopped`: the thread honored a stop request and has not run since.
+ * - `idle`: no run is live (never started, or the last run ended).
+ */
+export type ThreadStatus = "running" | "waiting" | "stopped" | "idle";
+
+/**
+ * What `handle.state()` returns.
+ */
+export interface ThreadState {
+  status: ThreadStatus;
+
+  /**
+   * The loop turn of the latest model call (it starts again from 1 with each
+   * `agent.loop()`), 0 before the first.
+   */
+  turn: number;
+
+  /**
+   * The latest non-empty model reply, cut to `summaryLength` characters.
+   */
+  summary: string | undefined;
+
+  /**
+   * Tokens used by every model call of the thread, across runs.
+   */
+  usage: { input: number; output: number };
+
+  /**
+   * The keys your code set in the thread's KV scope.
+   */
+  keys: Record<string, unknown>;
+}
+
+/**
+ * What the agent function keeps in the thread KV (key `__state`) for
+ * `state()`. Keys starting with `__` are hidden from `state().keys`.
+ */
+export interface ThreadRecord {
+  status: ThreadStatus;
+  turn: number;
+  summary?: string;
+  usage: { input: number; output: number };
+
+  /**
+   * The run that wrote the record last, so a finished run never overwrites
+   * the record of a newer one.
+   */
+  runId?: string;
+}
+
+export const threadRecordKey = "__state";
+
+/**
+ * Thread KV key holding the IDs of the last runs that ended. The cleanup writes
+ * it; `state()` shows the thread idle while the record is still that run's.
+ */
+export const threadEndedKey = "__ended";
+
+/**
+ * The longest `summary` kept.
+ */
+export const summaryLength = 500;
+
+export interface RequestOptions {
+  /**
+   * How long to wait for the reply. Default `"1h"`.
+   */
+  timeout?: string | number;
+}
+
 export interface ThreadHandle {
   /**
    * The agent, as `"appId/functionId"`.
@@ -78,6 +171,7 @@ export interface ThreadHandle {
 
   /**
    * Sends a message that starts the next turn (and a run, if none is live).
+   * Inside a function it is a step, so a replay sends it once.
    */
   send(message: string): Promise<void>;
 
@@ -94,9 +188,24 @@ export interface ThreadHandle {
   stop(options: { when: "now" | "nextTurn" }): Promise<void>;
 
   /**
-   * The thread's KV scope.
+   * What the thread is doing and has used. It reads the thread's KV scope, so
+   * it works when no run is live.
    */
-  state(): Promise<Record<string, unknown>>;
+  state(): Promise<ThreadState>;
+
+  /**
+   * Asks the thread something and waits for its reply: an inbox message plus a
+   * signal the thread answers with `message.reply()`. It is not an invoke; a
+   * live run reads it from its inbox, and an idle thread is woken for it like
+   * by any message. Only inside a function, because the wait is a step.
+   * Resolves to the reply, or `null` when the timeout passes.
+   * @param payload What to ask.
+   * @param options Timeout.
+   */
+  request<TReply = unknown>(
+    payload: unknown,
+    options?: RequestOptions,
+  ): Promise<TReply | null>;
 }
 
 /**
@@ -126,6 +235,50 @@ export function threadKv(
 }
 
 /**
+ * The current function execution, when the caller can use steps: inside a
+ * function but not inside a step's callback (which is already memoized).
+ */
+function stepContext() {
+  const execution = getAsyncCtxSync()?.execution;
+
+  return execution && !execution.executingStep ? execution : undefined;
+}
+
+/**
+ * Counts the requests made in one execution of a function. The count starts
+ * again on every replay, so a request has the same signal ID each time.
+ */
+const requestCounts = new WeakMap<object, number>();
+
+/**
+ * The thread state record as the handle shows it.
+ * @param record What the agent function kept, if anything.
+ * @param all The thread's whole KV scope.
+ */
+export function threadStateOf(
+  record: ThreadRecord | undefined,
+  all: Record<string, unknown>,
+): ThreadState {
+  const ended =
+    record?.runId !== undefined &&
+    (all[threadEndedKey] as string[] | undefined)?.includes(record.runId) ===
+      true;
+  const status = record?.status ?? "idle";
+
+  return {
+    status: ended && status !== "stopped" ? "idle" : status,
+    turn: record?.turn ?? 0,
+    summary: record?.summary,
+    usage: record?.usage ?? { input: 0, output: 0 },
+    keys: Object.fromEntries(
+      Object.entries(all).filter(([name]) => {
+        return !name.startsWith("__");
+      }),
+    ),
+  };
+}
+
+/**
  * EXPERIMENTAL: Gets the handle of a thread.
  * @param client Inngest client.
  * @param agent The agent, as `"appId/functionId"`.
@@ -140,8 +293,22 @@ export function getThread(
 ): ThreadHandle {
   const session = options.session ?? key;
 
+  // Inside a function the send is a step, so a replay does not send it again.
+  async function sendEvent(
+    id: string,
+    event: { name: string; data: unknown; meta?: unknown },
+  ) {
+    if (stepContext()) {
+      await step.sendEvent(id, event as never);
+
+      return;
+    }
+
+    await client.send(event as never);
+  }
+
   async function post(message: ThreadMessage) {
-    await client.send({
+    await sendEvent(`thread:${key}:${message.kind}`, {
       name: agentMessageEvent,
       data: message,
       meta: { sessions: threadSessions(key, session) },
@@ -160,7 +327,7 @@ export function getThread(
     },
     async stop({ when }) {
       if (when === "now") {
-        await client.send({
+        await sendEvent(`thread:${key}:stop-now`, {
           name: agentStopEvent,
           data: { agent, thread: key },
         });
@@ -173,11 +340,50 @@ export function getThread(
     async state() {
       const all = await threadKv(client, key, options.kv).all();
 
-      return Object.fromEntries(
-        Object.entries(all).filter(([name]) => {
-          return !name.startsWith("__");
-        }),
+      return threadStateOf(
+        all[threadRecordKey] as ThreadRecord | undefined,
+        all,
       );
+    },
+    async request<TReply>(
+      payload: unknown,
+      requestOptions: RequestOptions = {},
+    ) {
+      const execution = stepContext();
+      if (!execution) {
+        throw new Error(
+          "thread.request() waits for a reply with a signal, so it must be called inside a function.",
+        );
+      }
+
+      const count = (requestCounts.get(execution.instance) ?? 0) + 1;
+      requestCounts.set(execution.instance, count);
+
+      const signal = `thread-request:${execution.ctx.runId}:${count}`;
+      const event = execution.ctx.event as {
+        name: string;
+        data?: { thread?: string };
+      };
+
+      // The wait is first, so it is open before the other thread can answer.
+      const [reply] = await Promise.all([
+        step.waitForSignal(`request:${key}:${count}:reply`, {
+          signal,
+          timeout: requestOptions.timeout ?? "1h",
+          onConflict: "replace",
+        }),
+        post({
+          agent,
+          thread: key,
+          kind: "request",
+          payload,
+          replyTo: signal,
+          from:
+            event.name === agentMessageEvent ? event.data?.thread : undefined,
+        }),
+      ]);
+
+      return (reply?.data ?? null) as TReply | null;
     },
   };
 }

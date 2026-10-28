@@ -278,6 +278,12 @@ export interface AgentToolDefinition<
   id: string;
 
   /**
+   * Runs `run` as a group of steps instead of one step, so it can use the
+   * global `step` (see `tool.group()`).
+   */
+  group?: boolean;
+
+  /**
    * Also offers the tool to code in a sandbox as this command, such as
    * `get-org`. The command sends the call home to the function.
    */

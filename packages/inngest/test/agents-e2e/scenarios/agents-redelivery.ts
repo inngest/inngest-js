@@ -12,6 +12,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -66,11 +67,13 @@ export const agentsRedelivery = scenario({
       baseUrl: ctx.devUrl,
       isDev: true,
     });
-    const thread = getThread(
-      client,
-      "agents-e2e/agents-redeliver",
-      `redeliver-${Date.now()}`,
-      { kv: createKv({ adapter: redisKvAdapter(ctx.redisUrl) }) },
+    const thread = withKeys(
+      getThread(
+        client,
+        "agents-e2e/agents-redeliver",
+        `redeliver-${Date.now()}`,
+        { kv: createKv({ adapter: redisKvAdapter(ctx.redisUrl) }) },
+      ),
     );
 
     await thread.send("m0");

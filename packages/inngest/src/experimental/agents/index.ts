@@ -6,3 +6,8 @@
  */
 export * from "../../components/agent/agents.ts";
 export * from "../../components/agent/index.ts";
+export type {
+  GitPolicy,
+  GitPolicyResult,
+  GitPush,
+} from "../../components/sandbox/gitPush.ts";

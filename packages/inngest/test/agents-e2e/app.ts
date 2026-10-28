@@ -35,13 +35,26 @@ for (const id of ids) {
 const fakeSandboxes = scenarios.some((s) => {
   return s.sandbox === "fake";
 });
+const localDirs = scenarios.flatMap((s) => {
+  return s.sandboxLocalDirs ?? [];
+});
+const snapshotLimit = scenarios.find((s) => {
+  return s.sandboxSnapshotLimit;
+})?.sandboxSnapshotLimit;
 const commands = Object.assign({}, ...scenarios.map((s) => s.sandboxCommands));
 
 export const client = new Inngest({
   id: "agents-e2e",
   middleware: [sandboxMiddleware()],
   ...(fakeSandboxes
-    ? { fetch: fakeSandbox({ recordUrl: fakesUrl, commands }).fetch }
+    ? {
+        fetch: fakeSandbox({
+          recordUrl: fakesUrl,
+          commands,
+          localDirs,
+          ...(snapshotLimit ? { snapshotLimit } : {}),
+        }).fetch,
+      }
     : {}),
 });
 

@@ -23,19 +23,25 @@ export {
 export type {
   LazySandbox,
   SandboxBinding,
+  SandboxBindingInput,
   SandboxBindingOptions,
   SandboxDefinition,
   SandboxDefinitionOptions,
+  SandboxesConfig,
   SandboxHandle,
   SandboxToolsFactory,
 } from "./defs.ts";
 export {
   agentTools,
+  getSandbox,
   openSandboxes,
+  resolveSandboxes,
   sandbox,
   sandboxTools,
   toolNamespaceSeparator,
 } from "./defs.ts";
+export type { GitPushToolOptions } from "./gitPush.ts";
+export { gitPushTool } from "./gitPush.ts";
 export type { AgentInvokeOptions } from "./invoke.ts";
 export { agentInvokeDepth, agentInvokeInput } from "./invoke.ts";
 export type {

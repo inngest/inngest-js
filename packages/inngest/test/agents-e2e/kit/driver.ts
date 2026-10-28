@@ -120,6 +120,18 @@ export interface Scenario {
     string,
     { stdout?: string; stderr?: string; exitCode?: number }
   >;
+
+  /**
+   * Commands in these directories that no `sandboxCommands` entry matches run
+   * on this machine, so a scenario can use real git.
+   */
+  sandboxLocalDirs?: string[];
+
+  /**
+   * Snapshots named under `prefix` stop at `max` with the platform's
+   * snapshot limit error.
+   */
+  sandboxSnapshotLimit?: { prefix: string; max: number };
   functions: (env: AppEnv) => InngestFunction.Any[];
   run: (ctx: Ctx) => Promise<void>;
 }
