@@ -186,7 +186,9 @@ export interface ThreadHandle {
   /**
    * Stops the thread. `"nextTurn"` lets the running model call finish and
    * stops before the next; `"now"` cancels the live run. It does nothing when
-   * no run is live.
+   * no run is live. `"now"` can only cancel a run whose thread key is a plain
+   * path of its trigger event (see `ThreadTrigger.thread`); for a computed key
+   * use `"nextTurn"`.
    */
   stop(options: { when: "now" | "nextTurn" }): Promise<void>;
 

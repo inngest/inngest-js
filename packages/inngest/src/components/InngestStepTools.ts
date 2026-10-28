@@ -593,12 +593,17 @@ export const createStepTools = <
           // Waits of a multi-event subscription race, so whichever message
           // arrives first is handed out and the others keep their wait.
           const race = mode === "next" && streams.length > 1;
+          const target = streams[stream];
+
+          if (!target) {
+            throw new Error(`step.subscribe(): no stream ${stream}.`);
+          }
 
           return tools["~subscribeOp"](
             race ? { id: stepId, parallelMode: "race" } : stepId,
             {
-              event: (streams[stream] as { event: string }).event,
-              if: streams[stream]?.if,
+              event: target.event,
+              if: target.if,
               subscribe: {
                 key: streamKey(id, streams.length, stream),
                 mode,

@@ -195,8 +195,14 @@ export async function openSubscription<TData = unknown>(
   // (seq 0) is not a saved message. Acks reach each stream in its own order
   // as long as the caller acks in merged order.
   async function ack(message: InboxMessage<TData>) {
-    if (message.seq < 1 || acked.has(message.seq) || !message.source) {
+    if (message.seq < 1 || acked.has(message.seq)) {
       return;
+    }
+
+    if (!message.source) {
+      throw new Error(
+        `Message ${message.seq} has no source, so it can't be acked: pass the message the subscription returned.`,
+      );
     }
 
     acked.add(message.seq);

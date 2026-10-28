@@ -47,6 +47,16 @@ export interface ThreadTrigger {
   /**
    * The thread key, a CEL expression over `event` that gives a string, such
    * as `event.data.channel + "/" + event.data.thread_ts`.
+   *
+   * The key is the thread's address: a message sent through a thread handle
+   * with the same string, or another `on` event whose key is the same string,
+   * reaches the same thread. Prefix the expression (`"slack:" + ...`) to keep
+   * events apart.
+   *
+   * `thread.stop({ when: "now" })` cancels the run only when the key is a plain
+   * path of the event (`event.data.thread`). A computed key, such as one that
+   * joins two fields, can't be matched by the cancel expression, so a stop
+   * with `when: "nextTurn"` is the way to stop that thread.
    */
   thread?: string;
 

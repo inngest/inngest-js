@@ -169,3 +169,13 @@ describe("subscription over several events", () => {
     expect(exec.log).toEqual(["inbox:open", "inbox:1"]);
   });
 });
+
+describe("ack", () => {
+  test("a numbered message without a source is an error, the put-back trigger is not", async () => {
+    const exec = fakeExecutor();
+    const sub = await openSubscription<string>(exec.op, "inbox", opts);
+
+    await expect(sub.ack({ seq: 3, data: "x" })).rejects.toThrow(/no source/);
+    await expect(sub.ack({ seq: 0, data: "trigger" })).resolves.toBeUndefined();
+  });
+});
