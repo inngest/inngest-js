@@ -100,9 +100,21 @@ describe("report", () => {
     await report("x");
     await report("y", { to: "b" });
 
-    expect(a.posts.map((m) => m.text)).toEqual(["x"]);
-    expect(c.posts.map((m) => m.text)).toEqual(["x"]);
-    expect(b.posts.map((m) => m.text)).toEqual(["y"]);
+    expect(
+      a.posts.map((m) => {
+        return m.text;
+      }),
+    ).toEqual(["x"]);
+    expect(
+      c.posts.map((m) => {
+        return m.text;
+      }),
+    ).toEqual(["x"]);
+    expect(
+      b.posts.map((m) => {
+        return m.text;
+      }),
+    ).toEqual(["y"]);
     await expect(report("z", { to: "nope" })).rejects.toThrow(
       'no channel named "nope"',
     );

@@ -164,6 +164,7 @@ export const createReporter = (
   return async function report(message, options) {
     const normalized: ChannelMessage =
       typeof message === "string" ? { text: message } : message;
+
     const wanted = options?.to ?? configured ?? "main";
     const targets = [wanted].flat();
     const n = ++reports;

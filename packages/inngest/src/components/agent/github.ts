@@ -65,6 +65,7 @@ const comment = async (
   body: string,
 ): Promise<void> => {
   const token = options.token ?? process.env.GITHUB_TOKEN;
+
   const res = await fetch(
     `${options.apiUrl ?? "https://api.github.com"}/repos/${target.owner}/${target.repo}/issues/${target.number}/comments`,
     {

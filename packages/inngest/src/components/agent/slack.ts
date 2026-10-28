@@ -68,6 +68,7 @@ const call = async (
   body: Record<string, unknown>,
 ): Promise<void> => {
   const token = options.token ?? process.env.SLACK_BOT_TOKEN;
+
   const res = await fetch(
     `${options.apiUrl ?? "https://slack.com/api"}/${method}`,
     {
@@ -79,6 +80,7 @@ const call = async (
       body: JSON.stringify(body),
     },
   );
+
   const json = (await res.json().catch(() => {
     return {};
   })) as { ok?: boolean; error?: string };
