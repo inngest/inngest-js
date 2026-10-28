@@ -736,5 +736,5 @@ export const useRealtime = <
   } as UseRealtimeResult<TChannel, TTopics>;
 };
 
-export type { Inngest };
 export { getClientSubscriptionToken };
+export type { Inngest };

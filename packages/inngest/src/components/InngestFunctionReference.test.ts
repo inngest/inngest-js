@@ -19,14 +19,18 @@ describe("referenceFunction", () => {
       expect(fnRef.opts.appId).toBeUndefined();
 
       // Type assertions
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -45,14 +49,18 @@ describe("referenceFunction", () => {
       expect(fnRef.opts.appId).toBe("test-app");
 
       // Type assertions - should still default to MinimalEventPayload/unknown without schemas
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -74,14 +82,18 @@ describe("referenceFunction", () => {
       expect(fnRef.opts.appId).toBeUndefined();
 
       // Type assertions - should infer types from schemas
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -110,14 +122,18 @@ describe("referenceFunction", () => {
       expect(fnRef.opts.appId).toBe("test-app");
 
       // Type assertions - schemas should work regardless of appId
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -138,15 +154,19 @@ describe("referenceFunction", () => {
         functionId: "test-function",
       });
 
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
 
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       // Check that types are not any
       assertType<IsAny<ActualInput>>(false);
@@ -170,15 +190,19 @@ describe("referenceFunction", () => {
         },
       });
 
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
 
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       // Check that types are not any
       assertType<IsAny<ActualInput>>(false);
@@ -209,10 +233,12 @@ describe("referenceFunction", () => {
         functionId: "test-function",
       });
 
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       // Check that output type is inferred correctly
       assertType<IsAny<ActualOutput>>(false);
@@ -230,10 +256,12 @@ describe("referenceFunction", () => {
         },
       });
 
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       // Check that output type is not any
       assertType<IsAny<ActualOutput>>(false);
@@ -248,15 +276,19 @@ describe("referenceFunction", () => {
         },
       });
 
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
 
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       // Check that types are not any
       assertType<IsAny<ActualInput>>(false);
@@ -282,10 +314,12 @@ describe("referenceFunction", () => {
       // When appId is not provided, it should be treated as a local function
 
       // Type assertions - appId doesn't affect type inference
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsEqual<ActualInput, MinimalEventPayload>>(true);
@@ -301,14 +335,18 @@ describe("referenceFunction", () => {
       // When appId is provided, it should be treated as a cross-app reference
 
       // Type assertions - cross-app references still default to MinimalEventPayload/unknown
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -363,14 +401,18 @@ describe("referenceFunction", () => {
       expect(fnRef).toBeInstanceOf(InngestFunctionReference);
 
       // Type assertions - complex schemas should be correctly resolved
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
-      type ActualOutput =
-        typeof fnRef extends InngestFunctionReference<infer _, infer TOutput>
-          ? TOutput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
+      type ActualOutput = typeof fnRef extends InngestFunctionReference<
+        infer _,
+        infer TOutput
+      >
+        ? TOutput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
       assertType<IsAny<ActualOutput>>(false);
@@ -411,10 +453,12 @@ describe("referenceFunction", () => {
       expect(fnRef).toBeInstanceOf(InngestFunctionReference);
 
       // Type assertions - transforms should resolve to output types
-      type ActualInput =
-        typeof fnRef extends InngestFunctionReference<infer TInput, infer _>
-          ? TInput
-          : never;
+      type ActualInput = typeof fnRef extends InngestFunctionReference<
+        infer TInput,
+        infer _
+      >
+        ? TInput
+        : never;
 
       assertType<IsAny<ActualInput>>(false);
 

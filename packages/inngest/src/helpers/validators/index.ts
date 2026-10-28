@@ -14,12 +14,11 @@ export type ResolveSchema<
   TInput,
   TFallback = TInput,
   TUnknownFallback = TFallback,
-> =
-  IsUnknown<TInput> extends true
-    ? TUnknownFallback
-    : TInput extends StandardSchemaV1
-      ? StandardSchemaV1.InferOutput<TInput>
-      : TFallback;
+> = IsUnknown<TInput> extends true
+  ? TUnknownFallback
+  : TInput extends StandardSchemaV1
+    ? StandardSchemaV1.InferOutput<TInput>
+    : TFallback;
 
 /**
  * A valid input schema for an event's `data`.

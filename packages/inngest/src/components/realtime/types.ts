@@ -72,14 +72,13 @@ export namespace Realtime {
     };
 
     export namespace Token {
-      export type InferChannel<TToken extends Token> =
-        TToken extends Token<
-          infer IChannel,
-          // biome-ignore lint/suspicious/noExplicitAny: fine in this generic
-          any
-        >
-          ? IChannel
-          : Realtime.ChannelInput;
+      export type InferChannel<TToken extends Token> = TToken extends Token<
+        infer IChannel,
+        // biome-ignore lint/suspicious/noExplicitAny: fine in this generic
+        any
+      >
+        ? IChannel
+        : Realtime.ChannelInput;
 
       export type InferTopicData<
         TToken extends Token,
@@ -87,10 +86,9 @@ export namespace Realtime {
           Token.InferChannel<TToken>
         >,
         // biome-ignore lint/suspicious/noExplicitAny: untargeted infer
-      > =
-        TToken extends Token<any, infer ITopics>
-          ? { [K in ITopics[number]]: TChannelTopics[K] }
-          : never;
+      > = TToken extends Token<any, infer ITopics>
+        ? { [K in ITopics[number]]: TChannelTopics[K] }
+        : never;
 
       export type InferMessage<TToken extends Token> = Simplify<
         Realtime.Message<
@@ -234,31 +232,29 @@ export namespace Realtime {
   export namespace Channel {
     export type InferId<
       TChannel extends Realtime.ChannelInstance | Realtime.ChannelDef | string,
-    > =
-      TChannel extends Realtime.ChannelInstance<
-        infer IId,
-        Realtime.TopicsConfig
-      >
-        ? IId
-        : TChannel extends Realtime.ChannelDef<
-              infer TNameFn,
-              Realtime.TopicsConfig
-            >
-          ? ReturnType<TNameFn>
-          : TChannel extends string
-            ? TChannel
-            : string;
+    > = TChannel extends Realtime.ChannelInstance<
+      infer IId,
+      Realtime.TopicsConfig
+    >
+      ? IId
+      : TChannel extends Realtime.ChannelDef<
+            infer TNameFn,
+            Realtime.TopicsConfig
+          >
+        ? ReturnType<TNameFn>
+        : TChannel extends string
+          ? TChannel
+          : string;
 
     export type InferTopics<
       TChannel extends Realtime.ChannelInstance | Realtime.ChannelDef | string,
-    > =
-      TChannel extends Realtime.ChannelDef<infer _NameFn, infer ITopics>
+    > = TChannel extends Realtime.ChannelDef<infer _NameFn, infer ITopics>
+      ? ITopics
+      : TChannel extends Realtime.ChannelInstance<infer _Name, infer ITopics>
         ? ITopics
-        : TChannel extends Realtime.ChannelInstance<infer _Name, infer ITopics>
-          ? ITopics
-          : TChannel extends string
-            ? Record<string, unknown>
-            : Record<string, unknown>;
+        : TChannel extends string
+          ? Record<string, unknown>
+          : Record<string, unknown>;
   }
 
   //
@@ -349,10 +345,11 @@ type Includes<Value extends readonly any[], Item> =
 		: false;
 ```
 */
-export type IsEqual<A, B> =
-  (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2
-    ? true
-    : false;
+export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
+  G,
+>() => G extends B ? 1 : 2
+  ? true
+  : false;
 
 /**
  * Returns the given generic as either itself or a promise of itself.

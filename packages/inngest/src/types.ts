@@ -2182,34 +2182,33 @@ type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
  */
 export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-> =
-  TFunction extends InngestFunction<
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
-    infer ITriggers extends InngestFunction.Trigger<string>[]
-  >
-    ? // First check: Does this function have an invoke trigger with a schema?
-      // If so, only invoke schemas should be used (not eventType schemas)
-      HasInvokeTriggerWithSchema<ITriggers> extends true
-      ? { data: ExtractInvokeSchemaInput<ITriggers> }
-      : // Second check: Does this function have any trigger with a schema?
-        HasTriggerWithSchema<ITriggers> extends true
-        ? // If so, use the schema's input type for the data property
-          { data: ExtractTriggerSchemaInput<ITriggers> }
-        : // Otherwise, fall back to existing behavior
-          IsEqual<
-              EventNameFromTrigger<ITriggers[number]>,
-              `${internalEvents.ScheduledTimer}`
-            > extends true
-          ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-          : MinimalEventPayload
-    : never;
+> = TFunction extends InngestFunction<
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any,
+  infer ITriggers extends InngestFunction.Trigger<string>[]
+>
+  ? // First check: Does this function have an invoke trigger with a schema?
+    // If so, only invoke schemas should be used (not eventType schemas)
+    HasInvokeTriggerWithSchema<ITriggers> extends true
+    ? { data: ExtractInvokeSchemaInput<ITriggers> }
+    : // Second check: Does this function have any trigger with a schema?
+      HasTriggerWithSchema<ITriggers> extends true
+      ? // If so, use the schema's input type for the data property
+        { data: ExtractTriggerSchemaInput<ITriggers> }
+      : // Otherwise, fall back to existing behavior
+        IsEqual<
+            EventNameFromTrigger<ITriggers[number]>,
+            `${internalEvents.ScheduledTimer}`
+          > extends true
+        ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+        : MinimalEventPayload
+  : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.
