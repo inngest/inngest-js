@@ -8,7 +8,7 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { snapshotCacheOf, snapshotState } from "../cache/cache.ts";
+import { snapshotCacheOf, snapshotState, takeStepOf } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
@@ -779,14 +779,14 @@ const createNamedSnapshot = async (
   stepId: string,
   { target, exclude, broken, ephemeral, cache }: SnapshotCache,
 ): Promise<TakenSnapshot> => {
-  const taken = await snapshotCacheOf(run, (id) => {
-    return takeStepOf(stepId, id);
+  const taken = await snapshotCacheOf(run, (action) => {
+    return takeStepOf(stepId, action);
   }).take(
     target.entry,
-    (name, attempt) => {
+    (name, n) => {
       const id = !name
         ? `${stepId} (unnamed)`
-        : attempt === 0
+        : n === 0
           ? stepId
           : `${stepId} (retry)`;
 
@@ -798,6 +798,8 @@ const createNamedSnapshot = async (
     },
     {
       stepId,
+      // A run's own snapshot has one generation, so nothing is replaced.
+      ...(ephemeral ? { replace: false } : {}),
       ...(cache?.maxAge === undefined ? {} : { maxAge: cache.maxAge }),
       ...(exclude ? { exclude } : {}),
       ...(broken ? { broken } : {}),
@@ -828,15 +830,6 @@ const createNamedSnapshot = async (
   // build's own cleanup would delete it while that run still starts jobs from
   // it.
   return { snapshotId: taken.snapshotId, reused: false };
-};
-
-/** The step each of the cache's cleanups is, from the ID it asked for. */
-const takeStepOf = (stepId: string, id: string): StepSpec => {
-  if (id.endsWith(":replaced")) {
-    return steps.deleteReplacedCache(joinId(stepId, "replaced"));
-  }
-
-  return steps.resolveCacheName(`${stepId}${scopeSeparator}name-taken`);
 };
 
 /**

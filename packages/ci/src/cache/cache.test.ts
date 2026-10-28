@@ -10,7 +10,8 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import { deleteSnapshot, resolveCacheKey } from "./cache.ts";
+import { deleteSnapshot, resolveCacheKey, takeStepOf } from "./cache.ts";
+import { buildEntryOf, snapshotEntry } from "./names.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -101,5 +102,49 @@ describe("resolveCacheKey", () => {
     const { named } = await resolveCacheKey(run, { kind: "release" });
 
     expect(named).toEqual({ kind: "release" });
+  });
+});
+
+describe("the steps of a build's cache calls", () => {
+  test("keep the IDs and names of earlier releases", () => {
+    expect(takeStepOf("base › snapshot", "name-taken")).toMatchObject({
+      id: "base › snapshot › name-taken",
+      name: "Resolve cache name",
+    });
+
+    expect(takeStepOf("base › snapshot", "replaced")).toMatchObject({
+      id: "base › snapshot › replaced",
+      name: "Delete replaced cache",
+    });
+  });
+});
+
+describe("the entry a build is asked for", () => {
+  test("is the entry the invoker sent", () => {
+    const entry = snapshotEntry({
+      kind: "cache",
+      scope: "pr:7",
+      jobId: "base",
+      ownKey: "slot0001/key00001",
+    });
+
+    expect(entry).toEqual({
+      scope: "ci/pr:7",
+      key: "base/slot0001",
+      generation: "key00001",
+    });
+    expect(buildEntryOf({ entry })).toBe(entry);
+  });
+
+  test("is rebuilt from the cacheKey of an earlier release, to the same name", () => {
+    const entry = buildEntryOf({ cacheKey: "ci/pr:7/base/slot0001/key00001" });
+
+    expect([entry.scope, entry.key, entry.generation].join("/")).toBe(
+      "ci/pr:7/base/slot0001/key00001",
+    );
+  });
+
+  test("is refused when the data has neither", () => {
+    expect(() => buildEntryOf({})).toThrow();
   });
 });

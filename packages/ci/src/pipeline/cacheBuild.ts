@@ -68,7 +68,13 @@ export interface CacheBuildData extends Record<string, unknown> {
    * The entry the snapshot is written under: scope, job and `ownKey`, where
    * the scope of a job without a `cache` is the pipeline run.
    */
-  entry: SnapshotEntry;
+  entry?: SnapshotEntry;
+  /**
+   * The full snapshot name a build run invoked by an earlier release carries
+   * instead of `entry`. Only read when `entry` is missing, so such a run, in
+   * flight across an upgrade, still builds.
+   */
+  cacheKey?: string;
   /** The named parts of the job's `cache.key` as the invoking run resolved them. */
   key?: Record<string, string>;
   /**
