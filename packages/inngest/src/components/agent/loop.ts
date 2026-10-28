@@ -34,25 +34,75 @@ export type AgentMessage =
  * it answers.
  */
 export interface AgentToolResult {
+  /**
+   * The ID of the call this answers.
+   */
   toolCallId: string;
+
+  /**
+   * The tool's name.
+   */
   name: string;
+
+  /**
+   * The arguments of the call, as the model sent them.
+   */
   input: unknown;
+
+  /**
+   * The result as text.
+   */
   content: string;
+
+  /**
+   * Set when the tool failed.
+   */
   isError?: boolean;
 }
 
+/**
+ * A tool call the model asked for.
+ */
 export interface AgentToolCall {
+  /**
+   * The provider's ID of the call; the result answers it.
+   */
   id: string;
+
+  /**
+   * The tool's name in the model's list.
+   */
   name: string;
+
+  /**
+   * The arguments the model sent. Untrusted JSON until the tool's schema has
+   * checked it, so it is `unknown` here.
+   */
   input: unknown;
 }
 
+/**
+ * Tokens used by model calls.
+ */
 export interface AgentUsage {
+  /**
+   * Input tokens.
+   */
   input: number;
+
+  /**
+   * Output tokens.
+   */
   output: number;
 }
 
+/**
+ * What the loop hands to your `model` function for one call.
+ */
 export interface AgentModelRequest {
+  /**
+   * The system prompt, if the loop has one.
+   */
   system?: string;
 
   /**
@@ -63,9 +113,13 @@ export interface AgentModelRequest {
   messages: AgentMessage[];
 
   /**
-   * This call's number, from 1, and the most calls the loop will make.
+   * This call's number, from 1.
    */
   turn: number;
+
+  /**
+   * The most model calls the loop will make.
+   */
   maxTurns: number;
 
   /**
@@ -81,6 +135,10 @@ export interface AgentModelRequest {
   tools: ToolJsonDefinition[];
 }
 
+/**
+ * What your `model` function answers with: the reply, its text, the tool calls
+ * it asks for and the tokens it used.
+ */
 export interface AgentModelResponse {
   /**
    * The assistant's reply, kept in the history as it is.
@@ -96,6 +154,10 @@ export interface AgentModelResponse {
    * The calls the reply asks for. A reply with none is the final one.
    */
   toolCalls: AgentToolCall[];
+
+  /**
+   * Tokens this call used, which the loop adds up. Default: none counted.
+   */
   usage?: AgentUsage;
 }
 
@@ -107,15 +169,33 @@ export type AgentModel = (
   request: AgentModelRequest,
 ) => Promise<AgentModelResponse>;
 
+/**
+ * One finished model call, as `onTurn` receives it.
+ */
 export interface AgentTurn {
+  /**
+   * This call's number, from 1.
+   */
   turn: number;
 
   /**
    * The ID of the model call's step.
    */
   stepId: string;
+
+  /**
+   * The reply's text.
+   */
   text: string;
+
+  /**
+   * The calls the reply asked for.
+   */
   toolCalls: AgentToolCall[];
+
+  /**
+   * Tokens this call used.
+   */
   usage: AgentUsage;
 }
 
@@ -126,20 +206,54 @@ export interface AgentTurn {
  * the call took in this execution, which is short when it replays.
  */
 export interface AgentToolRun {
+  /**
+   * The model call that asked for it.
+   */
   turn: number;
+
+  /**
+   * The call.
+   */
   call: AgentToolCall;
+
+  /**
+   * What the tool returned.
+   */
   output: unknown;
+
+  /**
+   * Whether the call failed.
+   */
   isError: boolean;
+
+  /**
+   * The ID of the call's step.
+   */
   stepId: string;
+
+  /**
+   * How long the call took in this execution.
+   */
   ms: number;
 }
 
+/**
+ * Options of `agent.loop()`.
+ */
 export interface AgentLoopOptions {
   /**
    * Prefix of the step IDs. Default `"agent"`.
    */
   id?: string;
+
+  /**
+   * Calls your model once per turn. Make it with `agent.model()`.
+   */
   model: AgentModel;
+
+  /**
+   * The system prompt. Default: none.
+   */
   system?: string;
 
   /**
@@ -229,23 +343,39 @@ export interface AgentLoopOptions {
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
 }
 
+/**
+ * What `agent.loop()` returns.
+ */
 export interface AgentLoopResult {
   /**
    * The text of the last model reply.
    */
   text: string;
+
+  /**
+   * Why the loop ended: the model finished (`"done"`), it ran out of turns,
+   * `stop` asked to end it, or the budget was spent.
+   */
   stopped: "done" | "maxTurns" | "stopped" | "budget";
 
   /**
    * Why the loop ended, for `stopped: "budget"`.
    */
   reason?: string;
+
+  /**
+   * How many model calls the loop made.
+   */
   turns: number;
 
   /**
    * The whole conversation. Pass it as `history` to continue.
    */
   history: AgentMessage[];
+
+  /**
+   * Tokens used by every model call of this loop.
+   */
   usage: AgentUsage;
 
   /**
@@ -577,4 +707,16 @@ const model = (fn: AgentModel): AgentModel => {
   return fn;
 };
 
+/**
+ * EXPERIMENTAL: The agent helpers: `agent.loop()` runs the model-and-tools
+ * loop, `agent.model()` makes a model function, `agent.toolError()` returns an
+ * error result from a tool and `agent.invoke()` starts another agent.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "inngest/experimental/agents";
+ *
+ * const result = await agent.loop({ model, prompt: "Fix the test", tools });
+ * ```
+ */
 export const agent = { loop, model, toolError, invoke };
