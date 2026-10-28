@@ -116,3 +116,40 @@ describe("agent invoke helpers", () => {
     expect(agentInvokeDepth({ data: { q: 1 } })).toBe(0);
   });
 });
+
+describe("agent.invoke limits", () => {
+  const withLimits = (limits: Record<string, unknown>) => {
+    return {
+      name: "foo",
+      data: { _agent: { depth: 1, limits } },
+    };
+  };
+
+  test("refuses a call the inherited limits do not allow, with a message", async () => {
+    await expect(
+      found(
+        () => {
+          return agent.invoke("team/leaf");
+        },
+        withLimits({ depth: 0 }),
+      ),
+    ).rejects.toThrow(/team\/leaf was not started/);
+  });
+
+  test("passes the narrowed limits to the agent it starts", async () => {
+    const steps = await found(
+      () => {
+        return agent.invoke("team/leaf");
+      },
+      withLimits({ depth: 2, mayCall: [["team/*"]] }),
+    );
+
+    expect(steps[0]?.opts).toMatchObject({
+      payload: {
+        data: {
+          _agent: { depth: 2, limits: { depth: 1, mayCall: [["team/*"]] } },
+        },
+      },
+    });
+  });
+});

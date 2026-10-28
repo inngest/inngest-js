@@ -13,6 +13,12 @@ import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import {
+  checkInvoke,
+  childLimits,
+  limitStateOf,
+  readInheritedLimits,
+} from "./limits.ts";
 import { currentSessions } from "./sessions.ts";
 
 /**
@@ -119,6 +125,10 @@ const calls = new WeakMap<object, number>();
  * sessions of the caller reach it through session propagation. The agent
  * can read how deep it is with `agentInvokeDepth(event)`.
  *
+ * An agent's `limits` apply: a call they refuse throws an `AgentLimitError`
+ * whose message says why, so inside a tool the model reads it as the result.
+ * The agent started inherits the limits, narrowed.
+ *
  * @example
  * ```ts
  * const found = await agent.invoke<{ answer: string }>("scout-app/researcher", {
@@ -143,6 +153,16 @@ export const invoke = async <TOutput = unknown>(
   }
 
   const { ctx, instance } = execution;
+  const info = (ctx.event as { data?: Record<string, unknown> }).data?.[
+    invokeKey
+  ];
+  const limits = limitStateOf(instance, readInheritedLimits(info));
+
+  if (limits) {
+    checkInvoke(limits, target);
+    limits.spawned += 1;
+  }
+
   const n = calls.get(instance) ?? 0;
 
   calls.set(instance, n + 1);
@@ -167,7 +187,13 @@ export const invoke = async <TOutput = unknown>(
     { id, name: `invoke ${target}` },
     {
       function: referenceFunction({ appId, functionId }),
-      data: { ...data, [invokeKey]: { depth: depth + 1 } },
+      data: {
+        ...data,
+        [invokeKey]: {
+          depth: depth + 1,
+          ...(limits && { limits: childLimits(limits) }),
+        },
+      },
       meta: { ...options.meta, sessions },
       timeout: options.timeout,
     },
