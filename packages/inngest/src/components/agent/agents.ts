@@ -232,6 +232,8 @@ export type {
   KvIndexRange,
   KvKey,
   KvKeyInput,
+  KvRoundTrips,
+  KvSchemaMustRoundTrip,
   KvScope,
   KvScopeInstance,
   KvSetOptions,

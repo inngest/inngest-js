@@ -536,6 +536,26 @@ export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
   : unknown;
 
 /**
+ * What a `kvKey` schema must satisfy: its input and output types match, so
+ * the value read back is the value that was stored. A schema that does not
+ * (a transform, default or coercion) fails with this type in the message.
+ */
+export type KvRoundTrips<S extends StandardSchemaV1> = [
+  StandardSchemaV1.InferInput<S>,
+] extends [StandardSchemaV1.InferOutput<S>]
+  ? [StandardSchemaV1.InferOutput<S>] extends [StandardSchemaV1.InferInput<S>]
+    ? unknown
+    : KvSchemaMustRoundTrip
+  : KvSchemaMustRoundTrip;
+
+/**
+ * Marks a schema refused by `kvKey`.
+ */
+export interface KvSchemaMustRoundTrip {
+  "kvKey schema: input and output types must match (no transforms, defaults or coercion)": never;
+}
+
+/**
  * Names a key and types its value.
  *
  * @example
@@ -554,14 +574,7 @@ export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
 export function kvKey<T>(name: string): KvKey<T>;
 export function kvKey<S extends StandardSchemaV1>(
   name: string,
-  schema: S &
-    ([StandardSchemaV1.InferInput<S>] extends [StandardSchemaV1.InferOutput<S>]
-      ? [StandardSchemaV1.InferOutput<S>] extends [
-          StandardSchemaV1.InferInput<S>,
-        ]
-        ? unknown
-        : never
-      : never),
+  schema: S & KvRoundTrips<S>,
 ): KvKey<StandardSchemaV1.InferOutput<S>>;
 export function kvKey(name: string, schema?: StandardSchemaV1): KvKey<unknown> {
   return { name, schema };
