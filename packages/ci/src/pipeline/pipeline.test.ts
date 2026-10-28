@@ -1375,7 +1375,7 @@ describe("from", () => {
     });
 
     expect(result.type).toBe("function-resolved");
-    expect([...named]).toEqual(["ci/run:01RUNA/base/"]);
+    expect([...named]).toEqual(["ci/run:01RUNA/base/run"]);
     expect(api.snapshots.size).toBe(0);
   });
 
@@ -2347,8 +2347,8 @@ describe("cache", () => {
     }
 
     expect(ran(api, "pnpm install")).toBe(2);
-    // The first key's entry is not deleted: it expires on its own.
-    expect(namedSnapshots(api)).toHaveLength(2);
+    // The new key's entry replaces the first key's.
+    expect(namedSnapshots(api)).toHaveLength(1);
   });
 
   test("the same branch, job and key in another repository misses", async () => {

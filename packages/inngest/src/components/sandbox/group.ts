@@ -59,13 +59,20 @@ export const destroyQuietly = async (
  * The options of a sandbox created from just an ID. Each run's sandboxes need
  * names that no other run shares.
  */
-export const sandboxDefaults = (id: string) => {
+export const sandboxCreateDefaults = (id: string) => {
   return {
-    id,
     name: `${getAsyncCtxSync()?.execution?.ctx.runId}-${id}`,
     vcpu: 2,
     memoryMb: 2048,
   };
+};
+
+/**
+ * `sandboxCreateDefaults()` with the ID, for a group sandbox made from just an
+ * ID.
+ */
+export const sandboxDefaults = (id: string) => {
+  return { id, ...sandboxCreateDefaults(id) };
 };
 
 /**

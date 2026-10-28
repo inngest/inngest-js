@@ -1,7 +1,7 @@
 /**
  * @module
- * EXPERIMENTAL: The host side of a checked git push, shared by the `git`
- * shim and the `git_push` agent tool so both apply one policy the same way.
+ * EXPERIMENTAL: The host side of a checked git push, used by the `git_push`
+ * agent tool.
  *
  * Code in a sandbox bundles the branch it wants to push. The bundle comes
  * home, and `pushBundle()` unpacks it on the host, works out from the objects
@@ -125,10 +125,16 @@ export const normalizeUrl = (url: string): string => {
     .toLowerCase();
 };
 
+const refPattern = /^refs\/(heads|tags)\/[A-Za-z0-9._/@+-]+$/;
+
 /**
- * The refs a push may name: full branch and tag names.
+ * Whether `ref` is a full branch or tag name a push may name. It is the one
+ * check for every ref: the one asked for and the one a policy substitutes.
+ * @param ref Full ref name, such as `refs/heads/agent/fix`.
  */
-export const refPattern = /^refs\/(heads|tags)\/[A-Za-z0-9._/@+-]+$/;
+export const isPushableRef = (ref: string): boolean => {
+  return refPattern.test(ref) && !ref.includes("..");
+};
 
 /**
  * The most new commits one push may carry. A longer push would be only partly
@@ -155,6 +161,29 @@ export const gitAuth = async (
       return value !== "";
     }),
   };
+};
+
+let hostGitChecked: Promise<void> | undefined;
+
+/**
+ * Fails with an actionable error when the host has no `git`. A success is
+ * remembered for the process, so a push finds out before it does any work.
+ */
+export const assertHostGit = (): Promise<void> => {
+  hostGitChecked ??= hostGit(["--version"]).then(
+    (result) => {
+      ok(result, "git --version");
+    },
+    (error) => {
+      hostGitChecked = undefined;
+
+      throw new Error(
+        `git_push needs \`git\` on the machine that runs your app, and could not run it: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+  );
+
+  return hostGitChecked;
 };
 
 /**
@@ -430,7 +459,7 @@ export const pushBundle = async (
         })
       ) {
         return {
-          refused: "a path in this push has characters this shim can't check",
+          refused: "a path in this push has characters git_push can't check",
         };
       }
 
@@ -486,7 +515,7 @@ export const pushBundle = async (
         }
 
         if (verdict && "ref" in verdict) {
-          if (!refPattern.test(verdict.ref)) {
+          if (!isPushableRef(verdict.ref)) {
             throw new Error(`The policy named an invalid ref: ${verdict.ref}`);
           }
 

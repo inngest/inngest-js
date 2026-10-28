@@ -139,7 +139,7 @@ export const cacheRefreshIdPrefix = "ci/cache-refresh/";
 /** What a build run is asked to build, from the data it was invoked with. */
 export const requestOf = (data: CacheBuildData): BuildRequest => {
   return {
-    target: { ownKey: data.ownKey, key: data.key ?? {}, name: data.cacheKey },
+    target: { ownKey: data.ownKey, key: data.key ?? {}, entry: data.entry },
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),
