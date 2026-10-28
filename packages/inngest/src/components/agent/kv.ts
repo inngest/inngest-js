@@ -414,6 +414,11 @@ export function redisKvAdapter(url: string): KvAdapter {
       // An index with no members is gone from Redis; forget its entry too.
       if ((await command("ZCARD", sorted(hash, index))) === 0) {
         await command("ZREM", registry(hash), `z:${index}`);
+
+        // An add that raced the removal is listed again.
+        if ((await command("ZCARD", sorted(hash, index))) !== 0) {
+          await register(hash, `z:${index}`);
+        }
       }
     },
   };
@@ -490,7 +495,7 @@ export interface KvScopeInstance {
    * retried after its own write also gets `true`, because the key already
    * holds exactly its value; put an owner token (such as the run id) in the
    * value so a different caller never matches. Use one style per key: a
-   * concurrent `set` of the same key is not arbitrated.
+   * concurrent `set`, or a claim with and without a `ttl`, is not arbitrated.
    */
   setIfAbsent(
     key: string,
