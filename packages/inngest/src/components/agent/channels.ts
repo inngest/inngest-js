@@ -518,9 +518,15 @@ export const postJson = async (
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
 
-  const json = (await res.json().catch(() => {
+  const parsed: unknown = await res.json().catch(() => {
     return {};
-  })) as Record<string, unknown>;
+  });
+
+  // A body that is not a JSON object (`null`, a list) is no body.
+  const json =
+    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
 
   // GitHub answers a secondary rate limit with 403 and one of these.
   const limited =
