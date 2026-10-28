@@ -565,6 +565,9 @@ export function createAgentFunction(
                   thread: data.thread,
                   runId,
                   scope: store.thread,
+                  warn: (data, message) => {
+                    logger.warn(data, message);
+                  },
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;
                   },

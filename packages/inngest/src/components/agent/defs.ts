@@ -10,6 +10,7 @@
  */
 
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
+import { StepError } from "../StepError.ts";
 import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
 import { destroyQuietly, sandboxCreateDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
@@ -190,8 +191,15 @@ export interface SandboxBinding<TStart = SandboxStart> {
 
   /**
    * Keep the sandbox running between runs and stop it after it has been idle
-   * this long. Off by default. The idle check itself belongs to the thread
-   * that owns the sandbox; here it is validated and carried.
+   * this long. Off by default.
+   *
+   * It is validated and wired to the thread's sandbox owner, but it does
+   * nothing yet: stopping an idle sandbox needs an idle timeout on the
+   * platform's sandbox (a sandbox option such as `idleTimeout`), which does
+   * not exist, and the SDK runs no idle check of its own. Until it does, a
+   * sandbox with `keepAlive` is snapshotted and destroyed at run end like
+   * any other, and the thread's next run restores it.
+   * @deprecated Needs a platform idle timeout, which is not available yet.
    */
   keepAlive?: { idle: SandboxDuration };
 }
@@ -431,6 +439,23 @@ const setupContext = (
   };
 };
 
+/**
+ * Whether a failed create says its snapshot does not exist. A durable
+ * sandbox's step carries the API's error as its cause.
+ * @param error What the create failed with.
+ */
+const isSnapshotGone = (error: unknown): boolean => {
+  const { code, cause } = (error ?? {}) as {
+    code?: string;
+    cause?: { code?: string };
+  };
+
+  return (
+    code === "sandbox_snapshot_not_found" ||
+    cause?.code === "sandbox_snapshot_not_found"
+  );
+};
+
 const lazySandbox = (
   name: string,
   binding: SandboxDefinition | SandboxBinding,
@@ -488,29 +513,59 @@ const lazySandbox = (
     const restoreFrom = owner ? await owner.restore(name) : undefined;
 
     restored = restoreFrom !== undefined;
-    const sandbox = definition.skills?.length
-      ? await createWithSkills({
-          name,
-          sources: definition.skills,
-          fresh: options,
-          image: definition.image,
-          sandboxes,
-          runtime: runtime as SandboxRuntime,
-          restoreFrom,
-          onCreated: arm,
-        })
-      : restoreFrom
+    const withSkills = (from: string | undefined) => {
+      return createWithSkills({
+        name,
+        sources: definition.skills ?? [],
+        fresh: options,
+        image: definition.image,
+        sandboxes,
+        runtime: runtime as SandboxRuntime,
+        restoreFrom: from,
+        onCreated: (sandbox) => {
+          existed = true;
+          arm(sandbox);
+        },
+      });
+    };
+    const make = async (from: string | undefined) => {
+      if (definition.skills?.length) {
+        return withSkills(from);
+      }
+
+      const sandbox = from
         ? await sandboxes.create(name, {
             name: options.name,
-            snapshotId: restoreFrom,
+            snapshotId: from,
           } as SandboxCreateOptions)
         : await sandboxes.create(name, options);
 
-    if (!definition.skills?.length) {
+      existed = true;
       arm(sandbox);
-    }
 
-    return sandbox;
+      return sandbox;
+    };
+
+    // The snapshot may be gone by now (a newer run deleted it as superseded,
+    // or it expired): the thread then starts fresh instead of failing. Only a
+    // "snapshot not found" from the create counts; any other failure (a
+    // platform error, a start that timed out) fails the run rather than
+    // dropping the thread's state, and once the sandbox exists an error is not
+    // the restore's.
+    let existed = false;
+
+    try {
+      return await make(restoreFrom);
+    } catch (error) {
+      if (!restoreFrom || existed || !isSnapshotGone(error)) {
+        throw error;
+      }
+
+      owner?.restoreFailed?.(name, error);
+      restored = false;
+
+      return make(undefined);
+    }
   };
 
   const create = (): Promise<DurableSandbox> => {
@@ -637,11 +692,30 @@ const lazySandbox = (
 
         if (sandbox) {
           // A sandbox whose creation or setup failed is not worth keeping.
-          if (!failed && used) {
-            await owner?.save(name, sandbox);
-          }
+          const keep = !failed && used && keepAlive;
 
-          await destroyQuietly(sandbox, `${name}:destroy`, guard);
+          // The owner may keep a keepAlive sandbox running for the thread's
+          // next run. None does yet (see `keepAlive`).
+          // A keep that fails for good counts as declined.
+          const kept = keep
+            ? await owner?.keep?.(name, sandbox, keepAlive).catch((error) => {
+                if (!(error instanceof StepError)) {
+                  throw error;
+                }
+
+                return false;
+              })
+            : false;
+
+          if (kept) {
+            guard?.abort();
+          } else {
+            if (!failed && used) {
+              await owner?.save(name, sandbox);
+            }
+
+            await destroyQuietly(sandbox, `${name}:destroy`, guard);
+          }
         }
 
         if (failed && !observed) {
