@@ -305,6 +305,7 @@ describe("adapters", () => {
   test("an empty allow-list is an error, not everything", () => {
     expect(() => {
       return slack.thread({ in: [] });
+
     }).toThrow("empty");
     expect(() => {
       return github.comment({ repos: [] });
