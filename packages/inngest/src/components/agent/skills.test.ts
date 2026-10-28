@@ -10,8 +10,10 @@ import type { DurableSandbox, DurableSandboxTools } from "../sandbox/types.ts";
 import { sandbox } from "./defs.ts";
 import {
   allowBake,
+  allowDynamicBake,
+  type BakeAllowance,
+  bakeAllowanceOf,
   createWithSkills,
-  newBakeAllowance,
   type SkillsBakeRequest,
   type SkillsRuntime,
   skills,
@@ -23,7 +25,14 @@ import {
 const sha1 = "a".repeat(40);
 const sha2 = "b".repeat(40);
 
-const setup = (options: { sha?: string | null; snapshots?: string[] } = {}) => {
+const setup = (
+  options: {
+    sha?: string | null;
+    snapshots?: string[];
+    image?: ReturnType<typeof sandboxImage.custom>;
+    size?: { vcpu: number; memoryMb: number };
+  } = {},
+) => {
   const commands: string[] = [];
   const created: unknown[] = [];
   const events: { name: string; data: SkillsBakeRequest }[] = [];
@@ -74,6 +83,7 @@ const setup = (options: { sha?: string | null; snapshots?: string[] } = {}) => {
       events.push(event);
     },
     fetch: fetchImpl as unknown as typeof fetch,
+    agent: "app/a",
   };
   const create = (
     sources: Parameters<typeof createWithSkills>[0]["sources"],
@@ -83,7 +93,12 @@ const setup = (options: { sha?: string | null; snapshots?: string[] } = {}) => {
       restoreFrom,
       name: "work",
       sources,
-      fresh: { name: "run-work", vcpu: 2, memoryMb: 2048 },
+      fresh: {
+        name: "run-work",
+        vcpu: options.size?.vcpu ?? 2,
+        memoryMb: options.size?.memoryMb ?? 2048,
+      },
+      image: options.image,
       sandboxes,
       runtime,
     });
@@ -255,41 +270,65 @@ describe("createWithSkills()", () => {
 });
 
 describe("validateBakeRequest()", () => {
-  const honest = async () => {
+  const agent = "app/a";
+  const honest = async (sources = [skills.git("a/b", { ref: "main" })]) => {
     const { events, create } = setup();
-    await create([skills.git("a/b", { ref: "main" })]);
+    await create(sources);
 
     return events[0]?.data as SkillsBakeRequest;
+  };
+  const allowing = (
+    definition: Parameters<typeof allowBake>[2] = {
+      skills: [skills.git("a/b", { ref: "main" })],
+    },
+    ref = agent,
+  ) => {
+    const allowance: BakeAllowance = new Map();
+
+    allowBake(allowance, ref, definition);
+
+    return allowance;
+  };
+  const withSource = (
+    request: SkillsBakeRequest,
+    patch: Partial<SkillsBakeRequest["sources"][number]>,
+  ): SkillsBakeRequest => {
+    return {
+      ...request,
+      sources: [
+        {
+          ...(request.sources[0] as SkillsBakeRequest["sources"][number]),
+          ...patch,
+        },
+      ],
+    };
   };
 
   test("accepts the request createWithSkills sends", async () => {
     const request = await honest();
-    const checked = await validateBakeRequest(request, newBakeAllowance());
+    const checked = await validateBakeRequest(request, allowing());
 
+    expect(request.agent).toBe(agent);
     expect(checked.shas).toEqual([sha1]);
     expect(checked.sources[0]).toMatchObject({ repo: "a/b", ref: "main" });
   });
 
   test("rejects forged payloads", async () => {
     const request = await honest();
-    const source = request.sources[0] as SkillsBakeRequest["sources"][number];
-    const forge = (patch: Partial<typeof source>, top = {}) => {
-      return validateBakeRequest(
-        { ...request, ...top, sources: [{ ...source, ...patch }] },
-        newBakeAllowance(),
-      );
+    const forge = (patch: Partial<SkillsBakeRequest["sources"][number]>) => {
+      return validateBakeRequest(withSource(request, patch), allowing());
     };
 
     await expect(forge({ sha: "main" })).rejects.toThrow("invalid sha");
     await expect(forge({ sha: "--upload-pack=x" })).rejects.toThrow(
       "invalid sha",
     );
-    await expect(forge({ repo: "../etc" })).rejects.toThrow("owner/name");
+    await expect(forge({ repo: "../etc" })).rejects.toThrow("the source");
     await expect(forge({ into: "/etc/ssh" })).rejects.toThrow("under /skills/");
-    await expect(forge({ url: "file:///etc" })).rejects.toThrow("the url");
+    await expect(forge({ url: "file:///etc" })).rejects.toThrow("the source");
     await expect(forge({ ref: "-x" })).rejects.toThrow("invalid ref");
     await expect(
-      validateBakeRequest({ ...request, sources: [] }, newBakeAllowance()),
+      validateBakeRequest({ ...request, sources: [] }, allowing()),
     ).rejects.toThrow("no sources");
   });
 
@@ -297,107 +336,113 @@ describe("validateBakeRequest()", () => {
     const request = await honest();
 
     await expect(
-      validateBakeRequest(
-        { ...request, name: "skills/other/x/y" },
-        newBakeAllowance(),
-      ),
+      validateBakeRequest({ ...request, name: "skills/other/x/y" }, allowing()),
     ).rejects.toThrow("bake into");
     await expect(
-      validateBakeRequest(
-        {
-          ...request,
-          sources: [
-            {
-              ...(request.sources[0] as SkillsBakeRequest["sources"][number]),
-              sha: sha2,
-            },
-          ],
-        },
-        newBakeAllowance(),
-      ),
+      validateBakeRequest(withSource(request, { sha: sha2 }), allowing()),
     ).rejects.toThrow("bake into");
   });
 
-  test("rejects a host, image or size the app does not use", async () => {
+  test("rejects a host, repository, image, size or agent the definitions don't use", async () => {
     const request = await honest();
-    const source = request.sources[0] as SkillsBakeRequest["sources"][number];
-    const allowance = newBakeAllowance();
 
     await expect(
       validateBakeRequest(
-        { ...request, sources: [{ ...source, url: "https://evil.test" }] },
-        allowance,
+        withSource(request, { url: "https://evil.test" }),
+        allowing(),
       ),
-    ).rejects.toThrow("the url");
+    ).rejects.toThrow("the source");
     await expect(
-      validateBakeRequest(
-        {
-          ...request,
-          sources: [{ ...source, url: "http://169.254.169.254" }],
-        },
-        allowance,
-      ),
-    ).rejects.toThrow("the url");
+      validateBakeRequest(withSource(request, { repo: "c/d" }), allowing()),
+    ).rejects.toThrow("the source");
     await expect(
-      validateBakeRequest({ ...request, image: "evil:latest" }, allowance),
+      validateBakeRequest({ ...request, image: "evil:latest" }, allowing()),
     ).rejects.toThrow("names image");
     await expect(
-      validateBakeRequest({ ...request, vcpu: 1000 }, allowance),
+      validateBakeRequest({ ...request, vcpu: 1000 }, allowing()),
     ).rejects.toThrow("more than");
     await expect(
-      validateBakeRequest({ ...request, memoryMb: 10_000_000 }, allowance),
+      validateBakeRequest({ ...request, memoryMb: 10_000_000 }, allowing()),
     ).rejects.toThrow("more than");
+    await expect(
+      validateBakeRequest({ ...request, vcpu: 8 }, allowing()),
+    ).rejects.toThrow("uses on that image");
+    await expect(
+      validateBakeRequest({ ...request, agent: "app/other" }, allowing()),
+    ).rejects.toThrow("bakes no skills");
   });
 
-  test("a host and image of a registered definition are accepted", async () => {
-    const allowance = newBakeAllowance();
-
-    allowBake(allowance, {
-      image: sandboxImage.custom("py:v1"),
-      skills: [
-        skills.git("a/b", { github: { url: "https://git.example.com/" } }),
-      ],
+  test("a host, image and size of the agent's definition are accepted", async () => {
+    const source = skills.git("a/b", {
+      ref: "main",
+      github: { url: "https://git.example.com/" },
     });
+    const { events, create } = setup({
+      image: sandboxImage.custom("py:v1"),
+      size: { vcpu: 4, memoryMb: 4096 },
+    });
+    await create([source]);
+    const request = events[0]?.data as SkillsBakeRequest;
 
-    expect([...allowance.urls]).toContain("https://git.example.com");
-    expect([...allowance.images]).toEqual(["py:v1"]);
-  });
-
-  test("a dynamic sandboxes config takes any image but only github.com", async () => {
-    const request = await honest();
-    const source = request.sources[0] as SkillsBakeRequest["sources"][number];
-    const allowance = { ...newBakeAllowance(), dynamic: true };
-
-    await expect(
-      validateBakeRequest({ ...request, image: "any:img" }, allowance),
-    ).rejects.toThrow("bake into");
+    expect(request).toMatchObject({ image: "py:v1", vcpu: 4 });
     await expect(
       validateBakeRequest(
-        { ...request, sources: [{ ...source, url: "https://x.test" }] },
-        allowance,
+        request,
+        allowing({
+          image: sandboxImage.custom("py:v1"),
+          vcpu: 4,
+          memoryMb: 4096,
+          skills: [source],
+        }),
       ),
-    ).rejects.toThrow("the url");
+    ).resolves.toBeDefined();
   });
 
-  test("a dynamic agent doesn't hide another agent's host", async () => {
+  test("a dynamic agent relaxes only its own requests", async () => {
     const request = await honest();
-    const source = request.sources[0] as SkillsBakeRequest["sources"][number];
-    const allowance = { ...newBakeAllowance(), dynamic: true };
-
-    allowBake(allowance, {
-      skills: [
-        skills.git("a/b", { github: { url: "https://git.example.com" } }),
-      ],
-    });
+    const allowance = allowing();
+    allowDynamicBake(allowance, "app/dynamic");
 
     await expect(
       validateBakeRequest(
         {
-          ...request,
-          sources: [{ ...source, url: "https://git.example.com/" }],
+          ...withSource(request, { url: "https://git.example.com" }),
+          agent: "app/dynamic",
+          image: "any:img",
         },
         allowance,
       ),
     ).rejects.toThrow("bake into");
+    await expect(
+      validateBakeRequest(
+        {
+          ...withSource(request, { url: "http://x.test" }),
+          agent: "app/dynamic",
+        },
+        allowance,
+      ),
+    ).rejects.toThrow("the source");
+    await expect(
+      validateBakeRequest(
+        withSource(request, { url: "https://git.example.com" }),
+        allowance,
+      ),
+    ).rejects.toThrow("the source");
+    await expect(
+      validateBakeRequest({ ...request, image: "any:img" }, allowance),
+    ).rejects.toThrow("names image");
+    await expect(
+      validateBakeRequest(
+        { ...request, agent: "app/dynamic", vcpu: 1000 },
+        allowance,
+      ),
+    ).rejects.toThrow("more than");
+  });
+
+  test("one allowance per client is shared", () => {
+    const client = {};
+
+    expect(bakeAllowanceOf(client)).toBe(bakeAllowanceOf(client));
+    expect(bakeAllowanceOf(client)).not.toBe(bakeAllowanceOf({}));
   });
 });

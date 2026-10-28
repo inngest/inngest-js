@@ -351,6 +351,15 @@ export const toolNamespaceSeparator = "_";
 const startModes: readonly unknown[] = ["lazy", "eager"];
 
 /**
+ * The definition of a binding, whichever form it is written in.
+ */
+export const definitionOf = <TStart>(
+  binding: SandboxDefinition | SandboxBinding<TStart>,
+): SandboxDefinition => {
+  return "sandbox" in binding ? binding.sandbox : binding;
+};
+
+/**
  * A binding as `openSandboxes()` holds it: always the object form, with its
  * `start` checked. The one place bindings are validated.
  */
