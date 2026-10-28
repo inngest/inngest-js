@@ -50,7 +50,9 @@ export const kvOps = scenario({
   },
   run: async (ctx) => {
     const tag = `t${Date.now()}`;
-    const run = await ctx.finished(await ctx.send("go", { tag }));
+    const run = await ctx.finished(
+      await ctx.send("go", { tag }, { startsRun: true }),
+    );
 
     ctx.expect.run(run).toComplete();
     ctx.expect.run(run).toOutput({
@@ -70,7 +72,9 @@ export const kvOps = scenario({
     await ctx.eventually(
       "ttl keys expire and the claim is free",
       async () => {
-        const read = await ctx.finished(await ctx.send("read", { tag }));
+        const read = await ctx.finished(
+          await ctx.send("read", { tag }, { startsRun: true }),
+        );
 
         return read;
       },

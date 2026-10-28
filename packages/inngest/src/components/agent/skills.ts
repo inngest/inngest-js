@@ -496,13 +496,89 @@ const snapshotName = (entry: SnapshotEntry): string => {
 };
 
 /**
+ * What a bake request may ask for. The agents of a client fill it in from the
+ * sandbox definitions they register, so an event can't choose a host or an
+ * image the app doesn't use.
+ */
+export interface BakeAllowance {
+  /**
+   * The GitHub hosts sources may come from. github.com is always allowed.
+   */
+  urls: Set<string>;
+
+  /**
+   * The images definitions with baked skills use. A request may also name no
+   * image. Not enforced once `dynamic`.
+   */
+  images: Set<string>;
+
+  /**
+   * Whether a sandboxes config is a function, so its definitions can't be read
+   * ahead: every image is accepted then, and a host is accepted only if a
+   * static definition of another agent uses it, or it is github.com.
+   */
+  dynamic: boolean;
+}
+
+/**
+ * The most vCPUs and memory a bake may ask for, whatever the definitions say.
+ */
+export const maxBakeSize = { vcpu: 16, memoryMb: 32_768 };
+
+const trimUrl = (url: string): string => {
+  return url.replace(/\/+$/, "");
+};
+
+/**
+ * Notes the hosts and images of a definition's baked skills.
+ * @param allowance What to add to.
+ * @param definition A sandbox definition.
+ */
+export const allowBake = (
+  allowance: BakeAllowance,
+  definition: {
+    image?: SandboxImage;
+    skills?: readonly SkillsSource[];
+  },
+): void => {
+  const baked = (definition.skills ?? []).filter((source) => {
+    return source.freshness === "bake";
+  });
+
+  if (baked.length === 0) {
+    return;
+  }
+
+  if (definition.image) {
+    allowance.images.add(definition.image.ref);
+  }
+
+  for (const source of baked) {
+    allowance.urls.add(trimUrl(source.github.url));
+  }
+};
+
+/**
+ * An allowance that starts with github.com and nothing else.
+ */
+export const newBakeAllowance = (): BakeAllowance => {
+  return {
+    urls: new Set([defaultGithub.url]),
+    images: new Set(),
+    dynamic: false,
+  };
+};
+
+/**
  * Checks a bake request as untrusted input and rebuilds from it what the
  * function bakes: sources that pass the same checks as `skills.git()`, pinned
  * to 40-hex shas, and the snapshot entry computed from them. Throws when the
- * request is malformed or its name is not the one its sources bake into.
+ * request is malformed, asks for a host, image or size the app doesn't use, or
+ * its name is not the one its sources bake into.
  */
 export const validateBakeRequest = async (
   request: SkillsBakeRequest,
+  allowance: BakeAllowance,
 ): Promise<{
   sources: SkillsSource[];
   shas: string[];
@@ -522,9 +598,28 @@ export const validateBakeRequest = async (
     }
   }
 
+  if (
+    request.vcpu > maxBakeSize.vcpu ||
+    request.memoryMb > maxBakeSize.memoryMb
+  ) {
+    throw new SandboxValidationError(
+      `Skills bake request asks for more than ${maxBakeSize.vcpu} vCPUs or ${maxBakeSize.memoryMb} MB`,
+    );
+  }
+
   if (request.image !== undefined && typeof request.image !== "string") {
     throw new SandboxValidationError(
       "Skills bake request has an invalid image",
+    );
+  }
+
+  if (
+    request.image &&
+    !allowance.dynamic &&
+    !allowance.images.has(request.image)
+  ) {
+    throw new SandboxValidationError(
+      `Skills bake request names image "${request.image}", which no sandbox of the app bakes skills into`,
     );
   }
 
@@ -535,9 +630,15 @@ export const validateBakeRequest = async (
       );
     }
 
-    if (typeof item.url !== "string" || !/^https?:\/\//.test(item.url)) {
+    if (typeof item.url !== "string") {
       throw new SandboxValidationError(
         `Skills bake request has an invalid url "${String(item.url)}"`,
+      );
+    }
+
+    if (!allowance.urls.has(trimUrl(item.url))) {
+      throw new SandboxValidationError(
+        `Skills bake request has the url "${item.url}", which no sandbox of the app bakes skills from`,
       );
     }
 
@@ -551,6 +652,7 @@ export const validateBakeRequest = async (
   const shas = asked.map((item) => {
     return item.sha;
   });
+
   const entry = await skillsEntry(
     sources,
     shas,
@@ -571,9 +673,19 @@ export const validateBakeRequest = async (
  * Builds a skills snapshot when asked: the function that bakes what a sandbox
  * missed. One build runs per snapshot name; asking again once it exists does
  * nothing.
+ *
+ * The request is validated first thing in the run, not in the trigger: the
+ * singleton key is the name the event gives, so a forged event with a real name
+ * can hold the slot for the moment it takes to be refused, and the real request
+ * is skipped then. The run is refused at once, so the slot frees at once.
+ *
+ * @param client Inngest client.
+ * @param allowance The hosts and images requests may use, filled in as agents
+ * are made.
  */
 export const createSkillsBakeFunction = (
   client: Inngest.Any,
+  allowance: BakeAllowance,
 ): InngestFunction.Any => {
   return client.createFunction(
     {
@@ -583,13 +695,14 @@ export const createSkillsBakeFunction = (
     },
     async ({ event, step, group, runId }) => {
       const request = event.data as SkillsBakeRequest;
-      const { sources, shas, entry } = await validateBakeRequest(request).catch(
-        (error: unknown) => {
-          throw new NonRetriableError(
-            error instanceof Error ? error.message : String(error),
-          );
-        },
-      );
+      const { sources, shas, entry } = await validateBakeRequest(
+        request,
+        allowance,
+      ).catch((error: unknown) => {
+        throw new NonRetriableError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
       const cache = snapshotCache(client, {
         memo: (id, fn) => {
           return step.run(id, fn);

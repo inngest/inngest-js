@@ -16,7 +16,11 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import type { SandboxDefinition } from "./defs.ts";
-import { createSkillsBakeFunction } from "./skills.ts";
+import {
+  allowBake,
+  createSkillsBakeFunction,
+  newBakeAllowance,
+} from "./skills.ts";
 import type {
   ThreadCronTrigger,
   ThreadEventTrigger,
@@ -81,6 +85,24 @@ const mayBakeSkills = (
   });
 };
 
+const allowBakes = (
+  allowance: ReturnType<typeof newBakeAllowance>,
+  sandboxes: AgentFunctionConfig["sandboxes"],
+): void => {
+  if (typeof sandboxes === "function") {
+    allowance.dynamic = true;
+
+    return;
+  }
+
+  for (const binding of Object.values(sandboxes ?? {})) {
+    allowBake(
+      allowance,
+      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition),
+    );
+  }
+};
+
 /**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
@@ -97,6 +119,7 @@ const mayBakeSkills = (
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
   let bake: InngestFunction.Any | undefined;
+  const allowance = newBakeAllowance();
 
   return {
     agent: (config: AgentFunctionConfig<unknown>, body: AgentBody) => {
@@ -112,8 +135,10 @@ export const createAgents = (client: Inngest.Any): Agents => {
       // many agents there are. A sandboxes config that is a function can't be
       // read ahead, so it counts as possibly having skills.
       if (mayBakeSkills(config.sandboxes)) {
-        bake ??= createSkillsBakeFunction(client);
+        bake ??= createSkillsBakeFunction(client, allowance);
       }
+
+      allowBakes(allowance, config.sandboxes);
 
       return created;
     },

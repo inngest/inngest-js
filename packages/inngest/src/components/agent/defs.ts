@@ -34,6 +34,7 @@ import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   createWithSkills,
   isSkillsSource,
+  maxBakeSize,
   type SkillsRuntime,
   type SkillsSource,
 } from "./skills.ts";
@@ -243,6 +244,16 @@ const defineSandbox = (
     ) {
       throw new SandboxValidationError(
         `Sandbox "${options.id}" bakes skills, which can't be combined with environment or secrets: use freshness "boot" for "${source.repo}"`,
+      );
+    }
+
+    if (
+      source.freshness === "bake" &&
+      ((options.vcpu ?? 0) > maxBakeSize.vcpu ||
+        (options.memoryMb ?? 0) > maxBakeSize.memoryMb)
+    ) {
+      throw new SandboxValidationError(
+        `Sandbox "${options.id}" bakes skills, which allows at most ${maxBakeSize.vcpu} vCPUs and ${maxBakeSize.memoryMb} MB: use freshness "boot" for "${source.repo}"`,
       );
     }
   }
