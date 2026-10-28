@@ -81,7 +81,7 @@ describe("report", () => {
       { text: "one" },
       { text: "two", kind: "result" },
     ]);
-    expect(ids).toEqual(["report:1:main", "report:2:main"]);
+    expect(ids).toEqual(["report:1:0:main", "report:2:0:main"]);
   });
 
   test("with no main channel and no config it does nothing", async () => {
@@ -123,6 +123,12 @@ describe("trigger helpers", () => {
     expect(trigger.thread).toContain("has(event.data.thread_ts)");
     expect(trigger.message({ data: { text: "hi" } })).toBe("hi");
     expect(slack.thread().if).toBeUndefined();
+  });
+
+  test("github.comment rejects a repository that is not owner/repo", () => {
+    expect(() => {
+      return github.comment({ repos: ["acme"] });
+    }).toThrow("not an");
   });
 
   test("github.comment keys by repository and number", () => {

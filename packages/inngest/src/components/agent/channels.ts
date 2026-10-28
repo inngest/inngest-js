@@ -99,7 +99,8 @@ export const defineChannel = (adapter: Channel): Channel => {
 
 /**
  * Renders an ask through a channel. This is what `thread.ask` calls; a channel
- * without `ask` is an error that says so, never a silent skip.
+ * without `ask` is an error that says so, never a silent skip. Call it inside
+ * a step, so a replay of the run does not render the question twice.
  * @param channel The channel to ask through.
  * @param ask The question.
  */
@@ -191,7 +192,7 @@ export const createReporter = (
       }
 
       const destination = channel;
-      await runStep(`report:${n}:${name}`, async () => {
+      await runStep(`report:${n}:${index}:${name}`, async () => {
         await destination.post(normalized);
       });
     }

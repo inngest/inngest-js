@@ -96,6 +96,12 @@ export const github = {
     const repos = options.repos?.map((full) => {
       const [owner, repo] = full.split("/");
 
+      if (!owner || !repo) {
+        throw new Error(
+          `github.comment: "${full}" is not an "owner/repo" repository.`,
+        );
+      }
+
       return `(event.data.owner == ${JSON.stringify(owner)} && event.data.repo == ${JSON.stringify(repo)})`;
     });
 

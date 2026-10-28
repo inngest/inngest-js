@@ -4,6 +4,7 @@
  * Slack thread it started in and to a GitHub comment chosen from the event,
  * and renders an ask through the Slack channel. Slack and GitHub are the fakes.
  */
+import { step } from "inngest";
 import {
   agent,
   askThrough,
@@ -57,10 +58,12 @@ export const channels = scenario({
           tools: {},
         });
 
-        await askThrough(destinations.main as Channel, {
-          signal: "ask-1",
-          question: "Open the PR?",
-          options: ["open", "skip"],
+        await step.run("ask-1", async () => {
+          await askThrough(destinations.main as Channel, {
+            signal: "ask-1",
+            question: "Open the PR?",
+            options: ["open", "skip"],
+          });
         });
         await report({ text: result.text, kind: "result" });
 
