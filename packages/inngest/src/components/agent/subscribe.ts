@@ -90,6 +90,17 @@ export type SubscribeData<TOpts> = TOpts extends {
     : unknown;
 
 /**
+ * The data of a subscription's messages: an explicit `TData` wins (an `any`
+ * stays `any`), and without one the event types' data is inferred.
+ */
+export type SubscribeMessageData<TData, TOpts> = 0 extends 1 & TData
+  ? // biome-ignore lint/suspicious/noExplicitAny: an explicit any stays any
+    any
+  : unknown extends TData
+    ? SubscribeData<TOpts>
+    : TData;
+
+/**
  * The name of an event source.
  * @param source A name or an event type.
  */

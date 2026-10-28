@@ -1,7 +1,9 @@
 /**
  * @module
- * EXPERIMENTAL: `agent.invoke()`, which starts another agent by a plain
- * `"appId/functionId"` string from inside a function and returns its result.
+ * EXPERIMENTAL: `agent.invoke()`, which starts another agent from inside a
+ * function and returns its result. The agent is the one `createAgents()`
+ * returned (its input is typed from its `invoke()` trigger and its result from
+ * its body) or a plain `"appId/functionId"` string (untyped).
  *
  * It is a `step.invoke` to a function reference, so the target resolves the
  * way every `step.invoke` target does. The call adds what an agent needs on
@@ -13,6 +15,7 @@ import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import type { AgentFunction } from "./agentFunction.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -111,9 +114,14 @@ const parseTarget = (target: string): { appId: string; functionId: string } => {
 
 /**
  * EXPERIMENTAL: Starts the agent `target` with `data` and waits for its
- * result. Call it inside a function. `target` is `"appId/functionId"`; the
- * function is assumed to be an agent, one that declares `input` and has no
- * trigger of its own.
+ * result. Call it inside a function. `target` is the agent, or
+ * `"appId/functionId"` for one this code has no handle on. The callee finds
+ * the thread this call names in `data._agent.thread`.
+ *
+ * If the callee is stopped (a stop now cancels its run), the caller gets no
+ * error: the executor completes the caller's run with a null output, as it
+ * does for any `step.invoke` of a cancelled function, and the code after this
+ * call does not run.
  *
  * The agent runs in the caller's session (`agent_session`) on a new thread
  * (`agent_thread`). Without a session, the caller's run starts one. Other
@@ -135,11 +143,22 @@ const parseTarget = (target: string): { appId: string; functionId: string } => {
  * @param data The agent's input.
  * @param options Step ID, thread key, meta and timeout.
  */
-export const invoke = async <TOutput = unknown>(
+export function invoke<TInput extends Record<string, unknown>, TOutput>(
+  target: AgentFunction<TInput, TOutput>,
+  data: TInput,
+  options?: AgentInvokeOptions,
+): Promise<TOutput>;
+export function invoke<TOutput = unknown>(
   target: string,
+  data?: Record<string, unknown>,
+  options?: AgentInvokeOptions,
+): Promise<TOutput>;
+export async function invoke(
+  agentOrRef: string | { ref: string },
   data: Record<string, unknown> = {},
   options: AgentInvokeOptions = {},
-): Promise<TOutput> => {
+): Promise<unknown> {
+  const target = typeof agentOrRef === "string" ? agentOrRef : agentOrRef.ref;
   const { appId, functionId } = parseTarget(target);
   const execution = getAsyncCtxSync()?.execution;
 
@@ -180,6 +199,7 @@ export const invoke = async <TOutput = unknown>(
         ...data,
         [invokeKey]: {
           depth: depth + 1,
+          thread: sessions.agent_thread,
           ...(limits && { limits: childLimits(limits) }),
         },
       },
@@ -188,5 +208,5 @@ export const invoke = async <TOutput = unknown>(
     },
   );
 
-  return result as TOutput;
-};
+  return result;
+}

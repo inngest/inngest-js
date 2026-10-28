@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: the overloads type the config and body; the implementation accepts any of them
+
 /**
  * @module
  * EXPERIMENTAL: the agent layer exported from `inngest/experimental/agents`.
@@ -24,10 +26,13 @@ import {
   createSkillsBakeFunction,
 } from "./skills.ts";
 import type {
+  ThreadCronEvent,
   ThreadCronTrigger,
   ThreadEventTrigger,
+  ThreadTriggerEventOf,
   ThreadTriggerEventSource,
   ThreadTriggerList,
+  ThreadTriggerListEvent,
 } from "./threadTrigger.ts";
 
 export interface Agents {
@@ -37,20 +42,28 @@ export interface Agents {
    * @param config Function ID and KV store.
    * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
    */
-  agent<const TOne extends ThreadTriggerEventSource>(
+  agent<TType extends EventTypeWithAnySchema<string>, TOutput = unknown>(
+    config: AgentFunctionConfig<TType, ThreadTriggerEventOf<TType>>,
+    body: AgentBody<ThreadTriggerEventOf<TType>, TOutput>,
+  ): AgentFunction<InvokeInput<ThreadTriggerEventOf<TType>>, TOutput>;
+  agent<const TOne extends ThreadTriggerEventSource, TOutput = unknown>(
     config: AgentFunctionConfig<
-      ThreadEventTrigger<TOne> | EventTypeWithAnySchema<string>
+      ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
+      ThreadTriggerEventOf<TOne>
     >,
-    body: AgentBody,
-  ): AgentFunction;
-  agent(
-    config: AgentFunctionConfig<ThreadCronTrigger>,
-    body: AgentBody,
-  ): AgentFunction;
-  agent<const TMany extends readonly unknown[]>(
-    config: AgentFunctionConfig<ThreadTriggerList<TMany>>,
-    body: AgentBody,
-  ): AgentFunction;
+    body: AgentBody<ThreadTriggerEventOf<TOne>, TOutput>,
+  ): AgentFunction<InvokeInput<ThreadTriggerEventOf<TOne>>, TOutput>;
+  agent<TOutput = unknown>(
+    config: AgentFunctionConfig<ThreadCronTrigger, ThreadCronEvent>,
+    body: AgentBody<ThreadCronEvent, TOutput>,
+  ): AgentFunction<Record<string, unknown>, TOutput>;
+  agent<const TMany extends readonly unknown[], TOutput = unknown>(
+    config: AgentFunctionConfig<
+      ThreadTriggerList<TMany>,
+      ThreadTriggerListEvent<TMany>
+    >,
+    body: AgentBody<ThreadTriggerListEvent<TMany>, TOutput>,
+  ): AgentFunction<InvokeInput<ThreadTriggerListEvent<TMany>>, TOutput>;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
@@ -71,6 +84,18 @@ export interface Agents {
    */
   functions(): InngestFunction.Any[];
 }
+
+/**
+ * What `agent.invoke(agent, input)` takes: the data of the agent's
+ * `invoke()` triggers, or any record for an agent without one.
+ */
+export type InvokeInput<TEvent> = [
+  Extract<TEvent, { name: "inngest/function.invoked" }>,
+] extends [never]
+  ? Record<string, unknown>
+  : DataOf<Extract<TEvent, { name: "inngest/function.invoked" }>>;
+
+type DataOf<T> = T extends { data: infer TData } ? TData : never;
 
 const mayBakeSkills = (
   sandboxes: AgentFunctionConfig["sandboxes"],
@@ -131,7 +156,10 @@ export const createAgents = (client: Inngest.Any): Agents => {
   let bakes = false;
 
   return {
-    agent: (config: AgentFunctionConfig<unknown>, body: AgentBody) => {
+    agent: (
+      config: AgentFunctionConfig<unknown, any>,
+      body: AgentBody<any>,
+    ) => {
       const created = createAgentFunction(
         client,
         config as AgentFunctionConfig,
@@ -240,13 +268,16 @@ export type {
 } from "./threadList.ts";
 export { listThreads } from "./threadList.ts";
 export type {
+  ThreadCronEvent,
   ThreadCronTrigger,
   ThreadEventTrigger,
   ThreadKeyConfig,
   ThreadTrigger,
   ThreadTriggerData,
   ThreadTriggerEvent,
+  ThreadTriggerEventOf,
   ThreadTriggerEventSource,
   ThreadTriggerList,
+  ThreadTriggerListEvent,
   ThreadTriggers,
 } from "./threadTrigger.ts";

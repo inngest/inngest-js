@@ -111,6 +111,23 @@ export const agentsAppEvent = scenario({
     );
     ctx.check("one run for the thread", state.runs === 1, state);
 
+    // Core rejects an event that breaks the schema for a run it would start;
+    // the live run drops it the same way and carries on with the next one.
+    await sleep(2000);
+    await ctx.send("order", { id: key, note: "third" });
+    const after = await ctx.eventually(
+      "an event that breaks the schema is dropped and the next one delivered",
+      keys,
+      (s) => {
+        return list(s, "turns").includes(`order ${key}: third`);
+      },
+    );
+    ctx.check(
+      "the invalid event was not delivered",
+      list(after, "turns").length === 3 && after.runs === 1,
+      after,
+    );
+
     await other.send(order.create({ id: "ignored", note: "skipped" }));
     await sleep(3000);
     ctx.check(

@@ -37,8 +37,8 @@ import {
 import {
   eventNameOf,
   openSubscription,
-  type SubscribeData,
   type SubscribeEvent,
+  type SubscribeMessageData,
   type SubscribeOptions,
   type Subscription,
   streamsOf,
@@ -588,16 +588,12 @@ export const createStepTools = <
     >(
       idOrOptions: StepOptionsOrId,
       opts: TOpts,
-    ): Promise<
-      Subscription<unknown extends TData ? SubscribeData<TOpts> : TData>
-    > => {
+    ): Promise<Subscription<SubscribeMessageData<TData, TOpts>>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
       const streams = streamsOf(opts);
 
-      return openSubscription<
-        unknown extends TData ? SubscribeData<TOpts> : TData
-      >(
+      return openSubscription<SubscribeMessageData<TData, TOpts>>(
         function op(stepId, mode, seq, stream) {
           const target = streams[stream];
 
