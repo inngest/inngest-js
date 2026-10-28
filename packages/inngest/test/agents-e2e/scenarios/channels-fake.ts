@@ -4,7 +4,8 @@
  * the scenario asserts on what they received.
  */
 
-import { agent, tool } from "inngest/experimental";
+import { tool } from "inngest/experimental";
+import { agent } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
 

@@ -3,7 +3,8 @@
  * Proves the fake Sandboxes API: `group.sandbox()` creates a sandbox, runs a
  * canned command and a model-driven code tool in it, and destroys it.
  */
-import { agent, type DurableSandbox } from "inngest/experimental";
+import type { DurableSandbox } from "inngest/experimental";
+import { agent } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
 
 export const sandboxFake = scenario({

@@ -5,14 +5,14 @@
  * created lazily by its first tool call, once; the one it never touches is
  * never created.
  */
+import { tool } from "inngest/experimental";
 import {
   agent,
   agentTools,
   openSandboxes,
   sandbox,
   sandboxTools,
-  tool,
-} from "inngest/experimental";
+} from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
 

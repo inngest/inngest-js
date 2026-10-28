@@ -6,6 +6,7 @@
  */
 import { Inngest, NonRetriableError } from "inngest";
 import {
+  createAgents,
   createKv,
   getThread,
   kv,
@@ -29,7 +30,8 @@ export const agentsRedelivery = scenario({
   owner: "agents-f",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client }) => {
-    const agent = client.agent(
+    const agents = createAgents(client);
+    const agent = agents.agent(
       { id: "agents-redeliver" },
       async ({ inbox }) => {
         for await (const message of inbox) {
@@ -59,7 +61,7 @@ export const agentsRedelivery = scenario({
       },
     );
 
-    return agent.functions;
+    return agents.functions();
   },
   run: async (ctx) => {
     const client = new Inngest({

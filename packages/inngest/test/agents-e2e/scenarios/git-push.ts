@@ -15,7 +15,7 @@ import {
   openSandboxes,
   sandbox,
   sandboxTools,
-} from "inngest/experimental";
+} from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
 import { type GitRemote, startGitRemote } from "../kit/gitRemote.ts";
 
