@@ -363,7 +363,12 @@ export function createAgentFunction(
       // this marks the end on its own key and `state()` shows the thread idle
       // while the record is still this run's. A newer run's record wins.
       if (thread) {
-        await store.scope("thread", thread).set(threadEndedKey, runId);
+        await store
+          .scope("thread", thread)
+          .update<string[]>(threadEndedKey, (ended) => {
+            // A list, so cleanups that run out of order cannot hide each other.
+            return [...(ended ?? []), runId].slice(-20);
+          });
       }
     },
   );

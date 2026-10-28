@@ -514,7 +514,7 @@ describe("thread state", () => {
       },
     });
 
-    expect(await thread.get("__ended")).toBe("r1");
+    expect(await thread.get("__ended")).toEqual(["r1"]);
     expect(await thread.get("__state")).toMatchObject({ status: "running" });
   });
 });
