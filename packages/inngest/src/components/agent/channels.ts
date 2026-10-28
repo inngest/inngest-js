@@ -209,7 +209,9 @@ export const createReporter = (
         return [{ name: `inline${index}`, channel: target, index }];
       }
 
-      const channel = channels[target];
+      const channel = Object.hasOwn(channels, target)
+        ? channels[target]
+        : undefined;
 
       // The default destination is optional; a name somebody wrote is not.
       if (!channel && wanted === "main" && !options?.to && !configured) {

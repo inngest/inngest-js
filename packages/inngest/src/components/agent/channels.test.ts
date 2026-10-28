@@ -591,6 +591,28 @@ describe("adapter safety", () => {
     }
   });
 
+  test("GitHub entities cannot spell a mention, and odd channel names are unknown", async () => {
+    const posts: string[] = [];
+
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      posts.push(JSON.parse(init.body).body);
+
+      return new Response("{}", { status: 201 });
+    });
+
+    await github
+      .channel(githubEvent, { repos: ["acme/app"] })
+      .post({ text: "&#64;octocat &commat;octocat" });
+
+    expect(posts[0]).toBe("&amp;#64;octocat &amp;commat;octocat");
+
+    const report = createReporter({}, undefined, direct);
+
+    for (const to of ["constructor", "__proto__", "toString"]) {
+      await expect(report("x", { to })).rejects.toThrow(NonRetriableError);
+    }
+  });
+
   test("a GitHub 403 is retried only when it is a rate limit", async () => {
     const channel = github.channel(githubEvent, { repos: ["acme/app"] });
 

@@ -123,12 +123,16 @@ export interface GithubThreadOptions {
 const maxBody = 65_000;
 
 /**
- * Makes model text inert in a comment: `@name` becomes `@` and a zero-width
- * space then `name`, so nobody is mentioned, and `<!--` is broken so the text
- * cannot open an HTML comment (the ask marker is one).
+ * Makes model text inert in a comment: `&` is escaped, so an entity such as
+ * `&#64;` cannot spell a mention, `@name` becomes `@` and a zero-width space
+ * then `name`, so nobody is mentioned, and `<!--` is broken so the text cannot
+ * open an HTML comment (the ask marker is one).
  */
 const inert = (text: string): string => {
-  return text.replace(/@(?=[A-Za-z0-9_-])/g, "@​").replace(/<!--/g, "<​!--");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/@(?=[A-Za-z0-9_-])/g, "@\u200b")
+    .replace(/<!--/g, "<\u200b!--");
 };
 
 const render = (message: ChannelMessage): string => {
