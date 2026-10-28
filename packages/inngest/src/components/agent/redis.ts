@@ -104,10 +104,14 @@ export interface RedisClient {
 
   /**
    * Runs the commands as one MULTI/EXEC block, sent in a single write so no
-   * other command on this connection lands inside it. Resolves to the EXEC reply.
-   * @param commands Commands to run, each a list of arguments.
+   * other command on this connection lands inside it. Resolves to the EXEC
+   * reply. There is no rollback: if one command fails when EXEC runs, the ones
+   * before it have already run and the call rejects after that partial write.
    */
-  transaction(commands: string[][]): Promise<Reply>;
+  transaction(
+    /** Commands to run, each a list of arguments. */
+    commands: string[][],
+  ): Promise<Reply>;
   close(): void;
   isClosed(): boolean;
 }

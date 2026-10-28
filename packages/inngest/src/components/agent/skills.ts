@@ -30,7 +30,7 @@
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { GroupSandbox } from "../sandbox/group.ts";
+import { defaultSandboxSize, type GroupSandbox } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
 import { image as sandboxImage } from "../sandbox/image.ts";
 import {
@@ -542,11 +542,6 @@ export interface AgentBakeAllowance {
 export type BakeAllowance = Map<string, AgentBakeAllowance>;
 
 /**
- * The size of a sandbox that names none, as `sandboxCreateDefaults` has it.
- */
-const defaultBakeSize = { vcpu: 2, memoryMb: 2048 };
-
-/**
  * The most vCPUs and memory a bake may ask for, whatever the definitions say.
  */
 export const maxBakeSize = Object.freeze({ vcpu: 16, memoryMb: 32_768 });
@@ -616,8 +611,8 @@ export const allowBake = (
   const allowed = allowanceOf(allowance, agent);
   const image = definition.image?.ref ?? "";
   const size = allowed.sizes.get(image);
-  const vcpu = definition.vcpu ?? defaultBakeSize.vcpu;
-  const memoryMb = definition.memoryMb ?? defaultBakeSize.memoryMb;
+  const vcpu = definition.vcpu ?? defaultSandboxSize.vcpu;
+  const memoryMb = definition.memoryMb ?? defaultSandboxSize.memoryMb;
 
   allowed.sizes.set(image, {
     vcpu: Math.max(size?.vcpu ?? 0, vcpu),
@@ -700,7 +695,7 @@ export const validateBakeRequest = async (
   if (!allowed.dynamic) {
     if (!size) {
       throw new SandboxValidationError(
-        `Skills bake request names image "${String(request.image)}", which no sandbox of "${request.agent}" bakes skills into`,
+        `Skills bake request names image "${request.image ?? "the default image"}", which no sandbox of "${request.agent}" bakes skills into`,
       );
     }
 

@@ -5,16 +5,18 @@
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import {
   askThrough,
   type ChannelMessage,
   createReporter,
   defineChannel,
+  truncate,
 } from "./channels.ts";
-import { github } from "./github.ts";
+import { github, githubCommentEvent } from "./github.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { slack } from "./slack.ts";
+import { slack, slackMessageEvent } from "./slack.ts";
 import { run } from "./test-helpers.ts";
 
 const recorder = () => {
@@ -54,6 +56,7 @@ describe("defineChannel and askThrough", () => {
     });
 
     await askThrough(asking, { signal: "s1", question: "ok?" });
+
     expect(asks).toEqual([{ signal: "s1", question: "ok?" }]);
 
     await expect(
@@ -65,6 +68,7 @@ describe("defineChannel and askThrough", () => {
 describe("report", () => {
   test("posts to main by default, as a step per destination", async () => {
     const main = recorder();
+
     const ids: string[] = [];
 
     const report = createReporter(
@@ -99,6 +103,7 @@ describe("report", () => {
     const a = recorder();
     const b = recorder();
     const c = recorder();
+
     const channels = { a: a.channel, b: b.channel };
 
     const report = createReporter(channels, ["a", c.channel], direct);
@@ -145,50 +150,39 @@ describe("report validation", () => {
 
     expect(a.posts).toEqual([]);
   });
-
-  test("a null thread_ts is rejected, so the key and the target agree", () => {
-    expect(() => {
-      return slack.channel({
-        data: { channel: "C1", ts: "1.1", text: "hi", thread_ts: null },
-      });
-    }).toThrow("thread_ts");
-  });
-
-  test("a Slack message with a null user is accepted", () => {
-    expect(() => {
-      return slack.channel({
-        data: { channel: "C1", ts: "1.1", text: "hi", user: null },
-      });
-    }).not.toThrow();
-  });
 });
 
+const slackEvent = {
+  data: { channel: "C1", ts: "1.1", text: "hi" },
+};
+
+const githubEvent = {
+  data: { owner: "acme", repo: "app", number: "7", body: "b" },
+};
+
 describe("trigger helpers", () => {
-  test("slack.thread keys by channel and thread timestamp", () => {
+  test("slack.thread keys by channel and thread timestamp and skips bots", () => {
     const trigger = slack.thread({ in: ["C1", "C2"] });
 
-    expect(trigger.event).toBe("slack/message");
+    expect(trigger.event).toBe(slackMessageEvent);
 
     expect(trigger.if).toBe(
-      '(event.data.channel == "C1" || event.data.channel == "C2")',
+      '!has(event.data.botId) && (event.data.channel == "C1" || event.data.channel == "C2")',
     );
 
-    expect(trigger.thread).toContain("has(event.data.thread_ts)");
+    expect(trigger.thread).toContain("has(event.data.threadTs)");
+
     expect(trigger.message({ data: { text: "hi" } })).toBe("hi");
 
-    expect(slack.thread().if).toBeUndefined();
+    expect(slack.thread({ in: ["C1"], allowBots: true }).if).toBe(
+      '(event.data.channel == "C1")',
+    );
   });
 
-  test("github.comment rejects a repository that is not owner/repo", () => {
-    expect(() => {
-      return github.comment({ repos: ["acme"] });
-    }).toThrow("not an");
-  });
+  test("github.thread keys by repository and number", () => {
+    const trigger = github.thread({ repos: ["acme/app"] });
 
-  test("github.comment keys by repository and number", () => {
-    const trigger = github.comment({ repos: ["acme/app"] });
-
-    expect(trigger.event).toBe("github/issue_comment");
+    expect(trigger.event).toBe(githubCommentEvent);
 
     expect(trigger.if).toBe(
       '((event.data.owner == "acme" && event.data.repo == "app"))',
@@ -196,73 +190,229 @@ describe("trigger helpers", () => {
 
     expect(trigger.thread).toContain('#" + event.data.number');
   });
+
+  test("the allow list is required, not empty and well formed", () => {
+    expect(() => {
+      return slack.thread({ in: [] });
+    }).toThrow("cannot be empty");
+
+    expect(() => {
+      return slack.thread(undefined as never);
+    }).toThrow("cannot be empty");
+
+    expect(() => {
+      return slack.thread({ in: ["general"] });
+    }).toThrow("not a Slack channel ID");
+
+    expect(() => {
+      return github.thread({ repos: [] });
+    }).toThrow("cannot be empty");
+
+    expect(() => {
+      return github.thread({ repos: ["acme"] });
+    }).toThrow("not an");
+
+    expect(() => {
+      return github.thread({ repos: ["../app"] });
+    }).toThrow("not an");
+  });
+});
+
+describe("channel routing", () => {
+  test("a channel outside the allow list throws and is not retried", () => {
+    expect(() => {
+      return slack.channel(slackEvent, { in: ["C2"] });
+    }).toThrow(NonRetriableError);
+
+    expect(() => {
+      return github.channel(githubEvent, { repos: ["acme/other"] });
+    }).toThrow(NonRetriableError);
+
+    expect(() => {
+      return slack.channel(slackEvent, undefined as never);
+    }).toThrow("cannot be empty");
+
+    expect(() => {
+      return github.channel(githubEvent, { repos: [] });
+    }).toThrow("cannot be empty");
+  });
+
+  test("a target is checked against the list too", () => {
+    expect(() => {
+      return slack.channel({ channel: "C9", threadTs: "1.1" }, { in: ["C1"] });
+    }).toThrow("allow list");
+
+    expect(() => {
+      return github.channel(
+        { owner: "acme", repo: "app", number: 7 },
+        { repos: ["acme/other"] },
+      );
+    }).toThrow("allow list");
+  });
+});
+
+describe("event validation", () => {
+  test("Slack fields are checked strictly, and a bad event is not retried", () => {
+    const bad = [
+      { channel: "general", ts: "1.1", text: "x" },
+      { channel: "C1", ts: "x", text: "x" },
+      { channel: "C1", ts: "1.1", threadTs: null, text: "x" },
+      { channel: "C1", ts: "1.1", botId: null, text: "x" },
+      { channel: "C1", ts: "1.1", text: 1 },
+    ];
+
+    for (const data of bad) {
+      expect(() => {
+        return slack.channel({ data }, { in: ["C1", "general"] });
+      }).toThrow(NonRetriableError);
+    }
+
+    expect(() => {
+      return slack.channel(
+        { data: { ...slackEvent.data, user: null } },
+        { in: ["C1"] },
+      );
+    }).not.toThrow();
+  });
+
+  test("GitHub fields are checked strictly", () => {
+    const bad = [
+      { owner: "..", repo: "app", number: "7", body: "b" },
+      { owner: "acme", repo: "r#5", number: "7", body: "b" },
+      { owner: "acme", repo: "app", number: "5#7", body: "b" },
+    ];
+
+    for (const data of bad) {
+      expect(() => {
+        return github.channel({ data }, { repos: ["acme/app"] });
+      }).toThrow(NonRetriableError);
+    }
+
+    for (const number of ["", " ", "1e1", "0x10", "-5", "0", "abc"]) {
+      expect(() => {
+        return github.channel(
+          { data: { ...githubEvent.data, number } },
+          { repos: ["acme/app"] },
+        );
+      }).toThrow("not a valid value");
+    }
+
+    for (const number of [0, -1, 1.5, Number.NaN]) {
+      expect(() => {
+        return github.channel(
+          { owner: "acme", repo: "app", number },
+          { repos: ["acme/app"] },
+        );
+      }).toThrow(NonRetriableError);
+    }
+  });
 });
 
 describe("adapters", () => {
-  const calls: { url: string; body: Record<string, unknown> }[] = [];
+  const calls: {
+    url: string;
+    body: Record<string, unknown>;
+
+    signal: unknown;
+  }[] = [];
 
   beforeEach(() => {
     calls.length = 0;
 
-    vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
-      calls.push({ url, body: JSON.parse(init.body) });
+    vi.stubGlobal(
+      "fetch",
+      async (url: string, init: { body: string; signal: unknown }) => {
+        calls.push({ url, body: JSON.parse(init.body), signal: init.signal });
 
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    );
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  test("slack.channel posts and asks in the event's thread", async () => {
-    const channel = slack.channel(
-      { data: { channel: "C1", ts: "1.1", text: "hi" } },
-      { apiUrl: "http://slack.test" },
-    );
+  const slackChannel = () => {
+    return slack.channel(slackEvent, {
+      in: ["C1"],
+      apiUrl: "http://slack.test",
+    });
+  };
 
-    await channel.post({ text: "working" });
+  test("slack.channel posts and asks in the event's thread, parsing nothing", async () => {
+    await slackChannel().post({ text: "working" });
 
-    await channel.ask?.({
+    await slackChannel().ask?.({
       signal: "sig",
       question: "go?",
       options: ["yes", "no"],
     });
 
-    expect(calls[0]).toEqual({
-      url: "http://slack.test/chat.postMessage",
-      body: { channel: "C1", thread_ts: "1.1", text: "working" },
+    expect(calls[0]?.url).toBe("http://slack.test/chat.postMessage");
+
+    expect(calls[0]?.body).toEqual({
+      channel: "C1",
+      thread_ts: "1.1",
+      text: "working",
+      parse: "none",
+      link_names: false,
     });
 
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(calls[1]?.body.thread_ts).toBe("1.1");
+
+    expect(calls[1]?.body.parse).toBe("none");
 
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain('"value":"yes"');
   });
 
-  test("slack ask shows the timeout and uses a menu past 25 options", async () => {
-    const channel = slack.channel(
-      { channel: "C1", thread_ts: "1.1" },
-      { apiUrl: "http://slack.test" },
+  test("Slack text is escaped and errors are marked", async () => {
+    await slackChannel().post({ text: "<!channel> <@U1> <https://x|y> & z" });
+
+    await slackChannel().post({ text: "boom", kind: "error" });
+
+    await slackChannel().ask?.({
+      signal: "s",
+      question: "<!here> ok?",
+      timeout: "<7d>",
+    });
+
+    expect(calls[0]?.body.text).toBe(
+      "&lt;!channel&gt; &lt;@U1&gt; &lt;https://x|y&gt; &amp; z",
     );
 
+    expect(calls[1]?.body.text).toBe(":warning: boom");
+
+    expect(calls[2]?.body.text).toBe("&lt;!here&gt; ok?");
+
+    expect(JSON.stringify(calls[2]?.body.blocks)).toContain(
+      "Answer within &lt;7d&gt;.",
+    );
+
+    expect(JSON.stringify(calls[2]?.body.blocks)).not.toContain("<!here>");
+  });
+
+  test("slack ask shows the timeout and uses a menu past 25 options", async () => {
     const many = Array.from({ length: 30 }, (_, i) => {
       return `o${i}`;
     });
 
-    await channel.ask?.({
+    await slackChannel().ask?.({
       signal: "s",
       question: "q",
       options: ["a"],
       timeout: "7d",
     });
 
-    await channel.ask?.({ signal: "s", question: "q", options: many });
+    await slackChannel().ask?.({ signal: "s", question: "q", options: many });
 
     expect(JSON.stringify(calls[0]?.body.blocks)).toContain(
       "Answer within 7d.",
     );
 
     expect(JSON.stringify(calls[0]?.body.blocks)).toContain('"type":"button"');
+
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain("static_select");
 
     expect(JSON.stringify(calls[1]?.body.blocks)).not.toContain(
@@ -270,69 +420,15 @@ describe("adapters", () => {
     );
 
     await expect(
-      channel.ask?.({
+      slackChannel().ask?.({
         signal: "s",
         question: "q",
         options: Array.from({ length: 101 }, String),
       }),
     ).rejects.toThrow("at most 100");
-  });
-
-  test("slack.channel rejects an event of the wrong shape", () => {
-    expect(() => {
-      return slack.channel({ data: { text: 1 } });
-    }).toThrow("not a slack/message");
-  });
-
-  test("github.channel comments on the event's issue", async () => {
-    const channel = github.channel(
-      { data: { owner: "acme", repo: "app", number: "7", body: "b" } },
-      { apiUrl: "http://gh.test" },
-    );
-
-    await channel.post({ text: "progress" });
-
-    await channel.ask?.({ signal: "sig", question: "ok?", options: ["a"] });
-
-    expect(calls[0]).toEqual({
-      url: "http://gh.test/repos/acme/app/issues/7/comments",
-      body: { body: "progress" },
-    });
-
-    expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
-  });
-
-  test("an empty allow-list is an error, not everything", () => {
-    expect(() => {
-      return slack.thread({ in: [] });
-    }).toThrow("empty");
-
-    expect(() => {
-      return github.comment({ repos: [] });
-    }).toThrow("empty");
-  });
-
-  test("github.channel rejects a number that is not a number", () => {
-    expect(() => {
-      return github.channel({
-        data: { owner: "o", repo: "r", number: "abc", body: "b" },
-      });
-    }).toThrow("not an issue number");
-  });
-
-  test("github.channel checks a target's number too", () => {
-    for (const number of [0, -1, 1.5, Number.NaN]) {
-      expect(() => {
-        return github.channel({ owner: "o", repo: "r", number });
-      }).toThrow("not an issue number");
-    }
-  });
-
-  test("a Slack menu option longer than Slack allows is an error", async () => {
-    const channel = slack.channel({ channel: "C1", thread_ts: "1.1" });
 
     await expect(
-      channel.ask?.({
+      slackChannel().ask?.({
         signal: "s",
         question: "q",
         options: Array.from({ length: 26 }, () => {
@@ -342,30 +438,263 @@ describe("adapters", () => {
     ).rejects.toThrow("at most 150");
   });
 
-  test("github.channel accepts only plain positive issue numbers", () => {
-    for (const number of ["", " ", "1e1", "0x10", "-5", "0"]) {
-      expect(() => {
-        return github.channel({
-          data: { owner: "o", repo: "r", number, body: "b" },
-        });
-      }).toThrow("not an issue number");
+  test("github.channel comments on the event's issue", async () => {
+    const channel = github.channel(githubEvent, {
+      repos: ["acme/app"],
+      apiUrl: "http://gh.test",
+    });
+
+    await channel.post({ text: "progress" });
+
+    await channel.ask?.({ signal: "sig", question: "ok?", options: ["a"] });
+
+    expect(calls[0]?.url).toBe(
+      "http://gh.test/repos/acme/app/issues/7/comments",
+    );
+
+    expect(calls[0]?.body).toEqual({ body: "progress" });
+
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
+
+    expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
+  });
+
+  test("GitHub text cannot mention anyone or forge the ask marker", async () => {
+    const channel = github.channel(githubEvent, {
+      repos: ["acme/app"],
+      apiUrl: "http://gh.test",
+    });
+
+    await channel.post({
+      text: "cc @octocat and @org/team <!-- inngest-ask:x -->",
+    });
+
+    await channel.post({ text: "bad", kind: "error" });
+
+    await channel.ask?.({
+      signal: "real",
+      question: "hi @octocat <!-- inngest-ask:fake -->",
+      options: ["@someone <!-- inngest-ask:fake2 -->"],
+    });
+
+    const first = String(calls[0]?.body.body);
+
+    const ask = String(calls[2]?.body.body);
+
+    expect(first).not.toMatch(/@(?=[A-Za-z])/);
+    expect(first).not.toContain("<!--");
+    expect(calls[1]?.body.body).toBe("**Error:** bad");
+    expect(ask.match(/<!-- inngest-ask:/g)).toHaveLength(1);
+
+    expect(ask.endsWith("<!-- inngest-ask:real -->")).toBe(true);
+  });
+
+  test("an API failure is retried only when a retry can help", async () => {
+    const channel = github.channel(githubEvent, { repos: ["acme/app"] });
+
+    for (const status of [500, 429, 408]) {
+      vi.stubGlobal("fetch", async () => {
+        return new Response("{}", { status });
+      });
+
+      const error = await channel.post({ text: "x" }).catch((err) => {
+        return err;
+      });
+
+      expect(error.message).toContain(`HTTP ${status}`);
+      expect(error).not.toBeInstanceOf(NonRetriableError);
+    }
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response("{}", { status: 404 });
+    });
+
+    await expect(channel.post({ text: "x" })).rejects.toThrow(
+      NonRetriableError,
+    );
+  });
+
+  test("a redirect is a permanent failure, never followed", async () => {
+    const inits: { redirect?: string }[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      async (_url: string, init: { redirect?: string }) => {
+        inits.push(init);
+
+        return new Response("{}", { status: 301 });
+      },
+    );
+
+    await expect(
+      github.channel(githubEvent, { repos: ["acme/app"] }).post({ text: "x" }),
+    ).rejects.toThrow(NonRetriableError);
+
+    await expect(
+      slack.channel(slackEvent, { in: ["C1"] }).post({ text: "x" }),
+    ).rejects.toThrow(NonRetriableError);
+
+    expect(
+      inits.map((init) => {
+        return init.redirect;
+      }),
+    ).toEqual(["manual", "manual"]);
+  });
+
+  test("Slack API errors are classified", async () => {
+    vi.stubGlobal("fetch", async () => {
+      return new Response(JSON.stringify({ ok: false, error: "ratelimited" }), {
+        status: 200,
+      });
+    });
+
+    const limited = await slackChannel()
+      .post({ text: "x" })
+      .catch((err) => {
+        return err;
+      });
+
+    expect(limited).not.toBeInstanceOf(NonRetriableError);
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response(
+        JSON.stringify({ ok: false, error: "channel_not_found" }),
+        { status: 200 },
+      );
+    });
+
+    await expect(slackChannel().post({ text: "x" })).rejects.toThrow(
+      NonRetriableError,
+    );
+  });
+});
+
+describe("adapter safety", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("a Slack 200 that is not ok:true is a retryable failure", async () => {
+    const channel = slack.channel(slackEvent, { in: ["C1"] });
+
+    for (const body of ["", "not json", "{}"]) {
+      vi.stubGlobal("fetch", async () => {
+        return new Response(body, { status: 200 });
+      });
+
+      const error = await channel.post({ text: "x" }).catch((err) => {
+        return err;
+      });
+
+      expect(error.message).toContain("unreadable_response");
+      expect(error).not.toBeInstanceOf(NonRetriableError);
     }
   });
 
-  test("an API failure throws", async () => {
-    vi.stubGlobal("fetch", async () => {
-      return new Response("{}", { status: 500 });
+  test("GitHub entities cannot spell a mention, and odd channel names are unknown", async () => {
+    const posts: string[] = [];
+
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      posts.push(JSON.parse(init.body).body);
+
+      return new Response("{}", { status: 201 });
     });
 
-    await expect(
-      github.channel({ owner: "o", repo: "r", number: 1 }).post({ text: "x" }),
-    ).rejects.toThrow("HTTP 500");
+    await github
+      .channel(githubEvent, { repos: ["acme/app"] })
+      .post({ text: "&#64;octocat &commat;octocat" });
+
+    expect(posts[0]).toBe("&amp;#64;octocat &amp;commat;octocat");
+
+    const report = createReporter({}, undefined, direct);
+
+    for (const to of ["constructor", "__proto__", "toString"]) {
+      await expect(report("x", { to })).rejects.toThrow(NonRetriableError);
+    }
+  });
+
+  test("a GitHub 403 is retried only when it is a rate limit", async () => {
+    const channel = github.channel(githubEvent, { repos: ["acme/app"] });
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response("{}", {
+        status: 403,
+        headers: { "retry-after": "5" },
+      });
+    });
+
+    expect(
+      await channel.post({ text: "x" }).catch((err) => {
+        return err;
+      }),
+    ).not.toBeInstanceOf(NonRetriableError);
+
+    vi.stubGlobal("fetch", async () => {
+      return new Response("{}", { status: 403 });
+    });
+
+    await expect(channel.post({ text: "x" })).rejects.toThrow(
+      NonRetriableError,
+    );
+  });
+
+  test("an unsafe ask signal is refused before anything is posted", async () => {
+    const calls: unknown[] = [];
+
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+
+      return new Response('{"ok":true}', { status: 200 });
+    });
+
+    for (const signal of ["a-->b", "x\ny", "", "s".repeat(201)]) {
+      await expect(
+        slack
+          .channel(slackEvent, { in: ["C1"] })
+          .ask?.({ signal, question: "q" }),
+      ).rejects.toThrow(NonRetriableError);
+
+      await expect(
+        github
+          .channel(githubEvent, { repos: ["acme/app"] })
+          .ask?.({ signal, question: "q" }),
+      ).rejects.toThrow(NonRetriableError);
+    }
+
+    expect(calls).toEqual([]);
+  });
+
+  test("github.thread can ignore the agent's own comments", () => {
+    expect(
+      github.thread({
+        repos: ["acme/app"],
+        ignoreAuthors: ["my-bot", "app[bot]"],
+      }).if,
+    ).toBe(
+      '((event.data.owner == "acme" && event.data.repo == "app")) && (!has(event.data.author) || event.data.author != "my-bot") && (!has(event.data.author) || event.data.author != "app[bot]")',
+    );
+
+    expect(() => {
+      return github.thread({ repos: ["acme/app"], ignoreAuthors: ["a b"] });
+    }).toThrow("not a login");
+  });
+});
+
+describe("text limits", () => {
+  test("truncate never splits a surrogate pair", () => {
+    expect(truncate("abc", 5)).toBe("abc");
+
+    expect(truncate("abcdef", 4)).toBe("abc…");
+
+    // "ab" then an emoji (two units): cutting inside it drops the half.
+    expect(truncate("ab\u{1f600}cd", 4)).toBe("ab…");
   });
 });
 
 describe("agent function wiring", () => {
   test("channels may be a function of the trigger and report reaches them", async () => {
     const main = recorder();
+
     const seen: string[] = [];
 
     const { fn } = createAgentFunction(
@@ -394,6 +723,7 @@ describe("agent function wiring", () => {
     });
 
     expect(seen.length).toBeGreaterThan(0);
+
     expect(main.posts).toEqual([{ text: "starting" }]);
 
     expect(result).toBeDefined();

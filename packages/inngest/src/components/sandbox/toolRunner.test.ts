@@ -1519,8 +1519,12 @@ describe("commands.run with tools that wait", () => {
           return {
             stdout: log
               .slice(Number(lines))
-              .map((line) => `${line}`.trimEnd())
-              .map((line) => `${line}\n`)
+              .map((line) => {
+                return `${line}`.trimEnd();
+              })
+              .map((line) => {
+                return `${line}\n`;
+              })
               .join(""),
             stderr: "",
             exitCode: 0,
