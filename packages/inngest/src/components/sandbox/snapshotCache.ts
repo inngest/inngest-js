@@ -17,6 +17,11 @@
  * Several builders racing for one name are settled by the platform: it gives
  * a name to one snapshot, and the others adopt that snapshot.
  *
+ * An environment holds a limited number of snapshots. When taking one fails
+ * for that limit, the cache makes room itself and tries once more: it deletes
+ * expired and failed snapshots, then superseded generations of its entries,
+ * then (only in scopes the caller allows) the least recently created ones.
+ *
  * @module
  */
 
@@ -217,6 +222,28 @@ export interface SnapshotCacheOptions {
   expiryMargin?: SandboxDuration;
   /** How long a lookup waits for a snapshot still being created. Defaults to 2 minutes. */
   readyWait?: SandboxDuration;
+  /**
+   * What to do when the environment's snapshot limit stops a take: make room,
+   * then try once more. On by default, deleting only expired and failed
+   * snapshots and superseded generations. `false` turns it off.
+   */
+  evict?: false | EvictOptions;
+}
+
+/** How a cache makes room when the snapshot limit is reached. */
+export interface EvictOptions {
+  /**
+   * Scopes whose snapshots may be deleted, least recently created first, when
+   * nothing else frees room. A pattern matches the start of a name, and `*`
+   * matches any characters: `ci/pr:*`, `thread/*`, `skills`. A pattern with no
+   * trailing `*` matches whole scopes only (`main` is not `main2`). Without
+   * any, live snapshots are never deleted.
+   */
+  scopes?: string[];
+  /** The most snapshots deleted per take. Defaults to 20. */
+  maxDeletions?: number;
+  /** Told what was deleted. Defaults to `console.warn`. */
+  log?: (message: string) => void;
 }
 
 /** The snapshot API the cache needs, which `client.sandboxes` provides. */
@@ -307,6 +334,35 @@ const isNameRefused = (error: unknown): boolean => {
   const { status, name } = (error ?? {}) as { status?: number; name?: string };
 
   return status === 400 || status === 422 || name === "SandboxValidationError";
+};
+
+const limitCode = "sandbox_snapshot_limit_exceeded";
+const defaultMaxDeletions = 20;
+
+/** Whether a take failed for the environment's snapshot limit. */
+const isLimitReached = (error: unknown): boolean => {
+  return hasCode(error, limitCode);
+};
+
+const escapeRegExp = (text: string): string => {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+/** Whether a name starts with one of the scope patterns, ending where a scope does. */
+const inScopes = (name: string, patterns: string[]): boolean => {
+  return patterns.some((pattern) => {
+    const source = pattern.split("*").map(escapeRegExp).join(".*");
+    const boundary = pattern.endsWith("*") ? "" : "(?:/|$)";
+
+    return new RegExp(`^${source}${boundary}`).test(name);
+  });
+};
+
+/** Whether a name has the `<scope>/<key>/<generation>` shape of the cache's. */
+const isCacheName = (name: string): boolean => {
+  const parts = name.split("/");
+
+  return parts.length >= 3 && parts.every(Boolean);
 };
 
 const sleep = (ms: number): Promise<void> => {
@@ -475,11 +531,9 @@ export const snapshotCache = (
     }
   };
 
-  /** Every snapshot that exists and passes `matches`, paged. */
-  const listMatching = async (
-    matches: (snapshot: SnapshotInfo & { name: string }) => boolean,
-  ): Promise<(SnapshotInfo & { name: string })[]> => {
-    const found: (SnapshotInfo & { name: string })[] = [];
+  /** Every snapshot that exists, paged. */
+  const listAll = async (): Promise<SnapshotInfo[]> => {
+    const found: SnapshotInfo[] = [];
     let cursor: string | undefined;
 
     do {
@@ -490,12 +544,8 @@ export const snapshotCache = (
 
       for (const snapshot of page.items as SnapshotInfo[]) {
         // The API keeps the records of deleted snapshots in its lists.
-        if (
-          snapshot.name &&
-          !/^DELET/.test(snapshot.status) &&
-          matches({ ...snapshot, name: snapshot.name })
-        ) {
-          found.push({ ...snapshot, name: snapshot.name });
+        if (!/^DELET/.test(snapshot.status)) {
+          found.push(snapshot);
         }
       }
 
@@ -503,6 +553,21 @@ export const snapshotCache = (
     } while (cursor);
 
     return found;
+  };
+
+  /** Every named snapshot that exists and passes `matches`, paged. */
+  const listMatching = async (
+    matches: (snapshot: SnapshotInfo & { name: string }) => boolean,
+  ): Promise<(SnapshotInfo & { name: string })[]> => {
+    const named: (SnapshotInfo & { name: string })[] = [];
+
+    for (const snapshot of await listAll()) {
+      if (snapshot.name && matches({ ...snapshot, name: snapshot.name })) {
+        named.push({ ...snapshot, name: snapshot.name });
+      }
+    }
+
+    return named;
   };
 
   /**
@@ -567,12 +632,155 @@ export const snapshotCache = (
     }
   };
 
+  const evictOptions = options.evict === false ? undefined : options.evict;
+  const evicting = options.evict !== false;
+  const maxDeletions = evictOptions?.maxDeletions ?? defaultMaxDeletions;
+  const log =
+    evictOptions?.log ??
+    ((message: string) => {
+      console.warn(message);
+    });
+
+  const oldestFirst = (a: SnapshotInfo, b: SnapshotInfo): number => {
+    return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+  };
+
+  /**
+   * Delete snapshots until there is room for one more. Expired and failed
+   * snapshots always go; superseded generations, then snapshots in evictable
+   * scopes, go only until one is freed. `keep` and the entry's own slot are
+   * never evicted from live snapshots.
+   */
+  const makeRoom = async (
+    entry: SnapshotEntry,
+    keep: string | undefined,
+  ): Promise<{ freed: string[]; remaining: number }> => {
+    const all = await listAll();
+    const now = Date.now();
+    const freed: string[] = [];
+    const gone = new Set<string>();
+
+    const free = async (snapshot: SnapshotInfo, why: string) => {
+      if (freed.length >= maxDeletions || gone.has(snapshot.id)) {
+        return;
+      }
+
+      if (await remove(snapshot.id)) {
+        gone.add(snapshot.id);
+        freed.push(snapshot.name ?? snapshot.id);
+        log(`snapshotCache: deleted ${snapshot.name ?? snapshot.id} (${why})`);
+      }
+    };
+
+    const garbage = all.filter((snapshot) => {
+      const expiresAt = snapshot.expiresAt
+        ? Date.parse(snapshot.expiresAt)
+        : Number.NaN;
+
+      return (
+        snapshot.status === "FAILED" ||
+        (Number.isFinite(expiresAt) && expiresAt < now)
+      );
+    });
+
+    for (const snapshot of garbage.sort(oldestFirst)) {
+      await free(snapshot, snapshot.status === "FAILED" ? "failed" : "expired");
+    }
+
+    const ready = all.filter((snapshot) => {
+      return (
+        snapshot.status === "READY" &&
+        !gone.has(snapshot.id) &&
+        snapshot.id !== keep &&
+        snapshot.name !== undefined &&
+        isCacheName(snapshot.name)
+      );
+    });
+    const newestOfSlot = new Map<string, SnapshotInfo>();
+
+    for (const snapshot of ready) {
+      const slot = snapshotSlot(snapshot.name as string);
+      const newest = newestOfSlot.get(slot);
+
+      if (!newest || newest.createdAt < snapshot.createdAt) {
+        newestOfSlot.set(slot, snapshot);
+      }
+    }
+
+    const superseded = ready.filter((snapshot) => {
+      const slot = snapshotSlot(snapshot.name as string);
+
+      return newestOfSlot.get(slot)?.id !== snapshot.id;
+    });
+
+    for (const snapshot of superseded.sort(oldestFirst)) {
+      if (freed.length === 0) {
+        await free(snapshot, "superseded generation");
+      }
+    }
+
+    const own = snapshotSlot(snapshotName(entry));
+    const evictable = ready.filter((snapshot) => {
+      return (
+        !gone.has(snapshot.id) &&
+        snapshotSlot(snapshot.name as string) !== own &&
+        inScopes(snapshot.name as string, evictOptions?.scopes ?? [])
+      );
+    });
+
+    for (const snapshot of evictable.sort(oldestFirst)) {
+      if (freed.length === 0) {
+        await free(snapshot, "evictable scope, least recently created");
+      }
+    }
+
+    return { freed, remaining: all.length - freed.length };
+  };
+
   const take: SnapshotCache["take"] = async (
     entry,
-    snapshot,
+    createSnapshot,
     takeOptions = {},
   ) => {
     const name = snapshotName(entry);
+    let madeRoom = false;
+    let attempt = 0;
+
+    /** The caller's snapshot call, which on the snapshot limit makes room and tries once more. */
+    const snapshot = async (snapshotName: string | undefined) => {
+      try {
+        return await createSnapshot(snapshotName, attempt++);
+      } catch (error) {
+        if (!evicting || madeRoom || !isLimitReached(error)) {
+          throw error;
+        }
+
+        madeRoom = true;
+
+        const room = await memo(
+          idOf("evict", entry, takeOptions.stepId),
+          () => {
+            return makeRoom(entry, takeOptions.exclude);
+          },
+        );
+
+        try {
+          return await createSnapshot(snapshotName, attempt++);
+        } catch (retryError) {
+          if (!isLimitReached(retryError)) {
+            throw retryError;
+          }
+
+          throw Object.assign(
+            new Error(
+              `The environment has reached its Sandboxes snapshot limit. Making room deleted ${room.freed.length} snapshot(s) (${room.freed.join(", ") || "none"}) and it still failed, with ${room.remaining} left that the cache may not delete. Delete snapshots that are no longer needed, or allow more scopes with the \`evict.scopes\` option.`,
+              { cause: error },
+            ),
+            { code: limitCode },
+          );
+        }
+      }
+    };
     const taken = (
       result: { id: string; createdAt: string },
       named: boolean,
@@ -585,10 +793,9 @@ export const snapshotCache = (
         reused: false,
       };
     };
-    let attempt = 0;
 
     const named = async (): Promise<TakenSnapshot> => {
-      const result = taken(await snapshot(name, attempt++), true);
+      const result = taken(await snapshot(name), true);
 
       await memo(idOf("replaced", entry, takeOptions.stepId), async () => {
         await deleteReplaced(result);
@@ -641,7 +848,7 @@ export const snapshotCache = (
       }
     }
 
-    return taken(await snapshot(undefined, attempt++), false);
+    return taken(await snapshot(undefined), false);
   };
 
   const ensure: SnapshotCache["ensure"] = async (

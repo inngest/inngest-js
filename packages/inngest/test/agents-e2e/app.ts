@@ -38,6 +38,9 @@ const fakeSandboxes = scenarios.some((s) => {
 const localDirs = scenarios.flatMap((s) => {
   return s.sandboxLocalDirs ?? [];
 });
+const snapshotLimit = scenarios.find((s) => {
+  return s.sandboxSnapshotLimit;
+})?.sandboxSnapshotLimit;
 const commands = Object.assign({}, ...scenarios.map((s) => s.sandboxCommands));
 
 export const client = new Inngest({
@@ -49,6 +52,7 @@ export const client = new Inngest({
           recordUrl: fakesUrl,
           commands,
           localDirs,
+          ...(snapshotLimit ? { snapshotLimit } : {}),
         }).fetch,
       }
     : {}),

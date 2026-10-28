@@ -31,6 +31,12 @@ export interface FakeSandboxOptions {
    * served from disk, so a scenario can use real git.
    */
   localDirs?: string[];
+
+  /**
+   * Creating a snapshot named under `prefix` fails with
+   * `sandbox_snapshot_limit_exceeded` while `max` of them exist.
+   */
+  snapshotLimit?: { prefix: string; max: number };
 }
 
 const encode = (text: string) => {
@@ -189,6 +195,28 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
             ],
           },
           { status: 409 },
+        );
+      }
+
+      const limit = options.snapshotLimit;
+
+      if (
+        limit &&
+        request.name?.startsWith(limit.prefix) &&
+        [...snapshots.values()].filter((snapshot) => {
+          return snapshot.name?.startsWith(limit.prefix);
+        }).length >= limit.max
+      ) {
+        return Response.json(
+          {
+            errors: [
+              {
+                code: "sandbox_snapshot_limit_exceeded",
+                message: "the environment has reached its snapshot limit",
+              },
+            ],
+          },
+          { status: 403 },
         );
       }
 
