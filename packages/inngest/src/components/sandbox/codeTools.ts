@@ -17,6 +17,11 @@ import {
   SandboxValidationError,
 } from "./types.ts";
 
+/**
+ * The names of the code tools a sandbox can bring: file `read`, `write`,
+ * `edit` and `search`, a shell `run`, and `run_code` for a script that calls
+ * tools.
+ */
 export type CodeToolName =
   | "read"
   | "write"
@@ -25,6 +30,9 @@ export type CodeToolName =
   | "run"
   | "run_code";
 
+/**
+ * Options of `sandbox.tools.code()`.
+ */
 export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
   /**
    * Where relative paths and commands start. Default `/work`.

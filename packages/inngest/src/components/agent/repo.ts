@@ -12,6 +12,9 @@ import type { CodeToolName } from "../sandbox/codeTools.ts";
 import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
 
+/**
+ * Options of `repo()`: which repository to check out and how.
+ */
 export interface RepoOptions {
   /**
    * A GitHub `owner/name`, or any git URL or path.
@@ -36,7 +39,13 @@ export interface RepoOptions {
   token?: string | (() => string | Promise<string>);
 }
 
+/**
+ * A repository checked out in a sandbox, made by `repo()`.
+ */
 export interface Repo {
+  /**
+   * Where the repository is checked out in the sandbox.
+   */
   path: string;
 
   /**

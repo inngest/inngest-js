@@ -79,6 +79,19 @@ export type GitPolicyResult =
   // biome-ignore lint/suspicious/noConfusingVoidType: a policy that returns nothing has the type void
   | void;
 
+/**
+ * Decides each push of the git push tool before it happens. It receives the
+ * push and answers with a `GitPolicyResult`; it may be async.
+ *
+ * @example
+ * ```ts
+ * const policy: GitPolicy = (push) => {
+ *   if (!push.branch?.startsWith("agent/")) {
+ *     return { refuse: "Branches for the agent start with agent/" };
+ *   }
+ * };
+ * ```
+ */
 export type GitPolicy = (
   push: GitPush,
 ) => GitPolicyResult | Promise<GitPolicyResult>;
