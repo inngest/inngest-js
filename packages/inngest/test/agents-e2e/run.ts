@@ -36,6 +36,89 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(here, "../..");
 const scenarioCapMs = 110_000;
 
+// How often the Dev Server is pinged while a scenario runs, how long a ping
+// may take, and how many pings in a row may fail before the stack counts as
+// gone. A busy Dev Server can be slow, so only a dead one fails all of them.
+const watchEveryMs = 3000;
+const watchTimeoutMs = 5000;
+const watchFailures = 5;
+
+/**
+ * Whether the Dev Server answers.
+ * @param devUrl The Dev Server's URL.
+ */
+const stackAlive = async (devUrl: string): Promise<boolean> => {
+  try {
+    await fetch(devUrl, { signal: AbortSignal.timeout(watchTimeoutMs) });
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether the Dev Server is gone: it did not answer three pings, a second
+ * apart, so one slow answer is not enough.
+ * @param devUrl The Dev Server's URL.
+ */
+const stackDead = async (devUrl: string): Promise<boolean> => {
+  for (let ping = 0; ping < 3; ping++) {
+    if (await stackAlive(devUrl)) {
+      return false;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+  }
+
+  return true;
+};
+
+/**
+ * Pings the Dev Server while a scenario runs. `gone` rejects once pings fail
+ * `watchFailures` times in a row, so a stack that something else stopped ends
+ * the scenario at once instead of at its cap.
+ * @param devUrl The Dev Server's URL.
+ */
+const watchStack = (devUrl: string) => {
+  let failures = 0;
+  let lost = false;
+  let stopped = false;
+  let reject: (error: Error) => void = () => {};
+  const gone = new Promise<never>((_, fail) => {
+    reject = fail;
+  });
+  gone.catch(() => {});
+
+  const timer = setInterval(async () => {
+    if (await stackAlive(devUrl)) {
+      failures = 0;
+
+      return;
+    }
+
+    failures += 1;
+
+    if (failures >= watchFailures && !lost && !stopped) {
+      lost = true;
+      reject(new Error("the Dev Server stopped answering"));
+    }
+  }, watchEveryMs);
+
+  return {
+    gone,
+    lost: () => {
+      return lost;
+    },
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+};
+
 const args = process.argv.slice(2);
 const inner = args.includes("--inner");
 const keep = args.includes("--keep");
@@ -246,7 +329,12 @@ if (!inner) {
         console.log("FAIL agents:verify exceeded its time cap");
         void stopAndExit(1);
       },
-      (3 + ids.length * 2) * 60_000,
+      // The stack, plus every scenario's own cap (the sum of the caps is not
+      // reached when scenarios pass in less).
+      3 * 60_000 +
+        scenarios.reduce((sum, s) => {
+          return sum + (s.capMs ?? scenarioCapMs);
+        }, 0),
     ).unref();
   }
 
@@ -279,15 +367,18 @@ if (!inner) {
       const ctx = createCtx(s.id, stack.devUrl, stack.redisUrl, fakes, () => {
         scenarioFailed = true;
       });
+      const cap = s.capMs ?? scenarioCapMs;
       let timer: NodeJS.Timeout | undefined;
+      const watch = watchStack(stack.devUrl);
 
       try {
         await Promise.race([
           s.run(ctx),
+          watch.gone,
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => {
-              reject(new Error(`scenario exceeded ${scenarioCapMs / 1000}s`));
-            }, scenarioCapMs);
+              reject(new Error(`scenario exceeded ${cap / 1000}s`));
+            }, cap);
           }),
         ]);
       } catch (error) {
@@ -297,12 +388,30 @@ if (!inner) {
         );
       } finally {
         clearTimeout(timer);
+        watch.stop();
       }
 
       failed ||= scenarioFailed;
       console.log(
         `${scenarioFailed ? "FAIL" : "PASS"} ${s.id} (${Math.round((Date.now() - begin) / 1000)}s)`,
       );
+
+      // Every scenario after this one would only fail with "fetch failed".
+      // A stack that died between scenarios fails the next one at once, so a
+      // failed scenario is checked directly too.
+      if (watch.lost() || (scenarioFailed && (await stackDead(stack.devUrl)))) {
+        const rest = scenarios.slice(scenarios.indexOf(s) + 1);
+
+        failed = true;
+
+        if (rest.length > 0) {
+          console.log(
+            `FAIL ${rest.length} scenario(s) not run: the stack ${name} went away, so something outside this run stopped it`,
+          );
+        }
+
+        break;
+      }
     }
   } catch (error) {
     failed = true;

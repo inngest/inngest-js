@@ -30,6 +30,10 @@ export const agentsCron = scenario({
   id: "agents-cron",
   owner: "agents-event-types",
   needs: { oss: "jack/step-subscribe" },
+
+  // Ticks are minute-aligned: up to a minute to the first, a wait for the
+  // next to pass, and up to a minute to the one after a stop now.
+  capMs: 270_000,
   functions: ({ client }) => {
     const agents = createAgents(client);
 
@@ -89,7 +93,7 @@ export const agentsCron = scenario({
     );
 
     // The next tick comes while the run is live: skipped, not delivered.
-    await sleep(70_000);
+    await sleep(65_000);
     const live = await keys();
     ctx.check(
       "a tick while a run is live starts nothing",
