@@ -10,6 +10,7 @@
  */
 
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
+import { StepError } from "../StepError.ts";
 import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
 import { destroyQuietly, sandboxCreateDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
@@ -431,6 +432,23 @@ const setupContext = (
   };
 };
 
+/**
+ * Whether a failed create says its snapshot does not exist. A durable
+ * sandbox's step carries the API's error as its cause.
+ * @param error What the create failed with.
+ */
+const isSnapshotGone = (error: unknown): boolean => {
+  const { code, cause } = (error ?? {}) as {
+    code?: string;
+    cause?: { code?: string };
+  };
+
+  return (
+    code === "sandbox_snapshot_not_found" ||
+    cause?.code === "sandbox_snapshot_not_found"
+  );
+};
+
 const lazySandbox = (
   name: string,
   binding: SandboxDefinition | SandboxBinding,
@@ -488,29 +506,59 @@ const lazySandbox = (
     const restoreFrom = owner ? await owner.restore(name) : undefined;
 
     restored = restoreFrom !== undefined;
-    const sandbox = definition.skills?.length
-      ? await createWithSkills({
-          name,
-          sources: definition.skills,
-          fresh: options,
-          image: definition.image,
-          sandboxes,
-          runtime: runtime as SandboxRuntime,
-          restoreFrom,
-          onCreated: arm,
-        })
-      : restoreFrom
+    const withSkills = (from: string | undefined) => {
+      return createWithSkills({
+        name,
+        sources: definition.skills ?? [],
+        fresh: options,
+        image: definition.image,
+        sandboxes,
+        runtime: runtime as SandboxRuntime,
+        restoreFrom: from,
+        onCreated: (sandbox) => {
+          existed = true;
+          arm(sandbox);
+        },
+      });
+    };
+    const make = async (from: string | undefined) => {
+      if (definition.skills?.length) {
+        return withSkills(from);
+      }
+
+      const sandbox = from
         ? await sandboxes.create(name, {
             name: options.name,
-            snapshotId: restoreFrom,
+            snapshotId: from,
           } as SandboxCreateOptions)
         : await sandboxes.create(name, options);
 
-    if (!definition.skills?.length) {
+      existed = true;
       arm(sandbox);
-    }
 
-    return sandbox;
+      return sandbox;
+    };
+
+    // The snapshot may be gone by now (a newer run deleted it as superseded,
+    // or it expired): the thread then starts fresh instead of failing. Only a
+    // "snapshot not found" from the create counts; any other failure (a
+    // platform error, a start that timed out) fails the run rather than
+    // dropping the thread's state, and once the sandbox exists an error is not
+    // the restore's.
+    let existed = false;
+
+    try {
+      return await make(restoreFrom);
+    } catch (error) {
+      if (!restoreFrom || existed || !isSnapshotGone(error)) {
+        throw error;
+      }
+
+      owner?.restoreFailed?.(name, error);
+      restored = false;
+
+      return make(undefined);
+    }
   };
 
   const create = (): Promise<DurableSandbox> => {

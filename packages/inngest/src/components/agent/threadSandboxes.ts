@@ -24,7 +24,11 @@
  * from the snapshot alone: the definition's `environment` and `secrets` are
  * not applied to it, because the platform forbids them together with a
  * `snapshotId` (platform ask: accept them, so a restored sandbox gets the
- * current values). What a run wrote to disk, a token for instance, is in every
+ * current values). Probed against the platform on 2026-10-28 with the
+ * client's validation bypassed: `secrets` is rejected ("snapshot launches
+ * cannot select secrets"), `environment` is accepted but a command in the
+ * sandbox does not see it, and `vcpu` and `memoryMb` are accepted only
+ * when they equal the snapshot's own size. What a run wrote to disk, a token for instance, is in every
  * later run's sandbox.
  *
  * Known gaps, by design: a cancelled run's cleanup can still be running when
@@ -90,6 +94,15 @@ export interface ThreadSandboxOwner {
   save(name: string, sandbox: DurableSandbox): Promise<void>;
 
   /**
+   * Called when creating a sandbox from the thread's snapshot failed (for
+   * instance the snapshot was deleted meanwhile) and a fresh one is created
+   * instead.
+   * @param name The sandbox's name in the agent's `sandboxes`.
+   * @param error What the create failed with.
+   */
+  restoreFailed?(name: string, error: unknown): void;
+
+  /**
    * Registers the defer that saves and destroys the sandbox if the run ends
    * without doing it. Abort the handle once the sandbox is destroyed. It
    * saves only a sandbox the run has marked ready.
@@ -137,6 +150,11 @@ export interface ThreadSandboxOptions {
   run: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
 
   /**
+   * Logs a warning, pino style (`logger.warn(data, message)`).
+   */
+  warn?: (data: Record<string, unknown>, message: string) => void;
+
+  /**
    * Registers the cleanup defer with a sandbox's details.
    */
   defer: (id: string, sandbox: ThreadSandboxCleanup) => DeferHandle;
@@ -165,6 +183,23 @@ export const threadSnapshotEntry = (
     key: `${ref}/${name}/${hash}`,
     generation,
   };
+};
+
+/**
+ * Deletes the ready key. It is housekeeping: its failure must not fail the run
+ * or the cleanup, and it is done only once the snapshot is recorded, so a
+ * failed save leaves the cleanup able to save.
+ * @param scope The thread's KV scope.
+ * @param key The ready key.
+ */
+const forget = async (scope: KvScopeInstance, key: string): Promise<void> => {
+  try {
+    await scope.delete(key);
+  } catch (error) {
+    if (!(error instanceof StepError)) {
+      throw error;
+    }
+  }
 };
 
 /**
@@ -216,7 +251,15 @@ export const threadSandboxOwner = (
         await recordSandboxGeneration(scope, ref, name, runId);
 
         const generations = sandboxGenerations(scope, ref, name);
-        const older = await generations.range({ max: runScore(runId) - 1 });
+        const previous = await generations.range({
+          max: runScore(runId) - 1,
+        });
+
+        // The newest of the older generations stays as a spare: a run that
+        // restored it a moment ago may still be creating from it.
+        const older = previous.slice(0, -1);
+
+        await forget(scope, sandboxReadyKey(ref, name, runId));
 
         if (older.length === 0) {
           return;
@@ -245,10 +288,14 @@ export const threadSandboxOwner = (
         if (!(error instanceof StepError)) {
           throw error;
         }
-      } finally {
-        // The run has done what its cleanup would.
-        await scope.delete(sandboxReadyKey(ref, name, runId));
       }
+    },
+
+    restoreFailed: (name, error) => {
+      options.warn?.(
+        { ref, thread, sandbox: name, error: String(error) },
+        "Restoring the thread's sandbox from its snapshot failed; starting a fresh one",
+      );
     },
 
     guard: (name, sandbox) => {
@@ -334,6 +381,7 @@ export const cleanupThreadSandbox = async (
 
       if (named) {
         await recordSandboxGeneration(scope, ref, sandbox.name, runId);
+        await forget(scope, readyKey);
       }
     } catch (error) {
       if (!(error instanceof StepError)) {
@@ -345,8 +393,4 @@ export const cleanupThreadSandbox = async (
   await options.run(`${sandbox.name}:thread:destroy`, async () => {
     await (await client.sandboxes.get(sandbox.sandboxId))?.destroy();
   });
-
-  if (ready) {
-    await scope.delete(readyKey);
-  }
 };

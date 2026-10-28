@@ -145,9 +145,10 @@ export const threadSandboxes = scenario({
     await ctx.expect
       .posts({ channel: "sandbox", method: "snapshot.create" })
       .toHaveCount(2);
+    // The previous generation stays as a spare.
     await ctx.expect
       .posts({ channel: "sandbox", method: "snapshot.delete" })
-      .toHaveCount(1);
+      .toHaveCount(0);
 
     await beta.send("read");
     await runEnded(3);
@@ -194,6 +195,18 @@ export const threadSandboxes = scenario({
       },
       (read) => {
         return read === "kept through a cancel";
+      },
+    );
+
+    // A third save by alpha deletes its first generation, not the spare.
+    await alpha.send("read");
+    await ctx.eventually(
+      "the third generation deletes the first",
+      async () => {
+        return calls("snapshot.delete").length;
+      },
+      (count) => {
+        return count === 1;
       },
     );
   },
