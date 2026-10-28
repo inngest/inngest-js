@@ -286,6 +286,12 @@ export interface SkillsRuntime {
    * Resolves refs. Default: global `fetch`.
    */
   fetch?: typeof fetch;
+
+  /**
+   * The ref of the agent that runs, `appId/functionId`, sent with bake
+   * requests.
+   */
+  agent: string;
 }
 
 /**
@@ -296,6 +302,12 @@ export type SkillsBakeRequest = {
    * The snapshot's name, which names the build.
    */
   name: string;
+
+  /**
+   * The ref of the agent whose sandbox asks, `appId/functionId`. The request
+   * is checked against what that agent's definitions use.
+   */
+  agent: string;
 
   /**
    * The image ref the snapshot starts from, if the definition names one.
@@ -386,6 +398,7 @@ export const createWithSkills = async (
       found = await cache.find(entry, { stepId });
       request = {
         name: snapshotName(entry),
+        agent: runtime.agent,
         ...(options.image && { image: options.image.ref }),
         vcpu: fresh.vcpu,
         memoryMb: fresh.memoryMb,
@@ -499,48 +512,96 @@ const snapshotName = (entry: SnapshotEntry): string => {
 };
 
 /**
- * What a bake request may ask for. The agents of a client fill it in from the
- * sandbox definitions they register, so an event can't choose a host or an
- * image the app doesn't use.
+ * What one agent's bake requests may ask for, read from its sandbox
+ * definitions, so an event can't choose a repository, host, image or size the
+ * agent doesn't use.
  */
-export interface BakeAllowance {
+export interface AgentBakeAllowance {
   /**
-   * The GitHub hosts sources may come from. github.com is always allowed.
-   */
-  urls: Set<string>;
-
-  /**
-   * The images definitions with baked skills use. A request may also name no
-   * image. Not enforced once `dynamic`.
-   */
-  images: Set<string>;
-
-  /**
-   * Whether a sandboxes config is a function, so its definitions can't be read
-   * ahead: every image is accepted then, and a host is accepted only if a
-   * static definition of another agent uses it, or it is github.com.
+   * Whether the agent's `sandboxes` is a function, so its definitions can't be
+   * read ahead. Its requests may then name any host and image, up to the size
+   * ceiling: a forged event that names this agent gets the same.
    */
   dynamic: boolean;
+
+  /**
+   * The `host|owner/name` of every baked source of the agent's definitions.
+   */
+  repos: Set<string>;
+
+  /**
+   * The largest size the agent's definitions use, by image ref (`""` for the
+   * default image).
+   */
+  sizes: Map<string, { vcpu: number; memoryMb: number }>;
 }
+
+/**
+ * What bake requests may ask for, by the ref of the agent that asks.
+ */
+export type BakeAllowance = Map<string, AgentBakeAllowance>;
+
+/**
+ * The size of a sandbox that names none, as `sandboxCreateDefaults` has it.
+ */
+const defaultBakeSize = { vcpu: 2, memoryMb: 2048 };
 
 /**
  * The most vCPUs and memory a bake may ask for, whatever the definitions say.
  */
-export const maxBakeSize = { vcpu: 16, memoryMb: 32_768 };
+export const maxBakeSize = Object.freeze({ vcpu: 16, memoryMb: 32_768 });
 
 const trimUrl = (url: string): string => {
   return url.replace(/\/+$/, "");
 };
 
+const repoKey = (url: string, repo: string): string => {
+  return `${trimUrl(url)}|${repo}`;
+};
+
+const allowanceOf = (
+  allowance: BakeAllowance,
+  agent: string,
+): AgentBakeAllowance => {
+  let found = allowance.get(agent);
+
+  if (!found) {
+    found = { dynamic: false, repos: new Set(), sizes: new Map() };
+    allowance.set(agent, found);
+  }
+
+  return found;
+};
+
 /**
- * Notes the hosts and images of a definition's baked skills.
- * @param allowance What to add to.
- * @param definition A sandbox definition.
+ * The allowance of every agent of a client. Agents made on one client by any
+ * number of `createAgents()` calls share it, as they share the bake function.
+ */
+const allowances = new WeakMap<object, BakeAllowance>();
+
+export const bakeAllowanceOf = (client: object): BakeAllowance => {
+  let found = allowances.get(client);
+
+  if (!found) {
+    found = new Map();
+    allowances.set(client, found);
+  }
+
+  return found;
+};
+
+/**
+ * Notes the repositories, image and size of a definition's baked skills as
+ * what an agent's requests may use.
  */
 export const allowBake = (
   allowance: BakeAllowance,
+  /** The agent's ref, `appId/functionId`. */
+  agent: string,
   definition: {
     image?: SandboxImage;
+    vcpu?: number;
+    memoryMb?: number;
     skills?: readonly SkillsSource[];
   },
 ): void => {
@@ -552,32 +613,39 @@ export const allowBake = (
     return;
   }
 
-  if (definition.image) {
-    allowance.images.add(definition.image.ref);
-  }
+  const allowed = allowanceOf(allowance, agent);
+  const image = definition.image?.ref ?? "";
+  const size = allowed.sizes.get(image);
+  const vcpu = definition.vcpu ?? defaultBakeSize.vcpu;
+  const memoryMb = definition.memoryMb ?? defaultBakeSize.memoryMb;
+
+  allowed.sizes.set(image, {
+    vcpu: Math.max(size?.vcpu ?? 0, vcpu),
+    memoryMb: Math.max(size?.memoryMb ?? 0, memoryMb),
+  });
 
   for (const source of baked) {
-    allowance.urls.add(trimUrl(source.github.url));
+    allowed.repos.add(repoKey(source.github.url, source.repo));
   }
 };
 
 /**
- * An allowance that starts with github.com and nothing else.
+ * Notes that an agent's definitions can't be read ahead.
  */
-export const newBakeAllowance = (): BakeAllowance => {
-  return {
-    urls: new Set([defaultGithub.url]),
-    images: new Set(),
-    dynamic: false,
-  };
+export const allowDynamicBake = (
+  allowance: BakeAllowance,
+  /** The agent's ref, `appId/functionId`. */
+  agent: string,
+): void => {
+  allowanceOf(allowance, agent).dynamic = true;
 };
 
 /**
  * Checks a bake request as untrusted input and rebuilds from it what the
  * function bakes: sources that pass the same checks as `skills.git()`, pinned
  * to 40-hex shas, and the snapshot entry computed from them. Throws when the
- * request is malformed, asks for a host, image or size the app doesn't use, or
- * its name is not the one its sources bake into.
+ * request is malformed, asks for a repository, image or size its agent doesn't
+ * use, or its name is not the one its sources bake into.
  */
 export const validateBakeRequest = async (
   request: SkillsBakeRequest,
@@ -610,20 +678,37 @@ export const validateBakeRequest = async (
     );
   }
 
+  const allowed =
+    typeof request.agent === "string"
+      ? allowance.get(request.agent)
+      : undefined;
+
+  if (!allowed) {
+    throw new SandboxValidationError(
+      `Skills bake request names the agent "${String(request.agent)}", which bakes no skills`,
+    );
+  }
+
   if (request.image !== undefined && typeof request.image !== "string") {
     throw new SandboxValidationError(
       "Skills bake request has an invalid image",
     );
   }
 
-  if (
-    request.image &&
-    !allowance.dynamic &&
-    !allowance.images.has(request.image)
-  ) {
-    throw new SandboxValidationError(
-      `Skills bake request names image "${request.image}", which no sandbox of the app bakes skills into`,
-    );
+  const size = allowed.sizes.get(request.image ?? "");
+
+  if (!allowed.dynamic) {
+    if (!size) {
+      throw new SandboxValidationError(
+        `Skills bake request names image "${String(request.image)}", which no sandbox of "${request.agent}" bakes skills into`,
+      );
+    }
+
+    if (request.vcpu > size.vcpu || request.memoryMb > size.memoryMb) {
+      throw new SandboxValidationError(
+        `Skills bake request asks for more than "${request.agent}" uses on that image: ${size.vcpu} vCPUs, ${size.memoryMb} MB`,
+      );
+    }
   }
 
   const sources = asked.map((item) => {
@@ -639,9 +724,13 @@ export const validateBakeRequest = async (
       );
     }
 
-    if (!allowance.urls.has(trimUrl(item.url))) {
+    if (
+      allowed.dynamic
+        ? !/^https:\/\//.test(item.url)
+        : !allowed.repos.has(repoKey(item.url, String(item.repo)))
+    ) {
       throw new SandboxValidationError(
-        `Skills bake request has the url "${item.url}", which no sandbox of the app bakes skills from`,
+        `Skills bake request has the source "${item.url}/${String(item.repo)}", which no sandbox of "${request.agent}" bakes skills from`,
       );
     }
 
@@ -681,13 +770,10 @@ export const validateBakeRequest = async (
  * singleton key is the name the event gives, so a forged event with a real name
  * can hold the slot for the moment it takes to be refused, and the real request
  * is skipped then. The run is refused at once, so the slot frees at once.
- *
- * @param client Inngest client.
- * @param allowance The hosts and images requests may use, filled in as agents
- * are made.
  */
 export const createSkillsBakeFunction = (
   client: Inngest.Any,
+  /** What each agent's requests may use, filled in as agents are made. */
   allowance: BakeAllowance,
 ): InngestFunction.Any => {
   return client.createFunction(

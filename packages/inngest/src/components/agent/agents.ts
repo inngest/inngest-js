@@ -15,11 +15,13 @@ import {
   type AgentFunctionConfig,
   createAgentFunction,
 } from "./agentFunction.ts";
-import type { SandboxDefinition } from "./defs.ts";
+import { definitionOf } from "./defs.ts";
 import {
   allowBake,
+  allowDynamicBake,
+  type BakeAllowance,
+  bakeAllowanceOf,
   createSkillsBakeFunction,
-  newBakeAllowance,
 } from "./skills.ts";
 import type {
   ThreadCronTrigger,
@@ -52,7 +54,9 @@ export interface Agents {
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
-   * cleanup. Call it after the agents are defined.
+   * cleanup. Call it after the agents are defined. The function that bakes
+   * skills snapshots is one per client: the instance that made the first agent
+   * with baked skills lists it, so serve that instance's functions.
    *
    * ```ts
    * export const { GET, POST, PUT } = serve({
@@ -76,32 +80,33 @@ const mayBakeSkills = (
   }
 
   return Object.values(sandboxes).some((binding) => {
-    const definition =
-      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition);
-
-    return (definition.skills ?? []).some((source) => {
+    return (definitionOf(binding).skills ?? []).some((source) => {
       return source.freshness === "bake";
     });
   });
 };
 
 const allowBakes = (
-  allowance: ReturnType<typeof newBakeAllowance>,
+  allowance: BakeAllowance,
+  agent: string,
   sandboxes: AgentFunctionConfig["sandboxes"],
 ): void => {
   if (typeof sandboxes === "function") {
-    allowance.dynamic = true;
+    allowDynamicBake(allowance, agent);
 
     return;
   }
 
   for (const binding of Object.values(sandboxes ?? {})) {
-    allowBake(
-      allowance,
-      "sandbox" in binding ? binding.sandbox : (binding as SandboxDefinition),
-    );
+    allowBake(allowance, agent, definitionOf(binding));
   }
 };
+
+/**
+ * The bake function of each client: one, however many `createAgents()` calls
+ * the client has.
+ */
+const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
@@ -119,7 +124,7 @@ const allowBakes = (
 export const createAgents = (client: Inngest.Any): Agents => {
   const made: AgentFunction[] = [];
   let bake: InngestFunction.Any | undefined;
-  const allowance = newBakeAllowance();
+  const allowance = bakeAllowanceOf(client);
 
   return {
     agent: (config: AgentFunctionConfig<unknown>, body: AgentBody) => {
@@ -134,11 +139,12 @@ export const createAgents = (client: Inngest.Any): Agents => {
       // Baked skills are built by a function of its own, served once however
       // many agents there are. A sandboxes config that is a function can't be
       // read ahead, so it counts as possibly having skills.
-      if (mayBakeSkills(config.sandboxes)) {
-        bake ??= createSkillsBakeFunction(client, allowance);
+      if (mayBakeSkills(config.sandboxes) && !bakeFunctions.has(client)) {
+        bake = createSkillsBakeFunction(client, allowance);
+        bakeFunctions.set(client, bake);
       }
 
-      allowBakes(allowance, config.sandboxes);
+      allowBakes(allowance, created.ref, config.sandboxes);
 
       return created;
     },

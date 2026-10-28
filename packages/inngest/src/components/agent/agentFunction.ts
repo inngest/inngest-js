@@ -607,6 +607,7 @@ export function createAgentFunction(
                 {
                   event: event as unknown as AgentConfigContext["event"],
                   client: client as unknown as SkillsRuntime["client"],
+                  agent: ref,
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;
                   },

@@ -1449,13 +1449,13 @@ describe("commands.run with tools that wait", () => {
    */
   const createReplaySandbox = (
     calls: string[],
-    { exitCode = 75, marker = true } = {},
+    { exitCode = 75, marker = true, replayedLine = true, big = false } = {},
   ) => {
     const log: string[] = [];
     const uploads = new Map<string, string>();
     const dirs = new Set<string>();
     const starts: { journal: string[] }[] = [];
-    const slept: string[] = [];
+    const removed: string[] = [];
     // The segment running now: how many calls it has made and its journal
     let current: { at: number; journal: string[]; done: boolean } | undefined;
 
@@ -1463,6 +1463,10 @@ describe("commands.run with tools that wait", () => {
       while (current && !current.done && current.at < calls.length) {
         if (current.at < current.journal.length) {
           current.at += 1;
+
+          if (current.at === current.journal.length && replayedLine) {
+            log.push('{"op":"replayed"}\n');
+          }
 
           continue;
         }
@@ -1475,7 +1479,7 @@ describe("commands.run with tools that wait", () => {
       if (current && !current.done) {
         current.done = true;
         log.push(
-          `${JSON.stringify({ op: "exit", code: 0, stdout: base64(`${current.journal.length} replayed\n`), stderr: "" })}\n`,
+          `${JSON.stringify({ op: "exit", code: 0, stdout: base64(big ? "x".repeat(3 * 1024 * 1024) : `${current.journal.length} replayed\n`), stderr: "" })}\n`,
         );
       }
     };
@@ -1483,6 +1487,12 @@ describe("commands.run with tools that wait", () => {
     const sandbox = {
       commands: {
         run: async (command: string[]) => {
+          if (command[0] === "rm") {
+            removed.push(String(command[2]));
+
+            return { stdout: "", stderr: "", exitCode: 0 };
+          }
+
           const [, , , , , lines, , ...replies] = command;
 
           for (const reply of replies) {
@@ -1556,7 +1566,19 @@ describe("commands.run with tools that wait", () => {
       },
     } as unknown as Sandbox;
 
-    return { sandbox, starts, slept };
+    return { sandbox, starts, removed };
+  };
+
+  const noop = (extra: SandboxTools): SandboxTools => {
+    return {
+      a: () => {
+        return 1;
+      },
+      b: () => {
+        return 2;
+      },
+      ...extra,
+    };
   };
 
   const fakeStep = {
@@ -1576,7 +1598,11 @@ describe("commands.run with tools that wait", () => {
   };
 
   test("a call to a tool that waits ends the process, runs the tool, and replays the earlier calls", async () => {
-    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"]);
+    const { sandbox, starts, removed } = createReplaySandbox([
+      "a",
+      "pause",
+      "b",
+    ]);
     const { host, executed } = createHost(sandbox);
     const ran: string[] = [];
     const tools: SandboxTools = {
@@ -1607,11 +1633,18 @@ describe("commands.run with tools that wait", () => {
     });
 
     expect(ran).toEqual(["a", "pause", "b"]);
-    expect(starts.map((start) => start.journal.length)).toEqual([0, 2]);
-    expect(starts[1]?.journal.map((line) => JSON.parse(line).result)).toEqual([
-      1,
-      "rested",
-    ]);
+    expect(
+      starts.map((start) => {
+        return start.journal.length;
+      }),
+    ).toEqual([0, 2]);
+    expect(
+      starts[1]?.journal.map((line) => {
+        return JSON.parse(line).result;
+      }),
+    ).toEqual([1, "rested"]);
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toMatch(/\.journal$/);
     expect(stdoutOf(result)).toBe("2 replayed\n");
     expect(executed).toEqual([
       "exec",
@@ -1621,6 +1654,7 @@ describe("commands.run with tools that wait", () => {
       "exec:resume:1",
       "exec:r1:tool:b:3",
       "exec:wait:3",
+      "exec:journal",
     ]);
   });
 
@@ -1640,7 +1674,7 @@ describe("commands.run with tools that wait", () => {
     });
 
     const result = await inFunction(() => {
-      return run(host, { a: () => 1, pause, b: () => 2 });
+      return run(host, noop({ pause }));
     });
 
     expect(starts).toHaveLength(1);
@@ -1648,15 +1682,93 @@ describe("commands.run with tools that wait", () => {
     expect(result).toMatchObject({ result: { exitCode: 0 } });
   });
 
+  test("a replay that exits 0 without using the whole journal fails", async () => {
+    const { sandbox } = createReplaySandbox(["a", "pause", "b"], {
+      replayedLine: false,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, {
+        a: () => {
+          return 1;
+        },
+        pause,
+        b: () => {
+          return 2;
+        },
+      });
+    });
+
+    expect(result).toMatchObject({ result: { exitCode: 76 } });
+    expect((result as { result: { stderr: string } }).result.stderr).toContain(
+      "replay diverged",
+    );
+  });
+
+  test("a short replay that printed more than the output limit stays marked as cut", async () => {
+    const { sandbox } = createReplaySandbox(["a", "pause", "b"], {
+      replayedLine: false,
+      big: true,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, noop({ pause }));
+    });
+
+    const { result: wire } = result as unknown as {
+      result: {
+        stdout: string;
+        stderr: string;
+        encoding: "utf8" | "base64";
+        output: {
+          truncated: boolean;
+          originalBytes: { stdout: number };
+          retainedBytes: { stderr: number };
+        };
+      };
+    };
+    const decode = (text: string) => {
+      return wire.encoding === "utf8"
+        ? Buffer.from(text)
+        : Buffer.from(text, "base64");
+    };
+
+    expect(result).toMatchObject({
+      result: { exitCode: 76, output: { truncated: true } },
+    });
+    expect(decode(wire.stderr).toString()).toContain("replay diverged");
+    expect(wire.output.retainedBytes.stderr).toBe(decode(wire.stderr).length);
+    expect(wire.output.originalBytes.stdout).toBe(3 * 1024 * 1024);
+  });
+
   test("an exit 75 the stub didn't write a yield for is the script's own", async () => {
     const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
       marker: false,
     });
     const { host } = createHost(sandbox);
-    const pause = tool.group({ waits: true, run: async () => 1 });
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
 
     const result = await inFunction(() => {
-      return run(host, { a: () => 1, pause, b: () => 2 });
+      return run(host, noop({ pause }));
     });
 
     expect(starts).toHaveLength(1);
@@ -1665,7 +1777,13 @@ describe("commands.run with tools that wait", () => {
 
   test("a tool that waits needs a group", () => {
     expect(() => {
-      return tool({ id: "pause", waits: true, run: () => 1 });
+      return tool({
+        id: "pause",
+        waits: true,
+        run: () => {
+          return 1;
+        },
+      });
     }).toThrow(/needs group: true/);
   });
 });
