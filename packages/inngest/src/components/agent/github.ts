@@ -148,11 +148,15 @@ export const github = {
         "github.channel: the event is not a github/issue_comment",
       );
 
-      return {
-        owner: data.owner,
-        repo: data.repo,
-        number: Number(data.number),
-      };
+      const number = Number(data.number);
+
+      if (!Number.isInteger(number)) {
+        throw new Error(
+          `github.channel: "${data.number}" is not an issue number.`,
+        );
+      }
+
+      return { owner: data.owner, repo: data.repo, number };
     })();
 
     return defineChannel({

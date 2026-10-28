@@ -294,6 +294,14 @@ describe("adapters", () => {
     expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
   });
 
+  test("github.channel rejects a number that is not a number", () => {
+    expect(() => {
+      return github.channel({
+        data: { owner: "o", repo: "r", number: "abc", body: "b" },
+      });
+    }).toThrow("not an issue number");
+  });
+
   test("an API failure throws", async () => {
     vi.stubGlobal("fetch", async () => {
       return new Response("{}", { status: 500 });
