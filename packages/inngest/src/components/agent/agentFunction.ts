@@ -27,7 +27,7 @@ import type { SandboxTools } from "../sandbox/tools.ts";
 import {
   type Channel,
   createReporter,
-  parseWith,
+  parseWithAsync,
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
@@ -71,6 +71,7 @@ import { markThreadIdle, threadRecorder } from "./threadState.ts";
 import {
   type CompiledTrigger,
   compileTriggers,
+  dataProblem,
   messageOf,
   schemaProblem,
   singletonKey,
@@ -315,7 +316,7 @@ const warned = new Set<string>();
 function threadInbox(
   inbox: Subscription<RawEvent>,
   toMessage: (raw: RawEvent) => ThreadMessage,
-  problemOf: (raw: RawEvent) => Promise<string | undefined>,
+  problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
   client: Inngest.Any,
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
   log: { warn: (message: string) => void },
@@ -346,7 +347,7 @@ function threadInbox(
         }
 
         const checked = replySchema
-          ? parseWith(replySchema, answer, "message.reply() data")
+          ? await parseWithAsync(replySchema, answer, "message.reply() data")
           : answer;
 
         await step.run(`reply:${message.seq}`, async () => {
@@ -374,13 +375,11 @@ function threadInbox(
   let delivered = 0;
 
   // An event that breaks its trigger's schema never starts a run in core, so
-  // it does not reach a live one either: it is dropped.
+  // it does not reach a live one either: it is dropped. The event that started
+  // the run was checked by core, except for the payload of a request, which
+  // core does not see.
   async function skipped(raw: InboxMessage<RawEvent>) {
-    if (raw.seq < 1) {
-      return false;
-    }
-
-    const problem = await problemOf(raw.data);
+    const problem = await problemOf(raw.data, raw.seq < 1);
     if (!problem) {
       return false;
     }
@@ -732,7 +731,22 @@ export function createAgentFunction(
               ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
               : (raw.data as ThreadMessage);
           },
-          async function problemOf(raw) {
+          async function problemOf(raw, started) {
+            // A request's payload is checked against `requests`, which core
+            // does not know. The asker gets no reply, so it times out: the
+            // same as for any event that breaks its schema.
+            if (raw.name === agentMessageEvent) {
+              const data = raw.data as ThreadMessage;
+
+              return data.kind === "request" && config.requests
+                ? dataProblem(config.requests.request, data.payload)
+                : undefined;
+            }
+
+            if (started) {
+              return undefined;
+            }
+
             return schemaProblem(
               triggers.filter((t) => {
                 return t.event === raw.name;

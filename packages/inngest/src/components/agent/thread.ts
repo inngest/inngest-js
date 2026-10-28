@@ -15,7 +15,7 @@ import type { InngestApi } from "../../api/api.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
-import { parseWith } from "./channels.ts";
+import { parseWithAsync } from "./channels.ts";
 import { agentMessage } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
@@ -453,7 +453,7 @@ export function getThread<TRequest = unknown, TReply = unknown>(
       }
 
       const asked = options.requests
-        ? parseWith(
+        ? await parseWithAsync(
             options.requests.request,
             payload,
             "thread.request() payload",

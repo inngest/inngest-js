@@ -432,12 +432,12 @@ export function compileTriggers(
  * @param schema The schema.
  * @param data The event's data.
  */
-async function problemOf(
+export async function dataProblem(
   schema: StandardSchemaV1,
   data: unknown,
 ): Promise<string | undefined> {
   try {
-    const result = await schema["~standard"].validate(data ?? {});
+    const result = await schema["~standard"].validate(data);
     if (!result.issues) {
       return undefined;
     }
@@ -479,9 +479,9 @@ export async function schemaProblem(
   const problems: string[] = [];
 
   for (const trigger of triggers) {
-    const problem = await problemOf(
+    const problem = await dataProblem(
       trigger.schema as StandardSchemaV1,
-      event.data,
+      event.data ?? {},
     );
     if (!problem) {
       return undefined;
