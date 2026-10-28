@@ -11,7 +11,9 @@ import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
 import {
   resolveToolCall,
   type SandboxTools,
+  type ToolInputType,
   type ToolJsonDefinition,
+  type ToolOutputType,
   toolDefinitions,
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
@@ -60,10 +62,23 @@ export interface AgentToolResult {
   isError?: boolean;
 }
 
+// The default for the tools a loop's runs and result were given. `any` is
+// what lets a result typed for its own tools be assigned to a plain
+// `AgentLoopResult` or `AgentToolRun`: `keyof TTools` makes the compiler treat
+// the parameter as invariant, and `any` is the one argument that goes both
+// ways. Its runs have `unknown` input and output, as untyped tools should.
+// `AgentLoopOptions` keeps `SandboxTools` as its default so that plain options
+// still check their `tools`; a typed one is not assignable to it.
+// biome-ignore lint/suspicious/noExplicitAny: see above
+type AnyTools = any;
+
 /**
  * A tool call the model asked for.
  */
-export interface AgentToolCall {
+export interface AgentToolCall<
+  TName extends string = string,
+  TInput = unknown,
+> {
   /**
    * The provider's ID of the call; the result answers it.
    */
@@ -72,13 +87,13 @@ export interface AgentToolCall {
   /**
    * The tool's name in the model's list.
    */
-  name: string;
+  name: TName;
 
   /**
    * The arguments the model sent. Untrusted JSON until the tool's schema has
-   * checked it, so it is `unknown` here.
+   * checked it, so it is `unknown` unless the run did not fail.
    */
-  input: unknown;
+  input: TInput;
 }
 
 /**
@@ -204,27 +219,54 @@ export interface AgentTurn {
  * `agent.toolError()`, or the error message when it threw), `stepId` the ID
  * of its step (the prefix of its steps for `tool.group()`), and `ms` how long
  * the call took in this execution, which is short when it replays.
+ *
+ * With typed `tools`, once `isError` is false, checking `name` narrows
+ * `call.input` and `output` to what that tool declares. A failed run is not
+ * narrowed: the model may have named a tool you don't have or passed input
+ * that doesn't fit, so its `name` is any string and its `call.input` unknown.
  */
-export interface AgentToolRun {
+export type AgentToolRun<TTools extends SandboxTools = AnyTools> =
+  | {
+      [TName in keyof TTools & string]: AgentToolRunOf<
+        TName,
+        ToolInputType<TTools[TName]>,
+        false,
+        ToolOutputType<TTools[TName]>
+      >;
+    }[keyof TTools & string]
+  | AgentToolRunOf<string, unknown, true, unknown>;
+
+interface AgentToolRunOf<
+  TName extends string,
+  TInput,
+  TIsError extends boolean,
+  TOutput,
+> {
   /**
    * The model call that asked for it.
    */
   turn: number;
 
   /**
+   * The tool's name, the same as `call.name`, on the run itself so that
+   * checking it narrows `call.input` and `output`.
+   */
+  name: TName;
+
+  /**
    * The call.
    */
-  call: AgentToolCall;
+  call: AgentToolCall<TName, TInput>;
 
   /**
    * What the tool returned.
    */
-  output: unknown;
+  output: TOutput;
 
   /**
    * Whether the call failed.
    */
-  isError: boolean;
+  isError: TIsError;
 
   /**
    * The ID of the call's step.
@@ -240,7 +282,7 @@ export interface AgentToolRun {
 /**
  * Options of `agent.loop()`.
  */
-export interface AgentLoopOptions {
+export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   /**
    * Prefix of the step IDs. Default `"agent"`.
    */
@@ -266,7 +308,7 @@ export interface AgentLoopOptions {
    * throws, or returns `agent.toolError(body)`, gives the model an error
    * result to react to.
    */
-  tools: SandboxTools;
+  tools: TTools;
 
   /**
    * The most characters of one tool result the model sees; longer ones keep
@@ -333,7 +375,7 @@ export interface AgentLoopOptions {
    * your function on every execution, so put side effects in steps; their IDs
    * are scoped to the call, so parallel calls don't clash.
    */
-  onToolResult?: (run: AgentToolRun) => void | Promise<void>;
+  onToolResult?: (run: AgentToolRun<TTools>) => void | Promise<void>;
 
   /**
    * Called after each model call, for progress. It runs in your function on
@@ -346,7 +388,7 @@ export interface AgentLoopOptions {
 /**
  * What `agent.loop()` returns.
  */
-export interface AgentLoopResult {
+export interface AgentLoopResult<TTools extends SandboxTools = AnyTools> {
   /**
    * The text of the last model reply.
    */
@@ -381,7 +423,7 @@ export interface AgentLoopResult {
   /**
    * Every tool call this loop made, in order.
    */
-  toolCalls: AgentToolRun[];
+  toolCalls: AgentToolRun<TTools>[];
 }
 
 const clip = (text: string, max: number): string => {
@@ -419,12 +461,12 @@ const isToolError = (output: unknown): output is { "~error": unknown } => {
   return typeof output === "object" && output !== null && errorKey in output;
 };
 
-const runTool = async (
-  options: AgentLoopOptions & { maxToolOutput: number },
+const runTool = async <TTools extends SandboxTools>(
+  options: AgentLoopOptions<TTools> & { maxToolOutput: number },
   turn: number,
   stepId: string,
   call: AgentToolCall,
-): Promise<{ result: AgentToolResult; run: AgentToolRun }> => {
+): Promise<{ result: AgentToolResult; run: AgentToolRun<TTools> }> => {
   const started = Date.now();
   let output: unknown;
   let isError = false;
@@ -466,7 +508,18 @@ const runTool = async (
   }
 
   const content = typeof output === "string" ? output : JSON.stringify(output);
-  const run = { turn, call, output, isError, stepId, ms: Date.now() - started };
+  // The model names the tool and the input at run time, so the compiler can't
+  // connect them to `TTools`. The type promises the narrowing only for runs
+  // that did not fail, and those ran a tool of that name with its input.
+  const run = {
+    turn,
+    name: call.name,
+    call,
+    output,
+    isError,
+    stepId,
+    ms: Date.now() - started,
+  } as AgentToolRun<TTools>;
 
   await withStepIdPrefix(`${stepId}:`, async () => {
     await options.onToolResult?.(run);
@@ -503,7 +556,9 @@ const runTool = async (
  * });
  * ```
  */
-const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
+const loop = async <TTools extends SandboxTools>(
+  options: AgentLoopOptions<TTools>,
+): Promise<AgentLoopResult<TTools>> => {
   const {
     id = "agent",
     model,
@@ -520,7 +575,7 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
     { role: "user", content: options.prompt },
   ];
   const usage: AgentUsage = { input: 0, output: 0 };
-  const toolRuns: AgentToolRun[] = [];
+  const toolRuns: AgentToolRun<TTools>[] = [];
   let text = "";
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
@@ -589,14 +644,14 @@ const loop = async (options: AgentLoopOptions): Promise<AgentLoopResult> => {
     }
 
     const run = (call: AgentToolCall, index: number) => {
-      return runTool(
+      return runTool<TTools>(
         { ...options, maxToolOutput },
         turn,
         `${id}:${turn}.${index}:${call.name}`,
         call,
       );
     };
-    let done: Awaited<ReturnType<typeof runTool>>[];
+    let done: { result: AgentToolResult; run: AgentToolRun<TTools> }[];
 
     if (parallelTools) {
       done = await Promise.all(reply.toolCalls.map(run));

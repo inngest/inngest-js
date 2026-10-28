@@ -9,7 +9,11 @@ import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { type AgentModelResponse, agent } from "./loop.ts";
+import {
+  type AgentLoopResult,
+  type AgentModelResponse,
+  agent,
+} from "./loop.ts";
 import { skills } from "./skills.ts";
 import { run } from "./test-helpers.ts";
 
@@ -79,7 +83,7 @@ describe("agent function", () => {
         let last = "";
 
         for await (const m of inbox) {
-          const result = await agent.loop({
+          const result: AgentLoopResult = await agent.loop({
             id: `turn${m.seq}`,
             model: agent.model(async (request) => {
               prompts.push(userTexts(request.messages));
