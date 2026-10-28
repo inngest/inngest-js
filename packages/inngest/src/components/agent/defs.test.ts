@@ -6,12 +6,17 @@
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import * as z from "zod/v4";
 import { tool } from "../sandbox/tools.ts";
-import type { DurableSandbox, DurableSandboxTools } from "../sandbox/types.ts";
+import type {
+  DurableSandbox,
+  DurableSandboxTools,
+  SandboxHandle,
+} from "../sandbox/types.ts";
 import {
   agentTools,
   getSandbox,
   openSandboxes,
   resolveSandboxes,
+  type SandboxRuntime,
   sandbox,
   sandboxTools,
 } from "./defs.ts";
@@ -390,5 +395,128 @@ describe("openSandboxes with a bad binding", () => {
     expect(() => {
       return openSandboxes({ a: "nope" as never }, env.sandboxes);
     }).toThrow("must be a definition");
+  });
+});
+
+describe("sandbox setup", () => {
+  const environment = () => {
+    const env = fakeEnvironment();
+    const order: string[] = [];
+    const sandboxes = {
+      create: async (id: unknown, options: unknown) => {
+        order.push("create");
+
+        const made = (await env.created(id, options)) as unknown as {
+          commands: {
+            run: (id: unknown, command: unknown) => Promise<unknown>;
+          };
+          files: Record<string, unknown>;
+        };
+
+        made.files = {
+          write: async (stepId: unknown) => {
+            order.push(`write:${String(stepId)}`);
+          },
+        };
+
+        return made as unknown as DurableSandbox;
+      },
+    } as unknown as DurableSandboxTools;
+    const runtime = {
+      event: { name: "e" },
+      run: async <T>(id: string, fn: () => Promise<T>) => {
+        order.push(`step:${id}`);
+
+        return fn();
+      },
+    } as unknown as SandboxRuntime;
+
+    return { env, order, sandboxes, runtime };
+  };
+
+  test("runs once after creation, with scoped step IDs, before get() resolves", async () => {
+    const { env, order, sandboxes, runtime } = environment();
+    const setup = vi.fn(async ({ sandbox: box, step, event, name }) => {
+      await step.run("load", async () => {
+        return "tar";
+      });
+      await box.files.write("restore", { path: "/w.tgz", data: "x" });
+      await box.commands.run("untar", "tar xzf /w.tgz");
+      expect(event).toEqual({ name: "e" });
+      expect(name).toBe("work");
+    });
+    const def = sandbox({ id: "s", setup });
+    const opened = openSandboxes({ work: def }, sandboxes, runtime);
+
+    expect(setup).not.toHaveBeenCalled();
+
+    await Promise.all([opened.work?.get(), opened.work?.get()]);
+
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(order).toEqual([
+      "create",
+      "step:work:setup:step:load",
+      "write:work:setup:sandbox:restore",
+    ]);
+    expect(env.runs).toEqual(["tar xzf /w.tgz"]);
+  });
+
+  test("an eager sandbox runs setup at once", async () => {
+    const { sandboxes, runtime } = environment();
+    const setup = vi.fn(async () => {});
+    const opened = openSandboxes(
+      { work: { sandbox: sandbox({ id: "s", setup }), start: "eager" } },
+      sandboxes,
+      runtime,
+    );
+
+    await opened.work?.get();
+    expect(setup).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failed setup fails get() but close() still destroys the sandbox", async () => {
+    const { env, sandboxes, runtime } = environment();
+    const def = sandbox({
+      id: "s",
+      setup: async () => {
+        throw new Error("no tarball");
+      },
+    });
+    const opened = openSandboxes({ work: def }, sandboxes, runtime);
+
+    await expect(opened.work?.get()).rejects.toThrow("no tarball");
+    await opened.work?.close();
+    expect(env.destroyed).toEqual(["work:destroy"]);
+  });
+
+  test("a setup without a run to attach to is a clear error", async () => {
+    const { sandboxes } = environment();
+    const opened = openSandboxes(
+      { work: sandbox({ id: "s", setup: async () => {} }) },
+      sandboxes,
+    );
+
+    await expect(opened.work?.get()).rejects.toThrow("a setup, which need");
+  });
+});
+
+describe("sandbox step ID namespaces", () => {
+  test("a tool step ID can't take the setup prefix", async () => {
+    const env = fakeEnvironment();
+    let captured: SandboxHandle | undefined;
+    const def = sandbox({
+      id: "s",
+      tools: (handle) => {
+        captured = handle;
+
+        return {};
+      },
+    });
+
+    openSandboxes({ work: def }, env.sandboxes);
+
+    await expect(captured?.commands.run("setup:x", "true")).rejects.toThrow(
+      "reserved",
+    );
   });
 });
