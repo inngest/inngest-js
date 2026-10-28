@@ -4,12 +4,12 @@
  * Insights query over the `agent/message` events. A thread exists once a
  * message was sent to it, so the events are the list.
  *
- * Insights is not served by the OSS Dev Server (it answers 501), so listing
- * works against Inngest Cloud. Pass `query` to read the events some other
- * way, for example in a test or from your own store.
+ * EXPERIMENTAL and unverified on Inngest Cloud: the query below has not been
+ * run against Insights yet, and the OSS Dev Server does not serve Insights (it
+ * answers 501). Pass `query` to read the events some other way, for example in
+ * a test or from your own store.
  */
 
-import type { InngestApi } from "../../api/api.ts";
 import type { Inngest } from "../Inngest.ts";
 import { agentMessageEvent, getThread, type ThreadHandle } from "./thread.ts";
 
@@ -41,6 +41,7 @@ export interface ThreadListOptions {
 export interface ThreadList {
   /**
    * The threads that were sent a message, most recent first, as handles.
+   * Experimental: the Insights query is unverified on Inngest Cloud.
    * @param options Session filter, limit and query override.
    */
   list(options?: ThreadListOptions): Promise<ThreadHandle[]>;
@@ -105,10 +106,7 @@ export async function listThreads(
   const query: InsightsQuery =
     options.query ??
     ((sql) => {
-      // The client keeps its API private; listing is the one other reader.
-      const api = (client as unknown as { inngestApi: InngestApi }).inngestApi;
-
-      return api.queryInsights(sql);
+      return client.queryInsights(sql);
     });
   const { columns, rows } = await query(threadListSql(agent, options));
   const threadAt = columns.indexOf("thread");

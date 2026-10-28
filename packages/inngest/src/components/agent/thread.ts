@@ -12,7 +12,9 @@
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
+import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
+import type { EffectiveLimits } from "./limits.ts";
 
 /**
  * The event every thread message is sent as.
@@ -135,6 +137,13 @@ export interface ThreadRecord {
   usage: { input: number; output: number };
 
   /**
+   * The limits the agent that started this thread passed down, narrowed over
+   * every start. Every later run of the thread applies them, so a sub-agent
+   * woken by a plain message stays inside them.
+   */
+  inherited?: EffectiveLimits;
+
+  /**
    * The run that wrote the record last, so a finished run never overwrites
    * the record of a newer one.
    */
@@ -142,12 +151,6 @@ export interface ThreadRecord {
 }
 
 export const threadRecordKey = "__state";
-
-/**
- * Thread KV key holding the IDs of the last runs that ended. The cleanup writes
- * it; `state()` shows the thread idle while the record is still that run's.
- */
-export const threadEndedKey = "__ended";
 
 /**
  * The longest `summary` kept.
@@ -245,13 +248,8 @@ function stepContext() {
 }
 
 /**
- * Counts the requests made in one execution of a function. The count starts
- * again on every replay, so a request has the same signal ID each time.
- */
-const requestCounts = new WeakMap<object, number>();
-
-/**
- * The thread state record as the handle shows it.
+ * The thread state record as the handle shows it. A thread with no record has
+ * never run.
  * @param record What the agent function kept, if anything.
  * @param all The thread's whole KV scope.
  */
@@ -259,14 +257,8 @@ export function threadStateOf(
   record: ThreadRecord | undefined,
   all: Record<string, unknown>,
 ): ThreadState {
-  const ended =
-    record?.runId !== undefined &&
-    (all[threadEndedKey] as string[] | undefined)?.includes(record.runId) ===
-      true;
-  const status = record?.status ?? "idle";
-
   return {
-    status: ended && status !== "stopped" ? "idle" : status,
+    status: record?.status ?? "idle",
     turn: record?.turn ?? 0,
     summary: record?.summary,
     usage: record?.usage ?? { input: 0, output: 0 },
@@ -356,8 +348,7 @@ export function getThread(
         );
       }
 
-      const count = (requestCounts.get(execution.instance) ?? 0) + 1;
-      requestCounts.set(execution.instance, count);
+      const count = nextCount(execution.instance, "request") + 1;
 
       const signal = `thread-request:${execution.ctx.runId}:${count}`;
       const event = execution.ctx.event as {

@@ -12,16 +12,15 @@ export type {
   GitPolicyResult,
   GitPush,
 } from "../sandbox/gitPush.ts";
+export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
   ConfigValue,
   LazySandbox,
   SandboxBinding,
-  SandboxBindingInput,
-  SandboxBindingOptions,
   SandboxDefinition,
   SandboxDefinitionOptions,
   SandboxesConfig,
-  SandboxHandle,
+  SandboxStart,
   SandboxToolsFactory,
 } from "./defs.ts";
 export {
@@ -37,6 +36,8 @@ export type { GitPushToolOptions } from "./gitPush.ts";
 export { gitPushTool } from "./gitPush.ts";
 export type { AgentInvokeOptions } from "./invoke.ts";
 export { agentInvokeDepth, agentInvokeInput } from "./invoke.ts";
+export type { AgentBudget, AgentLimits } from "./limits.ts";
+export { AgentLimitError } from "./limits.ts";
 export type {
   AgentLoopOptions,
   AgentLoopResult,
