@@ -7,11 +7,13 @@
  * only by the tool call that uses it.
  */
 import { Inngest } from "inngest";
-import { agent, sandbox } from "inngest/experimental";
 import {
+  agent,
+  createAgents,
   createKv,
   getThread,
   redisKvAdapter,
+  sandbox,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
 
@@ -28,7 +30,8 @@ export const sandboxStart = scenario({
   sandbox: "fake",
   sandboxCommands: { "echo sandbox-start": { stdout: "hello\n" } },
   functions: ({ client }) => {
-    const bot = client.agent(
+    const agents = createAgents(client);
+    const bot = agents.agent(
       {
         id: agentId,
         sandboxes: {
@@ -66,7 +69,7 @@ export const sandboxStart = scenario({
       },
     );
 
-    return bot.functions;
+    return agents.functions();
   },
   run: async (ctx) => {
     const client = new Inngest({

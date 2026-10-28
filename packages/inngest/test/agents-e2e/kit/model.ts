@@ -3,7 +3,10 @@
  * The scripted model. It needs no API key and answers from a list of steps,
  * so a scenario asserts on the primitives and never on a model.
  */
-import { agent, type AgentModelRequest as Request } from "inngest/experimental";
+import {
+  agent,
+  type AgentModelRequest as Request,
+} from "inngest/experimental/agents";
 
 export type ScriptStep =
   | { say: string; when?: (request: Request) => boolean }

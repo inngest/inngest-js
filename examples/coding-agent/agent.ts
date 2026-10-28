@@ -1,5 +1,6 @@
 import { Inngest } from "inngest";
-import { agent, repo, sandboxMiddleware, tool } from "inngest/experimental";
+import { sandboxMiddleware, tool } from "inngest/experimental";
+import { agent, repo } from "inngest/experimental/agents";
 import { z } from "zod";
 
 import { claude } from "./model.ts";

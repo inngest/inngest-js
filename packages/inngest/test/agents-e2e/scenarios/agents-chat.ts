@@ -5,8 +5,10 @@
  * stopping an idle thread starts nothing.
  */
 import { Inngest } from "inngest";
-import { agent, tool } from "inngest/experimental";
+import { tool } from "inngest/experimental";
 import {
+  agent,
+  createAgents,
   createKv,
   getThread,
   type Kv,
@@ -45,7 +47,8 @@ export const agentsChat = scenario({
   owner: "agents-f",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client }) => {
-    const chat = client.agent({ id: agentId }, async ({ inbox, control }) => {
+    const agents = createAgents(client);
+    const chat = agents.agent({ id: agentId }, async ({ inbox, control }) => {
       for await (const message of inbox) {
         await kv.thread.update<string[]>("started", function (started) {
           return [...(started ?? []), message.data.content ?? ""];
@@ -71,7 +74,7 @@ export const agentsChat = scenario({
       }
     });
 
-    return chat.functions;
+    return agents.functions();
   },
   run: async (ctx) => {
     const store: Kv = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });

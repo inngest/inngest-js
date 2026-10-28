@@ -11,10 +11,11 @@
  */
 import { Inngest, NonRetriableError } from "inngest";
 import { tool } from "inngest/experimental";
-import { agent, createAgentFunction, kv } from "inngest/experimental/agents";
+import { agent, createAgents, kv } from "inngest/experimental/agents";
 import { z } from "zod";
 
 export const client = new Inngest({ id: "agents-f" });
+export const agents = createAgents(client);
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -66,54 +67,42 @@ const scriptedModel = () => {
   });
 };
 
-export const chat = createAgentFunction(
-  client,
-  { id: "chat" },
-  async ({ inbox, control }) => {
-    for await (const message of inbox) {
-      const history = await kv.thread.get<never[]>("history");
-      const result = await agent.loop({
-        id: `turn${message.seq}`,
-        model: scriptedModel(),
-        prompt: message.data.content ?? "",
-        history: history ?? [],
-        tools: { think },
-        ...control,
-      });
-
-      await kv.thread.set("history", result.history);
-      await kv.thread.set("last", { seq: message.seq, text: result.text });
-      await kv.thread.update<string[]>("turns", function (turns) {
-        return [...(turns ?? []), message.data.content ?? ""];
-      });
-    }
-  },
-);
-
-export const quick = createAgentFunction(
-  client,
-  { id: "quick" },
-  async ({ inbox }) => {
-    const message = await inbox.next();
-    await sleep(3000);
-    await kv.thread.update<string[]>("seen", function (seen) {
-      return [...(seen ?? []), message?.data.content ?? ""];
+export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
+  for await (const message of inbox) {
+    const history = await kv.thread.get<never[]>("history");
+    const result = await agent.loop({
+      id: `turn${message.seq}`,
+      model: scriptedModel(),
+      prompt: message.data.content ?? "",
+      history: history ?? [],
+      tools: { think },
+      ...control,
     });
 
-    return message?.data.content;
-  },
-);
-
-export const boom = createAgentFunction(
-  client,
-  { id: "boom" },
-  async ({ inbox }) => {
-    const message = await inbox.next();
-    await sleep(2500);
-    await kv.thread.update<string[]>("seen", function (seen) {
-      return [...(seen ?? []), message?.data.content ?? ""];
+    await kv.thread.set("history", result.history);
+    await kv.thread.set("last", { seq: message.seq, text: result.text });
+    await kv.thread.update<string[]>("turns", function (turns) {
+      return [...(turns ?? []), message.data.content ?? ""];
     });
+  }
+});
 
-    throw new NonRetriableError("boom");
-  },
-);
+export const quick = agents.agent({ id: "quick" }, async ({ inbox }) => {
+  const message = await inbox.next();
+  await sleep(3000);
+  await kv.thread.update<string[]>("seen", function (seen) {
+    return [...(seen ?? []), message?.data.content ?? ""];
+  });
+
+  return message?.data.content;
+});
+
+export const boom = agents.agent({ id: "boom" }, async ({ inbox }) => {
+  const message = await inbox.next();
+  await sleep(2500);
+  await kv.thread.update<string[]>("seen", function (seen) {
+    return [...(seen ?? []), message?.data.content ?? ""];
+  });
+
+  throw new NonRetriableError("boom");
+});

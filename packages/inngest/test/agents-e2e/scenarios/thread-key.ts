@@ -8,12 +8,14 @@
  */
 import { Inngest } from "inngest";
 import {
+  createAgents,
   createKv,
   getThread,
   kv,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { withKeys } from "../kit/threads.ts";
 
 const agentId = "thread-key-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -35,7 +37,8 @@ export const threadKey = scenario({
   owner: "agents-thread-key",
   needs: { oss: "jack/step-subscribe" },
   functions: ({ client, event }) => {
-    const bot = client.agent(
+    const agents = createAgents(client);
+    const bot = agents.agent(
       {
         id: agentId,
         on: {
@@ -61,7 +64,7 @@ export const threadKey = scenario({
       },
     );
 
-    const stoppable = client.agent(
+    const stoppable = agents.agent(
       {
         id: stopId,
         on: { event: event("stop-msg"), thread: "event.data.key" },
@@ -80,7 +83,7 @@ export const threadKey = scenario({
       },
     );
 
-    return [...bot.functions, ...stoppable.functions];
+    return agents.functions();
   },
   run: async (ctx) => {
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });
@@ -91,7 +94,7 @@ export const threadKey = scenario({
     });
     const channel = `C${Date.now()}`;
     const handle = (key: string) => {
-      return getThread(client, ref, key, { kv: store });
+      return withKeys(getThread(client, ref, key, { kv: store }));
     };
     const t1 = handle(`${channel}/1.0`);
     const t2 = handle(`${channel}/2.0`);
@@ -165,7 +168,9 @@ export const threadKey = scenario({
 
     // A stop now cancels the run an event started (the key is a plain path,
     // which a cancel expression can match); the next event starts a new run.
-    const s1 = getThread(client, stopRef, `${channel}-stop`, { kv: store });
+    const s1 = withKeys(
+      getThread(client, stopRef, `${channel}-stop`, { kv: store }),
+    );
     await ctx.send("stop-msg", { key: `${channel}-stop` });
     await ctx.eventually("a path key starts its thread", s1.state, (s) => {
       return list(s, "turns").length === 1;

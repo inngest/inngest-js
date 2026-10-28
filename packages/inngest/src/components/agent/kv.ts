@@ -14,10 +14,10 @@
  * and thread from the function it is called in.
  */
 
-import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
 import { redisConnection } from "./redis.ts";
+import { currentSessions } from "./sessions.ts";
 
 export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
 
@@ -206,15 +206,12 @@ function currentIds(): KvScopeIds | undefined {
     return undefined;
   }
 
-  const { ctx, instance } = execution;
+  const { ctx } = execution;
   const app = getAsyncCtxSync()?.app as { id?: string; env?: string | null };
 
-  // `ctx.sessions` is only set while session propagation is on, so read the
-  // trigger events too. `data.thread` is what agent functions are started with.
-  const sessions = {
-    ...reduceEventsToPropagatedSessions(ctx.events ?? [ctx.event]),
-    ...ctx.sessions,
-  };
+  // `data.thread` is what agent functions are started with. A run started by
+  // an event of `on` is told its thread and session by the agent function.
+  const sessions = currentSessions(ctx);
   const agent = execution.agent;
   const thread =
     agent?.thread ??
@@ -226,11 +223,7 @@ function currentIds(): KvScopeIds | undefined {
   return {
     env: app?.env ?? "default",
     app: app?.id ?? "app",
-    // The execution keeps its options protected; the function ID is all we
-    // need from them.
-    function: (
-      instance as unknown as { options?: { fn?: { id(): string } } }
-    ).options?.fn?.id(),
+    function: execution.functionId,
     run: ctx.runId,
     session: agent?.session ?? sessions.agent_session,
     thread,

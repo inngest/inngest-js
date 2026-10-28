@@ -26,6 +26,11 @@ export interface AsyncContext {
     instance: IInngestExecution;
 
     /**
+     * The ID of the function being executed, when the engine knows it.
+     */
+    functionId?: string;
+
+    /**
      * The `ctx` object that has been passed in to this function execution,
      * including values such as `step` and `event`.
      */
