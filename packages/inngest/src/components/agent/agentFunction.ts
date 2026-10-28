@@ -83,7 +83,9 @@ export interface AgentFunctionConfig extends ThreadKeyConfig {
    * What this agent may start and spend: `depth` (default 1, so it may start
    * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
    * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
-   * do not allow; spread `control` into `agent.loop()` to stop on `budget`.
+   * do not allow, but only `agent.invoke()`: a raw `step.invoke` or
+   * `sendEvent` to another agent bypasses them. `budget` is not automatic:
+   * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
    */
   limits?: AgentLimits;
 }
@@ -433,7 +435,7 @@ export function createAgentFunction(
         }),
       ],
     },
-    async ({ event, step, defer, runId }) => {
+    async ({ event, step, defer, runId, logger }) => {
       // The thread a run belongs to comes from its trigger: a message names it,
       // any other trigger event gives it by the expression of its trigger.
       const found = triggers.find((t) => {
@@ -592,8 +594,7 @@ export function createAgentFunction(
         };
 
         // Closes every sandbox. Returns the first failure instead of throwing, so
-        // a failed eager start nothing used is raised but never in place of the
-        // body's own error.
+        // a failed eager start nothing used never replaces the body's own error.
         const closeAll = async () => {
           const closed = await Promise.allSettled(
             Object.values(opened).map((handle) => {
@@ -627,8 +628,16 @@ export function createAgentFunction(
 
         const rejected = await closeAll();
 
+        // The body succeeded, so an eager sandbox nothing used that failed to
+        // create is a warning, not a failed run.
         if (rejected) {
-          throw rejected.reason;
+          logger.warn(
+            `An unused eager sandbox failed to create: ${
+              rejected.reason instanceof Error
+                ? rejected.reason.message
+                : String(rejected.reason)
+            }`,
+          );
         }
 
         return result;

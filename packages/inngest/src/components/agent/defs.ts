@@ -634,7 +634,8 @@ export const getSandbox = (
  * EXPERIMENTAL: Opens the sandboxes an agent is allowed to use. Nothing is
  * created yet, except for sandboxes bound with `start: "eager"`, which begin
  * creating at once. If an eager create fails and nothing used the sandbox,
- * `close()` raises the failure.
+ * `close()` raises the failure (the agent's run logs it as a warning). A
+ * sandbox that was used raises its failure to the caller that used it.
  *
  * @param bindings The agent's `sandboxes`, by name.
  * @param sandboxes The `step.sandbox` of the running function.

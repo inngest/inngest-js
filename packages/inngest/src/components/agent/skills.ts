@@ -26,6 +26,7 @@
 
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { GroupSandbox } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
 import { image as sandboxImage } from "../sandbox/image.ts";
@@ -71,8 +72,9 @@ export interface SkillsGitOptions {
   freshness?: "bake" | "boot";
 
   /**
-   * Where the skills land in the sandbox. Default: `/skills/<owner>/<name>`. At least two
-   * levels deep, since the directory is replaced on every fetch.
+   * Where the skills land in the sandbox. Default: `/skills/<owner>/<name>`.
+   * Must be a directory under `/skills/`, since it is replaced on every
+   * fetch.
    */
   into?: string;
 
@@ -98,6 +100,8 @@ export interface SkillsSource {
   readonly into: string;
   readonly github: { url: string; apiUrl: string };
 }
+
+const skillsRoot = "/skills";
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -130,12 +134,16 @@ const gitSource = (
   const into = options.into ?? `/skills/${repo}`;
 
   if (
-    !into.startsWith("/") ||
-    into.split("/").some((part) => part === ".." || part === ".") ||
-    into.split("/").filter(Boolean).length < 2
+    !into.startsWith(`${skillsRoot}/`) ||
+    into
+      .split("/")
+      .slice(1)
+      .some((part) => {
+        return part === "" || part === ".." || part === ".";
+      })
   ) {
     throw new SandboxValidationError(
-      `Skills "${repo}" must go into an absolute path at least two levels deep, not "${into}"`,
+      `Skills "${repo}" must go into a directory under ${skillsRoot}/, not "${into}"`,
     );
   }
 
@@ -277,7 +285,6 @@ export interface SkillsBakeRequest {
    * The snapshot's name, which names the build.
    */
   name: string;
-  entry: SnapshotEntry;
 
   /**
    * The image ref the snapshot starts from, if the definition names one.
@@ -287,6 +294,7 @@ export interface SkillsBakeRequest {
   memoryMb: number;
   sources: {
     repo: string;
+    ref: string;
     sha: string;
     into: string;
     url: string;
@@ -344,18 +352,22 @@ export const createWithSkills = async (
         options.image,
         fresh,
       );
-      const cache = snapshotCache(runtime.client, { memo: runtime.run });
+      const cache = snapshotCache(runtime.client, {
+        memo: (id, fn) => {
+          return runtime.run(id, fn);
+        },
+      });
 
       found = await cache.find(entry, { stepId });
       request = {
-        name: `${entry.scope}/${entry.key}/${entry.generation}`,
-        entry,
+        name: snapshotName(entry),
         ...(options.image && { image: options.image.ref }),
         vcpu: fresh.vcpu,
         memoryMb: fresh.memoryMb,
         sources: baked.map((source, index) => {
           return {
             repo: source.repo,
+            ref: source.ref,
             sha: (shas as string[])[index] as string,
             into: source.into,
             url: source.github.url,
@@ -449,9 +461,85 @@ const skillsEntry = async (
 
   return {
     scope: skillsScope,
-    key: `${baked.map((source) => source.repo).join("+")}/${config.hash.slice(0, 8)}`,
+    key: `${baked.map((source) => source.repo).join("+")}/${config.hash.slice(0, 16)}`,
     generation,
   };
+};
+
+const snapshotName = (entry: SnapshotEntry): string => {
+  return `${entry.scope}/${entry.key}/${entry.generation}`;
+};
+
+/**
+ * Checks a bake request as untrusted input and rebuilds from it what the
+ * function bakes: sources that pass the same checks as `skills.git()`, pinned
+ * to 40-hex shas, and the snapshot entry computed from them. Throws when the
+ * request is malformed or its name is not the one its sources bake into.
+ */
+export const validateBakeRequest = async (
+  request: SkillsBakeRequest,
+): Promise<{
+  sources: SkillsSource[];
+  shas: string[];
+  entry: SnapshotEntry;
+}> => {
+  const asked = request.sources;
+
+  if (!Array.isArray(asked) || asked.length === 0) {
+    throw new SandboxValidationError("Skills bake request has no sources");
+  }
+
+  for (const size of [request.vcpu, request.memoryMb]) {
+    if (!Number.isInteger(size) || size <= 0) {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid size "${String(size)}"`,
+      );
+    }
+  }
+
+  if (request.image !== undefined && typeof request.image !== "string") {
+    throw new SandboxValidationError(
+      "Skills bake request has an invalid image",
+    );
+  }
+
+  const sources = asked.map((item) => {
+    if (typeof item?.sha !== "string" || !shaPattern.test(item.sha)) {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid sha "${String(item?.sha)}"`,
+      );
+    }
+
+    if (typeof item.url !== "string" || !/^https?:\/\//.test(item.url)) {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid url "${String(item.url)}"`,
+      );
+    }
+
+    return gitSource(item.repo, {
+      ref: item.ref,
+      freshness: "bake",
+      into: item.into,
+      github: { url: item.url },
+    });
+  });
+  const shas = asked.map((item) => {
+    return item.sha;
+  });
+  const entry = await skillsEntry(
+    sources,
+    shas,
+    request.image ? sandboxImage.custom(request.image) : undefined,
+    { vcpu: request.vcpu, memoryMb: request.memoryMb },
+  );
+
+  if (request.name !== snapshotName(entry)) {
+    throw new SandboxValidationError(
+      `Skills bake request is named "${String(request.name)}", but its sources bake into "${snapshotName(entry)}"`,
+    );
+  }
+
+  return { sources, shas, entry };
 };
 
 /**
@@ -470,6 +558,13 @@ export const createSkillsBakeFunction = (
     },
     async ({ event, step, group, runId }) => {
       const request = event.data as SkillsBakeRequest;
+      const { sources, shas, entry } = await validateBakeRequest(request).catch(
+        (error: unknown) => {
+          throw new NonRetriableError(
+            error instanceof Error ? error.message : String(error),
+          );
+        },
+      );
       const cache = snapshotCache(client, {
         memo: (id, fn) => {
           return step.run(id, fn);
@@ -478,7 +573,7 @@ export const createSkillsBakeFunction = (
       const sandboxGroup = group as unknown as { sandbox: GroupSandbox };
 
       const snapshot = await cache.ensure(
-        request.entry,
+        entry,
         async (take) => {
           return sandboxGroup.sandbox(
             {
@@ -491,20 +586,9 @@ export const createSkillsBakeFunction = (
               }),
             },
             async (sandbox) => {
-              await fetchSources(
-                sandbox,
-                "bake",
-                request.sources.map((source) => {
-                  return skills.git(source.repo, {
-                    ref: source.sha,
-                    into: source.into,
-                    github: { url: source.url },
-                  });
-                }),
-                (source) => {
-                  return source.ref;
-                },
-              );
+              await fetchSources(sandbox, "bake", sources, (source) => {
+                return shas[sources.indexOf(source)] as string;
+              });
 
               return take((name, attempt) => {
                 return sandbox.snapshot(`save:${attempt}`, { name });

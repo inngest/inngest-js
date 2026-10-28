@@ -60,9 +60,17 @@ export interface Ctx {
   event: (name: string) => string;
 
   /**
-   * Sends the scenario's event `name` and returns the event ID.
+   * Sends the scenario's event `name` and returns the event ID. Pass
+   * `startsRun: true` for an event that starts a run you will wait for with
+   * `finished()`: it is sent once more, with the same id, if no run starts.
+   * Leave it off for a message a running thread consumes, which a resend
+   * would deliver twice.
    */
-  send: (name: string, data?: Record<string, unknown>) => Promise<string>;
+  send: (
+    name: string,
+    data?: Record<string, unknown>,
+    options?: { startsRun?: boolean },
+  ) => Promise<string>;
 
   /**
    * Waits for the run the event started to leave `Running`.
@@ -299,25 +307,13 @@ export const createCtx = (
     });
   };
 
-  // What each event was sent as, to send it once more if it started no run.
-  // Only events that trigger a function are resent: the copy carries the same
-  // `id`, and the Dev Server starts one run per `id` (a repeat is stored as
-  // another event but starts no second run; checked on Dev Server 1.49). A
-  // message for a running thread would be delivered twice, so those are never
-  // resent. Each copy is a separate stored event, so the runs of every copy
-  // are read.
-  const triggersARun = async (name: string) => {
-    const res = await fetch(`${devUrl}/dev`);
-    const info = (await res.json()) as {
-      functions?: { triggers?: { event?: string }[] }[];
-    };
-
-    return (info.functions ?? []).some((fn) => {
-      return (fn.triggers ?? []).some((trigger) => {
-        return trigger.event === name;
-      });
-    });
-  };
+  // What each run-starting event was sent as, to send it once more if it
+  // started no run. Only sends that declare `startsRun` are resent: the copy
+  // carries the same `id`, and the Dev Server starts one run per `id` (a
+  // repeat is stored as another event but starts no second run; checked on
+  // Dev Server 1.49). A message for a running thread would be delivered twice,
+  // so those are never resent. Each copy is a separate stored event, so the
+  // runs of every copy are read.
   const sent = new Map<
     string,
     {
@@ -326,6 +322,7 @@ export const createCtx = (
     }
   >();
 
+  const lookupFailed = new Set<string>();
   const finished: Ctx["finished"] = async (eventId) => {
     const again = sent.get(eventId);
     const runsOfCopies = async () => {
@@ -333,9 +330,12 @@ export const createCtx = (
         [eventId, ...(again?.copies ?? [])].map((copy) => {
           // A lookup that fails is no runs yet, so the resend can still happen.
           return runsOf(copy).catch((error) => {
-            console.log(
-              `note ${id}: looking up the runs of event ${copy} failed: ${error instanceof Error ? error.message : String(error)}`,
-            );
+            if (!lookupFailed.has(copy)) {
+              lookupFailed.add(copy);
+              console.log(
+                `note ${id}: looking up the runs of event ${copy} failed: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
 
             return [];
           });
@@ -361,12 +361,6 @@ export const createCtx = (
     // The app is synced before a scenario starts, so this is a backstop: an
     // event that started no run within the window is sent once more.
     if (began.length === 0 && again) {
-      if (!(await triggersARun(again.event.name))) {
-        throw new Error(
-          `Event ${again.event.name} started no run and triggers no function, so it is not resent (a thread message would be delivered twice)`,
-        );
-      }
-
       console.log(
         `note ${id}: event ${eventId} (${again.event.name}) started no run in 15s; sending it once more with the same id`,
       );
@@ -413,11 +407,13 @@ export const createCtx = (
     event: (name) => {
       return eventName(id, name);
     },
-    send: async (name, data = {}) => {
+    send: async (name, data = {}, options = {}) => {
       const event = { id: randomUUID(), name: eventName(id, name), data };
       const eventId = (await client.send(event)).ids[0] as string;
 
-      sent.set(eventId, { event, copies: [] });
+      if (options.startsRun) {
+        sent.set(eventId, { event, copies: [] });
+      }
 
       return eventId;
     },
