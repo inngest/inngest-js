@@ -446,6 +446,12 @@ export class InngestCommHandler<
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
+   * Whether `streaming` was explicitly passed as an option. If so, it takes
+   * precedence over the `INNGEST_STREAMING` env var.
+   */
+  private readonly streamingExplicit: boolean;
+
+  /**
    * Whether unauthenticated `PUT` (sync) requests are accepted. Set via the
    * `enableUnauthedSync` serve option or `INNGEST_ENABLE_UNAUTHED_SYNC` env
    * var; serve option wins. Only applies in cloud mode.
@@ -585,8 +591,9 @@ export class InngestCommHandler<
         return defaultStreamingOption;
       })
       .parse(
-        options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
+        options.streaming ?? parseAsBoolean(this.env[envKeys.InngestStreaming]),
       );
+    this.streamingExplicit = options.streaming !== undefined;
 
     this.enableUnauthedSync = options.enableUnauthedSync;
 
@@ -704,11 +711,13 @@ export class InngestCommHandler<
       );
     }
 
-    const streamingRequested =
-      this.streaming === true ||
-      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
-      envStreaming === "allow" ||
-      envStreaming === "force";
+    // An explicit `streaming` option always wins over the env var.
+    const streamingRequested = this.streamingExplicit
+      ? this.streaming === true
+      : this.streaming === true ||
+        parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
+        envStreaming === "allow" ||
+        envStreaming === "force";
 
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
