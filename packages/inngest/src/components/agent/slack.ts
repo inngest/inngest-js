@@ -106,6 +106,7 @@ const call = async (
  */
 const maxButtons = 25;
 const maxSelectOptions = 100;
+const maxSelectValue = 150;
 
 /**
  * The blocks of an ask: the question, its options as buttons (as a menu when
@@ -120,6 +121,17 @@ const askBlocks = (ask: ChannelAsk) => {
   if (options.length > maxSelectOptions) {
     throw new Error(
       `slack ask: ${options.length} options; Slack allows at most ${maxSelectOptions}.`,
+    );
+  }
+
+  if (
+    options.length > maxButtons &&
+    options.some((option) => {
+      return option.length > maxSelectValue;
+    })
+  ) {
+    throw new Error(
+      `slack ask: with more than ${maxButtons} options an option may be at most ${maxSelectValue} characters.`,
     );
   }
 

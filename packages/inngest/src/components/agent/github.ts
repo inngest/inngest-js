@@ -147,6 +147,12 @@ export const github = {
   ): Channel => {
     const target: GithubTarget = (() => {
       if ("number" in source && typeof source.number === "number") {
+        if (!Number.isInteger(source.number) || source.number < 1) {
+          throw new Error(
+            `github.channel: ${source.number} is not an issue number.`,
+          );
+        }
+
         return source;
       }
 

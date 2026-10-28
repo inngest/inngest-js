@@ -319,6 +319,28 @@ describe("adapters", () => {
     }).toThrow("not an issue number");
   });
 
+  test("github.channel checks a target's number too", () => {
+    for (const number of [0, -1, 1.5, Number.NaN]) {
+      expect(() => {
+        return github.channel({ owner: "o", repo: "r", number });
+      }).toThrow("not an issue number");
+    }
+  });
+
+  test("a Slack menu option longer than Slack allows is an error", async () => {
+    const channel = slack.channel({ channel: "C1", thread_ts: "1.1" });
+
+    await expect(
+      channel.ask?.({
+        signal: "s",
+        question: "q",
+        options: Array.from({ length: 26 }, () => {
+          return "x".repeat(151);
+        }),
+      }),
+    ).rejects.toThrow("at most 150");
+  });
+
   test("github.channel accepts only plain positive issue numbers", () => {
     for (const number of ["", " ", "1e1", "0x10", "-5", "0"]) {
       expect(() => {
