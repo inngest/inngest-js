@@ -57,6 +57,7 @@ import {
   getThread,
   type ThreadHandle,
   type ThreadMessage,
+  type TriggerEvent,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
 import {
@@ -69,14 +70,17 @@ import {
   type CompiledTrigger,
   compileTriggers,
   messageOf,
+  schemaProblem,
   singletonKey,
   type ThreadKeyConfig,
   type ThreadTriggerEvent,
   type ThreadTriggers,
 } from "./threadTrigger.ts";
 
-export interface AgentFunctionConfig<TOn = ThreadTriggers>
-  extends ThreadKeyConfig<TOn> {
+export interface AgentFunctionConfig<
+  TOn = ThreadTriggers,
+  TEvent = TriggerEvent,
+> extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -97,7 +101,7 @@ export interface AgentFunctionConfig<TOn = ThreadTriggers>
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
    */
-  sandboxes?: SandboxesConfig<AgentConfigContext>;
+  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>>;
 
   /**
    * The destinations of progress and asks, by name: channels made with
@@ -128,15 +132,15 @@ export interface AgentFunctionConfig<TOn = ThreadTriggers>
 /**
  * What a config function receives.
  */
-export interface AgentConfigContext {
-  event: { name: string; data: ThreadMessage };
+export interface AgentConfigContext<TEvent = TriggerEvent> {
+  event: { name: string; data: ThreadMessage<TEvent> };
 }
 
 /**
  * What the body gets, besides the usual function context.
  */
-export interface AgentBodyContext {
-  event: { name: string; data: ThreadMessage };
+export interface AgentBodyContext<TEvent = TriggerEvent> {
+  event: { name: string; data: ThreadMessage<TEvent> };
   thread: ThreadHandle;
 
   /**
@@ -165,7 +169,7 @@ export interface AgentBodyContext {
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
-  inbox: ThreadInbox;
+  inbox: ThreadInbox<TEvent>;
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
@@ -187,7 +191,8 @@ export interface AgentBodyContext {
  * A message of the thread's inbox. A `"request"` message from another
  * thread's `handle.request()` is answered with `reply()`.
  */
-export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
+export interface ThreadInboxMessage<TEvent = TriggerEvent>
+  extends InboxMessage<ThreadMessage<TEvent>> {
   /**
    * Answers a request: sends `data` to the thread that asked. It is a step.
    * @param data The reply.
@@ -198,26 +203,42 @@ export interface ThreadInboxMessage extends InboxMessage<ThreadMessage> {
 /**
  * The thread's inbox: a subscription whose messages can reply.
  */
-export interface ThreadInbox
+export interface ThreadInbox<TEvent = TriggerEvent>
   extends Omit<
-      Subscription<ThreadMessage>,
+      Subscription<ThreadMessage<TEvent>>,
       "next" | "poll" | "close" | typeof Symbol.asyncIterator
     >,
-    AsyncIterable<ThreadInboxMessage> {
-  next(): Promise<ThreadInboxMessage | null>;
-  poll(): Promise<ThreadInboxMessage | null>;
+    AsyncIterable<ThreadInboxMessage<TEvent>> {
+  next(): Promise<ThreadInboxMessage<TEvent> | null>;
+  poll(): Promise<ThreadInboxMessage<TEvent> | null>;
 
   /**
    * Ends the subscription. See `Subscription.close()`: it only ends the
    * subscription, and a message that arrives afterwards is dropped.
    * @returns The messages that were saved but not read.
    */
-  close(): Promise<ThreadInboxMessage[]>;
+  close(): Promise<ThreadInboxMessage<TEvent>[]>;
 }
 
-export type AgentBody = (context: AgentBodyContext) => Promise<unknown>;
+/**
+ * The body of an agent. `TEvent` is the events of its `on` triggers and
+ * `TOutput` what it returns.
+ */
+export type AgentBody<TEvent = TriggerEvent, TOutput = unknown> = (
+  context: AgentBodyContext<TEvent>,
+) => Promise<TOutput>;
 
-export interface AgentFunction {
+export interface AgentFunction<
+  TInput = Record<string, unknown>,
+  TOutput = unknown,
+> {
+  /**
+   * Types only: what `agent.invoke(thisAgent, input)` takes and returns. The
+   * input is the data of the agent's `invoke()` trigger; the output is what
+   * its body returns.
+   */
+  readonly "~types"?: { input: TInput; output: TOutput };
+
   /**
    * The function that runs the body.
    */
@@ -259,8 +280,10 @@ export interface AgentFunction {
 function threadInbox(
   inbox: Subscription<RawEvent>,
   toMessage: (raw: RawEvent) => ThreadMessage,
+  problemOf: (raw: RawEvent) => Promise<string | undefined>,
   client: Inngest.Any,
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
+  log: { warn: (message: string) => void },
 ): {
   inbox: ThreadInbox;
 } {
@@ -309,16 +332,41 @@ function threadInbox(
 
   let delivered = 0;
 
+  // An event that breaks its trigger's schema never starts a run in core, so
+  // it does not reach a live one either: it is dropped.
+  async function skipped(raw: InboxMessage<RawEvent>) {
+    if (raw.seq < 1) {
+      return false;
+    }
+
+    const problem = await problemOf(raw.data);
+    if (!problem) {
+      return false;
+    }
+
+    log.warn(
+      `Dropped ${raw.data.name} from the inbox: it breaks its schema (${problem}).`,
+    );
+
+    return true;
+  }
+
   async function next() {
     if (delivered > 0) {
       await recorder.waiting();
     }
 
     for (;;) {
-      const message = unwrap(await inbox.next());
-      if (!message) {
+      const raw = await inbox.next();
+      if (!raw) {
         return null;
       }
+
+      if (await skipped(raw)) {
+        continue;
+      }
+
+      const message = unwrap(raw) as ThreadInboxMessage;
 
       delivered += 1;
 
@@ -337,7 +385,16 @@ function threadInbox(
     inbox: {
       next,
       async poll() {
-        return unwrap(await inbox.poll());
+        for (;;) {
+          const raw = await inbox.poll();
+          if (!raw) {
+            return null;
+          }
+
+          if (!(await skipped(raw))) {
+            return unwrap(raw);
+          }
+        }
       },
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
@@ -610,8 +667,17 @@ export function createAgentFunction(
               ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
               : (raw.data as ThreadMessage);
           },
+          async function problemOf(raw) {
+            return schemaProblem(
+              triggers.find((t) => {
+                return t.event === raw.name;
+              }),
+              raw,
+            );
+          },
           client,
           recorder,
+          logger,
         );
 
         const control = {

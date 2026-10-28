@@ -25,9 +25,20 @@ import type { EffectiveLimits } from "./limits.ts";
 export const agentMessageEvent = agentMessage.name;
 
 /**
- * What a thread message event carries in `data`.
+ * An event that started or reached an agent, as the agent sees it: the name
+ * and data of the trigger.
  */
-export type ThreadMessage = {
+export type TriggerEvent<TName extends string = string, TData = unknown> = {
+  id?: string;
+  name: TName;
+  data: TData;
+};
+
+/**
+ * What a thread message event carries in `data`. `TEvent` is the events of the
+ * agent's `on` triggers, so `event` is typed from them.
+ */
+export type ThreadMessage<TEvent = TriggerEvent> = {
   /**
    * The agent, as `"appId/functionId"`.
    */
@@ -70,7 +81,7 @@ export type ThreadMessage = {
   /**
    * For a message made from a trigger event: that event.
    */
-  event?: { id?: string; name: string; data: unknown };
+  event?: TEvent;
 };
 
 export interface ThreadOptions {

@@ -191,10 +191,10 @@ describe("thread key from a trigger", () => {
 
     expect(define({ on: { event: "e" } })).toThrow(/supplies no thread key/);
     expect(define({ on: { event: "a/*", thread: '"t"' } })).toThrow(
-      /plain event name/,
+      /(is a wildcard|owns)/,
     );
     expect(define({ on: { event: "agent/message", thread: '"t"' } })).toThrow(
-      /plain event name/,
+      /(is a wildcard|owns)/,
     );
     expect(
       define({

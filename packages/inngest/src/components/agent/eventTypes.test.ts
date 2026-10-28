@@ -10,11 +10,18 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
+import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { agentMessage } from "./events.ts";
+import { createKv, memoryKvAdapter } from "./kv.ts";
 import { skillsBake } from "./skills.ts";
+import { run } from "./test-helpers.ts";
 import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
-import { compileTriggers, singletonKey } from "./threadTrigger.ts";
+import {
+  compileTriggers,
+  schemaProblem,
+  singletonKey,
+} from "./threadTrigger.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
@@ -200,6 +207,12 @@ describe("step.subscribe", () => {
       { n: number } | undefined
     >();
 
+    // An explicit any stays any.
+    // biome-ignore lint/suspicious/noExplicitAny: the case under test
+    const loose = await step.subscribe<any>("loose", { event: order });
+
+    expectTypeOf((await loose.next())?.data).toBeAny();
+
     // @ts-expect-error an event type's data has no such field
     (await one.next())?.data.amount;
   };
@@ -316,16 +329,22 @@ describe("triggers", () => {
 
     expect(compiled[0]?.listen).toBe(false);
     expect(compiled[0]?.thread.source).toBe(
-      'has(event.data.thread) ? event.data.thread : ("worker")',
+      'has(event.data._agent) && has(event.data._agent.thread) ? event.data._agent.thread : ("worker")',
     );
     expect(
       compiled[0]?.thread.key({
         name: "inngest/function.invoked",
-        data: { thread: "t9" },
+        data: { _agent: { depth: 1, thread: "t9" } },
       }),
     ).toBe("t9");
     expect(
       compiled[0]?.thread.key({ name: "inngest/function.invoked", data: {} }),
+    ).toBe("worker");
+    expect(
+      compiled[0]?.thread.key({
+        name: "inngest/function.invoked",
+        data: { _agent: { depth: 1 } },
+      }),
     ).toBe("worker");
 
     agents.agent(
@@ -349,15 +368,25 @@ describe("triggers", () => {
   test("the agent's own events and mixed triggers are refused", () => {
     expect(() => {
       return compileTriggers("bot", { on: agentMessage });
-    }).toThrow(/other than/);
+    }).toThrow(/"agent\/message" is an event the agent layer owns/);
     expect(() => {
       return compileTriggers("bot", { on: skillsBake });
-    }).toThrow(/other than/);
+    }).toThrow(/"agent\/skills.bake" is an event the agent layer owns/);
     expect(() => {
       return compileTriggers("bot", {
         on: { event: "inngest/scheduled.timer", thread: '"a"' },
       });
-    }).toThrow(/other than/);
+    }).toThrow(/is the event of a cron; use \{ cron \}/);
+    expect(() => {
+      return compileTriggers("bot", {
+        on: { event: "inngest/function.invoked", thread: '"a"' },
+      });
+    }).toThrow(/use invoke\(schema\)/);
+    expect(() => {
+      return compileTriggers("bot", {
+        on: { event: "shop/*", thread: '"a"' },
+      });
+    }).toThrow(/is a wildcard/);
     expect(() => {
       return compileTriggers("bot", {
         on: { cron: "* * * * *", event: "shop/x" } as never,
@@ -376,6 +405,93 @@ describe("triggers", () => {
   test("an event type's name is checked like a name", () => {
     expect(() => {
       return compileTriggers("bot", { on: agentMessage });
-    }).toThrow(/other than "agent\/message"/);
+    }).toThrow(/"agent\/message" is an event the agent layer owns/);
+  });
+});
+
+describe("inbox validation", () => {
+  const makeAgent = () => {
+    return createAgentFunction(
+      client,
+      {
+        id: "checked",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        on: {
+          event: order,
+          thread: "event.data.id",
+          message: (trigger) => {
+            return `order ${trigger.data.id} ${trigger.data.total}`;
+          },
+        },
+      },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const second = await inbox.next();
+
+        return [first?.data.content, second?.data.content];
+      },
+    );
+  };
+
+  const event = (id: unknown, total: unknown) => {
+    return { name: "shop/order.created", data: { id, total } };
+  };
+
+  test("an event that breaks the schema is dropped, a valid one is delivered", async () => {
+    const { output } = await run(makeAgent().fn, {
+      event: event("a", 1),
+      saved: [event("a", "not a number"), event("a", 3)],
+    });
+
+    expect(output).toEqual(["order a 1", "order a 3"]);
+  });
+
+  test("an event type without a schema delivers everything", async () => {
+    const { output } = await run(
+      createAgentFunction(
+        client,
+        {
+          id: "unchecked",
+          kv: createKv({ adapter: memoryKvAdapter() }),
+          on: { event: ping, thread: "event.data.id" },
+        },
+        async ({ inbox }) => {
+          await inbox.next();
+
+          return (await inbox.next())?.data.event?.data;
+        },
+      ).fn,
+      {
+        event: { name: "shop/ping", data: { id: "a" } },
+        saved: [{ name: "shop/ping", data: { id: "a", anything: 1 } }],
+      },
+    );
+
+    expect(output).toEqual({ id: "a", anything: 1 });
+  });
+});
+
+describe("schemaProblem", () => {
+  const [trigger] = compileTriggers("bot", {
+    on: { event: order, thread: "event.data.id" },
+  });
+
+  test("names the field and the problem, or nothing when the data is fine", async () => {
+    expect(
+      await schemaProblem(trigger, { data: { id: "a", total: 1 } }),
+    ).toBeUndefined();
+    expect(
+      await schemaProblem(trigger, { data: { id: "a", total: "x" } }),
+    ).toMatch(/total/);
+    expect(await schemaProblem(trigger, {})).toMatch(/id/);
+  });
+
+  test("a trigger without a schema, or no trigger, has no problem", async () => {
+    const [plain] = compileTriggers("bot", {
+      on: { event: "shop/x", thread: "event.data.id" },
+    });
+
+    expect(await schemaProblem(plain, { data: 1 })).toBeUndefined();
+    expect(await schemaProblem(undefined, { data: 1 })).toBeUndefined();
   });
 });

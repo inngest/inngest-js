@@ -20,10 +20,10 @@
  * with typed input. A cron has no event data to key a thread on, so its
  * thread is one per agent (the agent's ID) unless the cron trigger sets
  * `thread`; a tick while a run is live starts nothing and is not delivered.
- * An invocation that names `data.thread` keeps it; any other is keyed by
- * `thread` or, without one, is the agent's one thread. Only one run is live
- * per thread, so a second such invocation while a run is live is skipped:
- * give each caller its own `data.thread` (`agent.invoke()` does).
+ * An invocation by `agent.invoke()` runs on the thread it names (its own, per
+ * call); any other invocation is keyed by `thread` or, without one, is the
+ * agent's one thread. Only one run is live per thread, so a second such
+ * invocation while a run is live is skipped.
  *
  * The expression is CEL, in the subset of `cel.ts`, because the backend
  * evaluates it as written and the run evaluates it too. A JavaScript function
@@ -38,7 +38,11 @@ import {
 } from "../triggers/triggers.ts";
 import { compileKey, toAsync } from "./cel.ts";
 import { skillsBakeEvent } from "./skills.ts";
-import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
+import {
+  agentMessageEvent,
+  type ThreadMessage,
+  type TriggerEvent,
+} from "./thread.ts";
 
 /**
  * The trigger event, as `message` sees it.
@@ -139,6 +143,38 @@ export type ThreadTrigger<
   | EventTypeWithAnySchema<string>;
 
 /**
+ * The trigger event of one trigger source: its name and data.
+ */
+type SourceEvent<T> = T extends string
+  ? TriggerEvent<T, ThreadTriggerData<T>>
+  : T extends EventType<infer TName, infer _TSchema>
+    ? TriggerEvent<TName, ThreadTriggerData<T>>
+    : never;
+
+/**
+ * What a cron trigger's tick looks like to the agent.
+ */
+export type ThreadCronEvent = TriggerEvent<
+  "inngest/scheduled.timer",
+  { cron: string }
+>;
+
+/**
+ * The event a trigger source gives the agent: the event's own name and data,
+ * or a cron tick for what is not an event source (a cron).
+ */
+export type ThreadTriggerEventOf<T> = T extends ThreadTriggerEventSource
+  ? SourceEvent<T>
+  : ThreadCronEvent;
+
+/**
+ * The events of a list of triggers, as a union.
+ */
+export type ThreadTriggerListEvent<TMany extends readonly unknown[]> = {
+  [K in keyof TMany]: ThreadTriggerEventOf<TMany[K]>;
+}[number];
+
+/**
  * A list of triggers in which each one types its own `message` from its own
  * event.
  */
@@ -206,6 +242,13 @@ export interface CompiledTrigger {
     | { cron: string; jitter?: string };
   thread: ReturnType<typeof compileKey>;
   session?: ReturnType<typeof compileKey>;
+
+  /**
+   * The schema of the event's data, when the trigger is an event type that has
+   * one. Core validates the event that starts a run; the agent checks the
+   * events that reach a live run against the same schema.
+   */
+  schema?: StandardSchemaV1;
   message?: ThreadTriggerFields<ThreadTriggerEvent>["message"];
 }
 
@@ -223,6 +266,36 @@ const reservedEvents: string[] = [agentMessageEvent, skillsBakeEvent];
 const literal = (value: string): string => {
   return JSON.stringify(value);
 };
+
+/**
+ * Why an event cannot trigger an agent, if it cannot.
+ * @param name The event's name.
+ * @param cron Whether the trigger is a cron.
+ * @param plain Whether the event was given as a plain name.
+ */
+function refusalOf(
+  name: string,
+  cron: boolean,
+  plain: boolean,
+): string | undefined {
+  if (name.includes("*")) {
+    return "is a wildcard, which an agent cannot listen to; name each event.";
+  }
+
+  if (reservedEvents.includes(name)) {
+    return "is an event the agent layer owns; use another event name.";
+  }
+
+  if (!cron && name === cronEvent) {
+    return "is the event of a cron; use { cron } to trigger on a schedule.";
+  }
+
+  if (plain && name === internalEvents.FunctionInvoked) {
+    return 'is the event of an invocation; use invoke(schema) from "inngest".';
+  }
+
+  return undefined;
+}
 
 /**
  * Validates and compiles the triggers of a config.
@@ -245,11 +318,13 @@ export function compileTriggers(
 
     const bare = trigger instanceof EventType;
     const cron = !bare && "cron" in trigger && typeof trigger.cron === "string";
+
     if (cron && (trigger as { event?: unknown }).event !== undefined) {
       throw new Error(
         `Agent "${id}": a trigger is an event or a cron, not both.`,
       );
     }
+
     const source = bare
       ? trigger
       : cron
@@ -264,14 +339,9 @@ export function compileTriggers(
       ? undefined
       : (trigger as ThreadEventTrigger | ThreadCronTrigger);
 
-    if (
-      reservedEvents.includes(name) ||
-      (!cron && name === cronEvent) ||
-      name.includes("*")
-    ) {
-      throw new Error(
-        `Agent "${id}": the trigger "${name}" must be a plain event name other than ${reservedEvents.map((reserved) => `"${reserved}"`).join(", ")}.`,
-      );
+    const refused = refusalOf(name, cron, typeof source === "string");
+    if (refused) {
+      throw new Error(`Agent "${id}": the trigger "${name}" ${refused}`);
     }
 
     // Every cron tick is one event, so crons share one thread key.
@@ -288,15 +358,15 @@ export function compileTriggers(
     // `thread` is written for the data of events: a cron is one thread per
     // agent unless it says otherwise.
     const invoked = name === internalEvents.FunctionInvoked;
-    const given = config.thread ?? own?.thread;
+
+    const supplied = config.thread ?? own?.thread;
     const thread = cron
       ? (own?.thread ?? literal(id))
       : invoked
-        ? // An invocation that names a thread (as `agent.invoke()` does for its
-          // callee) keeps it; one that does not is keyed by `thread`, or is the
-          // agent's own thread.
-          `has(event.data.thread) ? event.data.thread : (${given ?? literal(id)})`
-        : given;
+        ? // `agent.invoke()` names the callee's thread in `_agent`; any other
+          // invocation is keyed by `thread`, or is the agent's own thread.
+          `has(event.data._agent) && has(event.data._agent.thread) ? event.data._agent.thread : (${supplied ?? literal(id)})`
+        : supplied;
     if (!thread) {
       throw new Error(
         `Agent "${id}": the trigger "${name}" supplies no thread key; set \`thread\` on the agent.`,
@@ -317,6 +387,7 @@ export function compileTriggers(
     }
 
     const session = cron ? own?.session : (config.session ?? own?.session);
+
     const condition = cron
       ? undefined
       : (own as ThreadEventTrigger | undefined)?.if;
@@ -338,6 +409,7 @@ export function compileTriggers(
               event: source as ThreadTriggerEventSource,
               ...(condition ? { if: condition } : {}),
             },
+        schema: source instanceof EventType ? source.schema : undefined,
         thread: compileKey(thread),
         session: session ? compileKey(session) : undefined,
         message: own?.message as CompiledTrigger["message"],
@@ -351,6 +423,35 @@ export function compileTriggers(
   }
 
   return compiled;
+}
+
+/**
+ * Checks an event that reached a live run against its trigger's schema, the
+ * way core checks the event that starts a run. Resolves to what is wrong with
+ * it, or `undefined` when it is fine or there is no schema.
+ * @param trigger The compiled trigger the event matched.
+ * @param event The event.
+ */
+export async function schemaProblem(
+  trigger: CompiledTrigger | undefined,
+  event: { data?: unknown },
+): Promise<string | undefined> {
+  if (!trigger?.schema) {
+    return undefined;
+  }
+
+  const result = await trigger.schema["~standard"].validate(event.data ?? {});
+  if (!result.issues) {
+    return undefined;
+  }
+
+  return result.issues
+    .map((issue) => {
+      return issue.path && issue.path.length > 0
+        ? `${issue.path.map(String).join(".")}: ${issue.message}`
+        : issue.message;
+    })
+    .join(", ");
 }
 
 /**
