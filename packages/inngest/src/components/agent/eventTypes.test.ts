@@ -34,7 +34,6 @@ const fnOptions = (fn: { opts?: unknown }) => {
   return (fn as unknown as { ["opts"]: unknown })["opts"] as {
     triggers: unknown[];
     singleton: { key: string };
-    cancelOn: { event: string; if: string }[];
   };
 };
 

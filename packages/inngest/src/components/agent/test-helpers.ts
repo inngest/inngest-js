@@ -142,7 +142,8 @@ export const run = async (
           save(incoming.shift());
         }
 
-        answer(op.id, null);
+        // The executor answers the wait with the ID of the message it waited for.
+        answer(op.id, `${prefix}${sub.seq}`);
       }
     }
   }

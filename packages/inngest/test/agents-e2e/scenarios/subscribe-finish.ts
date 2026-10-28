@@ -1,8 +1,8 @@
 /**
  * @module
  * A run started by an `on` event ends when its body returns. The body reads the
- * trigger and one more event from the same `on` stream, then returns, so its
- * last step is the ack of a message that came from the `on` stream.
+ * trigger and one more event from the same `on` stream, then returns, so the
+ * last thing it did was wait for a message that came from the `on` stream.
  */
 import { Inngest } from "inngest";
 import {
