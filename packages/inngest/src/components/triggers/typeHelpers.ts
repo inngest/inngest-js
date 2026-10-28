@@ -4,7 +4,11 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
 import type { DeferFn, ReceivedEventMeta } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
-import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
+import type {
+  EventData,
+  EventType,
+  EventTypeWithAnySchema,
+} from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
 type BasicDataUnknown = Record<string, unknown>;
@@ -36,7 +40,7 @@ type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
+export type ReceivedEvent<TName, TData extends EventData> = {
   data: TData;
   id: string;
   name: TName;
@@ -81,7 +85,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+  ? TSchema extends StandardSchemaV1<infer TData extends EventData>
     ? ReceivedEvent<WildcardToUnknown<TName>, TData>
     : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
   : never;
@@ -98,7 +102,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
 type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
-> = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+> = TSchema extends StandardSchemaV1<infer TData extends EventData>
   ? ReceivedEvent<WildcardToUnknown<TName>, TData>
   : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
 
@@ -126,9 +130,7 @@ type ProcessSingleTrigger<
             if?: string;
           }
         ? [
-            TSchema extends StandardSchemaV1<
-              infer TData extends BasicDataUnknown
-            >
+            TSchema extends StandardSchemaV1<infer TData extends EventData>
               ? ReceivedEvent<WildcardToUnknown<TName>, TData>
               : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
           ]
