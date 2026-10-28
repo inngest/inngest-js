@@ -69,7 +69,9 @@ export const agentInvoke = scenario({
     ];
   },
   run: async (ctx) => {
-    const run = await ctx.finished(await ctx.send("go"));
+    const run = await ctx.finished(
+      await ctx.send("go", {}, { startsRun: true }),
+    );
     const out = run.output as { runId: string; child: Seen };
     const child = out?.child;
     const leaf = child?.inner;

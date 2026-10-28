@@ -34,8 +34,19 @@ const sh = (
   });
 };
 
-const reply = (id: number, result: unknown): string => {
-  return JSON.stringify({ op: "reply", id, result });
+const reply = (
+  id: number,
+  result: unknown,
+  tool?: string,
+  h?: string,
+): string => {
+  return JSON.stringify({
+    op: "reply",
+    id,
+    result,
+    ...(tool && { tool }),
+    ...(h && { h }),
+  });
 };
 
 /**
@@ -119,6 +130,238 @@ asyncio.run(main())`,
       expect(await converse(command)).toBe("3 7 100000\n");
     },
   );
+});
+
+/**
+ * Runs one segment of `command` as the tool runner does for tools that wait:
+ * `pause` is answered with a yield, `add` with the sum. Returns the exit
+ * code, the stdout and the reply to every call that was answered, in order.
+ */
+const segment = async (command: string[], journal: string[]) => {
+  const dir = join(root, `run-${count++}`);
+  const path = `${dir}.journal`;
+  const wrapper = wrapperScript.replaceAll(toolsRoot, root);
+
+  writeFileSync(path, journal.map((line) => `${line}\n`).join(""));
+
+  const child = spawn("/bin/sh", ["-c", wrapper, "sh", dir, ...command], {
+    env: { ...process.env, INNGEST_TOOLS_JOURNAL: path },
+  });
+  const answered: string[] = [];
+  const calls: { tool: string; h?: string }[] = [];
+  let lines = 0;
+  let replies: string[] = [];
+
+  for (let round = 0; round < 20; round++) {
+    const waited = sh(waiterScript, [dir, `${lines}`, "10", ...replies]);
+    const log = waited.stdout.split("\n").slice(0, -1);
+    lines += log.length;
+    replies = [];
+
+    for (const line of log) {
+      const event = parseToolEvent(line);
+      if (event?.op === "exit") {
+        child.kill();
+
+        return {
+          code: event.code,
+          stdout: Buffer.from(event.stdout, "base64").toString(),
+          stderr: Buffer.from(event.stderr, "base64").toString(),
+          answered,
+          calls,
+          log: readFileSync(join(dir, "ops.log"), "utf8"),
+        };
+      }
+
+      if (event?.op === "call") {
+        calls.push({ tool: event.tool, h: event.h });
+      }
+
+      if (event?.op === "call" && event.tool === "pause") {
+        replies.push(
+          JSON.stringify({ op: "reply", id: event.id, yield: true }),
+        );
+      } else if (event?.op === "call") {
+        const sum = (event.args as number[]).reduce((a, b) => a + b, 0);
+        answered.push(reply(event.id, sum, "add", event.h));
+        replies.push(reply(event.id, sum));
+      }
+    }
+  }
+
+  throw new Error("the command never exited");
+};
+
+describe("a tool that waits", () => {
+  test.each([
+    {
+      name: "node",
+      runnable: true,
+      command: [
+        "node",
+        "-e",
+        `const { tools } = require("inngest_tools");
+(async () => {
+  const a = await tools.add(1, 2);
+  console.log("before", a);
+  await tools.pause();
+  const b = await tools.add(a, 4);
+  console.log("after", b);
+})();`,
+      ],
+    },
+    {
+      name: "python",
+      runnable: hasPython,
+      command: [
+        "python3",
+        "-c",
+        `import asyncio
+from inngest_tools import tools
+
+
+async def main():
+    a = await tools.add(1, 2)
+    print("before", a)
+    await tools.pause()
+    b = await tools.add(a, 4)
+    print("after", b)
+
+
+asyncio.run(main())`,
+      ],
+    },
+  ])(
+    "$name code exits 75 at the call, then replays the journal",
+    async ({ runnable, command }) => {
+      if (!runnable) {
+        return;
+      }
+
+      const first = await segment(command, []);
+
+      expect(first.code).toBe(75);
+      expect(first.log).toContain('{"op":"yielded"}');
+      expect(first.stdout).toBe("before 3\n");
+
+      // The host runs pause and journals its result
+      const journal = [
+        ...first.answered,
+        reply(2, "rested", "pause", first.calls[1]?.h),
+      ];
+      const second = await segment(command, journal);
+
+      expect(second.code).toBe(0);
+      expect(second.stdout).toBe("before 3\nafter 7\n");
+      // Only the call after the journal went home
+      expect(second.calls).toEqual([{ tool: "add", h: expect.any(String) }]);
+      expect(second.answered).toHaveLength(1);
+    },
+  );
+});
+
+describe("a replay that diverges", () => {
+  const first = async (command: string[]) => {
+    const run = await segment(command, []);
+
+    return run.answered.map((line, at) => {
+      return reply(at + 1, JSON.parse(line).result, "add", run.calls[at]?.h);
+    });
+  };
+
+  test.each([
+    {
+      name: "a different tool",
+      code: `require("inngest_tools").tools.mul(1, 2).catch(() => console.log("caught"))`,
+      first: `require("inngest_tools").tools.add(1, 2)`,
+      message: "call 1 is mul",
+    },
+    {
+      name: "the same tool with other arguments",
+      code: `require("inngest_tools").tools.add(1, 3).catch(() => console.log("caught"))`,
+      first: `require("inngest_tools").tools.add(1, 2)`,
+      message: "call 1 is add",
+    },
+    {
+      name: "fewer calls than the first run",
+      code: `const { tools } = require("inngest_tools"); tools.add(1, 2).then(() => console.log("done"))`,
+      first: `const { tools } = require("inngest_tools"); tools.add(1, 2).then(() => tools.add(3, 4))`,
+      message: "the script made 1 calls, the first run made 2",
+    },
+  ])(
+    "$name exits 76 where a script's try/catch can't hide it",
+    async ({ code, first: firstRun, message }) => {
+      const journal = await first(["node", "-e", firstRun]);
+      const run = await segment(["node", "-e", code], journal);
+
+      expect(run.code).toBe(76);
+      expect(run.stderr).toContain(message);
+    },
+  );
+});
+
+describe("a replay that diverges in Python", () => {
+  const program = (calls: string) => {
+    return [
+      "python3",
+      "-c",
+      `import asyncio
+from inngest_tools import tools
+
+
+async def main():
+${calls}
+
+
+asyncio.run(main())`,
+    ];
+  };
+
+  test.each([
+    {
+      name: "other arguments",
+      calls:
+        "    try:\n        await tools.add(1, 3)\n    except Exception:\n        pass",
+      message: "call 1 is add",
+    },
+    {
+      name: "fewer calls",
+      calls: "    await tools.add(1, 2)",
+      message: "the script made 1 calls, the first run made 2",
+    },
+  ])("$name exits 76", async ({ calls, message }) => {
+    if (!hasPython) {
+      return;
+    }
+
+    const original = await segment(
+      program("    await tools.add(1, 2)\n    await tools.add(3, 4)"),
+      [],
+    );
+    const journal = original.answered.map((line, at) => {
+      return reply(
+        at + 1,
+        JSON.parse(line).result,
+        "add",
+        original.calls[at]?.h,
+      );
+    });
+    const run = await segment(program(calls), journal);
+
+    expect(run.code).toBe(76);
+    expect(run.stderr).toContain(message);
+  });
+});
+
+describe("the journal file", () => {
+  test("is deleted once the stub has read it", async () => {
+    const dir = join(root, `run-${count}`);
+    const path = `${dir}.journal`;
+
+    await segment(["node", "-e", `require("inngest_tools")`], []);
+
+    expect(() => readFileSync(path)).toThrow();
+  });
 });
 
 describe("the wrapper", () => {

@@ -15,6 +15,7 @@
  * run finishes is not lost.
  */
 
+import { internalEvents } from "../../helpers/consts.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
@@ -57,16 +58,24 @@ import {
   type ThreadMessage,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
+import {
+  cleanupThreadSandbox,
+  type ThreadSandboxCleanup,
+  threadSandboxOwner,
+} from "./threadSandboxes.ts";
 import { markThreadIdle, threadRecorder } from "./threadState.ts";
 import {
+  type CompiledTrigger,
   compileTriggers,
   messageOf,
   singletonKey,
   type ThreadKeyConfig,
   type ThreadTriggerEvent,
+  type ThreadTriggers,
 } from "./threadTrigger.ts";
 
-export interface AgentFunctionConfig extends ThreadKeyConfig {
+export interface AgentFunctionConfig<TOn = ThreadTriggers>
+  extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -82,8 +91,10 @@ export interface AgentFunctionConfig extends ThreadKeyConfig {
    * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
    * tool call that needs it (`start: "lazy"`, the default), or as soon as the
    * run begins (`"eager"`). Either the object or a `start` may be a function
-   * of `{ event }`; it re-runs on every replay, so it must be pure. The run
-   * destroys what it created when the body returns.
+   * of `{ event }`; it re-runs on every replay, so it must be pure. A sandbox
+   * belongs to the thread: it is restored from the thread's newest snapshot
+   * when first used and snapshotted when the run ends, whichever way, then
+   * destroyed. Only files survive between runs.
    */
   sandboxes?: SandboxesConfig<AgentConfigContext>;
 
@@ -106,7 +117,9 @@ export interface AgentFunctionConfig extends ThreadKeyConfig {
    * What this agent may start and spend: `depth` (default 1, so it may start
    * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
    * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
-   * do not allow; spread `control` into `agent.loop()` to stop on `budget`.
+   * do not allow, but only `agent.invoke()`: a raw `step.invoke` or
+   * `sendEvent` to another agent bypasses them. `budget` is not automatic:
+   * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
    */
   limits?: AgentLimits;
 }
@@ -396,6 +409,26 @@ function quote(value: string) {
 }
 
 /**
+ * The expressions that match a stop to the run a trigger started, one for
+ * each distinct thread key (crons share one).
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param triggers The compiled triggers.
+ */
+function stopExpressions(ref: string, triggers: CompiledTrigger[]): string[] {
+  const expressions = triggers.flatMap((trigger) => {
+    const key = trigger.thread.path ?? trigger.thread.constant;
+
+    return key
+      ? [
+          `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${key} == async.data.thread`,
+        ]
+      : [];
+  });
+
+  return [...new Set(expressions)];
+}
+
+/**
  * Defines an agent function. Use `createAgents(client).agent()`.
  * @param client Inngest client.
  * @param config Function ID and KV store.
@@ -415,11 +448,32 @@ export function createAgentFunction(
   const cleanup = createDefer(
     client,
     { id: `${config.id}-cleanup` },
-    async ({ event }) => {
-      const { runId, thread } = event.data as {
+    async ({ event, step }) => {
+      const { runId, thread, sandbox } = event.data as {
         runId: string;
         thread?: string;
+        sandbox?: ThreadSandboxCleanup;
       };
+
+      // A sandbox the run created and did not close: save it for the
+      // thread's next run and destroy it.
+      if (sandbox && thread) {
+        await cleanupThreadSandbox({
+          client: client as unknown as Parameters<
+            typeof cleanupThreadSandbox
+          >[0]["client"],
+          ref,
+          thread,
+          runId,
+          scope: store.scope("thread", thread),
+          sandbox,
+          run: (id, fn) => {
+            return step.run(id, fn) as ReturnType<typeof fn>;
+          },
+        });
+
+        return;
+      }
 
       // Each KV call is its own step.
       await store.scope("run", runId).clear();
@@ -441,9 +495,7 @@ export function createAgentFunction(
           if: `event.data.agent == ${quote(ref)} && event.data.kind != "stop"`,
         },
         ...triggers.map((trigger) => {
-          return trigger.if
-            ? { event: trigger.event, if: trigger.if }
-            : { event: trigger.event };
+          return trigger.fnTrigger;
         }),
       ],
       singleton: { key: threadExpression, mode: "skip" },
@@ -454,19 +506,12 @@ export function createAgentFunction(
         },
         // A cancel expression cannot call functions, so only a thread key that
         // is a plain path of the trigger can be matched against a stop.
-        ...triggers.flatMap((trigger) => {
-          return trigger.thread.path
-            ? [
-                {
-                  event: agentStopEvent,
-                  if: `event.name == ${quote(trigger.event)} && async.data.agent == ${quote(ref)} && ${trigger.thread.path} == async.data.thread`,
-                },
-              ]
-            : [];
+        ...stopExpressions(ref, triggers).map((expression) => {
+          return { event: agentStopEvent, if: expression };
         }),
       ],
     },
-    async ({ event, step, defer, runId }) => {
+    async ({ event, step, defer, runId, logger }) => {
       // The thread a run belongs to comes from its trigger: a message names it,
       // any other trigger event gives it by the expression of its trigger.
       const found = triggers.find((t) => {
@@ -499,7 +544,12 @@ export function createAgentFunction(
         // a plain message starts has the same limits.
         const started = await recorder.running(
           readInheritedLimits(
-            (data as unknown as Record<string, unknown>)._agent,
+            // An invoked agent is told its limits in the event's own data.
+            (
+              (found?.event === internalEvents.FunctionInvoked
+                ? event.data
+                : data) as Record<string, unknown>
+            )._agent,
           ),
         );
 
@@ -525,14 +575,18 @@ export function createAgentFunction(
               event: agentMessageEvent,
               if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
             },
-            ...triggers.map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+            ...triggers
+              .filter((trigger) => {
+                return trigger.listen;
+              })
+              .map((trigger) => {
+                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
 
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
+                return {
+                  event: trigger.event,
+                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+                };
+              }),
           ],
         });
         subscription.putBack([
@@ -547,16 +601,36 @@ export function createAgentFunction(
         });
         const opened =
           Object.keys(bindings).length > 0
-            ? openSandboxes(bindings, stepSandboxes(step), {
-                event,
-                client: client as unknown as SkillsRuntime["client"],
-                run: (id, fn) => {
-                  return step.run(id, fn) as ReturnType<typeof fn>;
+            ? openSandboxes(
+                bindings,
+                stepSandboxes(step),
+                {
+                  event: event as unknown as AgentConfigContext["event"],
+                  client: client as unknown as SkillsRuntime["client"],
+                  run: (id, fn) => {
+                    return step.run(id, fn) as ReturnType<typeof fn>;
+                  },
+                  sendEvent: (id, payload) => {
+                    return step.sendEvent(id, payload);
+                  },
                 },
-                sendEvent: (id, payload) => {
-                  return step.sendEvent(id, payload);
-                },
-              })
+                threadSandboxOwner({
+                  client: client as unknown as SkillsRuntime["client"],
+                  ref,
+                  thread: data.thread,
+                  runId,
+                  scope: store.thread,
+                  run: (id, fn) => {
+                    return step.run(id, fn) as ReturnType<typeof fn>;
+                  },
+                  defer: (id, sandbox) => {
+                    return defer(id, {
+                      function: cleanup,
+                      data: { runId, thread: data.thread, sandbox },
+                    });
+                  },
+                }),
+              )
             : {};
 
         const configContext = {
@@ -642,8 +716,7 @@ export function createAgentFunction(
         };
 
         // Closes every sandbox. Returns the first failure instead of throwing, so
-        // a failed eager start nothing used is raised but never in place of the
-        // body's own error.
+        // a failed eager start nothing used never replaces the body's own error.
         const closeAll = async () => {
           const closed = await Promise.allSettled(
             Object.values(opened).map((handle) => {
@@ -679,8 +752,16 @@ export function createAgentFunction(
 
         const rejected = await closeAll();
 
+        // The body succeeded, so an eager sandbox nothing used that failed to
+        // create is a warning, not a failed run.
         if (rejected) {
-          throw rejected.reason;
+          logger.warn(
+            `An unused eager sandbox failed to create: ${
+              rejected.reason instanceof Error
+                ? rejected.reason.message
+                : String(rejected.reason)
+            }`,
+          );
         }
 
         return result;

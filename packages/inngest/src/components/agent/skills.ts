@@ -21,11 +21,15 @@
  * one is saved; the rest expire.
  *
  * The ref is resolved to a sha in a memoized step, so a running thread keeps
- * the sha it started with however often the ref moves.
+ * the sha it started with however often the ref moves. A thread's sandbox is
+ * restored from the thread's own snapshot, which holds the skills it was saved
+ * with: a baked source is not re-resolved on a restore, so a thread keeps its
+ * skills until its snapshot expires; `"boot"` sources are fetched again.
  */
 
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { GroupSandbox } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
 import { image as sandboxImage } from "../sandbox/image.ts";
@@ -40,11 +44,19 @@ import {
   type DurableSandboxTools,
   SandboxValidationError,
 } from "../sandbox/types.ts";
+import { eventType, staticSchema } from "../triggers/triggers.ts";
 
 /**
  * The event that asks for a skills snapshot to be baked.
  */
-export const skillsBakeEvent = "agent/skills.bake";
+export const skillsBake = eventType("agent/skills.bake", {
+  schema: staticSchema<SkillsBakeRequest>(),
+});
+
+/**
+ * The name of the skills bake event.
+ */
+export const skillsBakeEvent = skillsBake.name;
 
 /**
  * The scope of every skills snapshot, `skills/<repos>/<config>/<sha>`.
@@ -71,8 +83,9 @@ export interface SkillsGitOptions {
   freshness?: "bake" | "boot";
 
   /**
-   * Where the skills land in the sandbox. Default: `/skills/<owner>/<name>`. At least two
-   * levels deep, since the directory is replaced on every fetch.
+   * Where the skills land in the sandbox. Default: `/skills/<owner>/<name>`.
+   * Must be a directory under `/skills/`, since it is replaced on every
+   * fetch.
    */
   into?: string;
 
@@ -98,6 +111,8 @@ export interface SkillsSource {
   readonly into: string;
   readonly github: { url: string; apiUrl: string };
 }
+
+const skillsRoot = "/skills";
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -130,12 +145,16 @@ const gitSource = (
   const into = options.into ?? `/skills/${repo}`;
 
   if (
-    !into.startsWith("/") ||
-    into.split("/").some((part) => part === ".." || part === ".") ||
-    into.split("/").filter(Boolean).length < 2
+    !into.startsWith(`${skillsRoot}/`) ||
+    into
+      .split("/")
+      .slice(1)
+      .some((part) => {
+        return part === "" || part === ".." || part === ".";
+      })
   ) {
     throw new SandboxValidationError(
-      `Skills "${repo}" must go into an absolute path at least two levels deep, not "${into}"`,
+      `Skills "${repo}" must go into a directory under ${skillsRoot}/, not "${into}"`,
     );
   }
 
@@ -260,7 +279,7 @@ export interface SkillsRuntime {
    */
   sendEvent: (
     id: string,
-    event: { name: string; data: SkillsBakeRequest },
+    event: ReturnType<typeof skillsBake.create>,
   ) => Promise<unknown>;
 
   /**
@@ -272,12 +291,11 @@ export interface SkillsRuntime {
 /**
  * What the bake function is asked to build.
  */
-export interface SkillsBakeRequest {
+export type SkillsBakeRequest = {
   /**
    * The snapshot's name, which names the build.
    */
   name: string;
-  entry: SnapshotEntry;
 
   /**
    * The image ref the snapshot starts from, if the definition names one.
@@ -287,11 +305,12 @@ export interface SkillsBakeRequest {
   memoryMb: number;
   sources: {
     repo: string;
+    ref: string;
     sha: string;
     into: string;
     url: string;
   }[];
-}
+};
 
 type CreateOptions = Parameters<DurableSandboxTools["create"]>[1];
 
@@ -309,6 +328,20 @@ export interface CreateWithSkillsOptions {
   image?: SandboxImage;
   sandboxes: DurableSandboxTools;
   runtime: SkillsRuntime;
+
+  /**
+   * A snapshot of this sandbox to start from, such as the thread's. It holds
+   * the skills it was saved with, so no baked snapshot is looked up or asked
+   * for; `"boot"` sources are fetched again.
+   */
+  restoreFrom?: string;
+
+  /**
+   * Called as soon as the sandbox exists, before its skills are fetched, so
+   * the caller can arrange its cleanup: a fetch that fails or a run that ends
+   * during it would otherwise leave the sandbox running.
+   */
+  onCreated?: (sandbox: DurableSandbox) => void;
 }
 
 /**
@@ -328,7 +361,7 @@ export const createWithSkills = async (
   let shas: (string | undefined)[] = [];
   let request: SkillsBakeRequest | undefined;
 
-  if (baked.length > 0) {
+  if (baked.length > 0 && !options.restoreFrom) {
     shas = await runtime.run(`${stepId}:resolve`, async () => {
       return Promise.all(
         baked.map((source) => {
@@ -344,18 +377,22 @@ export const createWithSkills = async (
         options.image,
         fresh,
       );
-      const cache = snapshotCache(runtime.client, { memo: runtime.run });
+      const cache = snapshotCache(runtime.client, {
+        memo: (id, fn) => {
+          return runtime.run(id, fn);
+        },
+      });
 
       found = await cache.find(entry, { stepId });
       request = {
-        name: `${entry.scope}/${entry.key}/${entry.generation}`,
-        entry,
+        name: snapshotName(entry),
         ...(options.image && { image: options.image.ref }),
         vcpu: fresh.vcpu,
         memoryMb: fresh.memoryMb,
         sources: baked.map((source, index) => {
           return {
             repo: source.repo,
+            ref: source.ref,
             sha: (shas as string[])[index] as string,
             into: source.into,
             url: source.github.url,
@@ -371,11 +408,15 @@ export const createWithSkills = async (
     }),
   );
 
-  if (found) {
+  const snapshotId = options.restoreFrom ?? found?.snapshotId;
+
+  if (snapshotId) {
     const sandbox = await options.sandboxes.create(name, {
       name: fresh.name,
-      snapshotId: found.snapshotId,
+      snapshotId,
     } as CreateOptions);
+
+    options.onCreated?.(sandbox);
 
     await fetchSources(
       sandbox,
@@ -393,13 +434,12 @@ export const createWithSkills = async (
 
   if (request) {
     // Builds of one snapshot name run one at a time (the function's singleton).
-    await runtime.sendEvent(`${stepId}:bake`, {
-      name: skillsBakeEvent,
-      data: request,
-    });
+    await runtime.sendEvent(`${stepId}:bake`, skillsBake.create(request));
   }
 
   const sandbox = await options.sandboxes.create(name, fresh);
+
+  options.onCreated?.(sandbox);
 
   await fetchSources(sandbox, stepId, sources, (source) => {
     return shaOf.get(source) ?? source.ref;
@@ -449,27 +489,223 @@ const skillsEntry = async (
 
   return {
     scope: skillsScope,
-    key: `${baked.map((source) => source.repo).join("+")}/${config.hash.slice(0, 8)}`,
+    key: `${baked.map((source) => source.repo).join("+")}/${config.hash.slice(0, 16)}`,
     generation,
   };
+};
+
+const snapshotName = (entry: SnapshotEntry): string => {
+  return `${entry.scope}/${entry.key}/${entry.generation}`;
+};
+
+/**
+ * What a bake request may ask for. The agents of a client fill it in from the
+ * sandbox definitions they register, so an event can't choose a host or an
+ * image the app doesn't use.
+ */
+export interface BakeAllowance {
+  /**
+   * The GitHub hosts sources may come from. github.com is always allowed.
+   */
+  urls: Set<string>;
+
+  /**
+   * The images definitions with baked skills use. A request may also name no
+   * image. Not enforced once `dynamic`.
+   */
+  images: Set<string>;
+
+  /**
+   * Whether a sandboxes config is a function, so its definitions can't be read
+   * ahead: every image is accepted then, and a host is accepted only if a
+   * static definition of another agent uses it, or it is github.com.
+   */
+  dynamic: boolean;
+}
+
+/**
+ * The most vCPUs and memory a bake may ask for, whatever the definitions say.
+ */
+export const maxBakeSize = { vcpu: 16, memoryMb: 32_768 };
+
+const trimUrl = (url: string): string => {
+  return url.replace(/\/+$/, "");
+};
+
+/**
+ * Notes the hosts and images of a definition's baked skills.
+ * @param allowance What to add to.
+ * @param definition A sandbox definition.
+ */
+export const allowBake = (
+  allowance: BakeAllowance,
+  definition: {
+    image?: SandboxImage;
+    skills?: readonly SkillsSource[];
+  },
+): void => {
+  const baked = (definition.skills ?? []).filter((source) => {
+    return source.freshness === "bake";
+  });
+
+  if (baked.length === 0) {
+    return;
+  }
+
+  if (definition.image) {
+    allowance.images.add(definition.image.ref);
+  }
+
+  for (const source of baked) {
+    allowance.urls.add(trimUrl(source.github.url));
+  }
+};
+
+/**
+ * An allowance that starts with github.com and nothing else.
+ */
+export const newBakeAllowance = (): BakeAllowance => {
+  return {
+    urls: new Set([defaultGithub.url]),
+    images: new Set(),
+    dynamic: false,
+  };
+};
+
+/**
+ * Checks a bake request as untrusted input and rebuilds from it what the
+ * function bakes: sources that pass the same checks as `skills.git()`, pinned
+ * to 40-hex shas, and the snapshot entry computed from them. Throws when the
+ * request is malformed, asks for a host, image or size the app doesn't use, or
+ * its name is not the one its sources bake into.
+ */
+export const validateBakeRequest = async (
+  request: SkillsBakeRequest,
+  allowance: BakeAllowance,
+): Promise<{
+  sources: SkillsSource[];
+  shas: string[];
+  entry: SnapshotEntry;
+}> => {
+  const asked = request.sources;
+
+  if (!Array.isArray(asked) || asked.length === 0) {
+    throw new SandboxValidationError("Skills bake request has no sources");
+  }
+
+  for (const size of [request.vcpu, request.memoryMb]) {
+    if (!Number.isInteger(size) || size <= 0) {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid size "${String(size)}"`,
+      );
+    }
+  }
+
+  if (
+    request.vcpu > maxBakeSize.vcpu ||
+    request.memoryMb > maxBakeSize.memoryMb
+  ) {
+    throw new SandboxValidationError(
+      `Skills bake request asks for more than ${maxBakeSize.vcpu} vCPUs or ${maxBakeSize.memoryMb} MB`,
+    );
+  }
+
+  if (request.image !== undefined && typeof request.image !== "string") {
+    throw new SandboxValidationError(
+      "Skills bake request has an invalid image",
+    );
+  }
+
+  if (
+    request.image &&
+    !allowance.dynamic &&
+    !allowance.images.has(request.image)
+  ) {
+    throw new SandboxValidationError(
+      `Skills bake request names image "${request.image}", which no sandbox of the app bakes skills into`,
+    );
+  }
+
+  const sources = asked.map((item) => {
+    if (typeof item?.sha !== "string" || !shaPattern.test(item.sha)) {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid sha "${String(item?.sha)}"`,
+      );
+    }
+
+    if (typeof item.url !== "string") {
+      throw new SandboxValidationError(
+        `Skills bake request has an invalid url "${String(item.url)}"`,
+      );
+    }
+
+    if (!allowance.urls.has(trimUrl(item.url))) {
+      throw new SandboxValidationError(
+        `Skills bake request has the url "${item.url}", which no sandbox of the app bakes skills from`,
+      );
+    }
+
+    return gitSource(item.repo, {
+      ref: item.ref,
+      freshness: "bake",
+      into: item.into,
+      github: { url: item.url },
+    });
+  });
+  const shas = asked.map((item) => {
+    return item.sha;
+  });
+
+  const entry = await skillsEntry(
+    sources,
+    shas,
+    request.image ? sandboxImage.custom(request.image) : undefined,
+    { vcpu: request.vcpu, memoryMb: request.memoryMb },
+  );
+
+  if (request.name !== snapshotName(entry)) {
+    throw new SandboxValidationError(
+      `Skills bake request is named "${String(request.name)}", but its sources bake into "${snapshotName(entry)}"`,
+    );
+  }
+
+  return { sources, shas, entry };
 };
 
 /**
  * Builds a skills snapshot when asked: the function that bakes what a sandbox
  * missed. One build runs per snapshot name; asking again once it exists does
  * nothing.
+ *
+ * The request is validated first thing in the run, not in the trigger: the
+ * singleton key is the name the event gives, so a forged event with a real name
+ * can hold the slot for the moment it takes to be refused, and the real request
+ * is skipped then. The run is refused at once, so the slot frees at once.
+ *
+ * @param client Inngest client.
+ * @param allowance The hosts and images requests may use, filled in as agents
+ * are made.
  */
 export const createSkillsBakeFunction = (
   client: Inngest.Any,
+  allowance: BakeAllowance,
 ): InngestFunction.Any => {
   return client.createFunction(
     {
       id: "agent-skills-bake",
-      triggers: [{ event: skillsBakeEvent }],
+      triggers: [skillsBake],
       singleton: { key: "event.data.name", mode: "skip" },
     },
     async ({ event, step, group, runId }) => {
       const request = event.data as SkillsBakeRequest;
+      const { sources, shas, entry } = await validateBakeRequest(
+        request,
+        allowance,
+      ).catch((error: unknown) => {
+        throw new NonRetriableError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
       const cache = snapshotCache(client, {
         memo: (id, fn) => {
           return step.run(id, fn);
@@ -478,7 +714,7 @@ export const createSkillsBakeFunction = (
       const sandboxGroup = group as unknown as { sandbox: GroupSandbox };
 
       const snapshot = await cache.ensure(
-        request.entry,
+        entry,
         async (take) => {
           return sandboxGroup.sandbox(
             {
@@ -491,20 +727,9 @@ export const createSkillsBakeFunction = (
               }),
             },
             async (sandbox) => {
-              await fetchSources(
-                sandbox,
-                "bake",
-                request.sources.map((source) => {
-                  return skills.git(source.repo, {
-                    ref: source.sha,
-                    into: source.into,
-                    github: { url: source.url },
-                  });
-                }),
-                (source) => {
-                  return source.ref;
-                },
-              );
+              await fetchSources(sandbox, "bake", sources, (source) => {
+                return shas[sources.indexOf(source)] as string;
+              });
 
               return take((name, attempt) => {
                 return sandbox.snapshot(`save:${attempt}`, { name });

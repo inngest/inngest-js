@@ -10,7 +10,7 @@
  * would have to write between the two to be overwritten, and it rewrites the
  * record on its next status change or turn.
  */
-import type { Kv } from "./kv.ts";
+import type { Kv, KvScopeInstance } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
@@ -112,4 +112,102 @@ export const markThreadIdle = async (
         ? { ...current, status: "idle" }
         : current;
     });
+};
+
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * When a run started, from its ID: run IDs are ULIDs, whose first ten
+ * characters are a millisecond timestamp. Anything else scores 0.
+ * @param runId The run ID.
+ */
+export const runScore = (runId: string): number => {
+  let score = 0;
+
+  for (const char of runId.slice(0, 10).toUpperCase()) {
+    const digit = crockford.indexOf(char);
+
+    if (digit < 0) {
+      return 0;
+    }
+
+    score = score * 32 + digit;
+  }
+
+  return score;
+};
+
+/**
+ * The sorted index of the runs that saved a snapshot of one of a thread's
+ * sandboxes, scored by when the run started. Adding a member is one atomic
+ * write that never removes another, so a cleanup that saves late can't move
+ * the newest generation back: the newest is read as the highest score. It
+ * is an index of its own, not part of the record: the record is rewritten
+ * whole by whichever run writes it.
+ * @param scope The thread's KV scope.
+ * @param ref The agent, as `"appId/functionId"`: threads of two agents may share a key.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ */
+export const sandboxGenerations = (
+  scope: KvScopeInstance,
+  ref: string,
+  name: string,
+) => {
+  return scope.index(`__sandbox:${ref}:${name}`);
+};
+
+/**
+ * Notes that `generation` took a snapshot of a thread's sandbox.
+ * @param scope The thread's KV scope.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ * @param generation The run that took the snapshot.
+ */
+export const recordSandboxGeneration = async (
+  scope: KvScopeInstance,
+  ref: string,
+  name: string,
+  generation: string,
+): Promise<void> => {
+  await sandboxGenerations(scope, ref, name).add(
+    generation,
+    runScore(generation),
+  );
+};
+
+/**
+ * The newest run that saved a snapshot of the thread's sandbox.
+ * @param scope The thread's KV scope.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ */
+export const newestSandboxGeneration = async (
+  scope: KvScopeInstance,
+  ref: string,
+  name: string,
+): Promise<string | undefined> => {
+  const [newest] = await sandboxGenerations(scope, ref, name).range({
+    order: "desc",
+    limit: 1,
+  });
+
+  return newest?.member;
+};
+
+/**
+ * The thread KV key that says a run's sandbox has finished its skills and
+ * setup, so its cleanup may snapshot it. It has the run in its name, so a
+ * newer run can't overwrite it before an older run's cleanup reads it, and it
+ * is deleted once the run has saved or cleaned up. The `__` prefix hides it
+ * from `state().keys`.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param name The sandbox's name in the agent's `sandboxes`.
+ * @param runId The run.
+ */
+export const sandboxReadyKey = (
+  ref: string,
+  name: string,
+  runId: string,
+): string => {
+  return `__sandbox-ready:${ref}:${name}:${runId}`;
 };

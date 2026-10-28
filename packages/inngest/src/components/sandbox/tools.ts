@@ -91,6 +91,11 @@ export interface SandboxTool {
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
+
+  /**
+   * Set by `tool.group({ waits: true })`.
+   */
+  readonly waits?: boolean;
 }
 
 /**
@@ -186,6 +191,26 @@ export interface ToolDefinition<
 }
 
 /**
+ * What a group tool that may wait for a long time declares on top of the rest.
+ */
+export interface WaitingToolDefinition<
+  TInput extends ToolInput | undefined,
+  TOutput extends StandardSchemaV1 | undefined,
+> extends ToolDefinition<TInput, TOutput> {
+  /**
+   * The tool may wait for longer than a command may run (sleep, wait for an
+   * event, wait for a person). A call to it suspends the code that made it:
+   * its process exits, the body runs here as steps with no command running,
+   * and the command starts again with every earlier call answered from a
+   * journal. The code must make the same calls in the same order each time it
+   * runs, so it reads clocks and randomness through tools. Use it in a command
+   * that runs one interpreter, such as a script: a shell running several
+   * would replay the same journal in each.
+   */
+  waits?: boolean;
+}
+
+/**
  * EXPERIMENTAL: `tool.step()` declares a tool that sandbox code can call. It
  * runs its body as one durable step.
  *
@@ -243,7 +268,7 @@ const toolMethods = {
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
-    definition: ToolDefinition<TInput, TOutput>,
+    definition: WaitingToolDefinition<TInput, TOutput>,
   ): SandboxTool => {
     return { ...definition, group: true } as SandboxTool;
   },
@@ -270,7 +295,7 @@ export interface AgentTool extends SandboxTool {
 export interface AgentToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
-> extends ToolDefinition<TInput, TOutput> {
+> extends WaitingToolDefinition<TInput, TOutput> {
   /**
    * The tool's name in the model's list. Letters, digits and underscores,
    * starting with a letter, up to 64 characters.
@@ -299,6 +324,12 @@ const defineTool = <
   definition: AgentToolDefinition<TInput, TOutput>,
 ): AgentTool => {
   validateTools({ [definition.id]: definition as unknown as SandboxTool });
+
+  if (definition.waits && !definition.group) {
+    throw new SandboxValidationError(
+      `Tool "${definition.id}" sets waits, which needs group: true: a tool that waits runs as a group of steps`,
+    );
+  }
 
   if (
     definition.sandboxCommand !== undefined &&
@@ -396,6 +427,17 @@ const toTool = (entry: SandboxToolEntry): SandboxTool => {
 };
 
 /**
+ * Whether a call to `name` suspends the code that made it. An unknown name
+ * doesn't: the call gets its error like any other.
+ */
+export const callWaits = (tools: SandboxTools, name: string): boolean => {
+  return (
+    Object.hasOwn(tools, name) &&
+    toTool(tools[name] as SandboxToolEntry).waits === true
+  );
+};
+
+/**
  * Checks the names of the tools you declared.
  */
 export const validateTools = (tools: SandboxTools): void => {
@@ -415,7 +457,9 @@ const eventSchema = z.discriminatedUnion("op", [
     tool: z.string().max(128),
     args: z.array(z.unknown()),
     kwargs: z.record(z.unknown()).optional(),
+    h: z.string().max(64).optional(),
   }),
+  z.object({ op: z.literal("yielded") }),
   z.object({
     op: z.literal("exit"),
     code: z.number().int(),

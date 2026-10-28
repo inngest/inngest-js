@@ -18,6 +18,7 @@ export async function startFakeRedis() {
   const data = new Map<string, Value>();
   const state = { now: 0 };
   const sockets = new Set<net.Socket>();
+  const commandLog: string[][] = [];
 
   function live(key: string) {
     const found = data.get(key);
@@ -43,6 +44,17 @@ export async function startFakeRedis() {
   }
 
   function execute(args: string[]): string {
+    const reply = run(args);
+    for (const [key, value] of [...data]) {
+      if (value.type !== "string" && value.value.size === 0) {
+        data.delete(key);
+      }
+    }
+
+    return reply;
+  }
+
+  function run(args: string[]): string {
     const [name, ...rest] = args;
     const a = rest as string[];
     switch ((name as string).toUpperCase()) {
@@ -131,6 +143,34 @@ export async function startFakeRedis() {
         }
 
         return `:${count}\r\n`;
+      }
+      case "TIME": {
+        return array([
+          String(Math.floor(state.now / 1000)),
+          String((state.now % 1000) * 1000),
+        ]);
+      }
+      case "HSETNX": {
+        let h = live(a[0] as string);
+        if (!h) {
+          h = { type: "hash", value: new Map() };
+          data.set(a[0] as string, h);
+        }
+        const hash = (h as { value: Map<string, string> }).value;
+        if (hash.has(a[1] as string)) {
+          return ":0\r\n";
+        }
+        hash.set(a[1] as string, a[2] as string);
+
+        return ":1\r\n";
+      }
+      case "EXISTS": {
+        return `:${a.filter((key) => live(key)).length}\r\n`;
+      }
+      case "ZCARD": {
+        const z = live(a[0] as string);
+
+        return `:${z?.type === "zset" ? z.value.size : 0}\r\n`;
       }
       case "ZREMRANGEBYSCORE": {
         const z = live(a[0] as string);
@@ -221,6 +261,7 @@ export async function startFakeRedis() {
           return;
         }
         buffer = buffer.subarray(parsed.end);
+        commandLog.push(parsed.reply as string[]);
         socket.write(execute(parsed.reply as string[]));
       }
     });
@@ -236,6 +277,7 @@ export async function startFakeRedis() {
   return {
     url: `redis://127.0.0.1:${port}`,
 
+    commands: commandLog,
     /**
      * Moves the server clock forward.
      * @param ms Milliseconds to add.

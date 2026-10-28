@@ -75,7 +75,9 @@ export const defs = scenario({
     ];
   },
   run: async (ctx) => {
-    const run = await ctx.finished(await ctx.send("go"));
+    const run = await ctx.finished(
+      await ctx.send("go", {}, { startsRun: true }),
+    );
 
     ctx.expect.run(run).toComplete();
     ctx.expect
