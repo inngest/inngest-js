@@ -228,7 +228,8 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await client()).command(...args);
   }
 
-  // Every key of the hash other than the hash itself matching `kind`.
+  // Every key of the hash other than the hash itself matching `kind`. A SCAN
+  // walks the whole keyspace, so `all()` and `clear()` cost more as it grows.
   async function scan(hash: string, kind: "t" | "z") {
     const pattern = `${hash.replace(/[\\*?[\]]/g, "\\$&")}|${kind}|*`;
     const found: string[] = [];
@@ -407,7 +408,8 @@ export interface KvScopeInstance {
   /**
    * Writes a key only when it has no value, and returns whether it did: the
    * first caller gets `true`, later ones `false` until the key expires or is
-   * deleted. Atomic across runs. Use one style per key: a key written with
+   * deleted. Atomic across runs, but at least once: if a step retries after
+   * its write, the retry sees the key present and returns `false`. Use one style per key: a key written with
    * `set` and no `ttl` is seen as present, but a later `set` may replace a claim.
    */
   setIfAbsent(
@@ -425,6 +427,7 @@ export interface KvScopeInstance {
 
   /**
    * Reads, transforms and writes a key in one step. Not atomic across runs.
+   * The result never expires, even if the key had a `ttl`.
    */
   update<T = unknown>(
     key: string,
@@ -572,9 +575,19 @@ function handleFor(
       await adapter.clear(hash);
     },
     async indexAdd(index, member, score) {
+      if (!Number.isFinite(score)) {
+        throw new Error("kv index scores must be finite numbers.");
+      }
       await adapter.indexAdd(hash, index, member, score);
     },
     async indexRange(index, options) {
+      if (
+        options.limit !== undefined &&
+        !(Number.isInteger(options.limit) && options.limit >= 0)
+      ) {
+        throw new Error("kv index limit must be a whole number, zero or more.");
+      }
+
       return adapter.indexRange(hash, index, options);
     },
     async indexRemove(index, member) {

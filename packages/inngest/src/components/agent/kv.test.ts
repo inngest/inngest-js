@@ -175,6 +175,8 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
         const kv = createKv({ adapter }).with({ id: "app", env: null });
         const index = kv.env.index("improve");
 
+        await expect(index.add("x", Number.NaN)).rejects.toThrow(/finite/);
+        await expect(index.range({ limit: -1 })).rejects.toThrow(/limit/);
         await index.add("a", 10);
         await index.add("b", 30);
         await index.add("c", 20);
