@@ -7,33 +7,52 @@
  *   thread's newest snapshot, or creates a fresh one when there is none (never
  *   saved, expired, or the name was refused). A run that never touches the
  *   sandbox restores nothing;
- * - when the run ends, a sandbox the run started is snapshotted, then
- *   destroyed. A run that is cancelled or times out cannot do that itself, so
- *   the cleanup defer it registered when the sandbox was created does it by
+ * - when the run ends, a sandbox the run used is snapshotted, then destroyed.
+ *   A run that is cancelled or times out cannot do that itself, so the
+ *   cleanup defer it registered when the sandbox was created does it by
  *   sandbox ID.
  *
  * A snapshot is named `thread/<agent>/<sandbox>/<hash of the thread key>/<run
  * ID>`: the run that took it is its generation. A run ID cannot collide with
- * another run's, and it sorts by time, so the pointer to the newest snapshot
- * (a thread KV key, see `recordSandboxGeneration()`) never moves back. Older
- * generations are replaced when a new one is saved; expiry is the platform's.
- * Only files survive, not running processes.
+ * another run's. The generations that saved are a sorted index in the
+ * thread's KV scope, scored by when the run started, and the newest is the
+ * highest score: adding a member is atomic and removes no other, so a cleanup
+ * that saves late never moves the newest generation back. A save deletes the
+ * generations older than itself by name. Expiry is the platform's.
+ *
+ * Only files survive, not running processes. A restored sandbox is created
+ * from the snapshot alone: the definition's `environment` and `secrets` are
+ * not applied to it, because the platform forbids them together with a
+ * `snapshotId` (platform ask: accept them, so a restored sandbox gets the
+ * current values). What a run wrote to disk, a token for instance, is in every
+ * later run's sandbox.
+ *
+ * Known gaps, by design: a cancelled run's cleanup can still be running when
+ * the thread's next run starts, and that run then restores the previous
+ * snapshot (the cancelled run's work is saved a moment later, for the run
+ * after); an interrupted command can be mid-write in a cancelled run's
+ * snapshot.
  */
 
+import hashjs from "hash.js";
 import type { DeferHandle } from "../../types.ts";
 import { StepError } from "../StepError.ts";
 import {
   type SnapshotCacheClient,
   type SnapshotEntry,
   snapshotCache,
-  snapshotKey,
 } from "../sandbox/snapshotCache.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
 import type { KvScopeInstance } from "./kv.ts";
 import {
+  newestSandboxGeneration,
   recordSandboxGeneration,
-  sandboxGenerationKey,
+  runScore,
+  sandboxGenerations,
+  sandboxReadyKey,
 } from "./threadState.ts";
+
+const { sha256 } = hashjs;
 
 /**
  * The scope of every thread snapshot.
@@ -49,13 +68,6 @@ export interface ThreadSandboxCleanup {
    */
   name: string;
   sandboxId: string;
-
-  /**
-   * Whether the sandbox may be snapshotted: false until its setup has
-   * finished, because a half set-up sandbox must never become the thread's
-   * next one.
-   */
-  save: boolean;
 }
 
 /**
@@ -79,13 +91,20 @@ export interface ThreadSandboxOwner {
 
   /**
    * Registers the defer that saves and destroys the sandbox if the run ends
-   * without doing it. Abort the handle once the sandbox is destroyed.
+   * without doing it. Abort the handle once the sandbox is destroyed. It
+   * saves only a sandbox the run has marked ready.
    * @param name The sandbox's name in the agent's `sandboxes`.
    * @param sandbox The sandbox the run just created.
-   * @param save Whether the cleanup may snapshot it. Register with `false`
-   * while setup runs, then replace the guard with a `true` one.
    */
-  guard(name: string, sandbox: DurableSandbox, save: boolean): DeferHandle;
+  guard(name: string, sandbox: DurableSandbox): DeferHandle;
+
+  /**
+   * Marks the sandbox as finished with its skills and setup, so the cleanup
+   * may snapshot it: a half set-up sandbox must never become the thread's
+   * next one.
+   * @param name The sandbox's name in the agent's `sandboxes`.
+   */
+  ready(name: string): Promise<void>;
 }
 
 export interface ThreadSandboxOptions {
@@ -108,8 +127,7 @@ export interface ThreadSandboxOptions {
   runId: string;
 
   /**
-   * The thread's KV scope, which holds the pointer to the newest snapshot of
-   * each sandbox.
+   * The thread's KV scope, which holds the generations of each sandbox.
    */
   scope: KvScopeInstance;
 
@@ -131,15 +149,16 @@ export interface ThreadSandboxOptions {
  * @param name The sandbox's name in the agent's `sandboxes`.
  * @param generation The run that took the snapshot.
  */
-export const threadSnapshotEntry = async (
+export const threadSnapshotEntry = (
   ref: string,
   thread: string,
   name: string,
   generation: string,
-): Promise<SnapshotEntry> => {
-  // A thread key is free text, so the name carries its hash: bounded, and
-  // made of safe characters.
-  const { hash } = await snapshotKey([thread]);
+): SnapshotEntry => {
+  // A thread key is free text, so the name carries its hash: bounded, made of
+  // safe characters, and long enough (128 bits) that two threads never share
+  // a snapshot.
+  const hash = sha256().update(thread).digest("hex").slice(0, 32);
 
   return {
     scope: threadSnapshotScope,
@@ -159,9 +178,7 @@ export const threadSandboxOwner = (
 
   return {
     restore: async (name) => {
-      const generation = await scope.get<string>(
-        sandboxGenerationKey(ref, name),
-      );
+      const generation = await newestSandboxGeneration(scope, ref, name);
 
       if (!generation) {
         return undefined;
@@ -169,7 +186,7 @@ export const threadSandboxOwner = (
 
       const found = await snapshotCache(client, {
         memo: options.run,
-      }).find(await threadSnapshotEntry(ref, thread, name, generation), {
+      }).find(threadSnapshotEntry(ref, thread, name, generation), {
         stepId: `${name}:thread:restore`,
       });
 
@@ -178,34 +195,71 @@ export const threadSandboxOwner = (
 
     save: async (name, sandbox) => {
       try {
+        // The older generations are deleted by name below, not by listing
+        // every snapshot of the environment.
         const taken = await snapshotCache(client, { memo: options.run }).take(
-          await threadSnapshotEntry(ref, thread, name, runId),
+          threadSnapshotEntry(ref, thread, name, runId),
           (snapshotName, n) => {
             return sandbox.snapshot(
               `${name}:thread:save:${n}`,
               snapshotName ? { name: snapshotName } : {},
             );
           },
-          { stepId: `${name}:thread:save` },
+          { stepId: `${name}:thread:save`, replace: false },
         );
 
         // A snapshot without its name can't be found again.
-        if (taken.named) {
-          await recordSandboxGeneration(scope, ref, name, runId);
+        if (!taken.named) {
+          return;
+        }
+
+        await recordSandboxGeneration(scope, ref, name, runId);
+
+        const generations = sandboxGenerations(scope, ref, name);
+        const older = await generations.range({ max: runScore(runId) - 1 });
+
+        if (older.length === 0) {
+          return;
+        }
+
+        await options.run(`${name}:thread:replace`, async () => {
+          const cache = snapshotCache(client);
+
+          for (const { member } of older) {
+            const found = await cache.find(
+              threadSnapshotEntry(ref, thread, name, member),
+            );
+
+            if (found) {
+              await cache.remove(found.snapshotId);
+            }
+          }
+
+          return null;
+        });
+
+        for (const { member } of older) {
+          await generations.remove(member);
         }
       } catch (error) {
         if (!(error instanceof StepError)) {
           throw error;
         }
+      } finally {
+        // The run has done what its cleanup would.
+        await scope.delete(sandboxReadyKey(ref, name, runId));
       }
     },
 
-    guard: (name, sandbox, save) => {
-      return options.defer(`${name}:thread:cleanup${save ? ":save" : ""}`, {
+    guard: (name, sandbox) => {
+      return options.defer(`${name}:thread:cleanup`, {
         name,
         sandboxId: sandbox.id,
-        save,
       });
+    },
+
+    ready: async (name) => {
+      await scope.set(sandboxReadyKey(ref, name, runId), true);
     },
   };
 };
@@ -240,20 +294,22 @@ export interface CleanupThreadSandboxOptions {
 
 /**
  * Saves and destroys a sandbox whose run ended without doing it (cancelled,
- * timed out, or a destroy that failed). It saves nothing when the thread
- * already has a snapshot from this run or a newer one, and destroys the
- * sandbox in every case.
+ * timed out, or a destroy that failed). It saves nothing when the sandbox was
+ * not marked ready, or when the thread already has a snapshot from this run or
+ * a newer one, and destroys the sandbox in every case.
  * @param options The ended run, its thread and the sandbox.
  */
 export const cleanupThreadSandbox = async (
   options: CleanupThreadSandboxOptions,
 ): Promise<void> => {
   const { client, ref, thread, runId, scope, sandbox } = options;
-  const known = await scope.get<string>(
-    sandboxGenerationKey(ref, sandbox.name),
-  );
+  const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
+  const ready = (await scope.get<boolean>(readyKey)) === true;
+  const newest = ready
+    ? await newestSandboxGeneration(scope, ref, sandbox.name)
+    : undefined;
 
-  if (sandbox.save && (!known || known < runId)) {
+  if (ready && (!newest || newest < runId)) {
     try {
       const named = await options.run(
         `${sandbox.name}:thread:snapshot`,
@@ -265,12 +321,10 @@ export const cleanupThreadSandbox = async (
           }
 
           const taken = await snapshotCache(client).take(
-            await threadSnapshotEntry(ref, thread, sandbox.name, runId),
+            threadSnapshotEntry(ref, thread, sandbox.name, runId),
             (snapshotName) => {
               return found.snapshot(snapshotName ? { name: snapshotName } : {});
             },
-            // A newer run may have saved meanwhile; deleting "older" snapshots
-            // by creation time would delete its snapshot, not this one's elders.
             { replace: false },
           );
 
@@ -291,4 +345,8 @@ export const cleanupThreadSandbox = async (
   await options.run(`${sandbox.name}:thread:destroy`, async () => {
     await (await client.sandboxes.get(sandbox.sandboxId))?.destroy();
   });
+
+  if (ready) {
+    await scope.delete(readyKey);
+  }
 };

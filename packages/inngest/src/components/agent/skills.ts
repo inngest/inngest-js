@@ -21,7 +21,10 @@
  * one is saved; the rest expire.
  *
  * The ref is resolved to a sha in a memoized step, so a running thread keeps
- * the sha it started with however often the ref moves.
+ * the sha it started with however often the ref moves. A thread's sandbox is
+ * restored from the thread's own snapshot, which holds the skills it was saved
+ * with: a baked source is not re-resolved on a restore, so a thread keeps its
+ * skills until its snapshot expires; `"boot"` sources are fetched again.
  */
 
 import type { Inngest } from "../Inngest.ts";
