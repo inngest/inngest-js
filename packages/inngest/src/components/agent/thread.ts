@@ -370,7 +370,8 @@ export function getThread(
           payload,
           replyTo: signal,
           from:
-            event.name === agentMessageEvent ? event.data?.thread : undefined,
+            execution.agent?.thread ??
+            (event.name === agentMessageEvent ? event.data?.thread : undefined),
         }),
       ]);
 
