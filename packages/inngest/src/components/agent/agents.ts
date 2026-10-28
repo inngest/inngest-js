@@ -42,28 +42,72 @@ export interface Agents {
    * @param config Function ID and KV store.
    * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
    */
-  agent<TType extends EventTypeWithAnySchema<string>, TOutput = unknown>(
-    config: AgentFunctionConfig<TType, ThreadTriggerEventOf<TType>>,
-    body: AgentBody<ThreadTriggerEventOf<TType>, TOutput>,
-  ): AgentFunction<InvokeInput<ThreadTriggerEventOf<TType>>, TOutput>;
-  agent<const TOne extends ThreadTriggerEventSource, TOutput = unknown>(
+  agent<
+    TType extends EventTypeWithAnySchema<string>,
+    TOutput = unknown,
+    TRequest = unknown,
+    TReply = unknown,
+  >(
+    config: AgentFunctionConfig<
+      TType,
+      ThreadTriggerEventOf<TType>,
+      TRequest,
+      TReply
+    >,
+    body: AgentBody<ThreadTriggerEventOf<TType>, TOutput, TRequest, TReply>,
+  ): AgentFunction<
+    InvokeInput<ThreadTriggerEventOf<TType>>,
+    TOutput,
+    TRequest,
+    TReply
+  >;
+  agent<
+    const TOne extends ThreadTriggerEventSource,
+    TOutput = unknown,
+    TRequest = unknown,
+    TReply = unknown,
+  >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
-      ThreadTriggerEventOf<TOne>
+      ThreadTriggerEventOf<TOne>,
+      TRequest,
+      TReply
     >,
-    body: AgentBody<ThreadTriggerEventOf<TOne>, TOutput>,
-  ): AgentFunction<InvokeInput<ThreadTriggerEventOf<TOne>>, TOutput>;
-  agent<TOutput = unknown>(
-    config: AgentFunctionConfig<ThreadCronTrigger, ThreadCronEvent>,
-    body: AgentBody<ThreadCronEvent, TOutput>,
-  ): AgentFunction<Record<string, unknown>, TOutput>;
-  agent<const TMany extends readonly unknown[], TOutput = unknown>(
+    body: AgentBody<ThreadTriggerEventOf<TOne>, TOutput, TRequest, TReply>,
+  ): AgentFunction<
+    InvokeInput<ThreadTriggerEventOf<TOne>>,
+    TOutput,
+    TRequest,
+    TReply
+  >;
+  agent<TOutput = unknown, TRequest = unknown, TReply = unknown>(
+    config: AgentFunctionConfig<
+      ThreadCronTrigger,
+      ThreadCronEvent,
+      TRequest,
+      TReply
+    >,
+    body: AgentBody<ThreadCronEvent, TOutput, TRequest, TReply>,
+  ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
+  agent<
+    const TMany extends readonly unknown[],
+    TOutput = unknown,
+    TRequest = unknown,
+    TReply = unknown,
+  >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
-      ThreadTriggerListEvent<TMany>
+      ThreadTriggerListEvent<TMany>,
+      TRequest,
+      TReply
     >,
-    body: AgentBody<ThreadTriggerListEvent<TMany>, TOutput>,
-  ): AgentFunction<InvokeInput<ThreadTriggerListEvent<TMany>>, TOutput>;
+    body: AgentBody<ThreadTriggerListEvent<TMany>, TOutput, TRequest, TReply>,
+  ): AgentFunction<
+    InvokeInput<ThreadTriggerListEvent<TMany>>,
+    TOutput,
+    TRequest,
+    TReply
+  >;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
@@ -267,8 +311,13 @@ export type {
   ThreadHandle,
   ThreadMessage,
   ThreadOptions,
+  ThreadRequestMessage,
+  ThreadRequests,
   ThreadState,
   ThreadStatus,
+  ThreadSteerMessage,
+  ThreadStopMessage,
+  ThreadUserMessage,
 } from "./thread.ts";
 export { agentMessageEvent, getThread } from "./thread.ts";
 export type {

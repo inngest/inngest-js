@@ -2,10 +2,11 @@
  * @module
  * Tests for thread handles with a fake client.
  */
+import { z } from "zod";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { getThread } from "./thread.ts";
+import { getThread, type ThreadRequests } from "./thread.ts";
 
 const fakeClient = (
   cancelAnswer: { ok: boolean; error?: { error: string; status: number } } = {
@@ -205,6 +206,7 @@ describe("thread handle", () => {
     const event = { name: "go", data: {} };
     const setup = (
       body: (thread: ReturnType<typeof getThread>) => Promise<unknown>,
+      requests?: ThreadRequests["request"],
     ) => {
       const bodies: unknown[] = [];
       const client = new Inngest({
@@ -216,7 +218,9 @@ describe("thread handle", () => {
           return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
         }) as unknown as typeof fetch,
       });
-      const thread = getThread(client, `${testClientId}/bot`, "t1");
+      const thread = getThread(client, `${testClientId}/bot`, "t1", {
+        requests: requests && { request: requests, reply: requests },
+      });
       const fn = client.createFunction(
         { id: "caller", triggers: [{ event: "go" }] },
         async () => {
@@ -266,6 +270,20 @@ describe("thread handle", () => {
           { displayName: "thread:t1:request" },
         ],
       });
+    });
+
+    test("request checks its payload against the requests schema before sending", async () => {
+      const { fn, bodies } = setup(
+        async (thread) => {
+          return thread.request({ question: 7 } as never);
+        },
+        z.object({ question: z.string() }),
+      );
+
+      await expect(runFnWithStack(fn, {}, { event })).resolves.toMatchObject({
+        type: "function-rejected",
+      });
+      expect(bodies).toEqual([]);
     });
 
     test("request resolves to the reply, or null when the wait times out", async () => {

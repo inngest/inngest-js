@@ -10,10 +10,12 @@
  * reaches the run through its subscription instead.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { InngestApi } from "../../api/api.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
+import { parseWith } from "./channels.ts";
 import { agentMessage } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
@@ -35,10 +37,9 @@ export type TriggerEvent<TName extends string = string, TData = unknown> = {
 };
 
 /**
- * What a thread message event carries in `data`. `TEvent` is the events of the
- * agent's `on` triggers, so `event` is typed from them.
+ * What every thread message carries.
  */
-export type ThreadMessage<TEvent = TriggerEvent> = {
+type ThreadMessageBase<TEvent> = {
   /**
    * The agent, as `"appId/functionId"`.
    */
@@ -50,41 +51,98 @@ export type ThreadMessage<TEvent = TriggerEvent> = {
   thread: string;
 
   /**
-   * `"user"` messages start the next turn; `"steer"` messages are folded into
-   * the turn that is running; `"stop"` asks the thread to stop; `"request"`
-   * is a question from another thread, answered with `message.reply()`. A
-   * stop never starts a run, so stopping an idle thread does nothing.
-   */
-  kind: "user" | "steer" | "stop" | "request";
-  content?: string;
-
-  /**
-   * For `"request"`: what the other thread asks.
-   */
-  payload?: unknown;
-
-  /**
-   * For `"request"`: the signal the reply is sent to.
-   */
-  replyTo?: string;
-
-  /**
-   * For `"request"`: the key of the thread that asked, when it is a thread.
-   */
-  from?: string;
-
-  /**
-   * For `"stop"`: `"nextTurn"` lets the running model call finish.
-   */
-  when?: "nextTurn";
-
-  /**
    * For a message made from a trigger event: that event.
    */
   event?: TEvent;
 };
 
-export interface ThreadOptions {
+/**
+ * A message that starts the next turn. `content` is missing when the trigger
+ * has no `message`.
+ */
+export type ThreadUserMessage<TEvent = TriggerEvent> =
+  ThreadMessageBase<TEvent> & {
+    kind: "user";
+    content?: string;
+  };
+
+/**
+ * A message folded into the turn that is running.
+ */
+export type ThreadSteerMessage<TEvent = TriggerEvent> =
+  ThreadMessageBase<TEvent> & {
+    kind: "steer";
+    content: string;
+  };
+
+/**
+ * A request to stop. `"nextTurn"` lets the running model call finish.
+ */
+export type ThreadStopMessage<TEvent = TriggerEvent> =
+  ThreadMessageBase<TEvent> & {
+    kind: "stop";
+    when: "nextTurn";
+    content?: undefined;
+  };
+
+/**
+ * A question from another thread.
+ */
+export type ThreadRequestMessage<
+  TEvent = TriggerEvent,
+  TRequest = unknown,
+> = ThreadMessageBase<TEvent> & {
+  kind: "request";
+
+  /**
+   * What the other thread asks.
+   */
+  payload: TRequest;
+
+  /**
+   * The signal the reply is sent to.
+   */
+  replyTo: string;
+
+  /**
+   * The key of the thread that asked, when it is a thread.
+   */
+  from?: string;
+  content?: undefined;
+};
+
+/**
+ * What a thread message event carries in `data`, by `kind`. `TEvent` is the
+ * events of the agent's `on` triggers, so `event` is typed from them;
+ * `TRequest` is what other threads ask the agent.
+ *
+ * - `"user"` starts the next turn.
+ * - `"steer"` is folded into the turn that is running.
+ * - `"stop"` asks the thread to stop. A stop never starts a run, so stopping
+ *   an idle thread does nothing.
+ * - `"request"` is a question from another thread, answered with
+ *   `message.reply()`.
+ */
+export type ThreadMessage<TEvent = TriggerEvent, TRequest = unknown> =
+  | ThreadUserMessage<TEvent>
+  | ThreadSteerMessage<TEvent>
+  | ThreadStopMessage<TEvent>
+  | ThreadRequestMessage<TEvent, TRequest>;
+
+/**
+ * The types of the requests an agent takes: what other threads ask and what
+ * the agent replies. The schemas give the types (`staticSchema()` for types
+ * only). A request is checked against `request` when it is sent through the
+ * agent's own `agent.thread()` handle, and a reply against `reply` when the
+ * agent sends it. A schema must accept the value it outputs, so one that
+ * transforms its input is a type error.
+ */
+export interface ThreadRequests<TRequest = unknown, TReply = unknown> {
+  request: StandardSchemaV1<TRequest, TRequest>;
+  reply: StandardSchemaV1<TReply, TReply>;
+}
+
+export interface ThreadOptions<TRequest = unknown, TReply = unknown> {
   /**
    * Session the thread belongs to. Default: the thread key.
    */
@@ -95,6 +153,12 @@ export interface ThreadOptions {
    * `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: Kv;
+
+  /**
+   * The agent's request and reply schemas: `request()` checks its payload
+   * against `request` before sending it.
+   */
+  requests?: ThreadRequests<TRequest, TReply>;
 }
 
 /**
@@ -173,7 +237,7 @@ export interface RequestOptions {
   timeout?: string | number;
 }
 
-export interface ThreadHandle {
+export interface ThreadHandle<TRequest = unknown, TReply = unknown> {
   /**
    * The agent, as `"appId/functionId"`.
    */
@@ -216,13 +280,17 @@ export interface ThreadHandle {
    * live run reads it from its inbox, and an idle thread is woken for it like
    * by any message. Only inside a function, because the wait is a step.
    * Resolves to the reply, or `null` when the timeout passes.
+   *
+   * `payload` and the reply are typed by the agent's `requests` config when
+   * the handle comes from `agent.thread()`. Otherwise both are `unknown`, and
+   * `TAnswer` names the reply you expect (not checked).
    * @param payload What to ask.
    * @param options Timeout.
    */
-  request<TReply = unknown>(
-    payload: unknown,
+  request<TAnswer extends TReply = TReply>(
+    payload: TRequest,
     options?: RequestOptions,
-  ): Promise<TReply | null>;
+  ): Promise<TAnswer | null>;
 }
 
 /**
@@ -291,12 +359,12 @@ export function threadStateOf(
  * @param key Thread key, the thread's address.
  * @param options Session and KV overrides.
  */
-export function getThread(
+export function getThread<TRequest = unknown, TReply = unknown>(
   client: Inngest.Any,
   agent: string,
   key: string,
-  options: ThreadOptions = {},
-): ThreadHandle {
+  options: ThreadOptions<TRequest, TReply> = {},
+): ThreadHandle<TRequest, TReply> {
   const session = options.session ?? key;
 
   // Inside a function the send is a step, so a replay does not send it again.
@@ -373,8 +441,8 @@ export function getThread(
         all,
       );
     },
-    async request<TReply>(
-      payload: unknown,
+    async request<TAnswer extends TReply>(
+      payload: TRequest,
       requestOptions: RequestOptions = {},
     ) {
       const execution = stepContext();
@@ -383,6 +451,14 @@ export function getThread(
           "thread.request() waits for a reply with a signal, so it must be called inside a function.",
         );
       }
+
+      const asked = options.requests
+        ? parseWith(
+            options.requests.request,
+            payload,
+            "thread.request() payload",
+          )
+        : payload;
 
       const count = nextCount(execution.instance, "request") + 1;
 
@@ -403,7 +479,7 @@ export function getThread(
           agent,
           thread: key,
           kind: "request",
-          payload,
+          payload: asked,
           replyTo: signal,
           from:
             execution.agent?.thread ??
@@ -411,7 +487,7 @@ export function getThread(
         }),
       ]);
 
-      return (reply?.data ?? null) as TReply | null;
+      return (reply?.data ?? null) as TAnswer | null;
     },
   };
 }
