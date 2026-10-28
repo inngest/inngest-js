@@ -34,7 +34,9 @@ export interface KvAdapter {
   set(hash: string, field: string, value: string, ttl?: number): Promise<void>;
 
   /**
-   * Writes only when the field has no live value. Returns whether it wrote.
+   * Writes only when the field has no live value, and returns whether this
+   * call holds it: `true` when it wrote, and also when the field already holds
+   * exactly `value` (the same call retried after its write).
    * @param ttl Seconds until the field expires. Absent: it never does.
    */
   setIfAbsent(
@@ -72,6 +74,9 @@ export interface KvIndexEntry {
   score: number;
 }
 
+/**
+ * Which members of a sorted index to return, and in what order.
+ */
 export interface KvIndexRange {
   /**
    * Lowest score to include. Default: no lower bound.
@@ -94,95 +99,93 @@ export interface KvIndexRange {
   order?: "asc" | "desc";
 }
 
+interface MemoryField {
+  value: string;
+  expiresAt?: number;
+}
+
+interface MemoryHash {
+  fields: Map<string, MemoryField>;
+  indexes: Map<string, Map<string, number>>;
+}
+
 /**
  * An in-process adapter, for tests and local scripts.
  */
 export function memoryKvAdapter(): KvAdapter {
-  const hashes = new Map<string, Map<string, string>>();
-  const expiries = new Map<string, number>();
-  const indexes = new Map<string, Map<string, number>>();
+  const hashes = new Map<string, MemoryHash>();
 
   function hashOf(hash: string) {
     let found = hashes.get(hash);
     if (!found) {
-      found = new Map();
+      found = { fields: new Map(), indexes: new Map() };
       hashes.set(hash, found);
     }
 
     return found;
   }
 
-  function expiryKey(hash: string, field: string) {
-    return `${hash}|${field}`;
-  }
-
   // Drops the field once its time is up, so every read gives the same answer.
   function live(hash: string, field: string) {
-    const at = expiries.get(expiryKey(hash, field));
-    if (at !== undefined && at <= Date.now()) {
-      hashOf(hash).delete(field);
-      expiries.delete(expiryKey(hash, field));
+    const found = hashOf(hash).fields.get(field);
+    if (found?.expiresAt !== undefined && found.expiresAt <= Date.now()) {
+      hashOf(hash).fields.delete(field);
+
+      return undefined;
     }
 
-    return hashOf(hash).has(field);
+    return found;
   }
 
   function write(hash: string, field: string, value: string, ttl?: number) {
-    hashOf(hash).set(field, value);
-    if (ttl === undefined) {
-      expiries.delete(expiryKey(hash, field));
-    } else {
-      expiries.set(expiryKey(hash, field), Date.now() + ttl * 1000);
-    }
+    hashOf(hash).fields.set(field, {
+      value,
+      expiresAt: ttl === undefined ? undefined : Date.now() + ttl * 1000,
+    });
   }
 
   return {
     async get(hash, field) {
-      return live(hash, field) ? (hashOf(hash).get(field) ?? null) : null;
+      return live(hash, field)?.value ?? null;
     },
     async set(hash, field, value, ttl) {
       write(hash, field, value, ttl);
     },
     async setIfAbsent(hash, field, value, ttl) {
-      if (live(hash, field)) {
-        return false;
+      const found = live(hash, field);
+      if (found) {
+        return found.value === value;
       }
+
       write(hash, field, value, ttl);
 
       return true;
     },
     async delete(hash, field) {
-      hashOf(hash).delete(field);
-      expiries.delete(expiryKey(hash, field));
+      hashOf(hash).fields.delete(field);
     },
     async all(hash) {
-      for (const field of [...hashOf(hash).keys()]) {
-        live(hash, field);
+      const out: Record<string, string> = {};
+      for (const field of [...hashOf(hash).fields.keys()]) {
+        const found = live(hash, field);
+        if (found) {
+          out[field] = found.value;
+        }
       }
 
-      return Object.fromEntries(hashOf(hash));
+      return out;
     },
     async clear(hash) {
       hashes.delete(hash);
-      for (const key of [...expiries.keys()]) {
-        if (key.startsWith(`${hash}|`)) {
-          expiries.delete(key);
-        }
-      }
-      for (const key of [...indexes.keys()]) {
-        if (key.startsWith(`${hash}|`)) {
-          indexes.delete(key);
-        }
-      }
     },
     async indexAdd(hash, index, member, score) {
-      const key = `${hash}|${index}`;
-      const found = indexes.get(key) ?? new Map<string, number>();
+      const { indexes } = hashOf(hash);
+      const found = indexes.get(index) ?? new Map<string, number>();
       found.set(member, score);
-      indexes.set(key, found);
+      indexes.set(index, found);
     },
     async indexRange(hash, index, options) {
-      const entries = [...(indexes.get(`${hash}|${index}`) ?? [])]
+      const entries = [...(hashOf(hash).indexes.get(index) ?? [])]
         .map(([member, score]) => {
           return { member, score };
         })
@@ -202,48 +205,57 @@ export function memoryKvAdapter(): KvAdapter {
       return entries.slice(0, options.limit ?? entries.length);
     },
     async indexRemove(hash, index, member) {
-      indexes.get(`${hash}|${index}`)?.delete(member);
+      hashOf(hash).indexes.get(index)?.delete(member);
     },
   };
 }
 
 /**
- * A Redis adapter that connects on first use.
+ * A Redis adapter that connects on first use. Needs Redis 6.2 or newer.
+ *
+ * Plain fields live in one hash. Fields with a time to live are string keys
+ * (older servers cannot expire a hash field) and each index is a sorted set.
+ * Every key of a scope instance carries the hash in `{braces}`, so they share
+ * a cluster slot and one scope instance can be read or removed in one go.
  * @param url `redis://` or `rediss://` URL.
  */
 export function redisKvAdapter(url: string): KvAdapter {
   const client = redisConnection(url);
+  const removeBatch = 500;
 
-  // Fields with a time to live are plain keys (older servers cannot expire a
-  // hash field) and each index is a sorted set; both are named after the hash.
+  function main(hash: string) {
+    return `{${hash}}`;
+  }
+
   function expiring(hash: string, field: string) {
-    return `${hash}|t|${field}`;
+    return `{${hash}}|t|${field}`;
   }
 
   function sorted(hash: string, index: string) {
-    return `${hash}|z|${index}`;
+    return `{${hash}}|z|${index}`;
+  }
+
+  // Lists the expiring fields and indexes of a hash, so `all()` and `clear()`
+  // touch only that hash. Entries are `t:<field>` or `z:<index>`, scored by
+  // when the entry may be forgotten (never, for an index).
+  function registry(hash: string) {
+    return `{${hash}}|keys`;
   }
 
   async function command(...args: string[]) {
     return (await client()).command(...args);
   }
 
-  // Each hash lists its expiring fields and indexes in a sorted set scored by
-  // when the entry may be forgotten (never, for an index), so `all()` and
-  // `clear()` touch only that hash and writes keep the set small. Entries are
-  // `t:<field>` or `z:<index>`. A write racing `clear()` can leave a key
-  // unlisted.
-  function registry(hash: string) {
-    return `${hash}|keys`;
+  // Redis's own clock, so a host with a skewed clock cannot mis-score entries.
+  async function serverNow() {
+    const [seconds, micros] = (await command("TIME")) as [string, string];
+
+    return Number(seconds) * 1000 + Math.floor(Number(micros) / 1000);
   }
 
-  // The slack covers a clock that is behind the server's.
-  const slackMs = 60_000;
-
   async function register(hash: string, entry: string, ttl?: number) {
-    const now = Date.now();
-    const until =
-      ttl === undefined ? "+inf" : String(now + ttl * 1000 + slackMs);
+    const now = await serverNow();
+    const until = ttl === undefined ? "+inf" : String(now + ttl * 1000);
 
     // GT: a later write with a shorter life never lowers the score.
     await command("ZADD", registry(hash), "GT", until, entry);
@@ -254,14 +266,16 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await command(
       "ZRANGEBYSCORE",
       registry(hash),
-      String(Date.now()),
+      String(await serverNow()),
       "+inf",
     )) as string[];
   }
 
   return {
     async get(hash, field) {
-      const stored = (await command("HGET", hash, field)) as string | null;
+      const stored = (await command("HGET", main(hash), field)) as
+        | string
+        | null;
 
       return (
         stored ??
@@ -270,37 +284,82 @@ export function redisKvAdapter(url: string): KvAdapter {
     },
     async set(hash, field, value, ttl) {
       if (ttl === undefined) {
-        await command("HSET", hash, field, value);
         await command("DEL", expiring(hash, field));
+        await command("HSET", main(hash), field, value);
 
         return;
       }
 
+      // Listed before the write in case the process dies in between, and
+      // after it so the entry cannot end before the key does.
       await register(hash, `t:${field}`, ttl);
+      await command("HDEL", main(hash), field);
       await command("SET", expiring(hash, field), value, "EX", String(ttl));
-      await command("HDEL", hash, field);
+      await register(hash, `t:${field}`, ttl);
     },
     async setIfAbsent(hash, field, value, ttl) {
-      if ((await command("HEXISTS", hash, field)) === 1) {
-        return false;
+      const stored = (await command("HGET", main(hash), field)) as
+        | string
+        | null;
+      if (stored !== null) {
+        return stored === value;
       }
 
-      await register(hash, `t:${field}`, ttl);
+      // A holder that vanishes between our failed write and our read leaves
+      // the key free, so the claim is tried once more.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (ttl === undefined) {
+          const live = (await command("GET", expiring(hash, field))) as
+            | string
+            | null;
+          if (live !== null) {
+            return live === value;
+          }
 
-      const args = ["SET", expiring(hash, field), value];
-      if (ttl !== undefined) {
-        args.push("EX", String(ttl));
+          if ((await command("HSETNX", main(hash), field, value)) === 1) {
+            return true;
+          }
+
+          const now = await command("HGET", main(hash), field);
+          if (now !== null) {
+            return now === value;
+          }
+
+          continue;
+        }
+
+        const claimed = await command(
+          "SET",
+          expiring(hash, field),
+          value,
+          "EX",
+          String(ttl),
+          "NX",
+        );
+        const now =
+          claimed === "OK"
+            ? value
+            : await command("GET", expiring(hash, field));
+        if (now === value) {
+          // Also on a retry, which may have died before listing the key.
+          await register(hash, `t:${field}`, ttl);
+
+          return true;
+        }
+        if (now !== null) {
+          return false;
+        }
       }
-      args.push("NX");
 
-      return (await command(...args)) === "OK";
+      return false;
     },
     async delete(hash, field) {
-      await command("HDEL", hash, field);
+      await command("HDEL", main(hash), field);
       await command("DEL", expiring(hash, field));
+      await command("ZREM", registry(hash), `t:${field}`);
     },
     async all(hash) {
-      const reply = (await command("HGETALL", hash)) as string[];
+      const reply = (await command("HGETALL", main(hash))) as string[];
       const out: Record<string, string> = {};
       for (let i = 0; i < reply.length; i += 2) {
         out[reply[i] as string] = reply[i + 1] as string;
@@ -322,7 +381,8 @@ export function redisKvAdapter(url: string): KvAdapter {
         )) as (string | null)[];
         fields.forEach((field, i) => {
           const value = values[i];
-          if (value !== null && value !== undefined) {
+          // The hash wins, as in get().
+          if (value !== null && value !== undefined && !(field in out)) {
             out[field] = value;
           }
         });
@@ -336,19 +396,27 @@ export function redisKvAdapter(url: string): KvAdapter {
           ? expiring(hash, entry.slice(2))
           : sorted(hash, entry.slice(2));
       });
-      await command("DEL", hash, registry(hash), ...keys);
+
+      // The hash and registry go last, so a failed clear can be run again.
+      for (let i = 0; i < keys.length; i += removeBatch) {
+        await command("DEL", ...keys.slice(i, i + removeBatch));
+      }
+      await command("DEL", registry(hash), main(hash));
     },
     async indexAdd(hash, index, member, score) {
+      // Listed before the write in case the process dies in between, and
+      // after it so a racing removal that unlisted the index cannot win.
       await register(hash, `z:${index}`);
       await command("ZADD", sorted(hash, index), String(score), member);
+      await register(hash, `z:${index}`);
     },
     async indexRange(hash, index, options) {
       const low = options.min === undefined ? "-inf" : String(options.min);
       const high = options.max === undefined ? "+inf" : String(options.max);
-      const desc = options.order === "desc";
-      const args = desc
-        ? ["ZREVRANGEBYSCORE", sorted(hash, index), high, low]
-        : ["ZRANGEBYSCORE", sorted(hash, index), low, high];
+      const args =
+        options.order === "desc"
+          ? ["ZREVRANGEBYSCORE", sorted(hash, index), high, low]
+          : ["ZRANGEBYSCORE", sorted(hash, index), low, high];
       args.push("WITHSCORES");
       if (options.limit !== undefined) {
         args.push("LIMIT", "0", String(options.limit));
@@ -364,6 +432,16 @@ export function redisKvAdapter(url: string): KvAdapter {
     },
     async indexRemove(hash, index, member) {
       await command("ZREM", sorted(hash, index), member);
+
+      // An index with no members is gone from Redis; forget its entry too.
+      if ((await command("ZCARD", sorted(hash, index))) === 0) {
+        await command("ZREM", registry(hash), `z:${index}`);
+
+        // An add that raced the removal is listed again.
+        if ((await command("ZCARD", sorted(hash, index))) !== 0) {
+          await register(hash, `z:${index}`);
+        }
+      }
     },
   };
 }
@@ -433,11 +511,13 @@ export interface KvScopeInstance {
   set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
 
   /**
-   * Writes a key only when it has no value, and returns whether it did: the
-   * first caller gets `true`, later ones `false` until the key expires or is
-   * deleted. Atomic against other `setIfAbsent` calls (not against a concurrent `set` of the same key), and at least once: if a step retries after
-   * its write, the retry sees the key present and returns `false`. Use one style per key: a key written with
-   * `set` and no `ttl` is seen as present, but a later `set` may replace a claim.
+   * Writes a key only when it has no value, and returns whether this call
+   * holds it: the first caller gets `true`, later ones `false` until the key
+   * expires or is deleted. Atomic against other `setIfAbsent` calls. A call
+   * retried after its own write also gets `true`, because the key already
+   * holds exactly its value; put an owner token (such as the run id) in the
+   * value so a different caller never matches. Use one style per key: a
+   * concurrent `set`, or a claim with and without a `ttl`, is not arbitrated.
    */
   setIfAbsent(
     key: string,
@@ -454,7 +534,8 @@ export interface KvScopeInstance {
 
   /**
    * Reads, transforms and writes a key in one step. Not atomic across runs.
-   * The result never expires, even if the key had a `ttl`.
+   * The result never expires, even if the key had a `ttl`: pass nothing to
+   * `set` yourself if you need the expiry kept.
    */
   update<T = unknown>(
     key: string,
@@ -499,6 +580,17 @@ export interface Kv extends KvScopeInstance {
 }
 
 /**
+ * Escapes the characters that separate or tag parts of a stored key, so
+ * different ids never name the same key.
+ * @param id Environment, app or scope id.
+ */
+function encodeId(id: string): string {
+  return id.replace(/[%:|{}]/g, (char) => {
+    return `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`;
+  });
+}
+
+/**
  * Names a scope instance's hash.
  * @param scope Scope to name.
  * @param ids Ids of the instances.
@@ -518,7 +610,7 @@ export function kvHash(scope: KvScope, ids: KvScopeIds): string {
         ? [ids.env]
         : [ids.env, ids.app, id];
 
-  return `inngest:kv:${scope}:${parts.filter(Boolean).join(":")}`;
+  return `inngest:kv:${scope}:${parts.filter(Boolean).map(encodeId).join(":")}`;
 }
 
 /**
@@ -643,8 +735,13 @@ function checkedRange(options: KvIndexRange) {
   ) {
     throw new Error('kv index order must be "asc" or "desc".');
   }
-  if (Number.isNaN(min) || Number.isNaN(max)) {
-    throw new Error("kv index min and max must be numbers.");
+  for (const bound of [min, max]) {
+    if (
+      bound !== undefined &&
+      (typeof bound !== "number" || Number.isNaN(bound))
+    ) {
+      throw new Error("kv index min and max must be numbers.");
+    }
   }
 }
 
@@ -654,7 +751,9 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
     ttl !== undefined &&
     !(Number.isInteger(ttl) && ttl > 0 && ttl <= 2 ** 31)
   ) {
-    throw new Error("kv ttl must be a whole number of seconds above zero.");
+    throw new Error(
+      "kv ttl must be a whole number of seconds, above zero and at most 2147483648.",
+    );
   }
 
   return ttl;
@@ -756,6 +855,7 @@ export function createKv(
           },
           async range(rangeOptions = {}) {
             checkedRange(rangeOptions);
+
             return run("index.range", name, async (h) => {
               return h.indexRange(name, rangeOptions);
             });

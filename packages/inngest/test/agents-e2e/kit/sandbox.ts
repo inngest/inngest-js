@@ -5,10 +5,17 @@
  * uploaded files and are destroyed without leaving the process. Every
  * operation is reported to the fakes server so a scenario can assert on it.
  * Requests for anything but `/v2/sandboxes` go to the real `fetch`.
+ *
+ * Processes and the commands that talk to them (the call-home wrapper and
+ * waiter of tools on `commands.run`) run for real on this machine, with
+ * `/inngest/tools` moved into a temp directory. So do the files the runners
+ * put under `/tmp/inngest-`. The sandbox's own state is that directory.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 export interface FakeSandboxOptions {
   /**
@@ -81,7 +88,31 @@ const runLocal = (
 
 export const fakeSandbox = (options: FakeSandboxOptions) => {
   const realFetch = globalThis.fetch;
-  const files = new Map<string, Uint8Array>();
+  // Files by sandbox, and the copy a snapshot keeps, so a sandbox created from
+  // a snapshot starts with the files its source had.
+  const files = new Map<string, Map<string, Uint8Array>>();
+  const snapshotFiles = new Map<string, Map<string, Uint8Array>>();
+  const filesOf = (sandboxId: string) => {
+    let found = files.get(sandboxId);
+
+    if (!found) {
+      found = new Map();
+      files.set(sandboxId, found);
+    }
+
+    return found;
+  };
+  const toolsDir = mkdtempSync(join(tmpdir(), "fake-sandbox-tools-"));
+  // Where a path or command of the sandbox lives on this machine
+  const local = (text: string) => {
+    return text.replaceAll("/inngest/tools", toolsDir);
+  };
+  const onDisk = (path: string) => {
+    return (
+      path.startsWith("/inngest/tools") ||
+      path.startsWith("/tmp/inngest-run-code-")
+    );
+  };
   const snapshots = new Map<
     string,
     Record<string, unknown> & { name?: string }
@@ -208,7 +239,12 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
       };
 
       snapshots.set(created.id, created);
-      record("snapshot.create", { id: created.id, name: request.name });
+      snapshotFiles.set(created.id, new Map(filesOf(id)));
+      record("snapshot.create", {
+        id: created.id,
+        name: request.name,
+        sandboxId: id,
+      });
 
       return Response.json({ data: created }, { status: 201 });
     }
@@ -219,6 +255,13 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         snapshotId?: string;
       };
       const created = resource(randomUUID(), request.name);
+
+      if (request.snapshotId) {
+        files.set(
+          created.id,
+          new Map(snapshotFiles.get(request.snapshotId) ?? []),
+        );
+      }
 
       record("sandbox.create", {
         id: created.id,
@@ -254,6 +297,19 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         cwd: request.cwd,
       });
 
+      if (text.includes("/inngest/tools") || text.includes("ops.log")) {
+        const ran = await runLocal(request.command.map(local), undefined);
+
+        return Response.json({
+          data: {
+            stdout: encode(ran.stdout),
+            stderr: encode(ran.stderr),
+            encoding: "base64",
+            exitCode: ran.exitCode,
+          },
+        });
+      }
+
       if (
         !canned &&
         request.cwd !== undefined &&
@@ -283,12 +339,59 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
       });
     }
 
+    if (id && rest === "/processes" && method === "POST") {
+      const request = JSON.parse(String(init?.body)) as {
+        command: string[];
+        environment?: Record<string, string>;
+        cwd?: string;
+      };
+      const child = spawn(
+        request.command[0] as string,
+        request.command.slice(1).map(local),
+        {
+          cwd: request.cwd,
+          env: {
+            ...process.env,
+            ...Object.fromEntries(
+              Object.entries(request.environment ?? {}).map(([key, value]) => {
+                return [key, local(value)];
+              }),
+            ),
+          },
+          stdio: "ignore",
+        },
+      );
+
+      child.on("error", () => {});
+      record("sandbox.process", { id, command: request.command });
+
+      return Response.json(
+        {
+          data: {
+            id: randomUUID(),
+            command: request.command,
+            pid: child.pid ?? 1,
+            state: "RUNNING",
+            startedAt: now(),
+          },
+        },
+        { status: 201 },
+      );
+    }
+
     if (id && rest === "/files") {
       const path = url.searchParams.get("path") ?? "";
 
       if (method === "PUT") {
-        const body = init?.body as Uint8Array;
-        files.set(path, body);
+        const body =
+          typeof init?.body === "string"
+            ? new TextEncoder().encode(init.body)
+            : (init?.body as Uint8Array);
+        if (onDisk(path)) {
+          mkdirSync(dirname(local(path)), { recursive: true });
+          writeFileSync(local(path), body);
+        }
+        filesOf(id).set(path, body);
         record("sandbox.upload", {
           id,
           path,
@@ -298,11 +401,11 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         return Response.json({ data: { path, bytesWritten: body.length } });
       }
 
-      let found = files.get(path);
+      let found = filesOf(id).get(path);
 
-      if (!found && path.startsWith("/tmp/inngest-git-")) {
+      if (!found && (path.startsWith("/tmp/inngest-git-") || onDisk(path))) {
         try {
-          found = new Uint8Array(readFileSync(path));
+          found = new Uint8Array(readFileSync(local(path)));
         } catch {}
       }
 

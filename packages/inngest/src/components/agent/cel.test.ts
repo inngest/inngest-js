@@ -139,3 +139,12 @@ describe("where the SDK subset and the backend CEL could differ", () => {
     ).toBe("9.9");
   });
 });
+
+describe("constant expressions", () => {
+  test("a lone string literal is constant, anything else is not", () => {
+    expect(compileExpression('"nightly"').constant).toBe('"nightly"');
+    expect(compileExpression("'nightly'").constant).toBe("'nightly'");
+    expect(compileExpression('"a" + "b"').constant).toBeUndefined();
+    expect(compileExpression("event.data.x").constant).toBeUndefined();
+  });
+});

@@ -90,8 +90,35 @@ export const run = async (
 
       const sub = (op.opts as { subscribe?: SubscribeOpts } | undefined)
         ?.subscribe;
+      if (op.op === StepOpCode.StepPlanned) {
+        // A planned step runs in a request of its own, as the executor does.
+        const ran = await runFnWithStack(fn, state, {
+          event: structuredClone(event),
+          events: [structuredClone(event)],
+          stackOrder: [...stack],
+          runStep: op.id,
+        });
+
+        if (ran.type === "step-ran") {
+          state = {
+            ...state,
+            [op.id]: {
+              id: op.id,
+              data: ran.step.data,
+              error: ran.step.error,
+            },
+          };
+          stack.push(op.id);
+        }
+
+        continue;
+      }
+
       if (op.op !== StepOpCode.WaitForEvent || !sub) {
-        state = { ...state, [op.id]: { id: op.id, data: op.data } };
+        state = {
+          ...state,
+          [op.id]: { id: op.id, data: op.data, error: op.error },
+        };
         stack.push(op.id);
         continue;
       }

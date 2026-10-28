@@ -4,6 +4,10 @@
  * declares `limits` in its config; `agent.invoke()` enforces `depth`, `spawn`
  * and `mayCall` and the loop enforces `budget`. An agent it starts inherits
  * the limits narrowed, so a sub-agent is never allowed more than its parent.
+ *
+ * Limits gate `agent.invoke()` only. A raw `step.invoke` or `sendEvent` to
+ * another agent is not checked, and `budget` only stops a loop that is given
+ * the body's `control` (see {@link AgentLimits.budget}).
  */
 import type { AgentUsage } from "./loop.ts";
 
@@ -46,8 +50,11 @@ export interface AgentLimits {
 
   /**
    * What the thread may spend. The loop stops with `stopped: "budget"` before
-   * its next model call once it is spent. A sub-agent gets what is left at
-   * most; the sub-agents' total is not capped, so pair it with `spawn`.
+   * its next model call once it is spent. This only applies to a loop that is
+   * passed `...control` (or `budget` and `onTurn` from it): a body that
+   * calls `agent.loop()` without them runs with no budget at all. A
+   * sub-agent gets what is left at most; the sub-agents' total is not capped,
+   * so pair it with `spawn`.
    */
   budget?: AgentBudget;
 }

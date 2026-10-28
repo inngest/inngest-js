@@ -141,7 +141,7 @@ export const gitPushTool = (
     run: async ({ branch }, { idempotencyKey, signal }) => {
       const ref = `refs/heads/${branch}`;
 
-      if (branch.startsWith("-") || !isPushableRef(ref)) {
+      if (!isPushableRef(ref)) {
         return agent.toolError(
           `${branch} is not a branch name git_push can push`,
         );

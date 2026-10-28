@@ -56,7 +56,9 @@ export const snapshotCacheScenario = scenario({
   run: async (ctx) => {
     const key = `acme/skills-${Date.now()}`;
     const bake = async (sha: string) => {
-      return ctx.finished(await ctx.send("bake", { key, sha }));
+      return ctx.finished(
+        await ctx.send("bake", { key, sha }, { startsRun: true }),
+      );
     };
 
     const first = await bake("sha1");

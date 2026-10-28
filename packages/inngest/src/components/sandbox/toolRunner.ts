@@ -19,6 +19,13 @@
  * ends soon after there is news. A quiet stretch longer than the window
  * continues in a fresh wait step.
  *
+ * A tool declared with `waits` suspends the code instead. Its call is answered
+ * with a yield, the process exits, and the tool's body runs as steps with no
+ * command running. Then `<id>:resume:<n>` starts the command again with the
+ * reply of every call so far (the journal) uploaded for the stubs to replay.
+ * Each resumed run is a segment: it has its own command clock and its tool
+ * steps are named `<id>:r<n>:tool:<name>:<id>`.
+ *
  * The host reads the log by line count, and user output stays
  * in files until the process exits. `toolStubs.ts` describes the log.
  */
@@ -40,6 +47,7 @@ import type {
 import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
+  callWaits,
   maxToolReplyBytes,
   parseToolEvent,
   resolveToolCall,
@@ -122,7 +130,30 @@ interface Round {
    * Set once the command has exited.
    */
   result?: SandboxOperationResultV1;
+
+  /**
+   * The exit code in the log, set with `result`.
+   */
+  exitCode?: number;
+
+  /**
+   * Whether a stub wrote its yield line in these lines.
+   */
+  yielded?: boolean;
 }
+
+/**
+ * A reply line as the journal keeps it, with the tool it answered and the
+ * stub's hash of the arguments, so a replay that makes different calls ends
+ * (exit 76) instead of getting another call's reply.
+ */
+const journaled = (line: string, request: ToolRequest): string => {
+  return JSON.stringify({
+    ...JSON.parse(line),
+    tool: request.tool,
+    h: request.h,
+  });
+};
 
 const errorMessage = (error: unknown): string => {
   return String(error instanceof Error ? error.message : error).slice(0, 2000);
@@ -269,12 +300,17 @@ export const runCommandWithTools = async (
     const log = waited.stdout.split("\n").slice(0, -1);
     const requests: Round["requests"] = [];
     let result: SandboxOperationResultV1 | undefined;
+    let exitCode: number | undefined;
+    let yielded = false;
 
     for (const line of log) {
       const event = parseToolEvent(line);
       if (event?.op === "call") {
         requests.push({ request: event, line });
+      } else if (event?.op === "yielded") {
+        yielded = true;
       } else if (event?.op === "exit") {
+        exitCode = event.code;
         result = execOperationResult({
           stdout: decodeBase64(event.stdout, "stdout"),
           stderr: decodeBase64(event.stderr, "stderr"),
@@ -283,7 +319,14 @@ export const runCommandWithTools = async (
       }
     }
 
-    return { now: Date.now(), lines: lines + log.length, requests, result };
+    return {
+      now: Date.now(),
+      lines: lines + log.length,
+      requests,
+      result,
+      exitCode,
+      yielded,
+    };
   };
 
   const abort = async (dir: string, reason: string): Promise<never> => {
@@ -302,6 +345,8 @@ export const runCommandWithTools = async (
     throw new Error(reason);
   };
 
+  let segment = 0;
+
   const answer = async ({
     request: call,
     line,
@@ -309,7 +354,7 @@ export const runCommandWithTools = async (
     request: ToolRequest;
     line: string;
   }): Promise<string> => {
-    const stepId = `${id}:tool:${call.tool}:${call.id}`;
+    const stepId = `${segment === 0 ? id : `${id}:r${segment}`}:tool:${call.tool}:${call.id}`;
     const idempotencyKey = `${scope}${stepId}`;
 
     try {
@@ -363,39 +408,96 @@ export const runCommandWithTools = async (
     }
   };
 
-  const started = await host.run(
-    idOrOptions,
-    async () => {
-      const startedAt = Date.now();
-      // The step's own ID, which stays distinct when a command ID repeats.
-      const stepId = getAsyncCtxSync()?.execution?.executingStep?.id ?? id;
-      const dir = `${toolsRoot}/${sha256().update(`${scope}${stepId}`).digest("hex")}`;
-      // The wait doesn't need the process to exist yet, so it runs alongside.
-      const [, round] = await Promise.all([
-        sandbox.processes.start({
-          command: ["/bin/sh", "-c", wrapperScript, "sh", dir, ...command],
-          ...(environment && { environment }),
-          ...(cwd !== undefined && { cwd }),
-        }),
-        follow(dir, 0, [], Math.min(waitWindowMs, timeoutMs)),
-      ]);
+  /**
+   * Starts the process, with `journal` (the replies to replay) if it has any.
+   */
+  const launch = (
+    stepOptions: StepOptionsOrId,
+    journal: string[],
+    stepMeta: SandboxTraceMetadata,
+  ) => {
+    return host.run(
+      stepOptions,
+      async () => {
+        const startedAt = Date.now();
+        // The step's own ID, which stays distinct when a command ID repeats.
+        const stepId =
+          getAsyncCtxSync()?.execution?.executingStep?.id ??
+          getStepOptions(stepOptions).id;
+        const dir = `${toolsRoot}/${sha256().update(`${scope}${stepId}`).digest("hex")}`;
+        const journalPath = `${dir}.journal`;
 
-      return { ...round, startedAt, dir };
-    },
-    meta,
-  );
+        if (journal.length > 0) {
+          await sandbox.files.upload({
+            path: journalPath,
+            data: `${journal.join("\n")}\n`,
+          });
+        }
 
-  const { dir } = started;
-  const seen = new Set<number>();
+        // The wait doesn't need the process to exist yet, so it runs alongside.
+        const [, round] = await Promise.all([
+          sandbox.processes.start({
+            command: ["/bin/sh", "-c", wrapperScript, "sh", dir, ...command],
+            ...((environment || journal.length > 0) && {
+              environment: {
+                ...environment,
+                ...(journal.length > 0 && {
+                  INNGEST_TOOLS_JOURNAL: journalPath,
+                }),
+              },
+            }),
+            ...(cwd !== undefined && { cwd }),
+          }),
+          follow(dir, 0, [], Math.min(waitWindowMs, timeoutMs)),
+        ]);
+
+        return { ...round, startedAt, dir };
+      },
+      stepMeta,
+    );
+  };
+
+  const started = await launch(idOrOptions, [], meta);
+
+  let { dir, startedAt } = started;
+  let seen = new Set<number>();
   let state: Round = started;
   let waits = 0;
+  let calls = 0;
+  // The reply to every call answered so far, in call order
+  const journal: string[] = [];
+  // The call to a tool that waits, once the process has been told to exit
+  let suspended: { request: ToolRequest; line: string } | undefined;
+  // Whether the stub confirmed it exited to suspend, not on its own
+  let yielded = false;
 
   for (;;) {
+    yielded ||= state.yielded === true;
+
+    if (state.result && suspended && yielded && state.exitCode === 75) {
+      journal.push(journaled(await answer(suspended), suspended.request));
+      yielded = false;
+      segment += 1;
+      suspended = undefined;
+      seen = new Set();
+      const resumed = await launch(
+        sdkStep(`${id}:resume:${segment}`, runningNames[commandKind(command)]),
+        journal,
+        { ...meta, kind: "wait" },
+      );
+
+      state = resumed;
+      dir = resumed.dir;
+      startedAt = resumed.startedAt;
+
+      continue;
+    }
+
     if (state.result) {
       return state.result;
     }
 
-    if (state.now - started.startedAt > timeoutMs) {
+    if (state.now - startedAt > timeoutMs) {
       return abort(
         dir,
         `Command with tools exceeded its ${timeoutMs}ms timeout`,
@@ -403,31 +505,59 @@ export const runCommandWithTools = async (
     }
 
     const pending: Round["requests"] = [];
-    for (const { request, line } of state.requests) {
-      if (seen.has(request.id)) {
+    for (const { request, line } of [...state.requests].sort((a, b) => {
+      return a.request.id - b.request.id;
+    })) {
+      if (seen.has(request.id) || suspended) {
         continue;
       }
 
       seen.add(request.id);
-
-      if (seen.size > maxCalls) {
-        return abort(dir, `Command made more than ${maxCalls} tool calls`);
-      }
-
       pending.push({ request, line });
     }
 
+    // Calls after one that waits are dropped: the code asks for them again
+    // when it runs again.
+    const waiting = pending.findIndex(({ request }) => {
+      return callWaits(tools, request.tool);
+    });
+    const answerable = waiting < 0 ? pending : pending.slice(0, waiting);
+
+    // Calls dropped after a waiting one are counted when they are made again
+    calls += answerable.length + (waiting < 0 ? 0 : 1);
+
+    if (calls > maxCalls) {
+      return abort(dir, `Command made more than ${maxCalls} tool calls`);
+    }
+
     const replies: string[] = [];
-    for (let at = 0; at < pending.length; at += maxConcurrentCalls) {
+    for (let at = 0; at < answerable.length; at += maxConcurrentCalls) {
       replies.push(
         ...(await Promise.all(
-          pending.slice(at, at + maxConcurrentCalls).map(answer),
+          answerable.slice(at, at + maxConcurrentCalls).map(answer),
         )),
       );
     }
 
+    journal.push(
+      ...replies.map((reply, at) => {
+        return journaled(
+          reply,
+          (answerable[at] as (typeof pending)[number]).request,
+        );
+      }),
+    );
+
+    const waited = waiting < 0 ? undefined : pending[waiting];
+    if (waited) {
+      suspended = waited;
+      replies.push(
+        JSON.stringify({ op: "reply", id: waited.request.id, yield: true }),
+      );
+    }
+
     const { lines } = state;
-    const remainingMs = timeoutMs - (state.now - started.startedAt);
+    const remainingMs = timeoutMs - (state.now - startedAt);
     state = await host.run(
       sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
       () => {

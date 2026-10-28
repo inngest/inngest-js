@@ -133,7 +133,8 @@ const refPattern = /^refs\/(heads|tags)\/[A-Za-z0-9._/@+-]+$/;
  * @param ref Full ref name, such as `refs/heads/agent/fix`.
  */
 export const isPushableRef = (ref: string): boolean => {
-  return refPattern.test(ref) && !ref.includes("..");
+  // A name part starting with "-" would read as an option to git.
+  return refPattern.test(ref) && !ref.includes("..") && !ref.includes("/-");
 };
 
 /**

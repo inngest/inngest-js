@@ -35,7 +35,10 @@ import {
   type TriggerEventFromFunction,
 } from "../types.ts";
 import {
+  eventNameOf,
   openSubscription,
+  type SubscribeData,
+  type SubscribeEvent,
   type SubscribeOptions,
   type Subscription,
   streamsOf,
@@ -579,15 +582,22 @@ export const createStepTools = <
      * subscription for the life of the run and saves every matching event as
      * a numbered message, so nothing sent while the function is busy is lost.
      */
-    subscribe: <TData = unknown>(
+    subscribe: <
+      TData = unknown,
+      const TOpts extends SubscribeOptions = SubscribeOptions,
+    >(
       idOrOptions: StepOptionsOrId,
-      opts: SubscribeOptions,
-    ): Promise<Subscription<TData>> => {
+      opts: TOpts,
+    ): Promise<
+      Subscription<unknown extends TData ? SubscribeData<TOpts> : TData>
+    > => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
       const streams = streamsOf(opts);
 
-      return openSubscription<TData>(
+      return openSubscription<
+        unknown extends TData ? SubscribeData<TOpts> : TData
+      >(
         function op(stepId, mode, seq, stream) {
           const target = streams[stream];
 
@@ -596,7 +606,7 @@ export const createStepTools = <
           }
 
           return tools["~subscribeOp"](stepId, {
-            event: target.event,
+            event: eventNameOf(target.event),
             if: target.if,
             subscribe: {
               key: id,
