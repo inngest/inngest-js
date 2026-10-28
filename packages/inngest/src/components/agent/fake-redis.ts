@@ -150,31 +150,6 @@ export async function startFakeRedis() {
 
         return `:${count}\r\n`;
       }
-      case "SADD": {
-        let set = live(a[0] as string);
-        if (!set) {
-          set = { type: "zset", value: new Map() };
-          data.set(a[0] as string, set);
-        }
-        (set as { value: Map<string, number> }).value.set(a[1] as string, 0);
-
-        return ":1\r\n";
-      }
-      case "SMEMBERS": {
-        const set = live(a[0] as string);
-
-        return array(set?.type === "zset" ? [...set.value.keys()] : []);
-      }
-      case "SREM": {
-        const set = live(a[0] as string);
-        for (const member of a.slice(1)) {
-          if (set?.type === "zset") {
-            set.value.delete(member);
-          }
-        }
-
-        return ":1\r\n";
-      }
       case "SCAN": {
         const pattern = a[a.findIndex((x) => x.toUpperCase() === "MATCH") + 1];
         const matcher = glob(pattern ?? "*");
@@ -184,16 +159,34 @@ export async function startFakeRedis() {
 
         return `*2\r\n${bulk("0")}${array(keys)}`;
       }
+      case "ZREMRANGEBYSCORE": {
+        const z = live(a[0] as string);
+        let count = 0;
+        if (z?.type === "zset") {
+          const hi = Number(a[2]);
+          for (const [member, score] of [...z.value]) {
+            if (score <= hi) {
+              z.value.delete(member);
+              count++;
+            }
+          }
+        }
+
+        return `:${count}\r\n`;
+      }
       case "ZADD": {
+        const gt = a[1]?.toUpperCase() === "GT";
+        const [score, member] = gt ? [a[2], a[3]] : [a[1], a[2]];
         let z = live(a[0] as string);
         if (!z) {
           z = { type: "zset", value: new Map() };
           data.set(a[0] as string, z);
         }
-        (z as { value: Map<string, number> }).value.set(
-          a[2] as string,
-          Number(a[1]),
-        );
+        const zset = (z as { value: Map<string, number> }).value;
+        const next = score === "+inf" ? Infinity : Number(score);
+        if (!gt || next > (zset.get(member as string) ?? -Infinity)) {
+          zset.set(member as string, next);
+        }
 
         return ":1\r\n";
       }
@@ -229,7 +222,15 @@ export async function startFakeRedis() {
           entries = entries.slice(0, Number(a[limitAt + 2]));
         }
 
-        return array(entries.flatMap(([m, s]) => [m, String(s)]));
+        const withScores = a.some((x) => {
+          return x.toUpperCase() === "WITHSCORES";
+        });
+
+        return array(
+          entries.flatMap(([m, s]) => {
+            return withScores ? [m, String(s)] : [m];
+          }),
+        );
       }
       default:
         return `-ERR unknown command ${name}\r\n`;
@@ -268,6 +269,16 @@ export async function startFakeRedis() {
      */
     advance(ms: number) {
       state.now += ms;
+    },
+
+    /**
+     * The members of a sorted set.
+     * @param key Key of the set.
+     */
+    members(key: string) {
+      const found = data.get(key);
+
+      return found?.type === "zset" ? [...found.value.keys()].sort() : [];
     },
     keys() {
       return [...data.keys()].sort();

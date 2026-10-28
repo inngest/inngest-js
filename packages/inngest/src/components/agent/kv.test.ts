@@ -255,6 +255,36 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     };
   });
 
+  test("the redis registry forgets expired keys on write", async () => {
+    const server = await startFakeRedis();
+    const env = createKv({ adapter: redisKvAdapter(server.url) }).with({
+      id: "app",
+      env: null,
+    }).env;
+
+    await env.set("a", 1, { ttl: 10 });
+    expect(await env.all()).toEqual({ a: 1 });
+
+    // Server time moves; the client clock must pass the slack too.
+    server.advance(11_000);
+    const real = Date.now;
+    Date.now = () => {
+      return real() + 200_000;
+    };
+    try {
+      await env.set("b", 2, { ttl: 10 });
+    } finally {
+      Date.now = real;
+    }
+
+    const registry = server.keys().find((key) => {
+      return key.endsWith("|keys");
+    }) as string;
+    expect(server.members(registry)).toEqual(["t:b"]);
+    expect(await env.all()).toEqual({ b: 2 });
+    await server.close();
+  });
+
   test("inside a function each operation is a memoized step", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const client = new Inngest({ id: testClientId });

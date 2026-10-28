@@ -228,20 +228,35 @@ export function redisKvAdapter(url: string): KvAdapter {
     return (await client()).command(...args);
   }
 
-  // The registry is cleaned of expired fields only by `all()`, and a write
-  // racing `all()` or `clear()` can leave a key unlisted.
-  // Each hash lists its expiring fields and indexes in a set, so `all()` and
-  // `clear()` touch only that hash. Entries are `t:<field>` or `z:<index>`.
+  // Each hash lists its expiring fields and indexes in a sorted set scored by
+  // when the entry may be forgotten (never, for an index), so `all()` and
+  // `clear()` touch only that hash and writes keep the set small. Entries are
+  // `t:<field>` or `z:<index>`. A write racing `clear()` can leave a key
+  // unlisted.
   function registry(hash: string) {
     return `${hash}|keys`;
   }
 
-  async function register(hash: string, entry: string) {
-    await command("SADD", registry(hash), entry);
+  // The slack covers a clock that is behind the server's.
+  const slackMs = 60_000;
+
+  async function register(hash: string, entry: string, ttl?: number) {
+    const now = Date.now();
+    const until =
+      ttl === undefined ? "+inf" : String(now + ttl * 1000 + slackMs);
+
+    // GT: a later write with a shorter life never lowers the score.
+    await command("ZADD", registry(hash), "GT", until, entry);
+    await command("ZREMRANGEBYSCORE", registry(hash), "-inf", String(now));
   }
 
   async function members(hash: string) {
-    return (await command("SMEMBERS", registry(hash))) as string[];
+    return (await command(
+      "ZRANGEBYSCORE",
+      registry(hash),
+      String(Date.now()),
+      "+inf",
+    )) as string[];
   }
 
   return {
@@ -261,7 +276,7 @@ export function redisKvAdapter(url: string): KvAdapter {
         return;
       }
 
-      await register(hash, `t:${field}`);
+      await register(hash, `t:${field}`, ttl);
       await command("SET", expiring(hash, field), value, "EX", String(ttl));
       await command("HDEL", hash, field);
     },
@@ -270,7 +285,7 @@ export function redisKvAdapter(url: string): KvAdapter {
         return false;
       }
 
-      await register(hash, `t:${field}`);
+      await register(hash, `t:${field}`, ttl);
 
       const args = ["SET", expiring(hash, field), value];
       if (ttl !== undefined) {
@@ -305,18 +320,12 @@ export function redisKvAdapter(url: string): KvAdapter {
             return expiring(hash, field);
           }),
         )) as (string | null)[];
-        const expired: string[] = [];
         fields.forEach((field, i) => {
           const value = values[i];
-          if (value === null || value === undefined) {
-            expired.push(`t:${field}`);
-          } else {
+          if (value !== null && value !== undefined) {
             out[field] = value;
           }
         });
-        if (expired.length > 0) {
-          await command("SREM", registry(hash), ...expired);
-        }
       }
 
       return out;
