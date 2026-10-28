@@ -118,6 +118,18 @@ describe("thread key from a trigger", () => {
     });
   });
 
+  test("wildcard triggers and the agent message event are rejected", () => {
+    for (const event of ["slack/*", "agent/message"]) {
+      expect(() => {
+        return createAgentFunction(
+          makeClient(),
+          { id: "bot", kv, on: { event, thread: () => "t" } },
+          async () => {},
+        );
+      }).toThrow(/plain event name/);
+    }
+  });
+
   test("two triggers on one event name are rejected", () => {
     expect(() => {
       return createAgentFunction(

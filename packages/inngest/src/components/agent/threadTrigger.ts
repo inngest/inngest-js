@@ -130,6 +130,12 @@ export function createThreadStarter(
   const names = new Set<string>();
 
   for (const trigger of triggers) {
+    if (trigger.event === agentMessageEvent || trigger.event.includes("*")) {
+      throw new Error(
+        `Agent "${id}": the trigger "${trigger.event}" must be a plain event name other than "${agentMessageEvent}".`,
+      );
+    }
+
     if (names.has(trigger.event)) {
       throw new Error(
         `Agent "${id}": two triggers on "${trigger.event}"; use one trigger per event name.`,
