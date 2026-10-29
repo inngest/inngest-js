@@ -890,64 +890,82 @@ export const retireSupersededSnapshots = async (
   // Everything in the name but its key, which is its last part.
   const slot = name.slice(0, name.lastIndexOf("/") + 1);
 
+  // A name with no slot would match every snapshot there is.
+  if (!slot) {
+    return;
+  }
+
   try {
     await ciRun(run, steps.retireSupersededSnapshots(stepId), async () => {
-      const current = await waitUntilReady(run, snapshotId);
-
-      if (current?.status !== "READY") {
+      try {
+        return await retireInSlot(run, slot, snapshotId);
+      } catch {
+        // Nothing worth retrying the step for: the older entries expire.
         return { deleted: 0 };
       }
-
-      let deleted = 0;
-      let cursor: string | undefined;
-
-      for (let page = 0; page < supersededPageLimit; page++) {
-        const listed = (await snapshotsClient(run).list({
-          limit: 100,
-          ...(cursor ? { cursor } : {}),
-        })) as {
-          items: SnapshotResource[];
-          page?: { hasMore?: boolean; cursor?: string };
-        };
-
-        for (const old of listed.items) {
-          if (
-            old.id === snapshotId ||
-            old.status !== "READY" ||
-            !old.name?.startsWith(slot) ||
-            old.createdAt > current.createdAt
-          ) {
-            continue;
-          }
-
-          try {
-            const snapshot = await snapshotsClient(run).get(old.id);
-
-            await snapshot?.delete();
-
-            deleted++;
-          } catch (error) {
-            if (!isSnapshotNotFound(error)) {
-              run.ci.logger?.warn(
-                { snapshotId: old.id, error },
-                "Couldn't delete a snapshot a new one replaced; it will expire on its own",
-              );
-            }
-          }
-        }
-
-        cursor = listed.page?.cursor;
-
-        if (!listed.page?.hasMore || !cursor) {
-          break;
-        }
-      }
-
-      return { deleted };
     });
   } catch {
     // Best effort only.
   }
+};
+
+const retireInSlot = async (
+  run: CiRunScope,
+  slot: string,
+  snapshotId: string,
+): Promise<{ deleted: number }> => {
+  const current = await waitUntilReady(run, snapshotId);
+
+  if (current?.status !== "READY") {
+    return { deleted: 0 };
+  }
+
+  let deleted = 0;
+  let cursor: string | undefined;
+
+  for (let page = 0; page < supersededPageLimit; page++) {
+    const listed = (await snapshotsClient(run).list({
+      limit: 100,
+      ...(cursor ? { cursor } : {}),
+    })) as {
+      items: SnapshotResource[];
+      page?: { hasMore?: boolean; cursor?: string };
+    };
+
+    for (const old of listed.items) {
+      if (
+        old.id === snapshotId ||
+        old.status !== "READY" ||
+        !old.name?.startsWith(slot) ||
+        old.createdAt >= current.createdAt
+      ) {
+        continue;
+      }
+
+      try {
+        const snapshot = await snapshotsClient(run).get(old.id);
+
+        await snapshot?.delete();
+
+        deleted++;
+      } catch (error) {
+        if (!isSnapshotNotFound(error)) {
+          run.ci.logger?.warn(
+            { snapshotId: old.id, error },
+            "Couldn't delete a snapshot a new one replaced; it will expire on its own",
+          );
+        }
+      }
+    }
+
+    cursor = listed.page?.cursor;
+
+    if (!listed.page?.hasMore || !cursor) {
+      break;
+    }
+  }
+
+  return { deleted };
 };
 
 /**

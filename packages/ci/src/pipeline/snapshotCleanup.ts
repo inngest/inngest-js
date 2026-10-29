@@ -63,10 +63,17 @@ export const snapshotCleanupFunction = (
  * `handOffSnapshots`), so its defers only start when the build fails or is
  * cancelled.
  */
-export const ownSnapshot = (run: CiRunScope, snapshotId: string): void => {
+export const ownSnapshot = (
+  run: CiRunScope,
+  snapshotId: string,
+  options: {
+    /** Whether to delete it when the run ends. Defaults to true. */
+    defer?: boolean;
+  } = {},
+): void => {
   run.createdSnapshots.add(snapshotId);
 
-  if (run.snapshotCleanups.has(snapshotId)) {
+  if (options.defer === false || run.snapshotCleanups.has(snapshotId)) {
     return;
   }
 
