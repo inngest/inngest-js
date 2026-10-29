@@ -177,6 +177,50 @@ describe("agent function", () => {
   });
 });
 
+describe("inbox timeouts", () => {
+  test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const expired = await inbox.next({ timeout: "1s" });
+        const second = await inbox.next();
+
+        return [first?.data.content, expired, second?.data.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("a"),
+      incoming: [message("user", "b")],
+      timeouts: 1,
+    });
+
+    expect(output).toEqual(["a", undefined, "b"]);
+  });
+
+  test("a message that arrives before the timeout is returned", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const second = await inbox.next({ timeout: "30s" });
+
+        return second?.data.content;
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("a"),
+      saved: [message("user", "b")],
+    });
+
+    expect(output).toBe("b");
+  });
+});
+
 describe("agent cleanup", () => {
   test("a deferred function clears the run's run-scoped KV", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });

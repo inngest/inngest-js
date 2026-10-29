@@ -41,6 +41,7 @@ export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
 export type {
   InboxMessage,
+  NextOptions,
   SubscribeOptions,
   Subscription,
 } from "./components/agent/subscribe";

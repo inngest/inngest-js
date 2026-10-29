@@ -385,6 +385,7 @@ export type {
 export { slack, slackMessageEvent } from "./slack.ts";
 export type {
   InboxMessage,
+  NextOptions,
   SubscribeData,
   SubscribeEvent,
   SubscribeOptions,

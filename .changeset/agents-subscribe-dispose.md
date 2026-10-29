@@ -21,3 +21,7 @@ Removed from `inngest/experimental/agents`: the `agentStop` event type, `agentSt
 `inbox.next({ timeout })` stops waiting after the timeout, like `step.waitForEvent()`: it returns `undefined`, the run goes on, and a message sent later is read by the next call. A timeout that expired stays expired when the run replays. The options of a subscription and of each event in `events` are checked for unknown fields.
 
 A read that finds no message after its park was answered throws instead of returning `null`; `null` is only the end of a subscription that `close()` ended.
+
+A `close()` that ends a read which is still waiting, and `next({ timeout })`, need a Dev Server or backend that has the matching `step.subscribe` support (the OSS `step-subscribe` change): without it the read is never answered as closed or timed out. `InboxMessage.user` is optional, because messages saved before it was kept do not have it.
+
+An agent body's `inbox.next({ timeout })` takes the same timeout and returns `undefined` when it expires, so a body can wait for a message for a while without racing `next()` against a sleep.

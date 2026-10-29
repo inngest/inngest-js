@@ -59,7 +59,7 @@ import {
 import type { AgentTurn } from "./loop.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
-import type { InboxMessage, Subscription } from "./subscribe.ts";
+import type { InboxMessage, NextOptions, Subscription } from "./subscribe.ts";
 import {
   agentMessageEvent,
   getThread,
@@ -434,6 +434,18 @@ export interface ThreadInbox<
   next(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
 
   /**
+   * Waits for the next message for at most `timeout`, and returns `undefined`
+   * when it expires. The wait is durable, like `step.waitForEvent()`'s: it
+   * does not hold the run's process, and a message that arrives after the timeout
+   * is read by the next call. Messages the inbox skips (a stop, or one that
+   * breaks its schema) start a new wait with the same timeout.
+   * @param options The timeout.
+   */
+  next(
+    options: NextOptions,
+  ): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null | undefined>;
+
+  /**
    * Reads the next message if it has already arrived, without waiting. It is a
    * step, so a replay reads the same answer.
    */
@@ -645,13 +657,17 @@ function threadInbox(
     );
   }
 
-  async function next() {
+  async function next(options?: NextOptions) {
     if (delivered > 0) {
       await recorder.waiting();
     }
 
     for (;;) {
-      const raw = await inbox.next();
+      const raw = options ? await inbox.next(options) : await inbox.next();
+      if (raw === undefined) {
+        return undefined;
+      }
+
       if (!raw) {
         return null;
       }
@@ -677,7 +693,7 @@ function threadInbox(
 
   return {
     inbox: {
-      next,
+      next: next as ThreadInbox["next"],
       async poll() {
         for (;;) {
           const raw = await inbox.poll();
