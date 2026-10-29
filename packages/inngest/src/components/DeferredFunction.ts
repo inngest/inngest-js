@@ -41,11 +41,39 @@ function parseExperimentRef(value: unknown): ExperimentRef | undefined {
   return undefined;
 }
 
+const parentStatuses = new Set<DeferredFunction.ParentStatus>([
+  "Completed",
+  "Failed",
+  "Cancelled",
+]);
+
+/**
+ * Validates the parent run's error into a `DeferredFunction.ParentError`, or
+ * `undefined` when it's absent or malformed.
+ */
+function parseParentError(
+  value: unknown,
+): DeferredFunction.ParentError | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    typeof value.message !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    name: value.name,
+    message: value.message,
+    ...(typeof value.stack === "string" ? { stack: value.stack } : {}),
+    ...(value.truncated === true ? { truncated: true } : {}),
+  };
+}
+
 /**
  * Strips our `_inngest` metadata off an event's `data` in place and returns the
- * parent routing metadata extracted from it.
+ * parent routing and outcome metadata extracted from it.
  */
-function stripInngestMetadata(event: {
+export function stripInngestMetadata(event: {
   data?: Record<string, unknown>;
 }): DeferredFunction.Parent {
   const data = event.data ?? {};
@@ -54,7 +82,13 @@ function stripInngestMetadata(event: {
   if (!isRecord(_inngest)) {
     throw new UnreachableError("deferred event is missing _inngest metadata");
   }
-  const { parent_fn_slug, parent_run_id } = _inngest;
+  const {
+    parent_fn_slug,
+    parent_run_id,
+    parent_status,
+    parent_error,
+    parent_ended_at,
+  } = _inngest;
   if (typeof parent_fn_slug !== "string") {
     throw new UnreachableError(
       "deferred event _inngest metadata is missing parent_fn_slug",
@@ -73,6 +107,14 @@ function stripInngestMetadata(event: {
     fnSlug: parent_fn_slug,
     runId: parent_run_id,
     experiment: parseExperimentRef(experiment),
+    status: parentStatuses.has(parent_status as DeferredFunction.ParentStatus)
+      ? (parent_status as DeferredFunction.ParentStatus)
+      : undefined,
+    error: parseParentError(parent_error),
+    endedAt:
+      typeof parent_ended_at === "number"
+        ? new Date(parent_ended_at)
+        : undefined,
   };
 }
 
@@ -193,14 +235,38 @@ export namespace DeferredFunction {
   >;
 
   /**
+   * How the parent run ended.
+   */
+  export type ParentStatus = "Completed" | "Failed" | "Cancelled";
+
+  /**
+   * The parent run's error, as reported in `inngest/function.finished`.
+   * `truncated` is set when the server reduced an oversized error to its name
+   * and message.
+   */
+  export type ParentError = {
+    name: string;
+    message: string;
+    stack?: string;
+    truncated?: true;
+  };
+
+  /**
    * Metadata describing the parent run that triggered the deferred run. Derived
    * from `event.data._inngest` and surfaced on the handler ctx as `parents[i]`,
    * aligned with `events[i]`.
+   *
+   * `status`, `error` and `endedAt` describe how the parent ended. They are
+   * `undefined` when the Inngest server predates parent outcomes; `error` is
+   * also `undefined` unless the parent failed with an error.
    */
   export type Parent = {
     fnSlug: string;
     runId: string;
     experiment?: ExperimentRef;
+    status?: ParentStatus;
+    error?: ParentError;
+    endedAt?: Date;
   };
 }
 
