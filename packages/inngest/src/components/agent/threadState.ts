@@ -190,10 +190,6 @@ export const threadRecorder = (
 };
 
 /**
- * Marks the thread idle once `runId` has ended, unless a newer run has written
- * the record since or the thread was stopped.
- */
-/**
  * Reads the thread's `lastRun`.
  */
 export const readLastRun = (
@@ -205,6 +201,10 @@ export const readLastRun = (
   return store.thread.get(lastRunKey);
 };
 
+/**
+ * Marks the thread idle once `runId` has ended, unless a newer run has written
+ * the record since or the thread was stopped.
+ */
 export const markThreadIdle = async (
   /**
    * KV store of the thread state.
