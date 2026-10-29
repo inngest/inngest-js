@@ -70,18 +70,28 @@ export interface InboxToolMessage {
 }
 
 /**
- * What the tools need of an inbox: `inbox.listen`, `next`, `unread` and `current`.
+ * A reader of the messages of one listened event: it has a cursor of its own,
+ * so reading never takes a message from the conversation, the other listeners
+ * or the loop's steering.
+ */
+export interface InboxToolView {
+  next: (options: {
+    timeout: number | string;
+  }) => Promise<InboxToolMessage | null | undefined>;
+  unread: () => Promise<InboxToolMessage[]>;
+  current: () => Promise<InboxToolMessage[]>;
+}
+
+/**
+ * What the tools need of the thread's inbox: `inbox.listen()` and
+ * `inbox.of()`.
  */
 export interface InboxToolInbox {
   listen: (
     event: string | EventType<string, never>,
     options: { thread: string; if?: string },
   ) => Promise<{ stop: () => Promise<void> }>;
-  next: (options: {
-    timeout: number | string;
-  }) => Promise<InboxToolMessage | null | undefined>;
-  unread: () => Promise<InboxToolMessage[]>;
-  current: () => Promise<InboxToolMessage[]>;
+  of: (event: string | EventType<string, never>) => InboxToolView;
 }
 
 export type InboxToolName =
@@ -105,6 +115,12 @@ const eventName = (source: InboxToolSource): string => {
  * wrapping it as `(<expression>)` cannot be closed early by the expression.
  */
 export const isWrappable = (expression: string): boolean => {
+  // A comment or a raw string would hide a parenthesis from this check and
+  // not from the evaluator, and a line break could end the wrapping one.
+  if (/[\u0000-\u001f]|\/\/|#|\br["']/i.test(expression)) {
+    return false;
+  }
+
   let depth = 0;
   let quote: string | undefined;
 
@@ -184,6 +200,14 @@ export const createInboxTools = (
   const maxWaitMs = durationToMs(config.maxWait ?? defaultMaxWait, {
     name: "inboxTools.maxWait",
   });
+  const names = config.listen.map(eventName);
+
+  if (new Set(names).size !== names.length) {
+    throw new Error(
+      "inboxTools.listen names an event twice; list each event once",
+    );
+  }
+
   const sources = new Map(
     config.listen.map((source) => {
       return [eventName(source), source] as const;
@@ -192,9 +216,39 @@ export const createInboxTools = (
   const allowed = [...sources.keys()].join(", ") || "none";
   const listeners = new Map<
     string,
-    { source: string; stop: () => Promise<void> }
+    {
+      source: string;
+      ready: Promise<{
+        listener: { stop: () => Promise<void> };
+        view: InboxToolView;
+      }>;
+    }
   >();
   const started = new Map<string, number>();
+  // The readers to use for `as`: that listener's, or every listener's.
+  const viewsFor = async (as: string | undefined): Promise<InboxToolView[]> => {
+    if (as !== undefined) {
+      const listener = listeners.get(as);
+
+      if (!listener) {
+        throw new Error(
+          `No listener named ${as}. Running: ${[...listeners.keys()].join(", ") || "none"}.`,
+        );
+      }
+
+      return [(await listener.ready).view];
+    }
+
+    if (listeners.size === 0) {
+      throw new Error("You are not listening to anything. Use inbox_listen.");
+    }
+
+    return Promise.all(
+      [...listeners.values()].map(async (listener) => {
+        return (await listener.ready).view;
+      }),
+    );
+  };
 
   return {
     inbox_listen: tool.group({
@@ -236,39 +290,56 @@ export const createInboxTools = (
           (narrow.length > maxIfChars || !isWrappable(narrow))
         ) {
           throw new Error(
-            `"if" must be a CEL expression of at most ${maxIfChars} characters with balanced parentheses and quotes.`,
+            `"if" must be a single-line CEL expression of at most ${maxIfChars} characters with balanced parentheses and quotes, and no comments or raw strings.`,
           );
         }
 
         // The configured filter and the model's, both of which must hold. The
-        // model's was checked to balance its parentheses and quotes, so it
-        // can't close the one around it.
+        // model's was checked so that it can't close the parenthesis around it.
         const filters = [source.if, narrow].filter((filter) => {
           return filter !== undefined && filter !== "";
         });
-        const listener = await inbox.listen(source.event, {
-          thread: source.thread,
-          ...(filters.length > 0 && {
-            if: filters
-              .map((filter) => {
-                return `(${filter})`;
-              })
-              .join(" && "),
-          }),
-        });
+        // Taken before the first await, so that listens made at the same time
+        // can't pass the same checks.
+        const reserved = (async () => {
+          const listener = await inbox.listen(source.event, {
+            thread: source.thread,
+            ...(filters.length > 0 && {
+              if: filters
+                .map((filter) => {
+                  return `(${filter})`;
+                })
+                .join(" && "),
+            }),
+          });
+
+          return { listener, view: inbox.of(source.event) };
+        })();
 
         started.set(name, count + 1);
-        listeners.set(as, { source: name, stop: listener.stop });
+        listeners.set(as, { source: name, ready: reserved });
+
+        try {
+          await reserved;
+        } catch (error) {
+          listeners.delete(as);
+          started.set(name, count);
+
+          throw error;
+        }
 
         return { listening: as, source: name };
       },
     }),
 
     inbox_wait: tool.group({
-      description: `Wait for the next message to arrive, up to the timeout (at most ${String(config.maxWait ?? defaultMaxWait)}), and return it. Returns nothing if none came in time. Messages come from every listener and from the conversation, each tagged with its source.`,
-      input: z.object({ timeout: z.union([z.string(), z.number()]) }),
+      description: `Wait for the next message of a listener to arrive, up to the timeout (at most ${String(config.maxWait ?? defaultMaxWait)}), and return it. Name the listener with "as" when you have more than one. Returns nothing if none came in time.`,
+      input: z.object({
+        timeout: z.union([z.string(), z.number()]),
+        as: z.string().optional(),
+      }),
       waits: true,
-      run: async ({ timeout }) => {
+      run: async ({ timeout, as }) => {
         const ms =
           timeout === 0 ? 0 : durationToMs(timeout, { name: "timeout" });
 
@@ -278,7 +349,15 @@ export const createInboxTools = (
           );
         }
 
-        const message = await inbox.next({ timeout: ms });
+        const views = await viewsFor(as);
+
+        if (views.length > 1) {
+          throw new Error(
+            `You have ${views.length} listeners: say which one to wait for with "as".`,
+          );
+        }
+
+        const message = await (views[0] as InboxToolView).next({ timeout: ms });
 
         return message ? { message: render(message) } : { message: null };
       },
@@ -286,11 +365,22 @@ export const createInboxTools = (
 
     inbox_read: tool.group({
       description:
-        "Return the messages that have arrived on the conversation and your listeners since you last read, without waiting. Each is tagged with its source. With all: true, return the latest 20 of everything so far instead, and how many there are in all.",
-      input: z.object({ all: z.boolean().optional() }),
-      run: async ({ all }) => {
+        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as". With all: true, return the latest 20 of everything received so far instead, and how many there are in all.',
+      input: z.object({
+        as: z.string().optional(),
+        all: z.boolean().optional(),
+      }),
+      run: async ({ as, all }) => {
+        const views = await viewsFor(as);
+
         if (all) {
-          const everything = await inbox.current();
+          const everything = (
+            await Promise.all(
+              views.map((view) => {
+                return view.current();
+              }),
+            )
+          ).flat();
 
           return {
             total: everything.length,
@@ -298,7 +388,13 @@ export const createInboxTools = (
           };
         }
 
-        const fresh = await inbox.unread();
+        const fresh = (
+          await Promise.all(
+            views.map((view) => {
+              return view.unread();
+            }),
+          )
+        ).flat();
 
         return { messages: fresh.map(render) };
       },
@@ -317,7 +413,7 @@ export const createInboxTools = (
         }
 
         listeners.delete(as);
-        await listener.stop();
+        await (await listener.ready).listener.stop();
 
         return { stopped: as };
       },

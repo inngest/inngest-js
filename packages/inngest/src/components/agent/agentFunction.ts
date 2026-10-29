@@ -65,7 +65,6 @@ import { agentMessage } from "./events.ts";
 import {
   createInboxTools,
   type InboxToolInbox,
-  type InboxToolMessage,
   type InboxToolName,
   type InboxToolsConfig,
 } from "./inboxTools.ts";
@@ -753,35 +752,17 @@ export interface ThreadInbox<
 }
 
 /**
- * A thread message as the inbox tools show it: a source's event by its name
- * and data, a conversation message by its kind and text.
- */
-const toolMessage = (message: ThreadInboxMessage): InboxToolMessage => {
-  const { data } = message;
-
-  return data.event
-    ? { name: data.event.name, data: data.event.data }
-    : { name: `thread/${data.kind}`, data: data.content ?? null };
-};
-
-/**
- * What the inbox tools need of the thread's inbox.
+ * What the inbox tools need of the thread's inbox. They read through views of
+ * the events they listen to, which have cursors of their own, so a stop, a
+ * user message or a request is never taken from the loop.
  */
 const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
   return {
     listen: (event, options) => {
       return inbox.listen(event as InboxSource["event"], options);
     },
-    next: async (options) => {
-      const message = await inbox.next(options);
-
-      return message ? toolMessage(message) : message;
-    },
-    unread: async () => {
-      return (await inbox.unread()).map(toolMessage);
-    },
-    current: async () => {
-      return (await inbox.current()).map(toolMessage);
+    of: (event) => {
+      return inbox.of(event as InboxSource["event"]);
     },
   };
 };
