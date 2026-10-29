@@ -1,13 +1,15 @@
 /**
  * @module
- * The message box of the play pane. Typing a message sends an event, and the
- * box shows each message as the event it became.
+ * The Messages tab of the play pane. A button sends a random message as an
+ * event, and the tab shows
+ * each message as the event it became.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { eventOfMessage } from "../../shared/events.ts";
 import { api } from "./api.ts";
 import { Kbd } from "./keyboard.tsx";
 import { useAction } from "./live.ts";
+import { messages, pick } from "./random.ts";
 
 export const MessagePanel = ({
   target,
@@ -16,64 +18,40 @@ export const MessagePanel = ({
   target: { agent: string; thread: string };
   disabled: boolean;
 }) => {
-  const [text, setText] = useState("Hello");
   const [sent, setSent] = useState<string[]>([]);
-  const box = useRef<HTMLTextAreaElement>(null);
-
-  useAction("message", () => {
-    box.current?.focus();
-  });
 
   const send = async () => {
-    if (!text.trim() || disabled) {
+    if (disabled) {
       return;
     }
 
-    const body = text;
-    const event = eventOfMessage(target.agent, target.thread, body);
+    const event = eventOfMessage(target.agent, target.thread, pick(messages));
 
-    setText("");
-    box.current?.focus();
-    await api.send(target.agent, target.thread, body);
+    await api.send(target.agent, target.thread, event.data.content);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
   };
 
+  useAction("sendEvent", () => {
+    void send();
+  });
+
   return (
-    <form
-      className="message"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
+    <div className="message">
       <p>
-        Say something to <code>{target.agent}</code>. A message is an event: it
-        reaches the agent's inbox on thread <code>{target.thread}</code>.
+        A message is an event: it reaches the inbox of{" "}
+        <code>{target.agent}</code> on thread <code>{target.thread}</code>.
       </p>
-      <label>
-        Message
-        <textarea
-          ref={box}
-          value={text}
-          rows={2}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.ctrlKey &&
-              !event.metaKey
-            ) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-      </label>
-      <button type="submit" className="primary" disabled={disabled}>
-        Send <kbd>Enter</kbd>
+      <button
+        type="button"
+        className="primary"
+        disabled={disabled}
+        onClick={() => {
+          void send();
+        }}
+      >
+        Send a message <Kbd action="sendEvent" />
       </button>
       {sent.map((json, at) => {
         return (
@@ -82,6 +60,6 @@ export const MessagePanel = ({
           </pre>
         );
       })}
-    </form>
+    </div>
   );
 };

@@ -380,16 +380,16 @@ export const App = () => {
       focusIn(".trace [data-row], .trace");
     },
     message: () => {
-      playTo("message", "message");
+      playTo("message", ".message button");
     },
     slack: () => {
-      playTo("slack", "slackCompose");
+      playTo("slack", ".slack-head button");
     },
     github: () => {
-      playTo("github", ".github select");
+      playTo("github", ".gh-head button");
     },
     events: () => {
-      playTo("events", ".events input");
+      playTo("events", ".events button");
     },
     slackCompose: () => {
       playTo("slack", "slackCompose");
@@ -397,17 +397,17 @@ export const App = () => {
     slackNew: () => {
       playTo("slack", "slackNew");
     },
-    slackChannel: () => {
-      playTo("slack", "slackChannel");
-    },
-    slackReact: () => {
-      playTo("slack", "slackReact");
-    },
     approve: () => {
       playTo("slack", "approve");
     },
     deny: () => {
       playTo("slack", "deny");
+    },
+    githubComment: () => {
+      playTo("github", "githubComment");
+    },
+    githubApprove: () => {
+      playTo("github", "githubApprove");
     },
     githubPull: () => {
       playTo("github", "githubPull");
@@ -416,7 +416,7 @@ export const App = () => {
       playTo("github", "githubIssue");
     },
     sendEvent: () => {
-      playTo("events", "sendEvent");
+      playTo(play === "message" ? "message" : "events", "sendEvent");
     },
     file: nextFile,
     devserver: () => {

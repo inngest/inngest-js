@@ -617,6 +617,54 @@ export const setupGithub = (deps: GithubDeps) => {
     },
   );
 
+  const comments = [
+    "Can you take a look at this?",
+    "I can reproduce this on the latest release.",
+    "Any update here? A customer is waiting on it.",
+    "This looks related to the change from last week.",
+  ];
+
+  const latest = (repo: string, kind?: "pull_request") => {
+    return db.get<ItemRow>(
+      `SELECT * FROM gh_items WHERE repo = ? ${kind ? "AND kind = 'pull_request'" : ""} ORDER BY number DESC LIMIT 1`,
+      repo,
+    );
+  };
+
+  router.route(
+    "POST",
+    "/api/github/:owner/:repo/comment",
+    async ({ params }) => {
+      const repo = repoOf(params);
+      const row = latest(repo);
+
+      if (!row) {
+        return { error: "Nothing to comment on yet" };
+      }
+
+      await comment(repo, row.number, pick(comments), humanLogin);
+
+      return { number: row.number };
+    },
+  );
+
+  router.route(
+    "POST",
+    "/api/github/:owner/:repo/approve",
+    async ({ params }) => {
+      const repo = repoOf(params);
+      const row = latest(repo, "pull_request");
+
+      if (!row) {
+        return { error: "Open a pull request first" };
+      }
+
+      await comment(repo, row.number, "Approved. Ship it.", humanLogin);
+
+      return { number: row.number };
+    },
+  );
+
   router.route("POST", "/api/github/:owner/:repo/pulls", async ({ params }) => {
     const row = await openRandom(repoOf(params), "pull_request");
 
