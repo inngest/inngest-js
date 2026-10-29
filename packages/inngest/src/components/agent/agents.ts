@@ -352,6 +352,7 @@ export {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+export type { AgentScoreName, AgentScores } from "./scores.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";
 export type {
