@@ -71,7 +71,7 @@ import {
   type InboxToolsConfig,
   type InboxToolsOf,
 } from "./inboxTools.ts";
-import { agentInvokeCancelOn } from "./invoke.ts";
+import { agentInvokeCancelOn, agentInvokeDepth } from "./invoke.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
@@ -691,6 +691,16 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * input as `data`, without what the SDK adds for the invoked agent.
    */
   trigger: AgentTypesOf<TTypes>["event"] | undefined;
+
+  /**
+   * How many agents deep this run is when `agent.invoke()` started it: 1 for
+   * an agent a function that is not an agent invoked, 2 for the next, and so
+   * on. 0 when something else started the run (an event, a cron tick, a thread
+   * message, including a later run of an invoked agent's thread).
+   * `agentInvokeDepth()` reads the same number from a plain function's event;
+   * in an agent body, where `trigger` has the SDK's own data removed, use this.
+   */
+  depth: number;
 
   /**
    * The handle of the thread this run belongs to.
@@ -2146,6 +2156,9 @@ export function createAgentFunction(
             logger,
             event: { ...event, data } as AgentBodyContext["event"],
             trigger: triggerOf(data.event),
+            depth: agentInvokeDepth(
+              event as unknown as { data?: Record<string, unknown> },
+            ),
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),

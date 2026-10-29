@@ -11,12 +11,14 @@
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
 import {
+  isToolError,
   resolveToolCall,
   type SandboxTools,
   type ToolInputType,
   type ToolJsonDefinition,
   type ToolOutputType,
   toolDefinitions,
+  toolErrorOf,
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
@@ -483,7 +485,6 @@ const clip = (text: string, max: number): string => {
   return `${text.slice(0, half)}\n... clipped ${text.length - max} characters ...\n${text.slice(-half)}`;
 };
 
-const errorKey = "~error";
 
 /**
  * EXPERIMENTAL: Returns a failure from a tool without throwing, so the model
@@ -500,13 +501,7 @@ const errorKey = "~error";
  * },
  * ```
  */
-const toolError = (body: unknown): { "~error": unknown } => {
-  return { [errorKey]: body };
-};
-
-const isToolError = (output: unknown): output is { "~error": unknown } => {
-  return typeof output === "object" && output !== null && errorKey in output;
-};
+const toolError = toolErrorOf;
 
 const runTool = async <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools> & {
@@ -568,7 +563,7 @@ const runTool = async <TTools extends SandboxTools>(
           });
 
       isError = isToolError(value);
-      output = isError ? (value as { [errorKey]: unknown })[errorKey] : value;
+      output = isToolError(value) ? value["~error"] : value;
     }
   } catch (error) {
     output = error instanceof Error ? error.message : String(error);

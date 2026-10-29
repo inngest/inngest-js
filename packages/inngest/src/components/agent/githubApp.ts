@@ -14,10 +14,9 @@
  *   privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
  * });
  *
- * await repo({
+ * await repo(sandbox, {
  *   repo: "acme/app",
  *   token: () => app.token("acme/app"),
- *   sandbox,
  * });
  * ```
  */

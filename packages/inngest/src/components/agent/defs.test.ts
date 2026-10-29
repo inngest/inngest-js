@@ -54,7 +54,6 @@ describe("tool()", () => {
     const getOrg = tool({
       id: "getOrg",
       input: z.object({ slug: z.string() }),
-      sandboxCommand: "get-org",
       run: async ({ slug }) => {
         return { slug };
       },
@@ -62,7 +61,6 @@ describe("tool()", () => {
 
     expect(getOrg.kind).toBe("inngest/tool");
     expect(getOrg.id).toBe("getOrg");
-    expect(getOrg.sandboxCommand).toBe("get-org");
     expect(tool.step({ run: () => 1 }).group).toBeUndefined();
     expect(tool.group({ run: () => 1 }).group).toBe(true);
   });
@@ -83,9 +81,6 @@ describe("tool()", () => {
     expect(() => {
       return tool({ id: "git.push", run: () => 1 });
     }).toThrow("Invalid tool name");
-    expect(() => {
-      return tool({ id: "ok", sandboxCommand: "Bad_Name", run: () => 1 });
-    }).toThrow("Invalid sandboxCommand");
   });
 
   test("agentTools keys by id and rejects duplicates", () => {
