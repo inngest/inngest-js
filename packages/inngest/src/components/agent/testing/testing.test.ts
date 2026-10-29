@@ -1266,3 +1266,77 @@ describe("fakeSandbox guard details", () => {
     ).toBe(126);
   });
 });
+
+describe("fakeSandbox guard against shell tricks", () => {
+  const exec = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("a command with no cwd, or a relative one, works from the sandbox's directory, not the host process's", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const home = (
+      await exec(sandbox, id, {
+        command: ["sh", "-c", "echo $SANDBOX_WORK"],
+        cwd: "/work",
+      })
+    ).stdout.trim();
+
+    // The marker "/work" names the sandbox; the cwd is not given.
+    expect(
+      (
+        await exec(sandbox, id, { command: ["sh", "-c", "pwd # /work"] })
+      ).stdout.trim(),
+    ).toBe(home);
+    expect(
+      (
+        await exec(sandbox, id, {
+          command: ["sh", "-c", "pwd # /work"],
+          cwd: "sub/dir",
+        })
+      ).stdout.trim(),
+    ).toBe(`${home}/sub/dir`);
+  });
+
+  test("each of these is refused", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const attempts = [
+      "cat file:///etc/passwd # /work",
+      "x://;cat</etc/passwd # /work",
+      "cat \\/etc/passwd # /work",
+      "cat {/etc/passwd,x} # /work",
+      "cat ~root/.ssh/id_rsa # /work",
+      "cat /*/passwd # /work",
+      "cat /?tc/passwd # /work",
+      "cd .\\. # /work",
+      "cd .'.' # /work",
+      'cd ."." # /work',
+      "cat /proc/self/root/etc/passwd # /work",
+      "cat /dev/fd/../etc/passwd # /work",
+    ];
+
+    for (const script of attempts) {
+      const refused = await exec(sandbox, id, {
+        command: ["sh", "-c", script],
+      });
+
+      expect({ script, exitCode: refused.exitCode }).toEqual({
+        script,
+        exitCode: 126,
+      });
+    }
+  });
+});

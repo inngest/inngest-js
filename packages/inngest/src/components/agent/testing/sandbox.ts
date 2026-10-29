@@ -64,14 +64,18 @@ export interface FakeSandboxOptions {
    * describes run on the host when it mentions the sandbox's `/work`,
    * `/inngest/tools` or a `diskPaths` entry, or runs in one of `localDirs`.
    * It is for tests with a scripted model (`script()`), never for a real one:
-   * this is not a sandbox. What it does to limit the damage is a guard, not a
-   * boundary: the environment is cut down to `PATH`, `HOME` (the sandbox's
-   * directory), `SANDBOX_WORK`, git's identity and what `passEnv` lists; a
-   * command with a `..` path segment, or an absolute path outside the
-   * sandbox's directories and the system's binaries, is refused with exit
-   * code 126; uploads and reads cannot leave those directories. A symlink a
-   * command makes, or a shell that builds a path out of pieces, can still
-   * reach further.
+   * this is not a sandbox, and the commands run with your user's rights. What
+   * it does is a best-effort guard against mistakes, not a boundary. The
+   * environment is cut down to `PATH`, `HOME` (the sandbox's directory),
+   * `SANDBOX_WORK`, git's identity and what `passEnv` lists; a command works
+   * from the sandbox's directory; one with a `..` path segment, `~user`, or an
+   * absolute path-like word outside the sandbox's directories and the
+   * system's binary directories is refused with exit code 126 (and recorded
+   * as `sandbox.refused`); uploads and reads stay inside those directories.
+   * A shell can still build a path out of pieces or expansions, follow a
+   * symlink, or `cd /` and use relative names, and the system's binary
+   * directories are not read-only: do not run it as root or with a real
+   * model.
    */
   execute?: "local";
 
@@ -514,9 +518,19 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     };
     // A working directory of the sandbox exists on the host before a command
     // runs in it, as it would in a real sandbox.
+    // A command run for real works from the sandbox's own directory unless it
+    // names another; a relative working directory is relative to it, never to
+    // the host process's.
+    const cwdOf = (cwd: string | undefined) => {
+      const dir = workOf(id ?? "");
+
+      return cwd === undefined ? dir : resolve(dir, local(cwd));
+    };
     const ensureCwd = (cwd: string | undefined) => {
-      if (cwd !== undefined && mentionsHostPath(cwd)) {
-        mkdirSync(local(cwd), { recursive: true });
+      const target = cwdOf(cwd);
+
+      if (target.startsWith(`${workOf(id ?? "")}/`)) {
+        mkdirSync(target, { recursive: true });
       }
     };
     // What a command run here sees: the environment it asked for with the
@@ -579,8 +593,6 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         "/dev/stdin",
         "/dev/stdout",
         "/dev/stderr",
-        "/dev/fd",
-        "/proc",
       ].filter(Boolean);
       const prefixes = ["/tmp/inngest-run-code-", "/tmp/inngest-git-"];
       const topLevel = [
@@ -628,22 +640,35 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       ];
 
       for (const text of texts) {
-        if (/(^|[/\s"'=:;&|(<>])\.\.(?=$|[/\s"';&|)<>])/.test(text)) {
-          return `"${text}" has a ".." path segment`;
+        // `..` as the shell will read it: with quotes and escapes taken out,
+        // so `.\\.` and `."."` are caught too.
+        for (const plain of [text, text.replace(/[\\\\'"]/g, "")]) {
+          if (/(^|[/\s=:;&|(<>{},])\.\.(?=$|[/\s;&|)<>{},])/.test(plain)) {
+            return `"${text}" has a ".." path segment`;
+          }
         }
+
+        // `~user` is that user's home, not the sandbox's.
+        if (/(^|[\s"'=:;&|(<>{},])~[A-Za-z_]/.test(text)) {
+          return `"${text}" names another user's home`;
+        }
+
+        // Web addresses are not paths; `file:` is, and stays in the scan.
+        const moved = local(text).replace(
+          /\b(?:https?|git|ssh):\/\/[^\s"'`;&|()<>$\\]*/gi,
+          "",
+        );
 
         // An argument that is a path on its own is checked as one, whatever
         // its shape: `rm -rf /`, `cat /work.bak`.
-        const whole = local(text).replace(/\/+$/, "") || "/";
+        const whole = moved.replace(/\/+$/, "") || "/";
 
-        if (/^\/[^\s]*$/.test(local(text)) && !allowed(whole)) {
+        if (/^\/[^\s]*$/.test(moved) && !allowed(whole)) {
           return `"${text}" is outside the sandbox's directories`;
         }
 
-        const moved = local(text).replace(/[a-z][a-z0-9+.-]*:\/\/\S*/gi, "");
-
         for (const found of moved.matchAll(
-          /(?:^|[\s"'=:;&|(<>`$,])(\/[\w.~-][^\s"'`;&|()<>$]*)/g,
+          /(?<![\w.-])(\/[\w.~*?[{-][^\s"'`;&|()<>$\\]*)/g,
         )) {
           const path = (found[1] ?? "").replace(/\/+$/, "");
           const segments = path.split("/").filter(Boolean);
@@ -808,7 +833,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
         const ran = await runLocal(
           request.command.map(local),
-          request.cwd === undefined ? undefined : local(request.cwd),
+          cwdOf(request.cwd),
           environmentOf(request.environment),
         );
 
@@ -908,7 +933,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           local(request.command[0] as string),
           request.command.slice(1).map(local),
           {
-            cwd: request.cwd === undefined ? undefined : local(request.cwd),
+            cwd: cwdOf(request.cwd),
             env: environmentOf(request.environment),
             stdio: ["ignore", "pipe", "pipe"],
             // Its own process group, so closing kills what a shell started too.
