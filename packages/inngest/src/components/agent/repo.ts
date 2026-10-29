@@ -178,7 +178,7 @@ g init --quiet --bare "$T" || exit 1
 const checkoutScript = `${prelude}
 if [ -e "$DIR/.git" ]; then
   if [ -z "$SYNC" ] && dirty; then
-    printf '%s\\n' "the checkout at $DIR has work a sync would lose (changes, untracked files or commits the remote lacks): pass sync: \"keep\" to keep it or sync: \"reset\" to discard it" >&2
+    printf '%s\\n' "the checkout at $DIR has work a sync would lose (changes, untracked files or commits the remote lacks): pass sync: 'keep' to keep it or sync: 'reset' to discard it" >&2
     exit 1
   fi
   action=synced
@@ -261,8 +261,9 @@ else
 fi
 g -C "$DIR" config user.name "Coding agent" || exit 1
 g -C "$DIR" config user.email "agent@users.noreply.github.com" || exit 1
+HEADSHA=$(g -C "$DIR" rev-parse HEAD) || exit 1
 CLONING=
-printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
+printf 'repo:%s:%s\\n' "$action" "$HEADSHA"
 `;
 
 // Pushes through the throwaway repository, so the process that holds the token
@@ -273,7 +274,7 @@ g -C "$DIR" push --quiet "$T" "$SHA:refs/heads/$BRANCH" || exit 1
 auth --git-dir="$T" push --quiet -- "$URL" "$SHA:refs/heads/$BRANCH" || exit 1
 # The push went to the URL, not a remote, so the checkout would not know the
 # remote has these commits (a later sync would call them local work).
-g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "$SHA"
+g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "$SHA" || true
 `;
 
 /**
