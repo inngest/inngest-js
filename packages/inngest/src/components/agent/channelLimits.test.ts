@@ -397,6 +397,12 @@ describe("report.card", () => {
     await expect(report.card({ id: "", title: "x" })).rejects.toThrow(
       "id of 1 to 100",
     );
+    await expect(report.card({ id: "a", title: "" })).rejects.toThrow(
+      "needs a title",
+    );
+    await expect(
+      report.card({ id: "a", title: "x", status: "weird" as never }),
+    ).rejects.toThrow("a status of");
   });
 
   test("stream limits an adapter declares must leave room for the summary", () => {
@@ -425,7 +431,7 @@ describe("the Slack stream", () => {
   const slackChannel = () => {
     return slack.channel(
       { channel: "C1", threadTs: "1.1" },
-      { in: ["C1"], token: "t" },
+      { in: ["C1"], token: "t", user: "U1", team: "T1" },
     );
   };
 
@@ -502,13 +508,126 @@ describe("the Slack stream", () => {
   test("a warning on a streamed update is an error, not a success", async () => {
     stubSlack((method) => {
       return method === "chat.appendStream"
-        ? { ok: true, response_metadata: { warnings: ["dropped_updates"] } }
+        ? {
+            ok: true,
+            warning: "missing_charset",
+            response_metadata: {
+              warnings: ["missing_charset"],
+              messages: ["[WARN] Maximum unique tasks (50) reached"],
+            },
+          }
         : { ok: true, ts: "9.9" };
     });
 
     await expect(
       slackChannel().stream?.append("9.9", [{ id: "c1", title: "t" }]),
-    ).rejects.toThrow("dropped part of the update: dropped_updates");
+    ).rejects.toThrow(
+      "dropped part of the update: [WARN] Maximum unique tasks",
+    );
+  });
+
+  test("Slack's harmless notices on a streamed update are not errors", async () => {
+    stubSlack(() => {
+      return {
+        ok: true,
+        ts: "9.9",
+        warning: "missing_charset",
+        response_metadata: { warnings: ["missing_charset"] },
+      };
+    });
+
+    await expect(
+      slackChannel().stream?.append("9.9", [{ id: "c1", title: "t" }]),
+    ).resolves.toBeUndefined();
+  });
+
+  test("a stream starts for a user and a team, as a plan", async () => {
+    const sent = stubSlack(() => {
+      return { ok: true, ts: "9.9" };
+    });
+
+    await slackChannel().stream?.start();
+
+    expect(sent[0]).toMatchObject({
+      method: "chat.startStream",
+      body: {
+        channel: "C1",
+        thread_ts: "1.1",
+        recipient_user_id: "U1",
+        recipient_team_id: "T1",
+        task_display_mode: "plan",
+        chunks: [{ type: "plan_update", title: "Progress" }],
+      },
+    });
+  });
+
+  test("the user comes from the event, the team from auth.test, and a stream without a user is refused", async () => {
+    const sent = stubSlack((method) => {
+      return method === "auth.test"
+        ? { ok: true, team_id: "T9" }
+        : { ok: true, ts: "9.9" };
+    });
+    const fromEvent = slack.channel(
+      { data: { channel: "C1", ts: "1.1", text: "hi", user: "U7" } },
+      { in: ["C1"], token: "t" },
+    );
+
+    await fromEvent.stream?.start();
+
+    expect(sent[0]?.method).toBe("auth.test");
+    expect(sent[1]?.body).toMatchObject({
+      recipient_user_id: "U7",
+      recipient_team_id: "T9",
+    });
+
+    const noUser = slack.channel(
+      { channel: "C1", threadTs: "1.1" },
+      { in: ["C1"], token: "t", team: "T1" },
+    );
+
+    await expect(noUser.stream?.start()).rejects.toThrow("needs the user");
+  });
+
+  test("a gone message is only a stream that ended for the stream calls", async () => {
+    stubSlack(() => {
+      return { ok: false, error: "message_not_found" };
+    });
+
+    await expect(
+      slackChannel().post({ text: "hi" }),
+    ).rejects.not.toBeInstanceOf(ChannelStreamEnded);
+  });
+
+  test("long card text is cut without leaving half an entity", async () => {
+    const sent = stubSlack(() => {
+      return { ok: true };
+    });
+
+    await slackChannel().stream?.append("9.9", [
+      { id: "c1", title: "&".repeat(300) },
+    ]);
+
+    const title = (sent[0]?.body.chunks as { title: string }[])[0]
+      ?.title as string;
+
+    expect(title.length).toBeLessThanOrEqual(250);
+    expect(title).toMatch(/(&amp;)+…$/);
+  });
+
+  test("a message that is gone is a stream that ended", async () => {
+    for (const error of [
+      "message_not_in_streaming_state",
+      "message_not_found",
+      "cant_update_message",
+    ]) {
+      stubSlack(() => {
+        return { ok: false, error };
+      });
+
+      await expect(
+        slackChannel().stream?.append("9.9", [{ id: "c1", title: "t" }]),
+      ).rejects.toBeInstanceOf(ChannelStreamEnded);
+    }
   });
 
   test("message_not_in_streaming_state is a stream that ended, and the reporter starts another", async () => {

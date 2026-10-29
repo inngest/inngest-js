@@ -100,6 +100,25 @@ export interface SlackChannelOptions {
    * token, so it must come from your config, never from an event.
    */
   apiUrl?: string;
+
+  /**
+   * The user a streamed progress message is for (`recipient_user_id`, which
+   * Slack requires to start a stream in a channel). Default: the author of
+   * the `slack/message` event the channel was made from.
+   */
+  user?: string;
+
+  /**
+   * The workspace of a streamed message (`recipient_team_id`). Default: the
+   * workspace of the token, found with `auth.test` when the stream starts.
+   */
+  team?: string;
+
+  /**
+   * The title of the plan a stream shows above its task cards. Default:
+   * `"Progress"`.
+   */
+  streamTitle?: string;
 }
 
 /**
@@ -175,6 +194,7 @@ const maxSelectValue = 150;
 const maxButtonValue = 2000;
 const maxSectionText = 3000;
 const maxLabel = 75;
+const maxCardText = 250;
 
 /**
  * What Slack allows a streamed message to hold, and when it ends one: 50
@@ -190,13 +210,45 @@ const slackCardStatus = {
   error: "error",
 } as const;
 
+/**
+ * The warning that says Slack dropped part of a streamed update, if any. Slack
+ * answers `ok` and says so only in `warning` and `response_metadata`, where
+ * it also puts harmless notices such as `missing_charset`, so only the
+ * notice about the task limit counts.
+ */
+const droppedUpdate = (json: Record<string, unknown>): string | undefined => {
+  const meta = json.response_metadata as
+    | { warnings?: unknown; messages?: unknown }
+    | undefined;
+  const lines = [
+    json.warning,
+    ...(Array.isArray(meta?.warnings) ? meta.warnings : []),
+    ...(Array.isArray(meta?.messages) ? meta.messages : []),
+  ].map(String);
+
+  return lines.find((line) => {
+    return /maximum unique tasks/i.test(line);
+  });
+};
+
+/**
+ * Slack's errors for a streamed message that is gone or over.
+ */
+const streamGone = new Set([
+  "message_not_in_streaming_state",
+  "message_not_found",
+  "cant_update_message",
+]);
+
+const streaming = /^chat\.(start|append|stop)Stream$/;
+
 const call = async (
   options: SlackChannelOptions,
   method: string,
   body: Record<string, unknown>,
   /**
    * For a streamed update: Slack answers `ok` and adds a warning when it
-   * dropped part of the update, so any warning is an error.
+   * dropped part of the update, and that warning (the task limit) is an error.
    */
   strict = false,
 ): Promise<Record<string, unknown>> => {
@@ -224,7 +276,7 @@ const call = async (
     const error = String(res.json.error ?? "unreadable_response");
 
     // The stream is over: the reporter starts another.
-    if (error === "message_not_in_streaming_state") {
+    if (streaming.test(method) && streamGone.has(error)) {
       throw new ChannelStreamEnded(`Slack ${method}: ${error}`);
     }
 
@@ -234,13 +286,11 @@ const call = async (
     );
   }
 
-  const warnings = (
-    res.json.response_metadata as { warnings?: unknown } | undefined
-  )?.warnings;
+  const dropped = strict ? droppedUpdate(res.json) : undefined;
 
-  if (strict && Array.isArray(warnings) && warnings.length > 0) {
+  if (dropped) {
     throw apiError(
-      `Slack ${method} dropped part of the update: ${warnings.map(String).join(", ")}`,
+      `Slack ${method} dropped part of the update: ${dropped}`,
       false,
     );
   }
@@ -252,15 +302,27 @@ const call = async (
  * A card as a Slack `task_update` chunk. Text is escaped like any text the
  * agent writes.
  */
+/**
+ * Card text as Slack shows it: escaped, then cut to Slack's limit without
+ * leaving half an entity at the end.
+ */
+const cardText = (text: string): string => {
+  const escaped = escapeSlack(text);
+
+  if (escaped.length <= maxCardText) {
+    return escaped;
+  }
+
+  return `${escaped.slice(0, maxCardText - 1).replace(/&[a-z]*;?$/, "")}…`;
+};
+
 const slackCard = (card: ChannelCard) => {
   return {
     type: "task_update",
     id: card.id,
-    title: truncate(escapeSlack(card.title), maxLabel * 4),
+    title: cardText(card.title),
     status: slackCardStatus[card.status ?? "running"],
-    ...(card.details === undefined
-      ? {}
-      : { details: truncate(escapeSlack(card.details), maxSectionText) }),
+    ...(card.details === undefined ? {} : { details: cardText(card.details) }),
   };
 };
 
@@ -438,6 +500,13 @@ export const slack = {
 
     assertAllowed("channel", target.channel, options.in);
 
+    // The author of the event the channel is made from: the user a stream is
+    // for, unless the options name one.
+    const eventUser =
+      "threadTs" in source
+        ? undefined
+        : ((source.data as { user?: string | null }).user ?? undefined);
+
     return defineChannel({
       post: async (message) => {
         await call(options, "chat.postMessage", {
@@ -457,10 +526,37 @@ export const slack = {
       stream: {
         limits: streamLimits,
         start: async () => {
+          const user = options.user ?? eventUser;
+
+          if (!user) {
+            throw apiError(
+              "slack stream: Slack needs the user a stream is for; pass `user` in the channel options or make the channel from a slack/message event",
+              false,
+            );
+          }
+
+          const team =
+            options.team ??
+            String((await call(options, "auth.test", {})).team_id ?? "");
           const started = await call(
             options,
             "chat.startStream",
-            { channel: target.channel, thread_ts: target.threadTs },
+            {
+              channel: target.channel,
+              thread_ts: target.threadTs,
+              recipient_user_id: user,
+              recipient_team_id: team,
+              task_display_mode: "plan",
+              chunks: [
+                {
+                  type: "plan_update",
+                  title: truncate(
+                    escapeSlack(options.streamTitle ?? "Progress"),
+                    maxCardText,
+                  ),
+                },
+              ],
+            },
             true,
           );
 

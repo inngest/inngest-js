@@ -142,7 +142,15 @@ export const startFakes = async (): Promise<Fakes> => {
         reply(200, {
           ok: true,
           ...(dropped
-            ? { response_metadata: { warnings: ["dropped_updates"] } }
+            ? {
+                warning: "missing_charset",
+                response_metadata: {
+                  warnings: ["missing_charset"],
+                  messages: [
+                    "[WARN] Maximum unique tasks (50) reached; the update was dropped",
+                  ],
+                },
+              }
             : {}),
         });
 

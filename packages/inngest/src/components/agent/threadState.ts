@@ -24,9 +24,15 @@ import {
   turnOf,
 } from "./recovery.ts";
 import { scoreThisStep } from "./scores.ts";
-import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
+import {
+  lastRunRecordKey,
+  summaryLength,
+  type ThreadRecord,
+  threadRecordKey,
+} from "./thread.ts";
 
 const recordKey = kvKey<ThreadRecord>(threadRecordKey);
+const lastRunKey = kvKey<LastRun>(lastRunRecordKey);
 
 /**
  * Names this process, so a run that continues in another one is noticed.
@@ -185,7 +191,7 @@ export const threadRecorder = (
           scoreThisStep("agent.stopped", 1);
         }
 
-        return { status: "stopped" };
+        return { status: "stopped", inflight: undefined };
       });
     },
 
@@ -213,6 +219,18 @@ export const threadRecorder = (
       });
     },
   };
+};
+
+/**
+ * Reads the thread's `lastRun`.
+ */
+export const readLastRun = (
+  /**
+   * KV store of the thread state.
+   */
+  store: Kv,
+): Promise<LastRun | undefined> => {
+  return store.thread.get(lastRunKey);
 };
 
 /**
@@ -249,9 +267,10 @@ export const markThreadIdle = async (
  * ended since. Deciding the same run again gives the same record, so a
  * retried step changes nothing. For a failed run with `resume` set, the
  * record also carries the loop guard: see `decide()`.
- * @returns The thread's record after the write.
+ * @returns The thread's `lastRun` after the write, and the record the run
+ * left behind (to know the turn it was answering).
  */
-export const recordEnd = (
+export const recordEnd = async (
   /**
    * KV store of the thread state.
    */
@@ -295,19 +314,23 @@ export const recordEnd = (
     resume?: boolean;
   },
 ) => {
-  return store.scope("thread", thread).update(recordKey, (found) => {
-    const current = found ?? emptyRecord();
+  const scope = store.scope("thread", thread);
 
+  // The record is only read here: it is written by the run and by its
+  // cleanup, and the run's ending goes under a key of its own, so none of
+  // the writes can lose another's.
+  const record = (await scope.get(recordKey)) ?? emptyRecord();
+  const last = await scope.update(lastRunKey, (found) => {
     if (
-      current.lastRun &&
-      current.lastRun.runId !== end.runId &&
-      runScore(current.lastRun.runId) > runScore(end.runId)
+      found &&
+      found.runId !== end.runId &&
+      runScore(found.runId) > runScore(end.runId)
     ) {
-      return current;
+      return found;
     }
 
     const { finished } = end;
-    let last: LastRun = {
+    let next: LastRun = {
       runId: end.runId,
       status: finished.status,
       at: end.at,
@@ -316,20 +339,19 @@ export const recordEnd = (
     if (finished.status === "failed" && finished.error) {
       const error = summarize(finished.error.message);
       const print = fingerprint(finished.error.name, finished.error.message);
-
       const turn = turnInFlight(
-        current,
+        record,
         end.runId,
         { content: end.content, turn: end.turn },
-        (a, b) => {
-          return runScore(a) < runScore(b);
+        (x, y) => {
+          return runScore(x) < runScore(y);
         },
       );
 
-      last =
+      next =
         end.resume === undefined
-          ? { ...last, error, fingerprint: print }
-          : decide(current.lastRun, {
+          ? { ...next, error, fingerprint: print }
+          : decide(found, {
               runId: end.runId,
               at: end.at,
               error,
@@ -339,8 +361,10 @@ export const recordEnd = (
             }).last;
     }
 
-    return { ...current, lastRun: last };
+    return next;
   });
+
+  return { last, record };
 };
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -368,6 +392,19 @@ export const runScore = (
   }
 
   return score;
+};
+
+/**
+ * When the run that took a snapshot started. A generation is a run ID, or a
+ * run ID and a `.` and a number for a later snapshot of the same run.
+ */
+export const generationScore = (
+  /**
+   * The generation.
+   */
+  generation: string,
+): number => {
+  return runScore(generation.split(".")[0] ?? generation);
 };
 
 /**
@@ -423,7 +460,7 @@ export const recordSandboxGeneration = async (
 ): Promise<void> => {
   await sandboxGenerations(scope, ref, name).add(
     generation,
-    runScore(generation),
+    generationScore(generation),
   );
 };
 

@@ -105,6 +105,12 @@ export interface RunFailure {
    * Whether the same error had already failed this turn.
    */
   repeated: boolean;
+
+  /**
+   * Whether a newer run has taken the thread over, so the failed turn is not
+   * resent.
+   */
+  superseded: boolean;
 }
 
 /**
@@ -388,6 +394,10 @@ export const decide = (
 export const failureText = (failure: RunFailure): string => {
   if (failure.resuming) {
     return `Hit an error: ${failure.error}. Resuming in a fresh run.`;
+  }
+
+  if (failure.superseded) {
+    return `Hit an error: ${failure.error}. A newer run has the thread, so this turn is not retried.`;
   }
 
   return failure.repeated

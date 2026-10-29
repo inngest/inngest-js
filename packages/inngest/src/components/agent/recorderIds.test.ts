@@ -99,3 +99,24 @@ describe.each([true, false])(
     });
   },
 );
+
+describe("the message in flight", () => {
+  test("a honored stop clears it, so a later failure resends nothing", async () => {
+    const client = new Inngest({ id: testClientId });
+    const store = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const fn = client.createFunction(
+      { id: "recorder", triggers: [{ event: "agent/message" }] },
+      async ({ runId }) => {
+        const recorder = threadRecorder(store, runId);
+
+        await recorder.running(undefined, { content: "do it" });
+        seen.push((await recorder.stopped()).inflight);
+      },
+    );
+
+    await runToEnd(fn);
+
+    expect(seen.at(-1)).toBeUndefined();
+  });
+});

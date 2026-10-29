@@ -386,16 +386,20 @@ interface CardStreamState {
 
 const summaryCardId = "summary";
 
+const cardStatuses = ["pending", "running", "done", "error"];
+
 const checkCard = (card: ChannelCard): void => {
   if (
     typeof card?.id !== "string" ||
     card.id.length < 1 ||
     card.id.length > 100 ||
     card.id === summaryCardId ||
-    typeof card.title !== "string"
+    typeof card.title !== "string" ||
+    card.title.length < 1 ||
+    (card.status !== undefined && !cardStatuses.includes(card.status))
   ) {
     throw new NonRetriableError(
-      `report.card: a card needs a title and an id of 1 to 100 characters other than "${summaryCardId}".`,
+      `report.card: a card needs a title, an id of 1 to 100 characters other than "${summaryCardId}", and a status of ${cardStatuses.join(", ")} if it has one.`,
     );
   }
 };

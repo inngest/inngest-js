@@ -36,11 +36,16 @@ export type GroupSandbox = <T>(
  * error the function goes on to throw is final.
  *
  * The scope's cleanup defer is aborted once the destroy has succeeded.
+ *
+ * `final: false` leaves retries as they were, for a destroy the run goes on
+ * past: a retry replays the memoized destroy, and the next use of the sandbox
+ * restores it.
  */
 export const destroyQuietly = async (
   sandbox: DurableSandbox,
   idOrOptions: StepOptionsOrId,
   cleanup?: DeferHandle,
+  options: { final?: boolean } = {},
 ): Promise<void> => {
   try {
     await sandbox.destroy(idOrOptions);
@@ -52,7 +57,9 @@ export const destroyQuietly = async (
     }
   }
 
-  getAsyncCtxSync()?.execution?.instance.failFinally();
+  if (options.final !== false) {
+    getAsyncCtxSync()?.execution?.instance.failFinally();
+  }
 };
 
 /**

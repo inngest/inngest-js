@@ -49,6 +49,7 @@ import {
 import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
 import { type KvScopeInstance, kvKey } from "./kv.ts";
 import {
+  generationScore,
   newestSandboxGeneration,
   recordSandboxGeneration,
   runScore,
@@ -64,6 +65,26 @@ const { sha256 } = hashjs;
 export const threadSnapshotScope = "thread";
 
 /**
+ * The generation a snapshot is saved as. A run's first snapshot of a sandbox
+ * is the run ID. A sandbox recycled mid-run saves again, and each save is a
+ * later generation of the same run (`<run ID>.000001`, `.000002`), which sorts after
+ * the one before it.
+ */
+export const sandboxGeneration = (
+  /**
+   * The run.
+   */
+  runId: string,
+
+  /**
+   * How many times the run has recycled the sandbox before this snapshot.
+   */
+  epoch = 0,
+): string => {
+  return epoch > 0 ? `${runId}.${String(epoch).padStart(6, "0")}` : runId;
+};
+
+/**
  * What the cleanup defer is told about a sandbox its run created.
  */
 export interface ThreadSandboxCleanup {
@@ -72,6 +93,12 @@ export interface ThreadSandboxCleanup {
    */
   name: string;
   sandboxId: string;
+
+  /**
+   * How many times the run had recycled the sandbox when this one was
+   * created. Absent: none.
+   */
+  epoch?: number;
 }
 
 /**
@@ -97,6 +124,8 @@ export interface ThreadSandboxOwner {
   /**
    * Snapshots a sandbox of this run for the thread's next run. A failed
    * snapshot is a warning on the trace and changes nothing about the run.
+   * Returns `false` when nothing was saved, so a caller that is about to
+   * destroy the sandbox can keep it instead.
    */
   save(
     /**
@@ -107,7 +136,14 @@ export interface ThreadSandboxOwner {
      * The sandbox, still running.
      */
     sandbox: DurableSandbox,
-  ): Promise<void>;
+
+    /**
+     * The counter of the run's saves and recycles of this sandbox, which names
+     * the generation. Default 0.
+     */
+    epoch?: number,
+    // biome-ignore lint/suspicious/noConfusingVoidType: an owner that returns nothing saved as before
+  ): Promise<boolean | undefined | void>;
 
   /**
    * Leaves a `keepAlive` sandbox running for the thread's next run instead of
@@ -184,6 +220,11 @@ export interface ThreadSandboxOwner {
      * The sandbox the run just created.
      */
     sandbox: DurableSandbox,
+
+    /**
+     * The counter of the run's saves and recycles of this sandbox. Default 0.
+     */
+    epoch?: number,
   ): DeferHandle;
 
   /**
@@ -322,6 +363,9 @@ export const threadSandboxOwner = (
 
   return {
     restore: async (name) => {
+      // The index range is a KV step, memoized in call order: a replay reads
+      // the candidates the first attempt did, even though this run's own saves
+      // are in the index by then.
       const newest = await sandboxGenerations(scope, ref, name).range({
         order: "desc",
         limit: 2,
@@ -343,31 +387,47 @@ export const threadSandboxOwner = (
       return found;
     },
 
-    save: async (name, sandbox) => {
+    save: async (name, sandbox, epoch = 0) => {
+      const generation = sandboxGeneration(runId, epoch);
+      const suffix = epoch > 0 ? `:g${epoch}` : "";
+
       try {
         // The older generations are deleted by name below, not by listing
         // every snapshot of the environment.
         const taken = await snapshotCache(client, { memo: options.run }).take(
-          threadSnapshotEntry(ref, thread, name, runId),
+          threadSnapshotEntry(ref, thread, name, generation),
           (snapshotName, n) => {
             return sandbox.snapshot(
-              `${name}:thread:save:${n}`,
+              `${name}:thread:save${suffix}:${n}`,
               snapshotName ? { name: snapshotName } : {},
             );
           },
-          { stepId: `${name}:thread:save`, replace: false },
+          { stepId: `${name}:thread:save${suffix}`, replace: false },
         );
 
         // A snapshot without its name can't be found again.
         if (!taken.named) {
-          return;
+          return false;
         }
 
-        await recordSandboxGeneration(scope, ref, name, runId);
+        await recordSandboxGeneration(scope, ref, name, generation);
+      } catch (error) {
+        if (!(error instanceof StepError)) {
+          throw error;
+        }
 
+        return false;
+      }
+
+      // The snapshot is taken and recorded; pruning the older ones is
+      // housekeeping, and its failure does not make the save one.
+      try {
         const generations = sandboxGenerations(scope, ref, name);
-        const previous = await generations.range({
-          max: runScore(runId) - 1,
+        // Generations of earlier runs, and earlier generations of this run.
+        const previous = (
+          await generations.range({ max: generationScore(generation) })
+        ).filter((entry) => {
+          return entry.member < generation;
         });
 
         // The newest of the older generations stays as a spare: a run that
@@ -375,10 +435,10 @@ export const threadSandboxOwner = (
         const older = previous.slice(0, -1);
 
         if (older.length === 0) {
-          return;
+          return true;
         }
 
-        await options.run(`${name}:thread:replace`, async () => {
+        await options.run(`${name}:thread:replace${suffix}`, async () => {
           const cache = snapshotCache(client);
 
           for (const { member } of older) {
@@ -397,10 +457,14 @@ export const threadSandboxOwner = (
         for (const { member } of older) {
           await generations.remove(member);
         }
+
+        return true;
       } catch (error) {
         if (!(error instanceof StepError)) {
           throw error;
         }
+
+        return true;
       }
     },
 
@@ -411,11 +475,19 @@ export const threadSandboxOwner = (
       );
     },
 
-    guard: (name, sandbox) => {
-      return options.defer(`${name}:thread:cleanup`, {
-        name,
-        sandboxId: sandbox.id,
-      });
+    guard: (name, sandbox, epoch = 0) => {
+      // A defer ID may be used once per run, so a recycled sandbox's cleanup
+      // has an ID of its own.
+      return options.defer(
+        epoch > 0
+          ? `${name}:thread:cleanup:g${epoch}`
+          : `${name}:thread:cleanup`,
+        {
+          name,
+          sandboxId: sandbox.id,
+          ...(epoch > 0 && { epoch }),
+        },
+      );
     },
 
     release: async (name) => {
@@ -477,12 +549,13 @@ export const cleanupThreadSandbox = async (
 ): Promise<void> => {
   const { client, ref, thread, runId, scope, sandbox } = options;
   const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
+  const generation = sandboxGeneration(runId, sandbox.epoch);
   const ready = (await scope.get(kvKey<boolean>(readyKey))) === true;
   const newest = ready
     ? await newestSandboxGeneration(scope, ref, sandbox.name)
     : undefined;
 
-  if (ready && (!newest || newest < runId)) {
+  if (ready && (!newest || newest < generation)) {
     try {
       const named = await options.run(
         `${sandbox.name}:thread:snapshot`,
@@ -494,7 +567,7 @@ export const cleanupThreadSandbox = async (
           }
 
           const taken = await snapshotCache(client).take(
-            threadSnapshotEntry(ref, thread, sandbox.name, runId),
+            threadSnapshotEntry(ref, thread, sandbox.name, generation),
             (snapshotName) => {
               return found.snapshot(snapshotName ? { name: snapshotName } : {});
             },
@@ -506,7 +579,7 @@ export const cleanupThreadSandbox = async (
       );
 
       if (named) {
-        await recordSandboxGeneration(scope, ref, sandbox.name, runId);
+        await recordSandboxGeneration(scope, ref, sandbox.name, generation);
       }
     } catch (error) {
       if (!(error instanceof StepError)) {

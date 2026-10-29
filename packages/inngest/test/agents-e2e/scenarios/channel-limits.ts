@@ -60,6 +60,7 @@ export const channelLimits = scenario({
         channel: "C44",
         ts: `${Date.now()}.000100`,
         text: "go",
+        user: "U1",
       }),
     );
 
