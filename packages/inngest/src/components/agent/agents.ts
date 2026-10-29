@@ -294,13 +294,18 @@ export type {
   KvIndexEntry,
   KvIndexRange,
   KvKey,
+  KvJson,
+  KvJsonSafe,
   KvKeyInput,
+  KvKeyOf,
   KvRoundTrips,
   KvSchemaMustRoundTrip,
   KvScope,
   KvScopeInstance,
   KvSetOptions,
   KvValue,
+  KvValueMustBeJson,
+  KvWrite,
 } from "./kv.ts";
 export {
   createKv,
