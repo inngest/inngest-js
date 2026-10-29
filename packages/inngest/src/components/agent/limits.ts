@@ -288,6 +288,24 @@ export const narrowInherited = (
 };
 
 /**
+ * The limits without a dollar budget. A dollar budget handed down by a parent
+ * belongs to the run it was handed to, so it is not kept on the thread: a
+ * later run, started by a plain message, has no price to count it with.
+ */
+export const withoutUsdBudget = (
+  limits: EffectiveLimits | undefined,
+): EffectiveLimits | undefined => {
+  if (!limits?.budget || limits.budget.usd === undefined) {
+    return limits;
+  }
+
+  const { usd: _usd, ...budget } = limits.budget;
+  const { budget: _budget, ...rest } = limits;
+
+  return Object.keys(budget).length > 0 ? { ...rest, budget } : rest;
+};
+
+/**
  * Reads the limits an invoking agent passed down, if any. It trusts only
  * well-formed numbers and strings, so a malformed payload never widens limits.
  */

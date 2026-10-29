@@ -11,7 +11,11 @@
  * record on its next status change or turn.
  */
 import { type Kv, type KvScopeInstance, kvKey } from "./kv.ts";
-import { type EffectiveLimits, narrowInherited } from "./limits.ts";
+import {
+  type EffectiveLimits,
+  narrowInherited,
+  withoutUsdBudget,
+} from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
 import {
   decide,
@@ -131,7 +135,8 @@ export const threadRecorder = (
     /**
      * A turn is running. A sub-agent's inherited limits are kept on the
      * record, narrowed over every start, so a later run that a plain message
-     * starts has the same limits.
+     * starts has the same limits. Not its dollar budget: that is for the run
+     * it was passed to.
      */
     running: (
       /**
@@ -146,7 +151,10 @@ export const threadRecorder = (
       inflight?: { content?: string } | null,
     ) => {
       return record((current) => {
-        const inherited = narrowInherited(current.inherited, startedWith);
+        // A dollar budget is for the run it was passed to, so it is not kept.
+        const inherited = withoutUsdBudget(
+          narrowInherited(current.inherited, startedWith),
+        );
 
         return {
           status: "running",

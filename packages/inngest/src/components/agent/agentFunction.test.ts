@@ -1649,6 +1649,72 @@ describe("agent limits", () => {
     expect(await start()).toBe(false);
   });
 
+  test("a dollar budget handed down is not kept: a later plain message runs an unpriced agent", async () => {
+    let ran = 0;
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async () => {
+        ran += 1;
+      },
+    );
+    const invoked = trigger("go");
+
+    await run(fn, {
+      event: {
+        ...invoked,
+        data: {
+          ...invoked.data,
+          _agent: { depth: 1, limits: { budget: { usd: 1, tokens: 500 } } },
+        },
+      },
+    });
+
+    expect(ran).toBe(0);
+
+    await run(fn, { event: trigger("again") });
+
+    expect(ran).toBeGreaterThan(0);
+  });
+
+  test("a malformed dollar budget handed down stops the loop as a spent budget, not as a missing price", async () => {
+    let models = 0;
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox, control }) => {
+        const first = await inbox.next();
+        const result = await agent.loop({
+          model: agent.model(async () => {
+            models += 1;
+
+            return spend(1, 1);
+          }),
+          prompt: first?.content ?? "",
+          tools: {},
+          ...control,
+        });
+
+        seen.push(result.stopped);
+      },
+    );
+    const invoked = trigger("go");
+
+    await run(fn, {
+      event: {
+        ...invoked,
+        data: {
+          ...invoked.data,
+          _agent: { depth: 1, limits: { budget: { usd: "lots" } } },
+        },
+      },
+    });
+
+    expect(models).toBe(0);
+    expect([...new Set(seen)]).toEqual(["budget"]);
+  });
+
   test("an agent refuses to start a sub-agent past its inherited depth", async () => {
     const { fn } = createAgentFunction(
       makeClient(),

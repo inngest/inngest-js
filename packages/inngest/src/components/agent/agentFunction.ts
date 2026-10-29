@@ -1773,15 +1773,16 @@ export function createAgentFunction(
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
+        const passed = readInheritedLimits(
+          // An invoked agent is told its limits in the event's own data.
+          (
+            (found?.event === internalEvents.FunctionInvoked
+              ? event.data
+              : data) as Record<string, unknown>
+          )._agent,
+        );
         const started = await recorder.running(
-          readInheritedLimits(
-            // An invoked agent is told its limits in the event's own data.
-            (
-              (found?.event === internalEvents.FunctionInvoked
-                ? event.data
-                : data) as Record<string, unknown>
-            )._agent,
-          ),
+          passed,
           data.kind === "user" ? { content: data.content } : null,
         );
 
@@ -1799,14 +1800,20 @@ export function createAgentFunction(
 
         const limits = registerLimits(
           instance,
-          narrowLimits(config.limits, started.inherited),
+          // The thread's kept limits, and the dollar budget of this start.
+          narrowLimits(
+            config.limits,
+            narrowInherited(started.inherited, passed),
+          ),
           { ...started.usage },
         );
 
         // A dollar budget handed down by a parent can't carry the parent's
         // price (a function), so an agent without its own would count every
         // call as free and never stop.
-        if (limits.limits.budget?.usd !== undefined && !config.limits?.price) {
+        // A budget that is already 0 (a malformed one is read as 0) stops the
+        // run before a call, so only a budget with dollars left needs it.
+        if ((limits.limits.budget?.usd ?? 0) > 0 && !config.limits?.price) {
           throw new NonRetriableError(
             `Agent "${config.id}" has a dollar budget (limits.budget.usd, set by its own limits or inherited from the agent that started it) but no limits.price: give it a limits.price.`,
           );

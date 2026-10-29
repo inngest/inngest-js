@@ -104,7 +104,7 @@ export const matrixScenario = (config: {
             checkpointing: config.checkpointing,
             optimizeParallelism: config.optimize,
           },
-          async ({ event: trigger, step }) => {
+          async ({ event: trigger, step, runId, attempt }) => {
             const t = trigger.data.t as string;
             const want = trigger.data.want as number;
             const slow = trigger.data.slow as number;
@@ -115,6 +115,7 @@ export const matrixScenario = (config: {
               return step.run(stepId, async () => {
                 log(`${stepId}:start`);
                 log(`step:${stepId}`);
+                log(`meta:${stepId}:run=${runId}:attempt=${attempt}`);
                 await sleep(ms);
                 log(`${stepId}:end`);
               });
@@ -427,7 +428,16 @@ const runCell = async (
     ];
 
     if (doubled.length > 0) {
-      failures.push(`step bodies ran twice: ${doubled.join(",")}`);
+      const metas = log.filter((l) => {
+        return (
+          l.startsWith("meta:") &&
+          doubled.some((d) => l.startsWith(`meta:${d.slice(5)}:`))
+        );
+      });
+
+      failures.push(
+        `step bodies ran twice: ${doubled.join(",")} (${metas.join(" | ")})`,
+      );
     }
 
     // Who wins a plain Promise.race can differ between the first run and a

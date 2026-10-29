@@ -13,6 +13,7 @@ import {
   narrowInherited,
   narrowLimits,
   readInheritedLimits,
+  withoutUsdBudget,
 } from "./limits.ts";
 import type { AgentUsage } from "./loop.ts";
 
@@ -232,4 +233,17 @@ test("Infinity in a config limit means no cap", () => {
   expect(
     narrowLimits({ spawn: Number.POSITIVE_INFINITY }, { spawn: 3 }).spawn,
   ).toBe(3);
+});
+
+describe("withoutUsdBudget", () => {
+  test("drops only the dollars of a budget, and an empty budget", () => {
+    expect(
+      withoutUsdBudget({ depth: 2, budget: { usd: 5, tokens: 9 } }),
+    ).toEqual({ depth: 2, budget: { tokens: 9 } });
+    expect(withoutUsdBudget({ depth: 2, budget: { usd: 5 } })).toEqual({
+      depth: 2,
+    });
+    expect(withoutUsdBudget({ depth: 2 })).toEqual({ depth: 2 });
+    expect(withoutUsdBudget(undefined)).toBeUndefined();
+  });
 });
