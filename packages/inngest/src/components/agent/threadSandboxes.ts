@@ -510,12 +510,40 @@ export const threadSandboxOwner = (
     pause: async (name, sandbox, epoch = 0) => {
       const suffix = epoch > 0 ? `:g${epoch}` : "";
 
+      const key = kvKey<PausedSandbox>(sandboxPausedKey(ref, name));
+
       try {
-        await sandbox.pause(`${name}:thread:pause${suffix}`);
-        await scope.set(kvKey<PausedSandbox>(sandboxPausedKey(ref, name)), {
+        // The record comes first: one that points at a sandbox the pause then
+        // failed to stop is harmless (it is resumed as it runs), while a
+        // paused sandbox nothing records would be lost.
+        const held = await scope.get(key);
+
+        await scope.set(key, {
           id: sandbox.id,
           generation: sandboxGeneration(runId, epoch),
         });
+
+        try {
+          await sandbox.pause(`${name}:thread:pause${suffix}`);
+        } catch (error) {
+          await forget(scope, key.name);
+
+          throw error;
+        }
+
+        // A sandbox the record held before is no longer the thread's, so
+        // nothing would ever resume or destroy it.
+        if (held && held.id !== sandbox.id) {
+          await options.run(`${name}:thread:superseded${suffix}`, async () => {
+            const found = await (
+              client as unknown as CleanupThreadSandboxOptions["client"]
+            ).sandboxes.get(held.id);
+
+            await found?.destroy();
+
+            return null;
+          });
+        }
 
         return true;
       } catch (error) {

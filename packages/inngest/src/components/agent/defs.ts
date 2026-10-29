@@ -244,7 +244,9 @@ export interface SandboxBinding<
    *   creates a new sandbox from the snapshot. Pick it when a paused sandbox
    *   should not be held, at the cost of a snapshot per thread.
    *
-   * A sandbox that belongs to no thread is destroyed.
+   * A resumed sandbox keeps the skills it was first created with (only
+   * `"boot"` sources are fetched again) and runs `setup` again with `restored`
+   * true. A sandbox that belongs to no thread is destroyed.
    */
   idle?: SandboxIdle;
 }
@@ -584,6 +586,10 @@ const lazySandbox = (
   let guard: DeferHandle | undefined;
   let restored = false;
 
+  // Whether the sandbox was resumed from a pause. Its workspace has no other
+  // copy, so it is kept (paused again) even when nothing used it.
+  let fromPause = false;
+
   // Rises with every save and every recycle. It names the generation of each
   // save and the cleanup defer of each sandbox, so neither is ever reused: a
   // save whose destroy then failed has taken its generation, and the next save
@@ -640,7 +646,11 @@ const lazySandbox = (
 
           existed = true;
           restored = true;
+          fromPause = true;
           arm(sandbox);
+          // The workspace was ready when it was paused: a run cancelled from
+          // here pauses it again.
+          await owner?.ready(name);
           await fetchBootSkills(name, sandbox, definition.skills ?? []);
 
           return sandbox;
@@ -875,7 +885,7 @@ const lazySandbox = (
 
         let paused = false;
 
-        if (used && idle === "pause") {
+        if ((used || fromPause) && idle === "pause") {
           paused = await owner.pause(name, sandbox, epoch);
 
           // A pause that worked took its generation.
@@ -940,6 +950,7 @@ const lazySandbox = (
         guard = undefined;
         used = false;
         restored = false;
+        fromPause = false;
 
         if (!saved) {
           epoch++;
@@ -975,7 +986,7 @@ const lazySandbox = (
 
         if (sandbox) {
           // A sandbox whose creation or setup failed is not worth keeping.
-          const worthKeeping = !failed && used;
+          const worthKeeping = (!failed && used) || fromPause;
 
           // A pause keeps the sandbox for the thread's next run; one that
           // could not be paused is saved and destroyed like any other.

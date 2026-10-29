@@ -238,6 +238,17 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     );
   });
 
+  test("a text file with a byte order mark is pushed byte for byte", async () => {
+    branch("agent/bom", () => {
+      writeFileSync(join(work, "bom.txt"), "\ufeffwith a mark\n");
+    });
+
+    const outcome = await push("agent/bom");
+    const pushed = (outcome as { pushed: { sha: string }[] }).pushed[0];
+
+    expect(pushed?.sha).toBe(git(work, "rev-parse", "refs/heads/agent/bom"));
+  });
+
   test("a blob whose content does not match its hash is refused before anything is sent", async () => {
     branch("agent/liar", () => {
       writeFileSync(join(work, "a.txt"), "real\n");

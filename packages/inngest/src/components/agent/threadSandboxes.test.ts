@@ -973,6 +973,76 @@ describe("lazy sandboxes of a thread", () => {
     expect(w.paused.has("sb-1")).toBe(false);
   });
 
+  test("a resumed sandbox nothing used is paused again, not destroyed", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      first.owner(),
+    );
+
+    await one.work?.get();
+    await one.work?.close();
+
+    const paused = w.durable("sb-1");
+    const next = openSandboxes(
+      { work: { sandbox: box, start: "eager" } },
+      {
+        create: vi.fn(),
+        get: vi.fn(async () => {
+          return paused;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      setup(w, "01B").owner(first.scope),
+    );
+
+    // Resumed by the eager start, then the run ends without using it.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+    await next.work?.close();
+
+    expect(w.live.has("sb-1")).toBe(true);
+    expect(w.paused.has("sb-1")).toBe(true);
+    expect(await setup(w, "01C").owner(first.scope).takePaused("work")).toBe(
+      "sb-1",
+    );
+  });
+
+  test("a pause that replaces another run's record destroys the sandbox it supersedes", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-old");
+
+    const s = setup(w, "01A");
+
+    await s.owner().pause("work", w.durable("sb-first"));
+    await setup(w, "01B").owner(s.scope).pause("work", w.durable("sb-new"));
+
+    expect(w.live.has("sb-first")).toBe(false);
+    expect(w.live.has("sb-new")).toBe(true);
+    expect(await s.owner().takePaused("work")).toBe("sb-new");
+  });
+
+  test("a pause that fails leaves no record", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+
+    expect(await s.owner().pause("work", w.durable("sb-1"))).toBe(false);
+    expect(await s.owner().takePaused("work")).toBeUndefined();
+  });
+
   test("rejects an idle that is not pause or snapshot", () => {
     expect(() => {
       return openSandboxes(

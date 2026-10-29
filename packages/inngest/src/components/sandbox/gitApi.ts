@@ -757,7 +757,11 @@ const inlineText = (bytes: Uint8Array, mode: string): string | undefined => {
   }
 
   try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    // The BOM is kept in the text, so it is written back.
+    const text = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(bytes);
 
     return text.includes("\0") ? undefined : text;
   } catch {
