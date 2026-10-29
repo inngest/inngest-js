@@ -618,6 +618,7 @@ export const createStepTools = <
                   timeout: timeStr(extra.timeout, client[internalLoggerSymbol]),
                 }),
             ...(extra?.attempt ? { attempt: extra.attempt } : {}),
+            ...(extra?.reader ? { reader: extra.reader } : {}),
           },
         });
       },
@@ -682,6 +683,7 @@ export const createStepTools = <
             stream?: number;
             timeout?: string;
             attempt?: number;
+            reader?: string;
           };
         },
       ) => Promise<unknown>

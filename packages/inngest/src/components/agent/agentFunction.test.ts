@@ -388,7 +388,7 @@ describe("inbox arrival", () => {
 
 describe("inbox sources", () => {
   const ci = (state: string) => {
-    return { name: "ci/status", data: { t: "t1", state } };
+    return { name: "ci/status", data: { t: "t1", state }, stream: 1 };
   };
 
   test("a configured source maps to the thread and its events are user messages for the model", async () => {
@@ -431,7 +431,7 @@ describe("inbox sources", () => {
       event: trigger("go"),
       incoming: [
         ci("red"),
-        { name: "deploy/done", data: { t: "t1", v: "1.2" } },
+        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 2 },
       ],
       onOp: (op) => {
         const opts = op.opts as { event?: string; if?: string } | undefined;

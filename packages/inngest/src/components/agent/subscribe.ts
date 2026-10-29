@@ -70,6 +70,22 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
    * The version of the event, when it was sent with one.
    */
   v?: string;
+
+  /**
+   * Which source of the subscription saved the message: the order of the
+   * sources, starting at 0. Missing on messages saved before it was kept.
+   */
+  stream?: number;
+
+  /**
+   * Whether this is a message of an event, and then the message narrowed to
+   * its name and data:
+   * `if (msg.is(order)) msg.data.total`.
+   * @param type The event name or event type.
+   */
+  is<TType extends SubscribeEvent["event"]>(
+    type: TType,
+  ): this is SourceMessage<{ event: TType }>;
 }
 
 /**
@@ -258,9 +274,44 @@ export function streamsOf(
 }
 
 /**
+ * A reader of one kind of message in an inbox, with a cursor of its own over the
+ * same ordered sequence. Reading through a view hides nothing from the inbox or
+ * from other views: every reader sees every message in its place.
+ */
+export interface View<TMessage> extends AsyncIterable<TMessage> {
+  /**
+   * Waits for the next message of this kind after this view's cursor, or
+   * returns `null` once the inbox is closed and none is left. Like the inbox's
+   * `next()`: `{ timeout }` gives up with `undefined`, and `{ timeout: 0 }` never
+   * waits.
+   * @param options The timeout.
+   */
+  next(): Promise<TMessage | null>;
+  next(options: NextOptions): Promise<TMessage | null | undefined>;
+
+  /**
+   * Every message of this kind after this view's cursor, in order, advancing
+   * the cursor past them. It never waits.
+   */
+  unread(): Promise<TMessage[]>;
+
+  /**
+   * Every message of this kind so far, read or not, in order. It moves no
+   * cursor and never waits.
+   */
+  current(): Promise<TMessage[]>;
+}
+
+/**
  * What `listen()` takes: an event name, an event type, or one with an `if`.
  */
 export type ListenSource = SubscribeEvent["event"] | SubscribeEvent;
+
+/**
+ * The message of one event type or name, typed by its schema.
+ */
+export type EventMessage<TType extends SubscribeEvent["event"]> =
+  SourceMessage<{ event: TType }>;
 
 /**
  * The messages a listened source adds.
@@ -276,6 +327,12 @@ export type ListenMessage<TSource extends ListenSource> =
  * A source added by `listen()`.
  */
 export interface Listener<TInbox = unknown> extends AsyncDisposable {
+  /**
+   * The number of the source in the subscription, which messages it saves carry
+   * as `stream`.
+   */
+  stream: number;
+
   /**
    * The inbox the source was added to, typed with the messages of the source
    * too.
@@ -339,6 +396,16 @@ export interface Subscription<
   unread(): Promise<TMessage[]>;
 
   /**
+   * A view of the messages of one event: it reads them with a cursor of its
+   * own, in the order they arrived, and hides nothing from other readers. The
+   * view's messages are typed by the event type.
+   * @param type The event name or event type.
+   */
+  of<TType extends SubscribeEvent["event"]>(
+    type: TType,
+  ): View<SourceMessage<{ event: TType }>>;
+
+  /**
    * Adds an event source to this subscription: its messages join the same
    * ordered sequence, from now on (events sent before are not captured). It is
    * one step. The returned listener removes the source again.
@@ -395,8 +462,30 @@ export type SubscribeOp = (
     target?: SubscribeEvent;
     timeout?: NextTimeout;
     attempt?: number;
+
+    /**
+     * The view that waits, for a park of a view.
+     */
+    reader?: string;
   },
 ) => Promise<unknown>;
+
+/**
+ * Gives a message its `is()` check, which is not a field: it is not copied,
+ * serialized or compared.
+ * @param message A message made from an event.
+ */
+export function withIs<TMessage extends object>(message: TMessage): TMessage {
+  Object.defineProperty(message, "is", {
+    value(type: SubscribeEvent["event"]) {
+      return (message as { name?: string }).name === eventNameOf(type);
+    },
+    enumerable: false,
+    configurable: true,
+  });
+
+  return message;
+}
 
 /**
  * Opens a subscription.
@@ -477,7 +566,7 @@ export async function openSubscription<
       throw new Error(`Subscription "${key}": message ${seq} is not an event.`);
     }
 
-    return { ...event, seq } as unknown as InboxMessage<TData>;
+    return withIs({ ...event, seq }) as unknown as InboxMessage<TData>;
   };
 
   // Messages put back, oldest first.
@@ -582,6 +671,163 @@ export async function openSubscription<
     readCount = seq;
 
     return messageOf(message, seq);
+  }
+
+  // Views: a cursor of its own over the same sequence. A view's read is the
+  // first message of its kind after the cursor, a function of the stack, so it
+  // is the same on every replay. What depends on the moment (`unread()`,
+  // `current()`, a timeout) first records how many messages there were.
+  let views = 0;
+
+  function of(type: SubscribeEvent["event"]) {
+    const wanted = eventNameOf(type);
+    const reader = `v${++views}`;
+    let cursor = 0;
+    let probes = 0;
+    const timedOutAt = new Map<number, number>();
+    let order: Promise<unknown> = Promise.resolve();
+
+    const alone = <T>(run: () => Promise<T>): Promise<T> => {
+      const result = order.then(run);
+      order = result.catch(() => {
+        return undefined;
+      });
+
+      return result;
+    };
+
+    // How many messages there were when this step ran, recorded.
+    const counted = async () => {
+      probes += 1;
+
+      const answer = (await op(
+        `${key}:${reader}:current:${probes}`,
+        "current",
+        undefined,
+        0,
+      )) as { count: number };
+
+      return answer.count;
+    };
+
+    const scan = (from: number, to: number, first = false) => {
+      const found: InboxMessage<TData>[] = [];
+      const messages = read();
+
+      for (let index = from; index < Math.min(to, messages.length); index++) {
+        const saved = messages[index];
+
+        if ((saved as { name?: string } | undefined)?.name === wanted) {
+          found.push(messageOf(saved, index + 1));
+
+          if (first) {
+            break;
+          }
+        }
+      }
+
+      return found;
+    };
+
+    const nextOf = async (
+      options?: NextOptions,
+    ): Promise<InboxMessage<TData> | null | undefined> => {
+      // The bound of the first scan: with a timeout, what was there when the
+      // read began, recorded, so that a timeout stays one on replay.
+      let bound =
+        options?.timeout === undefined
+          ? Number.POSITIVE_INFINITY
+          : await counted();
+
+      for (;;) {
+        const [hit] = scan(cursor, bound, true);
+
+        if (hit) {
+          cursor = hit.seq;
+
+          return hit;
+        }
+
+        if (options?.timeout === 0) {
+          cursor = Math.max(cursor, Math.min(bound, read().length));
+
+          return undefined;
+        }
+
+        const seen = Math.min(bound, read().length);
+
+        cursor = Math.max(cursor, seen);
+
+        if (total !== undefined && cursor >= total) {
+          return null;
+        }
+
+        // Nothing of this kind yet: wait for the next message of any kind, then
+        // look again.
+        const seq = seen + 1;
+        const attempt = timedOutAt.get(seq) ?? 0;
+        const answered = await op(
+          attempt
+            ? `${key}:${reader}:${seq}:${attempt}`
+            : `${key}:${reader}:${seq}`,
+          "park",
+          seq,
+          0,
+          { reader, timeout: options?.timeout, attempt },
+        );
+
+        if (answered === null) {
+          timedOutAt.set(seq, attempt + 1);
+
+          return undefined;
+        }
+
+        if ((answered as { closed?: boolean } | undefined)?.closed) {
+          return null;
+        }
+
+        // Woken: the message at `seq` exists. Scan on from the cursor over the
+        // whole state, which now holds it.
+        options = undefined;
+        bound = Number.POSITIVE_INFINITY;
+      }
+    };
+
+    const view: View<InboxMessage<TData>> = {
+      next: ((options?: NextOptions) => {
+        return alone(() => {
+          return nextOf(options);
+        });
+      }) as View<InboxMessage<TData>>["next"],
+      unread() {
+        return alone(async () => {
+          const count = await counted();
+          const taken = scan(cursor, count);
+
+          cursor = Math.max(cursor, count);
+
+          return taken;
+        });
+      },
+      current() {
+        return alone(async () => {
+          return scan(0, await counted());
+        });
+      },
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            const message = await view.next();
+
+            return message
+              ? { done: false, value: message }
+              : { done: true, value: undefined };
+          },
+        };
+      },
+    };
+
+    return view;
   }
 
   let currents = 0;
@@ -713,6 +959,7 @@ export async function openSubscription<
   const subscription: Subscription<TData> = {
     next: next as Subscription<TData>["next"],
     current: current as Subscription<TData>["current"],
+    of: of as unknown as Subscription<TData>["of"],
     unread: unread as Subscription<TData>["unread"],
     async listen(source) {
       if (closing) {
@@ -730,6 +977,7 @@ export async function openSubscription<
 
       const entry = streams[stream];
       const listener = {
+        stream,
         inbox: subscription,
         async stop() {
           if (!entry?.active) {
