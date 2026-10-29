@@ -422,6 +422,7 @@ export type {
   KvScope,
   KvScopeInstance,
   KvSetOptions,
+  KvSource,
   KvStore,
   KvValue,
   KvValueMustBeJson,
