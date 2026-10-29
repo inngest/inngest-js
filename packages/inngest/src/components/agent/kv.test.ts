@@ -476,6 +476,14 @@ describe("kv typed keys", () => {
     await bound.set(branded, { id: "x" as string & { __brand: "id" } });
     await bound.set(kvKey<{ a: string | undefined }>("u2"), { a: undefined });
     await bound.set(kvKey<readonly string[]>("ro2"), ["a"]);
+    interface Shape {
+      a: string;
+    }
+    const shape: Shape = { a: "x" };
+    await bound.set("iface", shape);
+    await bound.set("list", [shape]);
+    // @ts-expect-error undefined in an array is not JSON
+    await bound.set("holes", [undefined, "a"]);
     // @ts-expect-error a function is not JSON
     await bound.set("fn", () => 1);
     // @ts-expect-error a default makes the input wider than the output

@@ -604,12 +604,30 @@ export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
   : unknown;
 
 /**
- * What a write to a key takes: `T` for a `KvKey<T>`, any JSON value for a
- * plain name.
+ * What `update` returns: the key's type, or the value type the callback gave
+ * for a plain name.
  */
-export type KvWrite<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
+export type KvResult<K extends KvKeyInput, V> = [K] extends [KvKey<infer T>]
   ? T
-  : KvJson;
+  : V;
+
+/**
+ * What a write to a key takes: `T` for a `KvKey<T>`, for a plain name any value
+ * whose type is JSON-safe (checked deeply, so interfaces pass).
+ */
+export type KvWrite<K extends KvKeyInput, V = KvJson> = [K] extends [
+  KvKey<infer T>,
+]
+  ? T
+  : V & KvJsonCheck<V>;
+
+/**
+ * `unknown` (no constraint) when `V` is JSON-safe, otherwise a type that
+ * names the rule.
+ */
+export type KvJsonCheck<V> = [V] extends [KvJsonSafe<V>]
+  ? unknown
+  : KvValueMustBeJson;
 
 /**
  * What a `kvKey` schema must satisfy: its input and output types match, so
@@ -884,9 +902,9 @@ export interface KvScopeInstance {
    * @param value The value, JSON-serializable.
    * @param options Expiry.
    */
-  set<K extends KvKeyInput>(
+  set<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    value: KvWrite<K>,
+    value: KvWrite<K, V>,
     options?: KvSetOptions,
   ): Promise<void>;
 
@@ -905,9 +923,9 @@ export interface KvScopeInstance {
    * const owns = await kv.env.setIfAbsent(`card:${id}`, runId, { ttl: 600 });
    * ```
    */
-  setIfAbsent<K extends KvKeyInput>(
+  setIfAbsent<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    value: KvWrite<K>,
+    value: KvWrite<K, V>,
     options?: KvSetOptions,
   ): Promise<boolean>;
 
@@ -925,10 +943,10 @@ export interface KvScopeInstance {
    * The result never expires, even if the key had a `ttl`: pass nothing to
    * `set` yourself if you need the expiry kept.
    */
-  update<K extends KvKeyInput>(
+  update<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    fn: (current: KvValue<K> | undefined) => KvWrite<K>,
-  ): Promise<KvWrite<K>>;
+    fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
+  ): Promise<KvResult<K, V>>;
 
   /**
    * Reads a key and deletes it in one step. Use it for flags consumed once.
@@ -1314,7 +1332,10 @@ export function createKv(
           },
         };
       },
-      async update(key, fn) {
+      async update<K extends KvKeyInput, V>(
+        key: K,
+        fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
+      ): Promise<KvResult<K, V>> {
         const name = nameOf(key);
         const result = await run("update", name, async (h) => {
           const current = await tryDecode(key, await h.get(name));
@@ -1331,7 +1352,7 @@ export function createKv(
           return { "~kvUpdate": true, value: next } satisfies KvUpdate;
         });
 
-        return unwrapUpdate(result) as KvWrite<typeof key>;
+        return unwrapUpdate(result) as KvResult<K, V>;
       },
       async take(key) {
         const name = nameOf(key);
