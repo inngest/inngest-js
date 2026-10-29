@@ -1617,20 +1617,94 @@ export function kvFrom(source: KvSource | undefined): Kv {
     return source;
   }
 
-  // Every member is looked up on the KV the function returns at that moment.
-  return new Proxy({} as Kv, {
-    get(_, property) {
-      // Probes such as `await store` must not call the function.
-      if (typeof property === "symbol" || property === "then") {
-        return undefined;
-      }
+  return new LazyKv(source);
+}
 
-      const current = source();
-      const member = Reflect.get(current, property);
+/**
+ * A `Kv` that asks `source` for the KV at every use, so a per-request binding
+ * is read when the request is there.
+ */
+class LazyKv implements Kv {
+  constructor(private readonly source: () => Kv) {}
 
-      return typeof member === "function" ? member.bind(current) : member;
-    },
-  });
+  get<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined> {
+    return this.source().get(key);
+  }
+
+  set<K extends KvKeyInput, V = KvValue<K>>(
+    key: K,
+    value: KvWrite<K, V>,
+    options?: KvSetOptions,
+  ): Promise<void> {
+    return this.source().set(key, value, options);
+  }
+
+  setIfAbsent<K extends KvKeyInput, V = KvValue<K>>(
+    key: K,
+    value: KvWrite<K, V>,
+    options?: KvSetOptions,
+  ): Promise<boolean> {
+    return this.source().setIfAbsent(key, value, options);
+  }
+
+  index(name: string): KvIndex {
+    return this.source().index(name);
+  }
+
+  update<K extends KvKeyInput, V = KvValue<K>>(
+    key: K,
+    fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
+  ): Promise<KvResult<K, V>> {
+    return this.source().update(key, fn);
+  }
+
+  take<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined> {
+    return this.source().take(key);
+  }
+
+  delete(key: KvKeyInput): Promise<void> {
+    return this.source().delete(key);
+  }
+
+  all(): Promise<Record<string, unknown>> {
+    return this.source().all();
+  }
+
+  clear(): Promise<void> {
+    return this.source().clear();
+  }
+
+  scope(scope: KvScope, id?: string): KvScopeInstance {
+    return this.source().scope(scope, id);
+  }
+
+  get env(): KvScopeInstance {
+    return this.source().env;
+  }
+
+  get app(): KvScopeInstance {
+    return this.source().app;
+  }
+
+  get function(): KvScopeInstance {
+    return this.source().function;
+  }
+
+  get run(): KvScopeInstance {
+    return this.source().run;
+  }
+
+  get session(): KvScopeInstance {
+    return this.source().session;
+  }
+
+  get thread(): KvScopeInstance {
+    return this.source().thread;
+  }
+
+  with(client: { id: string; env: string | null }): Kv {
+    return this.source().with(client);
+  }
 }
 
 /**
