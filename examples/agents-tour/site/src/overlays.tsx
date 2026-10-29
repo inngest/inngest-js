@@ -104,7 +104,6 @@ export const Contents = ({
         onKeyDown={(event) => {
           if (event.key === "j" || event.key === "ArrowDown") {
             event.preventDefault();
-<<<<<<< HEAD
             setCursor((value) => {
               return Math.min(all.length - 1, value + 1);
             });
@@ -113,12 +112,6 @@ export const Contents = ({
             setCursor((value) => {
               return Math.max(0, value - 1);
             });
-=======
-            setCursor((value) => Math.min(all.length - 1, value + 1));
-          } else if (event.key === "k" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setCursor((value) => Math.max(0, value - 1));
->>>>>>> origin/jack/agent-primitives
           } else if (event.key === "Enter") {
             event.preventDefault();
             const page = all[cursor];
@@ -146,13 +139,9 @@ export const Contents = ({
                     className="entry"
                     tabIndex={-1}
                     key={page.id}
-<<<<<<< HEAD
                     onClick={() => {
                       onPick(page);
                     }}
-=======
-                    onClick={() => onPick(page)}
->>>>>>> origin/jack/agent-primitives
                   >
                     <span className="num">{page.number}</span>
                     {page.title}
@@ -216,25 +205,17 @@ export const Search = ({
             (event.ctrlKey && event.key === "n")
           ) {
             event.preventDefault();
-<<<<<<< HEAD
             setCursor((value) => {
               return Math.min(results.length - 1, value + 1);
             });
-=======
-            setCursor((value) => Math.min(results.length - 1, value + 1));
->>>>>>> origin/jack/agent-primitives
           } else if (
             event.key === "ArrowUp" ||
             (event.ctrlKey && event.key === "p")
           ) {
             event.preventDefault();
-<<<<<<< HEAD
             setCursor((value) => {
               return Math.max(0, value - 1);
             });
-=======
-            setCursor((value) => Math.max(0, value - 1));
->>>>>>> origin/jack/agent-primitives
           } else if (event.key === "Enter") {
             event.preventDefault();
             const page = results[cursor];
@@ -254,13 +235,9 @@ export const Search = ({
               aria-current={position === cursor}
               tabIndex={-1}
               key={page.id}
-<<<<<<< HEAD
               onClick={() => {
                 onPick(page);
               }}
-=======
-              onClick={() => onPick(page)}
->>>>>>> origin/jack/agent-primitives
             >
               <span className="num">{page.number}</span>
               {page.title}
