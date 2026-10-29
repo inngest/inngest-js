@@ -269,6 +269,10 @@ export const pushBranch = async (
      * Names the files the push uses in the sandbox; keep it the same on a retry.
      */
     idempotencyKey: string;
+
+    /**
+     * Aborts the requests of the push.
+     */
     signal?: AbortSignal;
   },
 ): Promise<PushBranchResult> => {
@@ -399,6 +403,12 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
       bundle = await sandbox.files.read("git-push:read", path);
     }
 
+    if (bundle.byteLength !== size) {
+      return fail(
+        `the push could not be read in full from the sandbox (${bundle.byteLength} of ${size} bytes)`,
+      );
+    }
+
     if (bundle.byteLength > maxBytes) {
       return fail(
         `the push is more than the ${maxBytes} bytes git_push accepts`,
@@ -444,7 +454,7 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
     if (!result || result.status === "non-fast-forward") {
       return fail(
         remoteInfo && remoteInfo.oldSha === undefined
-          ? `${branch} doesn't continue from a commit the remote has, so a push without git can't create it; rebase it onto the default branch`
+          ? `${branch} doesn't continue from a commit of the remote's default branch (or it was created on the remote meanwhile), so a push without git can't create it; rebase it onto the default branch`
           : `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`,
       );
     }

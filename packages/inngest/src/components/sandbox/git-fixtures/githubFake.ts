@@ -169,6 +169,25 @@ export const fakeGitHub = () => {
         : respond({ message: "Not Found" }, 404);
     }
 
+    if (method === "GET" && path.startsWith("/compare/")) {
+      const [from = "", to = ""] = path.slice("/compare/".length).split("...");
+
+      if (!commits.has(from) || !commits.has(to)) {
+        return respond({ message: "Not Found" }, 404);
+      }
+
+      return respond({
+        status:
+          from === to
+            ? "identical"
+            : ancestors(to).has(from)
+              ? "ahead"
+              : ancestors(from).has(to)
+                ? "behind"
+                : "diverged",
+      });
+    }
+
     if (method === "GET" && path.startsWith("/git/commits/")) {
       const found = commits.get(path.slice("/git/commits/".length));
 
@@ -299,7 +318,26 @@ export const fakeGitHub = () => {
    * clone and the fake agree on the base.
    */
   const seed = (repo: string, commit: string, ref: string) => {
+    seedCommit(repo, commit);
+    refs.set(ref, commit);
+  };
+
+  /**
+   * Loads a commit and its ancestors from a real repository.
+   */
+  const seedCommit = (repo: string, commit: string) => {
+    if (commits.has(commit)) {
+      return;
+    }
+
+    const parents = git(repo, "log", "-1", "--format=%P", commit)
+      .split(" ")
+      .filter(Boolean);
     const tree = new Map<string, Entry>();
+
+    for (const parent of parents) {
+      seedCommit(repo, parent);
+    }
 
     for (const line of git(repo, "ls-tree", "-r", commit).split("\n")) {
       const [meta = "", path = ""] = line.split("\t");
@@ -319,11 +357,10 @@ export const fakeGitHub = () => {
     trees.set(treeId, tree);
     commits.set(commit, {
       tree: treeId,
-      parents: [],
+      parents,
       message: "base",
       author: {},
     });
-    refs.set(ref, commit);
   };
 
   return {

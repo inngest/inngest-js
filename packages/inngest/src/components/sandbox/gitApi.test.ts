@@ -777,6 +777,54 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     expect(hub.commits.get(pushedSha)?.parents).toEqual([base]);
   });
 
+  test("a new branch can't be cut from a commit the default branch doesn't contain", async () => {
+    // An unreviewed commit that exists in the repository (a fork's, a deleted
+    // branch's) but is not in main.
+    git(work, "checkout", "--quiet", "-B", "side", base);
+    mkdirSync(join(work, ".github"), { recursive: true });
+    writeFileSync(join(work, ".github/ci.yml"), "evil\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "unreviewed");
+
+    const side = git(work, "rev-parse", "HEAD");
+
+    hub.seed(work, side, "refs/pull/1/head");
+    git(work, "checkout", "--quiet", "-B", "agent/forged", side);
+    writeFileSync(join(work, "docs.md"), "docs\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "docs only");
+
+    const tip = git(work, "rev-parse", "HEAD");
+    const ref = "refs/heads/agent/forged";
+    const state = await remoteState({ remote, ref, token, fetch: hub.handle });
+
+    hub.requests.length = 0;
+
+    // The sandbox leaves out the unreviewed commit and claims it as the base.
+    const outcome = await pushManifest({
+      remote,
+      token,
+      fetch: hub.handle,
+      manifest: manifestOf(tip, side),
+      target: { src: ref, dst: ref },
+      tip,
+      state,
+      policy: (push) => {
+        return push.paths.every((path) => {
+          return path.startsWith("docs");
+        })
+          ? undefined
+          : { refuse: "docs only" };
+      },
+    });
+
+    expect(outcome).toMatchObject({ pushed: [{ status: "non-fast-forward" }] });
+    expect(hub.refs.has(ref)).toBe(false);
+    expect(hub.requests.filter((request) => request.method === "POST")).toEqual(
+      [],
+    );
+  });
+
   test("says when the remote's hashes differ from the sandbox's", async () => {
     branch("agent/hash", () => {
       writeFileSync(join(work, "h.txt"), "h\n");

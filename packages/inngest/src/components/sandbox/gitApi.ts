@@ -455,13 +455,20 @@ const clientFor = (options: {
         throw error;
       }
     },
-    commitExists: async (sha: string): Promise<boolean> => {
+    /**
+     * Whether `sha` is the commit `tip` points at or one of its ancestors.
+     * Anything the API can't say is no.
+     */
+    isAncestor: async (sha: string, tip: string): Promise<boolean> => {
       try {
-        await json("GET", `/git/commits/${sha}`);
+        const compared = await json<{ status: string }>(
+          "GET",
+          `/compare/${sha}...${tip}`,
+        );
 
-        return true;
+        return compared.status === "ahead" || compared.status === "identical";
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
+        if (error instanceof ApiError && !error.retryable) {
           return false;
         }
 
@@ -673,6 +680,10 @@ export interface PushManifestOptions {
    */
   state: { oldSha?: string; base: string };
   policy?: GitPolicy;
+
+  /**
+   * Aborts the requests.
+   */
   signal?: AbortSignal;
 }
 
@@ -794,7 +805,10 @@ const pushParsed = async (
     state.oldSha === undefined &&
     firstParent !== undefined &&
     firstParent !== state.base &&
-    (await client.commitExists(firstParent))
+    // Only a commit the default branch contains: the policy sees the files
+    // the push changes against that commit, and an unreviewed commit from a
+    // fork or a deleted branch could carry other changes underneath.
+    (await client.isAncestor(firstParent, state.base))
   ) {
     chainBase = firstParent;
   }
@@ -1093,13 +1107,25 @@ const pushParsed = async (
 };
 
 export interface CommitFilesOptions {
+  /**
+   * The repository, as `https://github.com/owner/repo`.
+   */
   remote: string;
 
   /**
    * The token, used only for the requests the host makes.
    */
   token: string;
+
+  /**
+   * The GitHub API's base URL, for GitHub Enterprise or a test server. Default
+   * `https://api.github.com`, or `/api/v3` on the remote's host.
+   */
   api?: string;
+
+  /**
+   * The `fetch` the requests use. Default the global one.
+   */
   fetch?: typeof fetch;
 
   /**
@@ -1107,6 +1133,10 @@ export interface CommitFilesOptions {
    * does not exist yet starts from the repository's default branch.
    */
   ref: string;
+
+  /**
+   * The commit message, kept exactly as given.
+   */
   message: string;
 
   /**
@@ -1122,6 +1152,11 @@ export interface CommitFilesOptions {
     | null
     | { content: string | Uint8Array; executable?: boolean }
   >;
+
+  /**
+   * Who the commit is by, as author and committer. Default `inngest-agent`
+   * with a GitHub no-reply address.
+   */
   author?: { name: string; email: string };
 
   /**
