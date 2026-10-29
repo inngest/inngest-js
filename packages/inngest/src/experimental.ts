@@ -94,9 +94,6 @@ export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
   ConfigShim,
-  GitPolicyResult,
-  GitPush,
-  GitShimOptions,
   ProgramShim,
   SandboxShim,
   ShimCall,

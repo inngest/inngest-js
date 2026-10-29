@@ -9,13 +9,26 @@
  *
  * Credentials never enter the sandbox. A handler that needs one does the work
  * in your app and replies with the result: it gets the `sandbox` of its
- * command to move files in and out (see `tool.shim.git()`, which pushes from
- * your app with a token only your app holds). `run()` is for programs that
- * need no secret.
+ * command to move files in and out. `run()` is for programs that need no
+ * secret.
  *
  * Shims are made with `tool.shim()` and passed in `shims` on `commands.run()`
- * or `$`. `tool.shim.git()` and `tool.shim.config()` are shims for the common
- * cases.
+ * or `/**
+ * @module
+ * EXPERIMENTAL: Command shims. A shim stands in for a program on `PATH` inside
+ * a sandbox command. When code runs it, the shim calls its handler in your app
+ * through a tool, and the handler returns one of two things: run the real
+ * program (optionally with another argv, extra environment or stdin), or
+ * reply with an exit code, stdout and stderr. Declining, faking and doing the
+ * work in your app are all replies; rewriting is a run.
+ *
+ * Credentials never enter the sandbox. A handler that needs one does the work
+ * in your app and replies with the result: it gets the `sandbox` of its
+ * command to move files in and out. `run()` is for programs that need no
+ * secret.
+ *
+ * Shims are made with `tool.shim()` and passed in `shims` on `commands.run()`
+. `tool.shim.config()` is a shim for the common case of settings.
  *
  * Shims are built on tools (`tools.ts`, `toolRunner.ts`). They are a
  * convenience and an audit log, not a boundary: code can call the real
@@ -34,7 +47,6 @@
  */
 import { z } from "zod/v3";
 
-import { type GitShimOptions, gitShimDefinition } from "./gitShim.ts";
 import { internalTool } from "./internalTool.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import type { SandboxTool, SandboxToolContext, SandboxTools } from "./tools.ts";
@@ -309,32 +321,6 @@ const shim = (
   }
 
   return { ...parsed, shim: true, kind: "program", name };
-};
-
-/**
- * EXPERIMENTAL: The `git` action shim. `git clone` and `git fetch` run on the
- * host and unpack into the sandbox; `git push` is bundled in the sandbox,
- * brought home, checked by `policy` and pushed from the host. The token is made
- * on the host for each operation and never enters the sandbox. Other git
- * commands run the real git in the sandbox. See `gitShim.ts`.
- *
- * @example
- * ```ts
- * const git = tool.shim.git({
- *   remote: "https://github.com/acme/app.git",
- *   token: () => installationToken("acme/app"),
- *   policy: async (push) => {
- *     if (!push.branch?.startsWith("agent/")) {
- *       return { refuse: "agents push to agent/* branches" };
- *     }
- *   },
- * });
- *
- * await sandbox.$({ shims: [git] }).sh`git clone https://github.com/acme/app.git work`;
- * ```
- */
-shim.git = (options: GitShimOptions): ProgramShim => {
-  return shim("git", gitShimDefinition(options));
 };
 
 /**
@@ -650,9 +636,4 @@ export const withShims = (
   };
 };
 
-export type {
-  GitPolicyResult,
-  GitPush,
-  GitShimOptions,
-} from "./gitShim.ts";
 export { shim };

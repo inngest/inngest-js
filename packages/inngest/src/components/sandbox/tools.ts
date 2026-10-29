@@ -255,7 +255,7 @@ export const tool = {
    * that needs a credential in your app and reply with the result. See
    * `shims.ts`.
    *
-   * `tool.shim.git()` and `tool.shim.config()` are shims for the common cases.
+   * `tool.shim.config()` exposes plain settings to the sandbox.
    *
    * @example
    * ```ts
