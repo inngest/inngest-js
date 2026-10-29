@@ -545,6 +545,14 @@ export interface PushedRef {
    * The notes the policy returned, if any.
    */
   notes?: string[];
+
+  /**
+   * Set when a push without git rebuilt the commits and the remote's tip
+   * differs from the sandbox's: the sandbox's tip. The sandbox's branch does
+   * not contain the remote's commits, so it needs a fresh clone or fetch before
+   * the next push.
+   */
+  sandboxSha?: string;
 }
 
 const maxNotes = 20;

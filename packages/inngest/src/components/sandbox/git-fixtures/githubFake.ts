@@ -107,6 +107,10 @@ export const fakeGitHub = () => {
     headers?: Record<string, string>;
     before?: () => void;
   } = { status: 0 };
+  /**
+   * Makes the contents API report this size for a file, to stand in for a big one.
+   */
+  const reported = new Map<string, number>();
 
   const ancestors = (sha: string): Set<string> => {
     const seen = new Set<string>();
@@ -188,7 +192,7 @@ export const fakeGitHub = () => {
         return respond({
           type: entry.mode === "120000" ? "symlink" : "file",
           sha: entry.sha,
-          size: bytes.length,
+          size: reported.get(file) ?? bytes.length,
           encoding: "base64",
           content:
             bytes.length > inlineLimit
@@ -322,5 +326,15 @@ export const fakeGitHub = () => {
     refs.set(ref, commit);
   };
 
-  return { handle, blobs, trees, commits, refs, requests, fail, seed };
+  return {
+    handle,
+    blobs,
+    trees,
+    commits,
+    refs,
+    requests,
+    fail,
+    seed,
+    reported,
+  };
 };

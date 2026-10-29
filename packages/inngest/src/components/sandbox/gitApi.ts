@@ -377,20 +377,6 @@ const isRetryable = (response: Response): boolean => {
   );
 };
 
-export interface GitHubClient {
-  /**
-   * The current commit of \`ref\` (\`heads/main\`), or \`undefined\` when there is
-   * none.
-   */
-  refSha: (ref: string) => Promise<string | undefined>;
-
-  /**
-   * The commit the repository's default branch points at.
-   */
-  defaultTip: () => Promise<string>;
-  file: (path: string, ref: string) => Promise<Uint8Array | undefined>;
-}
-
 const clientFor = (options: {
   remote: string;
   token: string;
@@ -469,6 +455,19 @@ const clientFor = (options: {
         throw error;
       }
     },
+    commitExists: async (sha: string): Promise<boolean> => {
+      try {
+        await json("GET", `/git/commits/${sha}`);
+
+        return true;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return false;
+        }
+
+        throw error;
+      }
+    },
     defaultTip: async (): Promise<string> => {
       const info = await json<{ default_branch: string }>("GET", "");
       const sha = await (async () => {
@@ -522,11 +521,13 @@ const clientFor = (options: {
       }
 
       if (body.type === "submodule") {
-        throw new Error(`${path} is a submodule, which a policy can't read`);
+        throw new NonRetriableError(
+          `${path} is a submodule, which a policy can't read`,
+        );
       }
 
       if (body.size > maxPolicyFileBytes) {
-        throw new Error(
+        throw new NonRetriableError(
           `${path} is ${body.size} bytes, more than the ${maxPolicyFileBytes} a policy can read`,
         );
       }
@@ -739,15 +740,19 @@ const pushParsed = async (
     const seen = new Set<string>();
 
     for (const change of commit.changes) {
-      const clash =
-        seen.has(change.path) ||
-        commit.changes.some((other) => {
-          return other.path.startsWith(`${change.path}/`);
-        });
-
-      if (clash) {
+      if (seen.has(change.path)) {
         return {
           refused: `${change.path} appears twice in a commit of this push`,
+        };
+      }
+
+      if (
+        commit.changes.some((other) => {
+          return other.path.startsWith(`${change.path}/`);
+        })
+      ) {
+        return {
+          refused: `${change.path} becomes a directory (or a file replaces one) in a single commit; a push without git needs that in two commits: delete it in one, add it in the next`,
         };
       }
 
@@ -779,9 +784,23 @@ const pushParsed = async (
   }
 
   // The first new commit must sit on the commit the manifest was built on,
-  // and each of the others on the one before it.
+  // and each of the others on the one before it. A new branch may also be cut
+  // from any other commit the repository has, such as an older commit of the
+  // default branch.
+  let chainBase = state.base;
+  const firstParent = commits[0]?.parents[0];
+
+  if (
+    state.oldSha === undefined &&
+    firstParent !== undefined &&
+    firstParent !== state.base &&
+    (await client.commitExists(firstParent))
+  ) {
+    chainBase = firstParent;
+  }
+
   const linear = commits.every((commit, at) => {
-    return commit.parents[0] === (at === 0 ? state.base : commits[at - 1]?.sha);
+    return commit.parents[0] === (at === 0 ? chainBase : commits[at - 1]?.sha);
   });
   const fastForward =
     linear && (state.oldSha === undefined || state.oldSha === state.base);
@@ -805,7 +824,7 @@ const pushParsed = async (
     const cache = await baseFile();
 
     if (!cache.has(path)) {
-      const bytes = await client.file(path, state.base);
+      const bytes = await client.file(path, chainBase);
 
       // The contents API says nothing of a file's mode, and the manifest's
       // word for it is not checked, so the file before has no mode here.
@@ -926,6 +945,10 @@ const pushParsed = async (
       status,
       asked,
       ...(notes.length > 0 && { notes }),
+      // The commits were rebuilt with different hashes than the sandbox's.
+      ...(status === "pushed" &&
+        tip !== "" &&
+        sha !== tip && { sandboxSha: tip }),
     };
   };
 
@@ -937,11 +960,11 @@ const pushParsed = async (
 
   try {
     const blobShas = new Map<string, string>();
-    let parent = state.base;
+    let parent = chainBase;
     let parentTree = (
       await client.json<{ tree: { sha: string } }>(
         "GET",
-        `/git/commits/${state.base}`,
+        `/git/commits/${chainBase}`,
       )
     ).tree.sha;
 

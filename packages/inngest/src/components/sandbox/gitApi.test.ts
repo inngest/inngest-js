@@ -661,7 +661,7 @@ describe("the git-free push", { timeout: 60_000 }, () => {
       refused: expect.stringContaining("appears twice"),
     });
     await expect(run(["a", "a/b"])).resolves.toMatchObject({
-      refused: expect.stringContaining("appears twice"),
+      refused: expect.stringContaining("becomes a directory"),
     });
     expect(hub.requests.filter((request) => request.method === "POST")).toEqual(
       [],
@@ -750,6 +750,173 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     expect(isPlainPath(".git /x")).toBe(false);
     expect(isPlainPath(".gitignore")).toBe(true);
     expect(isPlainPath("a.git/x")).toBe(true);
+  });
+
+  test("a new branch may be cut from an older commit of the default branch", async () => {
+    // main moved on; the branch was cut before that.
+    writeFileSync(join(work, "later.txt"), "later\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "main moves");
+
+    const newMain = git(work, "rev-parse", "HEAD");
+
+    hub.seed(work, newMain, "refs/heads/main");
+    branch("agent/old-base", () => {
+      writeFileSync(join(work, "mine.txt"), "mine\n");
+    });
+
+    const outcome = await push("agent/old-base");
+
+    expect(outcome).toMatchObject({
+      pushed: [{ status: "pushed", ref: "refs/heads/agent/old-base" }],
+    });
+
+    const pushedSha = hub.refs.get("refs/heads/agent/old-base") ?? "";
+
+    expect(pushedSha).toBe(git(work, "rev-parse", "refs/heads/agent/old-base"));
+    expect(hub.commits.get(pushedSha)?.parents).toEqual([base]);
+  });
+
+  test("says when the remote's hashes differ from the sandbox's", async () => {
+    branch("agent/hash", () => {
+      writeFileSync(join(work, "h.txt"), "h\n");
+    });
+
+    const ref = "refs/heads/agent/hash";
+    const real = git(work, "rev-parse", ref);
+    const state = await remoteState({ remote, ref, token, fetch: hub.handle });
+    const run = (tip: string) => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: manifestOf(real, state.base),
+        target: { src: ref, dst: ref },
+        tip,
+        state,
+      });
+    };
+    const same = (await run(real)) as { pushed: { sandboxSha?: string }[] };
+
+    expect(same.pushed[0]?.sandboxSha).toBeUndefined();
+
+    hub.refs.delete(ref);
+
+    const other = (await run("e".repeat(40))) as {
+      pushed: { sandboxSha?: string }[];
+    };
+
+    expect(other.pushed[0]?.sandboxSha).toBe("e".repeat(40));
+  });
+
+  test("a retry after the ref was written but the answer was lost pushes the same commit", async () => {
+    branch("agent/lost", () => {
+      writeFileSync(join(work, "l.txt"), "l\n");
+    });
+
+    const ref = "refs/heads/agent/lost";
+    const tip = git(work, "rev-parse", ref);
+    const state = await remoteState({ remote, ref, token, fetch: hub.handle });
+    const manifest = manifestOf(tip, state.base);
+    let lost = true;
+    const flaky: typeof fetch = async (input, init) => {
+      const response = await hub.handle(input, init);
+
+      if (
+        lost &&
+        init?.method === "POST" &&
+        String(input).endsWith("/git/refs")
+      ) {
+        lost = false;
+
+        throw new TypeError("network lost after the ref was made");
+      }
+
+      return response;
+    };
+    const attempt = () => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: flaky,
+        manifest,
+        target: { src: ref, dst: ref },
+        tip,
+        state,
+      });
+    };
+
+    await expect(attempt()).rejects.toThrow("network lost");
+    expect(hub.refs.get(ref)).toBe(tip);
+    await expect(attempt()).resolves.toMatchObject({
+      pushed: [{ status: "pushed", sha: tip }],
+    });
+    expect(hub.refs.get(ref)).toBe(tip);
+
+    // An existing branch: the PATCH is made, the answer is lost.
+    writeFileSync(join(work, "l2.txt"), "l2\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "more");
+
+    const next = git(work, "rev-parse", ref);
+    const state2 = await remoteState({ remote, ref, token, fetch: hub.handle });
+    const manifest2 = manifestOf(next, state2.base);
+    let lost2 = true;
+    const flaky2: typeof fetch = async (input, init) => {
+      const response = await hub.handle(input, init);
+
+      if (lost2 && init?.method === "PATCH") {
+        lost2 = false;
+
+        throw new TypeError("network lost after the update");
+      }
+
+      return response;
+    };
+    const attempt2 = () => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: flaky2,
+        manifest: manifest2,
+        target: { src: ref, dst: ref },
+        tip: next,
+        state: state2,
+      });
+    };
+
+    await expect(attempt2()).rejects.toThrow("network lost");
+    await expect(attempt2()).resolves.toMatchObject({
+      pushed: [{ status: "pushed", sha: next }],
+    });
+  });
+
+  test("a file the policy can't read because it is too big ends the step with a clear error", async () => {
+    branch("agent/toobig", () => {
+      writeFileSync(join(work, "keep.txt"), "edited\n");
+    });
+    hub.reported.set("keep.txt", 9_000_000);
+
+    const failure = await push("agent/toobig", async (pushed) => {
+      await pushed.files[0]?.before();
+    }).catch((error: unknown) => {
+      return error;
+    });
+
+    expect(failure).toBeInstanceOf(NonRetriableError);
+    expect((failure as Error).message).toContain("keep.txt is 9000000 bytes");
+  });
+
+  test("a file that becomes a directory in one commit is refused with what to do", async () => {
+    branch("agent/dir", () => {
+      git(work, "rm", "--quiet", "keep.txt");
+      mkdirSync(join(work, "keep.txt"));
+      writeFileSync(join(work, "keep.txt/inner.txt"), "inner\n");
+    });
+
+    await expect(push("agent/dir")).resolves.toMatchObject({
+      refused: expect.stringContaining("in two commits"),
+    });
   });
 
   test("the sandbox that lacks the remote's commit makes the script exit 4", () => {
