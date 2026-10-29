@@ -1348,6 +1348,13 @@ export function createAgentFunction(
   const store = kvFrom(config.kv);
   const scoring = config.scores ?? true;
 
+  // A dollar budget with no price would count every call as free and never stop.
+  if (config.limits?.budget?.usd !== undefined && !config.limits.price) {
+    throw new Error(
+      `Agent "${config.id}" sets limits.budget.usd without limits.price: add the price of a model call, or the budget would never be spent.`,
+    );
+  }
+
   const cleanup = createDefer(
     client,
     { id: `${config.id}-cleanup` },

@@ -8,7 +8,10 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { eventType, invoke, staticSchema } from "../triggers/triggers.ts";
-import { createAgentFunction } from "./agentFunction.ts";
+import {
+  type AgentFunctionConfig,
+  createAgentFunction,
+} from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
@@ -1553,6 +1556,26 @@ describe("request and reply", () => {
 });
 
 describe("agent limits", () => {
+  test("a dollar budget without a price throws when the agent is defined", () => {
+    const define = (limits: AgentFunctionConfig["limits"]) => {
+      return () => {
+        return createAgentFunction(
+          makeClient(),
+          { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), limits },
+          async () => {},
+        );
+      };
+    };
+
+    expect(define({ budget: { usd: 1 } })).toThrow(
+      /limits\.budget\.usd without limits\.price/,
+    );
+    expect(
+      define({ budget: { usd: 1 }, price: { "*": { input: 1, output: 1 } } }),
+    ).not.toThrow();
+    expect(define({ budget: { tokens: 10 } })).not.toThrow();
+  });
+
   const spend = (input: number, output: number): AgentModelResponse => {
     return {
       message: { role: "assistant", content: [] },
