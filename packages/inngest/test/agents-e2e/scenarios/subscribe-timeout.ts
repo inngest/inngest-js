@@ -141,7 +141,17 @@ export const subscribeTimeout = scenario({
 
           await ctx.finished(start);
 
-          const [run] = await ctx.runsOf(start);
+          // The run's output can land a moment after its status.
+          const run = await ctx.until(
+            async () => {
+              const [found] = await ctx.runsOf(start);
+
+              return found;
+            },
+            (r) => {
+              return r?.output !== null && r?.output !== undefined;
+            },
+          );
           const output = run?.output as
             | { first?: unknown; second?: unknown }
             | undefined;
