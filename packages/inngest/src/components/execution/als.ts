@@ -6,6 +6,16 @@ import type { IInngestExecution } from "./InngestExecution.ts";
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
+/**
+ * What `agent.loop()` reads to steer and stop through the agent's inbox.
+ */
+export interface AgentBridge {
+  control?: {
+    steer: () => Promise<string[]>;
+    stop: () => Promise<boolean>;
+  };
+}
+
 export interface AsyncContext {
   /**
    * The Inngest App that is currently being used to execute the function.
@@ -114,6 +124,13 @@ export interface AsyncContext {
      * in the state, so it is not waited for. Only subscriptions use it.
      */
     skipStep?: (id: string) => Promise<void>;
+
+    /**
+     * The inbox control of the agent run this function execution is, set by the
+     * agent function once it exists. `agent.loop()` uses it to steer and stop
+     * when it is not given its own.
+     */
+    agentBridge?: AgentBridge;
 
     /**
      * The answer the run's state holds for a step, if it has one. Only

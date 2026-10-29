@@ -177,6 +177,190 @@ describe("agent function", () => {
   });
 });
 
+describe("inbox arrival", () => {
+  const loopOnce = async (
+    seen: unknown[][],
+    options: { control?: boolean } = {},
+  ) => {
+    return agent.model(async (request) => {
+      seen.push(userTexts(request.messages));
+
+      return {
+        message: { role: "assistant", content: [] },
+        toolCalls: [{ id: "c1", name: "missing", input: {} }],
+      };
+    });
+  };
+
+  test("agent.loop steers through the inbox without the app spreading control", async () => {
+    const seen: unknown[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        // No `...control`: the loop finds the inbox itself.
+        const result = await agent.loop({
+          model: await loopOnce(seen),
+          prompt: first?.data.content ?? "",
+          tools: {},
+        });
+        const next = await inbox.next();
+
+        return [result.stopped, result.turns, next?.data.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [
+        message("steer", "left"),
+        message("stop"),
+        message("user", "next"),
+      ],
+    });
+
+    expect(seen).toEqual([["go"]]);
+    expect(output).toEqual(["stopped", 1, "next"]);
+  });
+
+  test("foldMessages: all folds a user message into the turn, and next() does not return it again", async () => {
+    const seen: unknown[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        foldMessages: "all",
+      },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        await agent.loop({
+          model: agent.model(async (request) => {
+            seen.push(userTexts(request.messages));
+
+            // The second call has the folded message in its prompt.
+            return userTexts(request.messages).length > 1
+              ? say("done")
+              : {
+                  message: { role: "assistant", content: [] },
+                  toolCalls: [{ id: "c1", name: "missing", input: {} }],
+                };
+          }),
+          prompt: first?.data.content ?? "",
+          tools: {},
+        });
+
+        return (await inbox.next({ timeout: "1s" })) ?? "nothing left";
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "also this")],
+      timeouts: 1,
+    });
+
+    expect(seen).toEqual([["go"], ["go", "also this"]]);
+    expect(output).toBe("nothing left");
+  });
+
+  test("inbox.drain() takes the pending messages, stops included, and next() does not return them again", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const drained = await inbox.drain();
+        const after = await inbox.next({ timeout: "1s" });
+
+        return [
+          drained.map((m) => {
+            return m.data.kind;
+          }),
+          after,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "a"), message("stop"), message("steer", "b")],
+      timeouts: 1,
+    });
+
+    expect(output).toEqual([["user", "stop", "steer"], undefined]);
+  });
+
+  describe("onArrival", () => {
+    const arrivalFn = (calls: string[]) => {
+      const kv = createKv({ adapter: memoryKvAdapter() });
+      const { arrival } = createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          kv,
+          onArrival: async ({ message: arrived, thread }) => {
+            calls.push(`${thread}:${arrived.content}`);
+          },
+        },
+        async () => {},
+      );
+
+      return { kv, arrival: arrival as NonNullable<typeof arrival> };
+    };
+
+    const arrive = { ...message("user", "hello"), id: "evt-2" };
+    const seed = async (
+      kv: ReturnType<typeof createKv>,
+      record: Record<string, unknown>,
+    ) => {
+      await kv
+        .with({ id: testClientId, env: null })
+        .scope("thread", "t1")
+        .set("__state", { turn: 0, usage: { input: 0, output: 0 }, ...record });
+    };
+
+    test("is a function of its own, listed only when the config has the hook", () => {
+      const { arrival } = arrivalFn([]);
+
+      expect(arrival.id(testClientId)).toBe(`${testClientId}-bot-arrival`);
+      expect(
+        createAgentFunction(
+          makeClient(),
+          { id: "plain", kv: createKv({ adapter: memoryKvAdapter() }) },
+          async () => {},
+        ).arrival,
+      ).toBeUndefined();
+    });
+
+    test("runs for a message that reaches a busy thread", async () => {
+      const calls: string[] = [];
+      const { kv, arrival } = arrivalFn(calls);
+
+      await seed(kv, { status: "running", startedBy: "evt-1" });
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual(["t1:hello"]);
+    });
+
+    test("does not run for the message that started the run, or when the thread is not busy", async () => {
+      const calls: string[] = [];
+      const { kv, arrival } = arrivalFn(calls);
+
+      await seed(kv, { status: "running", startedBy: "evt-2" });
+      await run(arrival, { event: arrive });
+      await seed(kv, { status: "waiting", startedBy: "evt-1" });
+      await run(arrival, { event: arrive });
+      await seed(kv, { status: "idle" });
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual([]);
+    });
+  });
+});
+
 describe("inbox timeouts", () => {
   test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(

@@ -221,6 +221,12 @@ export interface ThreadRecord {
    * the record of a newer one.
    */
   runId?: string;
+
+  /**
+   * The ID of the event that started the run, so a message that reaches a
+   * thread can tell whether it is the one that started the live run.
+   */
+  startedBy?: string;
 }
 
 export const threadRecordKey = "__state";

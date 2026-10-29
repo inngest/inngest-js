@@ -60,11 +60,20 @@ export const threadRecorder = (
        * The limits the invoking agent passed down, if any.
        */
       startedWith?: EffectiveLimits,
+
+      /**
+       * The ID of the event that starts the run. Given once, at the start.
+       */
+      startedBy?: string,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
 
-        return { status: "running", ...(inherited && { inherited }) };
+        return {
+          status: "running",
+          ...(inherited && { inherited }),
+          ...(startedBy && { startedBy }),
+        };
       });
     },
 
@@ -291,4 +300,29 @@ export const sandboxReadyKey = (
   runId: string,
 ): string => {
   return `__sandbox-ready:${ref}:${name}:${runId}`;
+};
+
+/**
+ * Whether a message that reaches a thread finds its run busy: a run is live
+ * with a turn in flight, and the message is not the one that started it.
+ */
+export const threadBusyFor = async (
+  /**
+   * KV store of the thread state.
+   */
+  store: Kv,
+
+  /**
+   * Thread key.
+   */
+  thread: string,
+
+  /**
+   * The ID of the arriving message's event.
+   */
+  eventId: string | undefined,
+): Promise<boolean> => {
+  const current = await store.scope("thread", thread).get(recordKey);
+
+  return current?.status === "running" && current.startedBy !== eventId;
 };
