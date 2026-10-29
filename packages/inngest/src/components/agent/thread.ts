@@ -232,11 +232,6 @@ export interface ThreadRecord {
   runId?: string;
 
   /**
-   * How the last run that ended, ended.
-   */
-  lastRun?: LastRun;
-
-  /**
    * The message the run is answering, from its delivery until the run waits
    * for the next one. A failed run resends it.
    */
@@ -254,6 +249,13 @@ export interface ThreadRecord {
 }
 
 export const threadRecordKey = "__state";
+
+/**
+ * The KV key of how the thread's last run ended. It is a key of its own, not
+ * a field of the record, because the record is rewritten whole by whichever
+ * run writes it last.
+ */
+export const lastRunRecordKey = "__lastRun";
 
 /**
  * The longest `summary` kept.
@@ -374,7 +376,7 @@ export function threadStateOf(
     turn: record?.turn ?? 0,
     summary: record?.summary,
     usage: record?.usage ?? { input: 0, output: 0 },
-    lastRun: record?.lastRun,
+    lastRun: all[lastRunRecordKey] as LastRun | undefined,
     keys: Object.fromEntries(
       Object.entries(all).filter(([name]) => {
         return !name.startsWith("__");

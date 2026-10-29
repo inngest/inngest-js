@@ -88,6 +88,7 @@ import {
 } from "./threadSandboxes.ts";
 import {
   markThreadIdle,
+  readLastRun,
   recordEnd,
   runScore,
   threadRecorder,
@@ -936,6 +937,9 @@ export function createAgentFunction(
     {
       id: `${config.id}-finished`,
       retries: 3,
+      // A run reported twice (a batched or invoked run has several finished
+      // events) is handled once.
+      idempotency: "event.data.run_id",
       triggers: [
         {
           event: "inngest/function.finished",
@@ -957,7 +961,7 @@ export function createAgentFunction(
       const runId = String(data.run_id);
 
       // How the run ended is written first and whatever else happens next.
-      const record = await recordEnd(store, message.thread, {
+      const { last, record } = await recordEnd(store, message.thread, {
         runId,
         at: event.ts ?? 0,
         finished: ended,
@@ -970,8 +974,6 @@ export function createAgentFunction(
             ? recovery.resume !== false
             : undefined,
       });
-      const last = record.lastRun;
-
       if (!recovery || ended.status !== "failed") {
         return last;
       }
@@ -988,6 +990,10 @@ export function createAgentFunction(
           mine?.fingerprint ?? fingerprint(ended.error?.name, reason),
         resuming: mine?.recovery === "resumed",
         repeated: mine?.recovery === "stuck" && recovery.resume !== false,
+        superseded:
+          record.runId !== undefined &&
+          record.runId !== runId &&
+          runScore(record.runId) > runScore(runId),
       };
       // A post that fails for good, or a `message` that throws, must not keep
       // the turn from being taken up again.
@@ -1124,6 +1130,10 @@ export function createAgentFunction(
           ),
           data.kind === "user" ? { content: data.content } : null,
         );
+
+        // How the run before this one ended: a key of its own, so it is read
+        // apart from the record.
+        const previousRun = await readLastRun(store);
 
         // Limits apply to what `agent.invoke()` starts and to the loop's budget.
         // The usage is the thread's so far, and each turn adds to it.
@@ -1351,7 +1361,7 @@ export function createAgentFunction(
             report,
             scores: agentScores,
             inbox,
-            previousRun: started.lastRun,
+            previousRun,
             get restarts() {
               return recorder.restarts;
             },
