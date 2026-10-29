@@ -387,6 +387,16 @@ describe("adapters", () => {
     expect(JSON.stringify(calls[1]?.body.blocks)).toContain('"value":"yes"');
   });
 
+  test("slack.channel sends a message's blocks with its text", async () => {
+    const blocks = [{ type: "actions", elements: [] }];
+
+    await slackChannel().post({ text: "done", blocks });
+    await slackChannel().post({ text: "plain" });
+
+    expect(calls[0]?.body.blocks).toEqual(blocks);
+    expect(calls[1]?.body).not.toHaveProperty("blocks");
+  });
+
   test("Slack text is escaped and errors are marked", async () => {
     await slackChannel().post({ text: "<!channel> <@U1> <https://x|y> & z" });
 
@@ -477,6 +487,17 @@ describe("adapters", () => {
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
 
     expect(calls[1]?.body.body).toContain("<!-- inngest-ask:sig -->");
+  });
+
+  test("github.channel ignores blocks and posts nothing for a message with no text", async () => {
+    const channel = github.channel(githubEvent, { repos: ["acme/app"] });
+
+    await channel.post({ text: "", blocks: [{ type: "actions" }] });
+    await channel.post({ text: "hi", blocks: [{ type: "actions" }] });
+
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0]?.body)).toContain("hi");
+    expect(JSON.stringify(calls[0]?.body)).not.toContain("actions");
   });
 
   test("GitHub text cannot mention anyone or forge the ask marker", async () => {

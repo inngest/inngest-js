@@ -291,6 +291,12 @@ export const github = {
 
     return defineChannel({
       post: async (message) => {
+        // GitHub rejects an empty comment, and a message of blocks alone (a
+        // `report.finish({ blocks })`) has nothing here to show.
+        if (message.text === "") {
+          return;
+        }
+
         await comment(options, target, render(message));
       },
       ask: async (ask) => {

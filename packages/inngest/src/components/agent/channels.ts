@@ -38,6 +38,14 @@ export interface ChannelMessage<
    * messages; `"progress"` (the default) and `"result"` look the same.
    */
   kind?: "progress" | "result" | "error";
+
+  /**
+   * Rich content in the surface's own format (Slack: the `blocks` of
+   * `chat.postMessage`, such as buttons). The Slack adapter sends them with
+   * the text; the GitHub adapter ignores them. Only the surface they are made
+   * for understands them. Default: none.
+   */
+  blocks?: unknown[];
 }
 
 /**
@@ -520,7 +528,7 @@ export interface Reporter {
    * Ends the open progress stream with final content: markdown text and
    * surface-specific blocks (Slack: the blocks of `chat.stopStream`, such as
    * feedback buttons). A destination with no open stream posts `final.text`
-   * as a message, if there is any. The next card starts a new stream.
+   * as a message, with its `blocks` if it has any. The next card starts a new stream.
    */
   finish(
     /**
@@ -1112,17 +1120,24 @@ export const createReporter = (
       "finish",
       options,
       (channel) => {
-        return channel.stream !== undefined || final?.text !== undefined;
+        return (
+          channel.stream !== undefined ||
+          final?.text !== undefined ||
+          final?.blocks !== undefined
+        );
       },
       async (channel, before) => {
         const stop = before ? channel.stream?.stop : undefined;
 
         if (before && stop) {
           await stop.call(channel.stream, before.stream, final);
-        } else if (final?.text !== undefined) {
+        } else if (final?.text !== undefined || final?.blocks !== undefined) {
           // No open stream, or one that cannot be stopped with content: the
-          // text still reaches the thread.
-          await channel.post({ text: final.text });
+          // text and blocks still reach the thread.
+          await channel.post({
+            text: final.text ?? "",
+            ...(final.blocks === undefined ? {} : { blocks: final.blocks }),
+          });
         }
 
         return null;

@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   type ChannelCard,
+  type ChannelMessage,
   ChannelStreamEnded,
   type ChannelStreamFinal,
   type ChannelStreamStart,
@@ -989,6 +990,29 @@ describe("begin, finish, continued and step IDs", () => {
     await report.finish();
 
     expect(posted).toEqual(["Done."]);
+  });
+
+  test("finish with no open stream posts the blocks with the text, or alone", async () => {
+    const posted: ChannelMessage[] = [];
+    const channel = defineChannel({
+      post: async (message) => {
+        posted.push(message);
+      },
+    });
+    const report = createReporter(
+      { main: channel },
+      undefined,
+      stepper().runStep,
+    );
+    const blocks = [{ type: "context_actions" }];
+
+    await report.finish({ text: "Done.", blocks });
+    await report.finish({ blocks });
+
+    expect(posted).toEqual([
+      { text: "Done.", blocks },
+      { text: "", blocks },
+    ]);
   });
 
   test("a replay of begin and finish restores where the stream stands", async () => {

@@ -532,6 +532,7 @@ export const slack = {
           channel: target.channel,
           thread_ts: target.threadTs,
           text: truncate(render(message), maxSectionText * 10),
+          ...(message.blocks === undefined ? {} : { blocks: message.blocks }),
         });
       },
       ask: async (ask) => {
