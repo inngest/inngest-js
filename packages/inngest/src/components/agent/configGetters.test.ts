@@ -4,6 +4,7 @@
  * per request: a KV, and the tokens of the Slack and GitHub channels.
  */
 import { Inngest } from "../Inngest.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { github } from "./github.ts";
 import { createKv, kv, kvFrom, memoryKvAdapter } from "./kv.ts";
 import { slack } from "./slack.ts";
@@ -142,5 +143,108 @@ describe("channel tokens", () => {
       .post({ text: "plain" });
 
     expect(sent.at(-1)).toBe("Bearer ghs_plain");
+  });
+});
+
+describe("a token that is not usable", () => {
+  const slackTarget = { data: { channel: "C1", ts: "1.1", text: "hi" } };
+  const githubTarget = {
+    data: { owner: "acme", repo: "app", number: 7, body: "b" },
+  };
+  let requests = 0;
+
+  beforeEach(() => {
+    requests = 0;
+    vi.stubGlobal("fetch", async () => {
+      requests++;
+
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    vi.stubEnv("SLACK_BOT_TOKEN", "");
+    vi.stubEnv("GITHUB_TOKEN", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  test("an empty or blank token throws a clear error and sends nothing", async () => {
+    const slackOptions = { in: ["C1"], apiUrl: "http://slack.test" };
+    const githubOptions = { repos: ["acme/app"], apiUrl: "http://gh.test" };
+
+    for (const token of ["", "  ", async () => "", () => " "]) {
+      await expect(
+        slack
+          .channel(slackTarget, { ...slackOptions, token })
+          .post({ text: "x" }),
+      ).rejects.toThrow(/Slack token is unusable.*an empty string/);
+      await expect(
+        github
+          .channel(githubTarget, { ...githubOptions, token })
+          .post({ text: "x" }),
+      ).rejects.toThrow(/GitHub token is unusable.*an empty string/);
+    }
+
+    expect(requests).toBe(0);
+  });
+
+  test("a function does not fall back to the environment variable", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "from-env");
+    vi.stubEnv("SLACK_BOT_TOKEN", "from-env");
+
+    const nothing = (() => undefined) as unknown as () => string;
+
+    await expect(
+      github
+        .channel(githubTarget, {
+          repos: ["acme/app"],
+          apiUrl: "http://gh.test",
+          token: nothing,
+        })
+        .post({ text: "x" }),
+    ).rejects.toThrow(/GitHub token is unusable.*undefined, not a string/);
+    await expect(
+      slack
+        .channel(slackTarget, {
+          in: ["C1"],
+          apiUrl: "http://slack.test",
+          token: nothing,
+        })
+        .post({ text: "x" }),
+    ).rejects.toThrow(/Slack token is unusable.*undefined, not a string/);
+
+    expect(requests).toBe(0);
+  });
+
+  test("no token option and no variable still sends, without credentials", async () => {
+    const headers: (string | undefined)[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      async (_url: string, init: { headers: Record<string, string> }) => {
+        headers.push(init.headers.authorization);
+
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    );
+
+    await slack
+      .channel(slackTarget, { in: ["C1"], apiUrl: "http://slack.test" })
+      .post({ text: "x" });
+
+    expect(headers).toEqual([undefined]);
+  });
+
+  test("the error is not retried", async () => {
+    await expect(
+      slack
+        .channel(slackTarget, {
+          in: ["C1"],
+          apiUrl: "http://slack.test",
+          token: "",
+        })
+        .post({ text: "x" }),
+    ).rejects.toBeInstanceOf(NonRetriableError);
   });
 });

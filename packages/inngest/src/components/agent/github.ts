@@ -23,6 +23,7 @@ import {
   objectSchema,
   parseWith,
   postJson,
+  resolveToken,
   retryableStatus,
   truncate,
 } from "./channels.ts";
@@ -173,11 +174,7 @@ const comment = async (
   target: GithubTarget,
   body: string,
 ): Promise<void> => {
-  const token =
-    (typeof options.token === "function"
-      ? await options.token()
-      : options.token) ??
-    (typeof process === "undefined" ? undefined : process.env.GITHUB_TOKEN);
+  const token = await resolveToken(options.token, "GITHUB_TOKEN", "GitHub");
 
   const res = await postJson(
     `${options.apiUrl ?? "https://api.github.com"}/repos/${target.owner}/${target.repo}/issues/${target.number}/comments`,

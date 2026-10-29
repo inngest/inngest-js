@@ -24,6 +24,7 @@ import {
   objectSchema,
   parseWith,
   postJson,
+  resolveToken,
   retryableStatus,
   truncate,
 } from "./channels.ts";
@@ -260,11 +261,7 @@ const call = async (
    */
   strict = false,
 ): Promise<Record<string, unknown>> => {
-  const token =
-    (typeof options.token === "function"
-      ? await options.token()
-      : options.token) ??
-    (typeof process === "undefined" ? undefined : process.env.SLACK_BOT_TOKEN);
+  const token = await resolveToken(options.token, "SLACK_BOT_TOKEN", "Slack");
 
   const res = await postJson(
     `${options.apiUrl ?? "https://slack.com/api"}/${method}`,
