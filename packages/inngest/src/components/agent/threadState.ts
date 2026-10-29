@@ -23,10 +23,17 @@ const emptyRecord = (): ThreadRecord => {
 
 /**
  * The writes of one run. Each is one KV step.
- * @param store KV store of the thread state.
- * @param runId The live run, stamped on every write.
  */
-export const threadRecorder = (store: Kv, runId: string) => {
+export const threadRecorder = (
+  /**
+   * KV store of the thread state.
+   */
+  store: Kv,
+  /**
+   * The live run, stamped on every write.
+   */
+  runId: string,
+) => {
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
   ) => {
@@ -42,9 +49,13 @@ export const threadRecorder = (store: Kv, runId: string) => {
      * A turn is running. A sub-agent's inherited limits are kept on the
      * record, narrowed over every start, so a later run that a plain message
      * starts has the same limits.
-     * @param startedWith The limits the invoking agent passed down, if any.
      */
-    running: (startedWith?: EffectiveLimits) => {
+    running: (
+      /**
+       * The limits the invoking agent passed down, if any.
+       */
+      startedWith?: EffectiveLimits,
+    ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
 
@@ -73,9 +84,13 @@ export const threadRecorder = (store: Kv, runId: string) => {
 
     /**
      * A model call finished: its turn number, text and usage.
-     * @param turn The loop turn.
      */
-    turn: (turn: AgentTurn) => {
+    turn: (
+      /**
+       * The loop turn.
+       */
+      turn: AgentTurn,
+    ) => {
       return record((current) => {
         return {
           status: "running",
@@ -96,13 +111,21 @@ export const threadRecorder = (store: Kv, runId: string) => {
 /**
  * Marks the thread idle once `runId` has ended, unless a newer run has written
  * the record since or the thread was stopped.
- * @param store KV store of the thread state.
- * @param thread Thread key.
- * @param runId The run that ended.
  */
 export const markThreadIdle = async (
+  /**
+   * KV store of the thread state.
+   */
   store: Kv,
+
+  /**
+   * Thread key.
+   */
   thread: string,
+
+  /**
+   * The run that ended.
+   */
   runId: string,
 ): Promise<void> => {
   await store.scope("thread", thread).update(recordKey, (found) => {
@@ -119,9 +142,13 @@ const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 /**
  * When a run started, from its ID: run IDs are ULIDs, whose first ten
  * characters are a millisecond timestamp. Anything else scores 0.
- * @param runId The run ID.
  */
-export const runScore = (runId: string): number => {
+export const runScore = (
+  /**
+   * The run ID.
+   */
+  runId: string,
+): number => {
   let score = 0;
 
   for (const char of runId.slice(0, 10).toUpperCase()) {
@@ -144,13 +171,21 @@ export const runScore = (runId: string): number => {
  * the newest generation back: the newest is read as the highest score. It
  * is an index of its own, not part of the record: the record is rewritten
  * whole by whichever run writes it.
- * @param scope The thread's KV scope.
- * @param ref The agent, as `"appId/functionId"`: threads of two agents may share a key.
- * @param name The sandbox's name in the agent's `sandboxes`.
  */
 export const sandboxGenerations = (
+  /**
+   * The thread's KV scope.
+   */
   scope: KvScopeInstance,
+
+  /**
+   * The agent, as `"appId/functionId"`: threads of two agents may share a key.
+   */
   ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
   name: string,
 ) => {
   return scope.index(`__sandbox:${ref}:${name}`);
@@ -158,15 +193,26 @@ export const sandboxGenerations = (
 
 /**
  * Notes that `generation` took a snapshot of a thread's sandbox.
- * @param scope The thread's KV scope.
- * @param ref The agent, as `"appId/functionId"`.
- * @param name The sandbox's name in the agent's `sandboxes`.
- * @param generation The run that took the snapshot.
  */
 export const recordSandboxGeneration = async (
+  /**
+   * The thread's KV scope.
+   */
   scope: KvScopeInstance,
+
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
   name: string,
+
+  /**
+   * The run that took the snapshot.
+   */
   generation: string,
 ): Promise<void> => {
   await sandboxGenerations(scope, ref, name).add(
@@ -177,13 +223,21 @@ export const recordSandboxGeneration = async (
 
 /**
  * The newest run that saved a snapshot of the thread's sandbox.
- * @param scope The thread's KV scope.
- * @param ref The agent, as `"appId/functionId"`.
- * @param name The sandbox's name in the agent's `sandboxes`.
  */
 export const newestSandboxGeneration = async (
+  /**
+   * The thread's KV scope.
+   */
   scope: KvScopeInstance,
+
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
   name: string,
 ): Promise<string | undefined> => {
   const [newest] = await sandboxGenerations(scope, ref, name).range({
@@ -200,13 +254,21 @@ export const newestSandboxGeneration = async (
  * newer run can't overwrite it before an older run's cleanup reads it, and it
  * is deleted once the run has saved or cleaned up. The `__` prefix hides it
  * from `state().keys`.
- * @param ref The agent, as `"appId/functionId"`.
- * @param name The sandbox's name in the agent's `sandboxes`.
- * @param runId The run.
  */
 export const sandboxReadyKey = (
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
   name: string,
+
+  /**
+   * The run.
+   */
   runId: string,
 ): string => {
   return `__sandbox-ready:${ref}:${name}:${runId}`;

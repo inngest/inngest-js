@@ -104,15 +104,34 @@ export interface SkillsGitOptions {
  * client and fetches nothing until a sandbox that has it is created.
  */
 export interface SkillsSource {
+  /**
+   * Marks the value as made by `skills.git()`.
+   */
   readonly kind: "inngest/skills.git";
 
   /**
    * `owner/name` on GitHub.
    */
   readonly repo: string;
+
+  /**
+   * The branch, tag or commit used.
+   */
   readonly ref: string;
+
+  /**
+   * When the skills are fetched: baked into a snapshot, or at every boot.
+   */
   readonly freshness: "bake" | "boot";
+
+  /**
+   * The directory in the sandbox the skills land in.
+   */
   readonly into: string;
+
+  /**
+   * The GitHub host's web and API URLs.
+   */
   readonly github: { url: string; apiUrl: string };
 }
 
@@ -121,7 +140,14 @@ const skillsRoot = "/skills";
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const gitSource = (
+  /**
+   * `owner/name`.
+   */
   repo: string,
+
+  /**
+   * Ref, freshness and where the skills land.
+   */
   options: SkillsGitOptions = {},
 ): SkillsSource => {
   if (!repoPattern.test(repo) || repo.split("/").includes("..")) {
@@ -195,8 +221,6 @@ const gitSource = (
 export const skills = {
   /**
    * A public GitHub repository of skills.
-   * @param repo `owner/name`.
-   * @param options Ref, freshness and where the skills land.
    */
   git: gitSource,
 };

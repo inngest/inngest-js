@@ -44,7 +44,15 @@ export interface SlackMessageData {
    * The thread the message is in. Missing for a message that starts a thread.
    */
   threadTs?: string;
+
+  /**
+   * The message's text.
+   */
   text: string;
+
+  /**
+   * The author's Slack user ID. Missing or `null` for a bot message.
+   */
   user?: string | null;
 
   /**
@@ -96,7 +104,14 @@ export interface SlackChannelOptions {
  * Where a Slack channel posts: a channel and the thread in it.
  */
 export interface SlackTarget {
+  /**
+   * The Slack channel ID.
+   */
   channel: string;
+
+  /**
+   * The `ts` of the thread's first message.
+   */
   threadTs: string;
 }
 

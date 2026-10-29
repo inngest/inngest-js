@@ -70,11 +70,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
  * How many agents deep an invoked agent is: 1 for one started by a function
  * that is not an agent, 2 for the next, and so on. 0 for an event that did
  * not come from `agent.invoke()`.
- * @param event The event the function was started with.
  */
-export const agentInvokeDepth = (event: {
-  data?: Record<string, unknown>;
-}): number => {
+export const agentInvokeDepth = (
+  /**
+   * The event the function was started with.
+   */
+  event: { data?: Record<string, unknown> },
+): number => {
   const info = event.data?.[invokeKey];
   const depth = isRecord(info) ? info.depth : undefined;
 
@@ -85,11 +87,13 @@ export const agentInvokeDepth = (event: {
  * The data `agent.invoke()` was given, without the SDK's own key. Use it as
  * the input of an agent that other agents start. It returns a copy and leaves
  * the event as it is, so `agentInvokeDepth()` still works.
- * @param event The event the function was started with.
  */
-export const agentInvokeInput = (event: {
-  data?: Record<string, unknown>;
-}): Record<string, unknown> => {
+export const agentInvokeInput = (
+  /**
+   * The event the function was started with.
+   */
+  event: { data?: Record<string, unknown> },
+): Record<string, unknown> => {
   const { [invokeKey]: _info, ...input } = event.data ?? {};
 
   return input;
@@ -97,9 +101,13 @@ export const agentInvokeInput = (event: {
 
 /**
  * Splits `"appId/functionId"` at its first slash.
- * @param target The agent's address.
  */
-const parseTarget = (target: string): { appId: string; functionId: string } => {
+const parseTarget = (
+  /**
+   * The agent's address.
+   */
+  target: string,
+): { appId: string; functionId: string } => {
   const slash = target.indexOf("/");
   const appId = target.slice(0, slash);
   const functionId = target.slice(slash + 1);
@@ -139,19 +147,37 @@ const parseTarget = (target: string): { appId: string; functionId: string } => {
  *   question,
  * });
  * ```
- *
- * @param target The agent, as `"appId/functionId"`.
- * @param data The agent's input.
- * @param options Step ID, thread key, meta and timeout.
  */
 export function invoke<TInput extends Record<string, unknown>, TOutput>(
+  /**
+   * The agent, as `createAgents()` returned it.
+   */
   target: AgentFunction<TInput, TOutput>,
+
+  /**
+   * The agent's input.
+   */
   data: TInput,
+
+  /**
+   * Step ID, thread key, meta and timeout.
+   */
   options?: AgentInvokeOptions,
 ): Promise<TOutput>;
 export function invoke<TOutput = unknown>(
+  /**
+   * The agent as `"appId/functionId"`, for one this code has no handle on.
+   */
   target: string,
+
+  /**
+   * The agent's input. Untyped.
+   */
   data?: Record<string, unknown>,
+
+  /**
+   * Step ID, thread key, meta and timeout.
+   */
   options?: AgentInvokeOptions,
 ): Promise<TOutput>;
 export async function invoke(
