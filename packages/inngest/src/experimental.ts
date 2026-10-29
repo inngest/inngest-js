@@ -143,6 +143,7 @@ export {
 export type {
   AgentTool,
   AgentToolDefinition,
+  AgentToolSource,
   JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,

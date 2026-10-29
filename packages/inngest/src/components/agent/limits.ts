@@ -62,7 +62,9 @@ export interface AgentLimits {
   /**
    * The agents this agent may start, as `"appId/functionId"` patterns where
    * `*` matches any text (`"research/*"`). Default: any. A sub-agent may
-   * start only agents that match its parent's list and its own.
+   * start only agents that match its parent's list and its own. It limits
+   * `agent.invoke()` only: an agent in the `tools` of `agent.loop()` is
+   * allowed by being listed there.
    */
   mayCall?: string[];
 
@@ -465,6 +467,11 @@ export const checkInvoke = (
    * The agent to start, as `"appId/functionId"`.
    */
   target: string,
+  /**
+   * How the agent is started. An agent used as a tool is allowed by being in
+   * the caller's `tools`, so `mayCall` does not apply to it.
+   */
+  via: { asTool?: boolean } = {},
 ): void => {
   const { depth, spawn, mayCall } = state.limits;
 
@@ -482,7 +489,7 @@ export const checkInvoke = (
     );
   }
 
-  for (const list of mayCall ?? []) {
+  for (const list of via.asTool ? [] : (mayCall ?? [])) {
     const allowed = list.some((pattern) => {
       return matchesTarget(pattern, target);
     });

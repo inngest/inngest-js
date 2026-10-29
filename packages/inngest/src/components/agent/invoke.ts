@@ -280,6 +280,35 @@ export async function invoke(
   data: Record<string, unknown> = {},
   options: AgentInvokeOptions = {},
 ): Promise<unknown> {
+  return invokeAgent(agentOrRef, data, options, false);
+}
+
+/**
+ * Starts an agent for `invoke()` and for an agent used as a tool.
+ */
+export async function invokeAgent(
+  /**
+   * The agent, or its `"appId/functionId"`.
+   */
+  agentOrRef: string | { ref: string },
+
+  /**
+   * The agent's input, or a function of the thread key the call chose that
+   * returns it.
+   */
+  data: Record<string, unknown> | ((thread: string) => Record<string, unknown>),
+
+  /**
+   * Step ID, thread key, meta and timeout.
+   */
+  options: AgentInvokeOptions,
+
+  /**
+   * Whether the agent is a tool of the caller. Being in its `tools` allows it,
+   * so `mayCall` does not apply.
+   */
+  asTool: boolean,
+): Promise<unknown> {
   const target = typeof agentOrRef === "string" ? agentOrRef : agentOrRef.ref;
   const { appId, functionId } = parseTarget(target);
   const execution = getAsyncCtxSync()?.execution;
@@ -295,7 +324,7 @@ export async function invoke(
   const limits = limitStateOf(instance, readInheritedLimits(info));
 
   if (limits) {
-    checkInvoke(limits, target);
+    checkInvoke(limits, target, { asTool });
     limits.spawned += 1;
   }
 
@@ -318,7 +347,7 @@ export async function invoke(
     {
       function: referenceFunction({ appId, functionId }),
       data: {
-        ...data,
+        ...(typeof data === "function" ? data(sessions.agent_thread) : data),
         [invokeKey]: {
           depth: depth + 1,
           thread: sessions.agent_thread,
