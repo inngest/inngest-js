@@ -130,7 +130,7 @@ describe("openSandboxes()", () => {
       "work_read",
     ]);
     expect(opened.work?.start).toBe("lazy");
-    expect(opened.work?.keepAlive).toBeUndefined();
+    expect(opened.work?.idle).toBe("pause");
     expect(env.created).not.toHaveBeenCalled();
     expect(opened.work?.started).toBe(false);
 
@@ -198,14 +198,14 @@ describe("openSandboxes()", () => {
         data: {
           sandbox: workbench,
           start: "eager",
-          keepAlive: { idle: "10m" },
+          idle: "snapshot",
         },
       },
       env.sandboxes,
     );
 
     expect(env.created).toHaveBeenCalledTimes(1);
-    expect(opened.data?.keepAlive).toEqual({ idle: "10m" });
+    expect(opened.data?.idle).toBe("snapshot");
 
     await opened.data?.get();
     expect(env.created).toHaveBeenCalledTimes(1);
@@ -229,16 +229,16 @@ describe("validation", () => {
   const def = sandbox({ id: "w", tools: sandbox.tools.code() });
   const { sandboxes } = fakeEnvironment();
 
-  test("rejects a bad binding name, a keepAlive without idle, colliding tool names", () => {
+  test("rejects a bad binding name, an unknown idle, colliding tool names", () => {
     expect(() => {
       return openSandboxes({ "my-box": def }, sandboxes);
     }).toThrow("Invalid sandbox name");
     expect(() => {
       return openSandboxes(
-        { a: { sandbox: def, keepAlive: {} as { idle: string } } },
+        { a: { sandbox: def, idle: "stop" as never } },
         sandboxes,
       );
-    }).toThrow("needs an idle time");
+    }).toThrow('use "pause" or "snapshot"');
 
     const a = sandbox({
       id: "a",

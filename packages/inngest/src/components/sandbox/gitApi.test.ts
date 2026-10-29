@@ -198,6 +198,94 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     expect(parent?.parents).toEqual([base]);
   });
 
+  test("a push of many files sends text inside the trees and uploads only the rest, together", async () => {
+    branch("agent/many", () => {
+      for (let n = 0; n < 12; n += 1) {
+        writeFileSync(join(work, `text-${n}.txt`), `file ${n}\n`);
+      }
+
+      for (let n = 0; n < 6; n += 1) {
+        writeFileSync(join(work, `bin-${n}.bin`), Buffer.from([0, n, 255, 7]));
+      }
+
+      writeFileSync(join(work, "same-a.bin"), Buffer.from([9, 0, 9]));
+      writeFileSync(join(work, "same-b.bin"), Buffer.from([9, 0, 9]));
+      writeFileSync(join(work, "empty.txt"), "");
+    });
+
+    const before = hub.requests.length;
+    const outcome = await push("agent/many");
+    const made = hub.requests.slice(before).filter((request) => {
+      return request.method === "POST";
+    });
+    const count = (path: string) => {
+      return made.filter((request) => {
+        return request.path === path;
+      }).length;
+    };
+
+    expect(outcome).toMatchObject({ pushed: [{ status: "pushed" }] });
+    // Six binary files, the two equal ones as one blob, and the empty file.
+    expect(count("/git/blobs")).toBe(8);
+    expect(count("/git/trees")).toBe(1);
+    expect(count("/git/commits")).toBe(1);
+
+    const pushed = (outcome as { pushed: { sha: string }[] }).pushed[0];
+
+    expect(pushed?.sha).toBe(git(work, "rev-parse", "refs/heads/agent/many"));
+    expect(filesAt(pushed?.sha ?? "")).toEqual(
+      realFilesAt(git(work, "rev-parse", "refs/heads/agent/many")),
+    );
+  });
+
+  test("a text file with a byte order mark is pushed byte for byte", async () => {
+    branch("agent/bom", () => {
+      writeFileSync(join(work, "bom.txt"), "\ufeffwith a mark\n");
+    });
+
+    const outcome = await push("agent/bom");
+    const pushed = (outcome as { pushed: { sha: string }[] }).pushed[0];
+
+    expect(pushed?.sha).toBe(git(work, "rev-parse", "refs/heads/agent/bom"));
+  });
+
+  test("a blob whose content does not match its hash is refused before anything is sent", async () => {
+    branch("agent/liar", () => {
+      writeFileSync(join(work, "a.txt"), "real\n");
+    });
+
+    const tip = git(work, "rev-parse", "refs/heads/agent/liar");
+    const state = await remoteState({
+      remote,
+      ref: "refs/heads/agent/liar",
+      token,
+      fetch: hub.handle,
+    });
+    const manifest = manifestOf(tip, state.base).replace(
+      /^(BLOB [0-9a-f]{40} )(.*)$/m,
+      (_line, head: string) => {
+        return `${head}${Buffer.from("forged\n").toString("base64")}`;
+      },
+    );
+    const before = hub.requests.length;
+    const outcome = await pushManifest({
+      remote,
+      token,
+      fetch: hub.handle,
+      manifest,
+      target: { src: "refs/heads/agent/liar", dst: "refs/heads/agent/liar" },
+      tip,
+      state,
+    });
+
+    expect(outcome).toMatchObject({ refused: expect.stringContaining("hash") });
+    expect(
+      hub.requests.slice(before).filter((request) => {
+        return request.method === "POST";
+      }),
+    ).toEqual([]);
+  });
+
   test("shows the policy the commits, paths and files before and after, from the manifest", async () => {
     branch("agent/p", () => {
       writeFileSync(

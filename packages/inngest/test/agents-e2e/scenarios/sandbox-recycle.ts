@@ -31,7 +31,7 @@ export const sandboxRecycle = scenario({
     const agents = createAgents(client);
 
     agents.agent(
-      { id: agentId, sandboxes: { work: box } },
+      { id: agentId, sandboxes: { work: { sandbox: box, idle: "snapshot" } } },
       async ({ inbox, sandboxes }) => {
         const first = await inbox.next();
         const command = first?.content ?? "";

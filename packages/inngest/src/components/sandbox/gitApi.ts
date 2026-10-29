@@ -704,6 +704,71 @@ export interface PushManifestOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * How many requests of one kind are in flight at once. GitHub asks for few
+ * concurrent writes, so uploads stay at this.
+ */
+const concurrency = 4;
+
+/**
+ * Runs `fn` over `items`, at most `limit` at a time. The results are in the
+ * order of the items; the first failure is thrown once the running calls end.
+ */
+const inParallel = async <T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results: R[] = [];
+  let next = 0;
+  let failure: { error: unknown } | undefined;
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (!failure && next < items.length) {
+        const at = next;
+
+        next += 1;
+
+        try {
+          results[at] = await fn(items[at] as T);
+        } catch (error) {
+          failure ??= { error };
+        }
+      }
+    }),
+  );
+
+  if (failure) {
+    throw failure.error;
+  }
+
+  return results;
+};
+
+/**
+ * The text of a file that a tree can carry inline, so it costs no request of
+ * its own: ordinary files whose bytes are non-empty UTF-8 that decodes and
+ * encodes back to the same bytes. Anything else is uploaded as a blob.
+ */
+const inlineText = (bytes: Uint8Array, mode: string): string | undefined => {
+  if ((mode !== "100644" && mode !== "100755") || bytes.length === 0) {
+    return undefined;
+  }
+
+  try {
+    // The BOM is kept in the text, so it is written back.
+    const text = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(bytes);
+
+    return text.includes("\0") ? undefined : text;
+  } catch {
+    return undefined;
+  }
+};
+
 const modeIsFile = (mode: string): boolean => {
   return mode === "100644" || mode === "100755" || mode === "120000";
 };
@@ -938,6 +1003,18 @@ const pushParsed = async (
         patch: async () => {
           const out: string[] = [];
 
+          // The files the patch reads, fetched together instead of one after
+          // the other.
+          await inParallel(paths, concurrency, (path) => {
+            return fromBase(path);
+          });
+
+          if (divergent.length > 0) {
+            await inParallel(divergent, concurrency, (path) => {
+              return atTip(path);
+            });
+          }
+
           for (const commit of newestFirst) {
             const index = commits.indexOf(commit);
 
@@ -1016,7 +1093,50 @@ const pushParsed = async (
   }
 
   try {
+    // Every blob of the push, once: text goes into the trees as it is, and the
+    // rest is uploaded together before the first tree. What a blob hashes to is
+    // checked here, so nothing depends on how it is sent.
+    const inline = new Map<string, string>();
+    const upload = new Set<string>();
+
+    for (const commit of commits) {
+      for (const change of commit.changes) {
+        if (noSha.test(change.sha)) {
+          continue;
+        }
+
+        const bytes = blobs.get(change.sha) as Uint8Array;
+
+        if (!inline.has(change.sha) && !upload.has(change.sha)) {
+          if ((await gitBlobSha(bytes)) !== change.sha) {
+            return {
+              refused: `the content of ${change.path} does not match its hash`,
+            };
+          }
+        }
+
+        const text = inlineText(bytes, change.mode);
+
+        if (text !== undefined && !upload.has(change.sha)) {
+          inline.set(change.sha, text);
+        } else {
+          inline.delete(change.sha);
+          upload.add(change.sha);
+        }
+      }
+    }
+
     const blobShas = new Map<string, string>();
+
+    await inParallel([...upload], concurrency, async (sha) => {
+      const made = await client.json<{ sha: string }>("POST", "/git/blobs", {
+        content: encodeBase64(blobs.get(sha) as Uint8Array),
+        encoding: "base64",
+      });
+
+      blobShas.set(sha, made.sha);
+    });
+
     let parent = chainBase;
     let parentTree = (
       await client.json<{ tree: { sha: string } }>(
@@ -1030,7 +1150,8 @@ const pushParsed = async (
         path: string;
         mode: string;
         type: "blob";
-        sha: string | null;
+        sha?: string | null;
+        content?: string;
       }[] = [];
 
       for (const change of commit.changes) {
@@ -1045,33 +1166,15 @@ const pushParsed = async (
           continue;
         }
 
-        let created = blobShas.get(change.sha);
-
-        if (!created) {
-          const made = await client.json<{ sha: string }>(
-            "POST",
-            "/git/blobs",
-            {
-              content: encodeBase64(blobs.get(change.sha) as Uint8Array),
-              encoding: "base64",
-            },
-          );
-
-          if (made.sha !== change.sha) {
-            return {
-              refused: `the content of ${change.path} does not match its hash`,
-            };
-          }
-
-          created = made.sha;
-          blobShas.set(change.sha, created);
-        }
+        const text = inline.get(change.sha);
 
         entries.push({
           path: change.path,
           mode: change.mode,
           type: "blob",
-          sha: created,
+          ...(text === undefined
+            ? { sha: blobShas.get(change.sha) as string }
+            : { content: text }),
         });
       }
 

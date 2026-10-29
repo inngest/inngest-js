@@ -489,6 +489,30 @@ export const createWithSkills = async (
   return sandbox;
 };
 
+/**
+ * Fetches again the `"boot"` sources of a sandbox that was resumed from a
+ * pause: it has every other source already.
+ */
+export const fetchBootSkills = (
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
+  name: string,
+  sandbox: DurableSandbox,
+  sources: readonly SkillsSource[],
+): Promise<void> => {
+  return fetchSources(
+    sandbox,
+    `${name}:skills`,
+    sources.filter((source) => {
+      return source.freshness === "boot";
+    }),
+    (source) => {
+      return source.ref;
+    },
+  );
+};
+
 const fetchSources = async (
   sandbox: DurableSandbox,
   stepId: string,

@@ -38,7 +38,9 @@ import { agent } from "./loop.ts";
 const defaultMaxBytes = 1024 * 1024;
 
 /**
- * Without git the manifest is read in pieces of this size, each in a step of
+ * Without git the manifest is compressed in the sandbox and, when that fits
+ * a step (`maxBundleBytes`), read in one step. One that does not (mostly
+ * incompressible files) is read raw in pieces of this size, each in a step of
  * its own, so a push can be far bigger than one step's output.
  */
 const manifestChunkBytes = 512 * 1024;
@@ -197,6 +199,52 @@ const chooseTransport = async (
   }
 };
 
+/**
+ * Inflates gzip `bytes`, and stops at `limit` bytes so a sandbox cannot
+ * make the host expand more than it declared.
+ */
+const gunzip = async (
+  bytes: Uint8Array,
+  limit: number,
+): Promise<Uint8Array | undefined> => {
+  const reader = new Blob([bytes as BlobPart])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"))
+    .getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (
+      let part = await reader.read();
+      !part.done;
+      part = await reader.read()
+    ) {
+      total += part.value.byteLength;
+
+      if (total > limit) {
+        await reader.cancel();
+
+        return undefined;
+      }
+
+      chunks.push(part.value);
+    }
+  } catch {
+    return undefined;
+  }
+
+  const whole = new Uint8Array(total);
+  let at = 0;
+
+  for (const chunk of chunks) {
+    whole.set(chunk, at);
+    at += chunk.byteLength;
+  }
+
+  return whole;
+};
+
 const describe = (
   pushed: PushedRef,
 ): {
@@ -333,7 +381,8 @@ export const pushBranch = async (
             "-c",
             `tip=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "no such branch" >&2; exit 3; }
 set -- "$1" "$tip" "$3"
-${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
+${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"
+if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
             "sh",
             remoteInfo.base,
             ref,
@@ -366,7 +415,9 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
 
     tip = remoteInfo ? (printed[0] ?? "") : "";
 
-    const size = Number(printed.at(-1));
+    // The manifest prints its compressed size last (0 when it has none).
+    const packedSize = remoteInfo ? Number(printed.at(-1)) : 0;
+    const size = Number(printed.at(remoteInfo ? -2 : -1));
 
     if (!(size <= maxBytes)) {
       return fail(
@@ -376,7 +427,22 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
 
     let bundle: Uint8Array;
 
-    if (remoteInfo && size > manifestChunkBytes) {
+    if (remoteInfo && packedSize > 0 && packedSize <= maxBundleBytes) {
+      // The whole manifest in one step.
+      const packed = await sandbox.files.read("git-push:read", `${path}.gz`);
+      const inflated =
+        packed.byteLength === packedSize
+          ? await gunzip(packed, size)
+          : undefined;
+
+      if (!inflated || inflated.byteLength !== size) {
+        return fail(
+          "the push could not be read in full from the sandbox (its compressed manifest was cut short or larger than declared)",
+        );
+      }
+
+      bundle = inflated;
+    } else if (remoteInfo && size > manifestChunkBytes) {
       // The manifest is plain text; each piece is a step of its own.
       const pieces: string[] = [];
 
@@ -472,9 +538,11 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
       }),
     };
   } finally {
-    await sandbox.commands.run("git-push:cleanup", ["rm", "-f", path], {
-      cwd,
-    });
+    await sandbox.commands.run(
+      "git-push:cleanup",
+      ["rm", "-f", path, `${path}.gz`],
+      { cwd },
+    );
   }
 };
 

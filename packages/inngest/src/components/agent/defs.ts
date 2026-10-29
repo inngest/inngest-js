@@ -10,6 +10,8 @@
  */
 
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
+import { StepError } from "../StepError.ts";
 import {
   type CodeToolName,
   type CodeToolsOptions,
@@ -30,7 +32,6 @@ import {
   type DurableSandboxTools,
   type SandboxCreateFreshOptions,
   type SandboxCreateOptions,
-  type SandboxDuration,
   type SandboxHandle,
   SandboxValidationError,
 } from "../sandbox/types.ts";
@@ -38,12 +39,17 @@ import type { AgentConfigContext } from "./agentFunction.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   createWithSkills,
+  fetchBootSkills,
   isSkillsSource,
   maxBakeSize,
   type SkillsRuntime,
   type SkillsSource,
 } from "./skills.ts";
-import type { ThreadSandboxOwner } from "./threadSandboxes.ts";
+import {
+  defaultSandboxIdle,
+  type SandboxIdle,
+  type ThreadSandboxOwner,
+} from "./threadSandboxes.ts";
 
 /**
  * A config field: a value, or a function of `Ctx` returning it. A `T` that is
@@ -225,18 +231,24 @@ export interface SandboxBinding<
   start?: TStart;
 
   /**
-   * Keep the sandbox running between runs and stop it after it has been idle
-   * this long. Off by default.
+   * What a thread's sandbox becomes when its run is done with it (the run
+   * ended, or `recycle()` was called).
    *
-   * It is validated and wired to the thread's sandbox owner, but it does
-   * nothing yet: stopping an idle sandbox needs an idle timeout on the
-   * platform's sandbox (a sandbox option such as `idleTimeout`), which does
-   * not exist, and the SDK runs no idle check of its own. Until it does, a
-   * sandbox with `keepAlive` is snapshotted and destroyed at run end like
-   * any other, and the thread's next run restores it.
-   * @deprecated Needs a platform idle timeout, which is not available yet.
+   * - `"pause"` (default): the platform pauses it and the thread's next run
+   *   resumes it, so the workspace (a checkout, `node_modules`) is there as
+   *   it was, with no snapshot and no size cap. A sandbox that can't be paused
+   *   is saved as a snapshot and destroyed instead, and a paused one that is
+   *   gone by the next run falls back to the thread's newest snapshot, then to
+   *   a fresh sandbox.
+   * - `"snapshot"`: it is saved as a snapshot and destroyed, and the next run
+   *   creates a new sandbox from the snapshot. Pick it when a paused sandbox
+   *   should not be held, at the cost of a snapshot per thread.
+   *
+   * A resumed sandbox keeps the skills it was first created with (only
+   * `"boot"` sources are fetched again) and runs `setup` again with `restored`
+   * true. A sandbox that belongs to no thread is destroyed.
    */
-  keepAlive?: { idle: SandboxDuration };
+  idle?: SandboxIdle;
 }
 
 /**
@@ -401,10 +413,10 @@ export interface LazySandbox {
   readonly start: "lazy" | "eager";
 
   /**
-   * Deprecated and inert: see `SandboxBinding.keepAlive`.
-   * @deprecated Needs a platform idle timeout, which is not available yet.
+   * What happens to the sandbox when the run is done with it. See
+   * `SandboxBinding.idle`.
    */
-  readonly keepAlive?: { idle: SandboxDuration };
+  readonly idle: SandboxIdle;
 
   /**
    * Whether creation has begun.
@@ -431,23 +443,22 @@ export interface LazySandbox {
   close(): Promise<void>;
 
   /**
-   * Saves the sandbox and destroys it now, so the run can go on without it.
-   * The next `get()` (or a tool call) restores it from that snapshot into a
-   * new sandbox, with the files as they were, and the run is none the wiser.
+   * Sets the sandbox aside now (paused, or saved and destroyed: see `idle`),
+   * so the run can go on without it. The next `get()` (or a tool call) brings
+   * it back, with the files as they were, and the run is none the wiser.
    * Use it to drop an idle sandbox mid-run, for example while the thread waits
    * for its next message. Does nothing when no sandbox was created, one that
    * was never used is destroyed without a snapshot, and a failed create stays
    * failed. The snapshot is a generation of this run, so the thread's next
    * run restores the newest one. Call it only when nothing is using the
    * sandbox: a command still running in it is lost. Durable: a replay
-   * returns the same saves and destroys.
+   * returns the same saves, pauses and destroys.
    *
    * It needs a sandbox that belongs to a thread; without one it throws, since
    * nothing would keep the files. It throws, and leaves the sandbox as it
    * was, when the snapshot could not be taken or the sandbox could not be
-   * destroyed. The restored sandbox runs the definition's skills and `setup`
-   * again (with `restored` true), and `keepAlive` is ignored: a recycle always
-   * destroys.
+   * destroyed. The brought-back sandbox runs the definition's `setup` again
+   * (with `restored` true).
    */
   recycle(): Promise<void>;
 }
@@ -483,13 +494,23 @@ const toBinding = (
 
   if (options.sandbox?.kind !== "inngest/sandbox.definition") {
     throw new SandboxValidationError(
-      `Sandbox "${name}" must be a definition made with sandbox(), or { sandbox, start, keepAlive }`,
+      `Sandbox "${name}" must be a definition made with sandbox(), or { sandbox, start, idle }`,
     );
   }
 
   if (options.start !== undefined && !startModes.includes(options.start)) {
     throw new SandboxValidationError(
       `Sandbox "${name}" has start "${String(options.start)}": use "lazy" or "eager"`,
+    );
+  }
+
+  if (
+    options.idle !== undefined &&
+    options.idle !== "pause" &&
+    options.idle !== "snapshot"
+  ) {
+    throw new SandboxValidationError(
+      `Sandbox "${name}" has idle "${String(options.idle)}": use "pause" or "snapshot"`,
     );
   }
 
@@ -556,19 +577,18 @@ const lazySandbox = (
   const {
     sandbox: definition,
     start = "lazy",
-    keepAlive,
+    idle = defaultSandboxIdle,
   } = toBinding(name, binding);
-  if (keepAlive && !keepAlive.idle) {
-    throw new SandboxValidationError(
-      `keepAlive on sandbox "${name}" needs an idle time, such as { idle: "10m" }`,
-    );
-  }
 
   let raw: Promise<DurableSandbox> | undefined;
   let created: Promise<DurableSandbox> | undefined;
   let closed: Promise<void> | undefined;
   let guard: DeferHandle | undefined;
   let restored = false;
+
+  // Whether the sandbox was resumed from a pause. Its workspace has no other
+  // copy, so it is kept (paused again) even when nothing used it.
+  let fromPause = false;
 
   // Rises with every save and every recycle. It names the generation of each
   // save and the cleanup defer of each sandbox, so neither is ever reused: a
@@ -591,7 +611,7 @@ const lazySandbox = (
   // It saves the sandbox only once `owner.ready()` says its skills and setup
   // have finished.
   const arm = (sandbox: DurableSandbox) => {
-    guard = owner?.guard(name, sandbox, epoch);
+    guard = owner?.guard(name, sandbox, epoch, idle);
   };
 
   // The bare sandbox: restored from the thread's newest snapshot when it has
@@ -603,9 +623,51 @@ const lazySandbox = (
     // environment or secrets), so the definition's environment and secrets are
     // not applied to a restored sandbox. Platform ask: accept them with a
     // snapshotId.
-    const candidates = owner ? await owner.restore(name) : [];
     // Whether a sandbox exists: once it does, an error is not the restore's.
     let existed = false;
+
+    // The thread's paused sandbox comes first: it has the workspace as it
+    // was. One that is gone, or can't be resumed, is not an error: the
+    // snapshots are next.
+    const pausedId = owner ? await owner.takePaused(name) : undefined;
+
+    if (pausedId) {
+      try {
+        const found = await sandboxes.get(
+          `${name}:thread:resume:get`,
+          pausedId,
+        );
+
+        if (found && ["PAUSED", "RUNNING"].includes(found.status)) {
+          const sandbox =
+            found.status === "PAUSED"
+              ? await found.resume(`${name}:thread:resume`)
+              : found;
+
+          existed = true;
+          restored = true;
+          fromPause = true;
+          // The workspace was ready when it was paused: a run cancelled from
+          // here pauses it again.
+          await owner?.ready(name);
+          arm(sandbox);
+          await fetchBootSkills(name, sandbox, definition.skills ?? []);
+
+          return sandbox;
+        }
+      } catch (error) {
+        if (existed || !(error instanceof StepError)) {
+          throw error;
+        }
+      }
+
+      owner?.restoreFailed?.(
+        name,
+        new Error(`the paused sandbox ${pausedId} is gone or can't be resumed`),
+      );
+    }
+
+    const candidates = owner ? await owner.restore(name) : [];
 
     restored = candidates.length > 0;
 
@@ -773,7 +835,7 @@ const lazySandbox = (
     name,
     definition,
     start,
-    ...(keepAlive && { keepAlive }),
+    idle,
     get started() {
       return raw !== undefined;
     },
@@ -817,11 +879,24 @@ const lazySandbox = (
         const rearm = () => {
           const old = guard;
 
-          guard = owner.guard(name, sandbox, epoch);
+          guard = owner.guard(name, sandbox, epoch, idle);
           old?.abort();
         };
 
-        if (used) {
+        let paused = false;
+
+        if ((used || fromPause) && idle === "pause") {
+          paused = await owner.pause(name, sandbox, epoch);
+
+          // A pause that worked took its generation.
+          if (paused) {
+            epoch++;
+          }
+        }
+
+        if (paused) {
+          saved = true;
+        } else if (used || fromPause) {
           const ok = await owner.save(name, sandbox, epoch);
 
           // A save took its generation whether or not it worked.
@@ -838,30 +913,35 @@ const lazySandbox = (
           saved = true;
         }
 
-        // Without a cleanup defer there is nothing to read the outcome from.
-        let given = guard === undefined;
-        const cleanup = guard && {
-          abort: () => {
-            given = true;
-            guard?.abort();
-          },
-        };
+        if (paused) {
+          // Nothing to destroy: the pause is the thread's record of it.
+          guard?.abort();
+        } else {
+          // Without a cleanup defer there is nothing to read the outcome from.
+          let given = guard === undefined;
+          const cleanup = guard && {
+            abort: () => {
+              given = true;
+              guard?.abort();
+            },
+          };
 
-        await destroyQuietly(sandbox, `${name}:destroy`, cleanup, {
-          final: false,
-        });
+          await destroyQuietly(sandbox, `${name}:destroy`, cleanup, {
+            final: false,
+          });
 
-        if (!given) {
-          if (saved) {
-            rearm();
+          if (!given) {
+            if (saved) {
+              rearm();
+            }
+
+            throw new Error(
+              `Sandbox "${name}" was not recycled: it could not be destroyed, so it is still running`,
+            );
           }
-
-          throw new Error(
-            `Sandbox "${name}" was not recycled: it could not be destroyed, so it is still running`,
-          );
         }
 
-        // The next `get()` starts over, from the snapshot just taken. This
+        // The next `get()` starts over, from the snapshot or pause just taken. This
         // comes first so that nothing after the destroy can leave a destroyed
         // sandbox as the current one.
         raw = undefined;
@@ -870,6 +950,7 @@ const lazySandbox = (
         guard = undefined;
         used = false;
         restored = false;
+        fromPause = false;
 
         if (!saved) {
           epoch++;
@@ -905,16 +986,19 @@ const lazySandbox = (
 
         if (sandbox) {
           // A sandbox whose creation or setup failed is not worth keeping.
-          const worthKeeping = !failed && used;
+          const worthKeeping = (!failed && used) || fromPause;
 
-          if (worthKeeping) {
-            await owner?.save(name, sandbox, epoch);
+          // A pause keeps the sandbox for the thread's next run; one that
+          // could not be paused is saved and destroyed like any other.
+          let paused = false;
+
+          if (worthKeeping && owner && idle === "pause") {
+            paused = await owner.pause(name, sandbox, epoch);
           }
 
-          // The owner may keep a keepAlive sandbox running for the thread's
-          // next run. None does yet (see `keepAlive`). Anything but a
-          // `true` from `keep`, including a throw, counts as declined.
-          let kept = false;
+          if (worthKeeping && !paused) {
+            await owner?.save(name, sandbox, epoch);
+          }
 
           // Whether the cleanup defer was given up: only then is the run done
           // with the sandbox, so its ready mark may go. A save that failed
@@ -927,18 +1011,11 @@ const lazySandbox = (
             },
           };
 
-          if (worthKeeping && keepAlive && cleanup) {
-            try {
-              kept =
-                (await Promise.resolve(
-                  owner?.keep?.(name, sandbox, keepAlive, cleanup),
-                )) === true;
-            } catch (error) {
-              owner?.keepFailed?.(name, error);
-            }
-          }
-
-          if (!kept) {
+          if (paused) {
+            cleanup?.abort();
+            // The run is over: a retry could not use a paused sandbox.
+            getAsyncCtxSync()?.execution?.instance.failFinally();
+          } else {
             await destroyQuietly(sandbox, `${name}:destroy`, cleanup);
           }
 

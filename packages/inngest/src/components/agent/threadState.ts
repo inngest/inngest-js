@@ -574,3 +574,38 @@ export const statusAt = (
     (record.transitions?.length ? "idle" : record.status)
   );
 };
+
+/**
+ * What the thread keeps of a sandbox that its last run paused instead of
+ * destroying.
+ */
+export interface PausedSandbox {
+  /**
+   * The paused sandbox.
+   */
+  id: string;
+
+  /**
+   * The generation (run) that paused it, so a late cleanup of an older run
+   * never replaces a newer pause.
+   */
+  generation: string;
+}
+
+/**
+ * The thread KV key that holds the thread's paused sandbox of one name. The
+ * `__` prefix hides it from `state().keys`.
+ */
+export const sandboxPausedKey = (
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
+  ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
+  name: string,
+): string => {
+  return `__sandbox-paused:${ref}:${name}`;
+};

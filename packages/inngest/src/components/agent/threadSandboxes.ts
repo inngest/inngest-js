@@ -7,10 +7,13 @@
  *   thread's newest snapshot, or creates a fresh one when there is none (never
  *   saved, expired, or the name was refused). A run that never touches the
  *   sandbox restores nothing;
- * - when the run ends, a sandbox the run used is snapshotted, then destroyed.
- *   A run that is cancelled or times out cannot do that itself, so the
- *   cleanup defer it registered when the sandbox was created does it by
- *   sandbox ID.
+ * - when the run ends, a sandbox the run used is paused (the default,
+ *   `idle: "pause"`), or snapshotted then destroyed (`idle: "snapshot"`, and
+ *   what a pause that failed falls back to). A paused sandbox keeps its disk and
+ *   everything in it, so the workspace (a checkout, `node_modules`) comes back
+ *   whole with no size cap; the thread's next run resumes it. A run that is
+ *   cancelled or times out cannot do that itself, so the cleanup defer it
+ *   registered when the sandbox was created does it by sandbox ID.
  *
  * A snapshot is named `thread/<agent>/<sandbox>/<hash of the thread key>/<run
  * ID>`: the run that took it is its generation. A run ID cannot collide with
@@ -20,7 +23,13 @@
  * that saves late never moves the newest generation back. A save deletes the
  * generations older than itself by name. Expiry is the platform's.
  *
- * Only files survive, not running processes. A restored sandbox is created
+ * The thread keeps the ID of its paused sandbox in its KV scope. The next run
+ * takes it (one claim, so no two runs resume the same sandbox) and resumes it;
+ * a sandbox that is gone or can't be resumed falls back to the newest
+ * snapshot, then to a fresh sandbox. The platform decides how long a paused
+ * sandbox is kept.
+ *
+ * Only files survive a snapshot, not running processes. A restored sandbox is created
  * from the snapshot alone: the definition's `environment` and `secrets` are
  * not applied to it, because the platform forbids them together with a
  * `snapshotId` (platform ask: accept them, so a restored sandbox gets the
@@ -46,18 +55,32 @@ import {
   type SnapshotEntry,
   snapshotCache,
 } from "../sandbox/snapshotCache.ts";
-import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
+import type { DurableSandbox } from "../sandbox/types.ts";
 import { type KvScopeInstance, kvKey } from "./kv.ts";
 import {
   generationScore,
   newestSandboxGeneration,
+  type PausedSandbox,
   recordSandboxGeneration,
   runScore,
   sandboxGenerations,
+  sandboxPausedKey,
   sandboxReadyKey,
 } from "./threadState.ts";
 
 const { sha256 } = hashjs;
+
+/**
+ * What a thread's sandbox becomes when its run is done with it: `"pause"`
+ * keeps the sandbox, disk and all, for the thread's next run to resume;
+ * `"snapshot"` saves it as a snapshot and destroys it.
+ */
+export type SandboxIdle = "pause" | "snapshot";
+
+/**
+ * What a binding that says nothing about `idle` does.
+ */
+export const defaultSandboxIdle: SandboxIdle = "pause";
 
 /**
  * The scope of every thread snapshot.
@@ -100,6 +123,11 @@ export interface ThreadSandboxCleanup {
    * created. Absent: none.
    */
   epoch?: number;
+
+  /**
+   * What the cleanup does with the sandbox. Absent: `"pause"`.
+   */
+  idle?: SandboxIdle;
 }
 
 /**
@@ -147,15 +175,23 @@ export interface ThreadSandboxOwner {
   ): Promise<boolean | undefined | void>;
 
   /**
-   * Leaves a `keepAlive` sandbox running for the thread's next run instead of
-   * saving and destroying it, and returns whether it did. Optional: with no
-   * `keep`, or one that returns false, the run saves and destroys the
-   * sandbox as usual. Nothing implements it yet, because stopping the sandbox
-   * after `idle` needs an idle timeout on the platform's sandbox, which does
-   * not exist (platform ask). It will have to stop the sandbox on every
-   * terminal state of the thread's run, with no sweeper.
+   * Claims the sandbox the thread's last run paused, and returns its ID. Only
+   * one caller gets it: the record is removed as it is read. Undefined when
+   * the thread has none.
    */
-  keep?(
+  takePaused(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+  ): Promise<string | undefined>;
+
+  /**
+   * Pauses a sandbox of this run for the thread's next run and records it.
+   * Returns `false` when it could not (the sandbox is still running), so the
+   * caller saves and destroys it instead.
+   */
+  pause(
     /**
      * The sandbox's name in the agent's `sandboxes`.
      */
@@ -167,29 +203,11 @@ export interface ThreadSandboxOwner {
     sandbox: DurableSandbox,
 
     /**
-     * The binding's `keepAlive`.
+     * The counter of the run's saves, pauses and recycles of this sandbox.
+     * Default 0.
      */
-    keepAlive: { idle: SandboxDuration },
-
-    /**
-     * The cleanup defer of the sandbox. Returning `true` is a promise that the sandbox will be stopped on every way the thread's run can end: the hook registers its own stop defer first, and only then aborts `guard`, because nothing else will stop a sandbox left running. Anything but a `true`, and any throw, makes the run save and destroy as usual.
-     */
-    guard: DeferHandle,
-  ): Promise<boolean> | boolean;
-
-  /**
-   * Called when `keep` threw.
-   */
-  keepFailed?(
-    /**
-     * The sandbox's name in the agent's `sandboxes`.
-     */
-    name: string,
-    /**
-     * What it threw.
-     */
-    error: unknown,
-  ): void;
+    epoch?: number,
+  ): Promise<boolean>;
 
   /**
    * Called when creating a sandbox from the thread's snapshot failed (for
@@ -226,6 +244,11 @@ export interface ThreadSandboxOwner {
      * The counter of the run's saves and recycles of this sandbox. Default 0.
      */
     epoch?: number,
+
+    /**
+     * What the cleanup does with the sandbox. Default `"pause"`.
+     */
+    idle?: SandboxIdle,
   ): DeferHandle;
 
   /**
@@ -476,7 +499,73 @@ export const threadSandboxOwner = (
       );
     },
 
-    guard: (name, sandbox, epoch = 0) => {
+    takePaused: async (name) => {
+      const found = await scope.take(
+        kvKey<PausedSandbox>(sandboxPausedKey(ref, name)),
+      );
+
+      return found?.id;
+    },
+
+    pause: async (name, sandbox, epoch = 0) => {
+      const suffix = epoch > 0 ? `:g${epoch}` : "";
+
+      const key = kvKey<PausedSandbox>(sandboxPausedKey(ref, name));
+
+      try {
+        // The record comes first: one that points at a sandbox the pause then
+        // failed to stop is harmless (it is resumed as it runs), while a
+        // paused sandbox nothing records would be lost.
+        const held = await scope.get(key);
+
+        await scope.set(key, {
+          id: sandbox.id,
+          generation: sandboxGeneration(runId, epoch),
+        });
+
+        try {
+          await sandbox.pause(`${name}:thread:pause${suffix}`);
+        } catch (error) {
+          // Back to what the record held, which nothing has replaced.
+          if (held) {
+            await scope.set(key, held);
+          } else {
+            await forget(scope, key.name);
+          }
+
+          throw error;
+        }
+
+        // A sandbox the record held before is no longer the thread's, so
+        // nothing would ever resume or destroy it.
+        if (held && held.id !== sandbox.id) {
+          await options.run(`${name}:thread:superseded${suffix}`, async () => {
+            const found = await (
+              client as unknown as CleanupThreadSandboxOptions["client"]
+            ).sandboxes.get(held.id);
+
+            await found?.destroy();
+
+            return null;
+          });
+        }
+
+        return true;
+      } catch (error) {
+        if (!(error instanceof StepError)) {
+          throw error;
+        }
+
+        options.warn?.(
+          { ref, thread, sandbox: name, error: String(error) },
+          "Pausing the thread's sandbox failed; it is saved and destroyed instead",
+        );
+
+        return false;
+      }
+    },
+
+    guard: (name, sandbox, epoch = 0, idle = defaultSandboxIdle) => {
       // A defer ID may be used once per run, so a recycled sandbox's cleanup
       // has an ID of its own.
       return options.defer(
@@ -486,6 +575,7 @@ export const threadSandboxOwner = (
         {
           name,
           sandboxId: sandbox.id,
+          idle,
           ...(epoch > 0 && { epoch }),
         },
       );
@@ -493,13 +583,6 @@ export const threadSandboxOwner = (
 
     release: async (name) => {
       await forget(scope, sandboxReadyKey(ref, name, runId));
-    },
-
-    keepFailed: (name, error) => {
-      options.warn?.(
-        { ref, thread, sandbox: name, error: String(error) },
-        "keepAlive failed; the sandbox is saved and destroyed instead",
-      );
     },
 
     ready: async (name) => {
@@ -516,6 +599,7 @@ export interface CleanupThreadSandboxOptions {
           id: string;
           createdAt: string;
         }>;
+        pause(): Promise<unknown>;
         destroy(): Promise<unknown>;
       } | null>;
     };
@@ -537,10 +621,11 @@ export interface CleanupThreadSandboxOptions {
 }
 
 /**
- * Saves and destroys a sandbox whose run ended without doing it (cancelled,
- * timed out, or a destroy that failed). It saves nothing when the sandbox was
- * not marked ready, or when the thread already has a snapshot from this run or
- * a newer one, and destroys the sandbox in every case.
+ * Pauses (the default) or saves and destroys a sandbox whose run ended without
+ * doing it (cancelled, timed out, or a destroy that failed). It keeps nothing
+ * when the sandbox was not marked ready, or when the thread already has a
+ * paused sandbox or snapshot from this run or a newer one, and destroys the
+ * sandbox in every case but a successful pause.
  */
 export const cleanupThreadSandbox = async (
   /**
@@ -552,6 +637,76 @@ export const cleanupThreadSandbox = async (
   const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
   const generation = sandboxGeneration(runId, sandbox.epoch);
   const ready = (await scope.get(kvKey<boolean>(readyKey))) === true;
+
+  if (ready && (sandbox.idle ?? defaultSandboxIdle) === "pause") {
+    const pausedKey = kvKey<PausedSandbox>(sandboxPausedKey(ref, sandbox.name));
+    const held = await scope.get(pausedKey);
+
+    // This sandbox is the one the thread already holds: the run paused it
+    // itself and ended before it gave up its cleanup.
+    if (held?.id === sandbox.sandboxId) {
+      await forget(scope, readyKey);
+
+      return;
+    }
+
+    // A newer run's paused sandbox stays the thread's.
+    if (!held || held.generation < generation) {
+      try {
+        const paused = await options.run(
+          `${sandbox.name}:thread:pause`,
+          async () => {
+            const found = await client.sandboxes.get(sandbox.sandboxId);
+
+            if (!found) {
+              return false;
+            }
+
+            await found.pause();
+
+            return true;
+          },
+        );
+
+        if (paused) {
+          // A newer run may have paused its own sandbox while this one was
+          // being paused: its record stays, and this sandbox is not kept.
+          const now = await scope.get(pausedKey);
+
+          if (now?.id === sandbox.sandboxId) {
+            await forget(scope, readyKey);
+
+            return;
+          }
+
+          if (!now || now.generation < generation) {
+            await scope.set(pausedKey, { id: sandbox.sandboxId, generation });
+
+            // The sandbox the record held before is no longer the thread's.
+            if (now && now.id !== sandbox.sandboxId) {
+              await options.run(
+                `${sandbox.name}:thread:superseded`,
+                async () => {
+                  await (await client.sandboxes.get(now.id))?.destroy();
+
+                  return null;
+                },
+              );
+            }
+
+            await forget(scope, readyKey);
+
+            return;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof StepError)) {
+          throw error;
+        }
+      }
+    }
+  }
+
   const newest = ready
     ? await newestSandboxGeneration(scope, ref, sandbox.name)
     : undefined;
