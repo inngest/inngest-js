@@ -67,13 +67,13 @@ export const subscribeReplay = scenario({
           // The position and the event of each message, as every replay sees it.
           appendFileSync(
             seenFile(thread.key),
-            `${message.seq}:${message.data.content}\n`,
+            `${message.seq}:${message.content}\n`,
           );
 
           const where = message.seq;
 
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), `${message.data.content ?? ""}@${where}`];
+            return [...(turns ?? []), `${message.content ?? ""}@${where}`];
           });
           // The turn takes a while, as a step: the other stream's message
           // arrives meanwhile and is in history when this `next()` replays.

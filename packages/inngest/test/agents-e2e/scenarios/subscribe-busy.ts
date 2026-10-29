@@ -53,11 +53,11 @@ export const subscribeBusy = scenario({
       async ({ inbox, thread }) => {
         for await (const message of inbox) {
           await step.run("work", async () => {
-            appendFileSync(ranFile(thread.key), `${message.data.content}\n`);
+            appendFileSync(ranFile(thread.key), `${message.content}\n`);
             await sleep(2500);
           });
           await kv.thread.update(kvKey<string[]>("done"), function (done) {
-            return [...(done ?? []), message.data.content ?? ""];
+            return [...(done ?? []), message.content ?? ""];
           });
         }
       },

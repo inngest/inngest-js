@@ -48,8 +48,8 @@ export const threadHandle = scenario({
       { id: workerId },
       async ({ inbox, thread, control }) => {
         for await (const message of inbox) {
-          if (message.data.kind === "request") {
-            const { n } = message.data.payload as { n: number };
+          if (message.kind === "request") {
+            const { n } = message.payload as { n: number };
             await message.reply({ answer: n * 2, by: thread.key });
 
             continue;
@@ -61,7 +61,7 @@ export const threadHandle = scenario({
               { call: { name: "think", input: {} } },
               { say: "echo: {{last}}" },
             ]),
-            prompt: message.data.content ?? "",
+            prompt: message.content ?? "",
             tools: { think },
             ...control,
           });
@@ -79,10 +79,7 @@ export const threadHandle = scenario({
     // Asks the worker thread named in the message, from inside this function.
     const asker = agents.agent({ id: askerId }, async ({ inbox }) => {
       const message = await inbox.next();
-      const [key, n] = (message?.data.content ?? "").split(":") as [
-        string,
-        string,
-      ];
+      const [key, n] = (message?.content ?? "").split(":") as [string, string];
       const reply = await worker
         .thread(key)
         .request({ n: Number(n) }, { timeout: "1m" });

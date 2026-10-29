@@ -48,7 +48,7 @@ export const subscribeFast = scenario({
         const seen: string[] = [];
 
         for await (const message of inbox) {
-          seen.push(message.data.content ?? "");
+          seen.push(message.content ?? "");
 
           if (seen.length === messages) {
             break;

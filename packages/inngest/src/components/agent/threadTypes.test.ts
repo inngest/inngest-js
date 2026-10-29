@@ -92,8 +92,8 @@ describe("requests", () => {
     async ({ inbox, thread }) => {
       const message = await inbox.next();
 
-      if (message?.data.kind === "request") {
-        expectTypeOf(message.data.payload).toEqualTypeOf<{
+      if (message?.kind === "request") {
+        expectTypeOf(message.payload).toEqualTypeOf<{
           question: string;
         }>();
 
@@ -167,8 +167,8 @@ describe("requests", () => {
       async ({ inbox }) => {
         const message = await inbox.next();
 
-        if (message?.data.kind === "request") {
-          expectTypeOf(message.data.payload).toBeUnknown();
+        if (message?.kind === "request") {
+          expectTypeOf(message.payload).toBeUnknown();
         }
 
         await message?.reply({ anything: 1 });

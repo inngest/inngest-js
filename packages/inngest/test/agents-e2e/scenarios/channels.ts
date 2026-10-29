@@ -63,7 +63,7 @@ export const channels = scenario({
 
         const result = await agent.loop({
           model: script([{ say: "all done" }]),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
         });
 
@@ -93,7 +93,7 @@ export const channels = scenario({
           const message = await inbox.next();
 
           await kv.thread.update(kvKey<string[]>("texts"), (texts) => {
-            return [...(texts ?? []), message?.data.content ?? ""];
+            return [...(texts ?? []), message?.content ?? ""];
           });
         }
 

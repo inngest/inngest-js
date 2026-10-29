@@ -47,7 +47,7 @@ export const skillsBake = scenario({
         const first = await inbox.next();
         const result = await agent.loop({
           model: script([{ say: "ready" }]),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
           ...control,
         });

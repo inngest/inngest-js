@@ -52,7 +52,7 @@ export const inboxViews = scenario({
 
           if (source?.name === event("ci")) {
             await record(`main:ci:${(source.data as { n: number }).n}`);
-          } else if (message.data.content === "unread") {
+          } else if (message.content === "unread") {
             const rest = await ci.unread();
 
             await record(

@@ -60,7 +60,7 @@ export const threadKey = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), message.data.content ?? ""];
+            return [...(turns ?? []), message.content ?? ""];
           });
           await sleep(150);
         }
@@ -88,7 +88,10 @@ export const threadKey = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), String(message.data.event?.data.n)];
+            return [
+              ...(turns ?? []),
+              String((message.data as { n?: number }).n),
+            ];
           });
         }
       },
@@ -106,7 +109,7 @@ export const threadKey = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), message.data.event?.name ?? ""];
+            return [...(turns ?? []), message.name ?? ""];
           });
           await sleep(60_000);
         }
