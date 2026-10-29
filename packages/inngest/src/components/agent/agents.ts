@@ -434,6 +434,8 @@ export {
   ChannelStreamEnded,
   defineChannel,
 } from "./channels.ts";
+export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
+export { agentToolName } from "./agentTool.ts";
 export { agentMessage } from "./events.ts";
 export type {
   GithubChannelOptions,

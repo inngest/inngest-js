@@ -196,7 +196,24 @@ export type SandboxToolEntry =
   | SandboxTool
   | ((...args: never[]) => unknown)
   | InngestFunction.Any
-  | InngestFunctionReference.Any;
+  | InngestFunctionReference.Any
+  | AgentToolSource;
+
+/**
+ * Something that is a tool by carrying one, such as an agent. It goes in
+ * `tools` as it is.
+ */
+export interface AgentToolSource<TInput = unknown, TOutput = unknown> {
+  /**
+   * The tool the model calls to use it. Its `id` is the sanitised ID of the
+   * agent.
+   */
+  readonly "~tool": AgentTool<TInput, TOutput>;
+}
+
+const isToolSource = (entry: unknown): entry is AgentToolSource => {
+  return typeof entry === "object" && entry !== null && "~tool" in entry;
+};
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
 
@@ -209,7 +226,9 @@ export type ToolInputType<TEntry> = TEntry extends SandboxTool<
   unknown
 >
   ? TInput
-  : unknown;
+  : TEntry extends AgentToolSource<infer TInput, unknown>
+    ? TInput
+    : unknown;
 
 /**
  * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
@@ -220,7 +239,9 @@ export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
   infer TOutput
 >
   ? TOutput
-  : unknown;
+  : TEntry extends AgentToolSource<unknown, infer TOutput>
+    ? TOutput
+    : unknown;
 
 export interface SandboxToolOptions {
   /**
@@ -510,7 +531,7 @@ export const tool = Object.assign(defineTool, toolMethods);
  * The schema of the data a function takes, when its triggers say: that of its
  * `invoke()` trigger, or of its only event trigger with a schema.
  */
-const triggerSchema = (
+export const triggerSchema = (
   fn: InngestFunction.Any,
 ): StandardSchemaV1 | undefined => {
   const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
@@ -559,6 +580,10 @@ const functionTool = (
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
   if (typeof entry === "function") {
     return { run: entry };
+  }
+
+  if (isToolSource(entry)) {
+    return entry["~tool"];
   }
 
   return entry instanceof InngestFunction ||

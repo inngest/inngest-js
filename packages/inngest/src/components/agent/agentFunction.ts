@@ -41,7 +41,11 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { SandboxTool, SandboxTools } from "../sandbox/tools.ts";
+import type {
+  AgentTool,
+  SandboxTool,
+  SandboxTools,
+} from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { toAsync } from "./cel.ts";
 import {
@@ -64,6 +68,7 @@ import {
   sandboxTools,
   stepSandboxes,
 } from "./defs.ts";
+import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { agentMessage } from "./events.ts";
 import {
   createInboxTools,
@@ -155,7 +160,8 @@ export interface AgentFunctionOptions<
    */
   name?: InngestFunction.Options["name"];
   /**
-   * A longer description of the function, shown in the Inngest UI.
+   * A longer description of the function, shown in the Inngest UI. It is also
+   * what the model reads when the agent is one of the `tools` of another.
    */
   description?: InngestFunction.Options["description"];
 
@@ -1068,6 +1074,14 @@ export interface AgentFunction<
    * its body returns.
    */
   readonly "~types"?: { input: TInput; output: TOutput };
+
+  /**
+   * The agent as a tool, which is what an agent in `tools` becomes. Named by
+   * the agent's ID, described by its `description`. A call takes
+   * `{ message: string }`, or the agent's `invoke()` data when it declares a
+   * typed one, and returns what the agent returns.
+   */
+  readonly "~tool": AgentTool<AgentToolInput<TInput>, TOutput>;
 
   /**
    * The function that runs the body.
@@ -2305,6 +2319,12 @@ export function createAgentFunction(
   );
 
   return {
+    "~tool": agentToolOf(
+      ref,
+      config.id,
+      fn,
+      config.description,
+    ) as AgentFunction["~tool"],
     fn,
     cleanup,
     finished,
