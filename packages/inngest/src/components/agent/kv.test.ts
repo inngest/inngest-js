@@ -55,7 +55,7 @@ describe("kv", () => {
       "kv.get:function:a",
       "kv.get:run:missing",
       "kv.take:run:a",
-      "kv.get:run:a",
+      "kv.get:run:a:1",
       "kv.clear:run",
       "kv.all:run",
     ]);
@@ -407,7 +407,7 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     expect(type).toBe("function-resolved");
     expect(ran).toEqual([
       "kv.setIfAbsent:env:claim",
-      "kv.setIfAbsent:env:claim",
+      "kv.setIfAbsent:env:claim:1",
       "kv.index.add:env:runs:r1",
       "kv.index.range:env:runs",
       "kv.index.remove:env:runs:r1",
