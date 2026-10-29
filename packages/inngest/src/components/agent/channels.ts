@@ -163,9 +163,15 @@ export interface ChannelStream {
 
   /**
    * Starts a stream and returns its identity, such as a message timestamp.
-   * Runs inside a step.
+   * Runs inside a step. It writes `options.cards` as the stream's first
+   * cards, so a stream is never left without them if the first write fails.
    */
-  start(): Promise<string>;
+  start(
+    /**
+     * The title, the person the stream is for, and its first cards.
+     */
+    options: ChannelStreamStart,
+  ): Promise<string>;
 
   /**
    * Writes cards to a stream, adding the new ones and updating those that
@@ -186,15 +192,92 @@ export interface ChannelStream {
   ): Promise<void>;
 
   /**
-   * Closes a stream the reporter is leaving. Optional, and best effort: its
-   * failure is ignored.
+   * Closes a stream, with its final content when it has some. The reporter
+   * calls it without `final` for a stream it leaves for a new one, and a
+   * failure there is ignored; with `final` (from `report.finish()`) a failure
+   * fails the step.
    */
   stop?(
     /**
      * The stream.
      */
     stream: string,
+
+    /**
+     * What the stream ends with.
+     */
+    final?: ChannelStreamFinal,
   ): Promise<void>;
+
+  /**
+   * The card that says the stream goes on in another process, after a restart
+   * or a deploy. The reporter writes it once, together with the first card
+   * after the run's `restarts` grew, and counts it against the stream's
+   * limits. Give it an `id` of its own for each `restarts`. Optional: a
+   * stream without it says nothing.
+   */
+  continued?(
+    /**
+     * How many times the run has continued in another process.
+     */
+    restarts: number,
+  ): ChannelCard;
+}
+
+/**
+ * What a stream starts with.
+ */
+export interface ChannelStreamStart {
+  /**
+   * What the stream is about, such as a plan title of two to four words.
+   */
+  title?: string;
+
+  /**
+   * The person and workspace the stream is for, as the surface needs them
+   * (Slack: `recipient_user_id` and `recipient_team_id`).
+   */
+  recipient?: { user?: string; team?: string };
+
+  /**
+   * The first cards. The adapter writes them as part of starting.
+   */
+  cards?: ChannelCard[];
+}
+
+/**
+ * What a stream ends with.
+ */
+export interface ChannelStreamFinal {
+  /**
+   * Markdown text for the end of the stream.
+   */
+  text?: string;
+
+  /**
+   * Blocks in the surface's own format (Slack: the `blocks` of
+   * `chat.stopStream`, such as a context-actions block with feedback
+   * buttons). Only the surface they are made for understands them.
+   */
+  blocks?: unknown[];
+}
+
+/**
+ * How a report to a stream is written.
+ */
+export interface ReportStreamOptions {
+  /**
+   * Overrides the configured destinations.
+   */
+  to?: ReportConfig;
+
+  /**
+   * The base of the step ID, for the caller that wants stable step IDs (a
+   * trace that asserts one per label). Default: `report:<kind>:<n>`, with
+   * the destination appended. With a base, the destination is appended only
+   * when there is more than one.
+   */
+  stepId?: string;
 }
 
 /**
@@ -339,6 +422,13 @@ export type ReportConfigValue<Ctx> = ConfigValue<ReportConfig, Ctx>;
 
 /**
  * Posts progress to the agent's channels.
+ *
+ * Every write is a step of its own, so a replay writes nothing twice. Called
+ * inside a running `step.run` of your own, a write is made directly instead,
+ * on your step: it adds no step and your step's memo covers the replay. A
+ * stream's state is then kept in the thread's durable state rather than in
+ * step results, so use one form for a stream; a stream written in one form and
+ * then in the other starts again.
  */
 export interface Reporter {
   /**
@@ -373,12 +463,7 @@ export interface Reporter {
      * What to show.
      */
     status: ChannelStatus,
-    options?: {
-      /**
-       * Overrides the configured destinations for this status.
-       */
-      to?: ReportConfig;
-    },
+    options?: ReportStreamOptions,
   ): Promise<void>;
 
   /**
@@ -401,12 +486,37 @@ export interface Reporter {
      * The card to add or update.
      */
     card: ChannelCard,
-    options?: {
-      /**
-       * Overrides the configured destinations for this card.
-       */
-      to?: ReportConfig;
-    },
+    options?: ReportStreamOptions,
+  ): Promise<void>;
+
+  /**
+   * Starts a progress stream with a title, the person it is for and its first
+   * cards, on the destinations that have a `stream`; the others ignore it. A
+   * stream that is open is left (stopped without final content), and later
+   * cards go to the new one, which keeps the title and recipient if it rolls
+   * over. Use it when the title or the recipient is known; a first
+   * `report.card()` starts a stream without them.
+   */
+  begin(
+    /**
+     * The title, recipient and first cards of the stream.
+     */
+    start: ChannelStreamStart,
+    options?: ReportStreamOptions,
+  ): Promise<void>;
+
+  /**
+   * Ends the open progress stream with final content: markdown text and
+   * surface-specific blocks (Slack: the blocks of `chat.stopStream`, such as
+   * feedback buttons). A destination with no open stream posts `final.text`
+   * as a message, if there is any. The next card starts a new stream.
+   */
+  finish(
+    /**
+     * What the stream ends with.
+     */
+    final?: ChannelStreamFinal,
+    options?: ReportStreamOptions,
   ): Promise<void>;
 }
 
@@ -434,6 +544,17 @@ interface CardStreamState {
    * The unique cards of every stream before this one, plus this one's.
    */
   total: number;
+
+  /**
+   * What the stream was started with, so one that rolls over keeps it.
+   */
+  title?: string;
+  recipient?: { user?: string; team?: string };
+
+  /**
+   * The run's `restarts` when the stream last said it was continued.
+   */
+  restarts: number;
 }
 
 const summaryCardId = "summary";
@@ -473,6 +594,41 @@ const checkCard = (card: ChannelCard): void => {
   }
 };
 
+const noop = () => {
+  return undefined;
+};
+
+/**
+ * Starts a stream with `cards` and leaves `before`, if there is one.
+ */
+const startFresh = async (
+  stream: ChannelStream,
+  before: CardStreamState | undefined,
+  start: Omit<ChannelStreamStart, "cards">,
+  cards: ChannelCard[],
+  total: number,
+  restarts: number,
+): Promise<CardStreamState> => {
+  const now = Date.now();
+  const started = await stream.start({ ...start, cards });
+
+  if (before) {
+    await stream.stop?.(before.stream).catch(noop);
+  }
+
+  return {
+    stream: started,
+    startedAt: now,
+    ids: cards.map((card) => {
+      return card.id;
+    }),
+    total,
+    restarts,
+    ...(start.title === undefined ? {} : { title: start.title }),
+    ...(start.recipient === undefined ? {} : { recipient: start.recipient }),
+  };
+};
+
 /**
  * Writes one card to a destination's stream, rolling over to a new stream when
  * its limits say so. Returns where the stream stands.
@@ -481,21 +637,44 @@ const writeCard = async (
   stream: ChannelStream,
   card: ChannelCard,
   before: CardStreamState | undefined,
+  restarts: number,
 ): Promise<CardStreamState> => {
   const { limits } = stream;
-  const now = Date.now();
   const known = before?.ids.includes(card.id) === true;
+
+  // A stream that goes on after a restart says so once, in a card of its own.
+  const resumed =
+    before && restarts > before.restarts
+      ? stream.continued?.(restarts)
+      : undefined;
+  const added =
+    (resumed && !before?.ids.includes(resumed.id) ? 1 : 0) + (known ? 0 : 1);
   const full =
-    before !== undefined && !known && before.ids.length >= limits.rollAt;
-  const old = before !== undefined && now - before.startedAt >= limits.maxAgeMs;
+    before !== undefined && before.ids.length + added > limits.rollAt;
+  const old =
+    before !== undefined && Date.now() - before.startedAt >= limits.maxAgeMs;
 
   if (before && !full && !old) {
     try {
-      await stream.append(before.stream, [card]);
+      const cards = resumed ? [resumed, card] : [card];
 
-      return known
-        ? before
-        : { ...before, ids: [...before.ids, card.id], total: before.total + 1 };
+      await stream.append(before.stream, cards);
+
+      return {
+        ...before,
+        restarts: Math.max(before.restarts, restarts),
+        ids: [
+          ...before.ids,
+          ...cards
+            .map((written) => {
+              return written.id;
+            })
+            .filter((id) => {
+              return !before.ids.includes(id);
+            }),
+        ],
+        total: before.total + (known ? 0 : 1),
+      };
     } catch (error) {
       // Only a stream that has ended is rolled over; any other failure is a
       // failure.
@@ -506,44 +685,25 @@ const writeCard = async (
   }
 
   // A new stream starts with a summary of the cards it leaves, not with their
-  // history.
-  const started = await stream.start();
-  const cards: ChannelCard[] = before
-    ? [
-        {
-          id: summaryCardId,
-          title: "Earlier steps",
-          status: "done",
-          details: `${before.total} steps so far`,
-        },
-        card,
-      ]
-    : [card];
-
-  try {
-    await stream.append(started, cards);
-  } catch (error) {
-    // The step is retried from the old state and would start another stream:
-    // close this one, which nothing else will know about.
-    await stream.stop?.(started).catch(() => {
-      return undefined;
-    });
-
-    throw error;
-  }
-
-  if (before) {
-    await stream.stop?.(before.stream).catch(() => {
-      return undefined;
-    });
-  }
-
-  return {
-    stream: started,
-    startedAt: now,
-    ids: before ? [summaryCardId, card.id] : [card.id],
-    total: (before?.total ?? 0) + (known ? 0 : 1),
-  };
+  // history, and keeps the title and recipient the last one had.
+  return startFresh(
+    stream,
+    before,
+    { title: before?.title, recipient: before?.recipient },
+    before
+      ? [
+          {
+            id: summaryCardId,
+            title: "Earlier steps",
+            status: "done",
+            details: `${before.total} steps so far`,
+          },
+          card,
+        ]
+      : [card],
+    (before?.total ?? 0) + (known ? 0 : 1),
+    restarts,
+  );
 };
 
 /**
@@ -574,6 +734,32 @@ export const createReporter = (
    * is not scored.
    */
   scores?: { since?: number },
+
+  /**
+   * What the run knows that a stream can say: `restarts`, how many times the
+   * run continued in another process so far.
+   */
+  hooks?: {
+    restarts?: () => number;
+
+    /**
+     * Whether the caller is inside a running step. A report made there is
+     * written directly, on that step, instead of in a step of its own: the
+     * caller's step memoizes it. A stream's state then lives in `state`
+     * (durable, outside the steps), because the step results that carry it
+     * in the other form do not exist.
+     */
+    inStep?: () => boolean;
+
+    /**
+     * Where a stream's state is kept between reports made inside steps,
+     * by destination.
+     */
+    state?: {
+      get(key: string): Promise<CardStreamState | null | undefined>;
+      set(key: string, value: CardStreamState | null): Promise<void>;
+    };
+  },
 ): Reporter => {
   let reports = 0;
   // Whether a post of this run has finished, live or replayed.
@@ -657,85 +843,187 @@ export const createReporter = (
       lastPostAt = typeof postedAt === "number" ? postedAt : undefined;
     }
   }
-
   // Where each destination's card stream stands, and the end of the queue of
-  // card writes: they run one at a time, in call order.
-  const cardStreams = new Map<Channel, CardStreamState>();
+  // stream writes: they run one at a time, in call order.
+  const cardStreams = new Map<Channel, CardStreamState | null>();
   let queue: Promise<unknown> = Promise.resolve();
-  let cards = 0;
+  const counts = { card: 0, status: 0, begin: 0, finish: 0 };
 
-  let statuses = 0;
+  /**
+   * One write to the destinations' streams, queued after the ones before it.
+   * Each destination's step saves where its stream stands (or `null` once it
+   * is finished), which is all a replay needs.
+   */
+  const queued = (
+    kind: keyof typeof counts,
+    options: ReportStreamOptions | undefined,
+    wants: (channel: Channel) => boolean,
+    write: (
+      channel: Channel,
+      before: CardStreamState | undefined,
+      restarts: number,
+    ) => Promise<CardStreamState | null | undefined>,
+  ): Promise<void> => {
+    const n = ++counts[kind];
+    const direct = hooks?.inStep?.() === true;
+    const destinations = destinationsOf(options).filter(({ channel }) => {
+      return wants(channel);
+    });
 
-  async function status(
-    status: ChannelStatus,
-    options?: { to?: ReportConfig },
-  ) {
+    const run = queue.then(async () => {
+      for (const { name, channel, index } of destinations) {
+        if (direct) {
+          // On the caller's step: no step of ours. A stream's state is read
+          // from and written to the durable state, which is current when this
+          // runs live; a replay skips the caller's step and this with it.
+          const key = `__stream:${name}`;
+          const keeps = kind !== "status";
+          const held = keeps ? await hooks?.state?.get(key) : undefined;
+          // The durable state wins; a finished stream is `null` there.
+          const before =
+            (held === undefined ? cardStreams.get(channel) : held) ?? undefined;
+          const state =
+            (await write(channel, before, hooks?.restarts?.() ?? 0)) ?? null;
+
+          if (keeps) {
+            cardStreams.set(channel, state);
+            await hooks?.state?.set(key, state);
+          }
+
+          continue;
+        }
+
+        const base = options?.stepId;
+        const id = base
+          ? destinations.length > 1
+            ? `${base}:${name}`
+            : base
+          : `report:${kind}:${n}:${index}:${name}`;
+        const restarts = hooks?.restarts?.() ?? 0;
+        const before = cardStreams.get(channel) ?? undefined;
+        const state = await runStep(
+          id,
+          // The step saves where the stream stands, not a time: the runner is
+          // typed for the post steps, which save one.
+          (async () => {
+            return (await write(channel, before, restarts)) ?? null;
+          }) as unknown as () => Promise<number | undefined>,
+        );
+
+        if (kind === "card" || kind === "begin" || kind === "finish") {
+          cardStreams.set(channel, (state as CardStreamState | null) ?? null);
+        }
+      }
+    });
+
+    // One failed write must not stop the ones after it from running.
+    queue = run.catch(noop);
+
+    return run;
+  };
+
+  async function status(status: ChannelStatus, options?: ReportStreamOptions) {
     if (!channelStatuses.includes(status)) {
       throw new NonRetriableError(
         `report.status: the status is one of ${channelStatuses.join(", ")}.`,
       );
     }
 
-    const n = ++statuses;
-    const destinations = destinationsOf(options).filter(({ channel }) => {
-      return channel.status !== undefined;
-    });
+    await queued(
+      "status",
+      options,
+      (channel) => {
+        return channel.status !== undefined;
+      },
+      async (channel) => {
+        // A status line is never worth failing a run.
+        try {
+          await channel.status?.(status);
+        } catch {
+          // Best effort, as the channel's `status` documents.
+        }
 
-    const write = queue.then(async () => {
-      for (const { name, channel, index } of destinations) {
-        await runStep(`report:status:${n}:${index}:${name}`, async () => {
-          // A status line is never worth failing a run.
-          try {
-            await channel.status?.(status);
-          } catch {
-            // Best effort, as the channel's `status` documents.
-          }
-
-          return undefined;
-        });
-      }
-    });
-
-    queue = write.catch(() => {
-      return undefined;
-    });
-
-    return write;
+        return undefined;
+      },
+    );
   }
 
-  async function card(card: ChannelCard, options?: { to?: ReportConfig }) {
+  async function card(card: ChannelCard, options?: ReportStreamOptions) {
     checkCard(card);
 
-    const n = ++cards;
-    const destinations = destinationsOf(options).filter(({ channel }) => {
-      return channel.stream !== undefined;
-    });
-
-    const write = queue.then(async () => {
-      for (const { name, channel, index } of destinations) {
-        const stream = channel.stream as ChannelStream;
-        const state = (await runStep(
-          `report:card:${n}:${index}:${name}`,
-          // The step saves where the stream stands, not a time: the runner is
-          // typed for the post steps, which save one.
-          (async () => {
-            return writeCard(stream, card, cardStreams.get(channel));
-          }) as unknown as () => Promise<number | undefined>,
-        )) as CardStreamState;
-
-        cardStreams.set(channel, state);
-      }
-    });
-
-    // One failed write must not stop the ones after it from running.
-    queue = write.catch(() => {
-      return undefined;
-    });
-
-    return write;
+    await queued(
+      "card",
+      options,
+      (channel) => {
+        return channel.stream !== undefined;
+      },
+      async (channel, before, restarts) => {
+        return writeCard(
+          channel.stream as ChannelStream,
+          card,
+          before,
+          restarts,
+        );
+      },
+    );
   }
 
-  return Object.assign(report, { card, status }) as Reporter;
+  async function begin(
+    start: ChannelStreamStart,
+    options?: ReportStreamOptions,
+  ) {
+    for (const card of start.cards ?? []) {
+      checkCard(card);
+    }
+
+    await queued(
+      "begin",
+      options,
+      (channel) => {
+        return channel.stream !== undefined;
+      },
+      async (channel, before, restarts) => {
+        const cards = start.cards ?? [];
+
+        return startFresh(
+          channel.stream as ChannelStream,
+          before,
+          { title: start.title, recipient: start.recipient },
+          cards,
+          cards.length,
+          restarts,
+        );
+      },
+    );
+  }
+
+  async function finish(
+    final?: ChannelStreamFinal,
+    options?: ReportStreamOptions,
+  ) {
+    await queued(
+      "finish",
+      options,
+      (channel) => {
+        return channel.stream !== undefined || final?.text !== undefined;
+      },
+      async (channel, before) => {
+        const stop = before ? channel.stream?.stop : undefined;
+
+        if (before && stop) {
+          await stop.call(channel.stream, before.stream, final);
+        } else if (final?.text !== undefined) {
+          // No open stream, or one that cannot be stopped with content: the
+          // text still reaches the thread.
+          await channel.post({ text: final.text });
+        }
+
+        return null;
+      },
+    );
+  }
+
+  return Object.assign(report, { card, status, begin, finish }) as Reporter;
 };
 
 /**

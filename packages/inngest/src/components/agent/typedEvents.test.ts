@@ -105,6 +105,58 @@ describe("typed events", () => {
     expect(types).toBeTypeOf("function");
   });
 
+  test("trigger is the event of on, flat and typed, with no casts", () => {
+    agents.agent(
+      { id: "t1", on: { event: order, thread: "event.data.id" } },
+      async ({ trigger }) => {
+        expectTypeOf(trigger).toEqualTypeOf<Order | undefined>();
+
+        if (trigger) {
+          expectTypeOf(trigger.data.total).toBeNumber();
+        }
+
+        return undefined;
+      },
+    );
+
+    agents.agent(
+      {
+        id: "t2",
+        on: [
+          { event: order, thread: "event.data.id" },
+          { event: refund, thread: "event.data.order" },
+          { cron: "0 * * * *", thread: '"x"' },
+        ],
+      },
+      async ({ trigger }) => {
+        if (trigger?.name === "shop/order.created") {
+          expectTypeOf(trigger.data.total).toBeNumber();
+        }
+
+        if (trigger?.name === "shop/refund.created") {
+          expectTypeOf(trigger.data.amount).toBeNumber();
+        }
+
+        if (trigger?.name === "inngest/scheduled.timer") {
+          expectTypeOf(trigger.data.cron).toBeString();
+        }
+
+        return undefined;
+      },
+    );
+
+    agents.agent(
+      { id: "t3", on: { event: "slack/message", thread: "event.data.ts" } },
+      async ({ trigger }) => {
+        expectTypeOf(trigger?.name).toEqualTypeOf<
+          "slack/message" | undefined
+        >();
+
+        return undefined;
+      },
+    );
+  });
+
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },

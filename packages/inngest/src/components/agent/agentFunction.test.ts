@@ -7,7 +7,7 @@ import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
-import { staticSchema } from "../triggers/triggers.ts";
+import { invoke, staticSchema } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
@@ -1010,6 +1010,72 @@ describe("thread state", () => {
       status: "running",
       runId: "r2",
     });
+  });
+});
+
+describe("trigger", () => {
+  const make = (on: unknown) => {
+    return createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        on,
+      } as never,
+      async ({ trigger }) => {
+        return trigger ?? "none";
+      },
+    );
+  };
+
+  test("an event of on starts the run with the event itself on the body context", async () => {
+    const { fn } = make({ event: "shop/order", thread: "event.data.id" });
+
+    const { output } = await run(fn, {
+      event: { name: "shop/order", data: { id: "o1", total: 5 } },
+    });
+
+    expect(output).toMatchObject({
+      name: "shop/order",
+      data: { id: "o1", total: 5 },
+    });
+  });
+
+  test("a cron tick is the trigger of a cron run", async () => {
+    const { fn } = make({ cron: "0 * * * *" });
+
+    const { output } = await run(fn, {
+      event: { name: "inngest/scheduled.timer", data: { cron: "0 * * * *" } },
+    });
+
+    expect(output).toMatchObject({
+      name: "inngest/scheduled.timer",
+      data: { cron: "0 * * * *" },
+    });
+  });
+
+  test("an invoke trigger shows the caller's input without what the SDK told the agent", async () => {
+    const { fn } = make(invoke(z.object({ question: z.string() })));
+
+    const { output } = await run(fn, {
+      event: {
+        name: "inngest/function.invoked",
+        data: { question: "why", _agent: { thread: "t" } },
+      },
+    });
+
+    expect(output).toEqual({
+      name: "inngest/function.invoked",
+      data: { question: "why" },
+    });
+  });
+
+  test("a plain thread message has no trigger event", async () => {
+    const { fn } = make({ event: "shop/order", thread: "event.data.id" });
+
+    const { output } = await run(fn, { event: message("user", "hi") });
+
+    expect(output).toBe("none");
   });
 });
 

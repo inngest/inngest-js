@@ -8,6 +8,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   type ChannelCard,
   ChannelStreamEnded,
+  type ChannelStreamFinal,
+  type ChannelStreamStart,
   createReporter,
   defineChannel,
 } from "./channels.ts";
@@ -23,6 +25,7 @@ const fakeSurface = (
     rollAt?: number;
     endAfterWrites?: number;
     maxAgeMs?: number;
+    continued?: boolean;
   } = {},
 ) => {
   const maxCards = options.maxCards ?? 50;
@@ -31,7 +34,29 @@ const fakeSurface = (
     { cards: Map<string, ChannelCard>; writes: number; stopped: boolean }
   >();
   const calls: string[] = [];
+  const starts: ChannelStreamStart[] = [];
+  const stops: (ChannelStreamFinal | undefined)[] = [];
   let next = 0;
+
+  const write = (id: string, cards: ChannelCard[]) => {
+    const stream = streams.get(id) as NonNullable<
+      ReturnType<typeof streams.get>
+    >;
+
+    for (const card of cards) {
+      stream.cards.set(card.id, card);
+    }
+
+    if (stream.cards.size > maxCards) {
+      throw new Error(`${id} holds ${stream.cards.size} cards`);
+    }
+
+    stream.writes += 1;
+
+    if (cards.length > 0) {
+      calls.push(`append:${id}:${cards.map((c) => c.id).join(",")}`);
+    }
+  };
 
   const channel = defineChannel({
     post: async () => {},
@@ -41,11 +66,13 @@ const fakeSurface = (
         rollAt: options.rollAt ?? Math.max(1, maxCards - 10),
         maxAgeMs: options.maxAgeMs ?? 9 * 60_000,
       },
-      start: async () => {
+      start: async (start) => {
         const id = `stream${++next}`;
 
         streams.set(id, { cards: new Map(), writes: 0, stopped: false });
         calls.push(`start:${id}`);
+        starts.push(start);
+        write(id, start.cards ?? []);
 
         return id;
       },
@@ -61,30 +88,31 @@ const fakeSurface = (
           throw new ChannelStreamEnded();
         }
 
-        for (const card of cards) {
-          stream.cards.set(card.id, card);
-        }
-
-        if (stream.cards.size > maxCards) {
-          throw new Error(`${id} holds ${stream.cards.size} cards`);
-        }
-
-        stream.writes += 1;
-        calls.push(`append:${id}:${cards.map((c) => c.id).join(",")}`);
+        write(id, cards);
       },
-      stop: async (id) => {
+      stop: async (id, final) => {
         const stream = streams.get(id);
 
         if (stream) {
           stream.stopped = true;
         }
 
+        stops.push(final);
         calls.push(`stop:${id}`);
       },
+      continued: options.continued
+        ? (restarts) => {
+            return {
+              id: `continued-${restarts}`,
+              title: "Continued",
+              status: "done",
+            };
+          }
+        : undefined,
     },
   });
 
-  return { channel, streams, calls };
+  return { channel, streams, calls, starts, stops };
 };
 
 /**
@@ -243,15 +271,9 @@ describe("report.card", () => {
       report.card({ id: "c", title: "C" }),
     ]);
 
-    // The first card opens the stream, so only the appends after it are seen.
-    expect(order).toEqual([
-      "begin:a",
-      "end:a",
-      "begin:b",
-      "end:b",
-      "begin:c",
-      "end:c",
-    ]);
+    // The first card opens the stream (start writes it), so only the appends
+    // after it are seen, one at a time and in call order.
+    expect(order).toEqual(["begin:b", "end:b", "begin:c", "end:c"]);
   });
 
   test("a replay writes nothing again and continues from the saved stream state", async () => {
@@ -301,7 +323,7 @@ describe("report.card", () => {
     expect(surface.calls.at(-1)).toBe("append:stream2:a");
   });
 
-  test("a rollover whose first write fails closes the stream it started", async () => {
+  test("a start that fails leaves no stream and fails the write", async () => {
     const calls: string[] = [];
     const channel = defineChannel({
       post: async () => {},
@@ -310,13 +332,10 @@ describe("report.card", () => {
         start: async () => {
           calls.push("start");
 
-          return "s";
-        },
-        append: async () => {
           throw new Error("boom");
         },
-        stop: async () => {
-          calls.push("stop");
+        append: async () => {
+          calls.push("append");
         },
       },
     });
@@ -327,7 +346,7 @@ describe("report.card", () => {
     );
 
     await expect(report.card({ id: "a", title: "A" })).rejects.toThrow("boom");
-    expect(calls).toEqual(["start", "stop"]);
+    expect(calls).toEqual(["start"]);
   });
 
   test("two lists of destinations share one stream per channel", async () => {
@@ -353,13 +372,17 @@ describe("report.card", () => {
       post: async () => {},
       stream: {
         limits: { maxCards: 50, rollAt: 40, maxAgeMs: 60_000 },
-        start: async () => "s",
-        append: async (_id, cards) => {
+        start: async (start) => {
           if (failFirst) {
             failFirst = false;
             throw new Error("boom");
           }
 
+          calls.push(start.cards?.[0]?.id ?? "");
+
+          return "s";
+        },
+        append: async (_id, cards) => {
           calls.push(cards[0]?.id ?? "");
         },
       },
@@ -472,7 +495,7 @@ describe("the Slack stream", () => {
         : { ok: true };
     });
     const stream = slackChannel().stream;
-    const id = await stream?.start();
+    const id = await stream?.start({});
 
     await stream?.append(id as string, [
       {
@@ -546,7 +569,7 @@ describe("the Slack stream", () => {
       return { ok: true, ts: "9.9" };
     });
 
-    await slackChannel().stream?.start();
+    await slackChannel().stream?.start({});
 
     expect(sent[0]).toMatchObject({
       method: "chat.startStream",
@@ -572,7 +595,7 @@ describe("the Slack stream", () => {
       { in: ["C1"], token: "t" },
     );
 
-    await fromEvent.stream?.start();
+    await fromEvent.stream?.start({});
 
     expect(sent[0]?.method).toBe("auth.test");
     expect(sent[1]?.body).toMatchObject({
@@ -585,7 +608,7 @@ describe("the Slack stream", () => {
       { in: ["C1"], token: "t", team: "T1" },
     );
 
-    await expect(noUser.stream?.start()).rejects.toThrow("needs the user");
+    await expect(noUser.stream?.start({})).rejects.toThrow("needs the user");
   });
 
   test("a gone message is only a stream that ended for the stream calls", async () => {
@@ -638,7 +661,7 @@ describe("the Slack stream", () => {
         return { ok: true, ts: `9.${++started}` };
       }
 
-      // The first stream takes one card, then Slack ends it.
+      // The first stream takes one more card, then Slack ends it.
       if (method === "chat.appendStream" && body.ts === "9.1") {
         firstAppends += 1;
 
@@ -657,14 +680,33 @@ describe("the Slack stream", () => {
 
     await report.card({ id: "c1", title: "t" });
     await report.card({ id: "c2", title: "t" });
+    await report.card({ id: "c3", title: "t" });
+    await report.card({ id: "c4", title: "t" });
 
-    const appends = sent.filter((s) => s.method === "chat.appendStream");
-
-    // c1 lands; c2 finds the stream over (the failed write), then lands on a new one.
-    expect(appends.map((s) => s.body.ts)).toEqual(["9.1", "9.1", "9.2"]);
+    // c1 starts the stream; c2 lands; c3 and c4 are the second append, which
+    // finds the stream over: c3 starts a new one with a summary, c4 follows it.
     expect(
-      (appends[2]?.body.chunks as { id: string }[]).map((c) => c.id),
-    ).toEqual(["summary", "c2"]);
+      sent.map((s) => {
+        return [s.method, s.body.ts];
+      }),
+    ).toEqual([
+      ["chat.startStream", undefined],
+      ["chat.appendStream", "9.1"],
+      ["chat.appendStream", "9.1"],
+      ["chat.startStream", undefined],
+      ["chat.stopStream", "9.1"],
+      ["chat.appendStream", "9.2"],
+    ]);
+
+    const chunkIds = (index: number) => {
+      return (sent[index]?.body.chunks as { id?: string }[]).map((c) => {
+        return c.id;
+      });
+    };
+
+    expect(chunkIds(0)).toEqual([undefined, "c1"]);
+    expect(chunkIds(3)).toEqual([undefined, "summary", "c3"]);
+    expect(chunkIds(5)).toEqual(["c4"]);
   });
 });
 
@@ -843,6 +885,321 @@ describe("report.status and the Slack status line", () => {
       sources: [
         { type: "url", url: "https://x.test/a", text: "A &lt;page&gt;" },
       ],
+    });
+  });
+});
+
+describe("begin, finish, continued and step IDs", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("begin starts a stream with a title, a recipient and first cards, and a rollover keeps them", async () => {
+    const surface = fakeSurface({ maxCards: 12, rollAt: 3 });
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.begin({
+      title: "Fix the build",
+      recipient: { user: "U1", team: "T1" },
+      cards: [{ id: "a", title: "A" }],
+    });
+    await report.card({ id: "b", title: "B" });
+    await report.card({ id: "c", title: "C" });
+    await report.card({ id: "d", title: "D" });
+
+    expect(surface.starts).toEqual([
+      {
+        title: "Fix the build",
+        recipient: { user: "U1", team: "T1" },
+        cards: [{ id: "a", title: "A" }],
+      },
+      {
+        title: "Fix the build",
+        recipient: { user: "U1", team: "T1" },
+        cards: [
+          expect.objectContaining({ id: "summary" }),
+          { id: "d", title: "D" },
+        ],
+      },
+    ]);
+  });
+
+  test("begin leaves the stream that is open, without final content", async () => {
+    const surface = fakeSurface();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.card({ id: "a", title: "A" });
+    await report.begin({ title: "Next" });
+
+    expect(surface.calls).toEqual([
+      "start:stream1",
+      "append:stream1:a",
+      "start:stream2",
+      "stop:stream1",
+    ]);
+    expect(surface.stops).toEqual([undefined]);
+  });
+
+  test("finish ends the stream with final content, and the next card starts a new stream", async () => {
+    const surface = fakeSurface();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+    );
+    const final = { text: "All done.", blocks: [{ type: "context_actions" }] };
+
+    await report.card({ id: "a", title: "A" });
+    await report.finish(final);
+    await report.card({ id: "b", title: "B" });
+
+    expect(surface.stops).toEqual([final]);
+    expect(surface.calls).toEqual([
+      "start:stream1",
+      "append:stream1:a",
+      "stop:stream1",
+      "start:stream2",
+      "append:stream2:b",
+    ]);
+  });
+
+  test("finish with no open stream posts the text as a message", async () => {
+    const posted: string[] = [];
+    const channel = defineChannel({
+      post: async (message) => {
+        posted.push(message.text);
+      },
+      stream: fakeSurface().channel.stream,
+    });
+    const report = createReporter(
+      { main: channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.finish({ text: "Done." });
+    await report.finish();
+
+    expect(posted).toEqual(["Done."]);
+  });
+
+  test("a replay of begin and finish restores where the stream stands", async () => {
+    const surface = fakeSurface();
+    const first = stepper();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      first.runStep,
+    );
+
+    await report.begin({ title: "T", cards: [{ id: "a", title: "A" }] });
+    await report.finish({ text: "x" });
+
+    const callsBefore = [...surface.calls];
+    const again = stepper(first.results);
+    const replay = createReporter(
+      { main: surface.channel },
+      undefined,
+      again.runStep,
+    );
+
+    await replay.begin({ title: "T", cards: [{ id: "a", title: "A" }] });
+    await replay.finish({ text: "x" });
+    await replay.card({ id: "b", title: "B" });
+
+    expect(surface.calls.slice(0, callsBefore.length)).toEqual(callsBefore);
+    expect(surface.calls.slice(callsBefore.length)).toEqual([
+      "start:stream2",
+      "append:stream2:b",
+    ]);
+  });
+
+  test("a stream that goes on after a restart says so once, in a card that counts", async () => {
+    const surface = fakeSurface({ continued: true });
+    let restarts = 0;
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+      undefined,
+      {
+        restarts: () => {
+          return restarts;
+        },
+      },
+    );
+
+    await report.card({ id: "a", title: "A" });
+    restarts = 1;
+    await report.card({ id: "b", title: "B" });
+    await report.card({ id: "c", title: "C" });
+    restarts = 2;
+    await report.card({ id: "d", title: "D" });
+
+    expect(surface.calls).toEqual([
+      "start:stream1",
+      "append:stream1:a",
+      "append:stream1:continued-1,b",
+      "append:stream1:c",
+      "append:stream1:continued-2,d",
+    ]);
+    expect(surface.streams.get("stream1")?.cards.size).toBe(6);
+  });
+
+  test("a stream with no stop still gets the final text as a message", async () => {
+    const posted: string[] = [];
+    const base = fakeSurface().channel.stream as NonNullable<
+      ReturnType<typeof fakeSurface>["channel"]["stream"]
+    >;
+    const channel = defineChannel({
+      post: async (m) => {
+        posted.push(m.text);
+      },
+      stream: { ...base, stop: undefined },
+    });
+    const report = createReporter(
+      { main: channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.card({ id: "a", title: "A" });
+    await report.finish({ text: "Done." });
+
+    expect(posted).toEqual(["Done."]);
+  });
+
+  test("the continued card does not count as a step in the summary", async () => {
+    const surface = fakeSurface({ continued: true, maxCards: 12, rollAt: 3 });
+    let restarts = 0;
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+      undefined,
+      {
+        restarts: () => {
+          return restarts;
+        },
+      },
+    );
+
+    await report.card({ id: "a", title: "A" });
+    restarts = 1;
+    await report.card({ id: "b", title: "B" });
+    await report.card({ id: "c", title: "C" });
+
+    expect(surface.streams.get("stream2")?.cards.get("summary")?.details).toBe(
+      "2 steps so far",
+    );
+  });
+
+  test("a channel with no continued card, and a run with no restarts, say nothing", async () => {
+    const surface = fakeSurface();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+      undefined,
+      {
+        restarts: () => {
+          return 3;
+        },
+      },
+    );
+
+    await report.card({ id: "a", title: "A" });
+    await report.card({ id: "b", title: "B" });
+
+    expect(surface.calls).toEqual([
+      "start:stream1",
+      "append:stream1:a",
+      "append:stream1:b",
+    ]);
+  });
+
+  test("a step ID base replaces the default, with the destination added only when there are several", async () => {
+    const one = fakeSurface();
+    const two = fakeSurface();
+    const single = stepper();
+    const report = createReporter({ a: one.channel }, ["a"], single.runStep);
+
+    await report.card({ id: "x", title: "X" }, { stepId: "plan:x" });
+    await report.status("working", { stepId: "status:build" });
+    await report.finish({ text: "t" }, { stepId: "plan:end" });
+    await report.card({ id: "y", title: "Y" });
+
+    expect(single.ran).toEqual(["plan:x", "plan:end", "report:card:2:0:a"]);
+
+    const many = stepper();
+    const both = createReporter(
+      { a: one.channel, b: two.channel },
+      ["a", "b"],
+      many.runStep,
+    );
+
+    await both.card({ id: "z", title: "Z" }, { stepId: "plan:z" });
+    expect(many.ran).toEqual(["plan:z:a", "plan:z:b"]);
+  });
+
+  test("Slack starts a plan with the title, the recipient and the first cards, and stops with final content", async () => {
+    const sent: { method: string; body: Record<string, unknown> }[] = [];
+
+    vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
+      const method = String(url).split("/").at(-1) as string;
+
+      sent.push({ method, body: JSON.parse(init.body) });
+
+      return new Response(JSON.stringify({ ok: true, ts: "9.9" }), {
+        status: 200,
+      });
+    });
+
+    const channel = slack.channel(
+      { channel: "C1", threadTs: "1.1" },
+      { in: ["C1"], token: "t", user: "U1", team: "T1" },
+    );
+    const id = await channel.stream?.start({
+      title: "Fix the build",
+      recipient: { user: "U2", team: "T2" },
+      cards: [{ id: "a", title: "A", status: "running" }],
+    });
+
+    await channel.stream?.stop?.(id as string, {
+      text: "Done.",
+      blocks: [{ type: "context_actions" }],
+    });
+
+    expect(sent[0]?.body).toMatchObject({
+      recipient_user_id: "U2",
+      recipient_team_id: "T2",
+      task_display_mode: "plan",
+      chunks: [
+        { type: "plan_update", title: "Fix the build" },
+        { type: "task_update", id: "a", status: "in_progress" },
+      ],
+    });
+    expect(sent[1]).toMatchObject({
+      method: "chat.stopStream",
+      body: {
+        channel: "C1",
+        ts: "9.9",
+        markdown_text: "Done.",
+        blocks: [{ type: "context_actions" }],
+      },
+    });
+    expect(channel.stream?.continued?.(2)).toEqual({
+      id: "continued-2",
+      title: "Continued in a new process",
+      status: "done",
     });
   });
 });
