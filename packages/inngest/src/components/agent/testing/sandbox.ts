@@ -579,8 +579,34 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         "/dev/stdin",
         "/dev/stdout",
         "/dev/stderr",
+        "/dev/fd",
+        "/proc",
       ].filter(Boolean);
       const prefixes = ["/tmp/inngest-run-code-", "/tmp/inngest-git-"];
+      const topLevel = [
+        "/etc",
+        "/root",
+        "/home",
+        "/var",
+        "/opt",
+        "/srv",
+        "/mnt",
+        "/boot",
+        "/sys",
+        "/tmp",
+        "/media",
+        "/run",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/dev",
+        "/proc",
+        "/nix",
+        "/Users",
+        "/private",
+      ];
       const allowed = (path: string) => {
         return (
           [...here, ...system].some((root) => {
@@ -591,9 +617,13 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           })
         );
       };
+      // The runners work from `/tmp`; running there is fine, naming it as an
+      // argument (`rm -rf /tmp`) is not.
       const texts = [
         ...request.command,
-        ...(request.cwd === undefined ? [] : [request.cwd]),
+        ...(request.cwd === undefined || request.cwd === "/tmp"
+          ? []
+          : [request.cwd]),
         ...Object.values(request.environment ?? {}),
       ];
 
@@ -602,12 +632,31 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           return `"${text}" has a ".." path segment`;
         }
 
+        // An argument that is a path on its own is checked as one, whatever
+        // its shape: `rm -rf /`, `cat /work.bak`.
+        const whole = local(text).replace(/\/+$/, "") || "/";
+
+        if (/^\/[^\s]*$/.test(local(text)) && !allowed(whole)) {
+          return `"${text}" is outside the sandbox's directories`;
+        }
+
         const moved = local(text).replace(/[a-z][a-z0-9+.-]*:\/\/\S*/gi, "");
 
         for (const found of moved.matchAll(
-          /(?:^|[\s"'=:;&|(<>`$,])(\/[^\s"'`;&|()<>$]*)/g,
+          /(?:^|[\s"'=:;&|(<>`$,])(\/[\w.~-][^\s"'`;&|()<>$]*)/g,
         )) {
           const path = (found[1] ?? "").replace(/\/+$/, "");
+          const segments = path.split("/").filter(Boolean);
+
+          // A script has slashes that are not paths: `/q` in a sed address,
+          // `/` as division. A path has two segments, or is a top-level
+          // directory of the system.
+          if (
+            segments.length < 2 &&
+            !topLevel.includes(`/${segments[0] ?? ""}`)
+          ) {
+            continue;
+          }
 
           if (!allowed(path)) {
             return `"${path}" is outside the sandbox's directories`;
@@ -737,6 +786,12 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         const refused = refusalOf(request);
 
         if (refused) {
+          await record("sandbox.refused", {
+            id,
+            command: request.command,
+            reason: refused,
+          });
+
           return Response.json({
             data: {
               stdout: encode(""),
@@ -839,6 +894,11 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       const refused = plan.here ? refusalOf(request) : undefined;
 
       if (refused) {
+        await record("sandbox.refused", {
+          id,
+          command: request.command,
+          reason: refused,
+        });
         process.stderr = `FakeSandbox: refused to run on the host: ${refused}\n`;
         process.exitCode = 126;
       } else if (plan.here) {

@@ -1167,7 +1167,7 @@ describe("fakeSandbox real execution is opt-in and guarded", () => {
       cwd: "/work",
     });
     const backup = await run(sandbox, id, {
-      command: ["sh", "-c", "echo /work.bak"],
+      command: ["cat", "/work.bak"],
       cwd: "/work",
     });
 
@@ -1198,6 +1198,71 @@ describe("fakeSandbox real execution is opt-in and guarded", () => {
 
     expect(
       ((await waited.json()) as { data: { exitCode: number } }).data.exitCode,
+    ).toBe(126);
+  });
+});
+
+describe("fakeSandbox guard details", () => {
+  const exec = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      stderr: Buffer.from(data.stderr, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("a refusal is recorded with its reason, so a test can assert on it", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+
+    await exec(sandbox, id, {
+      command: ["cat", "/etc/hostname"],
+      cwd: "/work",
+    });
+
+    expect(sandbox.posts({ method: "sandbox.refused" })).toMatchObject([
+      { body: { command: ["cat", "/etc/hostname"] } },
+    ]);
+  });
+
+  test("slashes that are not paths do not trip the guard, and /tmp is a place to work from, not to act on", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+
+    // A division, and a `/q` that is a sed command, are not paths.
+    expect(
+      (
+        await exec(sandbox, id, {
+          command: [
+            "sh",
+            "-c",
+            "printf 'a\\nb\\n' | sed '1q'; echo $((4 / 2))",
+          ],
+          cwd: "/work",
+        })
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      (
+        await exec(sandbox, id, {
+          command: ["sh", "-c", "pwd # /work"],
+          cwd: "/tmp",
+        })
+      ).exitCode,
+    ).toBe(0);
+    // Naming /tmp as something to act on is a path outside.
+    expect(
+      (await exec(sandbox, id, { command: ["ls", "/tmp"], cwd: "/work" }))
+        .exitCode,
     ).toBe(126);
   });
 });
