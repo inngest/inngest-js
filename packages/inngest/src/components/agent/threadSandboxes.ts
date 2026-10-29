@@ -77,7 +77,8 @@ export const sandboxGeneration = (
   runId: string,
 
   /**
-   * How many times the run has recycled the sandbox before this snapshot.
+   * The run's count of saves and recycles of this sandbox before this
+   * snapshot.
    */
   epoch = 0,
 ): string => {
@@ -95,7 +96,7 @@ export interface ThreadSandboxCleanup {
   sandboxId: string;
 
   /**
-   * How many times the run had recycled the sandbox when this one was
+   * The run's count of saves and recycles of this sandbox when this one was
    * created. Absent: none.
    */
   epoch?: number;
