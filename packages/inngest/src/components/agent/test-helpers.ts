@@ -13,8 +13,9 @@ import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "park" | "poll" | "close";
+  mode: "open" | "park" | "poll" | "close" | "stop" | "current";
   seq?: number;
+  stream?: number;
 }
 
 /**
@@ -38,6 +39,12 @@ export const run = async (
     parkAnswer?: unknown;
 
     /**
+     * Steps the run already holds, by the ID the function gave them: the memos
+     * of a run that started before the IDs changed.
+     */
+    memos?: Record<string, unknown>;
+
+    /**
      * How many parks that carry a timeout end unanswered before a message is
      * allowed to arrive.
      */
@@ -53,7 +60,7 @@ export const run = async (
   const prefix = subscriptionMessageIdPrefix(key);
   const incoming = [...(options.incoming ?? [])];
   let timeoutsLeft = options.timeouts ?? 0;
-  const ops: { id: string; mode: string; seq?: number }[] = [];
+  const ops: { id: string; mode: string; seq?: number; stream?: number }[] = [];
   const saved: unknown[] = [];
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
@@ -88,6 +95,10 @@ export const run = async (
     stack.push(id);
     state = { ...state, [id]: { id, data } };
   };
+
+  for (const [stepId, data] of Object.entries(options.memos ?? {})) {
+    answer(_internals.hashId(stepId), data);
+  }
 
   for (const data of options.saved ?? []) {
     save(data);
@@ -163,12 +174,21 @@ export const run = async (
         continue;
       }
 
-      ops.push({ id: op.userland?.id ?? op.id, mode: sub.mode, seq: sub.seq });
+      ops.push({
+        id: op.userland?.id ?? op.id,
+        mode: sub.mode,
+        seq: sub.seq,
+        ...(sub.stream ? { stream: sub.stream } : {}),
+      });
       options.onOp?.(op, saved);
 
       if (sub.mode === "open") {
         answer(op.id, { opened: true });
       } else if (sub.mode === "close") {
+        answer(op.id, { count: saved.length });
+      } else if (sub.mode === "stop") {
+        answer(op.id, { stopped: true });
+      } else if (sub.mode === "current") {
         answer(op.id, { count: saved.length });
       } else if (sub.mode === "poll") {
         answer(op.id, saved[(sub.seq as number) - 1] ?? null);
