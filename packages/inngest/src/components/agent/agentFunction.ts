@@ -39,7 +39,7 @@ import {
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { Middleware } from "../middleware/middleware.ts";
-import type { SandboxTools } from "../sandbox/tools.ts";
+import type { SandboxTool, SandboxTools } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { toAsync } from "./cel.ts";
 import {
@@ -62,6 +62,12 @@ import {
   stepSandboxes,
 } from "./defs.ts";
 import { agentMessage } from "./events.ts";
+import {
+  createInboxTools,
+  type InboxToolInbox,
+  type InboxToolName,
+  type InboxToolsConfig,
+} from "./inboxTools.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
@@ -355,6 +361,17 @@ export interface AgentFunctionConfig<
   inbox?: readonly InboxSource[];
 
   /**
+   * Lets the model listen for events while it works: the body gets
+   * `inboxTools` (`inbox_listen`, `inbox_wait`, `inbox_read`, `inbox_stop`) to
+   * pass to `agent.loop()`, and to `sandbox.tools.code({ tools })` so `run_code`
+   * scripts use the same inbox. Off unless set. The model can only listen to the
+   * sources listed here, each tied to this thread by its own `thread`; its
+   * `if` can only narrow. A message that arrives while the model works is
+   * folded into its next turn by `control.steer()` when `foldMessages` allows.
+   */
+  inboxTools?: InboxToolsConfig;
+
+  /**
    * Which messages that arrive during a turn `control.steer()` (and so
    * `agent.loop()` inside this agent) folds into the turn at the next model
    * call. `"steer"` (default): only messages of kind `"steer"`; the rest wait
@@ -550,6 +567,12 @@ export interface AgentBodyFields<
   sandboxTools: SandboxToolsOf<TSandboxes>;
 
   /**
+   * The model's inbox tools, as the config's `inboxTools` allows: `inbox_listen`,
+   * `inbox_wait`, `inbox_read` and `inbox_stop`. Empty without `inboxTools`.
+   */
+  inboxTools: Partial<Record<InboxToolName, SandboxTool>>;
+
+  /**
    * The agent's channels, by name, as the config resolved them for this run.
    */
   channels: Record<string, Channel>;
@@ -727,6 +750,22 @@ export interface ThreadInbox<
    */
   close(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
 }
+
+/**
+ * What the inbox tools need of the thread's inbox. They read through views of
+ * the events they listen to, which have cursors of their own, so a stop, a
+ * user message or a request is never taken from the loop.
+ */
+const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
+  return {
+    listen: (event, options) => {
+      return inbox.listen(event as InboxSource["event"], options);
+    },
+    of: (event) => {
+      return inbox.of(event as InboxSource["event"]);
+    },
+  };
+};
 
 /**
  * The function context an agent's body shares with a plain function, typed
@@ -1852,6 +1891,9 @@ export function createAgentFunction(
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
+            inboxTools: config.inboxTools
+              ? createInboxTools(toolInbox(inbox), config.inboxTools)
+              : {},
             channels,
             report,
             scores: agentScores,
