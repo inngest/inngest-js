@@ -1597,6 +1597,43 @@ export function createKv(
 }
 
 /**
+ * A KV, or a function that returns one. The function is called at each use, so
+ * a KV that depends on a per-request binding (a Worker's D1 database) can be
+ * built from it when the request arrives. It must stand for the same data every
+ * time; a different store on the next call splits thread and run state.
+ */
+export type KvSource = Kv | (() => Kv);
+
+/**
+ * The KV a `KvSource` stands for. A function is called at every use, not once.
+ * @param source The KV or the function that returns it.
+ */
+export function kvFrom(source: KvSource | undefined): Kv {
+  if (source === undefined) {
+    return kv;
+  }
+
+  if (typeof source !== "function") {
+    return source;
+  }
+
+  // Every member is looked up on the KV the function returns at that moment.
+  return new Proxy({} as Kv, {
+    get(_, property) {
+      // Probes such as `await store` must not call the function.
+      if (typeof property === "symbol" || property === "then") {
+        return undefined;
+      }
+
+      const current = source();
+      const member = Reflect.get(current, property);
+
+      return typeof member === "function" ? member.bind(current) : member;
+    },
+  });
+}
+
+/**
  * The default KV. Its store is the one the app gave `createAgents`, else Redis
  * at `INNGEST_EXPERIMENTAL_KV_URL`.
  */

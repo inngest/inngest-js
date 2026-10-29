@@ -90,9 +90,13 @@ export interface GithubChannelOptions {
   repos: string[];
 
   /**
-   * Token. Default: `GITHUB_TOKEN`, read when a comment is posted.
+   * Token, or a function that makes one (it may be async), called each time a
+   * comment is posted, so a short-lived installation token such as
+   * `() => app.token("acme/app")` is always fresh and a Worker can read it from
+   * its per-request bindings. Default: `GITHUB_TOKEN`, read when a comment is
+   * posted.
    */
-  token?: string;
+  token?: string | (() => string | Promise<string>);
 
   /**
    * REST API base URL. Default: `https://api.github.com`. It receives the
@@ -170,7 +174,9 @@ const comment = async (
   body: string,
 ): Promise<void> => {
   const token =
-    options.token ??
+    (typeof options.token === "function"
+      ? await options.token()
+      : options.token) ??
     (typeof process === "undefined" ? undefined : process.env.GITHUB_TOKEN);
 
   const res = await postJson(

@@ -91,9 +91,11 @@ export interface SlackChannelOptions {
   in: string[];
 
   /**
-   * Bot token. Default: `SLACK_BOT_TOKEN`, read when a message is posted.
+   * Bot token, or a function that returns one (it may be async), called each
+   * time a message is posted, so a Worker can read it from its per-request
+   * bindings. Default: `SLACK_BOT_TOKEN`, read when a message is posted.
    */
-  token?: string;
+  token?: string | (() => string | Promise<string>);
 
   /**
    * Slack Web API base URL. Default: `https://slack.com/api`. It receives the
@@ -259,7 +261,9 @@ const call = async (
   strict = false,
 ): Promise<Record<string, unknown>> => {
   const token =
-    options.token ??
+    (typeof options.token === "function"
+      ? await options.token()
+      : options.token) ??
     (typeof process === "undefined" ? undefined : process.env.SLACK_BOT_TOKEN);
 
   const res = await postJson(
