@@ -312,7 +312,7 @@ export const createAgents = <TClient extends Inngest.Any>(
     }) as unknown as Agents<TClient>["agent"],
     functions: () => {
       const functions = made.flatMap((created) => {
-        return [created.fn, created.cleanup];
+        return [created.fn, created.cleanup, created.finished];
       });
       const shared = bakeFunctions.get(client);
 
@@ -386,6 +386,12 @@ export {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+export type {
+  AgentRecovery,
+  LastRun,
+  RunFailure,
+  RunOutcome,
+} from "./recovery.ts";
 export type { AgentScoreName, AgentScores } from "./scores.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";

@@ -10,13 +10,28 @@
  * would have to write between the two to be overwritten, and it rewrites the
  * record on its next status change or turn.
  */
+import { randomUUID } from "node:crypto";
 import { type Kv, type KvScopeInstance, kvKey } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import {
+  decide,
+  type Finished,
+  fingerprint,
+  type LastRun,
+  summarize,
+  turnInFlight,
+  turnOf,
+} from "./recovery.ts";
 import { scoreThisStep } from "./scores.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
 
 const recordKey = kvKey<ThreadRecord>(threadRecordKey);
+
+/**
+ * Names this process, so a run that continues in another one is noticed.
+ */
+const bootId = randomUUID();
 
 const emptyRecord = (): ThreadRecord => {
   return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };
@@ -39,17 +54,43 @@ export const threadRecorder = (
    */
   scores = false,
 ) => {
+  // How many times this run has continued in another process, as the latest
+  // write saw it. Every write is a memoized step, so a replay reads the same
+  // number at the same point of the body.
+  let restarts = 0;
+
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
   ) => {
-    return store.thread.update(recordKey, (found) => {
+    const written = await store.thread.update(recordKey, (found) => {
       const current = found ?? emptyRecord();
+      const mine = current.runId === runId;
+      const moved =
+        mine && current.host !== undefined && current.host !== bootId;
 
-      return { ...current, ...change(current), runId };
+      return {
+        ...current,
+        ...change(current),
+        runId,
+        host: bootId,
+        restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
+      };
     });
+
+    restarts = written.restarts ?? 0;
+
+    return written;
   };
 
   return {
+    /**
+     * How many times the run has continued in another process: a restart, a
+     * deploy or another instance picking it up.
+     */
+    get restarts() {
+      return restarts;
+    },
+
     /**
      * A turn is running. A sub-agent's inherited limits are kept on the
      * record, narrowed over every start, so a later run that a plain message
@@ -60,11 +101,24 @@ export const threadRecorder = (
        * The limits the invoking agent passed down, if any.
        */
       startedWith?: EffectiveLimits,
+
+      /**
+       * The message the turn answers, kept until the run waits for the next
+       * one: a failed run resends it.
+       */
+      inflight?: { content?: string } | null,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
 
-        return { status: "running", ...(inherited && { inherited }) };
+        return {
+          status: "running",
+          ...(inherited && { inherited }),
+          // `null` clears it: a run that does not begin with a message must
+          // not keep the one the run before it left behind.
+          ...(inflight === null && { inflight: undefined }),
+          ...(inflight && { inflight }),
+        };
       });
     },
 
@@ -74,7 +128,9 @@ export const threadRecorder = (
      */
     waiting: () => {
       return record((current) => {
-        return current.status === "stopped" ? {} : { status: "waiting" };
+        return current.status === "stopped"
+          ? {}
+          : { status: "waiting", inflight: undefined };
       });
     },
 
@@ -153,6 +209,105 @@ export const markThreadIdle = async (
     return current.runId === runId && current.status !== "stopped"
       ? { ...current, status: "idle" as const }
       : current;
+  });
+};
+
+/**
+ * Writes how `runId` ended as the thread's `lastRun`, unless a newer run has
+ * ended since. Deciding the same run again gives the same record, so a
+ * retried step changes nothing. For a failed run with `resume` set, the
+ * record also carries the loop guard: see `decide()`.
+ * @returns The thread's record after the write.
+ */
+export const recordEnd = (
+  /**
+   * KV store of the thread state.
+   */
+  store: Kv,
+
+  /**
+   * Thread key.
+   */
+  thread: string,
+
+  /**
+   * The run that ended.
+   */
+  end: {
+    /**
+     * The run that ended.
+     */
+    runId: string;
+
+    /**
+     * When it ended, in milliseconds since the epoch.
+     */
+    at: number;
+
+    /**
+     * How it ended.
+     */
+    finished: Finished;
+
+    /**
+     * The message that started the run, if it carried one, and whether the
+     * run began by answering a message.
+     */
+    content?: string;
+    turn: boolean;
+
+    /**
+     * Whether a failed turn is resent (recovery on). `undefined`: recovery
+     * is off, so the record has no guard.
+     */
+    resume?: boolean;
+  },
+) => {
+  return store.scope("thread", thread).update(recordKey, (found) => {
+    const current = found ?? emptyRecord();
+
+    if (
+      current.lastRun &&
+      current.lastRun.runId !== end.runId &&
+      runScore(current.lastRun.runId) > runScore(end.runId)
+    ) {
+      return current;
+    }
+
+    const { finished } = end;
+    let last: LastRun = {
+      runId: end.runId,
+      status: finished.status,
+      at: end.at,
+    };
+
+    if (finished.status === "failed" && finished.error) {
+      const error = summarize(finished.error.message);
+      const print = fingerprint(finished.error.name, finished.error.message);
+
+      const turn = turnInFlight(
+        current,
+        end.runId,
+        { content: end.content, turn: end.turn },
+        (a, b) => {
+          return runScore(a) < runScore(b);
+        },
+      );
+
+      last =
+        end.resume === undefined
+          ? { ...last, error, fingerprint: print }
+          : decide(current.lastRun, {
+              runId: end.runId,
+              at: end.at,
+              error,
+              fingerprint: print,
+              turn: turnOf(turn.content),
+              resume: end.resume && turn.resendable,
+            }).last;
+    }
+
+    return { ...current, lastRun: last };
   });
 };
 
