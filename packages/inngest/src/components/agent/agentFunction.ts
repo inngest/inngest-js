@@ -38,6 +38,8 @@ import {
   resolveConfigValue,
   resolveSandboxes,
   type SandboxesConfig,
+  type SandboxToolNames,
+  type SandboxToolsOf,
   sandboxTools,
   stepSandboxes,
 } from "./defs.ts";
@@ -85,6 +87,7 @@ export interface AgentFunctionConfig<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
 > extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
@@ -115,7 +118,7 @@ export interface AgentFunctionConfig<
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
    */
-  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>>;
+  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>, TSandboxes>;
 
   /**
    * The destinations of progress and asks, by name: channels made with
@@ -157,6 +160,7 @@ export interface AgentBodyContext<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
 > {
   event: { name: string; data: ThreadMessage<TEvent, TRequest> };
   thread: ThreadHandle<TRequest, TReply>;
@@ -165,13 +169,13 @@ export interface AgentBodyContext<
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
    * except `start: "eager"` ones, which are already being created.
    */
-  sandboxes: Record<string, LazySandbox>;
+  sandboxes: { [K in keyof TSandboxes & string]: LazySandbox };
 
   /**
    * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
    * the `tools` of `agent.loop()`.
    */
-  sandboxTools: SandboxTools;
+  sandboxTools: SandboxToolsOf<TSandboxes>;
 
   /**
    * The agent's channels, by name, as the config resolved them for this run.
@@ -254,7 +258,10 @@ export type AgentBody<
   TOutput = unknown,
   TRequest = unknown,
   TReply = unknown,
-> = (context: AgentBodyContext<TEvent, TRequest, TReply>) => Promise<TOutput>;
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
+> = (
+  context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes>,
+) => Promise<TOutput>;
 
 export interface AgentFunction<
   TInput = Record<string, unknown>,

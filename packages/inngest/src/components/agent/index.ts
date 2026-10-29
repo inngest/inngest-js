@@ -20,10 +20,13 @@ export type {
   SandboxDefinition,
   SandboxDefinitionOptions,
   SandboxesConfig,
+  SandboxRecord,
   SandboxSetup,
   SandboxSetupContext,
   SandboxStart,
+  SandboxToolNames,
   SandboxToolsFactory,
+  SandboxToolsOf,
 } from "./defs.ts";
 export {
   agentTools,

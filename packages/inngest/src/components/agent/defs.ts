@@ -10,7 +10,11 @@
  */
 
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
-import { type CodeToolsOptions, codeTools } from "../sandbox/codeTools.ts";
+import {
+  type CodeToolName,
+  type CodeToolsOptions,
+  codeTools,
+} from "../sandbox/codeTools.ts";
 import { destroyQuietly, sandboxCreateDefaults } from "../sandbox/group.ts";
 import type { SandboxImage } from "../sandbox/image.ts";
 import { image } from "../sandbox/image.ts";
@@ -66,9 +70,11 @@ export const resolveConfigValue = async <T, Ctx>(
 /**
  * Builds the tools a sandbox brings, such as `sandbox.tools.code()`.
  */
-export type SandboxToolsFactory = (sandbox: SandboxHandle) => SandboxTools;
+export type SandboxToolsFactory<TTool extends string = string> = (
+  sandbox: SandboxHandle,
+) => Record<TTool, SandboxToolEntry>;
 
-export interface SandboxDefinitionOptions {
+export interface SandboxDefinitionOptions<TTool extends string = string> {
   /**
    * Names the sandbox. Letters, digits, underscores and hyphens.
    */
@@ -99,7 +105,7 @@ export interface SandboxDefinitionOptions {
    * The tools every agent that uses this sandbox gets, such as
    * `sandbox.tools.code()`.
    */
-  tools?: SandboxToolsFactory;
+  tools?: SandboxToolsFactory<TTool>;
 
   /**
    * Git sources of skills, made with `skills.git()`. Each is fetched when the
@@ -169,7 +175,8 @@ export interface SandboxRuntime extends SkillsRuntime {
 /**
  * A sandbox defined with `sandbox()`. Nothing exists until an agent uses it.
  */
-export interface SandboxDefinition extends SandboxDefinitionOptions {
+export interface SandboxDefinition<TTool extends string = string>
+  extends SandboxDefinitionOptions<TTool> {
   readonly kind: "inngest/sandbox.definition";
 }
 
@@ -180,8 +187,11 @@ export type SandboxStart = "lazy" | "eager";
  * between runs. In an agent's config `start` may also be a function of the
  * run's context, such as `({ event }) => "eager"`.
  */
-export interface SandboxBinding<TStart = SandboxStart> {
-  sandbox: SandboxDefinition;
+export interface SandboxBinding<
+  TStart = SandboxStart,
+  TTool extends string = string,
+> {
+  sandbox: SandboxDefinition<TTool>;
 
   /**
    * `"lazy"` (default) creates the sandbox on the first call that needs it.
@@ -208,21 +218,45 @@ export interface SandboxBinding<TStart = SandboxStart> {
  * An agent's `sandboxes`, by name: a value, or a function of the run's context
  * that picks them.
  */
-export type SandboxesConfig<Ctx> = ConfigValue<
-  Record<
-    string,
-    SandboxDefinition | SandboxBinding<ConfigValue<SandboxStart, Ctx>>
-  >,
-  Ctx
->;
+export type SandboxesConfig<
+  Ctx,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
+> = ConfigValue<SandboxRecord<Ctx, TSandboxes>, Ctx>;
+
+/**
+ * For each sandbox of an agent, by name, the names of the tools its definition
+ * brings (`sandbox.tools.code()` brings `read | write | edit | search | run`).
+ * An agent's config is generic over it, so `sandboxes` and `sandboxTools` in
+ * its body know their names.
+ */
+export type SandboxToolNames = Record<string, string>;
+
+/**
+ * An agent's sandboxes by name, each a definition or a binding.
+ */
+export type SandboxRecord<
+  Ctx = never,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
+> = {
+  [K in keyof TSandboxes & string]:
+    | SandboxDefinition<TSandboxes[K]>
+    | SandboxBinding<ConfigValue<SandboxStart, Ctx>, TSandboxes[K]>;
+};
+
+/**
+ * The tools of an agent's sandboxes, keyed `<sandbox>_<tool>` (`work_run`).
+ */
+export type SandboxToolsOf<TSandboxes extends SandboxToolNames> = {
+  [K in keyof TSandboxes & string as `${K}_${TSandboxes[K]}`]: SandboxToolEntry;
+};
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
-const defineSandbox = (
-  options: SandboxDefinitionOptions,
-): SandboxDefinition => {
+const defineSandbox = <TTool extends string = never>(
+  options: SandboxDefinitionOptions<TTool>,
+): SandboxDefinition<TTool> => {
   if (!idPattern.test(options.id)) {
     throw new SandboxValidationError(
       `Invalid sandbox id "${options.id}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
@@ -297,16 +331,23 @@ export const sandbox = Object.assign(defineSandbox, {
     /**
      * `read`, `write`, `edit`, `search` and `run` in the sandbox.
      */
-    code: (options?: CodeToolsOptions): SandboxToolsFactory => {
-      return (handle) => {
+    code: ((options?: CodeToolsOptions) => {
+      return (handle: SandboxHandle) => {
         return codeTools(handle, options);
       };
+    }) as {
+      <const TName extends CodeToolName = Exclude<CodeToolName, "run_code">>(
+        options?: CodeToolsOptions<TName> & { tools?: undefined },
+      ): SandboxToolsFactory<TName>;
+      <const TName extends CodeToolName = CodeToolName>(
+        options: CodeToolsOptions<TName> & { tools: SandboxTools },
+      ): SandboxToolsFactory<TName>;
     },
     /**
      * `git_push`: the model pushes a branch, checked by your policy and sent
      * with a token only your app holds. See `gitPushTool()`.
      */
-    git: (options: GitPushToolOptions): SandboxToolsFactory => {
+    git: (options: GitPushToolOptions): SandboxToolsFactory<"git_push"> => {
       return (handle) => {
         return { git_push: gitPushTool(handle, options) };
       };
