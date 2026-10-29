@@ -485,7 +485,6 @@ const clip = (text: string, max: number): string => {
   return `${text.slice(0, half)}\n... clipped ${text.length - max} characters ...\n${text.slice(-half)}`;
 };
 
-
 /**
  * EXPERIMENTAL: Returns a failure from a tool without throwing, so the model
  * sees an error result whose body is `body` as it is. Use it for failures the

@@ -1183,6 +1183,28 @@ describe("agent.loop scores", () => {
     });
   });
 
+  test("a tool with an output schema may return toolError(), scored as an error and not checked against the schema", async () => {
+    const lookup = tool.step({
+      description: "Looks a ticket up",
+      input: z.object({ id: z.number() }),
+      output: z.object({ title: z.string() }),
+      run: ({ id }) => {
+        if (id < 0) {
+          return agent.toolError({ message: "no such ticket", id });
+        }
+
+        return { title: "ok" };
+      },
+    });
+    const { steps } = await run([call("lookup", { id: -1 }), say("a")], {
+      tools: { lookup },
+    });
+
+    expect(scoresOf(stepNamed(steps, "agent:1.0:lookup"))).toMatchObject({
+      "agent.tool_error": 1,
+    });
+  });
+
   test("counts the steering messages folded into a model call", async () => {
     const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {
       steer: async () => {

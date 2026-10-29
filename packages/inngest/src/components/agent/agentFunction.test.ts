@@ -1258,6 +1258,65 @@ describe("trigger", () => {
     });
   });
 
+  test("depth is how many agents deep an invoked run is; the trigger shows the caller's input only", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        on: invoke(z.object({ question: z.string() })),
+      } as never,
+      async ({ depth, trigger }) => {
+        return { depth, trigger };
+      },
+    );
+
+    const invoked = await run(fn, {
+      event: {
+        name: "inngest/function.invoked",
+        data: { question: "why", _agent: { depth: 2, thread: "t" } },
+      },
+    });
+
+    expect(invoked.output).toEqual({
+      depth: 2,
+      trigger: { name: "inngest/function.invoked", data: { question: "why" } },
+    });
+  });
+
+  test("depth is 0 for an event, a cron tick and a thread message", async () => {
+    const depthOf = async (
+      on: unknown,
+      event: { name: string; data: Record<string, unknown> },
+    ) => {
+      const { fn } = createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          kv: createKv({ adapter: memoryKvAdapter() }),
+          on,
+        } as never,
+        async ({ depth }) => {
+          return depth;
+        },
+      );
+
+      return (await run(fn, { event })).output;
+    };
+    const keyed = { event: "shop/order", thread: "event.data.id" };
+
+    expect(
+      await depthOf(keyed, { name: "shop/order", data: { id: "o1" } }),
+    ).toBe(0);
+    expect(
+      await depthOf(
+        { cron: "0 * * * *" },
+        { name: "inngest/scheduled.timer", data: { cron: "0 * * * *" } },
+      ),
+    ).toBe(0);
+    expect(await depthOf(keyed, message("user", "hi"))).toBe(0);
+  });
+
   test("a plain thread message has no trigger event", async () => {
     const { fn } = make({ event: "shop/order", thread: "event.data.id" });
 
