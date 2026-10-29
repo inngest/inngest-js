@@ -20,6 +20,12 @@ export type {
 } from "../sandbox/gitPush.ts";
 export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
+  AnthropicClient,
+  AnthropicOptions,
+  AnthropicReply,
+} from "./anthropic.ts";
+export { anthropic, anthropicPrices } from "./anthropic.ts";
+export type {
   AgentPrice,
   AgentPriceFunction,
   AgentPriceTable,
