@@ -19,6 +19,7 @@ import {
 } from "./protocol.ts";
 
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
+import { toolErrorOf } from "./toolError.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
@@ -546,6 +547,23 @@ describe("commands.run with tools", () => {
         idempotencyKey: "run-1:exec:tool:getCustomer:1",
       }),
     );
+  });
+
+  test("an error result is an error to the code, not a value", async () => {
+    const { fake, sandbox } = createFakeSandbox(
+      sendAll([request(1, "missing"), request(2, "broken")]),
+    );
+    const { host } = createHost(sandbox);
+
+    await run(host, {
+      missing: tool.step({ run: () => toolErrorOf("no such thread") }),
+      broken: tool.step({ run: () => toolErrorOf({ code: 7 }) }),
+    });
+
+    expect(replies(fake)).toEqual([
+      { id: 1, error: "no such thread" },
+      { id: 2, error: '{"code":7}' },
+    ]);
   });
 
   test("a tool that outlives its timeout fails with a timeout error", async () => {

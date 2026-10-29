@@ -19,7 +19,9 @@ const hex = tool.mcp({
 describe("tool.mcp types", () => {
   test("returns a handle, and tools() a plain record", async () => {
     expectTypeOf(hex).toEqualTypeOf<McpServer>();
-    expectTypeOf(hex.tools()).resolves.toEqualTypeOf<SandboxTools>();
+    expectTypeOf<ReturnType<typeof hex.tools>>().toEqualTypeOf<
+      Promise<SandboxTools>
+    >();
   });
 
   test("the handle goes in agent.loop() tools next to other tools", () => {

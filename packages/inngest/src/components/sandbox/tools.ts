@@ -23,9 +23,9 @@ import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
 import { isInternalTool } from "./internalTool.ts";
 import { McpServer, mcp } from "./mcp.ts";
-import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
+import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import {
   type Sandbox,
   type SandboxDuration,

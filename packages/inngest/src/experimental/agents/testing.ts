@@ -38,17 +38,6 @@ export type {
   GitSeed,
 } from "../../components/agent/testing/gitRemote.ts";
 export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
-export type { ScriptStep } from "../../components/agent/testing/model.ts";
-export { script } from "../../components/agent/testing/model.ts";
-export type { TestReporter } from "../../components/agent/testing/reporter.ts";
-export { testReporter } from "../../components/agent/testing/reporter.ts";
-export type {
-  FakeSandbox,
-  FakeSandboxOptions,
-} from "../../components/agent/testing/sandbox.ts";
-export { fakeSandbox } from "../../components/agent/testing/sandbox.ts";
-export type { ThreadHandleWithKeys } from "../../components/agent/testing/threads.ts";
-export { withKeys } from "../../components/agent/testing/threads.ts";
 export type {
   FakeMcp,
   FakeMcpCall,
@@ -60,3 +49,14 @@ export {
   fakeMcpFetch,
   fakeMcpServer,
 } from "../../components/agent/testing/mcp.ts";
+export type { ScriptStep } from "../../components/agent/testing/model.ts";
+export { script } from "../../components/agent/testing/model.ts";
+export type { TestReporter } from "../../components/agent/testing/reporter.ts";
+export { testReporter } from "../../components/agent/testing/reporter.ts";
+export type {
+  FakeSandbox,
+  FakeSandboxOptions,
+} from "../../components/agent/testing/sandbox.ts";
+export { fakeSandbox } from "../../components/agent/testing/sandbox.ts";
+export type { ThreadHandleWithKeys } from "../../components/agent/testing/threads.ts";
+export { withKeys } from "../../components/agent/testing/threads.ts";

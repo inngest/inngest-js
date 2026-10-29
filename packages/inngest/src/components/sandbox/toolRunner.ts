@@ -209,7 +209,9 @@ const resultLine = (id: number, name: string, value: unknown): string => {
     const body = value["~error"];
 
     return replyLine(id, {
-      error: errorMessage(typeof body === "string" ? body : JSON.stringify(body)),
+      error: errorMessage(
+        typeof body === "string" ? body : JSON.stringify(body),
+      ),
     });
   }
 

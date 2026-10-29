@@ -13,7 +13,7 @@ import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { McpAuthError, McpUnavailableError } from "./mcpClient.ts";
 import { secret } from "./secret.ts";
-import { type SandboxTool, tool } from "./tools.ts";
+import { resolveToolCall, type SandboxTool, tool } from "./tools.ts";
 
 const token = "hex-token-0123456789";
 
@@ -140,9 +140,9 @@ describe("tool.mcp", () => {
     const { hex } = connect({ tools: ["get-thread"] });
 
     expect(Object.keys(await build(hex))).toEqual(["hex_get_thread"]);
-    expect(
-      build(connect({ tools: ["nope"] }).hex),
-    ).rejects.toThrow('has no tool "nope"');
+    expect(build(connect({ tools: ["nope"] }).hex)).rejects.toThrow(
+      'has no tool "nope"',
+    );
   });
 
   test("two names that collide once - becomes _ throw", async () => {
@@ -181,7 +181,10 @@ describe("tool.mcp", () => {
   });
 
   test("an event stream answer is read", async () => {
-    const { hex } = connect({}, fakeMcpFetch({ tools: threads, token, stream: true }));
+    const { hex } = connect(
+      {},
+      fakeMcpFetch({ tools: threads, token, stream: true }),
+    );
     const tools = await build(hex);
 
     expect(await call(tools.hex_get_thread, {})).toBe("running");
@@ -241,9 +244,9 @@ describe("tool.mcp", () => {
 
     server.failNext(1, 503);
 
-    await expect(call(tools.hex_create_thread, { prompt: "hi" })).rejects.toBeInstanceOf(
-      McpUnavailableError,
-    );
+    await expect(
+      call(tools.hex_create_thread, { prompt: "hi" }),
+    ).rejects.toBeInstanceOf(McpUnavailableError);
   });
 
   test("an OAuth-only server fails fast with a message that says what to do", async () => {
@@ -296,6 +299,31 @@ describe("tool.mcp", () => {
     const { toolDefinitions } = await import("./tools.ts");
 
     expect(() => toolDefinitions({ hex })).toThrow("await server.tools()");
+  });
+
+  test("sandbox code calls the tools by name with named arguments, and a tool error is an error", async () => {
+    const { hex } = connect();
+    const tools = await build(hex);
+    const resolved = await resolveToolCall(
+      tools,
+      {
+        op: "call",
+        id: 1,
+        tool: "hex_create_thread",
+        args: [],
+        kwargs: { prompt: "hi" },
+      },
+      "{}",
+    );
+
+    if (resolved.error !== undefined) {
+      throw new Error(resolved.error);
+    }
+
+    expect(await resolved.invoke(context())).toEqual({
+      id: "t-1",
+      prompt: "hi",
+    });
   });
 
   test("tools() needs a name", async () => {

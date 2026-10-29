@@ -142,6 +142,16 @@ export interface FakeMcp extends FakeMcpServer {
 
 class Dropped extends Error {}
 
+const headersOf = (headers: Headers): Record<string, string> => {
+  const out: Record<string, string> = {};
+
+  headers.forEach((value, name) => {
+    out[name] = value;
+  });
+
+  return out;
+};
+
 const json = (status: number, body: unknown, headers: HeadersInit = {}) => {
   return new Response(JSON.stringify(body), {
     status,
@@ -164,7 +174,7 @@ const createFake = (options: FakeMcpOptions) => {
 
   const handle = async (request: Request): Promise<Response> => {
     const body = await request.text();
-    const headers = Object.fromEntries(request.headers.entries());
+    const headers = headersOf(request.headers);
     const message = JSON.parse(body || "{}") as {
       id?: number;
       method?: string;
@@ -303,10 +313,10 @@ const createFake = (options: FakeMcpOptions) => {
       const reply = result(message.id, answer);
 
       return options.stream
-        ? new Response(
-            `event: message\ndata: ${JSON.stringify(reply)}\n\n`,
-            { status: 200, headers: { "content-type": "text/event-stream" } },
-          )
+        ? new Response(`event: message\ndata: ${JSON.stringify(reply)}\n\n`, {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          })
         : json(200, reply);
     }
 
@@ -362,7 +372,7 @@ export const fakeMcpServer = async (
         }),
       );
 
-      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.writeHead(response.status, headersOf(response.headers));
       res.end(await response.text());
     } catch (error) {
       if (error instanceof Dropped) {

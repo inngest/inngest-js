@@ -35,8 +35,8 @@ export class Secret {
     const source = secretValue.get(this) as SecretSource;
     const value =
       typeof source === "string"
-        ? (globalThis as { process?: { env?: Record<string, string> } })
-            .process?.env?.[source]
+        ? (globalThis as { process?: { env?: Record<string, string> } }).process
+            ?.env?.[source]
         : await source();
 
     if (typeof value !== "string" || value === "") {

@@ -256,7 +256,7 @@ const withTimeout = (options: McpRequestOptions) => {
 
 export class McpClient {
   readonly #options: McpClientOptions;
-  #nextId = 1;
+  #lastId = 0;
 
   constructor(options: McpClientOptions) {
     this.#options = options;
@@ -309,6 +309,12 @@ export class McpClient {
     )) as McpCallResult;
   }
 
+  #newId(): number {
+    this.#lastId += 1;
+
+    return this.#lastId;
+  }
+
   async #call(
     method: string,
     params: unknown,
@@ -350,7 +356,7 @@ export class McpClient {
 
     for (let attempt = 0; ; attempt += 1) {
       const session = await this.#session(key, auth, timeout);
-      const id = this.#nextId++;
+      const id = this.#newId();
       const response = await this.#post(
         { jsonrpc: "2.0", id, method, params },
         auth,
@@ -387,7 +393,7 @@ export class McpClient {
       return held;
     }
 
-    const initId = this.#nextId++;
+    const initId = this.#newId();
     const created = (async () => {
       const response = await this.#post(
         {
@@ -397,7 +403,10 @@ export class McpClient {
           params: {
             protocolVersion: mcpProtocolVersion,
             capabilities: {},
-            clientInfo: { name: "inngest", version: this.#options.clientVersion },
+            clientInfo: {
+              name: "inngest",
+              version: this.#options.clientVersion,
+            },
           },
         },
         auth,
