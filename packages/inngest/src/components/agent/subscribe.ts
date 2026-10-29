@@ -729,9 +729,29 @@ export async function openSubscription<
       return found;
     };
 
+    // The parks this view made on the way to a message are answered steps in
+    // the state, which a replay does not ask for again: tell the engine they are
+    // accounted for. Every park id this view could have used between two
+    // cursors is skipped; one that was never used is no step to wait for.
+    const skipParks = async (from: number, to: number) => {
+      for (let seq = from + 1; seq <= to + 1; seq++) {
+        await skip(`${key}:${reader}:${seq}`);
+
+        for (
+          let attempt = 1;
+          attempt <= (timedOutAt.get(seq) ?? 0);
+          attempt++
+        ) {
+          await skip(`${key}:${reader}:${seq}:${attempt}`);
+        }
+      }
+    };
+
     const nextOf = async (
       options?: NextOptions,
     ): Promise<InboxMessage<TData> | null | undefined> => {
+      const startedAt = cursor;
+
       // The bound of the first scan: with a timeout, what was there when the
       // read began, recorded, so that a timeout stays one on replay.
       let bound =
@@ -744,6 +764,7 @@ export async function openSubscription<
 
         if (hit) {
           cursor = hit.seq;
+          await skipParks(startedAt, hit.seq);
 
           return hit;
         }
@@ -783,12 +804,23 @@ export async function openSubscription<
         }
 
         if ((answered as { closed?: boolean } | undefined)?.closed) {
+          // The close may have won the race with the delivery of a message that
+          // is already saved: look once more before ending.
+          const [late] = scan(cursor, Number.POSITIVE_INFINITY, true);
+
+          if (late) {
+            cursor = late.seq;
+            await skipParks(startedAt, late.seq);
+
+            return late;
+          }
+
           return null;
         }
 
         // Woken: the message at `seq` exists. Scan on from the cursor over the
-        // whole state, which now holds it.
-        options = undefined;
+        // whole state, which now holds it. The timeout, if any, starts again for
+        // the next wait.
         bound = Number.POSITIVE_INFINITY;
       }
     };

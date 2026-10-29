@@ -10,7 +10,6 @@
  * would have to write between the two to be overwritten, and it rewrites the
  * record on its next status change or turn.
  */
-import { randomUUID } from "node:crypto";
 import { type Kv, type KvScopeInstance, kvKey } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
@@ -37,7 +36,7 @@ const lastRunKey = kvKey<LastRun>(lastRunRecordKey);
 /**
  * Names this process, so a run that continues in another one is noticed.
  */
-const bootId = randomUUID();
+const bootId = globalThis.crypto.randomUUID();
 
 const emptyRecord = (): ThreadRecord => {
   return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };

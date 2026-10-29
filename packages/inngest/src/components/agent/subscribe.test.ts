@@ -531,6 +531,31 @@ describe("step.subscribe", () => {
       expect(split.output).toEqual([2, 1, 4]);
     });
 
+    test("a view's timeout still applies after a message of another kind wakes it", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+
+          return String(await reviews.next({ timeout: "1s" }));
+        },
+      );
+
+      // A mention wakes the park; the view looks again and waits with a timeout.
+      const { output, ops } = await run(fn, {
+        incoming: [mention(1)],
+        timeouts: 1,
+      });
+
+      expect(output).toBe("undefined");
+      expect(
+        ops.filter((op) => {
+          return op.mode === "park";
+        }),
+      ).toHaveLength(2);
+    });
+
     test("a timeout of a view stays a timeout on replay, though a match has arrived since", async () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },

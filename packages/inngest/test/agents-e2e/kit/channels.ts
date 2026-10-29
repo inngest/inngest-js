@@ -96,7 +96,22 @@ export const startFakes = async (): Promise<Fakes> => {
       // stream is over once it is stopped or a card named end-stream was
       // written (the next write gets message_not_in_streaming_state).
       if (method === "chat.startStream") {
-        streams.set(ts, { ids: new Set(), over: false });
+        const first = ((body.chunks ?? []) as { id?: string }[]).flatMap(
+          (c) => {
+            return c.id ? [c.id] : [];
+          },
+        );
+
+        streams.set(ts, { ids: new Set(first), over: false });
+        calls.push({
+          channel: "slack",
+          method,
+          thread: String(body.thread_ts ?? ts),
+          body: { ...body, ts, accepted: true, held: first.length },
+        });
+        reply(200, { ok: true, channel: body.channel, ts });
+
+        return;
       }
 
       if (method === "chat.stopStream") {
