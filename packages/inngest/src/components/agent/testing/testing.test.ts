@@ -978,3 +978,23 @@ describe("fakeSandbox cleanup", () => {
     expect(existsSync(path)).toBe(false);
   });
 });
+
+describe.skipIf(!backendPath())("startGitRemote auth for a push", () => {
+  test("with anonymous reads the push discovery still needs the token, and a malformed path is a 400", async () => {
+    await using remote = await startGitRemote({
+      token: "t",
+      anonymousReads: true,
+    });
+
+    const read = await fetch(`${remote.url}/info/refs?service=git-upload-pack`);
+    const push = await fetch(
+      `${remote.url}/info/refs?service=git-receive-pack`,
+    );
+    const bad = await fetch(`${remote.url}/%zz`);
+
+    expect(read.status).toBe(200);
+    expect(push.status).toBe(401);
+    expect(bad.status).toBe(400);
+    expect(remote.pushAuth).toHaveLength(1);
+  });
+});

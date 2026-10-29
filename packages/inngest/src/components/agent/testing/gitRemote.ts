@@ -255,7 +255,10 @@ export const startGitRemote = async (
     seen.push(req.headers.authorization ?? "");
 
     const url = new URL(req.url ?? "/", "http://localhost");
-    const pushing = url.pathname.endsWith("/git-receive-pack");
+    // A push is the receive-pack request and the discovery that asks for it.
+    const pushing =
+      url.pathname.endsWith("/git-receive-pack") ||
+      url.searchParams.get("service") === "git-receive-pack";
 
     if (pushing) {
       pushAuth.push(req.headers.authorization ?? "");
@@ -271,13 +274,24 @@ export const startGitRemote = async (
       return;
     }
 
+    let pathInfo: string;
+
+    try {
+      pathInfo = decodeURIComponent(url.pathname);
+    } catch {
+      res.writeHead(400);
+      res.end();
+
+      return;
+    }
+
     const child = spawn(backend, [], {
       env: {
         ...process.env,
         GIT_PROJECT_ROOT: root,
         GIT_HTTP_EXPORT_ALL: "1",
         REQUEST_METHOD: req.method ?? "GET",
-        PATH_INFO: decodeURIComponent(url.pathname),
+        PATH_INFO: pathInfo,
         QUERY_STRING: url.search.slice(1),
         CONTENT_TYPE: req.headers["content-type"] ?? "",
         ...(req.headers["content-length"] && {
@@ -318,6 +332,15 @@ export const startGitRemote = async (
 
       const out = Buffer.concat(chunks);
       const split = out.indexOf("\r\n\r\n");
+
+      // The backend died before it answered (it was killed, or it crashed).
+      if (split < 0) {
+        res.writeHead(502);
+        res.end();
+
+        return;
+      }
+
       const head = out.subarray(0, split).toString().split("\r\n");
       const headers: Record<string, string> = {};
       let status = 200;

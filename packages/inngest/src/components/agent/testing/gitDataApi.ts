@@ -256,7 +256,11 @@ export const createGitDataApi = (repoName = "acme/app") => {
       });
 
       return listing.length > 0
-        ? respond(listing.map((name) => ({ type: "file", path: name })))
+        ? respond(
+            listing.map((name) => {
+              return { type: "file", path: name };
+            }),
+          )
         : respond({ message: "Not Found" }, 404);
     }
 
