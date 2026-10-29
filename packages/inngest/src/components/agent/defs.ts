@@ -429,6 +429,27 @@ export interface LazySandbox {
    * not come back.
    */
   close(): Promise<void>;
+
+  /**
+   * Saves the sandbox and destroys it now, so the run can go on without it.
+   * The next `get()` (or a tool call) restores it from that snapshot into a
+   * new sandbox, with the files as they were, and the run is none the wiser.
+   * Use it to drop an idle sandbox mid-run, for example while the thread waits
+   * for its next message. Does nothing when no sandbox was created, one that
+   * was never used is destroyed without a snapshot, and a failed create stays
+   * failed. The snapshot is a generation of this run, so the thread's next
+   * run restores the newest one. Call it only when nothing is using the
+   * sandbox: a command still running in it is lost. Durable: a replay
+   * returns the same saves and destroys.
+   *
+   * It needs a sandbox that belongs to a thread; without one it throws, since
+   * nothing would keep the files. It throws, and leaves the sandbox as it
+   * was, when the snapshot could not be taken or the sandbox could not be
+   * destroyed. The restored sandbox runs the definition's skills and `setup`
+   * again (with `restored` true), and `keepAlive` is ignored: a recycle always
+   * destroys.
+   */
+  recycle(): Promise<void>;
 }
 
 /**
@@ -549,6 +570,15 @@ const lazySandbox = (
   let guard: DeferHandle | undefined;
   let restored = false;
 
+  // Rises with every save and every recycle. It names the generation of each
+  // save and the cleanup defer of each sandbox, so neither is ever reused: a
+  // save whose destroy then failed has taken its generation, and the next save
+  // is a later one.
+  let epoch = 0;
+
+  // The recycle in progress, which `get()` and `close()` wait for.
+  let recycling: Promise<void> | undefined;
+
   // Whether anything used the sandbox. One that was only created (an eager
   // start nothing needed) has nothing worth a snapshot.
   let used = false;
@@ -561,7 +591,7 @@ const lazySandbox = (
   // It saves the sandbox only once `owner.ready()` says its skills and setup
   // have finished.
   const arm = (sandbox: DurableSandbox) => {
-    guard = owner?.guard(name, sandbox);
+    guard = owner?.guard(name, sandbox, epoch);
   };
 
   // The bare sandbox: restored from the thread's newest snapshot when it has
@@ -688,6 +718,8 @@ const lazySandbox = (
   let ready: Promise<void> | undefined;
 
   const get = async (): Promise<DurableSandbox> => {
+    await recycling;
+
     observed = true;
     used = true;
 
@@ -747,8 +779,111 @@ const lazySandbox = (
     },
     tools,
     get,
+    recycle: () => {
+      const previous = recycling ?? Promise.resolve();
+      const next = previous.then(async () => {
+        if (closed) {
+          return;
+        }
+
+        // A setup still running must settle first, as at close.
+        let failed = false;
+
+        await created?.catch(() => {
+          failed = true;
+        });
+
+        const sandbox = await raw?.catch(() => {
+          return undefined;
+        });
+
+        // Nothing was created, or its creation failed: nothing to recycle.
+        if (!sandbox || failed) {
+          return;
+        }
+
+        if (!owner) {
+          throw new SandboxValidationError(
+            `Sandbox "${name}" can't be recycled: it doesn't belong to a thread, so nothing would keep its files`,
+          );
+        }
+
+        let saved = false;
+
+        // The sandbox stays running when a recycle fails after a save, so its
+        // cleanup defer moves to the new epoch: it must save what the sandbox
+        // writes from here on as a later generation, not skip it as already
+        // saved. The new defer is registered before the old one is dropped.
+        const rearm = () => {
+          const old = guard;
+
+          guard = owner.guard(name, sandbox, epoch);
+          old?.abort();
+        };
+
+        if (used) {
+          const ok = await owner.save(name, sandbox, epoch);
+
+          // A save took its generation whether or not it worked.
+          epoch++;
+
+          if (ok === false) {
+            rearm();
+
+            throw new Error(
+              `Sandbox "${name}" was not recycled: its snapshot could not be taken, so it is still running`,
+            );
+          }
+
+          saved = true;
+        }
+
+        // Without a cleanup defer there is nothing to read the outcome from.
+        let given = guard === undefined;
+        const cleanup = guard && {
+          abort: () => {
+            given = true;
+            guard?.abort();
+          },
+        };
+
+        await destroyQuietly(sandbox, `${name}:destroy`, cleanup, {
+          final: false,
+        });
+
+        if (!given) {
+          if (saved) {
+            rearm();
+          }
+
+          throw new Error(
+            `Sandbox "${name}" was not recycled: it could not be destroyed, so it is still running`,
+          );
+        }
+
+        await owner.release(name);
+
+        // The next `get()` starts over, from the snapshot just taken.
+        raw = undefined;
+        created = undefined;
+        ready = undefined;
+        guard = undefined;
+        used = false;
+        restored = false;
+
+        if (!saved) {
+          epoch++;
+        }
+      });
+
+      recycling = next.catch(() => {});
+
+      return next;
+    },
     close: () => {
       closed ??= (async () => {
+        await recycling;
+
         // A setup still running must settle first, so its steps never meet a
         // destroyed sandbox.
         let failure: unknown;
@@ -768,7 +903,7 @@ const lazySandbox = (
           const worthKeeping = !failed && used;
 
           if (worthKeeping) {
-            await owner?.save(name, sandbox);
+            await owner?.save(name, sandbox, epoch);
           }
 
           // The owner may keep a keepAlive sandbox running for the thread's

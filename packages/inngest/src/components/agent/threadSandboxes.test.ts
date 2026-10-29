@@ -11,6 +11,7 @@ import { createKv, type KvScopeInstance, memoryKvAdapter } from "./kv.ts";
 import { skills } from "./skills.ts";
 import {
   cleanupThreadSandbox,
+  sandboxGeneration,
   threadSandboxOwner,
   threadSnapshotEntry,
 } from "./threadSandboxes.ts";
@@ -525,7 +526,7 @@ describe("cleanupThreadSandbox", () => {
     await s.owner(failing).ready("work");
     await expect(
       s.owner(failing).save("work", w.durable("sb-1")),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
     expect(await newest(s.scope)).toBe("01A");
   });
 
@@ -1172,5 +1173,287 @@ describe("lazy sandboxes of a thread", () => {
     expect(
       await s.scope.get(sandboxReadyKey(ref, "work", "01A")),
     ).toBeUndefined();
+  });
+});
+
+describe("recycling a lazy sandbox", () => {
+  const box = sandbox({ id: "box" });
+
+  const open = (w: ReturnType<typeof world>, s: ReturnType<typeof setup>) => {
+    const created: { options: unknown }[] = [];
+    const tools = {
+      create: vi.fn(async (_id: unknown, options: unknown) => {
+        created.push({ options });
+
+        return w.durable(`sb-${created.length}`);
+      }),
+    } as unknown as DurableSandboxTools;
+
+    return {
+      created,
+      opened: openSandboxes({ work: box }, tools, undefined, s.owner()),
+    };
+  };
+
+  test("saves and destroys now, and the next get restores from that snapshot", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.get();
+    await opened.work?.recycle();
+
+    expect(w.rows).toHaveLength(1);
+    expect([...w.live]).toEqual([]);
+
+    await opened.work?.get();
+
+    expect(created).toHaveLength(2);
+    expect(created[1]?.options).toMatchObject({ snapshotId: w.rows[0]?.id });
+    expect([...w.live]).toEqual(["sb-2"]);
+
+    await opened.work?.close();
+
+    // Each save is a later generation of the run, and the newest is the last.
+    expect(w.rows).toHaveLength(2);
+    expect(await newest(s.scope)).toBe("01A.000001");
+    expect([...w.live]).toEqual([]);
+  });
+
+  test("each sandbox gets a cleanup defer of its own, and the recycled one's is aborted", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+
+    await opened.work?.get();
+    const [first] = s.defer.mock.results;
+    await opened.work?.recycle();
+    await opened.work?.get();
+
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+    expect(s.defer.mock.calls[1]?.[1]).toMatchObject({ epoch: 1 });
+    expect(first?.value.abort).toHaveBeenCalledTimes(1);
+  });
+
+  test("an eager sandbox nothing used is destroyed without a snapshot", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const eager = openSandboxes(
+      { work: { sandbox: sandbox({ id: "eager" }), start: "eager" } },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(),
+    );
+
+    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(eager.work?.started).toBe(true);
+    });
+    await eager.work?.recycle();
+
+    expect(w.rows).toHaveLength(0);
+    expect([...w.live]).toEqual([]);
+  });
+
+  test("a recycle whose snapshot failed keeps the sandbox running and says so", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.snapshot as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:save", new Error("snapshot failed")),
+    );
+
+    const [first] = s.defer.mock.results;
+
+    await expect(opened.work?.recycle()).rejects.toThrow(/still running/);
+    expect([...w.live]).toEqual(["sb-1"]);
+    expect(await opened.work?.get()).toBe(sandboxNow);
+
+    // Its cleanup moved to the new epoch, and the old one was dropped.
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+    expect(first?.value.abort).toHaveBeenCalledTimes(1);
+  });
+
+  test("a recycle whose destroy failed keeps the sandbox and says so", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.destroy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:destroy", new Error("destroy failed")),
+    );
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /could not be destroyed/,
+    );
+    expect(await opened.work?.get()).toBe(sandboxNow);
+  });
+
+  test("after a failed destroy the next save is a later generation, not a reuse of the first", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.destroy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:destroy", new Error("destroy failed")),
+    );
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /could not be destroyed/,
+    );
+    await opened.work?.close();
+
+    // The snapshot taken before the failed destroy, and a new one from close.
+    expect(w.rows).toHaveLength(2);
+    expect(await newest(s.scope)).toBe("01A.000001");
+  });
+
+  test("after a failed destroy the sandbox's cleanup saves what it writes next as a later generation", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.destroy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:destroy", new Error("destroy failed")),
+    );
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /could not be destroyed/,
+    );
+
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+
+    // The run dies now: the new cleanup, not the old one, handles the sandbox.
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A"), true);
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: s.defer.mock.calls[1]?.[1] as never,
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(await newest(s.scope)).toBe("01A.000001");
+    expect(w.rows).toHaveLength(2);
+  });
+
+  test("a sandbox that belongs to no thread cannot be recycled", async () => {
+    const w = world();
+    const opened = openSandboxes({ work: box }, {
+      create: vi.fn(async () => {
+        return w.durable("sb-1");
+      }),
+    } as unknown as DurableSandboxTools);
+
+    await opened.work?.get();
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /doesn't belong to a thread/,
+    );
+  });
+
+  test("a close during a recycle waits for it", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+
+    await opened.work?.get();
+    const recycled = opened.work?.recycle();
+    const closed = opened.work?.close();
+
+    await Promise.all([recycled, closed]);
+
+    // The recycled sandbox was saved once; the new one was never created.
+    expect(w.rows).toHaveLength(1);
+    expect([...w.live]).toEqual([]);
+  });
+
+  test("generations keep their order past a thousand epoch", () => {
+    expect(sandboxGeneration("01A", 999) < sandboxGeneration("01A", 1000)).toBe(
+      true,
+    );
+    expect(sandboxGeneration("01A", 0) < sandboxGeneration("01A", 1)).toBe(
+      true,
+    );
+  });
+
+  test("does nothing before a sandbox exists, and a recycle after close does nothing", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.recycle();
+    expect(created).toHaveLength(0);
+
+    await opened.work?.get();
+    await opened.work?.close();
+    await opened.work?.recycle();
+
+    expect(w.rows).toHaveLength(1);
+  });
+
+  test("a get during a recycle waits for it and gets the restored sandbox", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.get();
+    const recycled = opened.work?.recycle();
+    const again = opened.work?.get();
+
+    await recycled;
+    const sandboxAfter = await again;
+
+    expect(sandboxAfter?.id).toBe("sb-2");
+    expect(created[1]?.options).toMatchObject({ snapshotId: w.rows[0]?.id });
+  });
+
+  test("a cleanup of a recycled sandbox saves as the later generation", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+
+    await opened.work?.get();
+    await opened.work?.recycle();
+    await opened.work?.get();
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A"), true);
+
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-2", epoch: 1 },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(await newest(s.scope)).toBe("01A.000001");
+    expect(w.rows).toHaveLength(2);
+    expect([...w.live]).toEqual([]);
   });
 });
