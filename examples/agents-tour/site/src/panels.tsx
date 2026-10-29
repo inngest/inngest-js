@@ -109,6 +109,22 @@ const Step = ({ step }: { step: TraceStep }) => {
   );
 };
 
+const RunOutput = ({ id }: { id: string | null }) => {
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    if (id) {
+      void api.output(id).then((out) => {
+        setText(out.error ? out.error.message : (out.data ?? ""));
+      });
+    }
+  }, [id]);
+
+  return text && text !== "null" ? (
+    <code className="run-output">{text}</code>
+  ) : null;
+};
+
 const RunView = ({
   run,
   everything,
@@ -130,6 +146,7 @@ const RunView = ({
         />
         <strong>{run.fn}</strong>
         <span className="status">{run.status.toLowerCase()}</span>
+        <RunOutput id={run.output} />
       </header>
       {shown.length > 0 ? (
         <ul>
@@ -141,7 +158,9 @@ const RunView = ({
         <p className="empty">No steps of your own yet.</p>
       )}
       {hidden > 0 ? (
-        <p className="hidden-note">{hidden} housekeeping steps hidden</p>
+        <p className="hidden-note">
+          {hidden} housekeeping steps hidden (press H to show them)
+        </p>
       ) : null}
     </section>
   );
@@ -198,7 +217,7 @@ export const MessagePanel = ({
   }, [target.thread]);
 
   const send = async () => {
-    if (text.trim()) {
+    if (text.trim() && !disabled) {
       await api.send(target.agent, thread, text);
     }
   };

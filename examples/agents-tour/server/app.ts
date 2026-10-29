@@ -78,6 +78,9 @@ export const createTour = async (options: TourOptions) => {
   let runs: TraceRun[] = [];
   let from = new Date().toISOString();
   let generation = 0;
+  // Bumped when the runs on screen are cleared, so a poll that started
+  // before cannot bring them back.
+  let epoch = 0;
   let current: LoadedPage | undefined;
   const reported = new Set<string>();
 
@@ -163,8 +166,14 @@ export const createTour = async (options: TourOptions) => {
       return;
     }
 
+    const seen = epoch;
+
     try {
       const next = await readRuns(devServer, from);
+
+      if (seen !== epoch) {
+        return;
+      }
       const same = JSON.stringify(next) === JSON.stringify(runs);
 
       if (!same) {
@@ -242,6 +251,8 @@ export const createTour = async (options: TourOptions) => {
       }
 
       current = page;
+      from = new Date().toISOString();
+      epoch += 1;
       await cancelLive();
       emit({ type: "clear" });
       reported.clear();
@@ -263,8 +274,6 @@ export const createTour = async (options: TourOptions) => {
 
         return;
       }
-
-      from = new Date(Date.now() - 500).toISOString();
 
       try {
         await worker.sync(publicUrl);
@@ -358,6 +367,8 @@ export const createTour = async (options: TourOptions) => {
     if (path === "/api/open") {
       await running;
       current = byId.get(String(body.id));
+      epoch += 1;
+      from = new Date().toISOString();
       await cancelLive();
       emit({ type: "clear" });
       reported.clear();
@@ -383,14 +394,20 @@ export const createTour = async (options: TourOptions) => {
     }
 
     if (path === "/api/reset") {
-      await running;
-      worker.stop();
-      emit({ type: "clear" });
-      runs = [];
-      broadcast({ type: "runs", runs });
-      setStatus("starting", "Restarting the Dev Server...");
-      await devServer.restart();
-      setStatus("idle", "Ready");
+      const task = running.then(async () => {
+        worker.stop();
+        epoch += 1;
+        from = new Date().toISOString();
+        emit({ type: "clear" });
+        runs = [];
+        broadcast({ type: "runs", runs });
+        setStatus("starting", "Restarting the Dev Server...");
+        await devServer.restart();
+        setStatus("idle", "Ready");
+      });
+
+      running = task.catch(() => {});
+      await task;
 
       return sendJson(res, 200, { ok: true });
     }
@@ -434,6 +451,28 @@ export const createTour = async (options: TourOptions) => {
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", publicUrl);
+    const origin = req.headers.origin;
+    const foreign =
+      req.headers.host !== `127.0.0.1:${port}` ||
+      (origin !== undefined && origin !== publicUrl);
+
+    if (foreign && url.pathname !== "/api/inngest") {
+      res.writeHead(403, { "content-type": "text/plain" });
+      res.end("Forbidden");
+
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname.startsWith("/api/") &&
+      !req.headers["content-type"]?.startsWith("application/json")
+    ) {
+      res.writeHead(415, { "content-type": "text/plain" });
+      res.end("JSON only");
+
+      return;
+    }
 
     try {
       if (url.pathname === "/api/inngest") {

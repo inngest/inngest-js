@@ -29,6 +29,7 @@ const readyTimeoutMs = 30_000;
 export class Worker {
   private current: ChildProcess | undefined;
   private port = 0;
+  private readonly pending = new Set<ChildProcess>();
   private readonly env: WorkerEnv;
 
   constructor(env: WorkerEnv) {
@@ -39,6 +40,7 @@ export class Worker {
    * Starts the app from `dir`, and switches to it when it serves.
    */
   async reload(dir: string): Promise<Started> {
+    const pending = this.pending;
     const port = await freePort();
     const errors: string[] = [];
     const child = fork(join(this.env.root, "runtime/host.ts"), [], {
@@ -55,6 +57,11 @@ export class Worker {
       },
     });
 
+    pending.add(child);
+    child.once("exit", () => {
+      pending.delete(child);
+    });
+    child.on("error", () => {});
     child.stdout?.on("data", (chunk: Buffer) => {
       this.env.onOutput("out", chunk.toString("utf8"));
     });
@@ -131,7 +138,16 @@ export class Worker {
       },
     );
 
+    res.on("close", () => {
+      upstream.destroy();
+    });
     upstream.on("error", (error) => {
+      if (res.headersSent) {
+        res.destroy();
+
+        return;
+      }
+
       res.writeHead(502, { "content-type": "text/plain" });
       res.end(String(error));
     });
@@ -165,6 +181,10 @@ export class Worker {
   }
 
   stop() {
+    for (const child of this.pending) {
+      child.kill("SIGKILL");
+    }
+
     this.current?.kill("SIGTERM");
     this.current = undefined;
     this.port = 0;

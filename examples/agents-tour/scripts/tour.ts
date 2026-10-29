@@ -70,7 +70,13 @@ const tour = await createTour({
   ports: { api, gateway, gatewayGrpc, executorGrpc },
 });
 
-await tour.start();
+try {
+  await tour.start();
+} catch (error) {
+  console.error(String(error));
+  await tour.stop();
+  process.exit(1);
+}
 
 console.log(`\nThe Agents Tour is running at ${tour.url}`);
 console.log("Press Ctrl-C to stop it.\n");

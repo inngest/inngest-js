@@ -624,3 +624,12 @@ textarea {
 .cheat td:first-child {
   width: 42%;
 }
+
+.run-output {
+  margin-left: auto;
+  color: var(--ok);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

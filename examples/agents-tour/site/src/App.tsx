@@ -210,13 +210,12 @@ export const App = () => {
       store.set(editKey(page), edited);
     }
 
-    setTab((page.manifest.open as Tab | undefined) ?? "output");
     void api.run(page.id, values);
     editor.current?.focus();
   };
 
   const reset = () => {
-    if (!page) {
+    if (!page || !hasCode) {
       return;
     }
 

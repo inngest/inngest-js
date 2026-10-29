@@ -94,3 +94,8 @@ const server = createServer(async (req, res) => {
 server.listen(Number(process.env.PORT), "127.0.0.1", () => {
   process.send?.({ type: "ready" });
 });
+
+// If the tour server dies without cleaning up, do not outlive it.
+process.on("disconnect", () => {
+  process.exit(0);
+});

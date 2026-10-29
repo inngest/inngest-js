@@ -92,6 +92,10 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
         return;
       }
 
+      if (latest.current.blocked()) {
+        return;
+      }
+
       for (const def of keys) {
         if (
           def.inField.some((combo) => {

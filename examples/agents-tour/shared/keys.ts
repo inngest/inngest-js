@@ -56,7 +56,7 @@ export const keys: KeyDef[] = [
   },
   {
     id: "reset",
-    label: "Reset the page's code",
+    label: "Reset the code and the runs",
     group: "Code",
     inField: ["Alt+Shift+R"],
     outside: ["R"],
