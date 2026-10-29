@@ -74,12 +74,8 @@ export interface InboxToolMessage {
  */
 export interface InboxToolInbox {
   listen: (
-    source: {
-      event: string | EventType<string, never>;
-      thread: string;
-      if?: string;
-    },
-    options?: { if?: string },
+    event: string | EventType<string, never>,
+    options: { thread: string; if?: string },
   ) => Promise<{ stop: () => Promise<void> }>;
   next: (options: {
     timeout: number | string;
@@ -244,14 +240,22 @@ export const createInboxTools = (
           );
         }
 
-        const listener = await inbox.listen(
-          {
-            event: source.event,
-            thread: source.thread,
-            ...(source.if !== undefined && { if: source.if }),
-          },
-          narrow === undefined ? undefined : { if: narrow },
-        );
+        // The configured filter and the model's, both of which must hold. The
+        // model's was checked to balance its parentheses and quotes, so it
+        // can't close the one around it.
+        const filters = [source.if, narrow].filter((filter) => {
+          return filter !== undefined && filter !== "";
+        });
+        const listener = await inbox.listen(source.event, {
+          thread: source.thread,
+          ...(filters.length > 0 && {
+            if: filters
+              .map((filter) => {
+                return `(${filter})`;
+              })
+              .join(" && "),
+          }),
+        });
 
         started.set(name, count + 1);
         listeners.set(as, { source: name, stop: listener.stop });

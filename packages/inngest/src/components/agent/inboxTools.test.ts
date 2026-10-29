@@ -19,10 +19,10 @@ const fakeInbox = () => {
   const history: InboxToolMessage[] = [];
   let listens = 0;
   const inbox: InboxToolInbox = {
-    listen: async (source, options) => {
+    listen: async (event, options) => {
       const n = (listens += 1);
 
-      calls.push(["listen", source, options]);
+      calls.push(["listen", event, options]);
 
       return {
         stop: async () => {
@@ -90,12 +90,11 @@ describe("inbox_listen", () => {
     expect(calls).toEqual([
       [
         "listen",
+        "github/check_run",
         {
-          event: "github/check_run",
           thread: '"slack:" + event.data.slackThread',
-          if: 'event.data.repo == "app"',
+          if: '(event.data.repo == "app") && (event.data.pr == 12)',
         },
-        { if: "event.data.pr == 12" },
       ],
     ]);
   });
@@ -120,8 +119,7 @@ describe("inbox_listen", () => {
       thread: "other",
     });
 
-    expect(calls[0]?.[1]).toMatchObject({ thread: "event.data.deployId" });
-    expect(calls[0]?.[2]).toBeUndefined();
+    expect(calls[0]?.[2]).toEqual({ thread: "event.data.deployId" });
   });
 
   test.each([
