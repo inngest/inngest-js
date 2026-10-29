@@ -111,17 +111,15 @@ export const sandboxRecycle = scenario({
         calls("sandbox.destroy").length === 3,
       { created: calls("sandbox.create").length },
     );
+    const names = calls("snapshot.create").map((call) => {
+      return String(call.body.name);
+    });
     ctx.check(
       "each snapshot is a later generation of the same run",
-      calls("snapshot.create").length === 3 &&
-        new Set(
-          calls("snapshot.create").map((call) => {
-            return call.body.name;
-          }),
-        ).size === 3,
-      calls("snapshot.create").map((call) => {
-        return call.body.name;
-      }),
+      names.length === 3 &&
+        names[1] === `${names[0]}.000001` &&
+        names[2] === `${names[0]}.000002`,
+      names,
     );
     ctx.check(
       "the second sandbox was restored from the first snapshot",
@@ -131,13 +129,18 @@ export const sandboxRecycle = scenario({
 
     await thread.send("next");
     await ctx.eventually(
-      "the next run restores the newest generation",
+      "the next run read the file",
       async () => {
         return (await thread.state()).keys.nextRun;
       },
       (read) => {
         return read === "survives a recycle";
       },
+    );
+    ctx.check(
+      "and restored the newest generation",
+      calls("sandbox.create")[3]?.body.snapshotId ===
+        calls("snapshot.create")[2]?.body.id,
     );
 
     // The scenario ends only once its last run has saved, destroyed and pruned,

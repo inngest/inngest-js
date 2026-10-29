@@ -1313,6 +1313,43 @@ describe("recycling a lazy sandbox", () => {
     expect(await newest(s.scope)).toBe("01A.000001");
   });
 
+  test("after a failed destroy the sandbox's cleanup saves what it writes next as a later generation", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.destroy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:destroy", new Error("destroy failed")),
+    );
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /could not be destroyed/,
+    );
+
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+
+    // The run dies now: the new cleanup, not the old one, handles the sandbox.
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A"), true);
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: s.defer.mock.calls[1]?.[1] as never,
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(await newest(s.scope)).toBe("01A.000001");
+    expect(w.rows).toHaveLength(2);
+  });
+
   test("a sandbox that belongs to no thread cannot be recycled", async () => {
     const w = world();
     const opened = openSandboxes({ work: box }, {

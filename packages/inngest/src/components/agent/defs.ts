@@ -810,15 +810,32 @@ const lazySandbox = (
 
         let saved = false;
 
+        // The sandbox stays running when a recycle fails after a save, so its
+        // cleanup defer moves to the new epoch: it must save what the sandbox
+        // writes from here on as a later generation, not skip it as already
+        // saved. The new defer is registered before the old one is dropped.
+        const rearm = () => {
+          const old = guard;
+
+          guard = owner.guard(name, sandbox, epoch);
+          old?.abort();
+        };
+
         if (used) {
-          if ((await owner.save(name, sandbox, epoch)) === false) {
+          const ok = await owner.save(name, sandbox, epoch);
+
+          // A save took its generation whether or not it worked.
+          epoch++;
+
+          if (ok === false) {
+            rearm();
+
             throw new Error(
               `Sandbox "${name}" was not recycled: its snapshot could not be taken, so it is still running`,
             );
           }
 
           saved = true;
-          epoch++;
         }
 
         // Without a cleanup defer there is nothing to read the outcome from.
@@ -833,6 +850,10 @@ const lazySandbox = (
         await destroyQuietly(sandbox, `${name}:destroy`, cleanup);
 
         if (!given) {
+          if (saved) {
+            rearm();
+          }
+
           throw new Error(
             `Sandbox "${name}" was not recycled: it could not be destroyed, so it is still running`,
           );
