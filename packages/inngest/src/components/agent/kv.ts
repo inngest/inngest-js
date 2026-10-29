@@ -523,9 +523,8 @@ export interface KvKey<T> {
 }
 
 /**
- * Anything JSON can carry. Plain-name writes take this type, so a value whose
- * type is an `interface` must go through a typed key (`kvKey<MyInterface>`):
- * TypeScript does not assign an interface to an index signature.
+ * Anything JSON can carry. It is the default value type of `KvWrite`; plain-name
+ * writes are checked with `KvJsonSafe`, so interfaces pass.
  */
 export type KvJson =
   | string
@@ -552,8 +551,7 @@ type KvNonJson =
 /**
  * `T` with every part JSON cannot carry (a `Date`, `Map`, bigint or function)
  * turned into `never`. A type is JSON-safe when it is assignable to its own
- * `KvJsonSafe`; the hover on a refused type shows which property is the
- * problem. Interfaces and branded primitives pass. An object property may be
+ * `KvJsonSafe`. Interfaces and branded primitives pass. An object property may be
  * `undefined` or optional (JSON drops it); a top-level or array `undefined`
  * does not pass.
  */
