@@ -17,6 +17,7 @@
  * returning and the run ending), and nothing is re-sent at run end.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../../helpers/consts.ts";
 import type { Logger } from "../../middleware/logger.ts";
 import type {
@@ -84,10 +85,13 @@ import {
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import {
+  type EventMessage,
   eventNameOf,
   type InboxMessage,
   type NextOptions,
   type Subscription,
+  type View,
+  withIs,
 } from "./subscribe.ts";
 import {
   agentMessageEvent,
@@ -632,6 +636,7 @@ export interface ThreadInbox<
       | "next"
       | "current"
       | "unread"
+      | "of"
       | "listen"
       | "close"
       | typeof Symbol.asyncIterator
@@ -688,6 +693,17 @@ export interface ThreadInbox<
    * `agent.loop()`.
    */
   unread(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
+
+  /**
+   * A view of the messages of one event: it reads them with a cursor of its
+   * own and hides nothing from the inbox or other views. Messages are typed by
+   * the event type, and ones that break its schema are dropped, as in the
+   * inbox.
+   * @param type The event name or event type.
+   */
+  of<TType extends InboxSource["event"]>(
+    type: TType,
+  ): View<EventMessage<TType>>;
 
   /**
    * Adds an event source to the inbox mid-run: its events reach this thread's
@@ -901,7 +917,7 @@ function threadInbox(
     }
 
     const data = toMessage(message);
-    const unwrapped: ThreadInboxMessage = {
+    const unwrapped: ThreadInboxMessage = withIs({
       ...message,
       data,
       async reply(answer) {
@@ -922,7 +938,7 @@ function threadInbox(
           });
         });
       },
-    };
+    });
     raws.set(unwrapped, message);
 
     return unwrapped;
@@ -1042,6 +1058,56 @@ function threadInbox(
 
         return taken;
       },
+      of(type) {
+        const view = inbox.of(type);
+        const clean = async <T extends InboxMessage>(messages: T[]) => {
+          const kept: T[] = [];
+
+          for (const raw of messages) {
+            if (!(await skipped(raw))) {
+              kept.push(raw);
+            }
+          }
+
+          return kept;
+        };
+        const mine: View<EventMessage<typeof type>> = {
+          next: (async (options?: NextOptions) => {
+            for (;;) {
+              const raw = options
+                ? await view.next(options)
+                : await view.next();
+
+              if (!raw) {
+                return raw;
+              }
+
+              if (!(await skipped(raw))) {
+                return raw;
+              }
+            }
+          }) as View<EventMessage<typeof type>>["next"],
+          async unread() {
+            return clean(await view.unread()) as never;
+          },
+          async current() {
+            return clean(await view.current()) as never;
+          },
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                const message = await mine.next();
+
+                return message
+                  ? { done: false, value: message }
+                  : { done: true, value: undefined };
+              },
+            };
+          },
+        };
+
+        return mine;
+      },
       listen: listenTo as ThreadInbox["listen"],
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
@@ -1084,6 +1150,7 @@ interface RawEvent {
   id?: string;
   name: string;
   data: unknown;
+  stream?: number;
 }
 
 function quote(value: string) {
@@ -1507,11 +1574,30 @@ export function createAgentFunction(
           ],
         });
 
-        // How each inbox source words its messages for the model.
-        const sourceWords = new Map<string, InboxSource["message"]>();
+        // How each inbox source words its messages for the model and what it
+        // checks them against, by the source's stream. The first streams are the
+        // agent's own messages and the triggers that reach a live run.
+        const sourceWords = new Map<number, InboxSource["message"]>();
+        const sourceSchemas = new Map<number, StandardSchemaV1>();
+        const firstSource =
+          1 +
+          triggers.filter((trigger) => {
+            return trigger.listen;
+          }).length;
 
-        for (const source of config.inbox ?? []) {
-          sourceWords.set(eventNameOf(source.event), source.message);
+        const noteSource = (stream: number, source: InboxSource) => {
+          sourceWords.set(stream, source.message);
+
+          const schema =
+            typeof source.event === "object" ? source.event.schema : undefined;
+
+          if (schema) {
+            sourceSchemas.set(stream, schema as StandardSchemaV1);
+          }
+        };
+
+        for (const [index, source] of (config.inbox ?? []).entries()) {
+          noteSource(firstSource + index, source);
         }
 
         // Adds a source mid-run: a bare event takes its filter from the options.
@@ -1527,19 +1613,19 @@ export function createAgentFunction(
             if: inboxFilter(given, data.thread),
           });
 
-          sourceWords.set(eventNameOf(given.event), given.message);
+          noteSource(listener.stream, given);
 
           return listener;
         }
         subscription.putBack([
-          {
+          withIs({
             seq: 0,
             id: event.id ?? "",
             name: event.name,
             data: event.data,
             ts: event.ts ?? 0,
             user: {},
-          },
+          }) as InboxMessage,
         ]);
 
         const bindings = await resolveSandboxes(config.sandboxes, {
@@ -1639,7 +1725,7 @@ export function createAgentFunction(
             }
 
             // An event of an inbox source is a user message made from it.
-            const word = sourceWords.get(raw.name);
+            const word = sourceWords.get(raw.stream ?? -1);
 
             return {
               agent: ref,
@@ -1661,6 +1747,13 @@ export function createAgentFunction(
               return data.kind === "request" && config.requests
                 ? dataProblem(config.requests.request, data.payload)
                 : undefined;
+            }
+
+            // An event of an inbox source is checked against its event type.
+            const sourceSchema = sourceSchemas.get(raw.stream ?? -1);
+
+            if (sourceSchema) {
+              return dataProblem(sourceSchema, raw.data ?? {});
             }
 
             if (started) {

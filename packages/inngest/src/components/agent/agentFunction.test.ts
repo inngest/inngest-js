@@ -7,7 +7,7 @@ import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
-import { invoke, staticSchema } from "../triggers/triggers.ts";
+import { eventType, invoke, staticSchema } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
@@ -388,7 +388,7 @@ describe("inbox arrival", () => {
 
 describe("inbox sources", () => {
   const ci = (state: string) => {
-    return { name: "ci/status", data: { t: "t1", state } };
+    return { name: "ci/status", data: { t: "t1", state }, stream: 1 };
   };
 
   test("a configured source maps to the thread and its events are user messages for the model", async () => {
@@ -431,7 +431,7 @@ describe("inbox sources", () => {
       event: trigger("go"),
       incoming: [
         ci("red"),
-        { name: "deploy/done", data: { t: "t1", v: "1.2" } },
+        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 2 },
       ],
       onOp: (op) => {
         const opts = op.opts as { event?: string; if?: string } | undefined;
@@ -454,6 +454,88 @@ describe("inbox sources", () => {
       '(async.data.state != "ok") && (async.data.t) == "t1"',
     ]);
     expect(filters).toContainEqual(["deploy/done", '(async.data.t) == "t1"']);
+  });
+
+  test("each source words its own messages, even for the same event", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [
+          {
+            event: "ci/status",
+            thread: "event.data.t",
+            message: () => "from the first",
+          },
+          {
+            event: "ci/status",
+            if: 'event.data.t == "t1"',
+            message: () => "from the second",
+          },
+        ],
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const a = await inbox.next();
+        const b = await inbox.next();
+
+        return [a?.data.content, b?.data.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        { ...ci("red"), stream: 1 },
+        { ...ci("red"), stream: 2 },
+      ],
+    });
+
+    expect(output).toEqual(["from the first", "from the second"]);
+  });
+
+  test("a source's events are checked against its event type, and ones that break it are dropped", async () => {
+    const status = eventType("ci/typed", {
+      schema: z.object({ state: z.string() }),
+    });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [{ event: status, thread: "event.data.t" }],
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const kept = await inbox.next();
+
+        return JSON.parse(kept?.data.content ?? "null");
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        {
+          id: "typed-bad",
+          name: "ci/typed",
+          data: { t: "t1", state: 7 },
+          stream: 1,
+        },
+        {
+          id: "typed-ok",
+          name: "ci/typed",
+          data: { t: "t1", state: "green" },
+          stream: 1,
+        },
+      ],
+    });
+
+    expect(output).toEqual({
+      event: "ci/typed",
+      data: { t: "t1", state: "green" },
+    });
   });
 
   test("listen() adds a source mid-run, stop() removes it, and a source needs a thread or an if", async () => {

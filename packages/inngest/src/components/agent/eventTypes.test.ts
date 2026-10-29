@@ -250,6 +250,26 @@ describe("step.subscribe", () => {
       }>();
     }
 
+    // A view is typed by its event type, and msg.is() narrows by name and data.
+    const orders = one.of(order);
+    const viewed = await orders.next();
+
+    expectTypeOf(viewed?.data).toEqualTypeOf<
+      { id: string; total: number } | undefined
+    >();
+    expectTypeOf(viewed?.name).toEqualTypeOf<
+      "shop/order.created" | undefined
+    >();
+
+    const anything = await many.next();
+
+    if (anything?.is(refund)) {
+      expectTypeOf(anything.data).toEqualTypeOf<{
+        order: string;
+        amount: number;
+      }>();
+    }
+
     // @ts-expect-error an event type's data has no such field
     (await one.next())?.data.amount;
   };
