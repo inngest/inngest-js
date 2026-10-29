@@ -30,7 +30,7 @@ export interface AgentMessageInput {
  * What a call to the agent `TInput` takes as a tool: its `invoke()` data when
  * it declares one, else `{ message }`.
  */
-export type AgentToolInput<TInput> = string extends keyof TInput
+export type AgentToolInput<TInput> = Record<string, unknown> extends TInput
   ? AgentMessageInput
   : TInput;
 
@@ -79,7 +79,7 @@ export const agentToolOf = (
    */
   description: string | undefined,
 ): AgentTool => {
-  const typed = triggerSchema(fn);
+  const typed = triggerSchema(fn, true);
   const text =
     description ??
     `Hands a task to the ${id} agent and returns what it answers.`;

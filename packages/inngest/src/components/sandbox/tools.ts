@@ -533,6 +533,12 @@ export const tool = Object.assign(defineTool, toolMethods);
  */
 export const triggerSchema = (
   fn: InngestFunction.Any,
+
+  /**
+   * Take only the schema of an `invoke()` trigger, never that of another
+   * event.
+   */
+  invokeOnly = false,
 ): StandardSchemaV1 | undefined => {
   const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
     fn.opts.triggers ?? [];
@@ -554,7 +560,8 @@ export const triggerSchema = (
     return trigger.event === internalEvents.FunctionInvoked;
   });
 
-  return (invoked ?? (typed.length === 1 ? typed[0] : undefined))?.schema;
+  return (invoked ?? (!invokeOnly && typed.length === 1 ? typed[0] : undefined))
+    ?.schema;
 };
 
 /**
