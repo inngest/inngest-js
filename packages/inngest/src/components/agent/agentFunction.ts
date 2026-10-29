@@ -180,7 +180,9 @@ export interface AgentFunctionOptions<
 
   /**
    * Events that cancel a live run, as for any function. The run's cleanup
-   * (sandboxes, run-scoped KV) happens as for `handle.stop()`.
+   * (sandboxes, run-scoped KV) happens as for `handle.stop()`. An agent that
+   * only `agent.invoke()` starts can end with the run that invoked it: add
+   * `agentInvokeCancelOn`.
    */
   cancelOn?: InngestFunction.Options["cancelOn"];
 

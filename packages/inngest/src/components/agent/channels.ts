@@ -214,7 +214,8 @@ export interface ChannelStream {
    * Closes a stream, with its final content when it has some. The reporter
    * calls it without `final` for a stream it leaves for a new one, and a
    * failure there is ignored; with `final` (from `report.finish()`) a failure
-   * fails the step.
+   * fails the step. It may return the reference of the message the stream
+   * ended as; without one, `report.finish()` hands back the stream's own ID.
    */
   stop?(
     /**
@@ -226,7 +227,8 @@ export interface ChannelStream {
      * What the stream ends with.
      */
     final?: ChannelStreamFinal,
-  ): Promise<void>;
+    // biome-ignore lint/suspicious/noConfusingVoidType: an adapter that has no reference to give keeps returning nothing.
+  ): Promise<void | string>;
 
   /**
    * The card that says the stream goes on in another process, after a restart
@@ -323,14 +325,17 @@ export interface Channel {
 
   /**
    * Posts a message. Runs inside a step, so it may be retried: a post whose
-   * answer is lost is posted again, so delivery is at least once.
+   * answer is lost is posted again, so delivery is at least once. It may
+   * return the posted message's reference in the surface's own terms (Slack:
+   * the message `ts`), which `report.finish()` hands back to its caller.
    */
   post(
     /**
      * What to post.
      */
     message: ChannelMessage,
-  ): Promise<void>;
+    // biome-ignore lint/suspicious/noConfusingVoidType: an adapter that has no reference to give keeps returning nothing.
+  ): Promise<void | string>;
 
   /**
    * Renders a question and returns once it is shown. The answer does not come
@@ -529,6 +534,11 @@ export interface Reporter {
    * surface-specific blocks (Slack: the blocks of `chat.stopStream`, such as
    * feedback buttons). A destination with no open stream posts `final.text`
    * as a message, with its `blocks` if it has any. The next card starts a new stream.
+   *
+   * Returns the reference of the message that ended (Slack: its `ts`), in the
+   * surface's own terms, so a caller can attach follow-ups to it. With several
+   * destinations it is the first one's that has a reference. It is `undefined`
+   * when nothing was stopped or posted, or the surface gives no reference.
    */
   finish(
     /**
@@ -536,7 +546,18 @@ export interface Reporter {
      */
     final?: ChannelStreamFinal,
     options?: ReportStreamOptions,
-  ): Promise<void>;
+  ): Promise<string | undefined>;
+}
+
+/**
+ * What the step of a `finish` saves when it stopped or posted a message that
+ * has a reference, in place of a stream's state: the stream is over.
+ */
+interface FinishedRef {
+  /**
+   * The reference of the message the stream ended as, in the surface's terms.
+   */
+  ref: string;
 }
 
 /**
@@ -700,6 +721,14 @@ const checkCard = (card: ChannelCard): void => {
       `report.card: a card needs a title, an id of 1 to 100 characters other than "${summaryCardId}", and a status of ${cardStatuses.join(", ")} if it has one; details and output are text, and sources are up to ${maxSources} of { url, text }.`,
     );
   }
+};
+
+const isFinishedRef = (value: unknown): value is FinishedRef => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { ref?: unknown }).ref === "string"
+  );
 };
 
 const noop = () => {
@@ -977,13 +1006,15 @@ export const createReporter = (
       channel: Channel,
       before: CardStreamState | undefined,
       restarts: number,
-    ) => Promise<CardStreamState | null | undefined>,
-  ): Promise<void> => {
+    ) => Promise<CardStreamState | FinishedRef | null | undefined>,
+  ): Promise<string | undefined> => {
     const n = ++counts[kind];
     const direct = hooks?.inStep?.() === true;
     const destinations = destinationsOf(options).filter(({ channel }) => {
       return wants(channel);
     });
+
+    let ref: string | undefined;
 
     const run = queue.then(async () => {
       for (const { name, channel, index } of destinations) {
@@ -997,8 +1028,13 @@ export const createReporter = (
           // The durable state wins; a finished stream is `null` there.
           const before =
             (held === undefined ? cardStreams.get(channel) : held) ?? undefined;
-          const state =
+          const written =
             (await write(channel, before, hooks?.restarts?.() ?? 0)) ?? null;
+          const state = isFinishedRef(written) ? null : written;
+
+          if (isFinishedRef(written)) {
+            ref ??= written.ref;
+          }
 
           if (keeps) {
             cardStreams.set(channel, state);
@@ -1025,8 +1061,15 @@ export const createReporter = (
           }) as unknown as () => Promise<number | undefined>,
         );
 
+        if (isFinishedRef(state)) {
+          ref ??= state.ref;
+        }
+
         if (kind === "card" || kind === "begin" || kind === "finish") {
-          cardStreams.set(channel, (state as CardStreamState | null) ?? null);
+          cardStreams.set(
+            channel,
+            isFinishedRef(state) ? null : ((state as CardStreamState) ?? null),
+          );
         }
       }
     });
@@ -1034,7 +1077,9 @@ export const createReporter = (
     // One failed write must not stop the ones after it from running.
     queue = run.catch(noop);
 
-    return run;
+    return run.then(() => {
+      return ref;
+    });
   };
 
   async function status(status: ChannelStatus, options?: ReportStreamOptions) {
@@ -1115,8 +1160,8 @@ export const createReporter = (
   async function finish(
     final?: ChannelStreamFinal,
     options?: ReportStreamOptions,
-  ) {
-    await queued(
+  ): Promise<string | undefined> {
+    return queued(
       "finish",
       options,
       (channel) => {
@@ -1128,19 +1173,26 @@ export const createReporter = (
       },
       async (channel, before) => {
         const stop = before ? channel.stream?.stop : undefined;
+        let ref: string | undefined;
 
         if (before && stop) {
-          await stop.call(channel.stream, before.stream, final);
+          // A stream is its message, so its ID is the reference unless the
+          // adapter says otherwise.
+          const stopped = await stop.call(channel.stream, before.stream, final);
+
+          ref = typeof stopped === "string" ? stopped : before.stream;
         } else if (final?.text !== undefined || final?.blocks !== undefined) {
           // No open stream, or one that cannot be stopped with content: the
           // text and blocks still reach the thread.
-          await channel.post({
+          const posted = await channel.post({
             text: final.text ?? "",
             ...(final.blocks === undefined ? {} : { blocks: final.blocks }),
           });
+
+          ref = typeof posted === "string" ? posted : undefined;
         }
 
-        return null;
+        return typeof ref === "string" ? { ref } : null;
       },
     );
   }

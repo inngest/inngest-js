@@ -5,7 +5,13 @@
  */
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
-import { agentInvokeDepth, agentInvokeInput } from "./invoke.ts";
+import { createAgents } from "./agents.ts";
+import {
+  AgentCancelledError,
+  agentInvokeCancelOn,
+  agentInvokeDepth,
+  agentInvokeInput,
+} from "./invoke.ts";
 import { agent } from "./loop.ts";
 
 const found = async (
@@ -151,5 +157,104 @@ describe("agent.invoke limits", () => {
         },
       },
     });
+  });
+});
+
+describe("agent.invoke cancellation", () => {
+  const cancelledFinish = {
+    name: "inngest/function.finished",
+    data: {
+      _inngest: { status: "Cancelled" },
+      function_id: "team-researcher",
+      run_id: "child-run",
+    },
+  };
+
+  // Runs a caller whose invoke step already has `data`, and returns what the
+  // call did.
+  const settled = async (data: unknown) => {
+    const client = new Inngest({ id: testClientId });
+    let outcome: { value?: unknown; error?: unknown } = {};
+    const fn = client.createFunction(
+      { id: "caller", triggers: [{ event: "foo" }] },
+      async () => {
+        try {
+          outcome = { value: await agent.invoke("team/researcher", {}) };
+        } catch (error) {
+          outcome = { error };
+        }
+      },
+    );
+    const first = await runFnWithStack(fn, {});
+
+    if (first.type !== "steps-found") {
+      throw new Error(`unexpected ${first.type}`);
+    }
+
+    const id = first.steps[0]?.id as string;
+
+    await runFnWithStack(fn, { [id]: { id, data } });
+
+    return outcome;
+  };
+
+  test("a cancelled callee throws AgentCancelledError with its run", async () => {
+    const { error } = await settled(cancelledFinish);
+
+    expect(error).toBeInstanceOf(AgentCancelledError);
+    expect(error).toMatchObject({
+      name: "AgentCancelledError",
+      functionId: "team-researcher",
+      runId: "child-run",
+    });
+    expect((error as Error).message).toContain("team/researcher");
+  });
+
+  test("an output is returned as it is, whatever its shape", async () => {
+    for (const output of [
+      "text",
+      null,
+      { answer: 1 },
+      { name: "inngest/function.finished", data: { _inngest: {} } },
+    ]) {
+      expect((await settled(output)).value).toEqual(output);
+    }
+  });
+
+  test("tells the callee which run invoked it", async () => {
+    const steps = await found(() => {
+      return agent.invoke("team/researcher", {});
+    });
+
+    expect(steps[0]?.opts).toMatchObject({
+      payload: { data: { _agent: { parent: "run" } } },
+    });
+  });
+
+  test("an agent takes the parent cancel entry through its own cancelOn", () => {
+    const client = new Inngest({ id: testClientId });
+    const agents = createAgents(client);
+
+    agents.agent(
+      { id: "worker", cancelOn: [agentInvokeCancelOn] },
+      async () => {
+        return "done";
+      },
+    );
+    agents.agent({ id: "plain" }, async () => {
+      return "done";
+    });
+
+    const configs = agents.functions().map((fn) => {
+      return JSON.stringify(
+        fn["getConfig"]({ baseUrl: new URL("http://x"), appPrefix: "a" }),
+      );
+    });
+    const withEntry = configs.filter((config) => {
+      return config.includes(JSON.stringify(agentInvokeCancelOn.if));
+    });
+
+    expect(withEntry).toHaveLength(1);
+    expect(withEntry[0]).toContain("worker");
   });
 });

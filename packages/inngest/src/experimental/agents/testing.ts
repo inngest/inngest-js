@@ -3,11 +3,12 @@
  * EXPERIMENTAL: `inngest/experimental/agents/testing`. What a test of an agent
  * needs and an app would otherwise copy: a scripted model that needs no API
  * key, a fake Sandboxes API, fake Slack and GitHub servers that keep every
- * call, a git remote that wants a token, and a thread handle that returns the
- * keys the agent set. These run in Node and are for tests, never for
- * production code. `fakeSandbox` runs nothing on the host unless you set
- * `execute: "local"`; do that only with a scripted model (`script()`), because
- * a real model's commands would run on your machine.
+ * call, a git remote that wants a token, a thread handle that returns the keys
+ * the agent set, and a reporter that runs its steps on the spot. These run in
+ * Node and are for tests, never for production code. `fakeSandbox` runs
+ * nothing on the host unless you set `execute: "local"`; do that only with a
+ * scripted model (`script()`), because a real model's commands would run on
+ * your machine.
  *
  * ```ts
  * import { fakeSandbox, script, startFakes } from "inngest/experimental/agents/testing";
@@ -39,6 +40,8 @@ export type {
 export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
 export type { ScriptStep } from "../../components/agent/testing/model.ts";
 export { script } from "../../components/agent/testing/model.ts";
+export type { TestReporter } from "../../components/agent/testing/reporter.ts";
+export { testReporter } from "../../components/agent/testing/reporter.ts";
 export type {
   FakeSandbox,
   FakeSandboxOptions,

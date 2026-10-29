@@ -139,6 +139,118 @@ const stepper = (saved: Record<string, unknown> = {}) => {
   };
 };
 
+describe("report.finish returns the message reference", () => {
+  test("the stream's own ID when the adapter's stop returns nothing", async () => {
+    const surface = fakeSurface();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.begin({ title: "T", cards: [{ id: "a", title: "A" }] });
+
+    expect(await report.finish({ text: "Done." })).toBe("stream1");
+  });
+
+  test("what the adapter's stop returns", async () => {
+    const base = fakeSurface().channel.stream as NonNullable<
+      ReturnType<typeof fakeSurface>["channel"]["stream"]
+    >;
+    const channel = defineChannel({
+      post: async () => {},
+      stream: { ...base, stop: async () => "1700000000.000200" },
+    });
+    const report = createReporter(
+      { main: channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    await report.card({ id: "a", title: "A" });
+
+    expect(await report.finish({ text: "Done." })).toBe("1700000000.000200");
+  });
+
+  test("the reference of the message posted when no stream is open", async () => {
+    const channel = defineChannel({
+      post: async () => "ts-1",
+    });
+    const report = createReporter(
+      { main: channel },
+      undefined,
+      stepper().runStep,
+    );
+
+    expect(await report.finish({ text: "Done." })).toBe("ts-1");
+  });
+
+  test("undefined when nothing was stopped or posted, or the post has no reference", async () => {
+    const silent = createReporter(
+      { main: defineChannel({ post: async () => {} }) },
+      undefined,
+      stepper().runStep,
+    );
+
+    expect(await silent.finish({ text: "Done." })).toBeUndefined();
+    expect(await silent.finish()).toBeUndefined();
+  });
+
+  test("a replay returns the same reference without writing again", async () => {
+    const surface = fakeSurface();
+    const first = stepper();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      first.runStep,
+    );
+
+    await report.begin({ title: "T", cards: [{ id: "a", title: "A" }] });
+
+    const ref = await report.finish({ text: "x" });
+    const callsBefore = [...surface.calls];
+    const replay = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper(first.results).runStep,
+    );
+
+    await replay.begin({ title: "T", cards: [{ id: "a", title: "A" }] });
+
+    expect(await replay.finish({ text: "x" })).toBe(ref);
+    expect(surface.calls).toEqual(callsBefore);
+  });
+
+  test("on the caller's step, the reference comes back and the stream is closed", async () => {
+    const surface = fakeSurface();
+    const state = new Map<string, unknown>();
+    const report = createReporter(
+      { main: surface.channel },
+      undefined,
+      stepper().runStep,
+      undefined,
+      {
+        inStep: () => {
+          return true;
+        },
+        state: {
+          get: async (key) => {
+            return state.get(key) as never;
+          },
+          set: async (key, value) => {
+            state.set(key, value);
+          },
+        },
+      },
+    );
+
+    await report.card({ id: "a", title: "A" });
+
+    expect(await report.finish({ text: "x" })).toBe("stream1");
+    expect(state.get("__stream:main")).toBeNull();
+  });
+});
+
 describe("report.card", () => {
   test("100 unique cards never put more than the cap in one stream", async () => {
     const surface = fakeSurface({ maxCards: 50 });

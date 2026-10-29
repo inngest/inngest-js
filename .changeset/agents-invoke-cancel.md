@@ -1,0 +1,5 @@
+---
+"inngest": minor
+---
+
+`agent.invoke()` now tells you when the agent it started was cancelled: it throws an `AgentCancelledError` (with `functionId` and `runId`, not retried) instead of handing back the executor's finish event as if it were a result. Cancelling the caller cancels an agent or function it invoked that has the new `agentInvokeCancelOn` in its `cancelOn` (for ones that only `agent.invoke()` starts; the entry reads `data._agent.parent`, which other events lack), and so on down the chain. `report.finish()` returns the reference of the message that ended, in the surface's own terms (Slack: the message `ts`), so a caller can attach follow-ups; a channel's `post` and a stream's `stop` may return that reference. `inngest/experimental/agents/testing` exports `testReporter(channels, { report, saved })`, the agent's `report` with its steps run on the spot, plus the step IDs that ran and their results to replay.
