@@ -468,6 +468,14 @@ describe("kv typed keys", () => {
     kvKey("dt", z.date());
     // @ts-expect-error a type holding a Date is refused when the key is used
     await bound.set(kvKey<{ at: Date }>("d"), { at: new Date() });
+    // These pass: readonly data, branded primitives, optional and undefined properties.
+    await bound.set("ro", ["a"] as readonly string[]);
+    const branded = kvKey<{ id: string & { __brand: "id" }; note?: string }>(
+      "b",
+    );
+    await bound.set(branded, { id: "x" as string & { __brand: "id" } });
+    await bound.set(kvKey<{ a: string | undefined }>("u2"), { a: undefined });
+    await bound.set(kvKey<readonly string[]>("ro2"), ["a"]);
     // @ts-expect-error a function is not JSON
     await bound.set("fn", () => 1);
     // @ts-expect-error a default makes the input wider than the output

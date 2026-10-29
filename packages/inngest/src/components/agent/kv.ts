@@ -523,14 +523,16 @@ export interface KvKey<T> {
 }
 
 /**
- * Anything JSON can carry. Plain-name writes take this type.
+ * Anything JSON can carry. Plain-name writes take this type, so a value whose
+ * type is an `interface` must go through a typed key (`kvKey<MyInterface>`):
+ * TypeScript does not assign an interface to an index signature.
  */
 export type KvJson =
   | string
   | number
   | boolean
   | null
-  | KvJson[]
+  | readonly KvJson[]
   | { [key: string]: KvJson | undefined };
 
 /**
@@ -550,15 +552,28 @@ type KvNonJson =
 /**
  * `T` with every part JSON cannot carry (a `Date`, `Map`, bigint or function)
  * turned into `never`. A type is JSON-safe when it is assignable to its own
- * `KvJsonSafe`; the hover on a refused type shows which property is the problem.
+ * `KvJsonSafe`; the hover on a refused type shows which property is the
+ * problem. Interfaces and branded primitives pass. An object property may be
+ * `undefined` or optional (JSON drops it); a top-level or array `undefined`
+ * does not pass.
  */
-export type KvJsonSafe<T> = T extends KvNonJson
-  ? never
-  : T extends readonly (infer U)[]
-    ? KvJsonSafe<U>[]
-    : T extends object
-      ? { [P in keyof T]: KvJsonSafe<T[P]> }
-      : T;
+export type KvJsonSafe<T> = T extends string | number | boolean | null
+  ? T
+  : T extends KvNonJson
+    ? never
+    : T extends readonly (infer U)[]
+      ? readonly KvJsonSafe<U>[]
+      : T extends object
+        ? { [P in keyof T]: KvJsonProp<T[P]> }
+        : T;
+
+/**
+ * A property of a JSON-safe object. It may be `undefined` or optional, which
+ * JSON drops on write; at the top level or in an array it may not be.
+ */
+type KvJsonProp<V> = [undefined] extends [V]
+  ? KvJsonSafe<Exclude<V, undefined>> | undefined
+  : KvJsonSafe<V>;
 
 /**
  * What `kvKey<T>(name)` returns: a `KvKey<T>` when `T` is JSON-safe, otherwise
@@ -774,24 +789,26 @@ function unwrapUpdate(memo: unknown): unknown {
 }
 
 /**
- * Runs a schema check inside a step: a failure comes back as a message, so
- * the caller can throw it outside the step, where it is not retried.
- * @param check The decode to run.
+ * Decodes inside a step: a schema failure comes back as a message, so the
+ * caller can throw it outside the step, where it is not retried.
+ * @param key The key read.
+ * @param raw The stored value.
  */
-async function invalidOf(
-  check: () => Promise<unknown>,
-): Promise<string | undefined> {
+async function tryDecode<K extends KvKeyInput>(
+  key: K,
+  raw: unknown,
+): Promise<
+  { ok: true; value: KvValue<K> | undefined } | { ok: false; invalid: string }
+> {
   try {
-    await check();
+    return { ok: true, value: await decode(key, raw) };
   } catch (error) {
     if (error instanceof NonRetriableError) {
-      return error.message;
+      return { ok: false, invalid: error.message };
     }
 
     throw error;
   }
-
-  return undefined;
 }
 
 /**
@@ -1300,15 +1317,15 @@ export function createKv(
       async update(key, fn) {
         const name = nameOf(key);
         const result = await run("update", name, async (h) => {
-          const raw = await h.get(name);
-          const invalid = await invalidOf(() => {
-            return decode(key, raw);
-          });
-          if (invalid !== undefined) {
-            return { "~kvUpdate": true, invalid } satisfies KvUpdate;
+          const current = await tryDecode(key, await h.get(name));
+          if (!current.ok) {
+            return {
+              "~kvUpdate": true,
+              invalid: current.invalid,
+            } satisfies KvUpdate;
           }
 
-          const next = fn(await decode(key, raw));
+          const next = fn(current.value);
           await h.set(name, next);
 
           return { "~kvUpdate": true, value: next } satisfies KvUpdate;
@@ -1322,11 +1339,13 @@ export function createKv(
         // stays readable.
         const read = await run("take", name, async (h) => {
           const raw = await h.get(name);
-          const invalid = await invalidOf(() => {
-            return decode(key, raw);
-          });
-          if (invalid !== undefined) {
-            return { "~kvRead": true, found: false, invalid } satisfies KvRead;
+          const checked = await tryDecode(key, raw);
+          if (!checked.ok) {
+            return {
+              "~kvRead": true,
+              found: false,
+              invalid: checked.invalid,
+            } satisfies KvRead;
           }
 
           await h.delete(name);
