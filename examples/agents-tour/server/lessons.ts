@@ -7,6 +7,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { runFileOf } from "../shared/events.ts";
 import type {
   Lesson,
   Manifest,
@@ -79,6 +80,14 @@ export const loadLessons = (lessonsDir: string) => {
           files.push({
             name: "setup.ts",
             content: readFileSync(join(dir, "setup.ts"), "utf8"),
+            editable: false,
+          });
+        }
+
+        if (manifest.start && manifest.start.length > 0) {
+          files.push({
+            name: "run.ts",
+            content: runFileOf(manifest.start),
             editable: false,
           });
         }

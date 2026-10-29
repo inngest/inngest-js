@@ -1,7 +1,5 @@
 {
-  "panels": [
-    "message"
-  ],
+  "panels": ["message"],
   "start": [
     {
       "agent": "echo",
