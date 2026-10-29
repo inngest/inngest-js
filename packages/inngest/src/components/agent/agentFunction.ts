@@ -573,7 +573,10 @@ function threadInbox(
   /**
    * Records the thread's status: `waiting()` before the agent waits for a message after the first, `running()` once one is delivered.
    */
-  recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
+  recorder: Pick<
+    ReturnType<typeof threadRecorder>,
+    "waiting" | "running" | "resumed"
+  >,
   log: { warn: (message: string) => void },
   runId: string,
   replySchema?: ThreadRequests["reply"],
@@ -667,7 +670,7 @@ function threadInbox(
       if (raw === undefined) {
         // The wait expired: the agent goes on working, so it is not waiting.
         if (delivered > 0) {
-          await recorder.running();
+          await recorder.resumed();
         }
 
         return undefined;

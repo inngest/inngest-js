@@ -487,7 +487,7 @@ describe("thread state", () => {
       async ({ inbox }) => {
         const before = ((await record(kv)) as { status?: string } | undefined)
           ?.status;
-        // The trigger is a stop, which the inbox skips: nothing is delivered.
+        // The trigger is a stop, which the inbox skips.
         const expired = await inbox.next({ timeout: "1s" });
 
         seen.push(
@@ -500,8 +500,33 @@ describe("thread state", () => {
 
     await run(fn, { event: message("stop"), timeouts: 1 });
 
-    expect(seen[0]).toBeUndefined();
-    expect(seen[2]).toBe(seen[1]);
+    // The body ran again for each request; the last run is the final one.
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(seen.slice(-3)).toEqual([undefined, "running", "running"]);
+  });
+
+  test("a wait that expires does not undo a stop", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await kv
+          .with({ id: testClientId, env: null })
+          .scope("thread", "t1")
+          .set("__state", { status: "stopped", turn: 0, runId: "run" });
+        await inbox.next({ timeout: "1s" });
+        seen.push(
+          ((await record(kv)) as { status?: string } | undefined)?.status,
+        );
+      },
+    );
+
+    await run(fn, { event: trigger("one"), timeouts: 1 });
+
+    expect(seen.at(-1)).toBe("stopped");
   });
 
   test("honoring a stop request marks the thread stopped", async () => {
