@@ -393,6 +393,188 @@ describe("step.subscribe", () => {
     ).toEqual(["box:0:open", "box:1"]);
   });
 
+  describe("views", () => {
+    const mention = (n: number) => {
+      return {
+        id: `m${n}`,
+        name: "chat/mention",
+        data: { n },
+        ts: n,
+        user: {},
+      };
+    };
+    const review = (n: number) => {
+      return { id: `r${n}`, name: "pr/review", data: { n }, ts: n, user: {} };
+    };
+
+    test("a view is a cursor of its own: it hides nothing from the inbox or other views, and reads by arrival order", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+          const mentions = inbox.of("chat/mention");
+
+          const r1 = await reviews.next();
+          const m1 = await inbox.next();
+          const r2 = await reviews.next();
+          const m2 = await inbox.next();
+          const mention1 = await mentions.next();
+
+          return [r1, m1, r2, m2, mention1].map((m) => {
+            return [m?.seq, m?.name];
+          });
+        },
+      );
+
+      // Stack: seq1 mention, seq2 review, seq3 mention, seq4 review.
+      const { output } = await run(fn, {
+        saved: [mention(1), review(2), mention(3), review(4)],
+      });
+
+      expect(output).toEqual([
+        [2, "pr/review"],
+        [1, "chat/mention"],
+        [4, "pr/review"],
+        [2, "pr/review"],
+        [1, "chat/mention"],
+      ]);
+    });
+
+    test("a view waits for its kind: it parks at the next message and looks again", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+          const got = await reviews.next();
+
+          return [got?.seq, got?.data];
+        },
+      );
+
+      // Two mentions arrive before the review the view waits for.
+      const { output, ops } = await run(fn, {
+        incoming: [mention(1), mention(2), review(3)],
+      });
+
+      expect(output).toEqual([3, { n: 3 }]);
+      expect(
+        ops
+          .filter((op) => {
+            return op.mode === "park";
+          })
+          .map((op) => {
+            return op.id;
+          }),
+      ).toEqual(["inbox:v1:1", "inbox:v1:2", "inbox:v1:3"]);
+    });
+
+    test("unread() takes what is after the cursor, current() lists all, and neither waits", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+          const first = await reviews.next();
+          const all = await reviews.current();
+          const rest = await reviews.unread();
+          const none = await reviews.unread();
+          const poll = await reviews.next({ timeout: 0 });
+
+          return [
+            first?.seq,
+            all.map((m) => {
+              return m.seq;
+            }),
+            rest.map((m) => {
+              return m.seq;
+            }),
+            none.length,
+            poll,
+          ];
+        },
+      );
+
+      const { output } = await run(fn, {
+        saved: [review(1), mention(2), review(3), review(4)],
+      });
+
+      expect(output).toEqual([1, [1, 3, 4], [3, 4], 0, undefined]);
+    });
+
+    test("the reads are the same whatever the arrival timing", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+          const mentions = inbox.of("chat/mention");
+          const r = await reviews.next();
+          const m = await mentions.next();
+          const r2 = await reviews.next();
+
+          return [r?.seq, m?.seq, r2?.seq];
+        },
+      );
+      const all = [mention(1), review(2), mention(3), review(4)];
+
+      const together = await run(fn, { saved: all });
+      const trickled = await run(fn, { incoming: all });
+      const split = await run(fn, {
+        saved: all.slice(0, 2),
+        incoming: all.slice(2),
+      });
+
+      expect(together.output).toEqual([2, 1, 4]);
+      expect(trickled.output).toEqual([2, 1, 4]);
+      expect(split.output).toEqual([2, 1, 4]);
+    });
+
+    test("a timeout of a view stays a timeout on replay, though a match has arrived since", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const reviews = inbox.of("pr/review");
+          const first = await reviews.next({ timeout: "1s" });
+          const second = await reviews.next();
+
+          return [first, second?.seq];
+        },
+      );
+
+      const { output } = await run(fn, {
+        incoming: [review(1)],
+        timeouts: 1,
+      });
+
+      expect(output).toEqual([undefined, 1]);
+    });
+
+    test("msg.is() narrows by event name and is not a field of the message", async () => {
+      const fn = client().createFunction(
+        { id: "sub", triggers: [{ event: "sub/run" }] },
+        async ({ step }) => {
+          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const a = await inbox.next();
+          const b = await inbox.next();
+
+          return [
+            a?.is("chat/mention"),
+            a?.is("pr/review"),
+            b?.is("pr/review"),
+            Object.keys(a ?? {}).includes("is"),
+          ];
+        },
+      );
+
+      const { output } = await run(fn, { saved: [mention(1), review(2)] });
+
+      expect(output).toEqual([true, false, true, false]);
+    });
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
