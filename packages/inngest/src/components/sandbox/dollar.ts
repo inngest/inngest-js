@@ -390,7 +390,7 @@ export const createDollar = (
 
       const { id: callId, ...options } = first;
 
-      return createDollar(run, mergeOptions(defaults, options), callId);
+      return createDollar(run, mergeOptions(defaults, options), callId ?? id);
     }
 
     const argv = buildArgv(first, values);
