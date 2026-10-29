@@ -29,7 +29,11 @@ interface Message {
 interface Block {
   type: string;
   block_id?: string;
-  elements?: { type: string; text?: string | { text: string }; value?: string }[];
+  elements?: {
+    type: string;
+    text?: string | { text: string };
+    value?: string;
+  }[];
 }
 
 interface State {
@@ -134,7 +138,9 @@ const MessageView = ({
     ...new Set(
       state.reactions
         .filter((reaction) => {
-          return reaction.channel === message.channel && reaction.ts === message.ts;
+          return (
+            reaction.channel === message.channel && reaction.ts === message.ts
+          );
         })
         .map((reaction) => {
           return reaction.name;
@@ -145,7 +151,7 @@ const MessageView = ({
   const answer = answerOf(message);
 
   return (
-    <div className="message">
+    <div className="smsg">
       <div className="avatar" style={{ background: author?.color }}>
         {(author?.name ?? "?").slice(0, 1)}
       </div>
@@ -279,7 +285,9 @@ export const Slack = () => {
     const visible = (current?.messages ?? []).filter((message) => {
       return (
         message.channel === at &&
-        (open ? message.threadTs === open || message.ts === open : !message.threadTs)
+        (open
+          ? message.threadTs === open || message.ts === open
+          : !message.threadTs)
       );
     });
     const last = visible[visible.length - 1];
@@ -296,7 +304,7 @@ export const Slack = () => {
   useAction("slackChannel", cycleChannel);
   useAction("slackReact", react);
 
-    const answer = (value: "Approve" | "Deny") => {
+  const answer = (value: "Approve" | "Deny") => {
     const pending = [...(latest.current.state?.messages ?? [])]
       .reverse()
       .find((message) => {
@@ -350,11 +358,7 @@ export const Slack = () => {
   return (
     <div className="slack">
       <header className="slack-head">
-        <button
-          type="button"
-          className="ghost"
-          onClick={cycleChannel}
-        >
+        <button type="button" className="ghost" onClick={cycleChannel}>
           # {channel?.name} <Kbd action="slackChannel" />
         </button>
         <span className="topic">{channel?.topic}</span>
@@ -376,7 +380,8 @@ export const Slack = () => {
           type="button"
           className="ghost"
           disabled={shown.length === 0}
-          onClick={react}        >
+          onClick={react}
+        >
           React 👀 <Kbd action="slackReact" />
         </button>
       </header>
@@ -411,16 +416,28 @@ export const Slack = () => {
           value={text}
           rows={2}
           aria-label="Message"
-          placeholder={root ? "Reply in the thread" : `Message #${channel?.name}`}
+          placeholder={
+            root ? "Reply in the thread" : `Message #${channel?.name}`
+          }
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey
+            ) {
               event.preventDefault();
               void send();
             }
           }}
         />
-        <button type="button" className="primary" disabled={!text.trim()} onClick={() => void send()}>
+        <button
+          type="button"
+          className="primary"
+          disabled={!text.trim()}
+          onClick={() => void send()}
+        >
           Send <kbd>Enter</kbd>
         </button>
       </div>

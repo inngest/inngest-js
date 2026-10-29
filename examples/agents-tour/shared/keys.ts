@@ -20,14 +20,13 @@ export type ActionId =
   | "cheat"
   | "contents"
   | "search"
-  | "output"
+  | "text"
+  | "runEvent"
   | "trace"
+  | "message"
   | "slack"
   | "github"
   | "events"
-  | "message"
-  | "everything"
-  | "file"
   | "slackCompose"
   | "slackNew"
   | "slackChannel"
@@ -37,6 +36,9 @@ export type ActionId =
   | "githubIssue"
   | "githubPull"
   | "sendEvent"
+  | "everything"
+  | "file"
+  | "devserver"
   | "rowDown"
   | "rowUp"
   | "rowOpen"
@@ -47,13 +49,13 @@ export type ActionId =
 export interface KeyDef {
   id: ActionId;
   label: string;
-  group: "Code" | "Pages" | "Panels" | "Slack" | "GitHub" | "Trace" | "Focus";
+  group: "Code" | "Pages" | "Panes" | "Slack" | "GitHub" | "Trace" | "Focus";
   // Bindings that work while the editor or another text field has focus.
   inField: string[];
   // Bindings that work when focus is not in a text field.
   outside: string[];
   note?: string;
-  // Handled by the panel that owns it, not by the window.
+  // Handled by the pane that owns it, not by the window.
   local?: boolean;
 }
 
@@ -122,53 +124,60 @@ export const keys: KeyDef[] = [
     outside: ["?"],
   },
   {
-    id: "output",
-    label: "Output panel",
-    group: "Panels",
-    inField: ["Alt+Shift+O"],
-    outside: ["1", "g o"],
+    id: "text",
+    label: "Lesson text",
+    group: "Panes",
+    inField: ["Alt+Shift+1"],
+    outside: ["1"],
   },
   {
-    id: "trace",
-    label: "Trace panel",
-    group: "Panels",
-    inField: ["Alt+Shift+T"],
-    outside: ["2", "g t"],
-  },
-  {
-    id: "slack",
-    label: "Slack panel",
-    group: "Panels",
-    inField: ["Alt+Shift+S"],
-    outside: ["3", "g s"],
-  },
-  {
-    id: "github",
-    label: "GitHub panel",
-    group: "Panels",
-    inField: ["Alt+Shift+G"],
-    outside: ["4", "g h"],
-  },
-  {
-    id: "events",
-    label: "Event sender",
-    group: "Panels",
-    inField: ["Alt+Shift+V"],
-    outside: ["5", "g e"],
+    id: "runEvent",
+    label: "Show the event Run sends (run.ts)",
+    group: "Code",
+    inField: ["Alt+Shift+2"],
+    outside: ["2"],
   },
   {
     id: "message",
-    label: "Message box",
-    group: "Panels",
+    label: "Play pane (message box)",
+    group: "Panes",
     inField: ["Alt+Shift+M"],
-    outside: ["m", "g m"],
+    outside: ["3", "g m"],
   },
   {
-    id: "file",
-    label: "Switch between the code files",
-    group: "Code",
-    inField: ["Alt+Shift+L"],
-    outside: ["l"],
+    id: "trace",
+    label: "Trace",
+    group: "Panes",
+    inField: ["Alt+Shift+T"],
+    outside: ["4", "g t"],
+  },
+  {
+    id: "slack",
+    label: "Slack pane",
+    group: "Panes",
+    inField: ["Alt+Shift+S"],
+    outside: ["5", "g s"],
+  },
+  {
+    id: "github",
+    label: "GitHub pane",
+    group: "Panes",
+    inField: ["Alt+Shift+G"],
+    outside: ["6", "g h"],
+  },
+  {
+    id: "events",
+    label: "Event sender pane",
+    group: "Panes",
+    inField: ["Alt+Shift+V"],
+    outside: ["7", "g v"],
+  },
+  {
+    id: "sendEvent",
+    label: "Send the event",
+    group: "Panes",
+    inField: ["Alt+Shift+Enter"],
+    outside: ["s"],
   },
   {
     id: "slackCompose",
@@ -227,6 +236,13 @@ export const keys: KeyDef[] = [
     outside: ["o"],
   },
   {
+    id: "everything",
+    label: "Show every trace step",
+    group: "Trace",
+    inField: ["Alt+Shift+H"],
+    outside: ["h"],
+  },
+  {
     id: "rowDown",
     label: "Next trace row",
     group: "Trace",
@@ -251,18 +267,18 @@ export const keys: KeyDef[] = [
     local: true,
   },
   {
-    id: "sendEvent",
-    label: "Send the event",
-    group: "Panels",
-    inField: ["Alt+Shift+Enter"],
-    outside: ["s"],
+    id: "file",
+    label: "Switch between the code files",
+    group: "Code",
+    inField: ["Alt+Shift+L"],
+    outside: ["l"],
   },
   {
-    id: "everything",
-    label: "Show every trace step",
-    group: "Panels",
-    inField: ["Alt+Shift+H"],
-    outside: ["h"],
+    id: "devserver",
+    label: "Open the Dev Server",
+    group: "Pages",
+    inField: ["Alt+Shift+."],
+    outside: ["."],
   },
   {
     id: "undo",
@@ -316,6 +332,7 @@ const codeOf = (key: string) => {
     "]": "BracketRight",
     "[": "BracketLeft",
     "/": "Slash",
+    ".": "Period",
   };
 
   return symbols[key] ?? key;

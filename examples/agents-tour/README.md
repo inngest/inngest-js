@@ -9,16 +9,23 @@ This is phase 1: the runtime, the site and the first lesson (pages 1 to 8). The 
 You need Node 24, pnpm, git and Go. Go builds the Dev Server (see below); nothing else is downloaded or installed outside this checkout and a cache directory.
 
 ```bash
-git clone https://github.com/inngest/inngest-js.git   # or cd into your checkout
-cd inngest-js
-git checkout jack/agent-primitives
-git pull
-pnpm install
-pnpm --filter inngest build
-cd examples/agents-tour
-pnpm install --ignore-workspace --config.lockfile=false
-pnpm tour:devserver
-pnpm tour
+# try-the-tour.sh
+(
+  set -e
+  corepack enable
+  node -e 'process.exit(+process.versions.node.split(".")[0] < 24)' || { echo "Node 24 or newer is required"; exit 1; }
+  [ -d inngest-js ] || git clone https://github.com/inngest/inngest-js
+  cd inngest-js
+  git fetch origin
+  git checkout jack/agent-primitives
+  git pull --ff-only
+  pnpm install
+  pnpm --filter inngest build
+  cd examples/agents-tour
+  pnpm install --ignore-workspace --config.lockfile=false
+  pnpm tour:devserver
+  pnpm tour
+)
 ```
 
 `pnpm tour` prints the address and opens your browser. Press Ctrl-C to stop everything it started.
@@ -37,15 +44,18 @@ Fast paths, all optional: `TOUR_DEVSERVER_BIN=/path/to/inngest` uses a binary yo
 
 ## Keys
 
-The cursor starts in the editor, so every core action has a modifier key that works there, and a single key that works everywhere else. Each button shows the key that works where focus is now. Press <kbd>Alt</kbd>+<kbd>/</kbd> (or <kbd>?</kbd> outside the editor) for the full list.
+The cursor starts in the editor, so every key is a modifier key that works there and everywhere else. Each button shows its key, and the hint never changes with focus. Press <kbd>Alt</kbd>+<kbd>/</kbd> for the full list.
 
-| Action | In the editor or a text box | Elsewhere |
-|---|---|---|
-| Run | Ctrl/Cmd+Enter | R |
-| Next, previous page | Alt+] and Alt+[ | J and K, or the arrows |
-| Leave or return to the editor | Alt+Shift+E | E |
+| Action | Key |
+|---|---|
+| Run (formats first) | Ctrl/Cmd+Enter |
+| Next, previous page | Alt+] and Alt+[ |
+| Lesson text, message box, trace | Alt+Shift+1, Alt+Shift+M, Alt+Shift+T |
+| Show the event Run sends | Alt+Shift+2 |
+| Open the Dev Server | Alt+Shift+. |
+| Leave or return to the editor | Alt+Shift+E |
 
-The table is one file, `shared/keys.ts`. The editor commands, the window handler, the hints and the cheat sheet are all made from it.
+Single keys such as `r` and `j` also work outside text fields; they are never shown. The table is one file, `shared/keys.ts`: the editor commands, the window handler, the hints and the cheat sheet are all made from it.
 
 ## How it works
 
@@ -57,7 +67,7 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 
 - **Run** writes the page's files to `.tour/run/`, starts the app as a new process, switches the tour server's proxy to it once it serves, and registers it with the Dev Server. The Dev Server always talks to the proxy, so its address never changes. A file that does not load keeps the previous app serving and shows the error.
 - The page's start events are sent through the agent's own thread handle (or as a plain event for a trigger page).
-- The Trace panel reads the Dev Server's GraphQL API (`runs`, `runTraceSpanOutputByID`) every 300 ms.
+- The Trace pane reads the Dev Server's GraphQL API (`runs`, `runTraceSpanOutputByID`, the trigger event) every 300 ms and draws the real spans as a waterfall.
 - **Reset** restores the page's code and restarts the Dev Server, so the runs list is clean.
 
 ## Layout

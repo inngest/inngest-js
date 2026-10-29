@@ -435,11 +435,17 @@ export const setupGithub = (deps: GithubDeps) => {
       });
   };
 
-  router.route("GET", "/github/repos/:owner/:repo/issues", ({ params, query }) => {
-    return itemsOf(repoOf(params), undefined, query.get("state") ?? "open").map(
-      issueJson,
-    );
-  });
+  router.route(
+    "GET",
+    "/github/repos/:owner/:repo/issues",
+    ({ params, query }) => {
+      return itemsOf(
+        repoOf(params),
+        undefined,
+        query.get("state") ?? "open",
+      ).map(issueJson);
+    },
+  );
 
   router.route(
     "POST",
@@ -505,13 +511,17 @@ export const setupGithub = (deps: GithubDeps) => {
     },
   );
 
-  router.route("GET", "/github/repos/:owner/:repo/pulls", ({ params, query }) => {
-    return itemsOf(
-      repoOf(params),
-      "pull_request",
-      query.get("state") ?? "open",
-    ).map(pullJson);
-  });
+  router.route(
+    "GET",
+    "/github/repos/:owner/:repo/pulls",
+    ({ params, query }) => {
+      return itemsOf(
+        repoOf(params),
+        "pull_request",
+        query.get("state") ?? "open",
+      ).map(pullJson);
+    },
+  );
 
   router.route(
     "GET",
@@ -597,11 +607,15 @@ export const setupGithub = (deps: GithubDeps) => {
     return openPr(repo, pick(prFixtures), humanLogin);
   };
 
-  router.route("POST", "/api/github/:owner/:repo/issues", async ({ params }) => {
-    const row = await openRandom(repoOf(params), "issue");
+  router.route(
+    "POST",
+    "/api/github/:owner/:repo/issues",
+    async ({ params }) => {
+      const row = await openRandom(repoOf(params), "issue");
 
-    return { number: row.number };
-  });
+      return { number: row.number };
+    },
+  );
 
   router.route("POST", "/api/github/:owner/:repo/pulls", async ({ params }) => {
     const row = await openRandom(repoOf(params), "pull_request");

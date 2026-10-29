@@ -1,36 +1,13 @@
 /**
  * @module
- * The panels under the editor: Output and the message box.
+ * The message box of the play pane. Typing a message sends an event, and the
+ * box shows each message as the event it became.
  */
-import { useEffect, useRef, useState } from "react";
-import type { TourEvent } from "../../shared/types.ts";
+import { useRef, useState } from "react";
+import { eventOfMessage } from "../../shared/events.ts";
 import { api } from "./api.ts";
-
-type Line = Extract<TourEvent, { type: "log" }>;
-
-export const OutputPanel = ({ lines }: { lines: Line[] }) => {
-  const end = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [lines]);
-
-  return (
-    <div className="output" role="log" aria-label="Output" tabIndex={0}>
-      {lines.length === 0 ? (
-        <p className="empty">Press Run to see output here.</p>
-      ) : null}
-      {lines.map((line, index) => {
-        return (
-          <div className={`line ${line.kind}`} key={`${index}-${line.text}`}>
-            {line.text}
-          </div>
-        );
-      })}
-      <div ref={end} />
-    </div>
-  );
-};
+import { Kbd } from "./keyboard.tsx";
+import { useAction } from "./live.ts";
 
 export const MessagePanel = ({
   target,
@@ -39,17 +16,28 @@ export const MessagePanel = ({
   target: { agent: string; thread: string };
   disabled: boolean;
 }) => {
-  const [thread, setThread] = useState(target.thread);
   const [text, setText] = useState("Hello");
+  const [sent, setSent] = useState<string[]>([]);
+  const box = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    setThread(target.thread);
-  }, [target.thread]);
+  useAction("message", () => {
+    box.current?.focus();
+  });
 
   const send = async () => {
-    if (text.trim() && !disabled) {
-      await api.send(target.agent, thread, text);
+    if (!text.trim() || disabled) {
+      return;
     }
+
+    const body = text;
+    const event = eventOfMessage(target.agent, target.thread, body);
+
+    setText("");
+    box.current?.focus();
+    await api.send(target.agent, target.thread, body);
+    setSent((previous) => {
+      return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
+    });
   };
 
   return (
@@ -61,19 +49,13 @@ export const MessagePanel = ({
       }}
     >
       <p>
-        Say something to <code>{target.agent}</code>. Messages with the same
-        thread reach the same agent.
+        Say something to <code>{target.agent}</code>. A message is an event: it
+        reaches the agent's inbox on thread <code>{target.thread}</code>.
       </p>
-      <label>
-        Thread
-        <input
-          value={thread}
-          onChange={(event) => setThread(event.target.value)}
-        />
-      </label>
       <label>
         Message
         <textarea
+          ref={box}
           value={text}
           rows={2}
           onChange={(event) => setText(event.target.value)}
@@ -93,6 +75,13 @@ export const MessagePanel = ({
       <button type="submit" className="primary" disabled={disabled}>
         Send <kbd>Enter</kbd>
       </button>
+      {sent.map((json, at) => {
+        return (
+          <pre className="sent" key={`${at}-${json}`}>
+            Sent {json}
+          </pre>
+        );
+      })}
     </form>
   );
 };

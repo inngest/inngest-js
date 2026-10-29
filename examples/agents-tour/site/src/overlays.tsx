@@ -104,10 +104,14 @@ export const Contents = ({
         onKeyDown={(event) => {
           if (event.key === "j" || event.key === "ArrowDown") {
             event.preventDefault();
-            setCursor((value) => Math.min(all.length - 1, value + 1));
+            setCursor((value) => {
+              return Math.min(all.length - 1, value + 1);
+            });
           } else if (event.key === "k" || event.key === "ArrowUp") {
             event.preventDefault();
-            setCursor((value) => Math.max(0, value - 1));
+            setCursor((value) => {
+              return Math.max(0, value - 1);
+            });
           } else if (event.key === "Enter") {
             event.preventDefault();
             const page = all[cursor];
@@ -135,7 +139,9 @@ export const Contents = ({
                     className="entry"
                     tabIndex={-1}
                     key={page.id}
-                    onClick={() => onPick(page)}
+                    onClick={() => {
+                      onPick(page);
+                    }}
                   >
                     <span className="num">{page.number}</span>
                     {page.title}
@@ -199,13 +205,17 @@ export const Search = ({
             (event.ctrlKey && event.key === "n")
           ) {
             event.preventDefault();
-            setCursor((value) => Math.min(results.length - 1, value + 1));
+            setCursor((value) => {
+              return Math.min(results.length - 1, value + 1);
+            });
           } else if (
             event.key === "ArrowUp" ||
             (event.ctrlKey && event.key === "p")
           ) {
             event.preventDefault();
-            setCursor((value) => Math.max(0, value - 1));
+            setCursor((value) => {
+              return Math.max(0, value - 1);
+            });
           } else if (event.key === "Enter") {
             event.preventDefault();
             const page = results[cursor];
@@ -225,7 +235,9 @@ export const Search = ({
               aria-current={position === cursor}
               tabIndex={-1}
               key={page.id}
-              onClick={() => onPick(page)}
+              onClick={() => {
+                onPick(page);
+              }}
             >
               <span className="num">{page.number}</span>
               {page.title}
@@ -242,13 +254,20 @@ export const Search = ({
 };
 
 export const Cheat = ({ onClose }: { onClose: () => void }) => {
-  const groups = ["Code", "Pages", "Panels", "Slack", "GitHub", "Trace", "Focus"] as const;
+  const groups = [
+    "Code",
+    "Pages",
+    "Panes",
+    "Slack",
+    "GitHub",
+    "Trace",
+    "Focus",
+  ] as const;
 
   return (
     <Modal title="Keys" onClose={onClose}>
       <p className="modal-hint">
-        The first column works while the editor or a text box has focus. The
-        second works anywhere else.
+        These keys work everywhere, inside the editor too.
       </p>
       <div className="cheat">
         {groups.map((group) => {
@@ -272,13 +291,6 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
                               );
                             })}
                           </td>
-                          <td>
-                            {def.outside.map((spec) => {
-                              return (
-                                <kbd key={spec}>{hintOf(spec, isMac)}</kbd>
-                              );
-                            })}
-                          </td>
                         </tr>
                       );
                     })}
@@ -295,7 +307,7 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
                 return (
                   <tr key={item.label}>
                     <td>{item.label}</td>
-                    <td colSpan={2}>
+                    <td>
                       <kbd>{item.combo}</kbd>
                     </td>
                   </tr>

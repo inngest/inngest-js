@@ -83,7 +83,6 @@ export const createTour = async (options: TourOptions) => {
   // before cannot bring them back.
   let epoch = 0;
   let current: LoadedPage | undefined;
-  const reported = new Set<string>();
 
   const broadcast = (event: TourEvent) => {
     const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -141,30 +140,6 @@ export const createTour = async (options: TourOptions) => {
     },
   });
 
-  const describe = async (run: TraceRun) => {
-    emit({
-      type: "log",
-      kind: run.status === "COMPLETED" ? "result" : "err",
-      text: `run ${run.fn} ${run.status}`,
-    });
-
-    if (!run.output) {
-      return;
-    }
-
-    const output = await readOutput(devServer, run.output).catch(() => {
-      return undefined;
-    });
-
-    if (output?.error) {
-      emit({ type: "log", kind: "err", text: `error ${output.error.message}` });
-    } else if (output?.data === "null") {
-      emit({ type: "log", kind: "result", text: "no output" });
-    } else if (output?.data) {
-      emit({ type: "log", kind: "result", text: `output ${output.data}` });
-    }
-  };
-
   const poll = async () => {
     if (
       status.type !== "status" ||
@@ -187,13 +162,6 @@ export const createTour = async (options: TourOptions) => {
       if (!same) {
         runs = next;
         broadcast({ type: "runs", runs });
-      }
-
-      for (const run of next) {
-        if (terminal.has(run.status) && !reported.has(run.id)) {
-          reported.add(run.id);
-          await describe(run);
-        }
       }
     } catch {
       // The Dev Server is restarting; the next tick tries again.
@@ -270,7 +238,6 @@ export const createTour = async (options: TourOptions) => {
       epoch += 1;
       await cancelLive();
       emit({ type: "clear" });
-      reported.clear();
       runs = [];
       broadcast({ type: "runs", runs });
       fakes.reset();
@@ -340,6 +307,10 @@ export const createTour = async (options: TourOptions) => {
       return sendJson(res, 200, rest);
     }
 
+    if (path === "/api/info") {
+      return sendJson(res, 200, { devServerUrl: devServer.url });
+    }
+
     if (path === "/api/types") {
       return sendJson(res, 200, readTypes(root));
     }
@@ -387,7 +358,6 @@ export const createTour = async (options: TourOptions) => {
       from = new Date().toISOString();
       await cancelLive();
       emit({ type: "clear" });
-      reported.clear();
       runs = [];
       from = new Date().toISOString();
       broadcast({ type: "runs", runs });

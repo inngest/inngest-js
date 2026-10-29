@@ -8,14 +8,14 @@
  * no event.
  */
 import type { Inngest } from "inngest";
+import type { Db } from "./db.ts";
+import { HttpError, type Router } from "./http.ts";
 import {
   botId,
   botUser,
-  humanUser,
   slackChannels as channelIds,
+  humanUser,
 } from "./settings.ts";
-import type { Db } from "./db.ts";
-import { HttpError, type Router } from "./http.ts";
 
 export const slackChannelList = [
   { id: "C01GENERAL", name: "general", topic: "Company-wide chat" },

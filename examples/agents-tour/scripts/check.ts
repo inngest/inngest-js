@@ -61,8 +61,12 @@ const seen = new Map<string, string>();
 
 for (const def of keys) {
   for (const binding of [
-    ...def.inField.map((b) => `in:${b}`),
-    ...def.outside.map((b) => `out:${b}`),
+    ...def.inField.map((b) => {
+      return `in:${b}`;
+    }),
+    ...def.outside.map((b) => {
+      return `out:${b}`;
+    }),
   ]) {
     const owner = seen.get(binding);
 
