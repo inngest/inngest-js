@@ -123,19 +123,24 @@ const validateOptions = (options: McpServerOptions): void => {
 const resolveAuth = async (auth: McpAuth | undefined) => {
   const headers: Record<string, string> = {};
   const secrets: string[] = [];
-  const read = async (value: string | Secret): Promise<string> => {
+  const read = async (
+    value: string | Secret,
+    redacted: boolean,
+  ): Promise<string> => {
     const text = isSecret(value) ? await value.value() : value;
 
-    secrets.push(text);
+    if (redacted) {
+      secrets.push(text);
+    }
 
     return text;
   };
 
   if (auth && "bearer" in auth) {
-    headers.authorization = `Bearer ${await read(auth.bearer)}`;
+    headers.authorization = `Bearer ${await read(auth.bearer, true)}`;
   } else if (auth) {
     for (const [name, value] of Object.entries(auth.headers)) {
-      headers[name.toLowerCase()] = await read(value);
+      headers[name.toLowerCase()] = await read(value, isSecret(value));
     }
   }
 
@@ -164,7 +169,7 @@ const clip = (text: string): string => {
 };
 
 const textOf = (result: McpCallResult): string => {
-  return (result.content ?? [])
+  return (Array.isArray(result.content) ? result.content : [])
     .map((block) => {
       return block.type === "text" && typeof block.text === "string"
         ? block.text
@@ -189,7 +194,7 @@ export const mapMcpResult = (result: McpCallResult): unknown => {
   if (result.structuredContent !== undefined) {
     value = result.structuredContent;
   } else {
-    const blocks = result.content ?? [];
+    const blocks = Array.isArray(result.content) ? result.content : [];
 
     if (blocks.length === 1 && blocks[0]?.type === "text") {
       value = blocks[0].text ?? "";
@@ -219,7 +224,7 @@ export const mapMcpResult = (result: McpCallResult): unknown => {
 };
 
 const sanitise = (name: string): string => {
-  return name.replace(/[-.]/g, "_");
+  return name.replace(/[^A-Za-z0-9_]/g, "_");
 };
 
 /**
@@ -331,6 +336,12 @@ export class McpServer {
       }
 
       const key = `${name}_${sanitise(info.name)}`;
+
+      if (key.length > 64) {
+        throw new SandboxValidationError(
+          `MCP server "${name}" tool "${info.name}" makes a name longer than 64 characters: add tools: [...] without it`,
+        );
+      }
 
       if (Object.hasOwn(built, key)) {
         throw new SandboxValidationError(

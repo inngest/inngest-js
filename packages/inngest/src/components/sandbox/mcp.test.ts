@@ -279,6 +279,30 @@ describe("tool.mcp", () => {
     expect(error.cause).toBeUndefined();
   });
 
+  test("names that are not valid tool names are rewritten, and too long ones throw", async () => {
+    const { hex } = connect(
+      {},
+      fakeMcpFetch({
+        tools: {
+          "get thread": { run: () => "1" },
+          [`a${"b".repeat(70)}`]: { run: () => "2" },
+        },
+      }),
+    );
+
+    await expect(build(hex)).rejects.toThrow("longer than 64");
+    expect(
+      Object.keys(
+        await build(
+          connect(
+            { tools: ["get thread"] },
+            fakeMcpFetch({ tools: { "get thread": { run: () => "1" } } }),
+          ).hex,
+        ),
+      ),
+    ).toEqual(["hex_get_thread"]);
+  });
+
   test("a missing secret fails without retrying", async () => {
     const { hex } = connect({ auth: { bearer: secret("MCP_TEST_UNSET") } });
 

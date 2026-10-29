@@ -162,6 +162,18 @@ const sha256 = (text: string): string => {
 };
 
 /**
+ * Whether `message` is the response to request `id`, not a request or
+ * notification from the server that happens to carry the same id.
+ */
+const isAnswer = (message: JsonRpcMessage, id: number): boolean => {
+  return (
+    message.id === id &&
+    !("method" in message) &&
+    ("result" in message || "error" in message)
+  );
+};
+
+/**
  * Reads the first JSON-RPC response with `id` from an event stream, then
  * stops reading.
  */
@@ -206,7 +218,7 @@ const readEventStream = async (
         try {
           const message = JSON.parse(data) as JsonRpcMessage;
 
-          if (message.id === id) {
+          if (isAnswer(message, id)) {
             return message;
           }
         } catch {}
@@ -383,6 +395,12 @@ export class McpClient {
 
       if (message.error) {
         throw new McpProtocolError(message.error.message, message.error.code);
+      }
+
+      if (typeof message.result !== "object" || message.result === null) {
+        throw new McpOutcomeUnknownError(
+          "The MCP server's answer had no result",
+        );
       }
 
       return message.result;
@@ -567,7 +585,7 @@ export class McpClient {
 
         message = Array.isArray(parsed)
           ? parsed.find((item) => {
-              return item.id === id;
+              return isAnswer(item, id);
             })
           : parsed;
       }
