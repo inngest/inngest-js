@@ -665,6 +665,11 @@ function threadInbox(
     for (;;) {
       const raw = options ? await inbox.next(options) : await inbox.next();
       if (raw === undefined) {
+        // The wait expired: the agent goes on working, so it is not waiting.
+        if (delivered > 0) {
+          await recorder.running();
+        }
+
         return undefined;
       }
 
