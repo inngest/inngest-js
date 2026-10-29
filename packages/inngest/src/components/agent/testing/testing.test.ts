@@ -220,6 +220,43 @@ describe("fakeSandbox", () => {
     });
   });
 
+  test("the key '' does not stop a command in a local directory from running", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-local-"));
+
+    try {
+      await using sandbox = fakeSandbox({
+        commands: { hello: { stdout: "canned\n" }, "": {} },
+        localDirs: [dir],
+      });
+      const id = await create(sandbox);
+      const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, {
+        command: ["pwd"],
+        cwd: dir,
+      });
+      const { data } = (await response.json()) as { data: { stdout: string } };
+
+      expect(Buffer.from(data.stdout, "base64").toString().trim()).toContain(
+        dir,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a closed sandbox answers 503 and writes nothing", async () => {
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await sandbox.close();
+
+    const after = await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/inngest/tools/x`,
+      { method: "PUT", body: "x" },
+    );
+
+    expect(after.status).toBe(503);
+  });
+
   test("an unknown Sandboxes API path is an error and never reaches the network", async () => {
     const network = vi.fn(async () => {
       return new Response("network");

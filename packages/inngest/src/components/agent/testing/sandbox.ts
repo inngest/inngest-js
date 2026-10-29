@@ -179,7 +179,16 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
     };
   };
 
+  let closed = false;
+
   const fakeFetch: typeof fetch = async (input, init) => {
+    if (closed) {
+      return Response.json(
+        { errors: [{ code: "closed", message: "FakeSandbox is closed" }] },
+        { status: 503 },
+      );
+    }
+
     const url = new URL(
       input instanceof Request ? input.url : input.toString(),
       "http://fake.invalid",
@@ -344,9 +353,15 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
         cwd?: string;
       };
       const text = request.command.join(" ");
-      const canned = Object.entries(options.commands ?? {}).find(([key]) => {
+      const entries = Object.entries(options.commands ?? {});
+      const canned = entries.find(([key]) => {
         return text.includes(key);
       })?.[1];
+      // The key "" matches everything, so it must not stop a command meant to
+      // run in a local directory.
+      const described = entries.some(([key]) => {
+        return key !== "" && text.includes(key);
+      });
 
       await record("sandbox.exec", {
         id,
@@ -368,7 +383,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
       }
 
       if (
-        !canned &&
+        !described &&
         request.cwd !== undefined &&
         options.localDirs?.some((dir) => {
           return request.cwd?.startsWith(dir);
@@ -505,6 +520,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   };
 
   const close = async () => {
+    closed = true;
+
     for (const child of children) {
       child.kill("SIGKILL");
     }
