@@ -61,7 +61,7 @@ export interface RepoOptions {
    *   from the remote stays where it is, which the result reports as
    *   `action: "diverged"` with the local `sha`. Commits that only a
    *   detached HEAD held move to a `detached-<sha>` branch. A branch of your
-   *   own that the remote lacks can be `ref`, and tags you made are not
+   *   own that the remote lacks (or has deleted) can be `ref`, and tags you made are not
    *   overwritten. A checkout that would overwrite local changes, or one of
    *   another repository, fails.
    */
@@ -259,8 +259,8 @@ else
   fi
   action=cloned
 fi
-g -C "$DIR" config user.name "Coding agent" &&
-g -C "$DIR" config user.email "agent@users.noreply.github.com" &&
+g -C "$DIR" config user.name "Coding agent" || exit 1
+g -C "$DIR" config user.email "agent@users.noreply.github.com" || exit 1
 CLONING=
 printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 `;
