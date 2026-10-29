@@ -1,0 +1,490 @@
+/**
+ * @module
+ * Tests for the git-free push: the manifest script runs for real in a git
+ * repository, and `pushManifest()` rebuilds its commits on a fake GitHub API
+ * that keeps blobs, trees, commits and refs in memory.
+ */
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { fakeGitHub } from "./git-fixtures/githubFake.ts";
+import {
+  isGitHubRemote,
+  manifestScript,
+  parseManifest,
+  pushManifest,
+  remoteState,
+} from "./gitApi.ts";
+import type { GitPolicy } from "./gitPush.ts";
+
+const token = "ghs_api_secret_token_value";
+const remote = "https://github.com/acme/app";
+
+const env = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "Ada",
+  GIT_AUTHOR_EMAIL: "ada@example.com",
+  GIT_COMMITTER_NAME: "Ada",
+  GIT_COMMITTER_EMAIL: "ada@example.com",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+};
+
+const git = (cwd: string, ...args: string[]): string => {
+  return execFileSync("git", args, { cwd, encoding: "utf8", env }).trim();
+};
+
+describe("the git-free push", { timeout: 60_000 }, () => {
+  let work: string;
+  let base: string;
+  let hub: ReturnType<typeof fakeGitHub>;
+
+  beforeEach(() => {
+    work = mkdtempSync(join(tmpdir(), "git-api-work-"));
+    git(work, "init", "--quiet", "-b", "main");
+    mkdirSync(join(work, "src"));
+    writeFileSync(join(work, "src/a.ts"), "export const a = 1;\n");
+    writeFileSync(join(work, "old.txt"), "to delete\n");
+    writeFileSync(join(work, "keep.txt"), "keep\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "base");
+    base = git(work, "rev-parse", "HEAD");
+    hub = fakeGitHub();
+    hub.seed(work, base, "refs/heads/main");
+  });
+
+  afterEach(() => {
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  /**
+   * Makes the sandbox's commits on a branch off the base.
+   */
+  const branch = (name: string, edit: () => void, message = "edit") => {
+    git(work, "checkout", "--quiet", "-B", name, base);
+    edit();
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", message);
+  };
+
+  const manifestOf = (tip: string, from = base): string => {
+    const out = join(work, ".manifest");
+    const ran = spawnSync("sh", ["-c", manifestScript, "sh", from, tip, out], {
+      cwd: work,
+      env,
+      encoding: "utf8",
+    });
+
+    expect(ran.status).toBe(0);
+
+    return readFileSync(out, "utf8");
+  };
+
+  const push = async (
+    name: string,
+    policy?: GitPolicy,
+    over: { from?: string; tip?: string } = {},
+  ) => {
+    const ref = `refs/heads/${name}`;
+    const tip = over.tip ?? git(work, "rev-parse", ref);
+    const state = await remoteState({
+      remote,
+      ref,
+      token,
+      fetch: hub.handle,
+    });
+
+    return pushManifest({
+      remote,
+      token,
+      fetch: hub.handle,
+      manifest: manifestOf(tip, over.from ?? state.base),
+      target: { src: ref, dst: ref },
+      tip,
+      state,
+      policy,
+    });
+  };
+
+  /**
+   * The files of a tree in the fake, as path to mode and content.
+   */
+  const filesAt = (commit: string): Record<string, string> => {
+    const tree = hub.trees.get(hub.commits.get(commit)?.tree ?? "");
+
+    return Object.fromEntries(
+      [...(tree ?? [])].map(([path, entry]) => {
+        return [
+          path,
+          `${entry.mode} ${Buffer.from(hub.blobs.get(entry.sha) as Uint8Array).toString("base64")}`,
+        ];
+      }),
+    );
+  };
+
+  /**
+   * The same listing, from the real repository.
+   */
+  const realFilesAt = (commit: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+
+    for (const line of git(work, "ls-tree", "-r", commit).split("\n")) {
+      const [meta = "", path = ""] = line.split("\t");
+      const [mode = "", , sha = ""] = meta.split(" ");
+
+      out[path] =
+        `${mode} ${execFileSync("git", ["cat-file", "blob", sha], { cwd: work, env }).toString("base64")}`;
+    }
+
+    return out;
+  };
+
+  test("rebuilds the commits on the remote: edits, deletes, a binary file, a mode change, an empty file", async () => {
+    branch(
+      "agent/big",
+      () => {
+        writeFileSync(join(work, "src/a.ts"), "export const a = 2;\n");
+        git(work, "rm", "--quiet", "old.txt");
+        writeFileSync(
+          join(work, "blob.bin"),
+          Buffer.from([0, 1, 2, 255, 0, 7]),
+        );
+        writeFileSync(join(work, "run.sh"), "#!/bin/sh\necho hi\n");
+        chmodSync(join(work, "run.sh"), 0o755);
+        writeFileSync(join(work, "empty.txt"), "");
+      },
+      "first change\n\nwith a body",
+    );
+    writeFileSync(join(work, "keep.txt"), "kept, edited\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "second change");
+
+    const outcome = await push("agent/big");
+
+    expect(outcome).toMatchObject({
+      pushed: [{ ref: "refs/heads/agent/big", status: "pushed", asked: true }],
+    });
+
+    const pushed = (outcome as { pushed: { sha: string }[] }).pushed[0];
+    const made = hub.commits.get(pushed?.sha ?? "");
+
+    expect(hub.refs.get("refs/heads/agent/big")).toBe(pushed?.sha);
+    expect(filesAt(pushed?.sha ?? "")).toEqual(
+      realFilesAt(git(work, "rev-parse", "refs/heads/agent/big")),
+    );
+    expect(made?.message).toBe("second change\n");
+    expect(pushed?.sha).toBe(git(work, "rev-parse", "refs/heads/agent/big"));
+    expect(made?.author).toMatchObject({
+      name: "Ada",
+      email: "ada@example.com",
+    });
+
+    const parent = hub.commits.get(made?.parents[0] ?? "");
+
+    expect(parent?.message).toBe("first change\n\nwith a body\n");
+    expect(parent?.parents).toEqual([base]);
+  });
+
+  test("shows the policy the commits, paths and files before and after, from the manifest", async () => {
+    branch("agent/p", () => {
+      writeFileSync(
+        join(work, "src/a.ts"),
+        "export const a = 2;\nexport const b = 3;\n",
+      );
+      git(work, "rm", "--quiet", "old.txt");
+      writeFileSync(join(work, "new.txt"), "fresh\n");
+    });
+
+    const seen: unknown[] = [];
+    const outcome = await push("agent/p", async (pushed) => {
+      seen.push({
+        branch: pushed.branch,
+        oldSha: pushed.oldSha,
+        fastForward: pushed.fastForward,
+        commits: pushed.commits.map((commit) => {
+          return [commit.author, commit.subject];
+        }),
+        paths: pushed.paths,
+      });
+
+      const byPath = Object.fromEntries(
+        await Promise.all(
+          pushed.files.map(async (file) => {
+            return [
+              file.path,
+              [(await file.before())?.text, (await file.after())?.text],
+            ] as const;
+          }),
+        ),
+      );
+
+      seen.push(byPath);
+      seen.push(await pushed.patch());
+    });
+
+    expect(outcome).toHaveProperty("pushed");
+    expect(seen[0]).toEqual({
+      branch: "agent/p",
+      oldSha: undefined,
+      fastForward: true,
+      commits: [["Ada", "edit"]],
+      paths: ["new.txt", "old.txt", "src/a.ts"],
+    });
+    expect(seen[1]).toEqual({
+      "new.txt": [undefined, "fresh\n"],
+      "old.txt": ["to delete\n", undefined],
+      "src/a.ts": [
+        "export const a = 1;\n",
+        "export const a = 2;\nexport const b = 3;\n",
+      ],
+    });
+    expect(seen[2]).toContain("+export const b = 3;");
+    expect(seen[2]).toContain("-export const a = 1;");
+    expect(seen[2]).toContain("-to delete");
+    expect(seen[2]).toContain("+fresh");
+  });
+
+  test("a policy refusal pushes nothing, not even a blob", async () => {
+    branch("agent/no", () => {
+      mkdirSync(join(work, ".github"));
+      writeFileSync(join(work, ".github/ci.yml"), "on: push\n");
+    });
+    hub.requests.length = 0;
+
+    const outcome = await push("agent/no", (pushed) => {
+      if (pushed.paths.some((path) => path.startsWith(".github/"))) {
+        return { refuse: "do not touch .github" };
+      }
+
+      return undefined;
+    });
+
+    expect(outcome).toEqual({ refused: "do not touch .github" });
+    expect(hub.requests.filter((request) => request.method !== "GET")).toEqual(
+      [],
+    );
+    expect(hub.refs.has("refs/heads/agent/no")).toBe(false);
+  });
+
+  test("a policy can push to another ref instead", async () => {
+    branch("agent/x", () => {
+      writeFileSync(join(work, "x.txt"), "x\n");
+    });
+
+    const outcome = await push("agent/x", () => {
+      return { ref: "refs/heads/agent/safe" };
+    });
+
+    expect(outcome).toMatchObject({
+      pushed: [{ ref: "refs/heads/agent/safe", asked: false }],
+    });
+    expect(hub.refs.has("refs/heads/agent/safe")).toBe(true);
+    expect(hub.refs.has("refs/heads/agent/x")).toBe(false);
+  });
+
+  test("fast-forwards a branch that already exists, with the same commit hashes as the sandbox's", async () => {
+    branch("agent/ff", () => {
+      writeFileSync(join(work, "one.txt"), "1\n");
+    });
+    await push("agent/ff");
+
+    expect(hub.refs.get("refs/heads/agent/ff")).toBe(
+      git(work, "rev-parse", "refs/heads/agent/ff"),
+    );
+
+    writeFileSync(join(work, "two.txt"), "2\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "two");
+
+    const outcome = await push("agent/ff");
+
+    expect(outcome).toMatchObject({
+      pushed: [{ status: "pushed", oldSha: expect.any(String) }],
+    });
+    expect(hub.refs.get("refs/heads/agent/ff")).toBe(
+      git(work, "rev-parse", "refs/heads/agent/ff"),
+    );
+  });
+
+  test("a branch that doesn't continue from the remote's is not a fast-forward", async () => {
+    branch("agent/side", () => {
+      writeFileSync(join(work, "s.txt"), "s\n");
+    });
+
+    // The remote's branch is a different line of history that the sandbox has.
+    git(work, "checkout", "--quiet", "-B", "other", base);
+    writeFileSync(join(work, "o.txt"), "o\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "other");
+    hub.seed(work, git(work, "rev-parse", "other"), "refs/heads/agent/side");
+
+    const outcome = await push("agent/side");
+
+    expect(outcome).toMatchObject({ pushed: [{ status: "non-fast-forward" }] });
+    expect(hub.refs.get("refs/heads/agent/side")).toBe(
+      git(work, "rev-parse", "other"),
+    );
+  });
+
+  test("a ref that moved between the check and the push is not forced", async () => {
+    branch("agent/race", () => {
+      writeFileSync(join(work, "r.txt"), "r\n");
+    });
+
+    const ref = "refs/heads/agent/race";
+
+    hub.refs.set(ref, base);
+
+    const state = await remoteState({ remote, ref, token, fetch: hub.handle });
+    const other = hub.commits.get(base);
+
+    hub.commits.set("f".repeat(40), {
+      tree: other?.tree ?? "",
+      parents: [base],
+      message: "someone else",
+      author: {},
+    });
+    hub.refs.set(ref, "f".repeat(40));
+
+    const outcome = await pushManifest({
+      remote,
+      token,
+      fetch: hub.handle,
+      manifest: manifestOf(git(work, "rev-parse", ref), state.base),
+      target: { src: ref, dst: ref },
+      tip: git(work, "rev-parse", ref),
+      state,
+    });
+
+    expect(outcome).toMatchObject({ pushed: [{ status: "non-fast-forward" }] });
+    expect(hub.refs.get(ref)).toBe("f".repeat(40));
+  });
+
+  test("the token goes only in the Authorization header, and is masked in failures", async () => {
+    branch("agent/fail", () => {
+      writeFileSync(join(work, "f.txt"), "f\n");
+    });
+
+    const manifest = manifestOf(
+      git(work, "rev-parse", "refs/heads/agent/fail"),
+    );
+
+    expect(manifest).not.toContain(token);
+
+    hub.fail.match = /POST \/git\/trees/;
+    hub.fail.status = 500;
+
+    const outcome = await push("agent/fail");
+
+    expect(outcome).toHaveProperty("failed");
+    expect(JSON.stringify(outcome)).not.toContain(token);
+    expect(JSON.stringify(outcome)).toContain("***");
+    expect(
+      hub.requests.every((request) => {
+        return request.authorization === `Bearer ${token}`;
+      }),
+    ).toBe(true);
+  });
+
+  test("refuses a merge commit, a missing blob and a submodule", async () => {
+    const sha = "a".repeat(40);
+    const blob = "b".repeat(40);
+    const b64 = (text: string) => Buffer.from(text).toString("base64");
+    const header = (parents: string) => {
+      return [
+        `COMMIT ${sha} ${parents}`,
+        `AUTHOR ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00+00:00`,
+        `COMMITTER ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00+00:00`,
+        `MESSAGE ${b64("m")}`,
+      ];
+    };
+    const run = (lines: string[]) => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${lines.join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      });
+    };
+
+    await expect(
+      run(header(`${base} ${"c".repeat(40)}`)),
+    ).resolves.toMatchObject({
+      refused: expect.stringContaining("merge commit"),
+    });
+    await expect(
+      run([
+        ...header(base),
+        `CHANGE A 000000 100644 ${"0".repeat(40)} ${blob} ${b64("f.txt")}`,
+      ]),
+    ).resolves.toMatchObject({
+      refused: expect.stringContaining("lacks the content"),
+    });
+    await expect(
+      run([
+        ...header(base),
+        `CHANGE A 000000 160000 ${"0".repeat(40)} ${blob} ${b64("sub")}`,
+      ]),
+    ).resolves.toMatchObject({ refused: expect.stringContaining("submodule") });
+    expect(hub.requests.filter((request) => request.method === "POST")).toEqual(
+      [],
+    );
+  });
+
+  test("the sandbox that lacks the remote's commit makes the script exit 4", () => {
+    const ran = spawnSync(
+      "sh",
+      ["-c", manifestScript, "sh", "d".repeat(40), "HEAD", join(work, ".m")],
+      { cwd: work, env, encoding: "utf8" },
+    );
+
+    expect(ran.status).toBe(4);
+  });
+
+  test("a binary or unreadable file is a binary blob for the policy", async () => {
+    branch("agent/bin", () => {
+      writeFileSync(join(work, "pic.png"), Buffer.from([0x89, 0, 1, 2]));
+    });
+
+    const kinds: boolean[] = [];
+
+    await push("agent/bin", async (pushed) => {
+      for (const file of pushed.files) {
+        kinds.push((await file.after())?.binary ?? false);
+      }
+    });
+
+    expect(kinds).toEqual([true]);
+  });
+});
+
+describe("remotes", () => {
+  test.each([
+    ["https://github.com/acme/app", true],
+    ["https://github.com/acme/app.git", true],
+    ["https://ghe.example.com/acme/app", true],
+    ["https://example.com/just-one", false],
+    ["not a url", false],
+  ])("%s", (url, expected) => {
+    expect(isGitHubRemote(url)).toBe(expected);
+  });
+
+  test("parses a manifest and rejects a line it doesn't know", () => {
+    expect(() => parseManifest("NOPE x\n")).toThrow(/starts with NOPE/);
+    expect(() =>
+      parseManifest(`COMMIT ${"a".repeat(40)} ${"b".repeat(40)}\nWHAT x\n`),
+    ).toThrow(/unknown line/);
+    expect(parseManifest("").commits).toEqual([]);
+  });
+});

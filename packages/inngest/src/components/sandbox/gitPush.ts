@@ -138,6 +138,19 @@ let reading = 0;
 const waiting: (() => void)[] = [];
 
 /**
+ * Runs `load` once, on the first call.
+ */
+export const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+  let loaded: Promise<T> | undefined;
+
+  return () => {
+    loaded ??= load();
+
+    return loaded;
+  };
+};
+
+/**
  * Runs `fn` with at most four reads in flight, so a policy that reads every
  * file at once does not start a git process for each.
  */
@@ -157,6 +170,26 @@ const limited = async <T>(fn: () => Promise<T>): Promise<T> => {
     waiting.shift()?.();
   }
 };
+
+/**
+ * A file's content as a policy reads it.
+ */
+export const blobOf = (bytes: Uint8Array): GitPushBlob => {
+  const binary = bytes.subarray(0, 8000).includes(0);
+  let text: string | undefined;
+  if (!binary) {
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {}
+  }
+
+  return { size: bytes.length, binary, bytes, text };
+};
+
+/**
+ * The largest file a policy may read, as the error says.
+ */
+export const maxPolicyFileBytes = maxFileBytes;
 
 /**
  * Reads the file at `rev:path` in the repository at `repo`: `undefined` when
@@ -220,30 +253,9 @@ const readBlob = (
     ok(read, `reading ${path}`);
 
     const raw = read.stdoutBytes;
-    const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.length);
-    const binary = bytes.subarray(0, 8000).includes(0);
-    let text: string | undefined;
-    if (!binary) {
-      try {
-        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {}
-    }
 
-    return { size: bytes.length, binary, bytes, text };
+    return blobOf(new Uint8Array(raw.buffer, raw.byteOffset, raw.length));
   });
-};
-
-/**
- * Runs `load` once, on the first call.
- */
-const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
-  let loaded: Promise<T> | undefined;
-
-  return () => {
-    loaded ??= load();
-
-    return loaded;
-  };
 };
 
 /**

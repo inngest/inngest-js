@@ -12,6 +12,12 @@ import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
 import {
+  isGitHubRemote,
+  manifestScript,
+  pushManifest,
+  remoteState,
+} from "../sandbox/gitApi.ts";
+import {
   assertHostGit,
   type GitPolicy,
   gitAuth,
@@ -63,10 +69,32 @@ export interface GitPushToolOptions {
   cwd?: string;
 
   /**
-   * The most a bundle may weigh. A bundle moves through memoized steps, so it
-   * can't exceed about 2 MiB. Default 1 MiB.
+   * The most a bundle (or, without git, a manifest) may weigh. It moves
+   * through memoized steps, so it can't exceed about 2 MiB. Default 1 MiB.
    */
   maxBytes?: number;
+
+  /**
+   * How the push reaches the remote. `"git"` runs the host's `git` and
+   * works with any remote. `"api"` needs no `git` on the machine that runs
+   * your app, so the agent can run on Cloudflare Workers or any runtime with
+   * `fetch`: it rebuilds the commits on a GitHub remote with the Git Data API.
+   * It needs a linear history on top of the remote's branch (no merge commits
+   * and no submodule changes). Default `"auto"`: the host's `git` when it
+   * runs, else the API for a GitHub remote.
+   */
+  transport?: "auto" | "git" | "api";
+
+  /**
+   * The GitHub API's base URL, for `"api"`. Default `https://api.github.com`,
+   * or `/api/v3` on the remote's host for GitHub Enterprise.
+   */
+  api?: string;
+
+  /**
+   * The `fetch` the API push uses. Default the global one.
+   */
+  fetch?: typeof fetch;
 }
 
 const validate = (options: GitPushToolOptions): void => {
@@ -96,6 +124,21 @@ const validate = (options: GitPushToolOptions): void => {
   }
 
   if (
+    options.transport !== undefined &&
+    !["auto", "git", "api"].includes(options.transport)
+  ) {
+    throw new SandboxValidationError(
+      'transport must be "auto", "git" or "api"',
+    );
+  }
+
+  if (options.transport === "api" && !isGitHubRemote(options.remote)) {
+    throw new SandboxValidationError(
+      'transport "api" needs a GitHub remote like https://github.com/owner/repo',
+    );
+  }
+
+  if (
     options.maxBytes !== undefined &&
     (!Number.isInteger(options.maxBytes) ||
       options.maxBytes < 1 ||
@@ -104,6 +147,32 @@ const validate = (options: GitPushToolOptions): void => {
     throw new SandboxValidationError(
       "maxBytes must be a whole number from 1 to 1572864 (1.5 MiB), since a bundle moves through a memoized step",
     );
+  }
+};
+
+/**
+ * Which way to push: the host's git when the option and the machine allow, else
+ * the GitHub API.
+ */
+const chooseTransport = async (
+  options: GitPushToolOptions,
+): Promise<"git" | "api"> => {
+  const wanted = options.transport ?? "auto";
+
+  if (wanted === "api") {
+    return "api";
+  }
+
+  try {
+    await assertHostGit();
+
+    return "git";
+  } catch (error) {
+    if (wanted === "auto" && isGitHubRemote(options.remote)) {
+      return "api";
+    }
+
+    throw error;
   }
 };
 
@@ -151,21 +220,46 @@ export const gitPushTool = (
         );
       }
 
-      await assertHostGit();
-
-      const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.bundle`;
+      const transport = await chooseTransport(options);
+      const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.${transport === "api" ? "manifest" : "bundle"}`;
+      const remoteInfo =
+        transport === "api"
+          ? await step.run("git-push:remote", async () => {
+              return remoteState({
+                remote,
+                ref,
+                token: await options.token(),
+                api: options.api,
+                fetch: options.fetch,
+                signal,
+              });
+            })
+          : undefined;
+      let tip = "";
 
       try {
         const bundled = await sandbox.commands.run(
           "git-push:bundle",
-          [
-            "/bin/sh",
-            "-c",
-            'git rev-parse --verify --quiet "$1^{commit}" >/dev/null || { echo "no such branch" >&2; exit 3; }; git bundle create --quiet "$2" "$1" && wc -c < "$2"',
-            "sh",
-            ref,
-            path,
-          ],
+          remoteInfo
+            ? [
+                "/bin/sh",
+                "-c",
+                `tip=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "no such branch" >&2; exit 3; }
+set -- "$1" "$tip" "$3"
+${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
+                "sh",
+                remoteInfo.base,
+                ref,
+                path,
+              ]
+            : [
+                "/bin/sh",
+                "-c",
+                'git rev-parse --verify --quiet "$1^{commit}" >/dev/null || { echo "no such branch" >&2; exit 3; }; git bundle create --quiet "$2" "$1" && wc -c < "$2"',
+                "sh",
+                ref,
+                path,
+              ],
           { cwd },
         );
 
@@ -173,11 +267,17 @@ export const gitPushTool = (
           return agent.toolError(
             bundled.exitCode === 3
               ? `${branch} is not a branch in this repository`
-              : `could not bundle ${branch}: ${bundled.stderr.trim().slice(0, 300)}`,
+              : bundled.exitCode === 4
+                ? `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`
+                : `could not bundle ${branch}: ${bundled.stderr.trim().slice(0, 300)}`,
           );
         }
 
-        const size = Number(bundled.stdout.trim());
+        const printed = bundled.stdout.trim().split("\n");
+
+        tip = remoteInfo ? (printed[0] ?? "") : "";
+
+        const size = Number(printed.at(-1));
 
         if (!(size <= maxBytes)) {
           return agent.toolError(
@@ -194,6 +294,21 @@ export const gitPushTool = (
         }
 
         const outcome = await step.run("git-push:push", async () => {
+          if (remoteInfo) {
+            return pushManifest({
+              remote,
+              token: await options.token(),
+              api: options.api,
+              fetch: options.fetch,
+              manifest: new TextDecoder().decode(bundle),
+              target: { src: ref, dst: ref },
+              tip,
+              state: remoteInfo,
+              policy: options.policy,
+              signal,
+            });
+          }
+
           return pushBundle({
             remote,
             auth: await gitAuth(options.token, options.username),
