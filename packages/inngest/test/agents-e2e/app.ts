@@ -48,6 +48,9 @@ export const client = new Inngest({
     ? {
         fetch: fakeSandbox({
           recordUrl: fakesUrl,
+          // The scenarios drive the SDK's tool runners and real git with a
+          // scripted model.
+          execute: "local",
           // A command no scenario names succeeds with no output.
           commands: { ...commands, "": {} },
           localDirs,

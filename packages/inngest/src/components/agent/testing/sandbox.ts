@@ -23,7 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 import type { Call, CallFilter, Fakes } from "./fakes.ts";
 
@@ -58,9 +58,43 @@ export interface FakeSandboxOptions {
   >;
 
   /**
-   * Directories on this machine. A command that matches no canned entry and
-   * runs in one of them runs for real, and files under /tmp/inngest-git- are
-   * served from disk, so a scenario can use real git.
+   * Whether commands run for real on this machine. Off by default: a command
+   * is answered from `commands` or fails with exit code 127, and nothing the
+   * agent asks for is executed. `"local"` lets a command that no entry
+   * describes run on the host when it mentions the sandbox's `/work`,
+   * `/inngest/tools` or a `diskPaths` entry, or runs in one of `localDirs`.
+   * It is for tests with a scripted model (`script()`), never for a real one:
+   * this is not a sandbox, and the commands run with your user's rights. What
+   * it does is a best-effort guard against mistakes, not a boundary. The
+   * environment is the command's own `environment` over `PATH`, `HOME` (the
+   * sandbox's directory), `SANDBOX_WORK`, git's identity and what `passEnv`
+   * lists, with nothing else of the host's; a command works from the
+   * sandbox's directory (`localDirs` cwds excepted); one with a `..` path
+   * segment, `~user`, or an absolute path outside the sandbox's directories and
+   * the system's binary directories is refused with exit code 126 (and
+   * recorded as `sandbox.refused`). The words of a command are checked as
+   * paths, and the script of `sh -c` is searched for paths; the code another
+   * program is given (`node -e`, `python3 -c`) is not searched. Uploads and
+   * reads stay inside the sandbox's directories.
+   * A shell can still build a path out of pieces or expansions, follow a
+   * symlink, or `cd /` and use relative names, and the system's binary
+   * directories are not read-only: do not run it as root or with a real
+   * model.
+   */
+  execute?: "local";
+
+  /**
+   * Names of host environment variables a command run for real may see, next
+   * to `PATH`, `HOME`, `SANDBOX_WORK` and git's identity. Nothing else of the
+   * host environment, such as tokens, is passed.
+   */
+  passEnv?: string[];
+
+  /**
+   * Directories on this machine. With `execute: "local"`, a command that
+   * matches no canned entry and runs in one of them runs for real, and files
+   * under /tmp/inngest-git- are served from disk, so a scenario can use real
+   * git.
    */
   localDirs?: string[];
 
@@ -97,8 +131,8 @@ const now = () => {
 
 const runLocal = (
   command: string[],
-  cwd?: string,
-  environment: Record<string, string> = {},
+  cwd: string | undefined,
+  env: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
   return new Promise((resolve) => {
     execFile(
@@ -108,16 +142,7 @@ const runLocal = (
         cwd,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
-        env: {
-          ...process.env,
-          ...environment,
-          GIT_AUTHOR_NAME: "fake-sandbox",
-          GIT_AUTHOR_EMAIL: "fake-sandbox@example.com",
-          GIT_COMMITTER_NAME: "fake-sandbox",
-          GIT_COMMITTER_EMAIL: "fake-sandbox@example.com",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_TERMINAL_PROMPT: "0",
-        },
+        env,
       },
       (error, stdout, stderr) => {
         resolve({
@@ -257,12 +282,12 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   };
   const sandboxPaths = new RegExp(
-    `(?<![\\w./-])(${["/inngest/tools", "/work", ...disks]
+    `(?<![\\w./~-])(${["/inngest/tools", "/work", ...disks]
       .map(escapeForRegExp)
       .sort((a, b) => {
         return b.length - a.length;
       })
-      .join("|")})(?![\\w-])`,
+      .join("|")})(?![\\w.-])`,
     "g",
   );
   const localFor = (sandboxId: string) => {
@@ -367,12 +392,19 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     return {
       text,
       canned,
-      here: tools || (!described && (touchesWork || inLocalDir)),
+      here:
+        options.execute === "local" &&
+        (tools || (!described && (touchesWork || inLocalDir))),
+      wouldRun: tools || (!described && (touchesWork || inLocalDir)),
     };
   };
-  const unmatched = (text: string) => {
+  const unmatched = (text: string, wouldRun = false) => {
     return {
-      stderr: `FakeSandbox: no entry of \`commands\` matches "${text}". Add one, or the key "" to match any command.\n`,
+      stderr: `FakeSandbox: no entry of \`commands\` matches "${text}". Add one, or the key "" to match any command.${
+        wouldRun
+          ? ' It mentions a path of the sandbox, which only runs for real with `execute: "local"`.'
+          : ""
+      }\n`,
       exitCode: 127,
     } as { stdout?: string; stderr?: string; exitCode?: number };
   };
@@ -470,24 +502,236 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
     const [, id, rest = ""] = match;
     const local = localFor(id ?? "");
+    // Whether a file path of the sandbox lands inside the directories the fake
+    // owns on this machine once it is moved there: no `..`, and under the
+    // sandbox's directory, the tools or the runners' own `/tmp` names.
+    const confinedFile = (path: string) => {
+      if (path.split("/").includes("..")) {
+        return false;
+      }
+
+      const target = resolve(local(path));
+      const dir = workOf(id ?? "");
+
+      return (
+        target.startsWith(`${dir}/`) ||
+        target.startsWith(`${toolsDir}/`) ||
+        target.startsWith("/tmp/inngest-run-code-") ||
+        target.startsWith("/tmp/inngest-git-")
+      );
+    };
     // A working directory of the sandbox exists on the host before a command
     // runs in it, as it would in a real sandbox.
+    // A command run for real works from the sandbox's own directory unless it
+    // names another; a relative working directory is relative to it, never to
+    // the host process's.
+    const cwdOf = (cwd: string | undefined) => {
+      const dir = workOf(id ?? "");
+
+      // `/tmp` is the sandbox's own directory too: the host's `/tmp` is shared.
+      return cwd === undefined || cwd === "/tmp"
+        ? dir
+        : resolve(dir, local(cwd));
+    };
     const ensureCwd = (cwd: string | undefined) => {
-      if (cwd !== undefined && mentionsHostPath(cwd)) {
-        mkdirSync(local(cwd), { recursive: true });
+      const target = cwdOf(cwd);
+
+      if (target.startsWith(`${workOf(id ?? "")}/`)) {
+        mkdirSync(target, { recursive: true });
       }
     };
-    // What a command run here sees: the sandbox's own /work as SANDBOX_WORK,
-    // and its environment with the sandbox paths moved to this machine.
+    // What a command run here sees: the environment it asked for with the
+    // sandbox paths moved to this machine, over nothing of the host's but
+    // PATH and what `passEnv` lists. HOME is the sandbox's own directory, so
+    // `~` stays inside it.
     const environmentOf = (environment: Record<string, string> = {}) => {
+      const dir = workOf(id ?? "");
+
       return {
-        SANDBOX_WORK: workOf(id ?? ""),
         ...Object.fromEntries(
           Object.entries(environment).map(([key, value]) => {
             return [key, local(value)];
           }),
         ),
+        ...Object.fromEntries(
+          (options.passEnv ?? []).flatMap((name) => {
+            const value = process.env[name];
+
+            return value === undefined ? [] : [[name, value]];
+          }),
+        ),
+        PATH: process.env.PATH ?? "",
+        HOME: dir,
+        SANDBOX_WORK: dir,
+        GIT_AUTHOR_NAME: "fake-sandbox",
+        GIT_AUTHOR_EMAIL: "fake-sandbox@example.com",
+        GIT_COMMITTER_NAME: "fake-sandbox",
+        GIT_COMMITTER_EMAIL: "fake-sandbox@example.com",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+        // The project types `NODE_ENV` as required on `ProcessEnv`, which a
+        // scrubbed environment is not.
+      } as unknown as NodeJS.ProcessEnv;
+    };
+    // The reason a command may not run on this machine, or `undefined`. A
+    // guard against the plain mistakes, not a boundary: no `..` path segment,
+    // and no absolute path outside the sandbox's directories, the system's
+    // binaries and the places the SDK's runners use. The system's binary
+    // directories and every PATH entry are allowed as targets, so they can be
+    // written to as well as run from.
+    const refusalOf = (request: {
+      command: string[];
+      cwd?: string;
+      environment?: Record<string, string>;
+    }) => {
+      const dir = workOf(id ?? "");
+      const here = [dir, toolsDir, ...(options.localDirs ?? [])].map((path) => {
+        return path.replace(/\/+$/, "");
+      });
+      const system = [
+        ...(process.env.PATH ?? "").split(":"),
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/nix/store",
+        "/run/current-system/sw",
+        "/dev/null",
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+      ].filter(Boolean);
+      const prefixes = ["/tmp/inngest-run-code-", "/tmp/inngest-git-"];
+      const topLevel = [
+        "/etc",
+        "/root",
+        "/home",
+        "/var",
+        "/opt",
+        "/srv",
+        "/mnt",
+        "/boot",
+        "/sys",
+        "/tmp",
+        "/media",
+        "/run",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/dev",
+        "/proc",
+        "/nix",
+        "/Users",
+        "/private",
+      ];
+      const allowed = (path: string) => {
+        return (
+          [...here, ...system].some((root) => {
+            return path === root || path.startsWith(`${root}/`);
+          }) ||
+          prefixes.some((prefix) => {
+            return path.startsWith(prefix);
+          })
+        );
       };
+      // The runners work from `/tmp`; running there is fine, naming it as an
+      // argument (`rm -rf /tmp`) is not.
+      const shell = /(^|\/)(sh|bash|zsh|dash|ksh)$/.test(
+        request.command[0] ?? "",
+      );
+      // The words of the command, and which of them is a script a shell reads.
+      const texts = [
+        ...request.command.map((text, index) => {
+          return {
+            text,
+            script: shell && request.command[index - 1] === "-c",
+          };
+        }),
+        ...(request.cwd === undefined || request.cwd === "/tmp"
+          ? []
+          : [{ text: request.cwd, script: false }]),
+        ...Object.values(request.environment ?? {}).map((text) => {
+          return { text, script: false };
+        }),
+      ];
+
+      for (const { text, script } of texts) {
+        // `..` as the shell will read it: with quotes and escapes taken out,
+        // so `.\\.` and `."."` are caught too.
+        for (const plain of [text, text.replace(/[\\\\'"]/g, "")]) {
+          if (/(^|[/\s=:;&|(<>{},])\.\.(?=$|[/\s;&|)<>{},])/.test(plain)) {
+            return `"${text}" has a ".." path segment`;
+          }
+        }
+
+        // `~user` is that user's home, not the sandbox's.
+        if (
+          (script ? /(^|[\s"'=:;&|(<>{},])~[A-Za-z_]/ : /^~[A-Za-z_]/).test(
+            text,
+          )
+        ) {
+          return `"${text}" names another user's home`;
+        }
+
+        // Web addresses are not paths; `file:` is, and stays in the scan.
+        const moved = local(text).replace(
+          /\b(?:https?|git|ssh):\/\/[^\s"'`;&|()<>$\\]*/gi,
+          "",
+        );
+
+        // An argument that is a path on its own is checked as one, whatever
+        // its shape: `rm -rf /`, `cat /work.bak`.
+        const whole = moved.replace(/\/+$/, "") || "/";
+
+        if (/^\/[^\s]*$/.test(moved) && !allowed(whole)) {
+          return `"${text}" is outside the sandbox's directories`;
+        }
+
+        // Only a script a shell reads is searched for paths inside the text:
+        // the other words (code a runner is given, a commit message) are
+        // data, and a slash in them is not a path.
+        if (!script) {
+          continue;
+        }
+
+        // The root directory, or everything in it, as the target of a command
+        // that takes paths.
+        if (
+          /\b(cd|find|ls|rm|ln|cp|mv|du|chmod|chown|tar|rsync|cat)\s+(-\S+\s+)*\/+(?=[\s;&|)*?[{]|$)/.test(
+            moved,
+          )
+        ) {
+          return "the root directory is outside the sandbox's directories";
+        }
+
+        for (const found of moved.matchAll(
+          /(?<![\w.-])(\/[\w.~*?[{-][^\s"'`;&|()<>$\\]*)/g,
+        )) {
+          const path = (found[1] ?? "").replace(/\/+$/, "");
+          const segments = path.split("/").filter(Boolean);
+
+          // A script has slashes that are not paths: `/q` in a sed address,
+          // `/` as division. A path has two segments, or is a top-level
+          // directory of the system.
+          if (
+            segments.length < 2 &&
+            !topLevel.includes(`/${segments[0] ?? ""}`) &&
+            !/^\/[*?[{]/.test(path)
+          ) {
+            continue;
+          }
+
+          if (!allowed(path)) {
+            return `"${path}" is outside the sandbox's directories`;
+          }
+        }
+      }
+
+      return undefined;
     };
 
     if (id && rest === "/snapshots" && method === "POST") {
@@ -606,11 +850,32 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       });
 
       if (plan.here) {
+        const refused = refusalOf(request);
+
+        if (refused) {
+          await record("sandbox.refused", {
+            id,
+            command: request.command,
+            reason: refused,
+          });
+
+          return Response.json({
+            data: {
+              stdout: encode(""),
+              stderr: encode(
+                `FakeSandbox: refused to run on the host: ${refused}\n`,
+              ),
+              encoding: "base64",
+              exitCode: 126,
+            },
+          });
+        }
+
         ensureCwd(request.cwd);
 
         const ran = await runLocal(
           request.command.map(local),
-          request.cwd === undefined ? undefined : local(request.cwd),
+          cwdOf(request.cwd),
           environmentOf(request.environment),
         );
 
@@ -624,7 +889,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         });
       }
 
-      const answer = plan.canned ?? unmatched(plan.text);
+      const answer = plan.canned ?? unmatched(plan.text, plan.wouldRun);
 
       return Response.json({
         data: {
@@ -693,18 +958,25 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
       processes.set(process.id, process);
 
-      if (plan.here) {
+      const refused = plan.here ? refusalOf(request) : undefined;
+
+      if (refused) {
+        await record("sandbox.refused", {
+          id,
+          command: request.command,
+          reason: refused,
+        });
+        process.stderr = `FakeSandbox: refused to run on the host: ${refused}\n`;
+        process.exitCode = 126;
+      } else if (plan.here) {
         ensureCwd(request.cwd);
 
         const child = spawn(
           local(request.command[0] as string),
           request.command.slice(1).map(local),
           {
-            cwd: request.cwd === undefined ? undefined : local(request.cwd),
-            env: {
-              ...globalThis.process.env,
-              ...environmentOf(request.environment),
-            },
+            cwd: cwdOf(request.cwd),
+            env: environmentOf(request.environment),
             stdio: ["ignore", "pipe", "pipe"],
             // Its own process group, so closing kills what a shell started too.
             detached: true,
@@ -733,7 +1005,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           });
         });
       } else {
-        const answer = plan.canned ?? unmatched(plan.text);
+        const answer = plan.canned ?? unmatched(plan.text, plan.wouldRun);
 
         process.stdout = answer.stdout ?? "";
         process.stderr = answer.stderr ?? "";
@@ -765,6 +1037,21 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
             ? new TextEncoder().encode(init.body)
             : (init?.body as Uint8Array);
 
+        if (onDisk(path) && !confinedFile(path)) {
+          return Response.json(
+            {
+              errors: [
+                {
+                  code: "path_refused",
+                  message:
+                    "FakeSandbox keeps files only inside its own directories",
+                },
+              ],
+            },
+            { status: 400 },
+          );
+        }
+
         if (onDisk(path)) {
           mkdirSync(dirname(local(path)), { recursive: true });
           writeFileSync(local(path), body);
@@ -788,7 +1075,10 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
       // A file on the host may have been changed by a command since it was
       // uploaded: the host copy is the truth.
-      if (path.startsWith("/tmp/inngest-git-") || onDisk(path)) {
+      if (
+        (path.startsWith("/tmp/inngest-git-") || onDisk(path)) &&
+        confinedFile(path)
+      ) {
         try {
           found = new Uint8Array(readFileSync(local(path)));
         } catch {}
