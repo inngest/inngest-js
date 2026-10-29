@@ -6,12 +6,20 @@
  * remote asks for its token and leaves nothing behind.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as entry from "../../../experimental/agents/testing.ts";
 import {
+  fakeGitDataApi,
   fakeSandbox,
   script,
   startFakes,
@@ -69,6 +77,7 @@ const exec = async (
 describe("the entry", () => {
   test("exports exactly the documented names", () => {
     expect(Object.keys(entry).sort()).toEqual([
+      "fakeGitDataApi",
       "fakeSandbox",
       "script",
       "startFakes",
@@ -287,6 +296,7 @@ describe("fakeSandbox", () => {
     const id = await create(sandbox);
     const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
       command: ["sleep", "60"],
+      cwd: "/work",
     });
     const { pid } = ((await started.json()) as { data: { pid: number } }).data;
 
@@ -351,5 +361,640 @@ describe.skipIf(!backendPath())("startGitRemote", () => {
     }
 
     expect(existsSync(remoteDir)).toBe(false);
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote with repos", () => {
+  const run = (cwd: string, ...args: string[]) => {
+    return promisify(execFile)("git", args, {
+      cwd,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+  };
+
+  test("serves several seeded repositories, with branches, to anonymous readers; a push needs the token", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-repos-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "secret",
+        anonymousReads: true,
+        repos: {
+          website: { "index.md": "site\n" },
+          source: {
+            main: { "a.ts": "export const a = 1;\n" },
+            pr: { "a.ts": "export const a = 2;\n", "b.ts": "new\n" },
+          },
+        },
+      });
+
+      expect(Object.keys(remote.repos)).toEqual(["website", "source"]);
+      expect(remote.url).toBe(remote.repos.website?.url);
+      expect(Object.keys(remote.repos.source?.heads ?? {})).toEqual([
+        "main",
+        "pr",
+      ]);
+
+      // Anonymous clone of a branch, and of a commit by its hash.
+      await run(dir, "clone", "--quiet", remote.repos.source?.url ?? "", "src");
+      await run(`${dir}/src`, "checkout", "--quiet", "origin/pr");
+      expect((await run(`${dir}/src`, "rev-parse", "HEAD")).stdout.trim()).toBe(
+        remote.repos.source?.heads.pr,
+      );
+      // Any commit can be fetched by its hash.
+      await run(dir, "init", "--quiet", "by-hash");
+      await run(
+        `${dir}/by-hash`,
+        "fetch",
+        "--quiet",
+        remote.repos.source?.url ?? "",
+        remote.repos.source?.heads.pr ?? "",
+      );
+
+      // A push without the token is refused, and the header is on record.
+      await run(`${dir}/src`, "commit", "--allow-empty", "-m", "x", "-q");
+      await expect(
+        run(`${dir}/src`, "push", "--quiet", "origin", "HEAD:refs/heads/mine"),
+      ).rejects.toThrow();
+      expect(remote.pushAuth.length).toBeGreaterThan(0);
+
+      // With the token it goes through.
+      await run(
+        `${dir}/src`,
+        "push",
+        "--quiet",
+        remote.repos.source?.url.replace(
+          "http://",
+          "http://x-access-token:secret@",
+        ) ?? "",
+        "HEAD:refs/heads/mine",
+      );
+      expect(
+        (
+          await run(remote.repos.source?.dir ?? "", "rev-parse", "mine")
+        ).stdout.trim(),
+      ).not.toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("without anonymousReads a clone needs the token too", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-repos-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "secret",
+        repos: { only: { "a.txt": "a\n" } },
+      });
+
+      await expect(
+        run(dir, "clone", "--quiet", remote.url, "c"),
+      ).rejects.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("fakeSandbox /work, processes and disk paths", () => {
+  const upload = (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    path: string,
+    text: string,
+  ) => {
+    return sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent(path)}`,
+      { method: "PUT", body: text },
+    );
+  };
+  const execWith = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      stderr: Buffer.from(data.stderr, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("every sandbox has a /work of its own that commands run against for real", async () => {
+    await using sandbox = fakeSandbox();
+    const first = await create(sandbox);
+    const second = await create(sandbox);
+
+    await upload(sandbox, first, "/work/a.txt", "from first\n");
+
+    expect(
+      await execWith(sandbox, first, { command: ["cat", "/work/a.txt"] }),
+    ).toMatchObject({ stdout: "from first\n", exitCode: 0 });
+    // Not shared: the second sandbox has no such file.
+    expect(
+      (await execWith(sandbox, second, { command: ["cat", "/work/a.txt"] }))
+        .exitCode,
+    ).not.toBe(0);
+  });
+
+  test("a cwd or an environment value under /work runs for real, with SANDBOX_WORK set", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await upload(sandbox, id, "/work/n.txt", "42\n");
+
+    expect(
+      await execWith(sandbox, id, {
+        command: ["sh", "-c", "cat $FILE"],
+        environment: { FILE: "/work/n.txt" },
+      }),
+    ).toMatchObject({ stdout: "42\n" });
+
+    const where = await execWith(sandbox, id, {
+      command: ["pwd"],
+      cwd: "/work",
+    });
+
+    expect(where.stdout.trim()).toContain("fake-sandbox-work-");
+    expect(
+      (
+        await execWith(sandbox, id, {
+          command: ["sh", "-c", "echo $SANDBOX_WORK"],
+        })
+      ).exitCode,
+    ).toBe(127);
+    expect(
+      (
+        await execWith(sandbox, id, {
+          command: ["sh", "-c", "echo $SANDBOX_WORK"],
+          cwd: "/work",
+        })
+      ).stdout.trim(),
+    ).toBe(where.stdout.trim());
+  });
+
+  test("a snapshot keeps /work and a sandbox made from it starts with it", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await upload(sandbox, id, "/work/kept.txt", "kept\n");
+
+    const snapshot = await post(sandbox, `/v2/sandboxes/${id}/snapshots`, {
+      name: "s1",
+    });
+    const snapshotId = ((await snapshot.json()) as { data: { id: string } })
+      .data.id;
+    // Changes after the snapshot are not in it.
+    await upload(sandbox, id, "/work/later.txt", "later\n");
+
+    const restored = await post(sandbox, "/v2/sandboxes", { snapshotId });
+    const restoredId = ((await restored.json()) as { data: { id: string } })
+      .data.id;
+
+    expect(
+      await execWith(sandbox, restoredId, {
+        command: ["cat", "/work/kept.txt"],
+      }),
+    ).toMatchObject({ stdout: "kept\n" });
+    expect(
+      (
+        await execWith(sandbox, restoredId, {
+          command: ["cat", "/work/later.txt"],
+        })
+      ).exitCode,
+    ).not.toBe(0);
+  });
+
+  test("diskPaths are files of the sandbox's own that commands see", async () => {
+    await using sandbox = fakeSandbox({ diskPaths: ["/tmp/ws.tgz"] });
+    const first = await create(sandbox);
+    const second = await create(sandbox);
+
+    await upload(sandbox, first, "/tmp/ws.tgz", "tarball\n");
+
+    expect(
+      await execWith(sandbox, first, { command: ["cat", "/tmp/ws.tgz"] }),
+    ).toMatchObject({ stdout: "tarball\n" });
+    expect(
+      (await execWith(sandbox, second, { command: ["cat", "/tmp/ws.tgz"] }))
+        .exitCode,
+    ).not.toBe(0);
+  });
+
+  test("processes keep their output and can be waited for; canned commands answer them too", async () => {
+    await using sandbox = fakeSandbox({
+      commands: { build: { stdout: "built\n", exitCode: 0 } },
+    });
+    const id = await create(sandbox);
+    const start = async (body: Record<string, unknown>) => {
+      const response = await post(
+        sandbox,
+        `/v2/sandboxes/${id}/processes`,
+        body,
+      );
+
+      return ((await response.json()) as { data: { id: string } }).data.id;
+    };
+    const wait = async (processId: string) => {
+      const response = await post(
+        sandbox,
+        `/v2/sandboxes/${id}/processes/${processId}/wait`,
+        {},
+      );
+
+      return ((await response.json()) as { data: { exitCode: number } }).data
+        .exitCode;
+    };
+    const output = async (processId: string) => {
+      const response = await sandbox.fetch(
+        `http://sandboxes.test/v2/sandboxes/${id}/processes/${processId}/output`,
+      );
+      const { data } = (await response.json()) as {
+        data: { chunks: { stream: string; data: string }[] };
+      };
+
+      return data.chunks.map((chunk) => {
+        return Buffer.from(chunk.data, "base64").toString();
+      });
+    };
+
+    const real = await start({
+      command: ["sh", "-c", "echo hi; exit 3"],
+      cwd: "/work",
+    });
+
+    expect(await wait(real)).toBe(3);
+    expect((await output(real))[0]).toBe("hi\n");
+
+    const canned = await start({ command: ["build", "--all"] });
+
+    expect(await wait(canned)).toBe(0);
+    expect((await output(canned))[0]).toBe("built\n");
+
+    const typo = await start({ command: ["biuld"] });
+
+    expect(await wait(typo)).toBe(127);
+    expect((await output(typo))[1]).toContain("no entry of `commands`");
+  });
+});
+
+describe("fakeGitDataApi", () => {
+  test("is seeded from a real repository, takes a commit through the API and shows the ref", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-api-"));
+    const gitIn = (...args: string[]) => {
+      return execFileSync("git", args, {
+        cwd: dir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+        },
+      }).trim();
+    };
+
+    try {
+      gitIn("init", "--quiet", "-b", "main");
+      writeFileSync(join(dir, "a.txt"), "a\n");
+      gitIn("add", ".");
+      gitIn("commit", "--quiet", "-m", "base");
+
+      const base = gitIn("rev-parse", "HEAD");
+      const api = fakeGitDataApi({ repo: "acme/site" });
+
+      api.seed(dir, base, "refs/heads/main");
+
+      expect(api.ref("refs/heads/main")).toBe(base);
+      expect(api.ref("refs/heads/agent")).toBeUndefined();
+
+      const call = async (method: string, path: string, body?: unknown) => {
+        const response = await api.fetch(
+          `http://github.test/repos/acme/site${path}`,
+          {
+            method,
+            headers: { authorization: "Bearer t" },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          },
+        );
+
+        return (await response.json()) as {
+          sha: string;
+          tree: { sha: string };
+        };
+      };
+      const blob = await call("POST", "/git/blobs", {
+        content: Buffer.from("b\n").toString("base64"),
+        encoding: "base64",
+      });
+      const baseCommit = await call("GET", `/git/commits/${base}`);
+      const tree = await call("POST", "/git/trees", {
+        base_tree: baseCommit.tree.sha,
+        tree: [{ path: "b.txt", mode: "100644", type: "blob", sha: blob.sha }],
+      });
+      const who = {
+        name: "t",
+        email: "t@example.com",
+        date: "2026-01-01T00:00:00Z",
+      };
+      const commit = await call("POST", "/git/commits", {
+        message: "add b",
+        tree: tree.sha,
+        parents: [base],
+        author: who,
+        committer: who,
+      });
+
+      await call("POST", "/git/refs", {
+        ref: "refs/heads/agent",
+        sha: commit.sha,
+      });
+
+      expect(api.ref("refs/heads/agent")).toBe(commit.sha);
+      expect(api.requests.map((r) => r.method)).toContain("POST");
+      expect(api.requests[0]?.authorization).toBe("Bearer t");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("fakeSandbox paths and processes in detail", () => {
+  const exec = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("only /work itself is a host path: /workspace is not", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    const other = await exec(sandbox, id, { command: ["cat", "/workspace/x"] });
+
+    // Not run on the host: it is not described, so it fails loudly.
+    expect(other.exitCode).toBe(127);
+  });
+
+  test("a disk path is rewritten once and only as a whole path", async () => {
+    await using sandbox = fakeSandbox({
+      diskPaths: ["/data/"],
+      commands: { "": {} },
+    });
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/data/f.txt`,
+      { method: "PUT", body: "disk\n" },
+    );
+
+    expect(
+      await exec(sandbox, id, { command: ["cat", "/data/f.txt"] }),
+    ).toMatchObject({ stdout: "disk\n" });
+    // Another path that merely ends in /data is left alone: canned, not run.
+    expect(
+      await exec(sandbox, id, { command: ["cat", "/my/data/f.txt"] }),
+    ).toMatchObject({ stdout: "", exitCode: 0 });
+  });
+
+  test("a process started from a script under /work runs, and close kills its children", async () => {
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/run.sh`,
+      { method: "PUT", body: "#!/bin/sh\nsleep 60 &\nwait\n" },
+    );
+    await exec(sandbox, id, { command: ["chmod", "+x", "/work/run.sh"] });
+
+    const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
+      command: ["/work/run.sh"],
+    });
+    const { pid } = ((await started.json()) as { data: { pid: number } }).data;
+
+    expect(pid).toBeGreaterThan(1);
+    expect(() => process.kill(pid, 0)).not.toThrow();
+
+    await sandbox.close();
+
+    await vi.waitFor(() => {
+      expect(() => process.kill(pid, 0)).toThrow();
+    });
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote seeds", () => {
+  test("a seed without main still gets one, and other branches start from it", async () => {
+    await using remote = await startGitRemote({
+      token: "t",
+      repos: { only: { pr: { "a.txt": "a\n" } } },
+    });
+
+    expect(Object.keys(remote.repos.only?.heads ?? {})).toEqual(["main", "pr"]);
+  });
+});
+
+describe("fakeSandbox host files and directories", () => {
+  test("a file a command changed is read back as changed, not as uploaded", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+    const file = `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/x.txt`;
+
+    await sandbox.fetch(file, { method: "PUT", body: "uploaded\n" });
+    await post(sandbox, `/v2/sandboxes/${id}/exec`, {
+      command: ["sh", "-c", "echo changed > /work/x.txt"],
+    });
+
+    expect(await (await sandbox.fetch(file)).text()).toBe("changed\n");
+  });
+
+  test("a disk directory works as a cwd before anything is uploaded, whether it is written with a slash or not", async () => {
+    await using sandbox = fakeSandbox({ diskPaths: ["/data/"] });
+    const id = await create(sandbox);
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, {
+      command: ["sh", "-c", "echo hi > out.txt && cat out.txt"],
+      cwd: "/data",
+    });
+    const { data } = (await response.json()) as {
+      data: { stdout: string; exitCode: number };
+    };
+
+    expect(data.exitCode).toBe(0);
+    expect(Buffer.from(data.stdout, "base64").toString()).toBe("hi\n");
+  });
+
+  test("diskPaths under /work are refused", () => {
+    expect(() => {
+      return fakeSandbox({ diskPaths: ["/work/sub"] });
+    }).toThrow(/under \/work/);
+  });
+
+  test("localDirs match whole directories", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-dirs-"));
+    const sibling = `${dir}-sibling`;
+
+    try {
+      await using sandbox = fakeSandbox({ localDirs: [dir] });
+      const id = await create(sandbox);
+      const response = (cwd: string) => {
+        return post(sandbox, `/v2/sandboxes/${id}/exec`, {
+          command: ["pwd"],
+          cwd,
+        });
+      };
+
+      mkdirSync(sibling);
+
+      const inside = (await (await response(dir)).json()) as {
+        data: { exitCode: number };
+      };
+      const beside = (await (await response(sibling)).json()) as {
+        data: { exitCode: number };
+      };
+
+      expect(inside.data.exitCode).toBe(0);
+      expect(beside.data.exitCode).toBe(127);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(sibling, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote names", () => {
+  test("a repository name that needs URL encoding is served, and no repositories is an error", async () => {
+    await expect(startGitRemote({ token: "t", repos: {} })).rejects.toThrow(
+      /at least one repository/,
+    );
+
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-names-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "t",
+        anonymousReads: true,
+        repos: { "my repo": { "a.txt": "a\n" } },
+      });
+
+      await promisify(execFile)("git", ["clone", "--quiet", remote.url, "c"], {
+        cwd: dir,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      expect(existsSync(join(dir, "c", "a.txt"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("fakeSandbox cleanup", () => {
+  test("a destroyed sandbox and a deleted snapshot free their host directories, and close frees the rest", async () => {
+    const before = readdirSync(tmpdir()).filter((name) => {
+      return (
+        name.startsWith("fake-sandbox-") || name.startsWith("fake-snapshot-")
+      );
+    });
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/a.txt`,
+      { method: "PUT", body: "a" },
+    );
+
+    const snapshot = await post(sandbox, `/v2/sandboxes/${id}/snapshots`, {});
+    const snapshotId = ((await snapshot.json()) as { data: { id: string } })
+      .data.id;
+    const names = () => {
+      return readdirSync(tmpdir()).filter((name) => {
+        return (
+          (name.startsWith("fake-sandbox-work-") ||
+            name.startsWith("fake-snapshot-")) &&
+          !before.includes(name)
+        );
+      });
+    };
+
+    expect(names()).toHaveLength(2);
+
+    await sandbox.fetch(`http://sandboxes.test/v2/snapshots/${snapshotId}`, {
+      method: "DELETE",
+    });
+    await sandbox.fetch(`http://sandboxes.test/v2/sandboxes/${id}`, {
+      method: "DELETE",
+    });
+
+    expect(names()).toHaveLength(0);
+
+    await sandbox.close();
+
+    expect(
+      readdirSync(tmpdir()).filter((name) => {
+        return name.startsWith("fake-sandbox-tools-") && !before.includes(name);
+      }),
+    ).toHaveLength(0);
+  });
+
+  test("a runner file written to /tmp is removed on close", async () => {
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+    const path = `/tmp/inngest-run-code-test-${Date.now()}.json`;
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent(path)}`,
+      { method: "PUT", body: "{}" },
+    );
+
+    expect(existsSync(path)).toBe(true);
+
+    await sandbox.close();
+
+    expect(existsSync(path)).toBe(false);
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote auth for a push", () => {
+  test("with anonymous reads the push discovery still needs the token, and a malformed path is a 400", async () => {
+    await using remote = await startGitRemote({
+      token: "t",
+      anonymousReads: true,
+    });
+
+    const read = await fetch(`${remote.url}/info/refs?service=git-upload-pack`);
+    const push = await fetch(
+      `${remote.url}/info/refs?service=git-receive-pack`,
+    );
+    const bad = await fetch(`${remote.url}/%zz`);
+
+    expect(read.status).toBe(200);
+    expect(push.status).toBe(401);
+    expect(bad.status).toBe(400);
+    expect(remote.pushAuth).toHaveLength(1);
   });
 });
