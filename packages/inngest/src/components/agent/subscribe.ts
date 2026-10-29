@@ -61,9 +61,10 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
   ts: number;
 
   /**
-   * The `user` object of the event.
+   * The `user` object of the event. Missing on messages saved before it was
+   * kept.
    */
-  user: Record<string, unknown>;
+  user?: Record<string, unknown>;
 
   /**
    * The version of the event, when it was sent with one.
@@ -120,11 +121,17 @@ export type SubscribeOptions =
  * for a generic parameter is not checked for extra fields, so a typo such as
  * `iff` would be dropped silently; this turns it into an error.
  */
-export type ExactOptions<TOpts> = [
-  Exclude<keyof TOpts, "event" | "if" | "events"> | ExtraEventKeys<TOpts>,
-] extends [never]
-  ? unknown
-  : never;
+export type ExactOptions<TOpts> = 0 extends 1 & TOpts
+  ? never
+  : [
+        Exclude<keyof TOpts, "event" | "if" | "events"> | ExtraEventKeys<TOpts>,
+      ] extends [never]
+    ? unknown
+    : {
+        [K in
+          | Exclude<keyof TOpts, "event" | "if" | "events">
+          | ExtraEventKeys<TOpts>]: never;
+      };
 
 /**
  * The fields of the entries of `events` that a subscription event does not have.
@@ -360,18 +367,33 @@ export async function openSubscription<
   let polls = 0;
   let total: number | undefined;
 
-  // A message is the event the executor saved, with its `seq`. Memos from before
+  // A message is the event the executor saved, with its `seq`. The saved value
+  // is trusted to be an event (the executor writes it from the event it matched),
+  // so it is only checked for the fields every reader needs. Memos from before
   // messages were flat held `{ seq, data: event }`; those are unwrapped.
+  const isEvent = (value: unknown): value is Record<string, unknown> => {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { name?: unknown }).name === "string"
+    );
+  };
+
   const messageOf = (saved: unknown, seq: number): InboxMessage<TData> => {
-    const value = (saved ?? {}) as Record<string, unknown>;
-    const inner = value.data as Record<string, unknown> | undefined;
+    const wrapped =
+      typeof saved === "object" && saved !== null
+        ? (saved as { seq?: unknown; data?: unknown })
+        : undefined;
     const event =
-      typeof value.seq === "number" &&
-      inner !== null &&
-      typeof inner === "object" &&
-      "name" in inner
-        ? inner
-        : value;
+      typeof wrapped?.seq === "number" && isEvent(wrapped.data)
+        ? wrapped.data
+        : isEvent(saved)
+          ? saved
+          : undefined;
+
+    if (!event) {
+      throw new Error(`Subscription "${key}": message ${seq} is not an event.`);
+    }
 
     return { ...event, seq } as unknown as InboxMessage<TData>;
   };

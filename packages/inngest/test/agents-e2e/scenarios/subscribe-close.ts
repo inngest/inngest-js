@@ -41,7 +41,7 @@ const configs = [
   { checkpointing: true, optimize: true },
 ];
 
-const races = ["plain", "group"] as const;
+const races = ["plain", "group", "awaited"] as const;
 
 const tagOf = (c: (typeof configs)[number]) => {
   return `c${c.checkpointing ? 1 : 0}o${c.optimize ? 1 : 0}`;
@@ -80,6 +80,21 @@ export const subscribeClose = scenario({
                 return "p" as const;
               });
             };
+            if (race === "awaited") {
+              // The read is still waiting when the subscription closes: close ends
+              // the park as the end of the subscription, so the read returns null
+              // rather than throwing for a missing message.
+              const pending = inbox.next();
+
+              await inbox.close();
+
+              const read = await pending;
+
+              log("raced");
+
+              return { winner: read === null ? "closed" : "msg", unread: 0 };
+            }
+
             const winner =
               race === "plain"
                 ? await Promise.race([inbox.next(), work()])
@@ -136,7 +151,11 @@ export const subscribeClose = scenario({
 
           ctx.check(
             name,
-            status.toLowerCase() === "completed" && doubled.length === 0,
+            status.toLowerCase() === "completed" &&
+              doubled.length === 0 &&
+              (race !== "awaited" ||
+                (output as { winner?: string } | undefined)?.winner ===
+                  "closed"),
             { status, output, doubled },
           );
 
