@@ -495,7 +495,7 @@ export interface SubscribeEngine {
 
   /**
    * Plans steps instead of running a lone one in the request that found it,
-   * for as long as the subscription is open.
+   * for the rest of the run once a subscription has been opened.
    */
   hold: (on: boolean) => void;
 }
@@ -585,7 +585,9 @@ export async function openSubscription<
     });
   }
 
-  // From here a message can run the function while a step of it is running.
+  // From here a message can run the function while a step of it is running,
+  // and a wake queued before the close can still arrive after it: steps are
+  // planned for the rest of the run, never run in the request that found them.
   engine.hold(true);
 
   // How many messages have been read, how many polls were made, and how many
@@ -999,7 +1001,6 @@ export async function openSubscription<
       }
 
       total = count;
-      engine.hold(false);
 
       const unread: InboxMessage<TData>[] = [];
       const messages = read();

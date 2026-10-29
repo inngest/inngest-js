@@ -232,7 +232,7 @@ class InngestExecutionEngine
   private rootSpanId?: string;
 
   /**
-   * Set while a `step.subscribe()` subscription is open: a lone step is
+   * Set once a `step.subscribe()` subscription has been opened: a lone step is
    * planned, never run in the request that found it.
    */
   private holdImmediateExecution = false;
