@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { KnownKeys } from "../helpers/types.ts";
+import * as als from "./execution/als.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   type ScoreOptions,
@@ -384,6 +385,36 @@ describe("client.score.experiment", () => {
     // Same run-scoped target → merges into one ClickHouse row.
     expect(calls[0]!.target).toEqual(calls[1]!.target);
     expect(calls[0]!.target).toMatchObject({ run_id: "run_1" });
+  });
+
+  test("stays run-scoped when runId is omitted inside a step", async () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run_ctx", attempt: 0 },
+        executingStep: { id: "score-step" },
+      },
+    } as unknown as als.AsyncContext);
+    const client = new Inngest({ id: "app" });
+    const spy = vi
+      .spyOn(
+        client as unknown as {
+          updateMetadata: (a: { target: unknown }) => Promise<void>;
+        },
+        "updateMetadata",
+      )
+      .mockResolvedValue(undefined);
+
+    await client.score.experiment({
+      experiment: exp,
+      name: "rating",
+      value: 1,
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const [arg] of spy.mock.calls) {
+      expect(arg.target).toEqual({ run_id: "run_ctx" });
+    }
+    vi.restoreAllMocks();
   });
 });
 
