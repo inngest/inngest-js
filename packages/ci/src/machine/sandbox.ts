@@ -64,6 +64,7 @@ export const sandbox = async (
       annotations: [],
       summaries: [],
       env: {},
+      unset: new Set(),
       secrets: [],
       outputs: {},
       savedOutputs: "{}",

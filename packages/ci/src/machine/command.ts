@@ -7,7 +7,14 @@
  */
 
 import { NonRetriableError, StepError } from "inngest";
-import { getAsyncCtx, getSandboxError } from "inngest/experimental";
+import {
+  beginShellCommand,
+  endShellCommand,
+  getAsyncCtx,
+  getSandboxError,
+  type ShellStart,
+  stripShellReport,
+} from "inngest/experimental";
 import {
   CiUsageError,
   CommandFailedError,
@@ -399,6 +406,48 @@ class CommandBuilder implements Command {
     };
   }
 
+  /**
+   * Reads a finished attempt's report. The job moves only when the attempt is
+   * one that will count (it passed, or its failure is allowed), so a failed
+   * attempt that is retried starts again from where the command began.
+   */
+  private settled(
+    scope: CiJobScope,
+    start: ShellStart,
+    stdout: string,
+    exitCode: number,
+  ): string {
+    return exitCode === 0 || this.state.nothrow
+      ? endShellCommand(scope, start, stdout)
+      : stripShellReport(stdout, start.marker);
+  }
+
+  /**
+   * The command planned against the job's shell state as it is now, so a
+   * `cd` or `export` of an earlier command applies. It runs as a script
+   * that reports where it ended, which `settle` reads back.
+   */
+  private session(scope: CiJobScope, stepId: string) {
+    const { argv } = this.state;
+    const isScript =
+      argv.length === 3 && argv[0] === "/bin/sh" && argv[1] === "-c";
+    const start = beginShellCommand(
+      scope,
+      isScript ? (argv[2] as string) : argv.map(shellEscape).join(" "),
+      stepId,
+      { cwd: this.state.cwd, env: this.state.env },
+    );
+
+    return {
+      start,
+      options: {
+        command: ["/bin/sh", "-c", start.script],
+        environment: start.env,
+        cwd: start.cwd ?? defaultCwd,
+      },
+    };
+  }
+
   private timeoutError(scope: CiJobScope): CommandTimeoutError {
     return new CommandTimeoutError({
       command: this.state.argv,
@@ -523,7 +572,8 @@ class CommandBuilder implements Command {
     timeoutMs: number,
   ): Promise<CommandResult> {
     const secrets = this.secretValues(scope);
-    const { command, ...options } = this.spawnOptions(scope);
+    const { start, options: planned } = this.session(scope, stepId);
+    const { command, ...options } = planned;
 
     try {
       const result = await machine.sandbox.commands.run(
@@ -534,7 +584,10 @@ class CommandBuilder implements Command {
 
       return {
         exitCode: result.exitCode,
-        stdout: maskSecrets(result.stdout, secrets),
+        stdout: maskSecrets(
+          this.settled(scope, start, result.stdout, result.exitCode),
+          secrets,
+        ),
         stderr: maskSecrets(result.stderr, secrets),
         // No `durationMs`: the sandbox doesn't time a captured exec, and a clock
         // read out here would span a replay, not the command.
@@ -567,12 +620,15 @@ class CommandBuilder implements Command {
         ? startWindowMs
         : Math.min(startWindowMs, timeoutMs);
 
+    const { start, options } = this.session(scope, stepId);
+
     const started = await startProcess({
       scope,
       machine,
       stepId,
-      options: this.spawnOptions(scope),
+      options,
       windowMs,
+      display: this.state.argv,
     });
 
     const polled = await pollUntilTerminal({
@@ -602,6 +658,9 @@ class CommandBuilder implements Command {
       process: polled.process,
       stepId,
       secrets: this.secretValues(scope),
+      settle: (stdout, exitCode) => {
+        return this.settled(scope, start, stdout, exitCode);
+      },
     });
 
     await publishOutput(scope, stepId, "stdout", result.stdout);
@@ -903,6 +962,8 @@ const startProcess = async (opts: {
     cwd: string;
   };
   windowMs: number;
+  /** How the command reads in the trace, when it is not the one started. */
+  display?: string[];
 }): Promise<ProcessView> => {
   const { scope, machine } = opts;
 
@@ -911,7 +972,7 @@ const startProcess = async (opts: {
   const claimed = machine.claimedProcessIds;
 
   const base = {
-    ...commandMetadata(opts.options.command),
+    ...commandMetadata(opts.display ?? opts.options.command),
     cwd: opts.options.cwd,
   };
 
@@ -1164,6 +1225,8 @@ const readResult = async (opts: {
   process: ProcessView;
   stepId: string;
   secrets: string[];
+  /** Reads what a session added off stdout, before secrets are masked. */
+  settle?: (stdout: string, exitCode: number) => string;
 }): Promise<CommandResult> => {
   const { process } = opts;
 
@@ -1176,9 +1239,14 @@ const readResult = async (opts: {
       { id: process.id },
     ));
 
+  const exitCode = process.exitCode ?? (process.state === "EXITED" ? 0 : 1);
+
   return {
-    exitCode: process.exitCode ?? (process.state === "EXITED" ? 0 : 1),
-    stdout: maskSecrets(output.stdout, opts.secrets),
+    exitCode,
+    stdout: maskSecrets(
+      opts.settle ? opts.settle(output.stdout, exitCode) : output.stdout,
+      opts.secrets,
+    ),
     stderr: maskSecrets(output.stderr, opts.secrets),
     truncated: output.truncated,
     ...processDuration(process),

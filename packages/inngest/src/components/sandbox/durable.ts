@@ -36,6 +36,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import { createShell } from "./shell.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
@@ -756,7 +757,13 @@ export const createDurableSandboxFacade = (
     command,
     options,
   ) => {
-    const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
+    const {
+      tools,
+      toolOptions,
+      exitCodes,
+      "~shell": shell,
+      ...commandOptions
+    } = options ?? {};
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
@@ -764,7 +771,7 @@ export const createDurableSandboxFacade = (
       throw new SandboxValidationError("exitCodes can't be used with tools");
     }
 
-    const text = commandText(command);
+    const text = shell?.text ?? commandText(command);
     const timeoutMs =
       commandOptions.timeout === undefined
         ? undefined
@@ -790,6 +797,7 @@ export const createDurableSandboxFacade = (
         text,
         timeoutMs,
         exitCodes: exitCodes ?? "any",
+        strip: shell?.strip,
       });
     }
 
@@ -837,7 +845,13 @@ export const createDurableSandboxFacade = (
       operation,
       exitCodes && exitCodes !== "any"
         ? (wire) => {
-            checkExit(exitCodes, { command: text, ...toResult(wire) });
+            const seen = toResult(wire);
+
+            checkExit(exitCodes, {
+              command: text,
+              ...seen,
+              stdout: shell ? shell.strip(seen.stdout) : seen.stdout,
+            });
 
             return wire;
           }
@@ -849,6 +863,9 @@ export const createDurableSandboxFacade = (
   };
   const facade: DurableSandbox = {
     $: createDollar(run),
+    shell: (shellOptions) => {
+      return createShell(run, shellOptions);
+    },
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     tools: { code: (options) => codeTools(facade, options) },

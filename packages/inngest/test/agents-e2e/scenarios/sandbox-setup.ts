@@ -23,7 +23,7 @@ const workspace = "saved-workspace";
 
 const bench = sandbox({
   id: "setup-bench",
-  tools: sandbox.tools.code(),
+  tools: sandbox.tools.code({ session: false }),
   setup: async ({ sandbox: box, step }) => {
     const saved = await step.run("load", async () => {
       return workspace;

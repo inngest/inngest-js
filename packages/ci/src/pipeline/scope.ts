@@ -418,6 +418,11 @@ export interface CiJobScope {
   /** Environment defaults for commands in this scope. */
   env: Record<string, string>;
   cwd?: string;
+  /**
+   * Variables a command unset, so that later commands start without them.
+   * `env` and `cwd` move as commands `export` and `cd`, like a shell.
+   */
+  unset: Set<string>;
   /** Secret values to mask in output. */
   secrets: string[];
   /**

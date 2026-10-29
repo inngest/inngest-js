@@ -932,10 +932,20 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           environmentOf(request.environment),
         );
 
+        // A shell session's report names the sandbox's own /work, not the
+        // directory standing in for it, so the session's next cwd is a path the
+        // sandbox knows
+        const here = workOf(id ?? "");
+        const shown = (text: string) => {
+          return text.includes("__INGEST_SHELL_")
+            ? text.split(here).join("/work")
+            : text;
+        };
+
         return Response.json({
           data: {
-            stdout: encode(ran.stdout),
-            stderr: encode(ran.stderr),
+            stdout: encode(shown(ran.stdout)),
+            stderr: encode(shown(ran.stderr)),
             encoding: "base64",
             exitCode: ran.exitCode,
           },

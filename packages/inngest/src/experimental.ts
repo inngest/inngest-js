@@ -68,6 +68,8 @@ export type {
   SandboxRef,
   SandboxResource,
   SandboxResources,
+  SandboxShell,
+  SandboxShellOptions,
   SandboxSnapshot,
   SandboxSnapshotCloneOptions,
   SandboxSnapshotCreateOptions,
@@ -79,13 +81,18 @@ export type {
   SandboxSnapshotWaitOptions,
   SandboxStatus,
   SandboxWaitUntilRunningOptions,
+  ShellStart,
+  ShellState,
 } from "./components/InngestSandbox.ts";
 export {
+  beginShellCommand,
+  endShellCommand,
   getCommandError,
   getSandboxError,
   SandboxError,
   SandboxValidationError,
   sandboxMiddleware,
+  stripShellReport,
 } from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";

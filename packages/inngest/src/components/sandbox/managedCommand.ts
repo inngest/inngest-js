@@ -116,9 +116,20 @@ export const runManagedCommand = async (opts: {
   text: string;
   timeoutMs: number;
   exitCodes: SandboxExitCodes;
+  /** Takes what a session added off stdout, for the failures it reports. */
+  strip?: (stdout: string) => string;
 }): Promise<SandboxCommandResult> => {
-  const { rawToolResolver, sandbox, idOrOptions, text, timeoutMs, exitCodes } =
-    opts;
+  const {
+    rawToolResolver,
+    sandbox,
+    idOrOptions,
+    text,
+    timeoutMs,
+    exitCodes,
+    strip = (stdout: string) => {
+      return stdout;
+    },
+  } = opts;
   const step = getStepOptions(idOrOptions);
   const later = (suffix: string, name: string): StepOptionsOrId => {
     return { ...step, id: `${step.id} ${suffix}`, name, "~origin": sdkOrigin };
@@ -183,7 +194,7 @@ export const runManagedCommand = async (opts: {
     // The result of this command, or the throw of its failure
     const settle = (chunks: readonly unknown[]): SandboxCommandResult => {
       const { stdout, stderr, sizes } = collect(chunks);
-      const failure = { command: text, stdout, stderr };
+      const failure = { command: text, stdout: strip(stdout), stderr };
 
       if (timedOut) {
         throw commandFailure({

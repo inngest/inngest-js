@@ -10,6 +10,7 @@ import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
 import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
+import { createShell } from "./shell.ts";
 import { type SandboxTool, type SandboxTools, tool } from "./tools.ts";
 import {
   type DurableSandbox,
@@ -45,6 +46,13 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
    * script runs again after a wait. Default 5 minutes.
    */
   timeout?: SandboxDuration;
+
+  /**
+   * Whether `run` keeps its working directory and exported environment
+   * between calls, like a terminal. Default `true`. With `false` every
+   * command starts fresh in `cwd`.
+   */
+  session?: boolean;
 
   /**
    * Only these tools. Default all of them, with `run_code` only when
@@ -119,7 +127,17 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
   sandbox: Pick<DurableSandbox, "commands" | "files">,
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
-  const { cwd = "/work", timeout = "5m" } = options;
+  const { cwd = "/work", timeout = "5m", session: persist = true } = options;
+  let shell: ReturnType<typeof createShell> | undefined;
+  const session = () => {
+    if (!persist) {
+      return undefined;
+    }
+
+    shell ??= createShell(sandbox.commands.run, { cwd });
+
+    return shell;
+  };
 
   for (const name of Object.keys(scriptTools)) {
     if (options.tools && Object.hasOwn(options.tools, name)) {
@@ -146,7 +164,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
     environment: Record<string, string> = {},
   ): Promise<string> => {
     const result = await sandbox.commands.run({ id, name }, command, {
-      cwd,
+      cwd: shell?.cwd ?? cwd,
       environment,
       timeout,
     });
@@ -203,7 +221,9 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         replace_all: z.boolean().optional(),
       }),
       run: async ({ path, ...edit }) => {
-        const file = path.startsWith("/") ? path : `${cwd}/${path}`;
+        const file = path.startsWith("/")
+          ? path
+          : `${shell?.cwd ?? cwd}/${path}`;
         const bytes = await sandbox.files
           .read({ id: "edit:read", name: `read ${path}` }, file)
           .catch((error: unknown) => {
@@ -243,10 +263,30 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
     run: tool.group({
       description:
-        "Run a shell command in the repository. Returns the exit code, stdout and stderr.",
+        "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
       input: z.object({ command: z.string() }),
-      run: ({ command }) => {
-        return exec("run", command, ["/bin/sh", "-c", command]);
+      run: async ({ command }) => {
+        const current = session();
+
+        if (!current) {
+          return exec("run", command, ["/bin/sh", "-c", command]);
+        }
+
+        const before = current.cwd;
+        const result = await current.run(
+          { id: "run", name: command },
+          command,
+          {
+            timeout,
+          },
+        );
+        const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
+        const moved =
+          current.cwd !== before && current.cwd !== undefined
+            ? `\ncwd: ${current.cwd}`
+            : "";
+
+        return `exit ${result.exitCode}\n${result.stdout}${stderr}${moved}`;
       },
     }),
   };

@@ -3,6 +3,7 @@ import type { StepOptionsOrId } from "../../types.ts";
 import type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
+import type { SandboxShell, SandboxShellOptions } from "./shell.ts";
 import type { SandboxTool, SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
@@ -178,6 +179,11 @@ export interface SandboxCommandOptions {
   environment?: Record<string, string>;
   cwd?: string;
   timeout?: SandboxDuration;
+  /**
+   * @internal Set by `sandbox.shell()`: what the command reads as in errors,
+   * and how to take its session report off stdout before the exit is judged.
+   */
+  "~shell"?: { text: string; strip: (stdout: string) => string };
 }
 
 /**
@@ -605,6 +611,11 @@ export interface DurableSandbox {
    * script, and `$(options)` gives a `$` with options set. See `SandboxDollar`.
    */
   readonly $: SandboxDollar;
+  /**
+   * A shell session on this sandbox, whose commands share a working
+   * directory and exported environment. See `SandboxShell`.
+   */
+  shell(options?: SandboxShellOptions): SandboxShell;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;

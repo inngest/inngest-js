@@ -190,7 +190,7 @@ describe("codeTools edit", () => {
 describe("codeTools", () => {
   test("names each step after its command and runs it in cwd", async () => {
     const { ran, execs } = await inSandbox(async (sandbox) => {
-      const tools = codeTools(sandbox, { cwd: "/repo" });
+      const tools = codeTools(sandbox, { cwd: "/repo", session: false });
       const ctx = { signal: new AbortController().signal, idempotencyKey: "k" };
 
       await (tools.run.run as (input: unknown, ctx: unknown) => unknown)(
@@ -202,6 +202,22 @@ describe("codeTools", () => {
     expect(ran).toEqual(["box", "run", "box:destroy"]);
     expect(execs.map((exec) => exec.cwd)).toEqual(["/repo"]);
     expect(execs[0]?.command).toEqual(["/bin/sh", "-c", "npm test"]);
+  });
+
+  test("run keeps its directory between calls and says where a command moved it", async () => {
+    const { execs } = await inSandbox(async (sandbox) => {
+      const tools = codeTools(sandbox, { cwd: "/repo" });
+      const ctx = { signal: new AbortController().signal, idempotencyKey: "k" };
+      const run = tools.run.run as (input: unknown, ctx: unknown) => unknown;
+
+      await run({ command: "cd pkg" }, ctx);
+      await run({ command: "npm test" }, ctx);
+    });
+
+    // The fake answers with no report, so nothing moved: the session starts
+    // each command in cwd and carries its text after the report setup.
+    expect(execs.map((exec) => exec.cwd)).toEqual(["/repo", "/repo"]);
+    expect(execs[1]?.command.at(-1)).toMatch(/npm test$/);
   });
 
   test("returns the exit code with the output", async () => {
