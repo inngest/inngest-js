@@ -69,6 +69,7 @@ const readBody = async (
 export const startFakes = async (): Promise<Fakes> => {
   const calls: Call[] = [];
   const commits = new Map<string, string>();
+  const streams = new Map<string, { ids: Set<string>; over: boolean }>();
   let counter = 0;
 
   const server = createServer(async (req, res) => {
@@ -89,6 +90,64 @@ export const startFakes = async (): Promise<Fakes> => {
       const method = slack[1] as string;
       const ts = `${1_700_000_000 + counter}.${String(counter).padStart(6, "0")}`;
       const thread = String(body.thread_ts ?? body.timestamp ?? body.ts ?? ts);
+
+      // Streamed progress, with Slack's rules: a stream holds 50 unique task
+      // cards (a 51st is dropped and Slack answers ok with a warning), and a
+      // stream is over once it is stopped or a card named end-stream was
+      // written (the next write gets message_not_in_streaming_state).
+      if (method === "chat.startStream") {
+        streams.set(ts, { ids: new Set(), over: false });
+      }
+
+      if (method === "chat.stopStream") {
+        const stopped = streams.get(String(body.ts));
+
+        if (stopped) {
+          stopped.over = true;
+        }
+      }
+
+      if (method === "chat.appendStream") {
+        const stream = streams.get(String(body.ts));
+        const chunks = (body.chunks ?? []) as { id: string }[];
+
+        if (!stream || stream.over) {
+          calls.push({
+            channel: "slack",
+            method,
+            thread: String(body.ts),
+            body: { ...body, accepted: false },
+          });
+          reply(200, { ok: false, error: "message_not_in_streaming_state" });
+
+          return;
+        }
+
+        for (const chunk of chunks) {
+          stream.ids.add(chunk.id);
+
+          if (chunk.id === "end-stream") {
+            stream.over = true;
+          }
+        }
+
+        const dropped = stream.ids.size > 50;
+
+        calls.push({
+          channel: "slack",
+          method,
+          thread: String(body.ts),
+          body: { ...body, accepted: !dropped, held: stream.ids.size },
+        });
+        reply(200, {
+          ok: true,
+          ...(dropped
+            ? { response_metadata: { warnings: ["dropped_updates"] } }
+            : {}),
+        });
+
+        return;
+      }
 
       calls.push({ channel: "slack", method, thread, body });
       reply(200, { ok: true, channel: body.channel, ts });

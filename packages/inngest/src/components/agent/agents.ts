@@ -334,14 +334,21 @@ export type {
 export type {
   Channel,
   ChannelAsk,
+  ChannelCard,
   ChannelMessage,
+  ChannelStream,
+  ChannelStreamLimits,
   ChannelTrigger,
   ReportConfig,
   ReportConfigValue,
   Reporter,
   ReportTarget,
 } from "./channels.ts";
-export { askThrough, defineChannel } from "./channels.ts";
+export {
+  askThrough,
+  ChannelStreamEnded,
+  defineChannel,
+} from "./channels.ts";
 export { agentMessage } from "./events.ts";
 export type {
   GithubChannelOptions,
