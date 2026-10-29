@@ -107,6 +107,9 @@ export interface AgentFunctionOptions {
    * The name the function shows in the Inngest UI. Default: its `id`.
    */
   name?: InngestFunction.Options["name"];
+  /**
+   * A longer description of the function, shown in the Inngest UI.
+   */
   description?: InngestFunction.Options["description"];
 
   /**
@@ -195,7 +198,12 @@ export interface AgentFunctionOptions {
   checkpointing?: never;
 }
 
-const takenOptions = [
+/**
+ * The options of `AgentFunctionOptions` an agent passes on to its function. The
+ * type test `agentFunctionOptions.test.ts` checks that every option is in this
+ * list or in `refusedOptions`, so a new option cannot be dropped silently.
+ */
+export const takenOptions = [
   "name",
   "description",
   "concurrency",
@@ -210,7 +218,10 @@ const takenOptions = [
   "middleware",
 ] as const;
 
-const refusedOptions = [
+/**
+ * The options of `AgentFunctionOptions` that are `never`: an agent refuses them.
+ */
+export const refusedOptions = [
   "debounce",
   "batchEvents",
   "singleton",
@@ -504,12 +515,26 @@ export interface ThreadInbox<
   next(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
 
   /**
-   * Waits for the next message for at most `timeout`, and returns `undefined`
-   * when it expires. The wait is durable, like `step.waitForEvent()`'s: it
-   * does not hold the run's process, and a message that arrives after the timeout
-   * is read by the next call. Messages the inbox skips (a stop, or one that
-   * breaks its schema) start a new wait with the same timeout.
-   * @param options The timeout.
+   * Waits for the next message for at most `timeout`. The wait is durable,
+   * like `step.waitForEvent()`'s: it does not hold the run's process, and a
+   * message that arrives after the timeout is read by the next call. Messages
+   * the inbox skips (a stop, or one that breaks its schema) start a new wait
+   * with the same timeout.
+   *
+   * It resolves to `undefined` when the timeout expires, and to `null` when
+   * the inbox is closed and every saved message has been read, so check
+   * `=== undefined` to tell an idle wait from the end.
+   *
+   * @example
+   * ```ts
+   * const message = await inbox.next({ timeout: "10m" });
+   *
+   * if (message === undefined) {
+   *   // Nothing arrived in ten minutes: do periodic work, then wait again.
+   * } else if (message === null) {
+   *   // The inbox is closed and drained.
+   * }
+   * ```
    */
   next(
     options: NextOptions,
@@ -540,6 +565,15 @@ export interface ThreadInbox<
 }
 
 /**
+ * The function context an agent's body shares with a plain function, typed
+ * from the client's middleware: `step`, `group`, `defer`, `runId`, `logger`,
+ * `attempt` and the rest, without `event` and `events`, which the agent
+ * replaces.
+ */
+export type AgentFunctionInput<TClient extends Inngest.Any = Inngest.Any> =
+  Omit<GetFunctionInput<TClient>, "event" | "events">;
+
+/**
  * What the body gets: the function context the client's middleware gives a
  * plain function (`step` with `step.sandbox` when the client has the sandbox
  * middleware, `group`, `defer`, `runId`, `logger`, `attempt` and the rest)
@@ -554,7 +588,7 @@ export type AgentBodyContext<
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
   TClient extends Inngest.Any = Inngest.Any,
-> = Omit<GetFunctionInput<TClient>, "event" | "events"> &
+> = AgentFunctionInput<TClient> &
   AgentBodyFields<TEvent, TRequest, TReply, TSandboxes>;
 
 /**
@@ -746,6 +780,10 @@ function threadInbox(
     );
   }
 
+  function next(): Promise<ThreadInboxMessage | null>;
+  function next(
+    options: NextOptions,
+  ): Promise<ThreadInboxMessage | null | undefined>;
   async function next(options?: NextOptions) {
     if (delivered > 0) {
       await recorder.waiting();
@@ -787,7 +825,7 @@ function threadInbox(
 
   return {
     inbox: {
-      next: next as ThreadInbox["next"],
+      next,
       async drain() {
         const taken: ThreadInboxMessage[] = [];
 

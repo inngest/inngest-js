@@ -20,6 +20,7 @@ import {
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
 import { invoke } from "./invoke.ts";
+import { classifyModelError, untrusted } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
 
 /**
@@ -180,8 +181,10 @@ export interface AgentModelResponse {
 }
 
 /**
- * Calls a model once. It runs inside a step, so a failure is retried: throw a
- * `NonRetriableError` when a retry can't help, such as a bad request.
+ * Calls a model once. It runs inside a step, so a failure is retried. The loop
+ * gives up at once on a client error no retry can fix (a 4xx other than 408,
+ * 409 and 429; see `agent.classifyModelError()`), and you can throw a
+ * `NonRetriableError` yourself for anything else a retry can't help.
  */
 export type AgentModel = (
   request: AgentModelRequest,
@@ -678,16 +681,24 @@ const loop = async <TTools extends SandboxTools>(
           ? clipContext(messages, context.maxChars)
           : messages;
         const started = Date.now();
-        const answer = await model({
-          system,
-          messages: last
-            ? [...sent, { role: "user", content: options.wrapUp as string }]
-            : sent,
-          tools: definitions,
-          turn,
-          maxTurns,
-          ...(last && { toolChoice: "none" as const }),
-        });
+        let answer: AgentModelResponse;
+
+        // A 4xx no retry can fix (a rejected request, a bad key) ends the run
+        // instead of retrying it.
+        try {
+          answer = await model({
+            system,
+            messages: last
+              ? [...sent, { role: "user", content: options.wrapUp as string }]
+              : sent,
+            tools: definitions,
+            turn,
+            maxTurns,
+            ...(last && { toolChoice: "none" as const }),
+          });
+        } catch (error) {
+          throw classifyModelError(error);
+        }
 
         if (scores) {
           scoreThisStep("agent.model_ms", Date.now() - started);
@@ -852,7 +863,9 @@ const model = (fn: AgentModel): AgentModel => {
 /**
  * EXPERIMENTAL: The agent helpers: `agent.loop()` runs the model-and-tools
  * loop, `agent.model()` makes a model function, `agent.toolError()` returns an
- * error result from a tool and `agent.invoke()` starts another agent.
+ * error result from a tool, `agent.invoke()` starts another agent,
+ * `agent.classifyModelError()` marks model errors no retry can fix and
+ * `agent.untrusted()` marks text from outside.
  *
  * @example
  * ```ts
@@ -861,4 +874,11 @@ const model = (fn: AgentModel): AgentModel => {
  * const result = await agent.loop({ model, prompt: "Fix the test", tools });
  * ```
  */
-export const agent = { loop, model, toolError, invoke };
+export const agent = {
+  loop,
+  model,
+  toolError,
+  invoke,
+  classifyModelError,
+  untrusted,
+};

@@ -57,5 +57,7 @@ export type {
   AgentUsage,
 } from "./loop.ts";
 export { agent } from "./loop.ts";
+export type { UntrustedOptions } from "./modelErrors.ts";
+export { classifyModelError, untrusted, untrustedTag } from "./modelErrors.ts";
 export type { Repo, RepoOptions } from "./repo.ts";
 export { repo } from "./repo.ts";
