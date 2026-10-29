@@ -11,6 +11,7 @@ import { fakeMcpFetch } from "../agent/testing/mcp.ts";
 import { script } from "../agent/testing/model.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { mapMcpResult } from "./mcp.ts";
 import { McpAuthError, McpUnavailableError } from "./mcpClient.ts";
 import { secret } from "./secret.ts";
 import { resolveToolCall, type SandboxTool, tool } from "./tools.ts";
@@ -301,6 +302,21 @@ describe("tool.mcp", () => {
         ),
       ),
     ).toEqual(["hex_get_thread"]);
+  });
+
+  test("a malformed block in an answer never re-sends the call", async () => {
+    const { hex } = connect(
+      {},
+      fakeMcpFetch({
+        tools: { odd: { run: () => ({}) } },
+      }),
+    );
+    const tools = await build(hex);
+
+    expect(
+      mapMcpResult({ content: [null, { type: "text", text: "ok" }] as never }),
+    ).toBe("ok");
+    expect(await call(tools.hex_odd, {})).toBeDefined();
   });
 
   test("a missing secret fails without retrying", async () => {

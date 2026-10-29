@@ -17,6 +17,7 @@ import { step } from "../InngestStepTools.ts";
 import {
   type McpCallResult,
   McpClient,
+  type McpContentBlock,
   McpOutcomeUnknownError,
   McpProtocolError,
   type McpToolInfo,
@@ -168,8 +169,17 @@ const clip = (text: string): string => {
   return `${text.slice(0, keep)}\n[truncated ${total - 2 * keep} bytes]\n${text.slice(-keep)}`;
 };
 
+// Blocks a server sent that are not objects are ignored.
+const blocksOf = (result: McpCallResult): McpContentBlock[] => {
+  return (Array.isArray(result.content) ? result.content : []).filter(
+    (block) => {
+      return typeof block === "object" && block !== null;
+    },
+  );
+};
+
 const textOf = (result: McpCallResult): string => {
-  return (Array.isArray(result.content) ? result.content : [])
+  return blocksOf(result)
     .map((block) => {
       return block.type === "text" && typeof block.text === "string"
         ? block.text
@@ -194,7 +204,7 @@ export const mapMcpResult = (result: McpCallResult): unknown => {
   if (result.structuredContent !== undefined) {
     value = result.structuredContent;
   } else {
-    const blocks = Array.isArray(result.content) ? result.content : [];
+    const blocks = blocksOf(result);
 
     if (blocks.length === 1 && blocks[0]?.type === "text") {
       value = blocks[0].text ?? "";
@@ -373,13 +383,20 @@ export class McpServer {
       info.annotations?.idempotentHint === true;
 
     try {
-      return mapMcpResult(
-        await this.#client.callTool(info.name, input, {
-          signal: ctx.signal,
-          timeoutMs: this.#timeoutMs,
-          idempotencyKey: ctx.idempotencyKey,
-        }),
-      );
+      const answer = await this.#client.callTool(info.name, input, {
+        signal: ctx.signal,
+        timeoutMs: this.#timeoutMs,
+        idempotencyKey: ctx.idempotencyKey,
+      });
+
+      try {
+        return mapMcpResult(answer);
+      } catch (error) {
+        // The call was sent and the answer is unreadable.
+        throw new McpOutcomeUnknownError(
+          `the answer could not be read: ${(error as Error).message}`,
+        );
+      }
     } catch (error) {
       if (error instanceof McpOutcomeUnknownError && !repeatable) {
         return toolErrorOf(

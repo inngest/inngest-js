@@ -161,6 +161,15 @@ const sha256 = (text: string): string => {
   return hashjs.sha256().update(text).digest("hex");
 };
 
+// Redacting a bare number can leave text that isn't JSON; keep it as text.
+const parseOr = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+};
+
 /**
  * Whether `message` is the response to request `id`, not a request or
  * notification from the server that happens to carry the same id.
@@ -347,7 +356,7 @@ export class McpClient {
       return forms.some((form) => {
         return form.length >= 4 && text.includes(form);
       })
-        ? JSON.parse(redact(text, forms))
+        ? parseOr(redact(text, forms))
         : result;
     } catch (error) {
       if (error instanceof Error) {
