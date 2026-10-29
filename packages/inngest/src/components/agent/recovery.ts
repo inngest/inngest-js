@@ -99,7 +99,8 @@ export interface RunFailure {
 
   /**
    * Whether the turn is resent to a fresh run. It is not when the same error
-   * had already failed that turn, or when `resume` is off.
+   * had already failed that turn, when `resume` is off, or when the run failed
+   * with a `NonRetriableError`.
    */
   resuming: boolean;
 

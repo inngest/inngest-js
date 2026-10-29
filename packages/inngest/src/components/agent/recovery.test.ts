@@ -349,6 +349,7 @@ describe("the finished function", () => {
       }).error?.nonRetriable,
     ).toBe(true);
   });
+
   test("the same error failing the same turn again says so and resends nothing", async () => {
     const { agent, lastRun, sent, posts } = setup({ recovery: true });
     const failure = { name: "Error", message: "boom" };
