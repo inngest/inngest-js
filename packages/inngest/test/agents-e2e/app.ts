@@ -44,6 +44,9 @@ const commands = Object.assign({}, ...scenarios.map((s) => s.sandboxCommands));
 export const client = new Inngest({
   id: "agents-e2e",
   middleware: [sandboxMiddleware()],
+  ...(process.env.AGENTS_E2E_CHECKPOINTING
+    ? { checkpointing: JSON.parse(process.env.AGENTS_E2E_CHECKPOINTING) }
+    : {}),
   ...(fakeSandboxes
     ? {
         fetch: fakeSandbox({
@@ -73,7 +76,38 @@ const listed = scenarios.flatMap((s) => {
 });
 const functions = [...new Set(listed)];
 
-createServer(serve({ client, functions })).listen(
+if (process.env.AGENTS_E2E_REQLOG) {
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const begin = Date.now();
+    const res = await realFetch(input, init);
+    const url = String(input?.url ?? input).replace(/^https?:\/\/[^/]+/, "");
+
+    console.log(`OUTLOG ${begin} ${Date.now() - begin} ${init?.method ?? "GET"} ${url.slice(0, 60)}`);
+
+    return res;
+  }) as typeof fetch;
+}
+
+const handler = serve({ client, functions });
+
+createServer(
+  process.env.AGENTS_E2E_REQLOG
+    ? (req, res) => {
+        const begin = Date.now();
+        const bytes = Number(req.headers["content-length"] ?? 0);
+
+        res.on("finish", () => {
+          console.log(
+            `REQLOG ${begin} ${Date.now() - begin} ${bytes} ${req.method} ${req.url?.includes("stepId") ? req.url.replace(/.*stepId=/, "step=").slice(0, 12) : "discover"}`,
+          );
+        });
+
+        return handler(req, res);
+      }
+    : handler,
+).listen(
   Number(process.env.PORT),
   () => {
     // The CLI waits for the Dev Server to know these before it runs anything.
