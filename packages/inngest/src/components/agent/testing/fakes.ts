@@ -13,6 +13,9 @@ import { createServer, type IncomingMessage } from "node:http";
  * One call the fakes server received.
  */
 export interface Call {
+  /**
+   * Which fake received the call.
+   */
   channel: "slack" | "github" | "sandbox";
 
   /**
@@ -26,6 +29,10 @@ export interface Call {
    * `owner/repo#number` for GitHub.
    */
   thread?: string;
+
+  /**
+   * The request body, parsed as JSON or as a form.
+   */
   body: Record<string, unknown>;
 }
 
@@ -33,8 +40,19 @@ export interface Call {
  * Which calls `posts()` returns: those that match every field given.
  */
 export interface CallFilter {
+  /**
+   * Only calls of this fake.
+   */
   channel?: Call["channel"];
+
+  /**
+   * Only calls of this method.
+   */
   method?: string;
+
+  /**
+   * Only calls of this conversation.
+   */
   thread?: string;
 }
 
@@ -42,13 +60,24 @@ export interface CallFilter {
  * The running fakes server and what it recorded.
  */
 export interface Fakes {
+  /**
+   * The server's base URL, such as `http://127.0.0.1:41233`.
+   */
   url: string;
+
+  /**
+   * Every call received, oldest first.
+   */
   calls: Call[];
 
   /**
    * The calls that match every field of `filter`, oldest first.
    */
   posts: (filter?: CallFilter) => Call[];
+
+  /**
+   * Stops the server.
+   */
   close: () => Promise<void>;
 }
 

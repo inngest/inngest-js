@@ -164,7 +164,7 @@ export const channels = scenario({
       isDev: true,
     });
 
-    const issue = { owner: "acme", repo: "keys", number: "12" };
+    const issue = { owner: "acme", repo: "keys", number: 12 };
 
     const handle = withKeys(
       getThread(

@@ -67,6 +67,10 @@ export interface GitRemote {
    * Basic-auth headers the server has seen, to show what reached it.
    */
   seen: string[];
+
+  /**
+   * Stops the server and removes the repository.
+   */
   close: () => Promise<void>;
 }
 
