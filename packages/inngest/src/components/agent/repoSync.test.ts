@@ -157,4 +157,85 @@ describe("repo checkout and sync", () => {
     expect((await checkout({ ref: "v1" })).sha).toBe(first);
     expect((await checkout({ ref: "main" })).sha).toBe(first);
   });
+
+  test("a moved tag does not break the next sync", async () => {
+    git(seed, "tag", "latest");
+    git(seed, "push", "--quiet", "origin", "latest");
+    await checkout({ ref: "latest" });
+
+    const tip = upstream("b.txt", "two\n");
+    git(seed, "tag", "-f", "latest");
+    git(seed, "push", "--quiet", "--force", "origin", "latest");
+
+    expect(await checkout({ ref: "latest" })).toMatchObject({
+      action: "synced",
+      sha: tip,
+    });
+  });
+
+  test("keep checks out a tag, and makes a branch the checkout lacks", async () => {
+    const first = git(seed, "rev-parse", "HEAD");
+    git(seed, "tag", "v1");
+    git(seed, "push", "--quiet", "origin", "v1");
+    git(seed, "checkout", "--quiet", "-b", "dev");
+    writeFileSync(join(seed, "dev.txt"), "dev\n");
+    git(seed, "add", ".");
+    git(seed, "commit", "--quiet", "-m", "dev");
+    git(seed, "push", "--quiet", "origin", "dev");
+    const dev = git(seed, "rev-parse", "HEAD");
+    await checkout();
+
+    expect((await checkout({ ref: "dev", sync: "keep" })).sha).toBe(dev);
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("dev");
+    expect((await checkout({ ref: "v1", sync: "keep" })).sha).toBe(first);
+  });
+
+  test("keep carries a modified tracked file along", async () => {
+    await checkout();
+    writeFileSync(join(work, "a.txt"), "changed\n");
+    const tip = upstream("b.txt", "two\n");
+
+    expect(await checkout({ sync: "keep" })).toMatchObject({ sha: tip });
+    expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("changed\n");
+  });
+
+  test("keep moves commits only a detached HEAD held onto a branch", async () => {
+    await checkout();
+    git(work, "checkout", "--quiet", "--detach");
+    writeFileSync(join(work, "d.txt"), "detached\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "detached work");
+    const stranded = git(work, "rev-parse", "HEAD");
+
+    await checkout({ sync: "keep" });
+
+    const branches = git(work, "branch", "--contains", stranded);
+
+    expect(branches).toContain("detached-");
+  });
+
+  test("keep refuses a checkout of another repository, reset repoints it", async () => {
+    await checkout();
+    const other = join(root, "other.git");
+    git(root, "init", "--quiet", "--bare", "-b", "main", other);
+    git(seed, "push", "--quiet", other, "main");
+
+    await expect(
+      repo(sandbox, { repo: other, path: work, sync: "keep" }),
+    ).rejects.toThrow(/not .*other\.git/);
+
+    const result = await repo(sandbox, { repo: other, path: work });
+
+    expect(result.action).toBe("synced");
+    expect(git(work, "remote", "get-url", "origin")).toBe(other);
+  });
+
+  test("rejects a sync mode or a ref it does not understand", async () => {
+    await expect(
+      repo(sandbox, { repo: origin, path: work, sync: "Keep" as "keep" }),
+    ).rejects.toThrow(/reset" or "keep/);
+    await expect(
+      repo(sandbox, { repo: origin, path: work, ref: "--force" }),
+    ).rejects.toThrow(/can't start with/);
+  });
 });

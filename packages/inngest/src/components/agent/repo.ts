@@ -44,14 +44,17 @@ export interface RepoOptions {
    * from a thread's snapshot or recycled mid-run. The repository is fetched
    * either way.
    *
-   * - `"reset"` (default): the working copy becomes exactly `ref`. Local
-   *   commits on that branch, uncommitted changes and untracked files are
-   *   discarded, as if it were freshly cloned.
+   * - `"reset"` (default): the working copy becomes `ref` as the remote has it.
+   *   Local commits on that branch, uncommitted changes and untracked files
+   *   are discarded, as in a fresh clone; ignored files and submodules are
+   *   left alone. A checkout of another repository is repointed at this one.
    * - `"keep"`: nothing the agent did is discarded. `ref` is checked out (a
    *   branch is fast-forwarded to the remote when it can be), uncommitted
    *   changes come along, and a branch that has local commits or diverged
-   *   from the remote stays as it is. A checkout that would overwrite local
-   *   changes fails.
+   *   from the remote stays where it is, with a note on stderr. Commits that
+   *   only a detached HEAD held move to a `detached-<sha>` branch. A checkout
+   *   that would overwrite local changes, or one of another repository,
+   *   fails.
    */
   sync?: "reset" | "keep";
 }
@@ -99,39 +102,59 @@ if [ -n "$GIT_TOKEN" ]; then
 fi
 `;
 
-// Clones into an empty path, or fetches into a checkout that is already there.
-// Prints `cloned` or `synced`, then the commit.
+// Clones into an empty path, or fetches into a checkout that is already there
+// and brings it to the ref. The last line it prints is `repo:<action>:<sha>`.
 const checkoutScript = `${authenticate}
-if [ -d "$DIR/.git" ]; then
-  git -C "$DIR" remote set-url origin "$URL" &&
-  git -C "$DIR" fetch --quiet --tags --prune origin || exit 1
+if [ -e "$DIR/.git" ]; then
+  have=$(git -C "$DIR" remote get-url origin 2>/dev/null || true)
+  if [ "$have" != "$URL" ]; then
+    if [ "$SYNC" = keep ]; then
+      echo "the checkout at $DIR is of \${have:-no remote}, not $URL, and keep does not repoint it" >&2
+      exit 1
+    fi
+    if [ -n "$have" ]; then git -C "$DIR" remote set-url origin "$URL"; else git -C "$DIR" remote add origin "$URL"; fi || exit 1
+  fi
+  git -C "$DIR" fetch --force --quiet --tags --prune origin || exit 1
   if [ -z "$REF" ]; then
     git -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
     REF=$(git -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
+    [ -n "$REF" ] || { echo "cannot find the default branch of origin" >&2; exit 1; }
   fi
-  if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
-    if [ "$SYNC" = keep ]; then
-      git -C "$DIR" checkout --quiet "$REF" 2>/dev/null ||
-        git -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
-      git -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1
-    else
-      git -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
+  if [ "$SYNC" = keep ]; then
+    # Commits that only a detached HEAD holds would be left behind: keep them.
+    if ! git -C "$DIR" symbolic-ref -q HEAD >/dev/null && [ -n "$(git -C "$DIR" rev-list -n1 HEAD --not --branches --remotes 2>/dev/null)" ]; then
+      git -C "$DIR" branch "detached-$(git -C "$DIR" rev-parse --short HEAD)" || exit 1
     fi
-  elif [ "$SYNC" = keep ]; then
-    git -C "$DIR" checkout --quiet --detach "$REF" || exit 1
+    if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+      if git -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+        git -C "$DIR" checkout --quiet "$REF" || exit 1
+      else
+        git -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
+      fi
+      git -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
+        echo "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
+    else
+      git -C "$DIR" checkout --quiet --detach "$REF" || exit 1
+    fi
   else
-    git -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
+    git -C "$DIR" rebase --abort >/dev/null 2>&1
+    git -C "$DIR" merge --abort >/dev/null 2>&1
+    if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+      git -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
+    else
+      git -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
+    fi
+    git -C "$DIR" clean --quiet -fd || exit 1
   fi
-  if [ "$SYNC" != keep ]; then git -C "$DIR" clean --quiet -fd; fi
-  echo synced
+  action=synced
 else
   git clone --quiet "$URL" "$DIR" &&
   git -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
-  echo cloned
+  action=cloned
 fi
 git -C "$DIR" config user.name "Coding agent" &&
 git -C "$DIR" config user.email "agent@users.noreply.github.com" &&
-git -C "$DIR" rev-parse HEAD
+echo "repo:$action:$(git -C "$DIR" rev-parse HEAD)"
 `;
 
 const pushScript = `${authenticate}
@@ -164,6 +187,17 @@ export const repo = async (
   options: RepoOptions,
 ): Promise<Repo> => {
   const { ref, path = "/work", sync = "reset" } = options;
+
+  if (sync !== "reset" && sync !== "keep") {
+    throw new NonRetriableError(
+      `repo sync must be "reset" or "keep", not ${JSON.stringify(sync)}`,
+    );
+  }
+
+  if (ref?.startsWith("-")) {
+    throw new NonRetriableError(`repo ref can't start with "-": ${ref}`);
+  }
+
   const url = /^[\w.-]+\/[\w.-]+$/.test(options.repo)
     ? `https://github.com/${options.repo}.git`
     : options.repo;
@@ -197,8 +231,18 @@ export const repo = async (
     checkoutScript,
     { URL: url, REF: ref ?? "", SYNC: sync },
   );
-  const lines = stdout.trim().split("\n");
-  const action = lines.at(-2) === "synced" ? "synced" : "cloned";
+  // The script's last line says what it did; anything before it is noise.
+  const done = stdout
+    .trim()
+    .split("\n")
+    .reverse()
+    .map((line) => {
+      return /^repo:(cloned|synced):([0-9a-f]+)$/.exec(line);
+    })
+    .find(Boolean);
+  const action: "cloned" | "synced" =
+    done?.[1] === "synced" ? "synced" : "cloned";
+  const sha = done?.[2] ?? stdout.trim().split("\n").pop() ?? "";
 
   const push = async (branch: string): Promise<void> => {
     await git("push", `git push ${branch}`, pushScript, { BRANCH: branch });
@@ -207,7 +251,7 @@ export const repo = async (
   return {
     path,
     action,
-    sha: lines.at(-1) ?? "",
+    sha,
     push,
     tools: {
       ...sandbox.tools.code({ cwd: path }),

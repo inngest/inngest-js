@@ -12,4 +12,4 @@ const checkout = await repo(sandbox, {
 });
 ```
 
-`sync: "reset"` makes the working copy exactly `ref`, discarding local commits, changes and untracked files. `sync: "keep"` discards nothing: it checks out `ref`, fast-forwards the branch when it can, carries uncommitted changes, and leaves a branch with local commits where it is.
+`sync: "reset"` makes the working copy `ref` as the remote has it, discarding local commits, changes and untracked files (ignored files and submodules are left alone), and repoints a checkout of another repository. `sync: "keep"` discards nothing: it checks out `ref`, fast-forwards the branch when it can, carries uncommitted changes, leaves a branch with local commits where it is, moves commits only a detached HEAD held to a `detached-<sha>` branch, and fails rather than touch a checkout of another repository or overwrite local changes.
