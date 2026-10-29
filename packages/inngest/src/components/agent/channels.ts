@@ -11,6 +11,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import type { ConfigValue } from "./defs.ts";
+import { scoreThisStep } from "./scores.ts";
 
 /**
  * A message to a channel.
@@ -171,7 +172,10 @@ export interface Reporter {
   /**
    * Posts `message` to the destinations: `options.to`, else the `report`
    * config, else the channel named `main`. With no destination it does
-   * nothing. Each post is a step, so a replay never posts twice.
+   * nothing. Each post is a step, so a replay never posts twice. While the
+   * agent's `scores` are on, the first post is scored `agent.first_output_ms`
+   * (the trigger event to the post) and each later one `agent.output_gap_ms`
+   * (the previous post to this one), on the post's own step.
    */
   (
     /**
@@ -204,9 +208,19 @@ export const createReporter = (
   /**
    * Runs a durable step, `step.run`.
    */
-  runStep: (id: string, fn: () => Promise<void>) => Promise<unknown>,
+  runStep: (id: string, fn: () => Promise<number>) => Promise<unknown>,
+
+  /**
+   * Scores the posts when given: `since` is when the run began (ms since the
+   * epoch), which the first post is measured from; without it the first post
+   * is not scored.
+   */
+  scores?: { since?: number },
 ): Reporter => {
   let reports = 0;
+  // When the last post finished. Each post step returns it, so a replay has it
+  // from the saved result without running the post again.
+  let lastPostAt: number | undefined;
 
   return async function report(message, options) {
     const normalized: ChannelMessage =
@@ -241,10 +255,33 @@ export const createReporter = (
       return [{ name: target, channel, index }];
     });
 
+    // Measured from before this report's first post, so a second destination
+    // is not scored against its sibling.
+    const first = lastPostAt === undefined;
+    const since = scores ? (lastPostAt ?? scores.since) : undefined;
+
     for (const { name, channel, index } of destinations) {
-      await runStep(`report:${n}:${index}:${name}`, async () => {
-        await channel.post(normalized);
-      });
+      const postedAt = await runStep(
+        `report:${n}:${index}:${name}`,
+        async () => {
+          await channel.post(normalized);
+          const now = Date.now();
+
+          if (since !== undefined) {
+            scoreThisStep(
+              first ? "agent.first_output_ms" : "agent.output_gap_ms",
+              Math.max(0, now - since),
+            );
+          }
+
+          return now;
+        },
+      );
+
+      // A post saved before posts returned their time has none.
+      if (typeof postedAt === "number") {
+        lastPostAt = postedAt;
+      }
     }
   };
 };

@@ -18,6 +18,7 @@ import {
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
 import { invoke } from "./invoke.ts";
+import { scoreThisStep } from "./scores.ts";
 
 /**
  * One message of the conversation. The loop keeps the `content` of an
@@ -383,6 +384,24 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * `turn`) to post to Slack or a database once. An error fails the run.
    */
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
+
+  /**
+   * Whether the loop scores itself. Default: `true`. Each score is written on
+   * a step the loop already runs, with that step's result, so it adds no steps
+   * and a replay never writes it again.
+   *
+   * A model step gets `agent.model_ms` (how long the model function took),
+   * `agent.input_tokens` and `agent.output_tokens` when it reported usage,
+   * `agent.tool_calls` (how many tools the model asked for) and
+   * `agent.steers` (how many steering messages were folded in before the
+   * call). A tool step gets `agent.tool_ms` and `agent.tool_error` (1 when
+   * the tool threw or returned `agent.toolError()`, else 0). A group of steps
+   * from `tool.group()` is not scored, since it is not one step.
+   *
+   * Spread `control` from an agent body to follow the agent's `scores`
+   * setting.
+   */
+  scores?: boolean;
 }
 
 /**
@@ -462,7 +481,10 @@ const isToolError = (output: unknown): output is { "~error": unknown } => {
 };
 
 const runTool = async <TTools extends SandboxTools>(
-  options: AgentLoopOptions<TTools> & { maxToolOutput: number },
+  options: AgentLoopOptions<TTools> & {
+    maxToolOutput: number;
+    scores: boolean;
+  },
   turn: number,
   stepId: string,
   call: AgentToolCall,
@@ -495,8 +517,26 @@ const runTool = async <TTools extends SandboxTools>(
               return resolved.invoke(context);
             });
           })
-        : await step.run({ id: stepId, name, "~span": span }, () => {
-            return resolved.invoke(context);
+        : await step.run({ id: stepId, name, "~span": span }, async () => {
+            const toolStarted = Date.now();
+
+            try {
+              const answer = await resolved.invoke(context);
+
+              if (options.scores) {
+                scoreThisStep("agent.tool_ms", Date.now() - toolStarted);
+                scoreThisStep("agent.tool_error", isToolError(answer) ? 1 : 0);
+              }
+
+              return answer;
+            } catch (error) {
+              if (options.scores) {
+                scoreThisStep("agent.tool_ms", Date.now() - toolStarted);
+                scoreThisStep("agent.tool_error", 1);
+              }
+
+              throw error;
+            }
           });
 
       isError = isToolError(value);
@@ -568,6 +608,7 @@ const loop = async <TTools extends SandboxTools>(
     maxToolOutput = 8_000,
     parallelTools = true,
     context = { maxChars: 200_000 },
+    scores = true,
   } = options;
   const definitions = toolDefinitions(tools);
   const messages: AgentMessage[] = [
@@ -577,6 +618,8 @@ const loop = async <TTools extends SandboxTools>(
   const usage: AgentUsage = { input: 0, output: 0 };
   const toolRuns: AgentToolRun<TTools>[] = [];
   let text = "";
+  // Steering messages folded in since the last model call.
+  let steered = 0;
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
     const spent = await options.budget?.(turn);
@@ -600,13 +643,13 @@ const loop = async <TTools extends SandboxTools>(
         name: "Thinking",
         "~span": { id: modelStep, name: "Thinking", kind: "llm" },
       },
-      () => {
+      async () => {
         const last = turn === maxTurns && options.wrapUp !== undefined;
         const sent = context
           ? clipContext(messages, context.maxChars)
           : messages;
-
-        return model({
+        const started = Date.now();
+        const answer = await model({
           system,
           messages: last
             ? [...sent, { role: "user", content: options.wrapUp as string }]
@@ -616,8 +659,22 @@ const loop = async <TTools extends SandboxTools>(
           maxTurns,
           ...(last && { toolChoice: "none" as const }),
         });
+
+        if (scores) {
+          scoreThisStep("agent.model_ms", Date.now() - started);
+          scoreThisStep("agent.tool_calls", answer.toolCalls.length);
+          scoreThisStep("agent.steers", steered);
+
+          if (answer.usage) {
+            scoreThisStep("agent.input_tokens", answer.usage.input);
+            scoreThisStep("agent.output_tokens", answer.usage.output);
+          }
+        }
+
+        return answer;
       },
     )) as AgentModelResponse;
+    steered = 0;
 
     usage.input += reply.usage?.input ?? 0;
     usage.output += reply.usage?.output ?? 0;
@@ -645,7 +702,7 @@ const loop = async <TTools extends SandboxTools>(
 
     const run = (call: AgentToolCall, index: number) => {
       return runTool<TTools>(
-        { ...options, maxToolOutput },
+        { ...options, maxToolOutput, scores },
         turn,
         `${id}:${turn}.${index}:${call.name}`,
         call,
@@ -668,6 +725,7 @@ const loop = async <TTools extends SandboxTools>(
 
     for (const content of (await options.steer?.(turn)) ?? []) {
       messages.push({ role: "user", content });
+      steered += 1;
     }
 
     if (await options.stop?.(turn)) {

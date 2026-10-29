@@ -32,7 +32,7 @@ const recorder = () => {
   };
 };
 
-const direct = async (id: string, fn: () => Promise<void>) => {
+const direct = async (id: string, fn: () => Promise<number>) => {
   await fn();
 
   return id;

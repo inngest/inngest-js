@@ -53,6 +53,7 @@ import {
   registerLimits,
 } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
@@ -149,6 +150,16 @@ export interface AgentFunctionConfig<
    * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
    */
   limits?: AgentLimits;
+
+  /**
+   * Whether the agent scores itself. Default: `true`. The loop scores each
+   * model and tool step (see `agent.loop()`), `report()` scores how long
+   * the first post and each gap between posts took, and a stop request sets
+   * `agent.stopped` on the step that records it. Every score rides on a
+   * step that already runs, so none adds a step. `false` turns those off;
+   * `agent.score()` still works.
+   */
+  scores?: boolean;
 }
 
 /**
@@ -201,6 +212,12 @@ export interface AgentBodyContext<
   report: Reporter;
 
   /**
+   * Your own scores, next to the ones the framework writes. See
+   * `AgentScores`.
+   */
+  agent: AgentScores;
+
+  /**
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
@@ -219,6 +236,7 @@ export interface AgentBodyContext<
     stop: () => Promise<boolean>;
     onTurn: (turn: AgentTurn) => Promise<void>;
     budget: () => string | undefined;
+    scores: boolean;
   };
 }
 
@@ -579,6 +597,7 @@ export function createAgentFunction(
   const threadExpression = singletonKey(triggers);
 
   const store = config.kv ?? defaultKv;
+  const scoring = config.scores ?? true;
 
   const cleanup = createDefer(
     client,
@@ -663,7 +682,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId);
+        const recorder = threadRecorder(store, runId, scoring);
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -780,7 +799,9 @@ export function createAgentFunction(
           (id, run) => {
             return step.run(id, run);
           },
+          scoring ? { since: event.ts } : undefined,
         );
+        const agentScores = createAgentScores(client);
 
         let stopRequested = false;
         const { inbox } = threadInbox(
@@ -864,6 +885,7 @@ export function createAgentFunction(
           budget() {
             return budgetReason(limits);
           },
+          scores: scoring,
           async onTurn(turn: AgentTurn) {
             const next = await recorder.turn(turn);
 
@@ -894,6 +916,7 @@ export function createAgentFunction(
             sandboxTools: sandboxTools(opened),
             channels,
             report,
+            agent: agentScores,
             inbox,
             control,
           });

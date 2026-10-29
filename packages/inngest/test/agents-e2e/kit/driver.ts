@@ -52,6 +52,22 @@ export interface RunInfo {
   stepHashes: string[];
 }
 
+/**
+ * The scores a run was given, as the Dev Server shows them in its trace.
+ */
+export interface RunScores {
+  /**
+   * The scores on the step the function gave this ID, by score name. A step
+   * with none gives `{}`.
+   */
+  step: (id: string) => Record<string, number>;
+
+  /**
+   * The scores on the run itself.
+   */
+  run: Record<string, number>;
+}
+
 export interface Ctx {
   id: string;
   devUrl: string;
@@ -77,6 +93,11 @@ export interface Ctx {
    */
   finished: (eventId: string) => Promise<RunInfo>;
   runsOf: (eventId: string) => Promise<RunInfo[]>;
+
+  /**
+   * Reads the scores of a run from the Dev Server's trace.
+   */
+  scores: (runId: string) => Promise<RunScores>;
   check: (name: string, ok: boolean, detail?: unknown) => void;
 
   /**
@@ -173,6 +194,51 @@ const spans = (span: any): { name: string; stepID: string | null }[] => {
   return (span.childrenSpans ?? []).flatMap((child: any) => {
     return [child, ...spans(child)];
   });
+};
+
+const scoreKind = "inngest.score.";
+
+const scoresIn = (metadata: any[] | null | undefined) => {
+  return Object.fromEntries(
+    (metadata ?? [])
+      .filter((update) => {
+        return update.kind.startsWith(scoreKind);
+      })
+      .map((update) => {
+        return [update.kind.slice(scoreKind.length), update.values.value];
+      }),
+  ) as Record<string, number>;
+};
+
+const readScores = async (
+  devUrl: string,
+  runId: string,
+): Promise<RunScores> => {
+  const meta = "metadata { kind values }";
+  const data = await gql(
+    devUrl,
+    `query ($id: String!) { runTrace(runID: $id) { ${meta} childrenSpans { stepID ${meta} childrenSpans { stepID ${meta} childrenSpans { stepID ${meta} } } } } }`,
+    { id: runId },
+  );
+  const found = [data.runTrace, ...spans(data.runTrace)] as any[];
+
+  const byHash: Record<string, Record<string, number>> = {};
+
+  for (const span of found.slice(1)) {
+    if (span.stepID) {
+      byHash[span.stepID] = {
+        ...byHash[span.stepID],
+        ...scoresIn(span.metadata),
+      };
+    }
+  }
+
+  return {
+    run: scoresIn(data.runTrace.metadata),
+    step: (id) => {
+      return byHash[hash(id)] ?? {};
+    },
+  };
 };
 
 const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
@@ -412,6 +478,9 @@ export const createCtx = (
     devUrl,
     redisUrl,
     fakes: scoped,
+    scores: (runId) => {
+      return readScores(devUrl, runId);
+    },
     event: (name) => {
       return eventName(id, name);
     },

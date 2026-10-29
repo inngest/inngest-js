@@ -941,3 +941,87 @@ describe("tool types", () => {
     expect(typecheck).toBeTypeOf("function");
   });
 });
+
+const scoresOf = (op: OutgoingOp | undefined) => {
+  return Object.fromEntries(
+    (op?.metadata ?? [])
+      .filter((update) => {
+        return update.kind.startsWith("inngest.score.");
+      })
+      .map((update) => {
+        return [
+          update.kind.slice("inngest.score.".length),
+          (update.values as { value: number }).value,
+        ];
+      }),
+  );
+};
+
+describe("agent.loop scores", () => {
+  const stepNamed = (steps: OutgoingOp[], id: string) => {
+    return steps.find((op) => {
+      return op.userland?.id === id;
+    });
+  };
+
+  test("scores each model and tool step with that step's own result", async () => {
+    const { steps } = await run([call("add", { a: 1, b: 2 }), say("It is 3")]);
+
+    expect(scoresOf(stepNamed(steps, "agent:model:1"))).toEqual({
+      "agent.model_ms": expect.any(Number),
+      "agent.tool_calls": 1,
+      "agent.steers": 0,
+      "agent.input_tokens": 10,
+      "agent.output_tokens": 5,
+    });
+    expect(scoresOf(stepNamed(steps, "agent:1.0:add"))).toEqual({
+      "agent.tool_ms": expect.any(Number),
+      "agent.tool_error": 0,
+    });
+    expect(scoresOf(stepNamed(steps, "agent:model:2"))).toMatchObject({
+      "agent.tool_calls": 0,
+    });
+  });
+
+  test("scores a tool that returns toolError() as an error", async () => {
+    const failing = tool.step({
+      description: "Fails",
+      input: z.object({}),
+      run: () => {
+        return agent.toolError({ message: "nope" });
+      },
+    });
+    const { steps } = await run([call("failing", {}), say("a")], {
+      tools: { failing },
+    });
+
+    expect(scoresOf(stepNamed(steps, "agent:1.0:failing"))).toMatchObject({
+      "agent.tool_error": 1,
+    });
+  });
+
+  test("counts the steering messages folded into a model call", async () => {
+    const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {
+      steer: async () => {
+        return ["use 2", "and 3"];
+      },
+    });
+
+    expect(scoresOf(stepNamed(steps, "agent:model:1"))).toMatchObject({
+      "agent.steers": 0,
+    });
+    expect(scoresOf(stepNamed(steps, "agent:model:2"))).toMatchObject({
+      "agent.steers": 2,
+    });
+  });
+
+  test("writes no scores with scores: false", async () => {
+    const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {
+      scores: false,
+    });
+
+    for (const op of steps) {
+      expect(scoresOf(op)).toEqual({});
+    }
+  });
+});

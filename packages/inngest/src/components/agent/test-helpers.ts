@@ -31,6 +31,10 @@ export const run = async (
     saved?: unknown[];
     incoming?: unknown[];
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
+    /**
+     * Called with each `step.run` step as it ran, metadata included.
+     */
+    onStep?: (op: OutgoingOp) => void;
   } = {},
 ) => {
   const key = options.key ?? "inbox";
@@ -100,6 +104,7 @@ export const run = async (
         });
 
         if (ran.type === "step-ran") {
+          options.onStep?.(ran.step);
           state = {
             ...state,
             [op.id]: {
@@ -115,6 +120,10 @@ export const run = async (
       }
 
       if (op.op !== StepOpCode.WaitForEvent || !sub) {
+        if (op.op === StepOpCode.StepRun) {
+          options.onStep?.(op);
+        }
+
         state = {
           ...state,
           [op.id]: { id: op.id, data: op.data, error: op.error },
