@@ -195,7 +195,6 @@ export const run = async (
                   return found.id === op.id && found.op === StepOpCode.StepRun;
                 })
               : undefined;
-
         if (step) {
           options.onStep?.(step);
           state = {

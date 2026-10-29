@@ -1361,8 +1361,12 @@ class InngestExecutionEngine
           // truly done: the executor needs to memoize these and call back.
           // Don't close the stream. `filterNewSteps` excludes lazy ops, so
           // `attachLazyOps` is what folds them in here.
+          // A waiting thread is not a step to execute: a function that
+          // returns with one still waiting is done.
           const newSteps = await this.filterNewSteps(
-            Array.from(this.state.steps.values()),
+            Array.from(this.state.steps.values()).filter((step) => {
+              return step.op !== StepOpCode.None;
+            }),
           );
 
           if (newSteps?.length) {
@@ -2503,8 +2507,17 @@ class InngestExecutionEngine
         return;
       }
 
+      // A waiting thread (a subscription read with nothing to read) asks the
+      // executor for nothing, so it must not end the request while the function
+      // may still be about to return: let a whole macrotask pass first.
+      const onlyWaits = [...foundStepsToReport.values()].every((step) => {
+        return step.op === StepOpCode.None;
+      });
+
       let extensionPromise: Promise<void>;
-      if (++tickExtensionCount >= 10) {
+      if (onlyWaits) {
+        extensionPromise = resolveNextTick();
+      } else if (++tickExtensionCount >= 10) {
         tickExtensionCount = 0;
         extensionPromise = resolveNextTick();
       } else {
