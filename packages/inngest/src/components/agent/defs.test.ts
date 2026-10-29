@@ -20,6 +20,7 @@ import {
   sandbox,
   sandboxTools,
 } from "./defs.ts";
+import { agent } from "./loop.ts";
 import { skills } from "./skills.ts";
 
 const fakeEnvironment = () => {
@@ -54,7 +55,6 @@ describe("tool()", () => {
     const getOrg = tool({
       id: "getOrg",
       input: z.object({ slug: z.string() }),
-      sandboxCommand: "get-org",
       run: async ({ slug }) => {
         return { slug };
       },
@@ -62,7 +62,6 @@ describe("tool()", () => {
 
     expect(getOrg.kind).toBe("inngest/tool");
     expect(getOrg.id).toBe("getOrg");
-    expect(getOrg.sandboxCommand).toBe("get-org");
     expect(tool.step({ run: () => 1 }).group).toBeUndefined();
     expect(tool.group({ run: () => 1 }).group).toBe(true);
   });
@@ -79,13 +78,40 @@ describe("tool()", () => {
     });
   });
 
+  test("run may return agent.toolError() beside the output schema's value", () => {
+    tool({
+      id: "typedOutput",
+      input: z.object({ id: z.number() }),
+      output: z.object({ title: z.string() }),
+      run: ({ id }) => {
+        return id < 0
+          ? agent.toolError({ message: "no such ticket" })
+          : { title: "ok" };
+      },
+    });
+
+    tool({
+      id: "typedOutputAsync",
+      output: z.object({ title: z.string() }),
+      run: async () => {
+        return agent.toolError("nope");
+      },
+    });
+
+    tool({
+      id: "typedOutputWrong",
+      output: z.object({ title: z.string() }),
+      // @ts-expect-error a value that is not the schema's and not a tool error
+      run: () => {
+        return { title: 1 };
+      },
+    });
+  });
+
   test("rejects names the model cannot use", () => {
     expect(() => {
       return tool({ id: "git.push", run: () => 1 });
     }).toThrow("Invalid tool name");
-    expect(() => {
-      return tool({ id: "ok", sandboxCommand: "Bad_Name", run: () => 1 });
-    }).toThrow("Invalid sandboxCommand");
   });
 
   test("agentTools keys by id and rejects duplicates", () => {

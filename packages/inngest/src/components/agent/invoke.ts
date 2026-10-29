@@ -156,9 +156,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 /**
- * How many agents deep an invoked agent is: 1 for one started by a function
+ * How many agents deep an invoked function is: 1 for one started by a function
  * that is not an agent, 2 for the next, and so on. 0 for an event that did
- * not come from `agent.invoke()`.
+ * not come from `agent.invoke()`. Call it with the `event` of a plain
+ * function that `agent.invoke()` starts; an agent body gets the same number
+ * as `depth`, because its `trigger` has the SDK's data removed.
  */
 export const agentInvokeDepth = (
   /**
@@ -173,9 +175,10 @@ export const agentInvokeDepth = (
 };
 
 /**
- * The data `agent.invoke()` was given, without the SDK's own key. Use it as
- * the input of an agent that other agents start. It returns a copy and leaves
- * the event as it is, so `agentInvokeDepth()` still works.
+ * The data `agent.invoke()` was given, without the SDK's own key. Use it in a
+ * plain function that `agent.invoke()` starts. It returns a copy and leaves
+ * the event as it is, so `agentInvokeDepth()` still works. An agent body does
+ * not need it: its `trigger.data` is already the caller's input.
  */
 export const agentInvokeInput = (
   /**
@@ -226,7 +229,8 @@ const parseTarget = (
  * The agent runs in the caller's session (`agent_session`) on a new thread
  * (`agent_thread`). Without a session, the caller's run starts one. Other
  * sessions of the caller reach it through session propagation. The agent
- * can read how deep it is with `agentInvokeDepth(event)`.
+ * reads how deep it is as `depth` in its body, a plain function with
+ * `agentInvokeDepth(event)`.
  *
  * An agent's `limits` apply: a call they refuse throws an `AgentLimitError`
  * whose message says why, so inside a tool the model reads it as the result.

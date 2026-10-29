@@ -76,6 +76,46 @@ type ToolInputOf<TInput extends ToolInput | undefined> =
       ? Record<string, unknown>
       : never;
 
+/**
+ * What `agent.toolError(body)` returns: a tool's way to give the model an
+ * error result instead of a value. A tool whose `output` schema describes its
+ * values may return it too; it is not checked against the schema.
+ */
+export interface ToolErrorResult {
+  /**
+   * The error body the model reads.
+   */
+  readonly "~error": unknown;
+}
+
+const toolErrorKey = "~error";
+
+/**
+ * Makes a tool error result. See `agent.toolError()`.
+ */
+export const toolErrorOf = (
+  /**
+   * What the model should read as the error.
+   */
+  body: unknown,
+): ToolErrorResult => {
+  return { [toolErrorKey]: body };
+};
+
+/**
+ * Whether a tool returned an error result.
+ */
+export const isToolError = (
+  /**
+   * What the tool returned.
+   */
+  output: unknown,
+): output is ToolErrorResult => {
+  return (
+    typeof output === "object" && output !== null && toolErrorKey in output
+  );
+};
+
 type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
   TOutput extends StandardSchemaV1
     ? StandardSchemaV1.InferInput<TOutput>
@@ -229,10 +269,14 @@ export interface ToolDefinition<
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
-      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>
+      ) =>
+        | (ToolResultOf<TOutput> | ToolErrorResult)
+        | Promise<ToolResultOf<TOutput> | ToolErrorResult>
     : (
         ...args: never[]
-      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>;
+      ) =>
+        | (ToolResultOf<TOutput> | ToolErrorResult)
+        | Promise<ToolResultOf<TOutput> | ToolErrorResult>;
 }
 
 /**
@@ -331,11 +375,6 @@ export interface AgentTool<TInput = unknown, TOutput = unknown>
    * The name the model sees.
    */
   readonly id: string;
-
-  /**
-   * The command that sandbox code can run to call this tool.
-   */
-  readonly sandboxCommand?: string;
 }
 
 export interface AgentToolDefinition<
@@ -353,15 +392,7 @@ export interface AgentToolDefinition<
    * global `step` (see `tool.group()`).
    */
   group?: boolean;
-
-  /**
-   * Also offers the tool to code in a sandbox as this command, such as
-   * `get-org`. The command sends the call home to the function.
-   */
-  sandboxCommand?: string;
 }
-
-const sandboxCommandPattern = /^[a-z][a-z0-9-]{0,63}$/;
 
 const defineTool = <
   TInput extends ToolInput | undefined = undefined,
@@ -374,15 +405,6 @@ const defineTool = <
   if (definition.waits && !definition.group) {
     throw new SandboxValidationError(
       `Tool "${definition.id}" sets waits, which needs group: true: a tool that waits runs as a group of steps`,
-    );
-  }
-
-  if (
-    definition.sandboxCommand !== undefined &&
-    !sandboxCommandPattern.test(definition.sandboxCommand)
-  ) {
-    throw new SandboxValidationError(
-      `Invalid sandboxCommand "${definition.sandboxCommand}": use lowercase letters, digits and hyphens, starting with a letter`,
     );
   }
 
@@ -616,7 +638,7 @@ export const resolveToolCall = async (
         ...values,
         ...(typeof entry === "function" ? [] : [ctx]),
       );
-      if (!definition.output) {
+      if (!definition.output || isToolError(value)) {
         return value;
       }
 
