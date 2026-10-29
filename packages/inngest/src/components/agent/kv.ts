@@ -19,8 +19,9 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { getAsyncCtxSync } from "../execution/als.ts";
-import { step } from "../InngestStepTools.ts";
+import { STEP_INDEXING_SUFFIX, step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { nextCount } from "./executionCounter.ts";
 import { redisConnection } from "./redis.ts";
 import { currentSessions } from "./sessions.ts";
 
@@ -1272,8 +1273,19 @@ export function createKv(
         return fn(handle);
       }
 
+      // The same operation on the same key is often repeated with other work
+      // between the calls, which the engine reads as parallel chains using one
+      // ID and warns about. Each repeat gets the ID the engine would index it
+      // to (`id`, `id:1`, `id:2`), so runs in flight keep their steps and
+      // every ID is distinct.
+      const base = `kv.${op}:${scope}${explicitId ? `:${explicitId}` : ""}${key === undefined ? "" : `:${key}`}`;
+      const execution = getAsyncCtxSync()?.execution;
+      const repeat = execution ? nextCount(execution.instance, base) : 0;
+
       return (await step.run(
-        `kv.${op}:${scope}${explicitId ? `:${explicitId}` : ""}${key === undefined ? "" : `:${key}`}`,
+        repeat === 0
+          ? base
+          : { id: `${base}${STEP_INDEXING_SUFFIX}${repeat}`, name: base },
         async () => {
           return (await fn(handle)) ?? null;
         },
