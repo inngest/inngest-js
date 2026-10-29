@@ -20,6 +20,8 @@ import { withKeys } from "../kit/threads.ts";
 
 const agentId = "thread-key-agent";
 const ref = `agents-e2e/${agentId}`;
+const numericId = "thread-key-numeric-agent";
+const numericRef = `agents-e2e/${numericId}`;
 const stopId = "thread-key-stop-agent";
 const stopRef = `agents-e2e/${stopId}`;
 
@@ -61,6 +63,33 @@ export const threadKey = scenario({
             return [...(turns ?? []), message.data.content ?? ""];
           });
           await sleep(150);
+        }
+      },
+    );
+
+    // A key built from numbers. The backend reads JSON numbers as doubles and
+    // writes them with Go's shortest %g, so string() of 1234567 is
+    // "1.234567e+06", and string(int()) of an id is the whole number. The SDK
+    // computes the same key; the second event reaching the live run proves the
+    // backend's inbox filter agrees.
+    agents.agent(
+      {
+        id: numericId,
+        on: {
+          event: event("num"),
+          thread:
+            '"n" + string(event.data.big) + "#" + string(int(event.data.id))',
+        },
+      },
+      async ({ inbox }) => {
+        await kv.thread.update(kvKey<number>("runs"), function (runs) {
+          return (runs ?? 0) + 1;
+        });
+
+        for await (const message of inbox) {
+          await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
+            return [...(turns ?? []), String(message.data.event?.data.n)];
+          });
         }
       },
     );
@@ -156,6 +185,28 @@ export const threadKey = scenario({
         ),
       { state, turns },
     );
+    // A key built with string() and string(int()).
+    const numeric = withKeys(
+      getThread(client, numericRef, "n1.234567e+06#9876543210", { kv: store }),
+    );
+    await ctx.send("num", { big: 1234567, id: 9876543210, n: 1 });
+    await ctx.eventually(
+      "a key with string() starts its thread",
+      numeric.state,
+      (s) => {
+        return list(s, "turns").includes("1");
+      },
+    );
+    await ctx.send("num", { big: 1234567, id: 9876543210, n: 2 });
+    const numbers = await ctx.eventually(
+      "the second event with the same numbers reaches the live run",
+      numeric.state,
+      (s) => {
+        return list(s, "turns").includes("2");
+      },
+    );
+    ctx.check("one run for the numeric key", numbers.runs === 1, numbers);
+
     // Another thread starts its own run.
     await ctx.send("msg", { channel, ts: "2.0", text: "other" });
     const other = await ctx.eventually(

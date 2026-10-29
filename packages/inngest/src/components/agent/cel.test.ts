@@ -47,12 +47,86 @@ describe("thread key expressions", () => {
     }).toThrow(/not set/);
   });
 
-  test("string() and escapes other than backslash and quotes are rejected", () => {
-    for (const source of ["string(event.data.n)", '"a\\nb"']) {
+  test("escapes other than backslash and quotes are rejected", () => {
+    expect(() => {
+      return compileKey('"a\\nb"');
+    }).toThrow();
+  });
+
+  test("string() joins a number into a key the way CEL writes a double", () => {
+    // The right-hand side is what Go's strconv.FormatFloat(x, 'g', -1, 64) gives,
+    // which is what cel-go's string(double) returns.
+    const cases: [number, string][] = [
+      [12345, "12345"],
+      [123456, "123456"],
+      [1234567, "1.234567e+06"],
+      [1234567890, "1.23456789e+09"],
+      [1.5, "1.5"],
+      [100, "100"],
+      [1e20, "1e+20"],
+      [1e21, "1e+21"],
+      [0.0001, "0.0001"],
+      [0.00001, "1e-05"],
+      [1.2345678901234567e19, "1.2345678901234567e+19"],
+      [-42, "-42"],
+      [-1234567, "-1.234567e+06"],
+      [0, "0"],
+    ];
+
+    for (const [value, expected] of cases) {
+      const key = compileKey('"id-" + string(event.data.n)');
+
+      expect(key.key({ data: { n: value } })).toBe(`id-${expected}`);
+    }
+  });
+
+  test("string(int()) writes a whole number in full, as ids need", () => {
+    const key = compileKey('event.data.repo + "#" + string(int(event.data.n))');
+
+    expect(key.key({ data: { repo: "r", n: 1234567890 } })).toBe(
+      "r#1234567890",
+    );
+    expect(key.key({ data: { repo: "r", n: 42 } })).toBe("r#42");
+    expect(key.key({ data: { repo: "r", n: 42.9 } })).toBe("r#42");
+    expect(key.key({ data: { repo: "r", n: -7 } })).toBe("r#-7");
+  });
+
+  test("string() of a string or a boolean, and in the async form", () => {
+    expect(compileKey("string(event.data.s)").key({ data: { s: "x" } })).toBe(
+      "x",
+    );
+    expect(
+      compileKey('string(event.data.b) + "!"').key({ data: { b: true } }),
+    ).toBe("true!");
+    expect(compileKey("string(int(event.data.n))").asAsync).toBe(
+      "string(int(async.data.n))",
+    );
+  });
+
+  test("string() refuses what CEL and the SDK would write differently or cannot write", () => {
+    for (const source of [
+      "string(1234567)",
+      "string((1234567))",
+      "string(true ? 1234567 : 0)",
+      "string(1234567 + 0)",
+      "int(event.data.n)",
+      'string(int("12"))',
+    ]) {
       expect(() => {
-        return compileKey(source);
+        return compileKey(source).key({ data: { n: 1, s: "x" } });
       }).toThrow();
     }
+
+    expect(() => {
+      return compileKey("string(int(event.data.n))").key({
+        data: { n: 2 ** 70 },
+      });
+    }).toThrow(/out of range/);
+    expect(() => {
+      return compileKey("string(event.data.n)").key({
+        data: { n: Number.POSITIVE_INFINITY },
+      });
+    }).toThrow(/not finite/);
   });
 
   test("a missing path is an error, and the key must be a non-empty string", () => {
