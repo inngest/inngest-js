@@ -1021,8 +1021,8 @@ function threadInbox(
       event?: { id?: string; name: string; data: unknown };
     };
     // The event's own fields come last, so a field a thread message may one day
-    // have can never overwrite them (`ThreadMessageFields` is checked against
-    // the event's fields in the type tests).
+    // have can never overwrite them (the type tests fail if a thread message
+    // field shares a name with one of the event's).
     const unwrapped = withIs({
       ...fields,
       ...message,
