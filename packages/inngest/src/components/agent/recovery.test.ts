@@ -341,6 +341,19 @@ describe("the finished function", () => {
     expect(sent).toEqual([]);
   });
 
+  test("a plain error that ran out of retries is still resent", async () => {
+    const { agent, sent } = setup({ recovery: true });
+
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", {
+        name: "Error",
+        message: "flaky upstream",
+      }),
+    });
+
+    expect(sent).toMatchObject([{ id: "recover-r1" }]);
+  });
+
   test("an error the executor marked noRetry is not resent either", () => {
     expect(
       finishedOf({

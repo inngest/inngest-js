@@ -24,8 +24,14 @@ import { scenario } from "../kit/driver.ts";
 
 const agentId = "recovery-agent";
 const ref = `agents-e2e/${agentId}`;
-const postsFile = join(tmpdir(), "agent-recovery-posts.log");
-const attemptsFile = join(tmpdir(), "agent-recovery-attempts.log");
+// The worker and the CLI share these files, and several stacks can run on one
+// machine, so both name them by their stack's Redis URL, which they both have.
+const fileFor = (redisUrl: string | undefined, kind: string) => {
+  return join(
+    tmpdir(),
+    `agent-recovery-${kind}-${(redisUrl ?? "local").replace(/\W+/g, "-")}.log`,
+  );
+};
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -43,7 +49,10 @@ export const agentRecovery = scenario({
   id: "agent-recovery",
   owner: "agents-recovery",
   needs: { oss: "jack/step-subscribe" },
-  functions: ({ client }) => {
+  functions: ({ client, redisUrl }) => {
+    const postsFile = fileFor(redisUrl, "posts");
+    const attemptsFile = fileFor(redisUrl, "attempts");
+
     for (const file of [postsFile, attemptsFile]) {
       if (existsSync(file)) {
         unlinkSync(file);
@@ -111,6 +120,7 @@ export const agentRecovery = scenario({
     return agents.functions();
   },
   run: async (ctx) => {
+    const postsFile = fileFor(ctx.redisUrl, "posts");
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });
     const client = new Inngest({
       id: "agents-e2e",
