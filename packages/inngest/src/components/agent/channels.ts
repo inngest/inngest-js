@@ -67,9 +67,129 @@ export interface ChannelAsk {
 }
 
 /**
+ * One task card of a progress stream: a step the agent is working on, shown
+ * as a line with a status. A card is identified by its `id`; writing a card
+ * again with the same `id` updates it.
+ */
+export interface ChannelCard {
+  /**
+   * Names the card. Writing the same `id` again updates the card; a new `id`
+   * adds one. Up to 100 characters, and not `summary`, which the reporter uses
+   * for the card that stands for the cards of a stream it left.
+   */
+  id: string;
+
+  /**
+   * What the step is.
+   */
+  title: string;
+
+  /**
+   * Where the step is. Default: `"running"`.
+   */
+  status?: "pending" | "running" | "done" | "error";
+
+  /**
+   * More to show under the title.
+   */
+  details?: string;
+}
+
+/**
+ * What one surface allows a progress stream to hold. The surface's adapter
+ * declares it, so every agent that reports to the surface stays inside it.
+ */
+export interface ChannelStreamLimits {
+  /**
+   * The most unique cards one stream may hold. Slack: 50.
+   */
+  maxCards: number;
+
+  /**
+   * How many unique cards a stream holds before the reporter starts a new
+   * one, with a summary card for the cards it leaves. At most
+   * `maxCards - 2`, which leaves room for the summary and the new card.
+   */
+  rollAt: number;
+
+  /**
+   * How long a stream lives, in milliseconds, before the reporter starts a
+   * new one. The surface ends streams on its own after a while; set this a
+   * little under that.
+   */
+  maxAgeMs: number;
+}
+
+/**
+ * Thrown by an adapter's `append` when the stream it was asked to write to
+ * has ended (the surface closed it, or it timed out). The reporter starts a
+ * new stream and writes only the card it was writing, not the history.
+ */
+export class ChannelStreamEnded extends Error {
+  constructor(message = "The progress stream has ended.") {
+    super(message);
+    this.name = "ChannelStreamEnded";
+  }
+}
+
+/**
+ * A surface's streamed progress, such as Slack's task cards in one message.
+ * The adapter is stateless: a stream is a string the adapter hands out, and
+ * the reporter keeps it in step results, so a replay never starts or writes
+ * to a stream twice.
+ */
+export interface ChannelStream {
+  /**
+   * What the surface allows.
+   */
+  limits: ChannelStreamLimits;
+
+  /**
+   * Starts a stream and returns its identity, such as a message timestamp.
+   * Runs inside a step.
+   */
+  start(): Promise<string>;
+
+  /**
+   * Writes cards to a stream, adding the new ones and updating those that
+   * exist. Runs inside a step. Throws `ChannelStreamEnded` when the stream is
+   * over. A surface that answers with a warning that it dropped part of the
+   * update must throw: a dropped update is an error, not a success.
+   */
+  append(
+    /**
+     * The stream `start()` returned.
+     */
+    stream: string,
+
+    /**
+     * The cards to write.
+     */
+    cards: ChannelCard[],
+  ): Promise<void>;
+
+  /**
+   * Closes a stream the reporter is leaving. Optional, and best effort: its
+   * failure is ignored.
+   */
+  stop?(
+    /**
+     * The stream.
+     */
+    stream: string,
+  ): Promise<void>;
+}
+
+/**
  * How to talk to one destination.
  */
 export interface Channel {
+  /**
+   * The channel's streamed progress, for `report.card()`. A channel without
+   * one ignores cards.
+   */
+  stream?: ChannelStream;
+
   /**
    * Posts a message. Runs inside a step, so it may be retried: a post whose
    * answer is lost is posted again, so delivery is at least once.
@@ -117,6 +237,25 @@ export const defineChannel = (
 
   if (adapter.ask !== undefined && typeof adapter.ask !== "function") {
     throw new Error("A channel's `ask` must be a function.");
+  }
+
+  if (adapter.stream !== undefined) {
+    const { limits } = adapter.stream;
+
+    if (
+      typeof adapter.stream.start !== "function" ||
+      typeof adapter.stream.append !== "function" ||
+      !limits ||
+      !Number.isInteger(limits.maxCards) ||
+      !Number.isInteger(limits.rollAt) ||
+      limits.rollAt < 1 ||
+      limits.rollAt > limits.maxCards - 2 ||
+      !(limits.maxAgeMs > 0)
+    ) {
+      throw new Error(
+        "A channel's `stream` needs `start`, `append` and limits with `rollAt` between 1 and `maxCards - 2` and a positive `maxAgeMs`.",
+      );
+    }
   }
 
   return adapter;
@@ -189,7 +328,150 @@ export interface Reporter {
       to?: ReportConfig;
     },
   ): Promise<void>;
+
+  /**
+   * Shows a task card in the progress stream of the destinations that have
+   * one (a channel with a `stream`); the others ignore it. The channel's
+   * limits are kept for you: when a stream is about to hold more unique cards
+   * than the surface allows, or has been open as long as the surface lets it,
+   * or the surface says it ended, the reporter starts a new stream whose first
+   * card is a `summary` card for the ones left behind, and writes only the
+   * card at hand. Cards written together are written one after another, in
+   * the order they were called, so parallel tools cannot race a stream. Each
+   * write is a step, so a replay writes nothing twice. A card updated after
+   * its stream was left is shown again in the stream the reporter is writing
+   * to, as the surface cannot change a stream that has ended. A stream is
+   * kept per channel object, so a channel passed inline in `to` must be the
+   * same object every time, or each call starts a stream of its own.
+   */
+  card(
+    /**
+     * The card to add or update.
+     */
+    card: ChannelCard,
+    options?: {
+      /**
+       * Overrides the configured destinations for this card.
+       */
+      to?: ReportConfig;
+    },
+  ): Promise<void>;
 }
+
+/**
+ * Where a card stream stands, kept in the result of the step that wrote the
+ * last card, so a replay has it without writing again.
+ */
+interface CardStreamState {
+  /**
+   * The stream being written to.
+   */
+  stream: string;
+
+  /**
+   * When it was started, in milliseconds since the epoch.
+   */
+  startedAt: number;
+
+  /**
+   * The unique cards it holds.
+   */
+  ids: string[];
+
+  /**
+   * The unique cards of every stream before this one, plus this one's.
+   */
+  total: number;
+}
+
+const summaryCardId = "summary";
+
+const checkCard = (card: ChannelCard): void => {
+  if (
+    typeof card?.id !== "string" ||
+    card.id.length < 1 ||
+    card.id.length > 100 ||
+    card.id === summaryCardId ||
+    typeof card.title !== "string"
+  ) {
+    throw new NonRetriableError(
+      `report.card: a card needs a title and an id of 1 to 100 characters other than "${summaryCardId}".`,
+    );
+  }
+};
+
+/**
+ * Writes one card to a destination's stream, rolling over to a new stream when
+ * its limits say so. Returns where the stream stands.
+ */
+const writeCard = async (
+  stream: ChannelStream,
+  card: ChannelCard,
+  before: CardStreamState | undefined,
+): Promise<CardStreamState> => {
+  const { limits } = stream;
+  const now = Date.now();
+  const known = before?.ids.includes(card.id) === true;
+  const full =
+    before !== undefined && !known && before.ids.length >= limits.rollAt;
+  const old = before !== undefined && now - before.startedAt >= limits.maxAgeMs;
+
+  if (before && !full && !old) {
+    try {
+      await stream.append(before.stream, [card]);
+
+      return known
+        ? before
+        : { ...before, ids: [...before.ids, card.id], total: before.total + 1 };
+    } catch (error) {
+      // Only a stream that has ended is rolled over; any other failure is a
+      // failure.
+      if (!(error instanceof ChannelStreamEnded)) {
+        throw error;
+      }
+    }
+  }
+
+  // A new stream starts with a summary of the cards it leaves, not with their
+  // history.
+  const started = await stream.start();
+  const cards: ChannelCard[] = before
+    ? [
+        {
+          id: summaryCardId,
+          title: "Earlier steps",
+          status: "done",
+          details: `${before.total} steps so far`,
+        },
+        card,
+      ]
+    : [card];
+
+  try {
+    await stream.append(started, cards);
+  } catch (error) {
+    // The step is retried from the old state and would start another stream:
+    // close this one, which nothing else will know about.
+    await stream.stop?.(started).catch(() => {
+      return undefined;
+    });
+
+    throw error;
+  }
+
+  if (before) {
+    await stream.stop?.(before.stream).catch(() => {
+      return undefined;
+    });
+  }
+
+  return {
+    stream: started,
+    startedAt: now,
+    ids: before ? [summaryCardId, card.id] : [card.id],
+    total: (before?.total ?? 0) + (known ? 0 : 1),
+  };
+};
 
 /**
  * Makes the `report` function of a run.
@@ -228,17 +510,13 @@ export const createReporter = (
   // post saved by a run that had no scores returned nothing and has none.
   let lastPostAt: number | undefined;
 
-  return async function report(message, options) {
-    const normalized: ChannelMessage =
-      typeof message === "string" ? { text: message } : message;
-
+  const destinationsOf = (options?: { to?: ReportConfig }) => {
     const wanted = options?.to ?? configured ?? "main";
     const targets = [wanted].flat();
-    const n = ++reports;
 
     // Every name is checked before anything is posted, so a wrong name fails
     // the report before it has half happened.
-    const destinations = targets.flatMap((target, index) => {
+    return targets.flatMap((target, index) => {
       if (typeof target !== "string") {
         return [{ name: `inline${index}`, channel: target, index }];
       }
@@ -260,6 +538,17 @@ export const createReporter = (
 
       return [{ name: target, channel, index }];
     });
+  };
+
+  async function report(
+    message: string | ChannelMessage,
+    options?: { to?: ReportConfig },
+  ) {
+    const normalized: ChannelMessage =
+      typeof message === "string" ? { text: message } : message;
+
+    const n = ++reports;
+    const destinations = destinationsOf(options);
 
     // Measured from before this report's first post, so a second destination
     // is not scored against its sibling.
@@ -294,7 +583,47 @@ export const createReporter = (
       posted = true;
       lastPostAt = typeof postedAt === "number" ? postedAt : undefined;
     }
-  };
+  }
+
+  // Where each destination's card stream stands, and the end of the queue of
+  // card writes: they run one at a time, in call order.
+  const cardStreams = new Map<Channel, CardStreamState>();
+  let queue: Promise<unknown> = Promise.resolve();
+  let cards = 0;
+
+  async function card(card: ChannelCard, options?: { to?: ReportConfig }) {
+    checkCard(card);
+
+    const n = ++cards;
+    const destinations = destinationsOf(options).filter(({ channel }) => {
+      return channel.stream !== undefined;
+    });
+
+    const write = queue.then(async () => {
+      for (const { name, channel, index } of destinations) {
+        const stream = channel.stream as ChannelStream;
+        const state = (await runStep(
+          `report:card:${n}:${index}:${name}`,
+          // The step saves where the stream stands, not a time: the runner is
+          // typed for the post steps, which save one.
+          (async () => {
+            return writeCard(stream, card, cardStreams.get(channel));
+          }) as unknown as () => Promise<number | undefined>,
+        )) as CardStreamState;
+
+        cardStreams.set(channel, state);
+      }
+    });
+
+    // One failed write must not stop the ones after it from running.
+    queue = write.catch(() => {
+      return undefined;
+    });
+
+    return write;
+  }
+
+  return Object.assign(report, { card }) as Reporter;
 };
 
 /**

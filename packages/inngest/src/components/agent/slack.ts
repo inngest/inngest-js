@@ -16,7 +16,9 @@ import {
   assertSignal,
   type Channel,
   type ChannelAsk,
+  type ChannelCard,
   type ChannelMessage,
+  ChannelStreamEnded,
   type ChannelTrigger,
   defineChannel,
   objectSchema,
@@ -174,11 +176,30 @@ const maxButtonValue = 2000;
 const maxSectionText = 3000;
 const maxLabel = 75;
 
+/**
+ * What Slack allows a streamed message to hold, and when it ends one: 50
+ * unique task cards, and a stream closes on its own after about ten minutes.
+ * The reporter rolls over at 40 cards and at nine minutes.
+ */
+const streamLimits = { maxCards: 50, rollAt: 40, maxAgeMs: 9 * 60_000 };
+
+const slackCardStatus = {
+  pending: "pending",
+  running: "in_progress",
+  done: "complete",
+  error: "error",
+} as const;
+
 const call = async (
   options: SlackChannelOptions,
   method: string,
   body: Record<string, unknown>,
-): Promise<void> => {
+  /**
+   * For a streamed update: Slack answers `ok` and adds a warning when it
+   * dropped part of the update, so any warning is an error.
+   */
+  strict = false,
+): Promise<Record<string, unknown>> => {
   const token =
     options.token ??
     (typeof process === "undefined" ? undefined : process.env.SLACK_BOT_TOKEN);
@@ -202,11 +223,45 @@ const call = async (
   if (res.json.ok !== true) {
     const error = String(res.json.error ?? "unreadable_response");
 
+    // The stream is over: the reporter starts another.
+    if (error === "message_not_in_streaming_state") {
+      throw new ChannelStreamEnded(`Slack ${method}: ${error}`);
+    }
+
     throw apiError(
       `Slack ${method} failed: ${error}`,
       error === "unreadable_response" || transientErrors.has(error),
     );
   }
+
+  const warnings = (
+    res.json.response_metadata as { warnings?: unknown } | undefined
+  )?.warnings;
+
+  if (strict && Array.isArray(warnings) && warnings.length > 0) {
+    throw apiError(
+      `Slack ${method} dropped part of the update: ${warnings.map(String).join(", ")}`,
+      false,
+    );
+  }
+
+  return res.json;
+};
+
+/**
+ * A card as a Slack `task_update` chunk. Text is escaped like any text the
+ * agent writes.
+ */
+const slackCard = (card: ChannelCard) => {
+  return {
+    type: "task_update",
+    id: card.id,
+    title: truncate(escapeSlack(card.title), maxLabel * 4),
+    status: slackCardStatus[card.status ?? "running"],
+    ...(card.details === undefined
+      ? {}
+      : { details: truncate(escapeSlack(card.details), maxSectionText) }),
+  };
 };
 
 /**
@@ -398,6 +453,43 @@ export const slack = {
           text: truncate(escapeSlack(ask.question), maxSectionText),
           blocks: askBlocks(ask),
         });
+      },
+      stream: {
+        limits: streamLimits,
+        start: async () => {
+          const started = await call(
+            options,
+            "chat.startStream",
+            { channel: target.channel, thread_ts: target.threadTs },
+            true,
+          );
+
+          if (typeof started.ts !== "string") {
+            throw apiError("Slack chat.startStream returned no ts", false);
+          }
+
+          return started.ts;
+        },
+        append: async (stream, cards) => {
+          await call(
+            options,
+            "chat.appendStream",
+            {
+              channel: target.channel,
+              ts: stream,
+              chunks: cards.map((card) => {
+                return slackCard(card);
+              }),
+            },
+            true,
+          );
+        },
+        stop: async (stream) => {
+          await call(options, "chat.stopStream", {
+            channel: target.channel,
+            ts: stream,
+          });
+        },
       },
     });
   },
