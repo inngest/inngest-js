@@ -377,20 +377,6 @@ const isRetryable = (response: Response): boolean => {
   );
 };
 
-export interface GitHubClient {
-  /**
-   * The current commit of \`ref\` (\`heads/main\`), or \`undefined\` when there is
-   * none.
-   */
-  refSha: (ref: string) => Promise<string | undefined>;
-
-  /**
-   * The commit the repository's default branch points at.
-   */
-  defaultTip: () => Promise<string>;
-  file: (path: string, ref: string) => Promise<Uint8Array | undefined>;
-}
-
 const clientFor = (options: {
   remote: string;
   token: string;
@@ -469,6 +455,43 @@ const clientFor = (options: {
         throw error;
       }
     },
+    /**
+     * How `tip` relates to `sha` (`ahead` or `identical` when `sha` is the tip
+     * or an ancestor of it), the paths that differ between them, and whether
+     * that list is complete (the API lists at most 300 files). A commit the API
+     * doesn't know is `"unknown"`.
+     */
+    compare: async (
+      sha: string,
+      tip: string,
+    ): Promise<{ status: string; files: string[]; complete: boolean }> => {
+      try {
+        const compared = await json<{
+          status: string;
+          files?: { filename: string; previous_filename?: string }[];
+        }>("GET", `/compare/${sha}...${tip}`);
+
+        return {
+          status: compared.status,
+          files: (compared.files ?? []).flatMap((file) => {
+            return file.previous_filename
+              ? [file.filename, file.previous_filename]
+              : [file.filename];
+          }),
+          complete: (compared.files?.length ?? 0) < 300,
+        };
+      } catch (error) {
+        if (error instanceof ApiError && [404, 422].includes(error.status)) {
+          return { status: "unknown", files: [], complete: false };
+        }
+
+        if (error instanceof ApiError && !error.retryable) {
+          throw new NonRetriableError(error.message, { cause: error });
+        }
+
+        throw error;
+      }
+    },
     defaultTip: async (): Promise<string> => {
       const info = await json<{ default_branch: string }>("GET", "");
       const sha = await (async () => {
@@ -522,11 +545,13 @@ const clientFor = (options: {
       }
 
       if (body.type === "submodule") {
-        throw new Error(`${path} is a submodule, which a policy can't read`);
+        throw new NonRetriableError(
+          `${path} is a submodule, which a policy can't read`,
+        );
       }
 
       if (body.size > maxPolicyFileBytes) {
-        throw new Error(
+        throw new NonRetriableError(
           `${path} is ${body.size} bytes, more than the ${maxPolicyFileBytes} a policy can read`,
         );
       }
@@ -672,6 +697,10 @@ export interface PushManifestOptions {
    */
   state: { oldSha?: string; base: string };
   policy?: GitPolicy;
+
+  /**
+   * Aborts the requests.
+   */
   signal?: AbortSignal;
 }
 
@@ -739,15 +768,19 @@ const pushParsed = async (
     const seen = new Set<string>();
 
     for (const change of commit.changes) {
-      const clash =
-        seen.has(change.path) ||
-        commit.changes.some((other) => {
-          return other.path.startsWith(`${change.path}/`);
-        });
-
-      if (clash) {
+      if (seen.has(change.path)) {
         return {
           refused: `${change.path} appears twice in a commit of this push`,
+        };
+      }
+
+      if (
+        commit.changes.some((other) => {
+          return other.path.startsWith(`${change.path}/`);
+        })
+      ) {
+        return {
+          refused: `${change.path} becomes a directory (or a file replaces one) in a single commit; a push without git needs that in two commits: delete it in one, add it in the next`,
         };
       }
 
@@ -779,18 +812,47 @@ const pushParsed = async (
   }
 
   // The first new commit must sit on the commit the manifest was built on,
-  // and each of the others on the one before it.
+  // and each of the others on the one before it. A new branch may also be cut
+  // from any other commit the repository has, such as an older commit of the
+  // default branch.
+  let chainBase = state.base;
+  // The paths where an older base differs from the default branch's tip. The
+  // policy sees them as part of the push, since the new branch has the older
+  // content there.
+  let divergent: string[] = [];
+  const firstParent = commits[0]?.parents[0];
+
+  if (
+    state.oldSha === undefined &&
+    firstParent !== undefined &&
+    firstParent !== state.base
+  ) {
+    // Only a commit the default branch contains: an unreviewed commit from a
+    // fork or a deleted branch could carry other changes underneath, and a
+    // list of differences that is cut short can't be shown to the policy.
+    const compared = await client.compare(firstParent, state.base);
+
+    if (
+      (compared.status === "ahead" || compared.status === "identical") &&
+      compared.complete
+    ) {
+      chainBase = firstParent;
+      divergent = compared.files;
+    }
+  }
+
   const linear = commits.every((commit, at) => {
-    return commit.parents[0] === (at === 0 ? state.base : commits[at - 1]?.sha);
+    return commit.parents[0] === (at === 0 ? chainBase : commits[at - 1]?.sha);
   });
   const fastForward =
     linear && (state.oldSha === undefined || state.oldSha === state.base);
   const paths = [
-    ...new Set(
-      commits.flatMap((commit) => {
+    ...new Set([
+      ...commits.flatMap((commit) => {
         return commit.changes.map((change) => change.path);
       }),
-    ),
+      ...divergent,
+    ]),
   ].sort();
   const newestFirst = [...commits].reverse();
   const afterBlob = (change: ManifestCommit["changes"][number]) => {
@@ -798,22 +860,23 @@ const pushParsed = async (
       ? undefined
       : { ...blobOf(blobs.get(change.sha) as Uint8Array), mode: change.mode };
   };
-  const baseFile = once(async () => {
-    return new Map<string, GitPushBlob | undefined>();
-  });
-  const fromBase = async (path: string): Promise<GitPushBlob | undefined> => {
-    const cache = await baseFile();
+  // A file as a commit has it. The contents API says nothing of a file's
+  // mode, and the manifest's word for it is not checked, so there is no mode.
+  const reader = (at: string) => {
+    const cache = new Map<string, GitPushBlob | undefined>();
 
-    if (!cache.has(path)) {
-      const bytes = await client.file(path, state.base);
+    return async (path: string): Promise<GitPushBlob | undefined> => {
+      if (!cache.has(path)) {
+        const bytes = await client.file(path, at);
 
-      // The contents API says nothing of a file's mode, and the manifest's
-      // word for it is not checked, so the file before has no mode here.
-      cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
-    }
+        cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
+      }
 
-    return cache.get(path);
+      return cache.get(path);
+    };
   };
+  const fromBase = reader(chainBase);
+  const atTip = chainBase === state.base ? fromBase : reader(state.base);
   // The content of \`path\` just before commit \`index\`.
   const contentBefore = async (
     index: number,
@@ -842,8 +905,9 @@ const pushParsed = async (
     const files: GitPushFile[] = paths.map((path) => {
       return {
         path,
+        // What the remote's default branch (or the branch itself) has now.
         before: once(() => {
-          return fromBase(path);
+          return atTip(path);
         }),
         after: once(() => {
           return contentAfter(path);
@@ -890,6 +954,18 @@ const pushParsed = async (
             }
           }
 
+          if (divergent.length > 0) {
+            out.push(
+              `${state.base} (the default branch's tip, which this branch is cut before)\n`,
+            );
+
+            for (const path of divergent) {
+              out.push(
+                unifiedDiff(path, await atTip(path), await contentAfter(path)),
+              );
+            }
+          }
+
           return out.join("");
         },
       } satisfies GitPush);
@@ -926,6 +1002,10 @@ const pushParsed = async (
       status,
       asked,
       ...(notes.length > 0 && { notes }),
+      // The commits were rebuilt with different hashes than the sandbox's.
+      ...(status === "pushed" &&
+        tip !== "" &&
+        sha !== tip && { sandboxSha: tip }),
     };
   };
 
@@ -937,11 +1017,11 @@ const pushParsed = async (
 
   try {
     const blobShas = new Map<string, string>();
-    let parent = state.base;
+    let parent = chainBase;
     let parentTree = (
       await client.json<{ tree: { sha: string } }>(
         "GET",
-        `/git/commits/${state.base}`,
+        `/git/commits/${chainBase}`,
       )
     ).tree.sha;
 
@@ -1070,13 +1150,25 @@ const pushParsed = async (
 };
 
 export interface CommitFilesOptions {
+  /**
+   * The repository, as `https://github.com/owner/repo`.
+   */
   remote: string;
 
   /**
    * The token, used only for the requests the host makes.
    */
   token: string;
+
+  /**
+   * The GitHub API's base URL, for GitHub Enterprise or a test server. Default
+   * `https://api.github.com`, or `/api/v3` on the remote's host.
+   */
   api?: string;
+
+  /**
+   * The `fetch` the requests use. Default the global one.
+   */
   fetch?: typeof fetch;
 
   /**
@@ -1084,6 +1176,10 @@ export interface CommitFilesOptions {
    * does not exist yet starts from the repository's default branch.
    */
   ref: string;
+
+  /**
+   * The commit message, kept exactly as given.
+   */
   message: string;
 
   /**
@@ -1099,6 +1195,11 @@ export interface CommitFilesOptions {
     | null
     | { content: string | Uint8Array; executable?: boolean }
   >;
+
+  /**
+   * Who the commit is by, as author and committer. Default `inngest-agent`
+   * with a GitHub no-reply address.
+   */
   author?: { name: string; email: string };
 
   /**

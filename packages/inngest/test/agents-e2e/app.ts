@@ -48,7 +48,8 @@ export const client = new Inngest({
     ? {
         fetch: fakeSandbox({
           recordUrl: fakesUrl,
-          commands,
+          // A command no scenario names succeeds with no output.
+          commands: { ...commands, "": {} },
           localDirs,
         }).fetch,
       }

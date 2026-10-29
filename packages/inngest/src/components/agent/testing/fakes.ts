@@ -8,6 +8,7 @@
  * reviews).
  */
 import { createServer, type IncomingMessage } from "node:http";
+import { asyncDispose } from "./dispose.ts";
 
 /**
  * One call the fakes server received.
@@ -76,9 +77,20 @@ export interface Fakes {
   posts: (filter?: CallFilter) => Call[];
 
   /**
-   * Stops the server.
+   * Records a sandbox operation, as `fakeSandbox({ fakes })` does in this
+   * process.
+   */
+  record: (method: string, body: Record<string, unknown>) => void;
+
+  /**
+   * Stops the server and drops its connections.
    */
   close: () => Promise<void>;
+
+  /**
+   * Same as `close()`, for `await using fakes = await startFakes()`.
+   */
+  [Symbol.asyncDispose]: () => Promise<void>;
 }
 
 const readBody = async (
@@ -288,9 +300,21 @@ export const startFakes = async (): Promise<Fakes> => {
     throw new Error("The fakes server has no port");
   }
 
+  const close = () => {
+    return new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+      server.closeAllConnections();
+    });
+  };
+
   return {
     url: `http://127.0.0.1:${address.port}`,
     calls,
+    record: (method, body) => {
+      calls.push({ channel: "sandbox", method, body: { method, ...body } });
+    },
     posts: (filter = {}) => {
       return calls.filter((call) => {
         return (
@@ -300,13 +324,7 @@ export const startFakes = async (): Promise<Fakes> => {
         );
       });
     },
-    close: () => {
-      return new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-        server.closeAllConnections();
-      });
-    },
+    close,
+    [asyncDispose]: close,
   };
 };
