@@ -2,6 +2,4 @@
 
 This agent returns after one message, so its run ends.
 
-The next message starts a new run. Send three, and count the runs.
-
-`console.log` prints to the Output panel.
+The next message starts a new run. Send three, and count the runs in the Trace panel.
