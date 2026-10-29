@@ -642,6 +642,14 @@ export const cleanupThreadSandbox = async (
     const pausedKey = kvKey<PausedSandbox>(sandboxPausedKey(ref, sandbox.name));
     const held = await scope.get(pausedKey);
 
+    // This sandbox is the one the thread already holds: the run paused it
+    // itself and ended before it gave up its cleanup.
+    if (held?.id === sandbox.sandboxId) {
+      await forget(scope, readyKey);
+
+      return;
+    }
+
     // A newer run's paused sandbox stays the thread's.
     if (!held || held.generation < generation) {
       try {
@@ -664,6 +672,12 @@ export const cleanupThreadSandbox = async (
           // A newer run may have paused its own sandbox while this one was
           // being paused: its record stays, and this sandbox is not kept.
           const now = await scope.get(pausedKey);
+
+          if (now?.id === sandbox.sandboxId) {
+            await forget(scope, readyKey);
+
+            return;
+          }
 
           if (!now || now.generation < generation) {
             await scope.set(pausedKey, { id: sandbox.sandboxId, generation });

@@ -656,6 +656,35 @@ describe("cleanupThreadSandbox", () => {
     expect(await s.owner().takePaused("work")).toBe("sb-1");
   });
 
+  test("a cleanup of a sandbox its run already paused leaves it paused and recorded", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-1");
+
+    const s = setup(w, "01A");
+
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
+    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+      id: "sb-1",
+      generation: "01A",
+    });
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(w.live.has("sb-1")).toBe(true);
+    expect(await s.owner().takePaused("work")).toBe("sb-1");
+  });
+
   test("a cleanup of a sandbox that asked for snapshot saves and destroys it", async () => {
     const w = world();
 
