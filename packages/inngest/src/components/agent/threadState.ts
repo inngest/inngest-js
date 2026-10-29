@@ -79,6 +79,16 @@ export const threadRecorder = (
     },
 
     /**
+     * A wait for the next message ended without one. A thread that was waiting
+     * is running again; one that honored a stop stays stopped.
+     */
+    resumed: () => {
+      return record((current) => {
+        return current.status === "waiting" ? { status: "running" } : {};
+      });
+    },
+
+    /**
      * The thread honored a stop request.
      */
     stopped: () => {
