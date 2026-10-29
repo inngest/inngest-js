@@ -557,7 +557,10 @@ export const triggerSchema = (
       return trigger.schema;
     });
   const invoked = typed.find((trigger) => {
-    return trigger.event === internalEvents.FunctionInvoked;
+    const name =
+      trigger.event instanceof EventType ? trigger.event.name : trigger.event;
+
+    return name === internalEvents.FunctionInvoked;
   });
 
   return (invoked ?? (!invokeOnly && typed.length === 1 ? typed[0] : undefined))
