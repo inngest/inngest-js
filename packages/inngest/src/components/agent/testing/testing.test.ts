@@ -193,6 +193,41 @@ describe("fakeSandbox", () => {
     ]);
   });
 
+  test("a sandbox can be paused and resumed; a paused one runs nothing and a destroyed one is gone", async () => {
+    await using sandbox = fakeSandbox({ commands: { "": {} } });
+
+    const id = await create(sandbox);
+    const status = async () => {
+      const found = await sandbox.fetch(
+        `http://fake.invalid/v2/sandboxes/${id}`,
+      );
+
+      return found.status === 200
+        ? ((await found.json()) as { data: { status: string } }).data.status
+        : found.status;
+    };
+
+    expect(await status()).toBe("RUNNING");
+
+    await post(sandbox, `/v2/sandboxes/${id}/pause`, {});
+    expect(await status()).toBe("PAUSED");
+    expect(
+      (await post(sandbox, `/v2/sandboxes/${id}/exec`, { command: ["true"] }))
+        .status,
+    ).toBe(409);
+
+    await post(sandbox, `/v2/sandboxes/${id}/resume`, {});
+    expect(await status()).toBe("RUNNING");
+    expect((await exec(sandbox, id, ["true"])).exitCode).toBe(0);
+    expect(sandbox.posts({ method: "sandbox.pause" })).toHaveLength(1);
+    expect(sandbox.posts({ method: "sandbox.resume" })).toHaveLength(1);
+
+    await sandbox.fetch(`http://fake.invalid/v2/sandboxes/${id}`, {
+      method: "DELETE",
+    });
+    expect(await status()).toBe(404);
+  });
+
   test("posts to a fakes server in another process and waits for it", async () => {
     await using fakes = await startFakes();
     await using sandbox = fakeSandbox({ recordUrl: fakes.url });

@@ -10,6 +10,7 @@
  * no command, file or result the sandbox saw, and in no run output.
  */
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,7 +68,7 @@ const prepare = () => {
   git(work, "commit", "--quiet", "-m", "base");
 
   const base = git(work, "rev-parse", "HEAD");
-  const branch = (name: string, file: string, text: string) => {
+  const branch = (name: string, file: string, text: string | Buffer) => {
     git(work, "checkout", "--quiet", "-B", name, base);
     writeFileSync(join(work, file), text);
     git(work, "add", ".");
@@ -92,6 +93,9 @@ const prepare = () => {
       return `line ${at} of a large file\n`;
     }).join(""),
   );
+  // Random bytes do not compress, so the manifest is over what one step can
+  // read and goes in pieces.
+  branch("agent/random", "random.bin", randomBytes(1_900_000));
   branch(
     "agent/scripts",
     "package.json",
@@ -185,6 +189,12 @@ export const gitPushApi = scenario({
                     input: { branch: "agent/large" },
                   },
                 },
+                {
+                  call: {
+                    name: "work_git_push",
+                    input: { branch: "agent/random" },
+                  },
+                },
                 { say: "done" },
               ]),
               prompt: "push everything",
@@ -261,6 +271,11 @@ export const gitPushApi = scenario({
           output:
             '{"pushed":[{"ref":"refs/heads/agent/large","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
         },
+        {
+          isError: false,
+          output:
+            '{"pushed":[{"ref":"refs/heads/agent/random","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
+        },
       ],
       largeStored: true,
       sameHash: true,
@@ -270,11 +285,31 @@ export const gitPushApi = scenario({
         "refs/heads/agent/direct",
         "refs/heads/agent/large",
         "refs/heads/agent/ok",
+        "refs/heads/agent/random",
         "refs/heads/main",
       ],
     });
 
     const calls = JSON.stringify(ctx.fakes.posts({ channel: "sandbox" }));
+    const reads = (pattern: RegExp) => {
+      return run.steps.filter((step) => {
+        return pattern.test(step);
+      }).length;
+    };
+
+    // A manifest that compresses to what a step can read is read in one step.
+    // Only the random file's, which does not, is read in pieces.
+    ctx.check(
+      "compressible manifests are read in one step each",
+      reads(/git-push:read$/) === 6,
+      run.steps.filter((step) => {
+        return step.includes("git-push:read");
+      }),
+    );
+    ctx.check(
+      "an incompressible one is read in pieces",
+      reads(/git-push:read:\d+$/) >= 4,
+    );
 
     ctx.check(
       "the sandbox ran the manifest script",

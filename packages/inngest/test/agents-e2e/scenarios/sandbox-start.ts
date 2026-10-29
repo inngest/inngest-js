@@ -85,9 +85,14 @@ export const sandboxStart = scenario({
     await ctx.expect
       .posts({ channel: "sandbox", method: "sandbox.exec" })
       .toHaveCount(1);
+    // The eager sandbox nothing used is destroyed; the one the tool used is
+    // paused for the thread's next run.
     await ctx.expect
       .posts({ channel: "sandbox", method: "sandbox.destroy" })
-      .toHaveCount(2);
+      .toHaveCount(1);
+    await ctx.expect
+      .posts({ channel: "sandbox", method: "sandbox.pause" })
+      .toHaveCount(1);
     await ctx.expect
       .posts({ channel: "sandbox", method: "sandbox.create" })
       .toHaveCount(2);
