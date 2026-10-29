@@ -238,7 +238,9 @@ export const MessagePanel = ({
         Thread
         <input
           value={thread}
-          onChange={(event) => setThread(event.target.value)}
+          onChange={(event) => {
+            setThread(event.target.value);
+          }}
         />
       </label>
       <label>
@@ -246,7 +248,9 @@ export const MessagePanel = ({
         <textarea
           value={text}
           rows={2}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
