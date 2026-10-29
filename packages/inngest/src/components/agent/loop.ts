@@ -36,13 +36,60 @@ import { classifyModelError, untrusted } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
 
 /**
+ * A content block of a user message, in the shape your model function sends
+ * to its provider (`{ type: "text", text }`, `{ type: "image", ... }`).
+ */
+export interface AgentContentBlock {
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * What a user message holds: text, or content blocks.
+ */
+export type AgentUserContent = string | AgentContentBlock[];
+
+/**
+ * An event as the loop takes it: what an inbox message is, without its place
+ * in the inbox.
+ */
+export interface AgentEvent {
+  id?: string;
+  name: string;
+  data: unknown;
+}
+
+/**
+ * What goes into the conversation as a user message: text, content blocks, or
+ * an event (an inbox message), which `format` turns into one of those.
+ */
+export type AgentInput = AgentUserContent | AgentEvent;
+
+/**
+ * The default `format`: the text of an `agent/message` or `agent/steer`, and
+ * the name and data of any other event as JSON.
+ */
+export const defaultFormat = (event: AgentEvent): string => {
+  const data = event.data as { text?: unknown } | null | undefined;
+
+  if (
+    (event.name === "agent/message" || event.name === "agent/steer") &&
+    typeof data?.text === "string"
+  ) {
+    return data.text;
+  }
+
+  return JSON.stringify({ event: event.name, data: event.data });
+};
+
+/**
  * One message of the conversation. The loop keeps the `content` of an
  * `assistant` message exactly as your `model` function returned it, so
  * provider-specific parts (such as Anthropic thinking blocks and their
  * signatures) go back to the model untouched.
  */
 export type AgentMessage =
-  | { role: "user"; content: string }
+  | { role: "user"; content: AgentUserContent }
   | { role: "assistant"; content: unknown }
   | { role: "tool"; results: AgentToolResult[] };
 
@@ -354,9 +401,18 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   system?: string;
 
   /**
-   * The first user message.
+   * The first user message: text, content blocks, or an event such as an
+   * inbox message, which `format` turns into text or blocks.
    */
-  prompt: string;
+  prompt: AgentInput;
+
+  /**
+   * Turns an event (a `prompt` or a steering message that is an inbox
+   * message) into what the model sees: text or content blocks. Default: the
+   * `data.text` of `agent/message` and `agent/steer`, and the event's name and
+   * data as JSON for any other event.
+   */
+  format?: (event: AgentEvent) => AgentUserContent;
 
   /**
    * Tools the model can call, declared like sandbox tools. A tool that
@@ -400,11 +456,12 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   history?: AgentMessage[];
 
   /**
-   * Called between model calls, after the tool results. Returned strings reach
-   * the model as user messages, so a person can redirect a long task. It runs
-   * in your function, so it can use steps to read a durable log.
+   * Called between model calls, after the tool results. What it returns
+   * (text, blocks or events, as for `prompt`) reaches the model as user
+   * messages, so a person can redirect a long task. It runs in your function,
+   * so it can use steps to read a durable log.
    */
-  steer?: (turn: number) => Promise<string[] | undefined>;
+  steer?: (turn: number) => Promise<AgentInput[] | undefined>;
 
   /**
    * Called between model calls, after `steer`. Return `true` to end the loop
@@ -728,7 +785,7 @@ const bridgedControl = () => {
  * @param options The loop options.
  */
 const steerOf = (options: {
-  steer?: (turn: number) => Promise<string[] | undefined>;
+  steer?: (turn: number) => Promise<AgentInput[] | undefined>;
 }) => {
   return options.steer ?? bridgedControl()?.steer;
 };
@@ -795,9 +852,15 @@ const loop = async <TTools extends SandboxTools>(
   // The key of an MCP server in `tools` names its tools; its list is a step.
   const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
   const definitions = toolDefinitions(tools);
+  const format = options.format ?? defaultFormat;
+  const contentOf = (input: AgentInput): AgentUserContent => {
+    return typeof input === "string" || Array.isArray(input)
+      ? input
+      : format(input);
+  };
   const messages: AgentMessage[] = [
     ...(options.history ?? []),
-    { role: "user", content: options.prompt },
+    { role: "user", content: contentOf(options.prompt) },
   ];
   const usage: AgentUsage = { input: 0, output: 0 };
   const toolRuns: AgentToolRun<TTools>[] = [];
@@ -1016,8 +1079,8 @@ const loop = async <TTools extends SandboxTools>(
     toolRuns.push(...done.map(({ run: finished }) => finished));
     messages.push({ role: "tool", results: done.map(({ result }) => result) });
 
-    for (const content of (await steerOf(options)?.(turn)) ?? []) {
-      messages.push({ role: "user", content });
+    for (const input of (await steerOf(options)?.(turn)) ?? []) {
+      messages.push({ role: "user", content: contentOf(input) });
       steered += 1;
     }
 

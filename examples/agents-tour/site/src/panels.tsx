@@ -28,7 +28,7 @@ export const MessagePanel = ({
 
     const event = eventOfMessage(target.agent, thread, pick(messages));
 
-    await api.send(target.agent, thread, event.data.content);
+    await api.send(target.agent, thread, event.data.text);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });

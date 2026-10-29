@@ -17,6 +17,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "subscribe-busy-agent";
@@ -45,19 +46,16 @@ export const subscribeBusy = scenario({
         on: {
           event: event("msg"),
           thread: "event.data.thread",
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox, thread }) => {
         for await (const message of inbox) {
           await step.run("work", async () => {
-            appendFileSync(ranFile(thread.key), `${message.content}\n`);
+            appendFileSync(ranFile(thread.key), `${textOf(message)}\n`);
             await sleep(2500);
           });
           await kv.thread.update(kvKey<string[]>("done"), function (done) {
-            return [...(done ?? []), message.content ?? ""];
+            return [...(done ?? []), textOf(message) ?? ""];
           });
         }
       },

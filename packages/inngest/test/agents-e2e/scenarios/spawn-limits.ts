@@ -23,7 +23,7 @@ const app = "agents-e2e";
  * The message that starts an agent's thread when it is invoked.
  */
 const start = (id: string, thread: string) => {
-  return { agent: `${app}/${id}`, thread, kind: "user", content: "go" };
+  return { agent: `${app}/${id}`, thread, text: "go" };
 };
 
 /**

@@ -89,6 +89,9 @@ export {
 export type { AgentBudget, AgentLimits } from "./limits.ts";
 export { AgentLimitError } from "./limits.ts";
 export type {
+  AgentContentBlock,
+  AgentEvent,
+  AgentInput,
   AgentLoopOptions,
   AgentLoopResult,
   AgentMessage,
@@ -100,6 +103,7 @@ export type {
   AgentToolRun,
   AgentTurn,
   AgentUsage,
+  AgentUserContent,
 } from "./loop.ts";
 export { agent } from "./loop.ts";
 export type { UntrustedOptions } from "./modelErrors.ts";
