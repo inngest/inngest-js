@@ -108,6 +108,7 @@ import {
   getThread,
   type ThreadHandle,
   type ThreadMessage,
+  type ThreadRecord,
   type ThreadRequests,
   type TriggerEvent,
   threadSessions,
@@ -792,12 +793,20 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * stop message arrived. Messages that start the next turn stay in the inbox.
    * `onTurn` records the turn, the usage and a summary for
    * `thread.state()`: if you pass your own `onTurn`, put `...control` first
-   * and call `control.onTurn(turn)` from yours.
+   * and call `control.onTurn(turn)` from yours with the turn unchanged: the
+   * record of the turn is written inside the model call's step, and
+   * `control.onTurn` reads it back.
    */
   control: {
     steer: () => Promise<string[]>;
     stop: () => Promise<boolean>;
     onTurn: (turn: AgentTurn) => Promise<void>;
+
+    /**
+     * Records the turn inside the model call's step, so it costs no step of
+     * its own. `onTurn` then reads what it recorded.
+     */
+    recordTurn: (turn: AgentTurn) => Promise<unknown>;
     budget: () => string | undefined;
     scores: boolean;
 
@@ -1846,14 +1855,41 @@ export function createAgentFunction(
               : data) as Record<string, unknown>
           )._agent,
         );
-        const started = await recorder.running(
-          passed,
-          data.kind === "user" ? { content: data.content } : null,
-        );
+        // A run that began with the start as separate KV steps replays them
+        // as they were: the KV steps are numbered by how many came before, so
+        // folding the start would shift every later one.
+        const startedBefore =
+          getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
+            .found === true;
+        const startWith = async (inStep?: string) => {
+          return {
+            started: await recorder.running(
+              passed,
+              data.kind === "user" ? { content: data.content } : null,
+              inStep,
+            ),
+            previousRun: (await readLastRun(store, inStep)) ?? null,
+          };
+        };
 
-        // How the run before this one ended: a key of its own, so it is read
-        // apart from the record.
-        const previousRun = await readLastRun(store);
+        // How the run before this one ended is a key of its own, read apart
+        // from the record. Both are KV calls inside one step, so the start
+        // costs one step; the write is safe to repeat if the step is retried.
+        const begun = startedBefore
+          ? await startWith()
+          : await step.run(
+              { id: "thread:start", name: "Thread state" },
+              async () => {
+                return startWith(thread.key);
+              },
+            );
+        const started = begun.started as ThreadRecord;
+        const previousRun = begun.previousRun ?? undefined;
+
+        recorder.observe({
+          usage: started.usage,
+          restarts: started.restarts ?? 0,
+        });
 
         // Limits apply to what `agent.invoke()` starts and to the loop's budget.
         // The usage is the thread's so far, and each turn adds to it.
@@ -2156,8 +2192,21 @@ export function createAgentFunction(
           },
           scores: scoring,
           ...(config.limits?.price && { price: config.limits.price }),
+          async recordTurn(turn: AgentTurn) {
+            const next = await recorder.turn(turn, thread.key);
+
+            return { usage: next.usage, restarts: next.restarts ?? 0 };
+          },
           async onTurn(turn: AgentTurn) {
-            const next = await recorder.turn(turn);
+            // A turn recorded inside its step came back with the reply, also
+            // on a replay. One from before that (or from a loop without
+            // `recordTurn`) is recorded now.
+            const recorded = turn.recorded as
+              | { usage: ThreadRecord["usage"]; restarts: number }
+              | undefined;
+            const next = recorded
+              ? recorder.observe(recorded)
+              : await recorder.turn(turn);
 
             limits.used = { ...next.usage };
           },

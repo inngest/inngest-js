@@ -746,10 +746,61 @@ describe("step.subscribe", () => {
     const { ops, output } = await run(fn, { saved: ["from-b", "from-a"] });
 
     expect(output).toEqual(["from-b", "from-a"]);
-    expect(ops).toEqual([
-      { id: "inbox:0:open", mode: "open" },
-      { id: "inbox:1:open", mode: "open", stream: 1 },
-    ]);
+    expect(ops).toEqual([{ id: "inbox:open:all", mode: "open", streams: 2 }]);
+  });
+
+  test("an executor that opens only the first stream gets the rest one by one", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }, { event: "c" }],
+        });
+
+        return (await inbox.next())?.data;
+      },
+    );
+
+    const { ops } = await run(fn, { saved: ["x"], legacyExecutor: true });
+
+    expect(
+      ops.map((op) => {
+        return op.id;
+      }),
+    ).toEqual(["inbox:open:all", "inbox:1:open", "inbox:2:open"]);
+  });
+
+  test("a run that opened each stream in its own step keeps replaying", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }, { event: "c" }],
+        });
+
+        return (await inbox.close()).length;
+      },
+    );
+
+    for (const first of ["inbox:open", "inbox:0:open"]) {
+      const { ops } = await run(fn, {
+        memos: {
+          [first]: { opened: true },
+          "inbox:1:open": { opened: true },
+        },
+      });
+
+      // Only the open the run had not done yet is asked: the third stream.
+      expect(
+        ops
+          .filter((op) => {
+            return op.mode === "open";
+          })
+          .map((op) => {
+            return op.id;
+          }),
+      ).toEqual(["inbox:2:open"]);
+    }
   });
 
   test("an open for every event is the only step a subscription costs when the messages are there", async () => {
@@ -775,7 +826,7 @@ describe("step.subscribe", () => {
       ops.map((op) => {
         return op.mode;
       }),
-    ).toEqual(["open", "open"]);
+    ).toEqual(["open"]);
   });
 
   test("a read that was dropped still takes its message, in the first run and on replay alike", async () => {

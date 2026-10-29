@@ -4,21 +4,10 @@
  * box shows each message as the event it became.
  */
 import { useRef, useState } from "react";
+import { eventOfMessage } from "../../shared/events.ts";
 import { api } from "./api.ts";
-import type { Start } from "../../shared/types.ts";
-import { Kbd, shortcutsOf } from "./keyboard.tsx";
+import { Kbd } from "./keyboard.tsx";
 import { useAction } from "./live.ts";
-
-export const eventOfMessage = (
-  agent: string,
-  thread: string,
-  content: string,
-) => {
-  return {
-    name: "agent/message",
-    data: { agent: `tour/${agent}`, thread, kind: "user", content },
-  };
-};
 
 export const MessagePanel = ({
   target,
@@ -40,9 +29,12 @@ export const MessagePanel = ({
       return;
     }
 
-    const event = eventOfMessage(target.agent, target.thread, text);
+    const body = text;
+    const event = eventOfMessage(target.agent, target.thread, body);
 
-    await api.send(target.agent, target.thread, text);
+    setText("");
+    box.current?.focus();
+    await api.send(target.agent, target.thread, body);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
@@ -61,7 +53,7 @@ export const MessagePanel = ({
         reaches the agent's inbox on thread <code>{target.thread}</code>.
       </p>
       <label>
-        Message <Kbd action="message" />
+        Message
         <textarea
           ref={box}
           value={text}
@@ -91,57 +83,5 @@ export const MessagePanel = ({
         );
       })}
     </form>
-  );
-};
-
-const eventOfStart = (start: Start) => {
-  if ("event" in start) {
-    return start.event;
-  }
-
-  if ("slack" in start) {
-    return { name: "slack/message", data: start.slack };
-  }
-
-  return eventOfMessage(start.agent, start.thread, start.message);
-};
-
-/**
- * The exact events Run sends, read only, so nothing about a run is magic.
- */
-export const RunEvent = ({
-  starts,
-  open,
-  onToggle,
-}: {
-  starts: Start[];
-  open: boolean;
-  onToggle: () => void;
-}) => {
-  if (starts.length === 0) {
-    return null;
-  }
-
-  return (
-    <span className="run-event">
-      <button
-        type="button"
-        className="chip"
-        aria-expanded={open}
-        aria-keyshortcuts={shortcutsOf("runEvent")}
-        onClick={onToggle}
-      >
-        Run sends <Kbd action="runEvent" />
-      </button>
-      {open ? (
-        <pre className="run-event-json" role="note">
-          {starts
-            .map((start) => {
-              return JSON.stringify(eventOfStart(start), null, 2);
-            })
-            .join("\n")}
-        </pre>
-      ) : null}
-    </span>
   );
 };

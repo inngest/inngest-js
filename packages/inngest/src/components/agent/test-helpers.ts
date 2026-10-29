@@ -16,6 +16,7 @@ interface SubscribeOpts {
   mode: "open" | "poll" | "close" | "stop" | "current";
   seq?: number;
   stream?: number;
+  streams?: { stream: number }[];
 }
 
 /**
@@ -33,6 +34,12 @@ export const run = async (
     key?: string;
     saved?: unknown[];
     incoming?: unknown[];
+
+    /**
+     * Answers an open the way an executor that predates many-source opens
+     * does: without the count of streams it opened.
+     */
+    legacyExecutor?: boolean;
 
     /**
      * The subscription is closed (by a limit, or by a branch of the function)
@@ -235,13 +242,19 @@ export const run = async (
         mode: sub.mode,
         seq: sub.seq,
         ...(sub.stream ? { stream: sub.stream } : {}),
+        ...(sub.streams ? { streams: sub.streams.length + 1 } : {}),
       });
       options.onOp?.(op, saved);
 
       progressed = true;
 
       if (sub.mode === "open") {
-        answer(op.id, { opened: true });
+        answer(
+          op.id,
+          options.legacyExecutor
+            ? { opened: true }
+            : { opened: true, streams: 1 + (sub.streams?.length ?? 0) },
+        );
       } else if (sub.mode === "close") {
         answer(closedId, true);
         answer(op.id, { count: saved.length });

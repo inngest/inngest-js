@@ -254,7 +254,15 @@ export const Search = ({
 };
 
 export const Cheat = ({ onClose }: { onClose: () => void }) => {
-  const groups = ["Code", "Pages", "Panes", "Trace", "Focus"] as const;
+  const groups = [
+    "Code",
+    "Pages",
+    "Panes",
+    "Slack",
+    "GitHub",
+    "Trace",
+    "Focus",
+  ] as const;
 
   return (
     <Modal title="Keys" onClose={onClose}>

@@ -4,6 +4,7 @@
  * panels on the right; a bar to move between pages.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ActionId } from "../../shared/keys.ts";
 import type {
   Page,
   PageSummary,
@@ -13,19 +14,30 @@ import type {
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
+import { Events } from "./Events.tsx";
+import { Github } from "./Github.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
+import { announceChange, sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { sendAction, useAction } from "./live.ts";
-import { MessagePanel, RunEvent } from "./panels.tsx";
+import { MessagePanel } from "./panels.tsx";
 import { Divider } from "./panes.tsx";
 import { hash, store } from "./platform.ts";
+import { Slack } from "./Slack.tsx";
 import { TracePanel } from "./trace.tsx";
 
+type PlayTab = "message" | "slack" | "github" | "events";
 type Overlay = "contents" | "search" | "cheat" | null;
 type Theme = "system" | "light" | "dark";
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
+
+const tabNames: Record<PlayTab, string> = {
+  message: "Messages",
+  slack: "Slack",
+  github: "GitHub",
+  events: "Events",
+};
 
 const pathOf = (id: string) => {
   return `/tour/${id}`;
@@ -65,7 +77,6 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
-  const [showEvent, setShowEvent] = useState(false);
   const [theme, setTheme] = useState<Theme>(
     (store.get("tour:theme") as Theme | null) ?? "system",
   );
@@ -75,6 +86,7 @@ export const App = () => {
   const [rightRow, setRightRow] = useState(
     Number(store.get("tour:right")) || 56,
   );
+  const [play, setPlay] = useState<PlayTab>("message");
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
@@ -122,6 +134,8 @@ export const App = () => {
         setStatus(event);
       } else if (event.type === "runs") {
         setRuns(event.runs);
+      } else if (event.type === "fakes") {
+        announceChange(event.topic);
       }
     });
   }, []);
@@ -281,6 +295,16 @@ export const App = () => {
     store.set("tour:theme", next);
   };
 
+  const showRun = () => {
+    if (
+      files.some((file) => {
+        return file.name === "run.ts";
+      })
+    ) {
+      setActive("run.ts");
+    }
+  };
+
   const nextFile = () => {
     const at = files.findIndex((file) => {
       return file.name === active;
@@ -290,6 +314,33 @@ export const App = () => {
     if (next) {
       setActive(next.name);
     }
+  };
+
+  const target = page?.manifest.message;
+  const panels: PlayTab[] =
+    (page?.manifest.panels as PlayTab[] | undefined) ??
+    (target ? ["message"] : []);
+  const panelsKey = panels.join(",");
+
+  useEffect(() => {
+    setPlay(panelsKey.split(",")[0] as PlayTab);
+  }, [page?.id, panelsKey]);
+
+  // Opens a tab of the play pane, then focuses something in it or hands a key
+  // action to it once it is on screen.
+  const playTo = (tab: PlayTab, then: string | ActionId) => {
+    if (!panels.includes(tab)) {
+      return;
+    }
+
+    setPlay(tab);
+    window.setTimeout(() => {
+      if (then.startsWith(".")) {
+        document.querySelector<HTMLElement>(then)?.focus();
+      } else {
+        sendAction(then as ActionId);
+      }
+    }, 40);
   };
 
   const focusIn = (selector: string) => {
@@ -329,7 +380,43 @@ export const App = () => {
       focusIn(".trace [data-row], .trace");
     },
     message: () => {
-      sendAction("message");
+      playTo("message", "message");
+    },
+    slack: () => {
+      playTo("slack", "slackCompose");
+    },
+    github: () => {
+      playTo("github", ".github select");
+    },
+    events: () => {
+      playTo("events", ".events input");
+    },
+    slackCompose: () => {
+      playTo("slack", "slackCompose");
+    },
+    slackNew: () => {
+      playTo("slack", "slackNew");
+    },
+    slackChannel: () => {
+      playTo("slack", "slackChannel");
+    },
+    slackReact: () => {
+      playTo("slack", "slackReact");
+    },
+    approve: () => {
+      playTo("slack", "approve");
+    },
+    deny: () => {
+      playTo("slack", "deny");
+    },
+    githubPull: () => {
+      playTo("github", "githubPull");
+    },
+    githubIssue: () => {
+      playTo("github", "githubIssue");
+    },
+    sendEvent: () => {
+      playTo("events", "sendEvent");
     },
     file: nextFile,
     devserver: () => {
@@ -338,7 +425,7 @@ export const App = () => {
       }
     },
     runEvent: () => {
-      setShowEvent((value) => !value);
+      showRun();
     },
     rowDown: () => {},
     rowUp: () => {},
@@ -393,7 +480,9 @@ export const App = () => {
 
   const tabKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const tabs = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="tab"]',
+      ),
     ];
     const at = tabs.indexOf(document.activeElement as HTMLButtonElement);
     let next: number | undefined;
@@ -418,8 +507,6 @@ export const App = () => {
   if (!index || !page) {
     return <div className="loading">Loading the tour...</div>;
   }
-
-  const target = page.manifest.message;
 
   return (
     <div className="app">
@@ -461,6 +548,7 @@ export const App = () => {
             type="button"
             className="ghost"
             onClick={handlers.devserver}
+            title="The Dev Server in this tour is a bare binary with no dashboard, so this opens a stub page. The Trace pane shows the same runs."
             aria-keyshortcuts={shortcutsOf("devserver")}
           >
             Dev Server <Kbd action="devserver" />
@@ -487,7 +575,7 @@ export const App = () => {
         <div
           className="col"
           style={
-            hasCode && target
+            hasCode && panels.length > 0
               ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
               : undefined
           }
@@ -507,7 +595,7 @@ export const App = () => {
               }}
             />
           </section>
-          {hasCode && target ? (
+          {hasCode && panels.length > 0 ? (
             <>
               <Divider
                 axis="horizontal"
@@ -517,21 +605,39 @@ export const App = () => {
               />
               <section className="play" aria-label="Play">
                 <div className="tabs" role="tablist" onKeyDown={tabKeys}>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected="true"
-                    tabIndex={0}
-                    aria-keyshortcuts={shortcutsOf("message")}
-                  >
-                    Messages <Kbd action="message" />
-                  </button>
+                  {panels.map((tab) => {
+                    return (
+                      <button
+                        type="button"
+                        role="tab"
+                        id={`play-tab-${tab}`}
+                        key={tab}
+                        aria-selected={play === tab}
+                        aria-controls="play-panel"
+                        tabIndex={play === tab ? 0 : -1}
+                        onClick={() => setPlay(tab)}
+                        aria-keyshortcuts={shortcutsOf(tab)}
+                      >
+                        {tabNames[tab]} <Kbd action={tab} />
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="panel" role="tabpanel">
-                  <MessagePanel
-                    target={target}
-                    disabled={status.state !== "live"}
-                  />
+                <div
+                  className="panel"
+                  role="tabpanel"
+                  id="play-panel"
+                  aria-labelledby={`play-tab-${play}`}
+                >
+                  {play === "message" && target ? (
+                    <MessagePanel
+                      target={target}
+                      disabled={status.state !== "live"}
+                    />
+                  ) : null}
+                  {play === "slack" ? <Slack /> : null}
+                  {play === "github" ? <Github /> : null}
+                  {play === "events" ? <Events /> : null}
                 </div>
               </section>
             </>
@@ -568,6 +674,12 @@ export const App = () => {
                       >
                         {file.name}
                         {file.editable ? "" : " (read-only)"}
+                        {file.name === "run.ts" ? (
+                          <>
+                            {" "}
+                            <Kbd action="runEvent" />
+                          </>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -605,11 +717,6 @@ export const App = () => {
                   >
                     Run <Kbd action="run" />
                   </button>
-                  <RunEvent
-                    starts={page.manifest.start ?? []}
-                    open={showEvent}
-                    onToggle={() => setShowEvent((value) => !value)}
-                  />
                   {live ? (
                     <button
                       type="button"
@@ -652,7 +759,9 @@ export const App = () => {
                 axis="horizontal"
                 value={rightRow}
                 label="Resize the code and the trace"
-                onChange={(value) => saveSplit("tour:right", setRightRow, value)}
+                onChange={(value) =>
+                  saveSplit("tour:right", setRightRow, value)
+                }
               />
               <section className="tracepane" aria-label="Trace">
                 <TracePanel

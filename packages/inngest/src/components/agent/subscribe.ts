@@ -463,6 +463,11 @@ export type SubscribeOp = (
      * The event source of an open, close or stop.
      */
     target?: SubscribeEvent;
+
+    /**
+     * Further event sources of an open, opened by the same step as `target`.
+     */
+    more?: { stream: number; target: SubscribeEvent }[];
   },
 ) => Promise<unknown>;
 
@@ -553,7 +558,28 @@ export async function openSubscription<
       : `${key}:${stream}:${name}`;
   };
 
-  for (let stream = 0; stream < streams.length; stream++) {
+  // An inbox with several sources opens them in one step. A run that began
+  // with a step for each source (`<key>:open` or `<key>:0:open`) keeps
+  // opening them that way, so it replays as it ran. An executor that predates
+  // the many-source open answers without the count of streams it opened, and
+  // the rest are opened one by one.
+  let opened = 0;
+  const openedOneByOne =
+    answerOf(`${key}:open`).found || answerOf(`${key}:0:open`).found;
+
+  if (streams.length > 1 && !openedOneByOne) {
+    const answer = await op(`${key}:open:all`, "open", undefined, 0, {
+      target: streams[0]?.source,
+      more: streams.slice(1).map(({ source }, index) => {
+        return { stream: index + 1, target: source };
+      }),
+    });
+    const count = (answer as { streams?: unknown } | undefined)?.streams;
+
+    opened = typeof count === "number" ? count : 1;
+  }
+
+  for (let stream = opened; stream < streams.length; stream++) {
     await op(stepId(stream, "open"), "open", undefined, stream, {
       target: streams[stream]?.source,
     });
@@ -741,11 +767,11 @@ export async function openSubscription<
       return found;
     };
 
-    // The parks this view made on the way to a message are answered steps in
+    // The waits and timers this view made on the way to a message are answered steps in
     // the state, which a replay does not ask for again: tell the engine they are
-    // accounted for. Every park id this view could have used between two
+    // accounted for. Every wait id this view could have used between two
     // cursors is skipped; one that was never used is no step to wait for.
-    const skipParks = async (from: number, to: number) => {
+    const skipWaits = async (from: number, to: number) => {
       for (let seq = from + 1; seq <= to + 1; seq++) {
         await skip(`${key}:${reader}:${seq}`);
 
@@ -776,7 +802,7 @@ export async function openSubscription<
 
         if (hit) {
           cursor = hit.seq;
-          await skipParks(startedAt, hit.seq);
+          await skipWaits(startedAt, hit.seq);
 
           return hit;
         }
@@ -963,7 +989,7 @@ export async function openSubscription<
       }
 
       // With no source left to close, one close op still marks the inbox
-      // closed and ends any park, and gives the authoritative count.
+      // closed and ends any wait, and gives the authoritative count.
       if (!closedAny) {
         const closed = (await op(stepId(0, "close"), "close", undefined, 0, {
           target: streams[0]?.source,

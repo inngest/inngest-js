@@ -21,6 +21,7 @@ import {
 import { extname, join, normalize } from "node:path";
 import type { Page, Start, TourEvent, TraceRun } from "../shared/types.ts";
 import { DevServer, type DevServerPorts } from "./devserver.ts";
+import { createFakes } from "./fakes/index.ts";
 import { type LoadedPage, loadLessons } from "./lessons.ts";
 import { cancelRun, readOutput, readRuns, terminal } from "./runs.ts";
 import { readTypes } from "./types.ts";
@@ -120,8 +121,15 @@ export const createTour = async (options: TourOptions) => {
     appUrl: `${publicUrl}/api/inngest`,
     logFile: join(dataDir, "devserver.log"),
   });
+  const fakes = createFakes({
+    devServerUrl: devServer.url,
+    changed: (topic) => {
+      broadcast({ type: "fakes", topic });
+    },
+  });
   const worker = new Worker({
     root,
+    publicUrl,
     devServerUrl: devServer.url,
     onOutput: (kind, text) => {
       for (const line of text.split("\n")) {
@@ -155,7 +163,6 @@ export const createTour = async (options: TourOptions) => {
         runs = next;
         broadcast({ type: "runs", runs });
       }
-
     } catch {
       // The Dev Server is restarting; the next tick tries again.
     }
@@ -189,7 +196,14 @@ export const createTour = async (options: TourOptions) => {
     return dir;
   };
 
-  const sendStart = async (page: Page, start: Start) => {
+  const sendStart = async (_page: Page, start: Start) => {
+    if ("slack" in start) {
+      await fakes.say(start.slack.channel, start.slack.text);
+      info(`said "${start.slack.text}" in Slack`);
+
+      return;
+    }
+
     if ("event" in start) {
       await devServer.send(start.event.name, start.event.data);
       info(`sent event ${start.event.name}`);
@@ -226,6 +240,7 @@ export const createTour = async (options: TourOptions) => {
       emit({ type: "clear" });
       runs = [];
       broadcast({ type: "runs", runs });
+      fakes.reset();
       setStatus("starting", "Starting your code...");
 
       const started = Date.now();
@@ -346,6 +361,7 @@ export const createTour = async (options: TourOptions) => {
       runs = [];
       from = new Date().toISOString();
       broadcast({ type: "runs", runs });
+      fakes.reset();
       setStatus("idle", "Ready");
 
       return sendJson(res, 200, { ok: true });
@@ -374,6 +390,7 @@ export const createTour = async (options: TourOptions) => {
         broadcast({ type: "runs", runs });
         setStatus("starting", "Restarting the Dev Server...");
         await devServer.restart();
+        fakes.reset();
         setStatus("idle", "Ready");
       });
 
@@ -448,6 +465,8 @@ export const createTour = async (options: TourOptions) => {
     try {
       if (url.pathname === "/api/inngest") {
         worker.proxy(req, res);
+      } else if (await fakes.handle(req, res)) {
+        return;
       } else if (url.pathname.startsWith("/api/")) {
         await handleApi(req, res, url);
       } else {

@@ -634,6 +634,19 @@ export const createStepTools = <
               mode,
               ...(seq ? { seq } : {}),
               ...(stream ? { stream } : {}),
+              ...(extra?.more?.length
+                ? {
+                    streams: extra.more.map(
+                      ({ stream: index, target: more }) => {
+                        return {
+                          stream: index,
+                          event: eventNameOf(more.event),
+                          ...(more.if ? { if: more.if } : {}),
+                        };
+                      },
+                    ),
+                  }
+                : {}),
             },
           });
         });
@@ -749,6 +762,7 @@ export const createStepTools = <
             timeout?: string;
             attempt?: number;
             reader?: string;
+            streams?: { stream: number; event: string; if?: string }[];
           };
         },
       ) => Promise<unknown>
