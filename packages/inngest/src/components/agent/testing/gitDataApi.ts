@@ -95,10 +95,6 @@ const gitDate = (iso: string): string => {
 };
 
 /**
- * A GitHub API in memory: the endpoints a push uses, and a record of the
- * requests it saw.
- */
-/**
  * The size above which the contents API stops inlining a file's content.
  */
 const inlineLimit = 1024 * 1024;
@@ -206,7 +202,9 @@ export const createGitDataApi = (repoName = "acme/app") => {
             left.get(name)?.mode !== right.get(name)?.mode
           );
         })
-        .map((filename) => ({ filename }));
+        .map((filename) => {
+          return { filename };
+        });
 
       return respond({
         files,
@@ -310,7 +308,13 @@ export const createGitDataApi = (repoName = "acme/app") => {
       const sha = hash(
         "commit",
         Buffer.from(
-          `tree ${body.tree}\n${body.parents.map((parent: string) => `parent ${parent}\n`).join("")}${person("author", body.author)}${person("committer", body.committer)}\n${body.message}`,
+          `tree ${body.tree}\n${body.parents
+            .map((parent: string) => {
+              return `parent ${parent}\n`;
+            })
+            .join(
+              "",
+            )}${person("author", body.author)}${person("committer", body.committer)}\n${body.message}`,
         ),
       );
 
@@ -372,7 +376,9 @@ export const createGitDataApi = (repoName = "acme/app") => {
       seedCommit(repo, parent);
     }
 
-    for (const line of git(repo, "ls-tree", "-r", commit).split("\n")) {
+    for (const line of git(repo, "ls-tree", "-r", commit)
+      .split("\n")
+      .filter(Boolean)) {
       const [meta = "", path = ""] = line.split("\t");
       const [mode = "", , sha = ""] = meta.split(" ");
       const bytes = execFileSync("git", ["cat-file", "blob", sha], {

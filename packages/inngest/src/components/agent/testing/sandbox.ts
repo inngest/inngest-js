@@ -205,14 +205,23 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
     return found;
   };
+  let closed = false;
+
   const toolsDir = mkdtempSync(join(tmpdir(), "fake-sandbox-tools-"));
   // Every sandbox has a /work of its own on this machine, so a new sandbox
   // starts empty; a snapshot keeps a copy, and a sandbox made from it starts
   // with that copy.
   const workDirs = new Map<string, string>();
   const snapshotDirs = new Map<string, string>();
+  // Files a runner wrote straight to the host (`/tmp/inngest-run-code-*`),
+  // removed on close.
+  const written = new Set<string>();
   const workOf = (sandboxId: string) => {
     let dir = workDirs.get(sandboxId);
+
+    if (closed) {
+      throw new Error("FakeSandbox is closed");
+    }
 
     if (!dir) {
       dir = mkdtempSync(join(tmpdir(), "fake-sandbox-work-"));
@@ -368,8 +377,6 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     } as { stdout?: string; stderr?: string; exitCode?: number };
   };
 
-  let closed = false;
-
   const fakeFetch: typeof fetch = async (input, init) => {
     if (closed) {
       return Response.json(
@@ -411,6 +418,15 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
       if (snapshotId && method === "DELETE" && found) {
         snapshots.delete(snapshotId);
+        snapshotFiles.delete(snapshotId);
+
+        const kept = snapshotDirs.get(snapshotId);
+
+        if (kept) {
+          rmSync(kept, { recursive: true, force: true });
+          snapshotDirs.delete(snapshotId);
+        }
+
         await record("snapshot.delete", { id: snapshotId, name: found.name });
 
         return new Response(null, { status: 204 });
@@ -562,6 +578,14 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     }
 
     if (id && !rest && method === "DELETE") {
+      const dir = workDirs.get(id);
+
+      if (dir) {
+        rmSync(dir, { recursive: true, force: true });
+        workDirs.delete(id);
+      }
+
+      files.delete(id);
       await record("sandbox.destroy", { id });
 
       return new Response(null, { status: 204 });
@@ -740,10 +764,16 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           typeof init?.body === "string"
             ? new TextEncoder().encode(init.body)
             : (init?.body as Uint8Array);
+
         if (onDisk(path)) {
           mkdirSync(dirname(local(path)), { recursive: true });
           writeFileSync(local(path), body);
+
+          if (path.startsWith("/tmp/inngest-run-code-")) {
+            written.add(local(path));
+          }
         }
+
         filesOf(id).set(path, body);
         await record("sandbox.upload", {
           id,
@@ -797,7 +827,11 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     children.clear();
     rmSync(toolsDir, { recursive: true, force: true });
 
-    for (const dir of [...workDirs.values(), ...snapshotDirs.values()]) {
+    for (const dir of [
+      ...workDirs.values(),
+      ...snapshotDirs.values(),
+      ...written,
+    ]) {
       rmSync(dir, { recursive: true, force: true });
     }
   };

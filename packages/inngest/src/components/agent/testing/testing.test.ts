@@ -10,6 +10,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -909,5 +910,71 @@ describe.skipIf(!backendPath())("startGitRemote names", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("fakeSandbox cleanup", () => {
+  test("a destroyed sandbox and a deleted snapshot free their host directories, and close frees the rest", async () => {
+    const before = readdirSync(tmpdir()).filter((name) => {
+      return (
+        name.startsWith("fake-sandbox-") || name.startsWith("fake-snapshot-")
+      );
+    });
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/a.txt`,
+      { method: "PUT", body: "a" },
+    );
+
+    const snapshot = await post(sandbox, `/v2/sandboxes/${id}/snapshots`, {});
+    const snapshotId = ((await snapshot.json()) as { data: { id: string } })
+      .data.id;
+    const names = () => {
+      return readdirSync(tmpdir()).filter((name) => {
+        return (
+          (name.startsWith("fake-sandbox-work-") ||
+            name.startsWith("fake-snapshot-")) &&
+          !before.includes(name)
+        );
+      });
+    };
+
+    expect(names()).toHaveLength(2);
+
+    await sandbox.fetch(`http://sandboxes.test/v2/snapshots/${snapshotId}`, {
+      method: "DELETE",
+    });
+    await sandbox.fetch(`http://sandboxes.test/v2/sandboxes/${id}`, {
+      method: "DELETE",
+    });
+
+    expect(names()).toHaveLength(0);
+
+    await sandbox.close();
+
+    expect(
+      readdirSync(tmpdir()).filter((name) => {
+        return name.startsWith("fake-sandbox-tools-") && !before.includes(name);
+      }),
+    ).toHaveLength(0);
+  });
+
+  test("a runner file written to /tmp is removed on close", async () => {
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+    const path = `/tmp/inngest-run-code-test-${Date.now()}.json`;
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent(path)}`,
+      { method: "PUT", body: "{}" },
+    );
+
+    expect(existsSync(path)).toBe(true);
+
+    await sandbox.close();
+
+    expect(existsSync(path)).toBe(false);
   });
 });

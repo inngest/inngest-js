@@ -232,13 +232,19 @@ export const startGitRemote = async (
   const served: Record<string, { dir: string; heads: Record<string, string> }> =
     {};
 
-  for (const [name, seed] of Object.entries(repos)) {
-    const dir = join(root, `${name}.git`);
+  try {
+    for (const [name, seed] of Object.entries(repos)) {
+      const dir = join(root, `${name}.git`);
 
-    git(root, "init", "--bare", "--quiet", "-b", "main", dir);
-    git(dir, "config", "http.receivepack", "true");
-    git(dir, "config", "uploadpack.allowAnySHA1InWant", "true");
-    served[name] = { dir, heads: seedRepo(dir, seed) };
+      git(root, "init", "--bare", "--quiet", "-b", "main", dir);
+      git(dir, "config", "http.receivepack", "true");
+      git(dir, "config", "uploadpack.allowAnySHA1InWant", "true");
+      served[name] = { dir, heads: seedRepo(dir, seed) };
+    }
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+
+    throw error;
   }
 
   const expected = `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
@@ -318,6 +324,7 @@ export const startGitRemote = async (
 
       for (const line of head) {
         const [name = "", ...rest] = line.split(": ");
+
         if (name.toLowerCase() === "status") {
           status = Number.parseInt(rest.join(": "), 10);
         } else {
