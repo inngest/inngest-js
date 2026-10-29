@@ -616,3 +616,11 @@ textarea {
     padding: 12px 18px;
   }
 }
+
+.cheat table {
+  table-layout: fixed;
+}
+
+.cheat td:first-child {
+  width: 42%;
+}
