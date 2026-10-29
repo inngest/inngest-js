@@ -15,7 +15,7 @@ const agentId = "fewer-steps-agent";
 export const fewerSteps = scenario({
   id: "fewer-steps",
   owner: "agents-fewer-steps",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 
