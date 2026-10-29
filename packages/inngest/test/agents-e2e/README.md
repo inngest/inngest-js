@@ -83,7 +83,7 @@ Rules: a scenario uses its own event names and thread IDs (the driver gives you 
 If your piece needs a backend change not in the published Dev Server, declare it:
 
 ```ts
-export const myPiece = scenario({ id: "my-piece", needs: { oss: "jack/step-subscribe" }, ... });
+export const myPiece = scenario({ id: "my-piece", needs: { oss: "jack/step-subscribe-clean" }, ... });
 ```
 
 `kit/oss-pins.json` maps that branch to a sha. `run.ts` runs `devstack build-local ~/repo/inngest/inngest --ref <sha>` (cached per commit) and starts the Dev Server with `--bin local@<sha>`. Only the integration owner edits `oss-pins.json`, so everyone verifies against the same backend. Delete the pin when the published CLI has the feature. Two scenarios that need different pins cannot run in one `--all`; the CLI says so.

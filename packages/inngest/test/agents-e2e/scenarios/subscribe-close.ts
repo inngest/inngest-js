@@ -50,7 +50,7 @@ const tagOf = (c: (typeof configs)[number]) => {
 export const subscribeClose = scenario({
   id: "subscribe-close",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     return configs.flatMap((config) => {
       return races.map((race) => {

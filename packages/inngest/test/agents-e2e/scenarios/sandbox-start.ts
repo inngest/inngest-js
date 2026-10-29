@@ -26,7 +26,7 @@ const lazyBox = sandbox({ id: "lazy-box", tools: sandbox.tools.code() });
 export const sandboxStart = scenario({
   id: "sandbox-start",
   owner: "agents-sandbox-start",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   sandbox: "fake",
   sandboxCommands: { "echo sandbox-start": { stdout: "hello\n" } },
   functions: ({ client }) => {

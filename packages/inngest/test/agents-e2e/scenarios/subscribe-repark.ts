@@ -33,7 +33,7 @@ const total = rounds * 2;
 export const subscribeRepark = scenario({
   id: "subscribe-repark",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `repark-${tagOf(config)}`;

@@ -57,7 +57,7 @@ const acks = (thread: string) => {
 export const inboxArrival = scenario({
   id: "inbox-arrival",
   owner: "agents-inbox",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client }) => {
     const agents = createAgents(client);
 

@@ -13,7 +13,7 @@ import { scenario } from "../kit/driver.ts";
 export const channelLimits = scenario({
   id: "channel-limits",
   owner: "agents-channel-limits",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event, fakes }) => {
     const agents = createAgents(client);
 

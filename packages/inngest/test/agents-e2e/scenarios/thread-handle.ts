@@ -41,7 +41,7 @@ const askerRef = `agents-e2e/${askerId}`;
 export const threadHandle = scenario({
   id: "thread-handle",
   owner: "agents-thread-handle",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client }) => {
     const agents = createAgents(client);
     const worker = agents.agent(

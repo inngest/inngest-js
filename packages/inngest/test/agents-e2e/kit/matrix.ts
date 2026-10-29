@@ -94,7 +94,7 @@ export const matrixScenario = (config: {
   return scenario({
     id,
     owner: "subscribe-park",
-    needs: { oss: config.oss ?? "jack/step-subscribe" },
+    needs: { oss: config.oss ?? "jack/step-subscribe-clean" },
     functions: ({ client, event }) => {
       return shapes.map((shape) => {
         return client.createFunction(

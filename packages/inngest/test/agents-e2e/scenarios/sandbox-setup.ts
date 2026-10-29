@@ -44,7 +44,7 @@ const spare = sandbox({
 export const sandboxSetup = scenario({
   id: "sandbox-setup",
   owner: "agents-sandbox-setup",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   sandbox: "fake",
   functions: ({ client }) => {
     const agents = createAgents(client);

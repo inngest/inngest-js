@@ -41,7 +41,7 @@ const tagOf = (c: (typeof configs)[number]) => {
 export const subscribeRace = scenario({
   id: "subscribe-race",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `race-${tagOf(config)}`;

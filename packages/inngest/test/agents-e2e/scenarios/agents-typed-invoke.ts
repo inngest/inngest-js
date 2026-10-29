@@ -19,7 +19,7 @@ import { scenario } from "../kit/driver.ts";
 export const agentsTypedInvoke = scenario({
   id: "agents-typed-invoke",
   owner: "agents-event-types",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
     const asked = invoke(z.object({ question: z.string() }));

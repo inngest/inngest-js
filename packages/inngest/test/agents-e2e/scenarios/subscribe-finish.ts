@@ -21,7 +21,7 @@ const ref = `agents-e2e/${agentId}`;
 export const subscribeFinish = scenario({
   id: "subscribe-finish",
   owner: "agents-thread-key",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

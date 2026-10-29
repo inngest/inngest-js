@@ -29,7 +29,7 @@ const sleep = (ms: number) => {
 export const inboxSources = scenario({
   id: "inbox-sources",
   owner: "agents-inbox",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

@@ -27,7 +27,7 @@ const box = sandbox({ id: "pause-box" });
 export const threadSandboxesPause = scenario({
   id: "thread-sandboxes-pause",
   owner: "agents-git-batch",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   sandbox: "fake",
   functions: ({ client }) => {
     const agents = createAgents(client);

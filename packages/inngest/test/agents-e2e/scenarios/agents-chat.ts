@@ -46,7 +46,7 @@ const last = (state: Record<string, unknown>) => {
 export const agentsChat = scenario({
   id: "agents-chat",
   owner: "agents-f",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client }) => {
     const agents = createAgents(client);
     const chat = agents.agent({ id: agentId }, async ({ inbox, control }) => {

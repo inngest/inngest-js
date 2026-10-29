@@ -46,7 +46,7 @@ const when = ["batch-end", "inline-step"] as const;
 export const subscribeMode = scenario({
   id: "subscribe-mode",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `mode-${tagOf(config)}`;

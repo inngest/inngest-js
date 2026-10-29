@@ -48,7 +48,7 @@ const noop = tool.step({
 export const spawnLimits = scenario({
   id: "spawn-limits",
   owner: "agents-spawn-limits",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client }) => {
     const agents = createAgents(client);
     const first = async (inbox: { next(): Promise<unknown> }) => {

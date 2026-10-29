@@ -61,7 +61,7 @@ const call = (turn: number, name: string, input: Record<string, unknown>) => {
 export const inboxTools = scenario({
   id: "inbox-tools",
   owner: "agents-inbox-tools",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
     const checks = event("check");

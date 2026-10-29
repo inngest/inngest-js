@@ -66,7 +66,7 @@ type Out = { got: unknown[] };
 export const subscribePark = scenario({
   id: "subscribe-park",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe" },
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     return shapes.flatMap((shape) => {
       return configs.map((config) => {
