@@ -10,6 +10,6 @@ const agents = createAgents(client, {
 });
 ```
 
-`d1KvAdapter` takes a D1 database or a function that returns one, since a Worker's binding exists per request. Create the two tables with `d1KvSchema` in a migration. Keys past their `ttl` read as absent, and `setIfAbsent` is one SQL statement, so racing callers are arbitrated. An `update` is a read and a write on every store, so two runs updating one key at once can lose an update. `KvStore` documents what a store must guarantee.
+`d1KvAdapter` takes a D1 database or a function that returns one, since a Worker's binding exists per request. Create the two tables with `d1KvSchema` in a migration. Keys past their `ttl` read as absent, and `setIfAbsent` is one SQL statement, so racing callers are arbitrated. `update` is a compare-and-set on every store (a script on Redis, a matching statement on D1), so two runs updating one key at once lose no update; the function you give it may run more than once. `KvStore` documents what a store must guarantee.
 
 The agents entry no longer imports `node:crypto` at load, so it loads in a Worker without `nodejs_compat`.

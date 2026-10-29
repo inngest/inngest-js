@@ -13,8 +13,11 @@
  * - `set`, `delete`, `indexAdd` and `indexRemove` are single statements.
  * - `clear` removes the keys and the indexes of a scope instance in one batch,
  *   which D1 runs as a transaction.
- * - An `update` is a read, a function and a write, so it is not atomic across
- *   runs on any store; two runs updating one key at once can lose an update.
+ * - `compareAndSet` is one statement that matches on the old value (or, for
+ *   an absent key, an insert that only takes an absent or expired key), so the
+ *   KV's `update`, which retries on a lost compare, never loses an update. A
+ *   value that returns to what it was between the read and the write counts as
+ *   unchanged, which is right for an update that is a function of the value.
  * - Expired rows are deleted when their scope instance is next written with a
  *   time to live, and are never returned.
  */
@@ -214,6 +217,31 @@ export function d1KvAdapter(
       };
 
       return claim(false);
+    },
+
+    async compareAndSet(hash, field, expected, next) {
+      const current = await ready();
+      const result =
+        expected === null
+          ? await current
+              .prepare(
+                `INSERT INTO inngest_kv (scope, field, value, expires_at)
+                 VALUES (?, ?, ?, NULL)
+                 ON CONFLICT (scope, field) DO UPDATE SET
+                   value = excluded.value, expires_at = NULL
+                 WHERE inngest_kv.expires_at IS NOT NULL AND inngest_kv.expires_at <= ${now}`,
+              )
+              .bind(hash, field, next)
+              .run()
+          : await current
+              .prepare(
+                `UPDATE inngest_kv SET value = ?, expires_at = NULL
+                 WHERE scope = ? AND field = ? AND value = ? AND ${live}`,
+              )
+              .bind(next, hash, field, expected)
+              .run();
+
+      return (result.meta.changes ?? 0) > 0;
     },
 
     async delete(hash, field) {

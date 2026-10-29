@@ -181,6 +181,57 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
         await done();
       });
 
+      test("compareAndSet writes only over the value it expects", async () => {
+        const { adapter, advance, done } = await make();
+
+        expect(await adapter.compareAndSet("h", "k", null, "1")).toBe(true);
+        expect(await adapter.compareAndSet("h", "k", null, "2")).toBe(false);
+        expect(await adapter.compareAndSet("h", "k", "9", "2")).toBe(false);
+        expect(await adapter.compareAndSet("h", "k", "1", "2")).toBe(true);
+        expect(await adapter.get("h", "k")).toBe("2");
+
+        // A key past its ttl is absent, and the new value never expires.
+        await adapter.set("h", "t", "old", 10);
+        advance(11_000);
+        expect(await adapter.compareAndSet("h", "t", "old", "x")).toBe(false);
+        expect(await adapter.compareAndSet("h", "t", null, "new")).toBe(true);
+        advance(1_000_000);
+        expect(await adapter.get("h", "t")).toBe("new");
+
+        // A value written with a ttl is compared and replaced in either form.
+        await adapter.set("h", "u", "ttl", 100);
+        expect(await adapter.compareAndSet("h", "u", "ttl", "plain")).toBe(
+          true,
+        );
+        expect(await adapter.get("h", "u")).toBe("plain");
+        await done();
+      });
+
+      test("concurrent updates of one key lose none", async () => {
+        const { adapter, done } = await make();
+        const counter = createKv({ adapter }).with({
+          id: "app",
+          env: null,
+        }).env;
+        const key = kvKey<number>("count");
+        let calls = 0;
+
+        await Promise.all(
+          Array.from({ length: 20 }, () => {
+            return counter.update(key, (n) => {
+              calls++;
+
+              return (n ?? 0) + 1;
+            });
+          }),
+        );
+
+        expect(await counter.get(key)).toBe(20);
+        // The function runs again for each update that lost a race.
+        expect(calls).toBeGreaterThanOrEqual(20);
+        await done();
+      });
+
       test("a retried setIfAbsent holds its own claim, others do not", async () => {
         const { adapter, done } = await make();
         const env = createKv({ adapter }).with({ id: "app", env: null }).env;

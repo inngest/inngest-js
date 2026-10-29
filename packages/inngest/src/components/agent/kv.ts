@@ -47,9 +47,11 @@ export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
  * - A field past its `ttl` reads as absent, and `setIfAbsent` may take it over.
  * - A single write (`set`, `delete`, `indexAdd`, `indexRemove`) takes effect
  *   whole or not at all.
- * - Nothing spans two calls. A read followed by a write is not atomic, so the
- *   KV's `update` can lose an update when two runs update one key at once, on
- *   every store.
+ * - `compareAndSet` is atomic across callers, and the KV's `update` is built on
+ *   it: it reads, computes, and writes only if the value is still the one it
+ *   read, else it reads again. Redis does it in a script, D1 in one statement
+ *   that matches on the old value, memory on one thread.
+ * - Nothing else spans two calls. A `get` followed by a `set` is not atomic.
  */
 export interface KvAdapter {
   get(hash: string, field: string): Promise<string | null>;
@@ -70,6 +72,19 @@ export interface KvAdapter {
     field: string,
     value: string,
     ttl?: number,
+  ): Promise<boolean>;
+
+  /**
+   * Replaces the field's value with `next` only when its live value is
+   * `expected` (`null`: the field is absent), and returns whether it did.
+   * Atomic across callers: of two calls that read the same value, one wins.
+   * The new value never expires. The KV's `update` is built on it.
+   */
+  compareAndSet(
+    hash: string,
+    field: string,
+    expected: string | null,
+    next: string,
   ): Promise<boolean>;
   delete(hash: string, field: string): Promise<void>;
   all(hash: string): Promise<Record<string, string>>;
@@ -199,6 +214,15 @@ export function memoryKvAdapter(): KvAdapter {
 
       return true;
     },
+    async compareAndSet(hash, field, expected, next) {
+      if ((live(hash, field)?.value ?? null) !== expected) {
+        return false;
+      }
+
+      write(hash, field, next);
+
+      return true;
+    },
     async delete(hash, field) {
       hashes.get(hash)?.fields.delete(field);
     },
@@ -247,6 +271,20 @@ export function memoryKvAdapter(): KvAdapter {
     },
   };
 }
+
+// Compares the field (in either of its two forms) with the expected value and
+// writes the new one as a plain hash field, all on the server.
+const compareAndSetScript = `-- inngest-kv-cas
+local cur = redis.call('HGET', KEYS[1], ARGV[1])
+if not cur then cur = redis.call('GET', KEYS[2]) end
+if ARGV[2] == '0' then
+  if cur then return 0 end
+elseif cur ~= ARGV[3] then
+  return 0
+end
+redis.call('DEL', KEYS[2])
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
+return 1`;
 
 /**
  * A Redis adapter that connects on first use. Needs Redis 6.2 or newer.
@@ -401,6 +439,22 @@ export function redisKvAdapter(url: string): KvAdapter {
       }
 
       return false;
+    },
+    async compareAndSet(hash, field, expected, next) {
+      // A script, so the compare and the write are one step on the server.
+      const swapped = await command(
+        "EVAL",
+        compareAndSetScript,
+        "2",
+        main(hash),
+        expiring(hash, field),
+        field,
+        expected === null ? "0" : "1",
+        expected ?? "",
+        next,
+      );
+
+      return swapped === 1;
     },
     async delete(hash, field) {
       await command("HDEL", main(hash), field);
@@ -860,6 +914,17 @@ interface RawKv {
     value: unknown,
     options?: KvSetOptions,
   ): Promise<boolean>;
+
+  /**
+   * Reads a key, asks `compute` what to do, and writes only if the key is
+   * still as it was read, trying again from a fresh read when another caller
+   * got there first. `compute` may run more than once, so it must be a pure
+   * function of what it is given.
+   */
+  update<R>(
+    key: string,
+    compute: (current: unknown) => Promise<{ stop: R } | { write: unknown }>,
+  ): Promise<{ stopped: R } | { written: unknown }>;
   delete(key: string): Promise<void>;
   all(): Promise<Record<string, unknown>>;
   clear(): Promise<void>;
@@ -867,6 +932,9 @@ interface RawKv {
   indexRange(index: string, options: KvIndexRange): Promise<KvIndexEntry[]>;
   indexRemove(index: string, member: string): Promise<void>;
 }
+
+// How many times an update retries after losing a race.
+const updateAttempts = 25;
 
 /**
  * The ids that name a scope instance.
@@ -957,7 +1025,10 @@ export interface KvScopeInstance {
   index(name: string): KvIndex;
 
   /**
-   * Reads, transforms and writes a key in one step. Not atomic across runs.
+   * Reads, transforms and writes a key in one step. It is a compare-and-set:
+   * when another run changes the key between the read and the write, the
+   * update reads again and calls `fn` again, so `fn` must be a pure function
+   * of its argument. Two runs updating one key never lose an update.
    * A stored value that fails its key's schema is a `NonRetriableError`, as
    * for `get`, and nothing is written.
    * The result never expires, even if the key had a `ttl`: pass nothing to
@@ -1140,6 +1211,33 @@ function handleFor(adapter: KvAdapter, scope: KvScope, ids: KvScopeIds): RawKv {
         key,
         JSON.stringify(checkedValue(value)),
         checkedTtl(options),
+      );
+    },
+    async update(key, compute) {
+      for (let attempt = 0; attempt < updateAttempts; attempt++) {
+        const raw = await adapter.get(hash, key);
+        const outcome = await compute(
+          raw === null ? undefined : JSON.parse(raw),
+        );
+
+        if ("stop" in outcome) {
+          return { stopped: outcome.stop };
+        }
+
+        if (
+          await adapter.compareAndSet(
+            hash,
+            key,
+            raw,
+            JSON.stringify(checkedValue(outcome.write)),
+          )
+        ) {
+          return { written: outcome.write };
+        }
+      }
+
+      throw new Error(
+        `kv update of "${key}" kept losing to other writers; gave up after ${updateAttempts} tries`,
       );
     },
     async delete(key) {
@@ -1396,18 +1494,23 @@ export function createKv(
       ): Promise<KvResult<K, V>> {
         const name = nameOf(key);
         const result = await run("update", name, async (h) => {
-          const current = await tryDecode(key, await h.get(name));
-          if (!current.ok) {
-            return {
-              "~kvUpdate": true,
-              invalid: current.invalid,
-            } satisfies KvUpdate;
-          }
+          const outcome = await h.update<KvUpdate>(name, async (raw) => {
+            const current = await tryDecode(key, raw);
+            if (!current.ok) {
+              return {
+                stop: { "~kvUpdate": true, invalid: current.invalid },
+              };
+            }
 
-          const next = fn(current.value);
-          await h.set(name, next);
+            return { write: fn(current.value) };
+          });
 
-          return { "~kvUpdate": true, value: next } satisfies KvUpdate;
+          return "stopped" in outcome
+            ? outcome.stopped
+            : ({
+                "~kvUpdate": true,
+                value: outcome.written,
+              } satisfies KvUpdate);
         });
 
         return unwrapUpdate(result) as KvResult<K, V>;
