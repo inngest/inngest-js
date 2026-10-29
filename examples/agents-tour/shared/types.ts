@@ -27,7 +27,8 @@ export interface Manifest {
   panels?: string[];
   start?: Start[];
   // The message box sends to this agent and thread.
-  message?: { agent: string; thread: string };
+  // `threads` adds one button per thread; the first is the default.
+  message?: { agent: string; thread: string; threads?: string[] };
 }
 
 export interface PageFile {

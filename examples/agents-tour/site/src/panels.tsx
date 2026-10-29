@@ -15,44 +15,71 @@ export const MessagePanel = ({
   target,
   disabled,
 }: {
-  target: { agent: string; thread: string };
+  target: { agent: string; thread: string; threads?: string[] };
   disabled: boolean;
 }) => {
   const [sent, setSent] = useState<string[]>([]);
+  const threads = target.threads ?? [];
 
-  const send = async () => {
+  const send = async (thread: string) => {
     if (disabled) {
       return;
     }
 
-    const event = eventOfMessage(target.agent, target.thread, pick(messages));
+    const event = eventOfMessage(target.agent, thread, pick(messages));
 
-    await api.send(target.agent, target.thread, event.data.content);
+    await api.send(target.agent, thread, event.data.content);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
   };
 
   useAction("sendEvent", () => {
-    void send();
+    void send(threads[0] ?? target.thread);
+  });
+  useAction("sendOther", () => {
+    if (threads[1]) {
+      void send(threads[1]);
+    }
   });
 
   return (
     <div className="message">
       <p>
         A message is an event: it reaches the inbox of{" "}
-        <code>{target.agent}</code> on thread <code>{target.thread}</code>.
+        <code>{target.agent}</code> on a thread.
       </p>
-      <button
-        type="button"
-        className="primary"
-        disabled={disabled}
-        onClick={() => {
-          void send();
-        }}
-      >
-        Send a message <Kbd action="sendEvent" />
-      </button>
+      <div className="message-buttons">
+        {threads.length > 1 ? (
+          threads.map((thread, at) => {
+            return (
+              <button
+                type="button"
+                className="primary"
+                key={thread}
+                disabled={disabled}
+                onClick={() => {
+                  void send(thread);
+                }}
+              >
+                Send to {thread}{" "}
+                <Kbd action={at === 0 ? "sendEvent" : "sendOther"} />
+              </button>
+            );
+          })
+        ) : (
+          <button
+            type="button"
+            className="primary"
+            disabled={disabled}
+            onClick={() => {
+              void send(target.thread);
+            }}
+          >
+            Send a message <Kbd action="sendEvent" />
+          </button>
+        )}
+      </div>
       {sent.map((json, at) => {
         return (
           <pre className="sent" key={`${at}-${json}`}>

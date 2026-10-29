@@ -1,4 +1,4 @@
-# An agent is a function
+# Return a value
 
 What the function returns is the output of the run.
 
