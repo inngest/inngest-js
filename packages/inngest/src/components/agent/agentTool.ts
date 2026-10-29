@@ -6,13 +6,12 @@
  */
 
 import * as z from "zod/v4";
-
+import type { InngestFunction } from "../InngestFunction.ts";
 import {
   type AgentTool,
   type SandboxTool,
   triggerSchema,
 } from "../sandbox/tools.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
 import { invokeAgent } from "./invoke.ts";
 
 /**
@@ -81,7 +80,9 @@ export const agentToolOf = (
   description: string | undefined,
 ): AgentTool => {
   const typed = triggerSchema(fn);
-  const text = description ?? `Hands a task to the ${id} agent and returns what it answers.`;
+  const text =
+    description ??
+    `Hands a task to the ${id} agent and returns what it answers.`;
 
   // A plain agent reads its input as a message to its thread, the same event
   // `thread.send()` makes. The thread is the one the call chose.
@@ -102,7 +103,7 @@ export const agentToolOf = (
           return invokeAgent(
             { ref },
             (thread) => {
-              return { agent: ref, thread, kind: "user", content: message };
+              return { agent: ref, thread, text: message };
             },
             {},
             true,

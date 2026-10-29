@@ -474,9 +474,6 @@ export const slack = {
         : `!has(event.data.botId) && (${channels})`,
       thread:
         '"slack:" + event.data.channel + "/" + (has(event.data.threadTs) ? event.data.threadTs : event.data.ts)',
-      message: (event) => {
-        return (event.data as unknown as SlackMessageData).text;
-      },
       schema: slackMessageSchema,
     };
   },

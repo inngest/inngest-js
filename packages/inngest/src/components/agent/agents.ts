@@ -403,6 +403,7 @@ export type {
   AgentFunction,
   AgentFunctionConfig,
   AgentFunctionInput,
+  AgentStartData,
   AgentTypeDefaults,
   AgentTypes,
   AgentTypesOf,
@@ -412,6 +413,8 @@ export type {
   ThreadInboxMessage,
   ThreadListener,
 } from "./agentFunction.ts";
+export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
+export { agentToolName } from "./agentTool.ts";
 export type {
   Channel,
   ChannelAsk,
@@ -434,9 +437,20 @@ export {
   ChannelStreamEnded,
   defineChannel,
 } from "./channels.ts";
-export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
-export { agentToolName } from "./agentTool.ts";
-export { agentMessage } from "./events.ts";
+export type {
+  AgentMessageData,
+  AgentRequestData,
+  AgentResendData,
+  AgentRouting,
+  AgentSteerData,
+  AgentStopData,
+} from "./events.ts";
+export {
+  agentMessage,
+  agentRequest,
+  agentSteer,
+  agentStop,
+} from "./events.ts";
 export type {
   GithubChannelOptions,
   GithubCommentData,
@@ -506,18 +520,19 @@ export type {
 export type {
   RequestOptions,
   ThreadHandle,
-  ThreadMessage,
   ThreadOptions,
-  ThreadRequestMessage,
   ThreadRequests,
   ThreadState,
   ThreadStatus,
-  ThreadSteerMessage,
-  ThreadStopMessage,
-  ThreadUserMessage,
   TriggerEvent,
 } from "./thread.ts";
-export { agentMessageEvent, getThread } from "./thread.ts";
+export {
+  agentMessageEvent,
+  agentRequestEvent,
+  agentSteerEvent,
+  agentStopEvent,
+  getThread,
+} from "./thread.ts";
 export type {
   InsightsQuery,
   ThreadList,
