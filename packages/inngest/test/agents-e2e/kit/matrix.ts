@@ -173,7 +173,7 @@ export const matrixScenario = (config: {
               }
             } else if (shape === "poll") {
               while (reads.length < want) {
-                const polled = await inbox.poll();
+                const polled = await inbox.next({ timeout: 0 });
 
                 record(polled ?? (await inbox.next()));
               }
