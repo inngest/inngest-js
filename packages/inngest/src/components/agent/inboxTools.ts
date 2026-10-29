@@ -11,7 +11,7 @@ import { z } from "zod/v4";
 import { durationToMs } from "../../helpers/duration.ts";
 import type { SandboxTool } from "../sandbox/tools.ts";
 import { tool } from "../sandbox/tools.ts";
-import type { EventType } from "../triggers/triggers.ts";
+import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { untrusted } from "./modelErrors.ts";
 
 /**
@@ -21,7 +21,7 @@ export interface InboxToolSource {
   /**
    * The event, by name or `eventType()`. The model names it by its name.
    */
-  event: string | EventType<string, never>;
+  event: string | EventTypeWithAnySchema<string>;
 
   /**
    * CEL over `event` that maps it to this run's thread key. Fixed by you: the
@@ -88,10 +88,10 @@ export interface InboxToolView {
  */
 export interface InboxToolInbox {
   listen: (
-    event: string | EventType<string, never>,
+    event: string | EventTypeWithAnySchema<string>,
     options: { thread: string; if?: string },
   ) => Promise<{ stop: () => Promise<void> }>;
-  of: (event: string | EventType<string, never>) => InboxToolView;
+  of: (event: string | EventTypeWithAnySchema<string>) => InboxToolView;
 }
 
 export type InboxToolName =

@@ -804,10 +804,10 @@ export interface ThreadInbox<
 const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
   return {
     listen: (event, options) => {
-      return inbox.listen(event as InboxSource["event"], options);
+      return inbox.listen(event, options);
     },
     of: (event) => {
-      return inbox.of(event as InboxSource["event"]);
+      return inbox.of(event);
     },
   };
 };
