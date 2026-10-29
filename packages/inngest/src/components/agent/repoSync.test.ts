@@ -495,6 +495,21 @@ describe("repo checkout and sync", () => {
     await expect(checkout()).rejects.toThrow(/has work a sync would lose/);
   });
 
+  test("a missing result line is an error, not a guess", async () => {
+    const quiet = {
+      commands: {
+        run: async () => {
+          return { exitCode: 0, stdout: "garbled\n", stderr: "" };
+        },
+      },
+      tools: { code: () => ({}) },
+    } as unknown as Pick<DurableSandbox, "commands" | "tools">;
+
+    await expect(repo(quiet, { repo: origin, path: work })).rejects.toThrow(
+      /printed no result line/,
+    );
+  });
+
   test("a retry after a refused first run clones cleanly", async () => {
     await expect(checkout({ ref: "nope" })).rejects.toThrow(
       /is not a branch, tag or commit of/,

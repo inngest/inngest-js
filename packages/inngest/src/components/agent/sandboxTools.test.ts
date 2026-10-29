@@ -241,7 +241,7 @@ describe("repo", () => {
           branch: "fix",
         });
       },
-      { stdout: "noise\nabc123\n" },
+      { stdout: "noise\nrepo:cloned:abc123\n" },
     );
 
     expect(checkout).toMatchObject({ path: "/work", sha: "abc123" });

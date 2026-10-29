@@ -362,10 +362,16 @@ export const repo = async (
       return /^repo:(cloned|synced|diverged):([0-9a-f]+)$/.exec(line);
     })
     .find(Boolean);
-  // Without the marker, as with a sandbox that prints nothing else, it cloned.
-  const action: "cloned" | "synced" | "diverged" =
-    done?.[1] === "synced" || done?.[1] === "diverged" ? done[1] : "cloned";
-  const sha = done?.[2] ?? stdout.trim().split("\n").pop() ?? "";
+  // Without the marker the result cannot be trusted, so it is an error rather
+  // than a guess.
+  if (!done) {
+    throw new NonRetriableError(
+      `git clone or fetch ${options.repo} printed no result line: ${stdout.slice(-200)}`,
+    );
+  }
+
+  const action = done[1] as "cloned" | "synced" | "diverged";
+  const sha = done[2] as string;
 
   const push = async (branch: string): Promise<void> => {
     await git("push", `git push ${branch}`, pushScript, {
