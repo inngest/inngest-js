@@ -536,12 +536,14 @@ export const slack = {
           );
         }
 
-        await call(options, "chat.postMessage", {
+        const posted = await call(options, "chat.postMessage", {
           channel: target.channel,
           thread_ts: target.threadTs,
           text: truncate(render(message), maxSectionText * 10),
           ...(message.blocks === undefined ? {} : { blocks: message.blocks }),
         });
+
+        return typeof posted.ts === "string" ? posted.ts : undefined;
       },
       ask: async (ask) => {
         await call(options, "chat.postMessage", {
@@ -642,12 +644,14 @@ export const slack = {
           );
         },
         stop: async (stream, final) => {
-          await call(options, "chat.stopStream", {
+          const stopped = await call(options, "chat.stopStream", {
             channel: target.channel,
             ts: stream,
             ...(final?.text === undefined ? {} : { markdown_text: final.text }),
             ...(final?.blocks === undefined ? {} : { blocks: final.blocks }),
           });
+
+          return typeof stopped.ts === "string" ? stopped.ts : stream;
         },
       },
     });

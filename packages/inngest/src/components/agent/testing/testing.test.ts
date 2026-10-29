@@ -88,6 +88,7 @@ describe("the entry", () => {
       "script",
       "startFakes",
       "startGitRemote",
+      "testReporter",
       "withKeys",
     ]);
   });

@@ -15,6 +15,7 @@ import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { AgentFunction } from "./agentFunction.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
@@ -61,6 +62,91 @@ export interface AgentInvokeOptions {
    */
   timeout?: number | string | Date;
 }
+
+/**
+ * The `cancelOn` entry that ends a run when the run that invoked it is
+ * cancelled. Put it in the `cancelOn` of an agent or function that only
+ * `agent.invoke()` starts. A cancelled run sends `inngest/function.cancelled`,
+ * which carries its own run ID, and `agent.invoke()` hands that ID to the
+ * callee as `data._agent.parent`. A callee of the callee follows in turn.
+ *
+ * Do not use it on a function that other events also start (a message, a
+ * cron tick, a `step.invoke` that is not `agent.invoke()`): the expression
+ * reads `_agent`, which those events lack, and the server then cancels the
+ * run when any other run is cancelled.
+ */
+export const agentInvokeCancelOn = {
+  event: "inngest/function.cancelled",
+  if: "event.data.run_id == async.data._agent.parent",
+} as const;
+
+/**
+ * Thrown by `agent.invoke()` when the agent it started was cancelled (a stop
+ * now, a `cancelOn` event, or the cancellation of the caller's own parent), so
+ * the caller never takes a cancelled run's non-answer for a result. Code that
+ * can carry on without the callee catches it; anything else lets it fail the
+ * caller. It is not retried. Inside an agent tool, the loop reports a thrown
+ * error to the model as the tool's result, as it does an `AgentLimitError`,
+ * so the model reads that the agent was cancelled.
+ */
+export class AgentCancelledError extends NonRetriableError {
+  /**
+   * The ID of the function that was cancelled, as the executor reports it.
+   */
+  public readonly functionId: string | undefined;
+
+  /**
+   * The ID of the cancelled run.
+   */
+  public readonly runId: string | undefined;
+
+  constructor(
+    /**
+     * The `"appId/functionId"` that was invoked.
+     */
+    target: string,
+    /**
+     * Which run was cancelled, when the executor says.
+     */
+    run?: { functionId?: string; runId?: string },
+  ) {
+    super(
+      `agent.invoke(): ${target} was cancelled${run?.runId ? ` (run ${run.runId})` : ""}, so it returned no result.`,
+    );
+    this.name = "AgentCancelledError";
+    this.functionId = run?.functionId;
+    this.runId = run?.runId;
+  }
+}
+
+/**
+ * Reads what `step.invoke` gave back for a cancelled run. The executor
+ * resumes the caller with the `inngest/function.finished` event of the run, not
+ * with an output, when the run was cancelled; `undefined` for any other result.
+ */
+const cancelledRun = (
+  /**
+   * What the invoke step returned.
+   */
+  result: unknown,
+): { functionId?: string; runId?: string } | undefined => {
+  if (!isRecord(result) || result.name !== "inngest/function.finished") {
+    return undefined;
+  }
+
+  const data = result.data;
+  const info = isRecord(data) ? data._inngest : undefined;
+
+  if (!isRecord(data) || !isRecord(info) || info.status !== "Cancelled") {
+    return undefined;
+  }
+
+  return {
+    functionId:
+      typeof data.function_id === "string" ? data.function_id : undefined,
+    runId: typeof data.run_id === "string" ? data.run_id : undefined,
+  };
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -127,10 +213,12 @@ const parseTarget = (
  * `"appId/functionId"` for one this code has no handle on. The callee finds
  * the thread this call names in `data._agent.thread`.
  *
- * If the callee is stopped (a stop now cancels its run), the caller gets no
- * error: the executor completes the caller's run with a null output, as it
- * does for any `step.invoke` of a cancelled function, and the code after this
- * call does not run.
+ * If the callee is cancelled (a stop now, a `cancelOn` event), the call throws
+ * an `AgentCancelledError`: the executor resumes the caller with the callee's
+ * finish event instead of an output, and this call does not hand that over as
+ * a result. The other way round, cancelling the caller
+ * cancels an agent or function it invoked only if that one lists
+ * `agentInvokeCancelOn` in its `cancelOn`.
  *
  * The agent runs in the caller's session (`agent_session`) on a new thread
  * (`agent_thread`). Without a session, the caller's run starts one. Other
@@ -227,6 +315,7 @@ export async function invoke(
         [invokeKey]: {
           depth: depth + 1,
           thread: sessions.agent_thread,
+          parent: ctx.runId,
           ...(limits && { limits: childLimits(limits) }),
         },
       },
@@ -234,6 +323,12 @@ export async function invoke(
       timeout: options.timeout,
     },
   );
+
+  const cancelled = cancelledRun(result);
+
+  if (cancelled) {
+    throw new AgentCancelledError(target, cancelled);
+  }
 
   return result;
 }
