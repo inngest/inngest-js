@@ -461,6 +461,97 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     ]);
   });
 
+  test("the model's if is wrapped, so an || in it stays inside its own parentheses", async () => {
+    const { call, calls } = setup();
+
+    await call("inbox_listen", {
+      source: "github/check_run",
+      if: "event.data.a == 1 || event.data.b == 2",
+      as: "x",
+    });
+
+    expect(calls[0]?.[2]).toEqual({
+      thread: '"slack:" + event.data.slackThread',
+      if: '(event.data.repo == "app") && (event.data.a == 1 || event.data.b == 2)',
+    });
+  });
+
+  test("refuses event[...] and the line separators beyond ASCII", async () => {
+    const { call, calls } = setup();
+
+    for (const narrow of [
+      'event["data"].x == 1',
+      'event ["data"].x == 1',
+      "event.data.a == 1\u2028|| true",
+      "event.data.a == 1\u2029|| true",
+      "event.data.a == 1\u0085|| true",
+    ]) {
+      await expect(
+        call("inbox_listen", { source: "ci/status", if: narrow, as: "x" }),
+      ).rejects.toThrow(/"if" must be a single-line CEL expression/);
+    }
+
+    expect(calls).toEqual([]);
+    // Indexing a list inside the event is fine, and so is the word in a string.
+    await call("inbox_listen", {
+      source: "ci/status",
+      if: 'event.data.labels[0] == "event["',
+      as: "ok",
+    });
+  });
+
+  test("a new execution that replays the calls rebuilds the listeners, so wait, read and stop still work", async () => {
+    // Each step of a run is a new execution of the function: the tools are made
+    // again and the loop replays its tool calls in order, listen included (a
+    // memoized step inside the tool body).
+    const fake = fakeInbox();
+    const replay = () => {
+      return createInboxTools(fake.inbox, config);
+    };
+    const run = (
+      tools: ReturnType<typeof replay>,
+      name: keyof typeof tools,
+      input: unknown,
+    ) => {
+      return (tools[name].run as unknown as Call)(input);
+    };
+    const first = replay();
+
+    await run(first, "inbox_listen", { source: "ci/status", as: "ci" });
+
+    // The worker restarts here: new tools, the same calls replayed.
+    const second = replay();
+
+    await run(second, "inbox_listen", { source: "ci/status", as: "ci" });
+    fake.push("ci/status", { name: "ci/status", data: { n: 1 } });
+    await expect(
+      run(second, "inbox_wait", { timeout: "1m", as: "ci" }),
+    ).resolves.toMatchObject({ message: { source: "ci/status" } });
+    await expect(run(second, "inbox_stop", { as: "ci" })).resolves.toEqual({
+      stopped: "ci",
+    });
+  });
+
+  test("a run may wait only so long in all, and a source has a default cap", async () => {
+    const { call } = setup({ maxTotalWait: "50m", maxWait: "30m" });
+
+    await call("inbox_listen", { source: "ci/status", as: "a" });
+    await call("inbox_wait", { timeout: "30m" });
+    await expect(call("inbox_wait", { timeout: "30m" })).rejects.toThrow(
+      "This run may wait 50m in all",
+    );
+    await call("inbox_wait", { timeout: "20m" });
+    await call("inbox_stop", { as: "a" });
+    await call("inbox_listen", { source: "ci/status", as: "b" });
+    await call("inbox_stop", { as: "b" });
+    await call("inbox_listen", { source: "ci/status", as: "c" });
+    await call("inbox_stop", { as: "c" });
+    // Stopping doesn't give a place back: the default is three per source.
+    await expect(
+      call("inbox_listen", { source: "ci/status", as: "d" }),
+    ).rejects.toThrow("can be listened to 3 times");
+  });
+
   test("two listeners on one event share its messages, so a read shows each once", async () => {
     const { call, push } = setup({ maxListeners: 5 });
 

@@ -6,7 +6,9 @@
  * listener (refused by the cap), and goes on working with a slow tool. The
  * event arrives while that tool runs, and the loop folds it into the model's
  * next call, so the model is told without polling. The model then stops the
- * listener, and a later event is not delivered.
+ * listener, and a later event is not delivered. Every step of the run is a new
+ * execution of the function, so reading and stopping a listener that an earlier
+ * execution started also proves that the tools' state is rebuilt on replay.
  */
 import { Inngest } from "inngest";
 import { tool } from "inngest/experimental";
