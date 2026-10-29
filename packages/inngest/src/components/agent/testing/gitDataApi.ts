@@ -290,6 +290,13 @@ export const createGitDataApi = (repoName = "acme/app") => {
       for (const entry of body.tree) {
         if (entry.sha === null) {
           tree.delete(entry.path);
+        } else if (typeof entry.content === "string") {
+          // Like GitHub: the tree writes the blob out for an entry with content.
+          const bytes = new Uint8Array(Buffer.from(entry.content, "utf8"));
+          const made = blobSha(bytes);
+
+          blobs.set(made, bytes);
+          tree.set(entry.path, { mode: entry.mode, sha: made });
         } else {
           tree.set(entry.path, { mode: entry.mode, sha: entry.sha });
         }

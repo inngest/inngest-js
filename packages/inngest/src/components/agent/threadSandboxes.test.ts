@@ -7,7 +7,12 @@ import { describe, expect, test, vi } from "vitest";
 import { StepError } from "../StepError.ts";
 import type { DurableSandbox, DurableSandboxTools } from "../sandbox/types.ts";
 import { openSandboxes, sandbox } from "./defs.ts";
-import { createKv, type KvScopeInstance, memoryKvAdapter } from "./kv.ts";
+import {
+  createKv,
+  type KvScopeInstance,
+  kvKey,
+  memoryKvAdapter,
+} from "./kv.ts";
 import { skills } from "./skills.ts";
 import {
   cleanupThreadSandbox,
@@ -18,6 +23,7 @@ import {
 import {
   newestSandboxGeneration,
   runScore,
+  sandboxPausedKey,
   sandboxReadyKey,
 } from "./threadState.ts";
 
@@ -41,6 +47,18 @@ const world = () => {
   const calls: string[] = [];
   let counter = 0;
   const live = new Set<string>();
+  const paused = new Set<string>();
+
+  // Whether the platform pauses. Off, a pause fails and the sandbox is saved
+  // and destroyed.
+  const platform = { pausable: false };
+  const pause = async (id: string) => {
+    if (!platform.pausable) {
+      throw new StepError("pause", new Error("cannot pause"));
+    }
+
+    paused.add(id);
+  };
 
   const withDelete = (row: Row) => {
     return {
@@ -106,11 +124,15 @@ const world = () => {
         }
 
         return {
+          pause: () => {
+            return pause(id);
+          },
           snapshot: async (options: { name?: string }) => {
             return take(options.name);
           },
           destroy: async () => {
             live.delete(id);
+            paused.delete(id);
           },
         };
       },
@@ -120,20 +142,36 @@ const world = () => {
   const durable = (id: string) => {
     live.add(id);
 
-    return {
+    const made: Record<string, unknown> = {
       id,
+      get status() {
+        return paused.has(id) ? "PAUSED" : "RUNNING";
+      },
+      pause: vi.fn(async () => {
+        await pause(id);
+
+        return made;
+      }),
+      resume: vi.fn(async () => {
+        paused.delete(id);
+
+        return made;
+      }),
       snapshot: vi.fn(async (_id: unknown, options: { name?: string }) => {
         return take(options.name);
       }),
       destroy: vi.fn(async () => {
         live.delete(id);
+        paused.delete(id);
       }),
       commands: { run: vi.fn() },
       files: {},
-    } as unknown as DurableSandbox;
+    };
+
+    return made as unknown as DurableSandbox;
   };
 
-  return { rows, live, calls, client, durable };
+  return { rows, live, paused, platform, calls, client, durable };
 };
 
 const setup = (
@@ -330,6 +368,7 @@ describe("guard and ready", () => {
     expect(s.defer).toHaveBeenCalledWith("work:thread:cleanup", {
       name: "work",
       sandboxId: "sb-1",
+      idle: "pause",
     });
   });
 });
@@ -530,6 +569,88 @@ describe("cleanupThreadSandbox", () => {
     expect(await newest(s.scope)).toBe("01A");
   });
 
+  test("a cleanup pauses a ready sandbox, records it and does not destroy it", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-1");
+
+    const s = setup(w, "01A");
+
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(w.paused.has("sb-1")).toBe(true);
+    expect(w.live.has("sb-1")).toBe(true);
+    expect(w.rows).toHaveLength(0);
+    expect(await s.owner().takePaused("work")).toBe("sb-1");
+  });
+
+  test("a cleanup leaves a newer run's paused sandbox alone and destroys its own", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-1");
+
+    const s = setup(w, "01A");
+
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
+    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+      id: "sb-newer",
+      generation: "01Z",
+    });
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(w.live.has("sb-1")).toBe(false);
+    expect(await s.owner().takePaused("work")).toBe("sb-newer");
+  });
+
+  test("a cleanup of a sandbox that asked for snapshot saves and destroys it", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-1");
+
+    const s = setup(w, "01A");
+
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1", idle: "snapshot" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(w.paused.size).toBe(0);
+    expect(w.rows).toHaveLength(1);
+    expect(w.live.has("sb-1")).toBe(false);
+  });
+
   test("does nothing for a sandbox that is already gone", async () => {
     const w = world();
     const s = setup(w, "01A");
@@ -641,17 +762,149 @@ describe("lazy sandboxes of a thread", () => {
     expect(w.live.has("sb-1")).toBe(false);
   });
 
-  test("keepAlive does nothing yet: the sandbox is saved and destroyed like any other", async () => {
+  test("with a platform that pauses, close pauses the sandbox, keeps it and records it for the thread", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const s = setup(w, "01A");
+    const abort = vi.fn();
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      { ...s.owner(), guard: () => ({ abort }) },
+    );
+
+    await opened.work?.get();
+    await opened.work?.close();
+
+    // No snapshot and no destroy: the sandbox is paused and still there.
+    expect(w.rows).toHaveLength(0);
+    expect(w.live.has("sb-1")).toBe(true);
+    expect(w.paused.has("sb-1")).toBe(true);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(await s.owner().takePaused("work")).toBe("sb-1");
+    expect(await s.owner().takePaused("work")).toBeUndefined();
+  });
+
+  test("the thread's next run resumes the paused sandbox instead of creating one", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      first.owner(),
+    );
+
+    await one.work?.get();
+    await one.work?.close();
+
+    const paused = w.durable("sb-1");
+    const create = vi.fn();
+    const get = vi.fn(async () => {
+      return paused;
+    });
+    const next = openSandboxes(
+      { work: box },
+      { create, get } as unknown as DurableSandboxTools,
+      undefined,
+      setup(w, "01B").owner(first.scope),
+    );
+
+    await expect(next.work?.get()).resolves.toBe(paused);
+    expect(create).not.toHaveBeenCalled();
+    expect(paused.resume).toHaveBeenCalledTimes(1);
+    expect(w.paused.has("sb-1")).toBe(false);
+  });
+
+  test("a paused sandbox that is gone falls back to the snapshot, then to a fresh sandbox", async () => {
+    const w = world();
+    const first = setup(w, "01A");
+
+    await first.owner().save("work", w.durable("sb-0"));
+    await first.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+      id: "sb-gone",
+      generation: "01A",
+    });
+
+    const warned: string[] = [];
+    const create = vi.fn(async (_id: unknown, options: unknown) => {
+      expect(options).toMatchObject({ snapshotId: w.rows[0]?.id });
+
+      return w.durable("sb-2");
+    });
+    const opened = openSandboxes(
+      { work: box },
+      {
+        get: vi.fn(async () => {
+          return null;
+        }),
+        create,
+      } as unknown as DurableSandboxTools,
+      undefined,
+      {
+        ...setup(w, "01B").owner(first.scope),
+        restoreFailed: (name: string) => {
+          warned.push(name);
+        },
+      },
+    );
+
+    await opened.work?.get();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(warned).toEqual(["work"]);
+  });
+
+  test("idle snapshot saves and destroys, and never pauses", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const s = setup(w, "01A");
+    const made = w.durable("sb-1");
+    const opened = openSandboxes(
+      { work: { sandbox: box, idle: "snapshot" } },
+      {
+        create: vi.fn(async () => {
+          return made;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(),
+    );
+
+    expect(opened.work?.idle).toBe("snapshot");
+    await opened.work?.get();
+    await opened.work?.close();
+
+    expect(made.pause).not.toHaveBeenCalled();
+    expect(w.rows).toHaveLength(1);
+    expect(w.live.has("sb-1")).toBe(false);
+  });
+
+  test("a pause that fails falls back to save and destroy", async () => {
     const w = world();
     const s = setup(w, "01A");
-    const tools = {
-      create: vi.fn(async () => {
-        return w.durable("sb-1");
-      }),
-    } as unknown as DurableSandboxTools;
     const opened = openSandboxes(
-      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
-      tools,
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
       undefined,
       s.owner(),
     );
@@ -661,154 +914,72 @@ describe("lazy sandboxes of a thread", () => {
 
     expect(w.rows).toHaveLength(1);
     expect(w.live.has("sb-1")).toBe(false);
+    expect(await s.owner().takePaused("work")).toBeUndefined();
   });
 
-  test("an owner that keeps a keepAlive sandbox leaves it running and drops its cleanup", async () => {
+  test("a sandbox nothing used is destroyed, not paused", async () => {
     const w = world();
-    const s = setup(w, "01A");
-    const abort = vi.fn();
-    const keep = vi.fn(async () => {
-      return true;
-    });
-    const owner = {
-      ...s.owner(),
-      keep,
-      guard: () => {
-        return { abort };
-      },
-    };
-    const tools = {
-      create: vi.fn(async () => {
-        return w.durable("sb-1");
-      }),
-    } as unknown as DurableSandboxTools;
+
+    w.platform.pausable = true;
+
+    const made = w.durable("sb-1");
     const opened = openSandboxes(
-      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
-      tools,
-      undefined,
-      owner,
-    );
-
-    await opened.work?.get();
-    await opened.work?.close();
-
-    expect(keep).toHaveBeenCalledWith(
-      "work",
-      expect.anything(),
-      { idle: "10m" },
-      expect.objectContaining({ abort: expect.any(Function) }),
-    );
-    // The sandbox is saved before it is kept, so the thread keeps its state.
-    expect(w.rows).toHaveLength(1);
-    expect(w.live.has("sb-1")).toBe(true);
-  });
-
-  test("a keep that declines, or a sandbox that is unused, falls back to save and destroy or just destroy", async () => {
-    const w = world();
-    const s = setup(w, "01A");
-    const keep = vi.fn(async () => {
-      return false;
-    });
-    const tools = {
-      create: vi.fn(async () => {
-        return w.durable("sb-1");
-      }),
-    } as unknown as DurableSandboxTools;
-    const used = openSandboxes(
-      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
-      tools,
-      undefined,
-      { ...s.owner(), keep },
-    );
-
-    await used.work?.get();
-    await used.work?.close();
-
-    expect(keep).toHaveBeenCalledTimes(1);
-    expect(w.rows).toHaveLength(1);
-    expect(w.live.has("sb-1")).toBe(false);
-
-    const unused = openSandboxes(
-      { work: { sandbox: box, keepAlive: { idle: "10m" }, start: "eager" } },
-      tools,
-      undefined,
-      { ...setup(w, "01B").owner(), keep },
-    );
-
-    await unused.work?.close();
-
-    expect(keep).toHaveBeenCalledTimes(1);
-    expect(w.rows).toHaveLength(1);
-  });
-
-  test("a keep that fails for good counts as declined", async () => {
-    const w = world();
-    const s = setup(w, "01A");
-    const tools = {
-      create: vi.fn(async () => {
-        return w.durable("sb-1");
-      }),
-    } as unknown as DurableSandboxTools;
-    const opened = openSandboxes(
-      { work: { sandbox: box, keepAlive: { idle: "10m" } } },
-      tools,
-      undefined,
+      { work: { sandbox: box, start: "eager" } },
       {
-        ...s.owner(),
-        keep: async () => {
-          throw new StepError("keep", new Error("boom"));
-        },
-      },
+        create: vi.fn(async () => {
+          return made;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      setup(w, "01A").owner(),
     );
 
-    await opened.work?.get();
     await opened.work?.close();
 
-    expect(w.rows).toHaveLength(1);
+    expect(made.pause).not.toHaveBeenCalled();
     expect(w.live.has("sb-1")).toBe(false);
   });
 
-  test("a keep that returns anything but true, or throws, or returns a plain boolean, is handled", async () => {
-    const run = async (keep: () => unknown) => {
-      const w = world();
-      const s = setup(w, "01A");
-      const failed: unknown[] = [];
-      const opened = openSandboxes(
-        { work: { sandbox: box, keepAlive: { idle: "10m" } } },
-        {
-          create: vi.fn(async () => {
-            return w.durable("sb-1");
-          }),
-        } as unknown as DurableSandboxTools,
-        undefined,
-        {
-          ...s.owner(),
-          keep: keep as never,
-          keepFailed: (_name: string, error: unknown) => {
-            failed.push(error);
-          },
-        },
-      );
+  test("a recycle pauses and the next get resumes the same sandbox", async () => {
+    const w = world();
 
-      await opened.work?.get();
-      await opened.work?.close();
+    w.platform.pausable = true;
 
-      return { live: w.live.has("sb-1"), failed };
-    };
-
-    // A truthy value that is not `true` is declined.
-    expect(await run(() => "yes")).toEqual({ live: false, failed: [] });
-
-    // A throw is declined and reported.
-    const threw = await run(() => {
-      throw new Error("bad hook");
+    const made = w.durable("sb-1");
+    const create = vi.fn(async () => {
+      return made;
     });
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create,
+        get: vi.fn(async () => {
+          return made;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      setup(w, "01A").owner(),
+    );
 
-    expect(threw.live).toBe(false);
-    expect(threw.failed).toHaveLength(1);
+    await opened.work?.get();
+    await opened.work?.recycle();
 
-    // A plain boolean, not a promise, is accepted.
-    expect((await run(() => true)).live).toBe(true);
+    expect(w.paused.has("sb-1")).toBe(true);
+    expect(w.rows).toHaveLength(0);
+
+    await expect(opened.work?.get()).resolves.toBe(made);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(made.resume).toHaveBeenCalledTimes(1);
+    expect(w.paused.has("sb-1")).toBe(false);
+  });
+
+  test("rejects an idle that is not pause or snapshot", () => {
+    expect(() => {
+      return openSandboxes(
+        { work: { sandbox: box, idle: "stop" as never } },
+        {} as DurableSandboxTools,
+      );
+    }).toThrow('use "pause" or "snapshot"');
   });
 
   test("a restore whose newest snapshot is gone tries the next newest before going fresh", async () => {
@@ -1169,7 +1340,7 @@ describe("lazy sandboxes of a thread", () => {
       s.defer.mock.calls.map((call) => {
         return call[1];
       }),
-    ).toEqual([{ name: "work", sandboxId: "sb-x" }]);
+    ).toEqual([{ name: "work", sandboxId: "sb-x", idle: "pause" }]);
     expect(
       await s.scope.get(sandboxReadyKey(ref, "work", "01A")),
     ).toBeUndefined();

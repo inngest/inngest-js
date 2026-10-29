@@ -5,6 +5,21 @@
  * pushes branches from it. The token is only in the environment of the one
  * git process that talks to the remote (redacted from traces), and never written to
  * git config or a file, so the model's own commands can't read it.
+ *
+ * Reading and writing can use different credentials. The clone and fetch run
+ * in the sandbox with a short-lived, read-only token for the one repository,
+ * so a normal git clone moves the whole history in one go with no per-file
+ * requests. A push can stay on the host (`push`): the sandbox bundles its new
+ * commits, your policy checks them, and the host pushes with a write token
+ * that never enters the sandbox.
+ *
+ * ```ts
+ * await repo(sandbox, {
+ *   repo: "acme/app",
+ *   token: () => app.token("acme/app", { permissions: { contents: "read" } }),
+ *   push: { token: () => app.token("acme/app"), policy },
+ * });
+ * ```
  */
 import { z } from "zod/v4";
 
@@ -12,6 +27,12 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import type { CodeToolName } from "../sandbox/codeTools.ts";
 import { type SandboxTool, tool } from "../sandbox/tools.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
+import {
+  type GitPushToolOptions,
+  type PushBranchResult,
+  pushBranch,
+} from "./gitPush.ts";
+import { agent } from "./loop.ts";
 
 /**
  * Options of `repo()`: which repository to check out and how.
@@ -36,10 +57,24 @@ export interface RepoOptions {
   path?: string;
 
   /**
-   * Used to clone and push over HTTPS. Without it only public repositories
-   * can be cloned.
+   * Used to clone and fetch over HTTPS, and to push too unless `push` is
+   * set. Without it only public repositories can be cloned. When `push` is
+   * set this can be read-only: a token for this repository with
+   * `contents: "read"` (such as `githubApp().token(repo, { permissions: {
+   * contents: "read" } })`) is all the sandbox ever holds.
    */
   token?: string | (() => string | Promise<string>);
+
+  /**
+   * Pushes from the host instead of from the sandbox, with the checks and the
+   * write token of `git_push` (see `GitPushToolOptions`): the sandbox holds no
+   * write credential at all. The sandbox produces one bundle (or, without
+   * `git` on the host, one manifest) of the new commits, the host reads it in
+   * as few steps as it can and pushes it once. `remote` and `cwd` are the
+   * repository's own. Without `push`, `push()` runs in the sandbox with
+   * `token`.
+   */
+  push?: Omit<GitPushToolOptions, "remote" | "cwd">;
 
   /**
    * What to do when `path` already holds a checkout, as in a sandbox restored
@@ -302,7 +337,8 @@ g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "$SHA" || true
  * ```
  */
 export const repo = async (
-  sandbox: Pick<DurableSandbox, "commands" | "tools">,
+  sandbox: Pick<DurableSandbox, "commands" | "tools"> &
+    Partial<Pick<DurableSandbox, "files">>,
   options: RepoOptions,
 ): Promise<Repo> => {
   const { ref, path = "/work", sync } = options;
@@ -310,6 +346,12 @@ export const repo = async (
   if (sync !== undefined && sync !== "reset" && sync !== "keep") {
     throw new NonRetriableError(
       `repo sync must be "reset" or "keep", not ${JSON.stringify(sync)}`,
+    );
+  }
+
+  if (options.push && !sandbox.files) {
+    throw new NonRetriableError(
+      "repo push needs a sandbox with files: pass the sandbox itself",
     );
   }
 
@@ -374,7 +416,53 @@ export const repo = async (
   const action = done[1] as "cloned" | "synced" | "diverged";
   const sha = done[2] as string;
 
+  // The remote as the host reaches it: a plain https URL.
+  const hostRemote = url.replace(/\.git$/, "");
+
+  // A host push, with the sandbox's remote-tracking branch moved on to what
+  // was pushed (when the remote has the sandbox's own commits), so a later
+  // sync doesn't call them local work.
+  const pushFromHost = async (
+    branch: string,
+    pushOptions: NonNullable<RepoOptions["push"]>,
+  ): Promise<PushBranchResult> => {
+    const result = await pushBranch(
+      sandbox as Pick<DurableSandbox, "commands" | "files">,
+      { ...pushOptions, remote: hostRemote, cwd: path },
+      branch,
+      { idempotencyKey: `repo-push:${branch}` },
+    );
+
+    if (result.ok && result.pushed.every((pushed) => !pushed.sandboxSha)) {
+      await sandbox.commands.run(
+        `repo-push:track:${branch}`,
+        [
+          "/bin/sh",
+          "-c",
+          'git update-ref "refs/remotes/origin/$1" "$(git rev-parse --verify "refs/heads/$1")" || true',
+          "sh",
+          branch,
+        ],
+        { cwd: path },
+      );
+    }
+
+    return result;
+  };
+
   const push = async (branch: string): Promise<void> => {
+    if (options.push) {
+      const result = await pushFromHost(branch, options.push);
+
+      if (!result.ok) {
+        throw new NonRetriableError(
+          `git push ${branch} failed: ${result.error}`,
+        );
+      }
+
+      return;
+    }
+
     await git("push", `git push ${branch}`, pushScript, {
       BRANCH: branch,
       URL: url,
@@ -392,6 +480,15 @@ export const repo = async (
         description: "Push a local branch to the remote under the same name.",
         input: z.object({ branch: z.string() }),
         run: async ({ branch }) => {
+          if (options.push) {
+            const result = await pushFromHost(branch, options.push);
+
+            // A refusal is something the model can read and act on.
+            return result.ok
+              ? `pushed ${branch}${result.warning ? `. ${result.warning}` : ""}`
+              : agent.toolError(result.error);
+          }
+
           await push(branch);
 
           return `pushed ${branch}`;

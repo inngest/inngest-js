@@ -205,6 +205,10 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
     return found;
   };
+  // Sandboxes that are paused, and ones that were destroyed: a paused sandbox
+  // runs nothing, and a destroyed one is gone.
+  const paused = new Set<string>();
+  const destroyed = new Set<string>();
   let closed = false;
 
   const toolsDir = mkdtempSync(join(tmpdir(), "fake-sandbox-tools-"));
@@ -573,8 +577,55 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       return Response.json({ data: created }, { status: 201 });
     }
 
+    if (id && destroyed.has(id)) {
+      return Response.json(
+        {
+          errors: [{ code: "sandbox_not_found", message: "no such sandbox" }],
+        },
+        { status: 404 },
+      );
+    }
+
+    if (id && paused.has(id) && method === "POST" && rest !== "/resume") {
+      return Response.json(
+        {
+          errors: [
+            { code: "sandbox_not_running", message: "sandbox is paused" },
+          ],
+        },
+        { status: 409 },
+      );
+    }
+
     if (id && !rest && method === "GET") {
-      return Response.json({ data: resource(id) });
+      return Response.json({
+        data: {
+          ...resource(id),
+          status: paused.has(id) ? "PAUSED" : "RUNNING",
+        },
+      });
+    }
+
+    if (id && (rest === "/pause" || rest === "/resume") && method === "POST") {
+      if (rest === "/pause") {
+        paused.add(id);
+      } else {
+        paused.delete(id);
+      }
+
+      await record(rest === "/pause" ? "sandbox.pause" : "sandbox.resume", {
+        id,
+      });
+
+      return Response.json(
+        {
+          data: {
+            ...resource(id),
+            status: rest === "/pause" ? "PAUSED" : "RUNNING",
+          },
+        },
+        { status: 202 },
+      );
     }
 
     if (id && !rest && method === "DELETE") {
@@ -586,6 +637,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       }
 
       files.delete(id);
+      paused.delete(id);
+      destroyed.add(id);
       await record("sandbox.destroy", { id });
 
       return new Response(null, { status: 204 });
