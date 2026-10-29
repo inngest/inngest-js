@@ -362,6 +362,9 @@ export const threadSandboxOwner = (
 
   return {
     restore: async (name) => {
+      // The index range is a KV step, memoized in call order: a replay reads
+      // the candidates the first attempt did, even though this run's own saves
+      // are in the index by then.
       const newest = await sandboxGenerations(scope, ref, name).range({
         order: "desc",
         limit: 2,
