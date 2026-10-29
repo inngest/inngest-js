@@ -265,6 +265,35 @@ describe("agent function", () => {
     expect(output).toEqual(["slack/message", "evt9", { text: "hi" }]);
   });
 
+  test("an invoke of a plain agent with { agent, thread, text } is message 1, an agent/message", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        return [first?.name, first?.data];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: `${testClientId}/bot`,
+          thread: "t1",
+          text: "go",
+          _agent: { depth: 1 },
+        },
+      },
+    });
+
+    expect(output).toEqual([
+      "agent/message",
+      { agent: `${testClientId}/bot`, thread: "t1", text: "go" },
+    ]);
+  });
+
   test("a stop message that arrives while waiting is skipped", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
