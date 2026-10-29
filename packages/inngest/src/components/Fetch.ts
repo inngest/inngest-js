@@ -79,7 +79,12 @@ const createFetchShim = (): StepFetch => {
       gatewaySymbol
     ](`step.fetch: ${targetUrl.hostname}`, input, init);
 
-    return new Response(jsonRes.body, {
+    // These statuses forbid a body, even the empty string returned by the gateway.
+    const body = [204, 205, 304].includes(jsonRes.status_code)
+      ? null
+      : jsonRes.body;
+
+    return new Response(body, {
       headers: jsonRes.headers,
       status: jsonRes.status_code,
     });
