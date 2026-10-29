@@ -65,7 +65,7 @@ export const d1KvSchema = [
 // The database's clock, in milliseconds. Not `strftime('%s')`, which counts
 // whole seconds and would end a key up to a second early.
 const clockSql = "(julianday('now') - 2440587.5) * 86400000";
-const now = `CAST(${clockSql} AS INTEGER)`;
+const now = `CAST(ROUND(${clockSql}) AS INTEGER)`;
 
 const live = `(expires_at IS NULL OR expires_at > ${now})`;
 
@@ -266,9 +266,21 @@ export function d1KvAdapter(
       range: KvIndexRange,
     ): Promise<KvIndexEntry[]> {
       const desc = range.order === "desc";
-      // A bound that is not finite is no bound.
-      const min = Number.isFinite(range.min) ? range.min : undefined;
-      const max = Number.isFinite(range.max) ? range.max : undefined;
+      // An infinite bound on its own side is no bound. One that excludes
+      // everything (or NaN) matches nothing, as in the other stores.
+      if (
+        range.min === Number.POSITIVE_INFINITY ||
+        range.max === Number.NEGATIVE_INFINITY ||
+        Number.isNaN(range.min) ||
+        Number.isNaN(range.max)
+      ) {
+        return [];
+      }
+
+      const min =
+        range.min === Number.NEGATIVE_INFINITY ? undefined : range.min;
+      const max =
+        range.max === Number.POSITIVE_INFINITY ? undefined : range.max;
       const { results } = await (await ready())
         .prepare(
           `SELECT member, score FROM inngest_kv_index

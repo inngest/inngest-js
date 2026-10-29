@@ -75,6 +75,42 @@ describe("the d1 store", () => {
     expect(await adapter.get("h", "k")).toBeNull();
   });
 
+  test("a claim whose holder vanishes between the two statements is retried", async () => {
+    const database = await fakeD1(() => 1_700_000_000_000);
+    const adapter = d1KvAdapter(
+      {
+        ...database,
+        prepare: (sql) => {
+          const statement = database.prepare(sql);
+
+          // The first upsert finds a holder, which is gone before the read.
+          if (sql.includes("ON CONFLICT (scope, field)") && !vanished) {
+            vanished = true;
+
+            return {
+              ...statement,
+              bind: (...values) => {
+                const bound = statement.bind(...values);
+
+                return {
+                  ...bound,
+                  run: async () => ({ meta: { changes: 0 } }),
+                };
+              },
+            };
+          }
+
+          return statement;
+        },
+      },
+      { createTables: true },
+    );
+    let vanished = false;
+
+    expect(await adapter.setIfAbsent("h", "claim", "mine", 60)).toBe(true);
+    expect(await adapter.get("h", "claim")).toBe("mine");
+  });
+
   test("a range with infinite bounds is unbounded", async () => {
     const adapter = d1KvAdapter(await fakeD1(() => 1_700_000_000_000), {
       createTables: true,
@@ -85,6 +121,8 @@ describe("the d1 store", () => {
     expect(
       await adapter.indexRange("h", "i", { min: -Infinity, max: Infinity }),
     ).toEqual([{ member: "a", score: 1 }]);
+    expect(await adapter.indexRange("h", "i", { min: Infinity })).toEqual([]);
+    expect(await adapter.indexRange("h", "i", { max: -Infinity })).toEqual([]);
   });
 
   test("the schema can be created by a migration instead", async () => {
@@ -112,6 +150,18 @@ describe("the store an app gives createAgents", () => {
     await kv.with(client).env.set("k", 1);
 
     expect(await mine.all("inngest:kv:env:default")).toEqual({ k: "1" });
+  });
+
+  test("scope('app', id) reads the caller's store, not the named app's", async () => {
+    const mine = memoryKvAdapter();
+    const client = new Inngest({ id: "stores-app-c" });
+    createAgents(client, { store: mine });
+
+    await kv.with(client).scope("app", "elsewhere").set("k", 1);
+
+    expect(
+      Object.keys(await mine.all("inngest:kv:app:default:elsewhere")),
+    ).toEqual(["k"]);
   });
 
   test("a store given to createKv wins over the app's", async () => {

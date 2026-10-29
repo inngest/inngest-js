@@ -1305,7 +1305,7 @@ export function createKv(
       }
 
       return {
-        handle: handleFor(store(scoped.app), scope, scoped),
+        handle: handleFor(store(ids.app), scope, scoped),
         inFunction: Boolean(current),
       };
     }
