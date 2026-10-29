@@ -5,7 +5,7 @@
  * focus.
  */
 import type * as Monaco from "monaco-editor";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 import {
   type ActionId,
   hintOf,
@@ -35,27 +35,6 @@ const inMonaco = (target: EventTarget | null) => {
   return Boolean((target as HTMLElement | null)?.closest?.(".monaco-editor"));
 };
 
-let fieldFocus = false;
-const listeners = new Set<() => void>();
-
-const setFieldFocus = (next: boolean) => {
-  if (fieldFocus !== next) {
-    fieldFocus = next;
-
-    for (const listener of listeners) {
-      listener();
-    }
-  }
-};
-
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-
-  return () => {
-    listeners.delete(listener);
-  };
-};
-
 /**
  * Installs the window handler. `handlers` is read at each key press, so it
  * can change without reinstalling.
@@ -68,10 +47,6 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
   useEffect(() => {
     let pending = "";
     let timer: number | undefined;
-
-    const onFocus = () => {
-      setFieldFocus(inTextField(document.activeElement));
-    };
 
     const onKey = (event: KeyboardEvent) => {
       if (event.isComposing || event.repeat) {
@@ -98,6 +73,7 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
 
       for (const def of keys) {
         if (
+          !def.local &&
           def.inField.some((combo) => {
             return matches(event, combo, isMac);
           })
@@ -121,8 +97,20 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
       }
 
       for (const def of keys) {
+        if (def.local) {
+          continue;
+        }
+
         for (const binding of def.outside) {
           if (binding.includes(" ")) {
+            continue;
+          }
+
+          // Arrow keys belong to a tab list or a divider that has focus.
+          if (
+            binding.startsWith("Arrow") &&
+            (target as HTMLElement).closest?.('[role="tablist"], [role="separator"]')
+          ) {
             continue;
           }
 
@@ -166,14 +154,9 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
     };
 
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("focusin", onFocus);
-    window.addEventListener("focusout", () => {
-      window.setTimeout(onFocus, 0);
-    });
 
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("focusin", onFocus);
     };
   }, []);
 };
@@ -241,14 +224,12 @@ export const registerEditorCommands = (
 };
 
 /**
- * A `<kbd>` hint that shows the binding that works where focus is now.
+ * A `<kbd>` hint. It always shows the binding that works everywhere, inside
+ * the editor or not; single keys outside text fields are silent extras.
  */
 export const Kbd = ({ action }: { action: ActionId }) => {
-  const field = useSyncExternalStore(subscribe, () => {
-    return fieldFocus;
-  });
   const def = keyOf(action);
-  const spec = field ? def.inField[0] : (def.outside[0] ?? def.inField[0]);
+  const spec = def.inField[0] ?? def.outside[0];
 
   if (!spec) {
     return null;

@@ -1,7 +1,8 @@
 import { agents } from "./setup";
 
 export const echo = agents.agent({ id: "echo" }, async ({ inbox }) => {
-  const message = await inbox.next();
+  const first = await inbox.next();
+  const second = await inbox.next();
 
-  return `You said: ${message?.content}`;
+  return `First: ${first?.content}. Second: ${second?.content}`;
 });
