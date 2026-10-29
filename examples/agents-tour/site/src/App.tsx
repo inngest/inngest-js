@@ -99,7 +99,9 @@ export const App = () => {
 
     return api.stream((event) => {
       if (event.type === "log") {
-        setLines((previous) => [...previous, event]);
+        setLines((previous) => {
+          return [...previous, event];
+        });
       } else if (event.type === "clear") {
         setLines([]);
       } else if (event.type === "status") {
@@ -305,7 +307,9 @@ export const App = () => {
       showTab("message");
     },
     everything: () => {
-      setEverything((value) => !value);
+      setEverything((value) => {
+        return !value;
+      });
     },
     editor: toggleEditor,
     undo: undoReset,
@@ -373,7 +377,9 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("contents")}
+            onClick={() => {
+              setOverlay("contents");
+            }}
             aria-keyshortcuts={shortcutsOf("contents")}
           >
             Contents <Kbd action="contents" />
@@ -381,7 +387,9 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("search")}
+            onClick={() => {
+              setOverlay("search");
+            }}
             aria-keyshortcuts={shortcutsOf("search")}
           >
             Search <Kbd action="search" />
@@ -389,7 +397,9 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("cheat")}
+            onClick={() => {
+              setOverlay("cheat");
+            }}
             aria-keyshortcuts={shortcutsOf("cheat")}
           >
             Keys <Kbd action="cheat" />
@@ -430,7 +440,9 @@ export const App = () => {
                     role="tab"
                     aria-selected={active === file.name}
                     key={file.name}
-                    onClick={() => setActive(file.name)}
+                    onClick={() => {
+                      setActive(file.name);
+                    }}
                   >
                     {file.name}
                     {file.editable ? "" : " (read-only)"}
@@ -509,9 +521,13 @@ export const App = () => {
               onPointerDown={dragPanel}
               onKeyDown={(event) => {
                 if (event.key === "ArrowUp") {
-                  setPanelHeight((value) => Math.min(600, value + 24));
+                  setPanelHeight((value) => {
+                    return Math.min(600, value + 24);
+                  });
                 } else if (event.key === "ArrowDown") {
-                  setPanelHeight((value) => Math.max(120, value - 24));
+                  setPanelHeight((value) => {
+                    return Math.max(120, value - 24);
+                  });
                 }
               }}
             />
@@ -522,7 +538,9 @@ export const App = () => {
                     type="button"
                     role="tab"
                     aria-selected={tab === "output"}
-                    onClick={() => setTab("output")}
+                    onClick={() => {
+                      setTab("output");
+                    }}
                     aria-keyshortcuts={shortcutsOf("output")}
                   >
                     Output <Kbd action="output" />
@@ -533,7 +551,9 @@ export const App = () => {
                     type="button"
                     role="tab"
                     aria-selected={tab === "trace"}
-                    onClick={() => setTab("trace")}
+                    onClick={() => {
+                      setTab("trace");
+                    }}
                     aria-keyshortcuts={shortcutsOf("trace")}
                   >
                     Trace <Kbd action="trace" />
@@ -544,7 +564,9 @@ export const App = () => {
                     type="button"
                     role="tab"
                     aria-selected={tab === "message"}
-                    onClick={() => setTab("message")}
+                    onClick={() => {
+                      setTab("message");
+                    }}
                     aria-keyshortcuts={shortcutsOf("message")}
                   >
                     Message <Kbd action="message" />
@@ -576,7 +598,9 @@ export const App = () => {
       <footer className="pager">
         <button
           type="button"
-          onClick={() => go(-1)}
+          onClick={() => {
+            go(-1);
+          }}
           disabled={position <= 0}
           aria-keyshortcuts={shortcutsOf("prev")}
         >
@@ -588,7 +612,9 @@ export const App = () => {
         <button
           type="button"
           className="primary"
-          onClick={() => go(1)}
+          onClick={() => {
+            go(1);
+          }}
           aria-keyshortcuts={shortcutsOf("next")}
         >
           {position >= flat.length - 1 ? "Contents" : "Next"}{" "}
@@ -601,13 +627,27 @@ export const App = () => {
           index={index}
           current={page.id}
           onPick={pick}
-          onClose={() => setOverlay(null)}
+          onClose={() => {
+            setOverlay(null);
+          }}
         />
       ) : null}
       {overlay === "search" ? (
-        <Search index={index} onPick={pick} onClose={() => setOverlay(null)} />
+        <Search
+          index={index}
+          onPick={pick}
+          onClose={() => {
+            setOverlay(null);
+          }}
+        />
       ) : null}
-      {overlay === "cheat" ? <Cheat onClose={() => setOverlay(null)} /> : null}
+      {overlay === "cheat" ? (
+        <Cheat
+          onClose={() => {
+            setOverlay(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 };
