@@ -88,7 +88,7 @@ export const scoreThisStep = (
 };
 
 /**
- * What the body gets as `agent`: `score()` for your own scores.
+ * What the body gets as `scores`: `score()` for your own scores.
  */
 export interface AgentScores {
   /**
@@ -102,7 +102,7 @@ export interface AgentScores {
    *
    * @example
    * ```ts
-   * agent.score("support.escalated", ticket.escalated);
+   * scores.score("support.escalated", ticket.escalated);
    * ```
    */
   score(
@@ -120,7 +120,7 @@ export interface AgentScores {
 }
 
 /**
- * Makes the `agent.score()` of one agent run. `client` writes the scores
+ * Makes the `scores.score()` of one agent run. `client` writes the scores
  * made outside a step.
  */
 export const createAgentScores = (client: Inngest.Any): AgentScores => {

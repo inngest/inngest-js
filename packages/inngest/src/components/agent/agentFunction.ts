@@ -18,6 +18,8 @@
  */
 
 import { internalEvents } from "../../helpers/consts.ts";
+import type { Logger } from "../../middleware/logger.ts";
+import type { Context } from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
@@ -84,6 +86,154 @@ import {
 } from "./threadTrigger.ts";
 
 /**
+ * The options of a plain Inngest function that an agent takes as they are.
+ * The agent owns `triggers` (see `on`) and `singleton` (one live run per
+ * thread), and rejects `debounce`, `batchEvents` and `checkpointing`,
+ * which would break what a thread's run is.
+ */
+export interface AgentFunctionOptions {
+  /**
+   * The name the function shows in the Inngest UI. Default: its `id`.
+   */
+  name?: InngestFunction.Options["name"];
+  description?: InngestFunction.Options["description"];
+
+  /**
+   * Limits the steps that run at once, across threads or per key (per tenant,
+   * say). It never lets two runs of one thread live at once: the singleton
+   * does that. A run waiting for its next message holds no concurrency.
+   */
+  concurrency?: InngestFunction.Options["concurrency"];
+
+  /**
+   * How often a failing run is retried. A retry replays the body, so the
+   * thread's steps are memoized as for any function.
+   */
+  retries?: InngestFunction.Options["retries"];
+
+  /**
+   * How long a run may wait to start (`start`) and take (`finish`). A thread
+   * lives across many messages, so a `finish` timeout ends the whole run, not
+   * one turn: the thread's sandboxes are saved and its next message starts a
+   * new run.
+   */
+  timeouts?: InngestFunction.Options["timeouts"];
+
+  /**
+   * Events that cancel a live run, as for any function. The run's cleanup
+   * (sandboxes, run-scoped KV) happens as for `handle.stop()`.
+   */
+  cancelOn?: InngestFunction.Options["cancelOn"];
+
+  /**
+   * Called when a run fails for good. It is a function of its own, started
+   * with the failure event, and gets that event's context, not the agent's.
+   */
+  onFailure?: InngestFunction.Options["onFailure"];
+
+  /**
+   * Drops a trigger event whose key was seen in the last 24 hours. It applies
+   * to the events that start a run, not to messages a live run reads from its
+   * inbox. A key that repeats across a thread's messages, such as the thread
+   * key, would stop its later messages from starting a run once the first has
+   * ended: key it by something unique to the event, such as its ID.
+   */
+  idempotency?: InngestFunction.Options["idempotency"];
+
+  /**
+   * Skips trigger events beyond the limit. The skipped event does not start a
+   * run; a live run still reads it from its inbox.
+   */
+  rateLimit?: InngestFunction.Options["rateLimit"];
+
+  /**
+   * Delays trigger events beyond the limit instead of skipping them.
+   */
+  throttle?: InngestFunction.Options["throttle"];
+
+  /**
+   * Runs of this function ahead of or behind others.
+   */
+  priority?: InngestFunction.Options["priority"];
+
+  /**
+   * Middleware for this function's runs.
+   */
+  middleware?: InngestFunction.Options["middleware"];
+
+  /**
+   * Not allowed. A debounce keeps only the last of a burst of events, so the
+   * messages before it would never reach the thread.
+   */
+  debounce?: never;
+
+  /**
+   * Not allowed. The agent reads one event at a time from its inbox.
+   */
+  batchEvents?: never;
+
+  /**
+   * Not allowed. The agent has a singleton per thread of its own.
+   */
+  singleton?: never;
+
+  /**
+   * Not allowed. Checkpointing changes how steps run in a way the inbox's
+   * waiting and wake-ups do not support.
+   */
+  checkpointing?: never;
+}
+
+const takenOptions = [
+  "name",
+  "description",
+  "concurrency",
+  "retries",
+  "timeouts",
+  "cancelOn",
+  "onFailure",
+  "idempotency",
+  "rateLimit",
+  "throttle",
+  "priority",
+  "middleware",
+] as const;
+
+const refusedOptions = [
+  "debounce",
+  "batchEvents",
+  "singleton",
+  "checkpointing",
+] as const;
+
+/**
+ * The function options an agent's config passes on. A refused option throws,
+ * for the callers the types do not stop.
+ * @param config The agent's config.
+ */
+const functionOptions = (
+  config: AgentFunctionOptions & { id: string },
+): Partial<InngestFunction.Options> => {
+  for (const key of refusedOptions) {
+    if (config[key] !== undefined) {
+      throw new Error(
+        `Agent "${config.id}" does not take the \`${key}\` option: see AgentFunctionOptions`,
+      );
+    }
+  }
+
+  return Object.fromEntries(
+    takenOptions
+      .filter((key) => {
+        return config[key] !== undefined;
+      })
+      .map((key) => {
+        return [key, config[key]];
+      }),
+  );
+};
+
+/**
  * The config of an agent: its ID, what starts it, and what it may use.
  * `TOn` is the type of `on`, `TEvent` the events of its triggers, and
  * `TRequest` and `TReply` what other threads ask it and what it answers.
@@ -94,7 +244,8 @@ export interface AgentFunctionConfig<
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
-> extends ThreadKeyConfig<TOn> {
+> extends ThreadKeyConfig<TOn>,
+    AgentFunctionOptions {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -157,7 +308,7 @@ export interface AgentFunctionConfig<
    * the first post and each gap between posts took, and a stop request sets
    * `agent.stopped` on the step that records it. Every score rides on a
    * step that already runs, so none adds a step. `false` turns those off;
-   * `agent.score()` still works.
+   * `scores.score()` in the body still works.
    */
   scores?: boolean;
 }
@@ -170,14 +321,23 @@ export interface AgentConfigContext<TEvent = TriggerEvent> {
 }
 
 /**
- * What the body gets, besides the usual function context.
+ * What the body gets: the usual function context (`step`, `group`, `defer`,
+ * `runId`, `logger`, `attempt` and the rest) with the agent's own fields
+ * beside it. `event` is the agent's, not the function's: its `data` is the
+ * thread message, and `data.event` is the trigger event. There is no
+ * `events`, because an agent never runs on a batch.
  */
 export interface AgentBodyContext<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
-> {
+> extends Omit<Context.Any, "event" | "events"> {
+  /**
+   * The function's logger.
+   */
+  logger: Logger;
+
   /**
    * The event that started the run. Its `data` is the thread message, and
    * `data.event` is the trigger event, typed from `on`.
@@ -215,7 +375,7 @@ export interface AgentBodyContext<
    * Your own scores, next to the ones the framework writes. See
    * `AgentScores`.
    */
-  agent: AgentScores;
+  scores: AgentScores;
 
   /**
    * Messages sent to the thread, one per delivery, in order. The first is the
@@ -631,6 +791,7 @@ export function createAgentFunction(
 
   const fn = client.createFunction(
     {
+      ...functionOptions(config),
       id: config.id,
       triggers: [
         {
@@ -645,7 +806,10 @@ export function createAgentFunction(
       ],
       singleton: { key: threadExpression, mode: "skip" },
     },
-    async ({ event, step, defer, runId, logger }) => {
+    async (ctx) => {
+      const { event, step, defer, runId, logger } = ctx;
+      const { events: _events, ...functionContext } = ctx;
+
       // The thread a run belongs to comes from its trigger: a message names it,
       // any other trigger event gives it by the expression of its trigger.
       const found = triggers.find((t) => {
@@ -904,13 +1068,15 @@ export function createAgentFunction(
 
         try {
           result = await body({
+            ...functionContext,
+            logger,
             event: { ...event, data } as AgentBodyContext["event"],
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
             channels,
             report,
-            agent: agentScores,
+            scores: agentScores,
             inbox,
             control,
           });

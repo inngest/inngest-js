@@ -105,7 +105,7 @@ describe("scoreThisStep", () => {
   });
 });
 
-describe("agent.score", () => {
+describe("scores.score", () => {
   test("inside a step it rides on the step and calls no API", async () => {
     const { client, score } = failingClient();
     const scores = await stepScores(async () => {

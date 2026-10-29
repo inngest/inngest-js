@@ -1,7 +1,7 @@
 /**
  * @module
  * Scores: an agent scores its own model, tool and post steps with no extra
- * steps, a tool adds its own with `agent.score()`, and an
+ * steps, a tool adds its own with `scores.score()`, and an
  * agent with `scores: false` writes none of the framework's. The scores are
  * read back from the Dev Server's trace.
  */
@@ -38,7 +38,7 @@ export const agentsScores = scenario({
           on: { event: event(id), thread: "event.data.thread" },
           channels: { main: posts },
         },
-        async ({ inbox, report, control, agent: own }) => {
+        async ({ inbox, report, control, scores: own }) => {
           const first = await inbox.next();
           const note = tool.step({
             description: "Notes a number",
