@@ -778,7 +778,9 @@ function unwrapUpdate(memo: unknown): unknown {
  * the caller can throw it outside the step, where it is not retried.
  * @param check The decode to run.
  */
-async function invalidOf(check: () => Promise<unknown>): Promise<string | undefined> {
+async function invalidOf(
+  check: () => Promise<unknown>,
+): Promise<string | undefined> {
   try {
     await check();
   } catch (error) {
