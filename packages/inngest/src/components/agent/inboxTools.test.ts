@@ -33,7 +33,9 @@ const fakeInbox = () => {
   };
   const inbox: InboxToolInbox = {
     listen: async (event, options) => {
-      const n = (listens += 1);
+      listens += 1;
+
+      const n = listens;
 
       calls.push(["listen", event, options]);
 

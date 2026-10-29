@@ -118,8 +118,10 @@ const eventName = (source: InboxToolSource): string => {
  * since this check would read it differently from the evaluator.
  */
 export const isWrappable = (expression: string): boolean => {
-  if (/[\u0000-\u001f]/.test(expression)) {
-    return false;
+  for (let at = 0; at < expression.length; at += 1) {
+    if (expression.charCodeAt(at) < 32) {
+      return false;
+    }
   }
 
   let depth = 0;
