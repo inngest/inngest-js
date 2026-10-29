@@ -18,6 +18,7 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import { definitionOf, type SandboxToolNames } from "./defs.ts";
+import { type KvStore, setAppKvStore } from "./kv.ts";
 import {
   allowBake,
   allowDynamicBake,
@@ -256,6 +257,20 @@ const allowBakes = (
 const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * Options of `createAgents`.
+ */
+export interface CreateAgentsOptions {
+  /**
+   * Where the KV, thread state and indexes live: `redisKvAdapter(url)`,
+   * `d1KvAdapter(env.DB)` or `memoryKvAdapter()`. Default: Redis at
+   * `INNGEST_EXPERIMENTAL_KV_URL`. The guarantees of a store are on
+   * `KvStore`. One store per app ID: a second `createAgents` for the same
+   * client ID replaces the first's.
+   */
+  store?: KvStore;
+}
+
+/**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
  * ```ts
@@ -267,10 +282,16 @@ const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
  * ```
  *
  * @param client Inngest client.
+ * @param options Where the agents keep their state.
  */
 export const createAgents = <TClient extends Inngest.Any>(
   client: TClient,
+  options: CreateAgentsOptions = {},
 ): Agents<TClient> => {
+  if (options.store) {
+    setAppKvStore(client.id, options.store);
+  }
+
   const made: AgentFunction[] = [];
   const allowance = bakeAllowanceOf(client);
   let bakes = false;
@@ -382,6 +403,7 @@ export type {
   KvScope,
   KvScopeInstance,
   KvSetOptions,
+  KvStore,
   KvValue,
   KvValueMustBeJson,
   KvWrite,
@@ -393,6 +415,8 @@ export {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "./kvD1.ts";
+export { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 export type {
   AgentRecovery,
   LastRun,
