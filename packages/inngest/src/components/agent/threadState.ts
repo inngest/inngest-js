@@ -184,6 +184,19 @@ export const runScore = (
 };
 
 /**
+ * When the run that took a snapshot started. A generation is a run ID, or a
+ * run ID and a `.` and a number for a later snapshot of the same run.
+ */
+export const generationScore = (
+  /**
+   * The generation.
+   */
+  generation: string,
+): number => {
+  return runScore(generation.split(".")[0] ?? generation);
+};
+
+/**
  * The sorted index of the runs that saved a snapshot of one of a thread's
  * sandboxes, scored by when the run started. Adding a member is one atomic
  * write that never removes another, so a cleanup that saves late can't move
@@ -236,7 +249,7 @@ export const recordSandboxGeneration = async (
 ): Promise<void> => {
   await sandboxGenerations(scope, ref, name).add(
     generation,
-    runScore(generation),
+    generationScore(generation),
   );
 };
 

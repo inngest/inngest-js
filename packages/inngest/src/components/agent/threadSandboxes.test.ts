@@ -1174,3 +1174,145 @@ describe("lazy sandboxes of a thread", () => {
     ).toBeUndefined();
   });
 });
+
+describe("recycling a lazy sandbox", () => {
+  const box = sandbox({ id: "box" });
+
+  const open = (w: ReturnType<typeof world>, s: ReturnType<typeof setup>) => {
+    const created: { options: unknown }[] = [];
+    const tools = {
+      create: vi.fn(async (_id: unknown, options: unknown) => {
+        created.push({ options });
+
+        return w.durable(`sb-${created.length}`);
+      }),
+    } as unknown as DurableSandboxTools;
+
+    return {
+      created,
+      opened: openSandboxes({ work: box }, tools, undefined, s.owner()),
+    };
+  };
+
+  test("saves and destroys now, and the next get restores from that snapshot", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.get();
+    await opened.work?.recycle();
+
+    expect(w.rows).toHaveLength(1);
+    expect([...w.live]).toEqual([]);
+
+    await opened.work?.get();
+
+    expect(created).toHaveLength(2);
+    expect(created[1]?.options).toMatchObject({ snapshotId: w.rows[0]?.id });
+    expect([...w.live]).toEqual(["sb-2"]);
+
+    await opened.work?.close();
+
+    // Each save is a later generation of the run, and the newest is the last.
+    expect(w.rows).toHaveLength(2);
+    expect(await newest(s.scope)).toBe("01A.001");
+    expect([...w.live]).toEqual([]);
+  });
+
+  test("each sandbox gets a cleanup defer of its own, and the recycled one's is aborted", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+
+    await opened.work?.get();
+    const [first] = s.defer.mock.results;
+    await opened.work?.recycle();
+    await opened.work?.get();
+
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+    expect(s.defer.mock.calls[1]?.[1]).toMatchObject({ recycles: 1 });
+    expect(first?.value.abort).toHaveBeenCalledTimes(1);
+  });
+
+  test("a sandbox that was created but never used is destroyed without a snapshot", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const eager = openSandboxes(
+      { work: sandbox({ id: "eager" }) },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(),
+    );
+
+    // Not used by a get(): nothing to save.
+    expect(eager.work?.started).toBe(false);
+    await eager.work?.recycle();
+
+    expect(w.rows).toHaveLength(0);
+  });
+
+  test("does nothing before a sandbox exists, and a recycle after close does nothing", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.recycle();
+    expect(created).toHaveLength(0);
+
+    await opened.work?.get();
+    await opened.work?.close();
+    await opened.work?.recycle();
+
+    expect(w.rows).toHaveLength(1);
+  });
+
+  test("a get during a recycle waits for it and gets the restored sandbox", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { created, opened } = open(w, s);
+
+    await opened.work?.get();
+    const recycled = opened.work?.recycle();
+    const again = opened.work?.get();
+
+    await recycled;
+    const sandboxAfter = await again;
+
+    expect(sandboxAfter?.id).toBe("sb-2");
+    expect(created[1]?.options).toMatchObject({ snapshotId: w.rows[0]?.id });
+  });
+
+  test("a cleanup of a recycled sandbox saves as the later generation", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+
+    await opened.work?.get();
+    await opened.work?.recycle();
+    await opened.work?.get();
+    await s.scope.set(sandboxReadyKey(ref, "work", "01A"), true);
+
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01A",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-2", recycles: 1 },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(await newest(s.scope)).toBe("01A.001");
+    expect(w.rows).toHaveLength(2);
+    expect([...w.live]).toEqual([]);
+  });
+});

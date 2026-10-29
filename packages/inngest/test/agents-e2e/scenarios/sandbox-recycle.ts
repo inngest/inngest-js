@@ -1,0 +1,143 @@
+/**
+ * @module
+ * Proves a thread's sandbox can be recycled in the middle of a run. The agent
+ * writes a file, recycles the sandbox (saved and destroyed while the run goes
+ * on), and reads the file back: the sandbox it gets is a new one restored from
+ * the snapshot. The run's end then saves and destroys the second sandbox, and
+ * the thread's next run restores the file again.
+ */
+import { Inngest } from "inngest";
+import {
+  createAgents,
+  createKv,
+  getThread,
+  kv,
+  kvKey,
+  redisKvAdapter,
+  sandbox,
+} from "inngest/experimental/agents";
+import { scenario } from "../kit/driver.ts";
+
+const agentId = "sandbox-recycle-agent";
+const ref = `agents-e2e/${agentId}`;
+const box = sandbox({ id: "recycle-box" });
+
+export const sandboxRecycle = scenario({
+  id: "sandbox-recycle",
+  owner: "agents-sandbox-recycle",
+  needs: { oss: "jack/step-subscribe" },
+  sandbox: "fake",
+  functions: ({ client }) => {
+    const agents = createAgents(client);
+
+    agents.agent(
+      { id: agentId, sandboxes: { work: box } },
+      async ({ inbox, sandboxes }) => {
+        const first = await inbox.next();
+        const command = first?.data.content ?? "";
+        const read = async () => {
+          const work = await sandboxes.work?.get();
+          const bytes = await work?.files.read("notes", "/work/notes.txt");
+
+          return new TextDecoder().decode(bytes);
+        };
+
+        if (command === "recycle") {
+          const work = await sandboxes.work?.get();
+
+          await work?.files.write("notes", {
+            path: "/work/notes.txt",
+            data: "survives a recycle",
+          });
+          await sandboxes.work?.recycle();
+          await kv.thread.set(kvKey<string>("afterRecycle"), await read());
+          await sandboxes.work?.recycle();
+          await kv.thread.set(kvKey<string>("afterSecond"), await read());
+        }
+
+        if (command === "next") {
+          await kv.thread.set(kvKey<string>("nextRun"), await read());
+        }
+
+        return command;
+      },
+    );
+
+    return agents.functions();
+  },
+  run: async (ctx) => {
+    const client = new Inngest({
+      id: "agents-e2e",
+      baseUrl: ctx.devUrl,
+      isDev: true,
+    });
+    const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });
+    const thread = getThread(client, ref, `recycle-${Date.now()}`, {
+      kv: store,
+    });
+    const calls = (method: string) => {
+      return ctx.fakes.posts({ channel: "sandbox", method });
+    };
+
+    await thread.send("recycle");
+    await ctx.eventually(
+      "both reads came back after a recycle",
+      async () => {
+        return (await thread.state()).keys;
+      },
+      (keys) => {
+        return (
+          keys.afterRecycle === "survives a recycle" &&
+          keys.afterSecond === "survives a recycle"
+        );
+      },
+    );
+    await ctx.until(
+      async () => {
+        return calls("sandbox.destroy").length;
+      },
+      (count) => {
+        return count >= 3;
+      },
+      90_000,
+    );
+
+    // Three sandboxes, one per recycle and one for the end of the run; each
+    // was snapshotted before it was destroyed, and each later one was
+    // restored from the snapshot before it.
+    ctx.check(
+      "three sandboxes were created and destroyed",
+      calls("sandbox.create").length === 3 &&
+        calls("sandbox.destroy").length === 3,
+      { created: calls("sandbox.create").length },
+    );
+    ctx.check(
+      "each snapshot is a later generation of the same run",
+      calls("snapshot.create").length === 3 &&
+        new Set(
+          calls("snapshot.create").map((call) => {
+            return call.body.name;
+          }),
+        ).size === 3,
+      calls("snapshot.create").map((call) => {
+        return call.body.name;
+      }),
+    );
+    ctx.check(
+      "the second sandbox was restored from the first snapshot",
+      calls("sandbox.create")[1]?.body.snapshotId ===
+        calls("snapshot.create")[0]?.body.id,
+    );
+
+    await thread.send("next");
+    await ctx.eventually(
+      "the next run restores the newest generation",
+      async () => {
+        return (await thread.state()).keys.nextRun;
+      },
+      (read) => {
+        return read === "survives a recycle";
+      },
+    );
+  },
+});

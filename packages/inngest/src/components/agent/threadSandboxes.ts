@@ -49,6 +49,7 @@ import {
 import type { DurableSandbox, SandboxDuration } from "../sandbox/types.ts";
 import { type KvScopeInstance, kvKey } from "./kv.ts";
 import {
+  generationScore,
   newestSandboxGeneration,
   recordSandboxGeneration,
   runScore,
@@ -64,6 +65,26 @@ const { sha256 } = hashjs;
 export const threadSnapshotScope = "thread";
 
 /**
+ * The generation a snapshot is saved as. A run's first snapshot of a sandbox
+ * is the run ID. A sandbox recycled mid-run saves again, and each save is a
+ * later generation of the same run (`<run ID>.001`, `.002`), which sorts after
+ * the one before it.
+ */
+export const sandboxGeneration = (
+  /**
+   * The run.
+   */
+  runId: string,
+
+  /**
+   * How many times the run has recycled the sandbox before this snapshot.
+   */
+  recycles = 0,
+): string => {
+  return recycles > 0 ? `${runId}.${String(recycles).padStart(3, "0")}` : runId;
+};
+
+/**
  * What the cleanup defer is told about a sandbox its run created.
  */
 export interface ThreadSandboxCleanup {
@@ -72,6 +93,12 @@ export interface ThreadSandboxCleanup {
    */
   name: string;
   sandboxId: string;
+
+  /**
+   * How many times the run had recycled the sandbox when this one was
+   * created. Absent: none.
+   */
+  recycles?: number;
 }
 
 /**
@@ -107,6 +134,12 @@ export interface ThreadSandboxOwner {
      * The sandbox, still running.
      */
     sandbox: DurableSandbox,
+
+    /**
+     * How many times the run has recycled the sandbox before this save.
+     * Default 0.
+     */
+    recycles?: number,
   ): Promise<void>;
 
   /**
@@ -184,6 +217,12 @@ export interface ThreadSandboxOwner {
      * The sandbox the run just created.
      */
     sandbox: DurableSandbox,
+
+    /**
+     * How many times the run has recycled the sandbox before this one.
+     * Default 0.
+     */
+    recycles?: number,
   ): DeferHandle;
 
   /**
@@ -343,19 +382,22 @@ export const threadSandboxOwner = (
       return found;
     },
 
-    save: async (name, sandbox) => {
+    save: async (name, sandbox, recycles = 0) => {
+      const generation = sandboxGeneration(runId, recycles);
+      const suffix = recycles > 0 ? `:g${recycles}` : "";
+
       try {
         // The older generations are deleted by name below, not by listing
         // every snapshot of the environment.
         const taken = await snapshotCache(client, { memo: options.run }).take(
-          threadSnapshotEntry(ref, thread, name, runId),
+          threadSnapshotEntry(ref, thread, name, generation),
           (snapshotName, n) => {
             return sandbox.snapshot(
-              `${name}:thread:save:${n}`,
+              `${name}:thread:save${suffix}:${n}`,
               snapshotName ? { name: snapshotName } : {},
             );
           },
-          { stepId: `${name}:thread:save`, replace: false },
+          { stepId: `${name}:thread:save${suffix}`, replace: false },
         );
 
         // A snapshot without its name can't be found again.
@@ -363,11 +405,14 @@ export const threadSandboxOwner = (
           return;
         }
 
-        await recordSandboxGeneration(scope, ref, name, runId);
+        await recordSandboxGeneration(scope, ref, name, generation);
 
         const generations = sandboxGenerations(scope, ref, name);
-        const previous = await generations.range({
-          max: runScore(runId) - 1,
+        // Generations of earlier runs, and earlier generations of this run.
+        const previous = (
+          await generations.range({ max: generationScore(generation) })
+        ).filter((entry) => {
+          return entry.member < generation;
         });
 
         // The newest of the older generations stays as a spare: a run that
@@ -378,7 +423,7 @@ export const threadSandboxOwner = (
           return;
         }
 
-        await options.run(`${name}:thread:replace`, async () => {
+        await options.run(`${name}:thread:replace${suffix}`, async () => {
           const cache = snapshotCache(client);
 
           for (const { member } of older) {
@@ -411,11 +456,19 @@ export const threadSandboxOwner = (
       );
     },
 
-    guard: (name, sandbox) => {
-      return options.defer(`${name}:thread:cleanup`, {
-        name,
-        sandboxId: sandbox.id,
-      });
+    guard: (name, sandbox, recycles = 0) => {
+      // A defer ID may be used once per run, so a recycled sandbox's cleanup
+      // has an ID of its own.
+      return options.defer(
+        recycles > 0
+          ? `${name}:thread:cleanup:g${recycles}`
+          : `${name}:thread:cleanup`,
+        {
+          name,
+          sandboxId: sandbox.id,
+          ...(recycles > 0 && { recycles }),
+        },
+      );
     },
 
     release: async (name) => {
@@ -477,12 +530,13 @@ export const cleanupThreadSandbox = async (
 ): Promise<void> => {
   const { client, ref, thread, runId, scope, sandbox } = options;
   const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
+  const generation = sandboxGeneration(runId, sandbox.recycles);
   const ready = (await scope.get(kvKey<boolean>(readyKey))) === true;
   const newest = ready
     ? await newestSandboxGeneration(scope, ref, sandbox.name)
     : undefined;
 
-  if (ready && (!newest || newest < runId)) {
+  if (ready && (!newest || newest < generation)) {
     try {
       const named = await options.run(
         `${sandbox.name}:thread:snapshot`,
@@ -494,7 +548,7 @@ export const cleanupThreadSandbox = async (
           }
 
           const taken = await snapshotCache(client).take(
-            threadSnapshotEntry(ref, thread, sandbox.name, runId),
+            threadSnapshotEntry(ref, thread, sandbox.name, generation),
             (snapshotName) => {
               return found.snapshot(snapshotName ? { name: snapshotName } : {});
             },
@@ -506,7 +560,7 @@ export const cleanupThreadSandbox = async (
       );
 
       if (named) {
-        await recordSandboxGeneration(scope, ref, sandbox.name, runId);
+        await recordSandboxGeneration(scope, ref, sandbox.name, generation);
       }
     } catch (error) {
       if (!(error instanceof StepError)) {
