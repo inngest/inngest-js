@@ -1,5 +1,5 @@
 # The event sender
 
-Any event can start an agent. The **Events** tab sends one to the Dev Server by name, with JSON data.
+Any event can start an agent. The **Events** tab sends a `tour/greet` event for a random name to the Dev Server.
 
-Run the page, then send `tour/greet` with a name and look at the Trace.
+Run the page, press **Send an event**, and look at the Trace.

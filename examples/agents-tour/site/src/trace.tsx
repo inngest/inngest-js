@@ -512,6 +512,7 @@ const Run = ({
               <div role="listitem" key={row.key}>
                 <div
                   className={`wf-row wait-row ${row.live ? "live" : ""}`}
+                  title="The bar is the time the run spent waiting for a message"
                   data-row
                   tabIndex={-1}
                   style={pad}
@@ -522,7 +523,7 @@ const Run = ({
                   </span>
                   <span className="wf-track">
                     <i
-                      className="wf-bar waiting"
+                      className={`wf-bar ${row.live ? "waiting" : "completed"}`}
                       style={bar(row.from, row.to)}
                     />
                   </span>

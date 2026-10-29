@@ -1094,3 +1094,34 @@ main.single .text {
   font: 12px / 1.5 var(--mono);
   white-space: pre-wrap;
 }
+
+.gh-feed {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 14px;
+  min-height: 0;
+}
+
+.gh-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.gh-title {
+  font-size: 14px;
+}
+
+.gh-title .gh-state {
+  margin-right: 8px;
+}
+
+.indent {
+  margin-left: 40px;
+}
+
+.message p,
+.events p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
