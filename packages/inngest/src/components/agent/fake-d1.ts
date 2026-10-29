@@ -7,6 +7,19 @@
 import type { D1KvDatabase, D1KvStatement } from "./kvD1.ts";
 
 /**
+ * Whether this Node has `node:sqlite` (22.5 and later). Tests that need
+ * {@link fakeD1} skip themselves without it.
+ */
+export const hasNodeSqlite = await import("node:sqlite").then(
+  () => {
+    return true;
+  },
+  () => {
+    return false;
+  },
+);
+
+/**
  * Opens an in-memory database.
  * @param clockMs The database's clock, in milliseconds.
  */

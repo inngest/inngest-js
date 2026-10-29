@@ -5,11 +5,11 @@
  */
 import { Inngest } from "../Inngest.ts";
 import { createAgents } from "./agents.ts";
-import { fakeD1 } from "./fake-d1.ts";
+import { fakeD1, hasNodeSqlite } from "./fake-d1.ts";
 import { createKv, kv, memoryKvAdapter } from "./kv.ts";
 import { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 
-describe("the d1 store", () => {
+describe.skipIf(!hasNodeSqlite)("the d1 store", () => {
   test("setIfAbsent calls issued together give exactly one winner", async () => {
     const adapter = d1KvAdapter(await fakeD1(() => 1_700_000_000_000), {
       createTables: true,

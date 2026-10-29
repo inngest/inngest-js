@@ -40,6 +40,7 @@ import {
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { Middleware } from "../middleware/middleware.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { SandboxTool, SandboxTools } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { toAsync } from "./cel.ts";
@@ -1799,6 +1800,15 @@ export function createAgentFunction(
           narrowLimits(config.limits, started.inherited),
           { ...started.usage },
         );
+
+        // A dollar budget handed down by a parent can't carry the parent's
+        // price (a function), so an agent without its own would count every
+        // call as free and never stop.
+        if (limits.limits.budget?.usd !== undefined && !config.limits?.price) {
+          throw new NonRetriableError(
+            `Agent "${config.id}" has a dollar budget (limits.budget.usd, set by its own limits or inherited from the agent that started it) but no limits.price: give it a limits.price.`,
+          );
+        }
 
         // Opened first, so the gap in which a message could be missed is the few
         // milliseconds between the run starting and this op.

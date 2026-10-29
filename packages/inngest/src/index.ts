@@ -40,9 +40,15 @@
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
 export type {
+  ExactOptions,
   InboxMessage,
+  NamedOptions,
   NextOptions,
+  SubscribeData,
+  SubscribeEvent,
+  SubscribeMessages,
   SubscribeOptions,
+  SubscribeTool,
   Subscription,
 } from "./components/agent/subscribe";
 export { experiment } from "./components/ExperimentStrategies.ts";

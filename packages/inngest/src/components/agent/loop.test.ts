@@ -396,6 +396,47 @@ describe("agent.loop", () => {
     expect(replayed?.usage.usd).toBe(0.5);
   });
 
+  test("a stored cost that is not dollars is ignored and priced again", async () => {
+    const { steps } = await run([say("done")], { price: () => 7 });
+    const client = new Inngest({ id: testClientId });
+    const seen: { replayed?: AgentLoopResult } = {};
+    const usdOf = () => {
+      return seen.replayed?.usage.usd;
+    };
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        seen.replayed = await agent.loop({
+          model: agent.model(async () => {
+            throw new Error("the model must not be called on a replay");
+          }),
+          prompt: "go",
+          tools: {},
+          price: () => 0.5,
+        });
+      },
+    );
+
+    for (const bad of [-1, Number.NaN, "7", null]) {
+      const state = Object.fromEntries(
+        steps.map((done) => {
+          return [
+            done.id,
+            {
+              id: done.id,
+              data: { ...(done.data as Record<string, unknown>), usd: bad },
+            },
+          ];
+        }),
+      );
+
+      seen.replayed = undefined;
+      await runFnWithStack(fn, state);
+
+      expect(usdOf()).toBe(0.5);
+    }
+  });
+
   test("a price that gives no dollars ends the run without a retry", async () => {
     const { steps } = await run([say("done")], { price: () => Number.NaN });
 
