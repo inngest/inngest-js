@@ -312,7 +312,12 @@ export const createAgents = <TClient extends Inngest.Any>(
     }) as unknown as Agents<TClient>["agent"],
     functions: () => {
       const functions = made.flatMap((created) => {
-        return [created.fn, created.cleanup, created.finished];
+        return [
+          created.fn,
+          created.cleanup,
+          created.finished,
+          ...(created.arrival ? [created.arrival] : []),
+        ];
       });
       const shared = bakeFunctions.get(client);
 
@@ -322,6 +327,7 @@ export const createAgents = <TClient extends Inngest.Any>(
 };
 
 export type {
+  AgentArrivalContext,
   AgentBody,
   AgentBodyContext,
   AgentBodyFields,

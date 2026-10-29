@@ -177,6 +177,215 @@ describe("agent function", () => {
   });
 });
 
+describe("inbox arrival", () => {
+  const loopOnce = (seen: unknown[][]) => {
+    return agent.model(async (request) => {
+      seen.push(userTexts(request.messages));
+
+      return {
+        message: { role: "assistant", content: [] },
+        toolCalls: [{ id: "c1", name: "missing", input: {} }],
+      };
+    });
+  };
+
+  test("agent.loop steers through the inbox without the app spreading control", async () => {
+    const seen: unknown[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        // No `...control`: the loop finds the inbox itself.
+        const result = await agent.loop({
+          model: loopOnce(seen),
+          prompt: first?.data.content ?? "",
+          tools: {},
+        });
+        const next = await inbox.next();
+
+        return [result.stopped, result.turns, next?.data.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [
+        message("steer", "left"),
+        message("stop"),
+        message("user", "next"),
+      ],
+    });
+
+    expect(seen).toEqual([["go"]]);
+    expect(output).toEqual(["stopped", 1, "next"]);
+  });
+
+  test("foldMessages: all folds a user message into the turn, and next() does not return it again", async () => {
+    const seen: unknown[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        foldMessages: "all",
+      },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        await agent.loop({
+          model: agent.model(async (request) => {
+            seen.push(userTexts(request.messages));
+
+            // The second call has the folded message in its prompt.
+            return userTexts(request.messages).length > 1
+              ? say("done")
+              : {
+                  message: { role: "assistant", content: [] },
+                  toolCalls: [{ id: "c1", name: "missing", input: {} }],
+                };
+          }),
+          prompt: first?.data.content ?? "",
+          tools: {},
+        });
+
+        return (await inbox.next({ timeout: "1s" })) ?? "nothing left";
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "also this")],
+      timeouts: 1,
+    });
+
+    expect(seen).toEqual([["go"], ["go", "also this"]]);
+    expect(output).toBe("nothing left");
+  });
+
+  test("inbox.drain() takes the pending messages, stops included, and next() does not return them again", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const drained = await inbox.drain();
+        const after = await inbox.next({ timeout: "1s" });
+
+        return [
+          drained.map((m) => {
+            return m.data.kind;
+          }),
+          after,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "a"), message("stop"), message("steer", "b")],
+      timeouts: 1,
+    });
+
+    expect(output).toEqual([["user", "stop", "steer"], undefined]);
+  });
+
+  describe("onArrival", () => {
+    const arrivalFn = (calls: string[]) => {
+      const kv = createKv({ adapter: memoryKvAdapter() });
+      const { arrival } = createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          kv,
+          onArrival: async ({ message: arrived, thread }) => {
+            calls.push(`${thread}:${arrived.content}`);
+          },
+        },
+        async () => {},
+      );
+
+      return { kv, arrival: arrival as NonNullable<typeof arrival> };
+    };
+
+    // The message arrived at 200. What counts is what the thread was doing then.
+    const arrive = { ...message("user", "hello"), id: "evt-2", ts: 200 };
+    const seed = async (
+      kv: ReturnType<typeof createKv>,
+      status: string,
+      transitions: { status: string; at: number }[],
+    ) => {
+      await kv
+        .with({ id: testClientId, env: null })
+        .scope("thread", "t1")
+        .set("__state", {
+          status,
+          turn: 0,
+          usage: { input: 0, output: 0 },
+          transitions,
+        });
+    };
+
+    test("is a function of its own, listed only when the config has the hook", () => {
+      const { arrival } = arrivalFn([]);
+
+      expect(arrival.id(testClientId)).toBe(`${testClientId}-bot-arrival`);
+      expect(
+        createAgentFunction(
+          makeClient(),
+          { id: "plain", kv: createKv({ adapter: memoryKvAdapter() }) },
+          async () => {},
+        ).arrival,
+      ).toBeUndefined();
+    });
+
+    test("runs for a message that reaches a thread busy with a turn", async () => {
+      const calls: string[] = [];
+      const { kv, arrival } = arrivalFn(calls);
+
+      await seed(kv, "running", [{ status: "running", at: 100 }]);
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual(["t1:hello"]);
+    });
+
+    test("is judged by what the thread was doing when the message arrived, not when it is looked at", async () => {
+      const calls: string[] = [];
+      const { kv, arrival } = arrivalFn(calls);
+
+      // The message started the run (it arrived before the run did).
+      await seed(kv, "running", [{ status: "running", at: 300 }]);
+      await run(arrival, { event: arrive });
+
+      // It woke a waiting run, which is running again by now.
+      await seed(kv, "running", [
+        { status: "running", at: 100 },
+        { status: "waiting", at: 150 },
+        { status: "running", at: 300 },
+      ]);
+      await run(arrival, { event: arrive });
+
+      // The run had ended when it arrived, though the record is read later.
+      await seed(kv, "idle", [
+        { status: "running", at: 100 },
+        { status: "idle", at: 150 },
+      ]);
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual([]);
+
+      // It arrived mid-turn, and the run has gone back to waiting since.
+      await seed(kv, "waiting", [
+        { status: "running", at: 100 },
+        { status: "waiting", at: 300 },
+      ]);
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual(["t1:hello"]);
+    });
+  });
+});
+
 describe("inbox timeouts", () => {
   test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(
@@ -384,11 +593,18 @@ describe("createAgents", () => {
 });
 
 describe("thread state", () => {
-  const record = (kv: ReturnType<typeof createKv>) => {
-    return kv
+  const record = async (kv: ReturnType<typeof createKv>) => {
+    const found = await kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1")
       .get("__state");
+
+    // The status changes with their times are not part of what state() shows.
+    const { transitions: _transitions, ...rest } = (found ?? {}) as {
+      transitions?: unknown;
+    };
+
+    return found ? rest : found;
   };
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {

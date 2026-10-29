@@ -18,8 +18,13 @@
  */
 
 import { internalEvents } from "../../helpers/consts.ts";
+import type { Logger } from "../../middleware/logger.ts";
 import { createDefer } from "../DeferredFunction.ts";
-import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
+import {
+  type AgentBridge,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "../execution/als.ts";
 import {
   type GetFunctionInput,
   type Inngest,
@@ -91,6 +96,7 @@ import {
   readLastRun,
   recordEnd,
   runScore,
+  threadBusyFor,
   threadRecorder,
 } from "./threadState.ts";
 import {
@@ -297,6 +303,32 @@ export interface AgentFunctionConfig<
   requests?: ThreadRequests<TRequest, TReply>;
 
   /**
+   * Runs once for every message that reaches this thread while a run of it is
+   * busy (a turn is in flight), as soon as the message is saved, so the agent
+   * can acknowledge it on its channel (a reaction, a line saying it will be
+   * folded in). It runs in a function of its own, `<id>-arrival`, served with
+   * the agent by `agents.functions()`, so it does not wait for the turn and
+   * does not touch the run. It does not run for the message that started the
+   * run, or for a thread that is waiting for its next message (the run reads
+   * that message at once). What counts is what the thread was doing when the
+   * message arrived. The edges are not exact: a message in the instant before a
+   * run records its first turn is not acknowledged, and one that arrives after
+   * the body returned but before the run is cleaned up may be. A `step` is
+   * given: use it for the posts.
+   */
+  onArrival?: (context: AgentArrivalContext<TEvent>) => Promise<void> | void;
+
+  /**
+   * Which messages that arrive during a turn `control.steer()` (and so
+   * `agent.loop()` inside this agent) folds into the turn at the next model
+   * call. `"steer"` (default): only messages of kind `"steer"`; the rest wait
+   * for their own turn. `"all"`: user messages too, as steering lines; requests
+   * and stops keep their meaning. A folded message is consumed: `next()` does
+   * not return it again.
+   */
+  foldMessages?: "steer" | "all";
+
+  /**
    * The sandboxes this agent may use, by name: definitions made with
    * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
    * tool call that needs it (`start: "lazy"`, the default), or as soon as the
@@ -363,6 +395,41 @@ export interface AgentFunctionConfig<
  */
 export interface AgentConfigContext<TEvent = TriggerEvent> {
   event: { name: string; data: ThreadMessage<TEvent> };
+}
+
+/**
+ * What `onArrival` is given.
+ */
+export interface AgentArrivalContext<TEvent = TriggerEvent> {
+  /**
+   * The message that arrived.
+   */
+  message: ThreadMessage<TEvent>;
+
+  /**
+   * The thread it reached.
+   */
+  thread: string;
+
+  /**
+   * The agent's address.
+   */
+  ref: string;
+
+  /**
+   * The event that carried the message.
+   */
+  event: { id?: string; name: string; data: unknown };
+
+  /**
+   * The function's step tools, so each post is a durable step.
+   */
+  step: typeof step;
+
+  /**
+   * The function's logger.
+   */
+  logger: Logger;
 }
 
 /**
@@ -527,6 +594,16 @@ export interface ThreadInbox<
   poll(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
 
   /**
+   * Takes every message that has arrived and not been read, in order, without
+   * waiting. They are consumed: `next()` does not return them again. Stops are
+   * included, so a loop of your own can honor them. Each message read is a
+   * step, so a replay takes the same messages. This is what `control.steer()`
+   * is made of; use it to fold pending messages in at the safe point of a loop
+   * that is not `agent.loop()`.
+   */
+  drain(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
+
+  /**
    * Ends the subscription. See `Subscription.close()`: it only ends the
    * subscription, and a message that arrives afterwards is dropped.
    * @returns The messages that were saved but not read.
@@ -604,6 +681,12 @@ export interface AgentFunction<
    * run-scoped KV keys.
    */
   cleanup: InngestFunction.Any;
+
+  /**
+   * The function that runs `onArrival` for every message that reaches a busy
+   * thread. Present only when the config has an `onArrival`.
+   */
+  arrival?: InngestFunction.Any;
 
   /**
    * Runs when the executor reports that a run of `fn` ended, whichever way,
@@ -802,6 +885,20 @@ function threadInbox(
   return {
     inbox: {
       next,
+      async drain() {
+        const taken: ThreadInboxMessage[] = [];
+
+        for (;;) {
+          const raw = await inbox.poll();
+          if (!raw) {
+            return taken;
+          }
+
+          if (!(await skipped(raw))) {
+            taken.push(unwrap(raw) as ThreadInboxMessage);
+          }
+        }
+      },
       async poll() {
         for (;;) {
           const raw = await inbox.poll();
@@ -925,6 +1022,64 @@ export function createAgentFunction(
       }
     },
   );
+
+  const onArrival = config.onArrival;
+  const arrival = onArrival
+    ? client.createFunction(
+        {
+          id: `${config.id}-arrival`,
+          triggers: [
+            {
+              event: agentMessageEvent,
+              if: `event.data.agent == ${quote(ref)}`,
+            },
+            ...triggers
+              .filter((trigger) => {
+                return trigger.listen;
+              })
+              .map((trigger) => {
+                return trigger.fnTrigger;
+              }),
+          ],
+        },
+        async ({ event, step: arrivalStep, logger }) => {
+          const found = triggers.find((t) => {
+            return t.event === event.name;
+          });
+          const message = found
+            ? messageOf(ref, found, event as unknown as ThreadTriggerEvent)
+            : (event.data as ThreadMessage);
+          // An inbox drops a request that breaks its schema, so it is not
+          // acknowledged either.
+          if (
+            message.kind === "request" &&
+            config.requests &&
+            (await dataProblem(config.requests.request, message.payload))
+          ) {
+            return;
+          }
+
+          // The KV read is a durable step of its own, so a replay sees the same
+          // answer.
+          const busy = await threadBusyFor(store, message.thread, event.ts);
+
+          // A thread that is not working is not busy: its run, or the run this
+          // message starts, reads the message at once.
+          if (!busy) {
+            return;
+          }
+
+          await onArrival({
+            message,
+            thread: message.thread,
+            ref,
+            event: event as unknown as AgentArrivalContext["event"],
+            step: arrivalStep as unknown as typeof step,
+            logger,
+          });
+        },
+      )
+    : undefined;
 
   const recovery: AgentRecovery | undefined =
     config.recovery === true ? {} : config.recovery || undefined;
@@ -1097,6 +1252,9 @@ export function createAgentFunction(
         ? messageOf(ref, found, event as unknown as ThreadTriggerEvent)
         : (event.data as ThreadMessage);
       const session = found?.session?.key(event);
+
+      // Read by `agent.loop()` once the body's inbox exists.
+      const bridge: AgentBridge = {};
 
       // Run-scoped KV keys end with the run, whichever way it ends.
       defer("kv-cleanup", {
@@ -1301,7 +1459,10 @@ export function createAgentFunction(
               }
 
               const kind = message.data.kind;
-              if (kind === "steer") {
+              if (
+                kind === "steer" ||
+                (kind === "user" && config.foldMessages === "all")
+              ) {
                 lines.push(message.data.content ?? "");
               } else if (kind === "stop") {
                 stopRequested = true;
@@ -1333,6 +1494,10 @@ export function createAgentFunction(
             limits.used = { ...next.usage };
           },
         };
+
+        // `agent.loop()` steers and stops through the inbox unless it is given
+        // its own.
+        bridge.control = control;
 
         // Closes every sandbox. Returns the first failure instead of throwing, so
         // a failed eager start nothing used never replaces the body's own error.
@@ -1397,13 +1562,16 @@ export function createAgentFunction(
       const als = getAsyncCtxSync();
 
       // A run started by a message keeps what its trigger carries.
-      return als?.execution && found
+      return als?.execution
         ? runWithAsyncCtx(
             {
               ...als,
               execution: {
                 ...als.execution,
-                agent: { thread: thread.key, session: thread.session },
+                ...(found
+                  ? { agent: { thread: thread.key, session: thread.session } }
+                  : {}),
+                agentBridge: bridge,
               },
             },
             main,
@@ -1416,6 +1584,7 @@ export function createAgentFunction(
     fn,
     cleanup,
     finished,
+    ...(arrival && { arrival }),
     ref,
     thread(key, session) {
       return getThread(client, ref, key, {

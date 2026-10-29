@@ -7,6 +7,8 @@
  * The loop knows nothing about providers. You pass a `model` function that
  * calls your SDK of choice and answers in the small shape below.
  */
+
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
 import {
   resolveToolCall,
@@ -581,6 +583,33 @@ const runTool = async <TTools extends SandboxTools>(
 };
 
 /**
+ * The control of the agent run this loop is part of, if any.
+ */
+const bridgedControl = () => {
+  return getAsyncCtxSync()?.execution?.agentBridge?.control;
+};
+
+/**
+ * The loop's `steer`: the option, or inside an agent body the inbox's, so a
+ * message that arrives during a turn reaches the next model call without the app
+ * wiring it.
+ * @param options The loop options.
+ */
+const steerOf = (options: {
+  steer?: (turn: number) => Promise<string[] | undefined>;
+}) => {
+  return options.steer ?? bridgedControl()?.steer;
+};
+
+/**
+ * The loop's `stop`: the option, or inside an agent body the inbox's.
+ * @param options The loop options.
+ */
+const stopOf = (options: { stop?: (turn: number) => Promise<boolean> }) => {
+  return options.stop ?? bridgedControl()?.stop;
+};
+
+/**
  * EXPERIMENTAL: Runs a model with tools until it is done. Each model call is
  * one step, and each tool call is one step (a group of steps for
  * `tool.group()`).
@@ -734,12 +763,12 @@ const loop = async <TTools extends SandboxTools>(
     toolRuns.push(...done.map(({ run: finished }) => finished));
     messages.push({ role: "tool", results: done.map(({ result }) => result) });
 
-    for (const content of (await options.steer?.(turn)) ?? []) {
+    for (const content of (await steerOf(options)?.(turn)) ?? []) {
       messages.push({ role: "user", content });
       steered += 1;
     }
 
-    if (await options.stop?.(turn)) {
+    if (await stopOf(options)?.(turn)) {
       return {
         text,
         stopped: "stopped",

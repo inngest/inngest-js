@@ -46,6 +46,38 @@ const emptyRecord = (): ThreadRecord => {
 /**
  * The writes of one run. Each is one KV step.
  */
+/**
+ * The most status changes a record keeps.
+ */
+const keptTransitions = 64;
+
+/**
+ * The record with the change noted, if `next` changes the status or starts a
+ * new run. A record written before changes were kept starts its list with the
+ * status it had.
+ * @param current The record as it was.
+ * @param next The record as it will be.
+ * @param at The time of the change, in milliseconds since the epoch.
+ */
+export const withTransition = (
+  current: ThreadRecord,
+  next: ThreadRecord,
+  at = Date.now(),
+): ThreadRecord => {
+  if (next.status === current.status && next.runId === current.runId) {
+    return next;
+  }
+
+  const before = current.transitions ?? [{ status: current.status, at: 0 }];
+
+  return {
+    ...next,
+    transitions: [...before, { status: next.status, at }].slice(
+      -keptTransitions,
+    ),
+  };
+};
+
 export const threadRecorder = (
   /**
    * KV store of the thread state.
@@ -74,13 +106,13 @@ export const threadRecorder = (
       const moved =
         mine && current.host !== undefined && current.host !== bootId;
 
-      return {
+      return withTransition(current, {
         ...current,
         ...change(current),
         runId,
         host: bootId,
         restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
-      };
+      });
     });
 
     restarts = written.restarts ?? 0;
@@ -225,7 +257,7 @@ export const markThreadIdle = async (
     const current = found ?? emptyRecord();
 
     return current.runId === runId && current.status !== "stopped"
-      ? { ...current, status: "idle" as const }
+      ? withTransition(current, { ...current, status: "idle" as const })
       : current;
   });
 };
@@ -483,4 +515,60 @@ export const sandboxReadyKey = (
   runId: string,
 ): string => {
   return `__sandbox-ready:${ref}:${name}:${runId}`;
+};
+
+/**
+ * Whether a message that reaches a thread finds its run busy: the thread was
+ * working on a turn when the message arrived. A message that starts a run
+ * arrives before the run begins, and one that wakes a waiting run arrives while
+ * it waits, so neither counts. The status is the one at the message's time, not
+ * the one the record has by the time this is asked.
+ */
+export const threadBusyFor = async (
+  /**
+   * KV store of the thread state.
+   */
+  store: Kv,
+
+  /**
+   * Thread key.
+   */
+  thread: string,
+
+  /**
+   * When the message arrived, in milliseconds since the epoch.
+   */
+  arrivedAt: number | undefined,
+): Promise<boolean> => {
+  const current = await store.scope("thread", thread).get(recordKey);
+
+  return statusAt(current, arrivedAt) === "running";
+};
+
+/**
+ * What the thread was doing at a time: the latest recorded change at or before
+ * it, `idle` before the first.
+ * @param record The thread's record.
+ * @param at Milliseconds since the epoch; now when missing.
+ */
+export const statusAt = (
+  record: ThreadRecord | undefined,
+  at: number | undefined,
+): ThreadRecord["status"] => {
+  if (!record) {
+    return "idle";
+  }
+
+  if (at === undefined) {
+    return record.status;
+  }
+
+  const before = (record.transitions ?? []).filter((t) => {
+    return t.at <= at;
+  });
+
+  return (
+    before.at(-1)?.status ??
+    (record.transitions?.length ? "idle" : record.status)
+  );
 };

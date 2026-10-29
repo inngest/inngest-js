@@ -232,6 +232,13 @@ export interface ThreadRecord {
   runId?: string;
 
   /**
+   * The latest status changes with the time of each (milliseconds since the
+   * epoch), so a message can be placed against what the thread was doing when
+   * it arrived, not when it is looked at.
+   */
+  transitions?: { status: ThreadStatus; at: number }[];
+
+  /**
    * The message the run is answering, from its delivery until the run waits
    * for the next one. A failed run resends it.
    */
