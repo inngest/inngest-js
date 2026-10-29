@@ -12,7 +12,7 @@ export const eventOfMessage = (
 ) => {
   return {
     name: "agent/message",
-    data: { agent: `tour/${agent}`, thread, kind: "user", content },
+    data: { agent: `tour/${agent}`, thread, text: content },
   };
 };
 

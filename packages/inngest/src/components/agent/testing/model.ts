@@ -20,7 +20,13 @@ const lastUser = (request: Request) => {
     return m.role === "user";
   });
 
-  return message?.role === "user" ? message.content : "";
+  if (message?.role !== "user") {
+    return "";
+  }
+
+  return typeof message.content === "string"
+    ? message.content
+    : JSON.stringify(message.content);
 };
 
 /**

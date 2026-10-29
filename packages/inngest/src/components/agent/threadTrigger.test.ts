@@ -44,7 +44,7 @@ describe("thread key from a trigger", () => {
       opts.triggers.map((t) => {
         return t.event;
       }),
-    ).toEqual(["agent/message"]);
+    ).toEqual(["agent/message", "agent/steer", "agent/request"]);
     expect(opts.singleton.key).toBe("event.data.thread");
   });
 
@@ -72,6 +72,8 @@ describe("thread key from a trigger", () => {
 
     expect(opts.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
+      expect.objectContaining({ event: "agent/steer" }),
+      expect.objectContaining({ event: "agent/request" }),
       { event: "slack/message", if: "event.data.bot != true" },
       { event: "gh/comment" },
     ]);
@@ -90,9 +92,6 @@ describe("thread key from a trigger", () => {
         on: {
           event: "slack/message",
           thread: slackThread,
-          message: (event) => {
-            return event.data.text as string;
-          },
         },
       },
       async ({ inbox }) => {
@@ -104,16 +103,20 @@ describe("thread key from a trigger", () => {
 
         const again = await inbox.next();
 
-        return [again?.name, again?.id, again?.kind, again?.content];
+        return [
+          again?.name,
+          again?.id,
+          (again?.data as { text?: string }).text,
+        ];
       },
     );
 
     const { output } = await run(agent.fn, { event: slackMessage });
 
-    expect(output).toEqual(["slack/message", "evt1", "user", "hi"]);
+    expect(output).toEqual(["slack/message", "evt1", "hi"]);
   });
 
-  test("the run starts from the trigger event: its thread, session, message and a subscription per event", async () => {
+  test("the run starts from the trigger event: its thread, session and a subscription per event", async () => {
     const seen: { event?: string; if?: string }[] = [];
     let message: unknown;
     const agent = createAgentFunction(
@@ -126,9 +129,6 @@ describe("thread key from a trigger", () => {
           if: "event.data.bot != true",
           thread: slackThread,
           session: '"slack:" + event.data.channel',
-          message: (event) => {
-            return event.data.text as string;
-          },
         },
       },
       async ({ inbox, thread }) => {
@@ -159,10 +159,6 @@ describe("thread key from a trigger", () => {
 
     expect(output).toBe("slack:C1");
     expect(message).toMatchObject({
-      agent: `${testClientId}/bot`,
-      thread: "C1/1.2",
-      kind: "user",
-      content: "hi",
       name: "slack/message",
       id: "evt1",
       data: { channel: "C1", text: "hi" },
@@ -175,9 +171,15 @@ describe("thread key from a trigger", () => {
       opened.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "slack/message"]);
+    ).toEqual([
+      "agent/message",
+      "agent/steer",
+      "agent/stop",
+      "agent/request",
+      "slack/message",
+    ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[1]?.if).toBe(
+    expect(opened[4]?.if).toBe(
       `(event.data.bot != true) && (${slackThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",
@@ -190,14 +192,14 @@ describe("thread key from a trigger", () => {
       makeClient(),
       { id: "bot", kv, on: { event: "slack/message", thread: slackThread } },
       async ({ inbox }) => {
-        return (await inbox.next())?.thread;
+        return (await inbox.next())?.data.thread;
       },
     );
 
     const { output } = await run(agent.fn, {
       event: {
         name: "agent/message",
-        data: { agent: `${testClientId}/bot`, thread: "T9", kind: "user" },
+        data: { agent: `${testClientId}/bot`, thread: "T9", text: "hi" },
       },
     });
 

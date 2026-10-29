@@ -11,7 +11,7 @@ import type { IInngestExecution } from "./InngestExecution.ts";
  */
 export interface AgentBridge {
   control?: {
-    steer: () => Promise<string[]>;
+    steer: () => Promise<{ id?: string; name: string; data: unknown }[]>;
     stop: () => Promise<boolean>;
   };
 }

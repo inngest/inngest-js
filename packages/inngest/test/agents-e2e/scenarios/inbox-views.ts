@@ -15,6 +15,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "inbox-views-agent";
@@ -49,8 +50,10 @@ export const inboxViews = scenario({
 
         for await (const message of inbox) {
           if (message.name === event("ci")) {
-            await record(`main:ci:${(message.data as { n: number }).n}`);
-          } else if (message.content === "unread") {
+            await record(
+              `main:ci:${(message.data as unknown as { n: number }).n}`,
+            );
+          } else if (textOf(message) === "unread") {
             const rest = await ci.unread();
 
             await record(
