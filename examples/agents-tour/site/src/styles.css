@@ -172,8 +172,33 @@ main {
   min-height: 0;
 }
 
-main.split {
-  grid-template-columns: minmax(320px, 5fr) 7fr;
+main.grid {
+  grid-template-columns: 42fr 6px 58fr;
+}
+
+.col {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.col > section {
+  min-height: 0;
+  min-width: 0;
+}
+
+.play {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.tracepane {
+  background: var(--surface);
+  overflow: auto;
 }
 
 main.single {
@@ -278,20 +303,23 @@ code {
 }
 
 .divider {
+  background: var(--border);
+  flex: none;
+}
+
+.divider.horizontal {
   height: 6px;
   cursor: row-resize;
-  background: var(--border);
+}
+
+.divider.vertical {
+  width: 6px;
+  cursor: col-resize;
 }
 
 .divider:hover,
 .divider:focus-visible {
   background: var(--accent);
-}
-
-.lower {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 
 .panel {
@@ -346,43 +374,117 @@ code {
   background: var(--surface);
 }
 
-.run header {
+.run-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  padding: 7px 12px;
   background: var(--surface-2);
 }
 
-.run .status {
+.run .status,
+.run-total {
   color: var(--muted);
   font-size: 12px;
-  text-transform: lowercase;
 }
 
-.run ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.run-total {
+  margin-left: auto;
+  font-family: var(--mono);
 }
 
-.step {
+.trace-keys {
+  font-size: 12px;
+}
+
+.wf-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) 1fr 64px;
+  align-items: center;
+  column-gap: 10px;
   width: 100%;
   border: none;
   border-radius: 0;
   border-top: 1px solid var(--border);
   background: transparent;
-  justify-content: flex-start;
-  font: 13px var(--mono);
-}
-
-.step-name {
-  flex: 1;
+  padding: 3px 12px;
+  font: 12.5px var(--mono);
   text-align: left;
+  position: relative;
 }
 
-.step-meta {
+.wf-row > .dot {
+  position: absolute;
+  left: 2px;
+}
+
+.wf-row .wf-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-row.group .wf-name {
+  font-weight: 650;
+}
+
+.wf-row em {
   color: var(--muted);
+  font-style: normal;
+}
+
+.wf-track {
+  position: relative;
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 5px;
+}
+
+.wf-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 5px;
+  background: var(--muted);
+  min-width: 3px;
+}
+
+.wf-bar.completed {
+  background: var(--ok);
+}
+
+.wf-bar.running,
+.wf-bar.queued {
+  background: var(--accent);
+}
+
+.wf-bar.waiting {
+  background: var(--warn);
+  opacity: 0.7;
+}
+
+.wf-bar.failed,
+.wf-bar.cancelled {
+  background: var(--bad);
+}
+
+.wf-time {
+  color: var(--muted);
+  text-align: right;
+}
+
+.hidden-row {
+  grid-template-columns: 1fr auto;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.wait-row {
+  color: var(--muted);
+  cursor: default;
 }
 
 .step-detail {
@@ -392,14 +494,6 @@ code {
   font: 12px / 1.5 var(--mono);
   overflow: auto;
   max-height: 160px;
-}
-
-.hidden-note {
-  margin: 0;
-  padding: 6px 12px;
-  color: var(--muted);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
 }
 
 .dot {
@@ -632,4 +726,104 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.text {
+  max-width: none;
+}
+
+main.single .text {
+  max-width: 800px;
+}
+
+.files-key {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.chip {
+  border-radius: 999px;
+  font-size: 13px;
+  padding: 4px 10px;
+  color: var(--muted);
+}
+
+.run-event {
+  position: relative;
+}
+
+.run-event-json {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  margin: 0;
+  min-width: 320px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font: 12px / 1.5 var(--mono);
+}
+
+.sent {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  border-radius: 8px;
+  font: 12px / 1.5 var(--mono);
+  overflow: auto;
+}
+
+.notice {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  color: var(--bad);
+  font: 12.5px / 1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+.trigger-row .wf-name em {
+  color: var(--ok);
+}
+
+.trigger-content {
+  background: transparent;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  height: auto;
+}
+
+.run-output.error {
+  color: var(--bad);
+}
+
+.jv-key {
+  color: var(--accent);
+}
+
+.jv-string {
+  color: var(--ok);
+}
+
+.jv-number {
+  color: var(--warn);
+}
+
+.jv-bool {
+  color: var(--bad);
+}
+
+.error-detail {
+  color: var(--bad);
+}
+
+.message label kbd {
+  margin-left: 6px;
 }
