@@ -55,10 +55,7 @@ export const agentsCron = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), (turns) => {
-            return [
-              ...(turns ?? []),
-              `${message.data.event?.name}: ${message.data.content}`,
-            ];
+            return [...(turns ?? []), `${message.name}: ${message.content}`];
           });
           await sleep(120_000);
         }

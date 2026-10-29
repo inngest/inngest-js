@@ -52,7 +52,7 @@ export const agentsChat = scenario({
     const chat = agents.agent({ id: agentId }, async ({ inbox, control }) => {
       for await (const message of inbox) {
         await kv.thread.update(kvKey<string[]>("started"), function (started) {
-          return [...(started ?? []), message.data.content ?? ""];
+          return [...(started ?? []), message.content ?? ""];
         });
         const history = await kv.thread.get(kvKey<never[]>("history"));
         const result = await agent.loop({
@@ -61,7 +61,7 @@ export const agentsChat = scenario({
             { call: { name: "think", input: {} } },
             { say: "echo: {{last}}" },
           ]),
-          prompt: message.data.content ?? "",
+          prompt: message.content ?? "",
           history: history ?? [],
           tools: { think },
           ...control,
@@ -70,7 +70,7 @@ export const agentsChat = scenario({
         await kv.thread.set("history", result.history);
         await kv.thread.set("last", { seq: message.seq, text: result.text });
         await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-          return [...(turns ?? []), message.data.content ?? ""];
+          return [...(turns ?? []), message.content ?? ""];
         });
       }
     });

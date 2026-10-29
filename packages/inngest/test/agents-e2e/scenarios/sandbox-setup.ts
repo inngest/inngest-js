@@ -60,7 +60,7 @@ export const sandboxSetup = scenario({
             },
             { say: "done" },
           ]),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: sandboxTools,
           ...control,
         });

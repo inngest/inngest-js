@@ -51,7 +51,7 @@ export const subscribeCancel = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("read"), function (read) {
-            return [...(read ?? []), message.data.content ?? ""];
+            return [...(read ?? []), message.content ?? ""];
           });
         }
       },

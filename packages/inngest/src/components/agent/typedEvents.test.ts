@@ -36,8 +36,17 @@ describe("typed events", () => {
 
         const message = await inbox.next();
 
-        expectTypeOf(message?.data.event).toEqualTypeOf<Order | undefined>();
-        expectTypeOf(message?.data.content).toEqualTypeOf<string | undefined>();
+        // The message is the trigger event, flat; a plain thread message is
+        // `agent/message`.
+        expectTypeOf(message?.name).toEqualTypeOf<
+          "shop/order.created" | "agent/message" | undefined
+        >();
+
+        if (message?.name === "shop/order.created") {
+          expectTypeOf(message.data).toEqualTypeOf<Order["data"]>();
+        }
+
+        expectTypeOf(message?.content).toEqualTypeOf<string | undefined>();
 
         return undefined;
       },
@@ -56,7 +65,7 @@ describe("typed events", () => {
       },
       async ({ inbox }) => {
         const message = await inbox.next();
-        const trigger = message?.data.event;
+        const trigger = message;
 
         if (trigger?.name === "shop/order.created") {
           expectTypeOf(trigger.data.total).toBeNumber();
@@ -80,7 +89,7 @@ describe("typed events", () => {
       { id: "a-bare", on: [order, refund, asked], thread: "event.data.id" },
       async ({ inbox }) => {
         const message = await inbox.next();
-        const trigger = message?.data.event;
+        const trigger = message;
 
         if (trigger?.name === "shop/order.created") {
           expectTypeOf(trigger.data.total).toBeNumber();
@@ -157,16 +166,45 @@ describe("typed events", () => {
     );
   });
 
+  test("is() narrows the messages of on, and a source's messages are typed through a view", () => {
+    agents.agent(
+      {
+        id: "a-src",
+        on: { event: order, thread: "event.data.id" },
+        inbox: [{ event: refund, thread: "event.data.order" }],
+      },
+      async ({ inbox }) => {
+        const message = await inbox.next();
+
+        if (message?.is(order)) {
+          expectTypeOf(message.name).toEqualTypeOf<"shop/order.created">();
+          expectTypeOf(message.data.total).toBeNumber();
+          expectTypeOf(message.content).toEqualTypeOf<string | undefined>();
+        }
+
+        // A source's message keeps its own event name; the view types it.
+        const refunds = await inbox.of(refund).next();
+
+        expectTypeOf(refunds?.data.amount).toEqualTypeOf<number | undefined>();
+
+        return undefined;
+      },
+    );
+  });
+
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },
       async ({ inbox }) => {
         const message = await inbox.next();
 
-        expectTypeOf(message?.data.event?.name).toEqualTypeOf<
-          "slack/message" | undefined
+        expectTypeOf(message?.name).toEqualTypeOf<
+          "slack/message" | "agent/message" | undefined
         >();
-        expectTypeOf(message?.data.event?.data.anything).toBeAny();
+
+        if (message?.name === "slack/message") {
+          expectTypeOf(message.data.anything).toBeAny();
+        }
 
         return undefined;
       },
@@ -175,9 +213,13 @@ describe("typed events", () => {
     agents.agent({ id: "a4", on: { cron: "* * * * *" } }, async ({ inbox }) => {
       const message = await inbox.next();
 
-      expectTypeOf(message?.data.event?.data).toEqualTypeOf<
-        { cron: string } | undefined
+      expectTypeOf(message?.name).toEqualTypeOf<
+        "inngest/scheduled.timer" | "agent/message" | undefined
       >();
+
+      if (message?.name === "inngest/scheduled.timer") {
+        expectTypeOf(message.data).toEqualTypeOf<{ cron: string }>();
+      }
 
       return undefined;
     });

@@ -35,7 +35,7 @@ export const threadSandboxes = scenario({
       { id: agentId, sandboxes: { work: box } },
       async ({ inbox, sandboxes }) => {
         const first = await inbox.next();
-        const [command, text] = (first?.data.content ?? "").split(":") as [
+        const [command, text] = (first?.content ?? "").split(":") as [
           string,
           string | undefined,
         ];
