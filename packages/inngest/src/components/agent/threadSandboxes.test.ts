@@ -1272,9 +1272,18 @@ describe("recycling a lazy sandbox", () => {
       new StepError("sb:save", new Error("snapshot failed")),
     );
 
+    const [first] = s.defer.mock.results;
+
     await expect(opened.work?.recycle()).rejects.toThrow(/still running/);
     expect([...w.live]).toEqual(["sb-1"]);
     expect(await opened.work?.get()).toBe(sandboxNow);
+
+    // Its cleanup moved to the new epoch, and the old one was dropped.
+    expect(s.defer.mock.calls.map((call) => call[0])).toEqual([
+      "work:thread:cleanup",
+      "work:thread:cleanup:g1",
+    ]);
+    expect(first?.value.abort).toHaveBeenCalledTimes(1);
   });
 
   test("a recycle whose destroy failed keeps the sandbox and says so", async () => {

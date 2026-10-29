@@ -847,7 +847,9 @@ const lazySandbox = (
           },
         };
 
-        await destroyQuietly(sandbox, `${name}:destroy`, cleanup);
+        await destroyQuietly(sandbox, `${name}:destroy`, cleanup, {
+          final: false,
+        });
 
         if (!given) {
           if (saved) {
