@@ -159,6 +159,7 @@ const defaultMaxWait = "30m";
 const maxMessageChars = 4_000;
 const maxMatchFields = 8;
 const maxMatchValueChars = 200;
+const maxMatchKeyChars = 128;
 const defaultMaxPerRun = 3;
 const defaultMaxTotalWait = "2h";
 const maxReadMessages = 20;
@@ -246,13 +247,14 @@ export const matchToCel = (
   return entries
     .map(([path, value]) => {
       if (
+        path.length > maxMatchKeyChars ||
         !fieldPath.test(path) ||
         path.split(".").some((part) => {
           return reservedWords.has(part);
         })
       ) {
         throw new Error(
-          `"match" key ${JSON.stringify(path)} must be a field path of the event such as data.user.`,
+          `"match" key ${JSON.stringify(path)} must be a field path of the event such as data.user, at most ${maxMatchKeyChars} characters.`,
         );
       }
 

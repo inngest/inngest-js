@@ -1620,6 +1620,35 @@ describe("agent limits", () => {
     ]);
   });
 
+  test("a dollar budget inherited by an agent with no price fails the run instead of counting calls as free", async () => {
+    const start = async (limits?: AgentFunctionConfig["limits"]) => {
+      let ran = false;
+      const { fn } = createAgentFunction(
+        makeClient(),
+        { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), limits },
+        async () => {
+          ran = true;
+        },
+      );
+      const event = trigger("go");
+
+      await run(fn, {
+        event: {
+          ...event,
+          data: {
+            ...event.data,
+            _agent: { depth: 1, limits: { budget: { usd: 1 } } },
+          },
+        },
+      });
+
+      return ran;
+    };
+
+    expect(await start({ price: { "*": { input: 1, output: 1 } } })).toBe(true);
+    expect(await start()).toBe(false);
+  });
+
   test("an agent refuses to start a sub-agent past its inherited depth", async () => {
     const { fn } = createAgentFunction(
       makeClient(),

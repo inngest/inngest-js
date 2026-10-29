@@ -632,6 +632,13 @@ const stopOf = (options: { stop?: (turn: number) => Promise<boolean> }) => {
   return options.stop ?? bridgedControl()?.stop;
 };
 
+// The cost stored on a model step, when it is a usable number of dollars.
+const storedCost = (usd: unknown): number | undefined => {
+  return typeof usd === "number" && Number.isFinite(usd) && usd >= 0
+    ? usd
+    : undefined;
+};
+
 /**
  * EXPERIMENTAL: Runs a model with tools until it is done. Each model call is
  * one step, and each tool call is one step (a group of steps for
@@ -754,7 +761,8 @@ const loop = async <TTools extends SandboxTools>(
     // A step memoized before the cost was stored with it has no `usd`: price
     // it now.
     const cost = options.price
-      ? (reply.usd ?? priceOf(options.price, callUsage, reply.model))
+      ? (storedCost(reply.usd) ??
+        priceOf(options.price, callUsage, reply.model))
       : undefined;
 
     usage.input += callUsage.input;

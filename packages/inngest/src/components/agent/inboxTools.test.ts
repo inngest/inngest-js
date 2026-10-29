@@ -626,4 +626,11 @@ describe("matchToCel", () => {
   ])("%j", (match, cel) => {
     expect(matchToCel(match)).toBe(cel);
   });
+
+  test("a key is at most 128 characters", () => {
+    const long = `data.${"a".repeat(123)}`;
+
+    expect(matchToCel({ [long]: 1 })).toBe(`event.${long} == 1`);
+    expect(() => matchToCel({ [`${long}a`]: 1 })).toThrow("at most 128");
+  });
 });
