@@ -10,7 +10,9 @@ describe("repo types", () => {
     expectTypeOf<RepoOptions["sync"]>().toEqualTypeOf<
       "reset" | "keep" | undefined
     >();
-    expectTypeOf<Repo["action"]>().toEqualTypeOf<"cloned" | "synced">();
+    expectTypeOf<Repo["action"]>().toEqualTypeOf<
+      "cloned" | "synced" | "diverged"
+    >();
     expectTypeOf<Awaited<ReturnType<typeof repo>>>().toEqualTypeOf<Repo>();
 
     const options: RepoOptions = { repo: "inngest/inngest-js", sync: "keep" };

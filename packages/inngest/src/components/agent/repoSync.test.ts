@@ -110,7 +110,7 @@ describe("repo checkout and sync", () => {
     git(work, "commit", "--quiet", "-m", "local commit");
     const tip = upstream("b.txt", "two\n");
 
-    const result = await checkout();
+    const result = await checkout({ sync: "reset" });
 
     expect(result).toMatchObject({ action: "synced", sha: tip });
     expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("one\n");
@@ -382,7 +382,7 @@ describe("repo checkout and sync", () => {
 
     expect((await checkout({ ref: "mine", sync: "keep" })).sha).toBe(mine);
     expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("mine");
-    await expect(checkout({ ref: "mine" })).rejects.toThrow(
+    await expect(checkout({ ref: "mine", sync: "reset" })).rejects.toThrow(
       /is not a branch, tag or commit of/,
     );
   });
@@ -405,6 +405,59 @@ describe("repo checkout and sync", () => {
     await checkout({ sync: "keep" });
 
     expect(git(work, "rev-parse", "mine-tag")).toBe(local);
+  });
+
+  test("the default sync never wipes local work silently", async () => {
+    await checkout();
+
+    // Clean: it syncs.
+    const tip = upstream("b.txt", "two\n");
+    expect(await checkout()).toMatchObject({ action: "synced", sha: tip });
+
+    const refused = /has work a sync would lose.*sync: .?keep.?.*sync: .?reset/;
+
+    writeFileSync(join(work, "a.txt"), "edited\n");
+    await expect(checkout()).rejects.toThrow(refused);
+    expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("edited\n");
+    git(work, "checkout", "--quiet", "--", "a.txt");
+
+    writeFileSync(join(work, "untracked.txt"), "x\n");
+    await expect(checkout()).rejects.toThrow(refused);
+    rmSync(join(work, "untracked.txt"));
+
+    writeFileSync(join(work, "c.txt"), "local\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "local commit");
+    await expect(checkout()).rejects.toThrow(refused);
+    expect(existsSync(join(work, "c.txt"))).toBe(true);
+
+    // Explicit choices work.
+    // Ahead of the remote only, so there is nothing to fast-forward.
+    expect((await checkout({ sync: "keep" })).action).toBe("synced");
+    expect((await checkout({ sync: "reset" })).action).toBe("synced");
+    expect(existsSync(join(work, "c.txt"))).toBe(false);
+  });
+
+  test("keep says diverged, with the local sha, when it cannot fast-forward", async () => {
+    await checkout();
+    writeFileSync(join(work, "c.txt"), "local\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "local work");
+    const local = git(work, "rev-parse", "HEAD");
+    upstream("b.txt", "two\n");
+
+    const result = await checkout({ sync: "keep" });
+
+    expect(result).toMatchObject({ action: "diverged", sha: local });
+  });
+
+  test("a retry after a refused first run clones cleanly", async () => {
+    await expect(checkout({ ref: "nope" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+    expect(existsSync(work)).toBe(false);
+
+    expect(await checkout()).toMatchObject({ action: "cloned" });
   });
 
   test("a branch deleted on the remote is gone after a sync", async () => {
@@ -455,7 +508,7 @@ describe("repo checkout and sync", () => {
     mkdirSync(join(work, "scratch"));
     writeFileSync(join(work, "scratch", "y"), "y");
 
-    await checkout();
+    await checkout({ sync: "reset" });
 
     expect(existsSync(join(work, "scratch"))).toBe(false);
     // The ignore rule was in a commit the reset discarded, so cache is untracked.

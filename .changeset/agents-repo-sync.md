@@ -2,13 +2,13 @@
 "inngest": minor
 ---
 
-`repo()` brings an existing checkout up to date instead of failing. When `path` already holds a repository, as in a sandbox restored from a thread's snapshot or recycled mid-run, it fetches and moves the working copy to `ref`; `Repo.action` says `"cloned"` or `"synced"`.
+`repo()` brings an existing checkout up to date instead of failing. When `path` already holds a repository, as in a sandbox restored from a thread's snapshot or recycled mid-run, it fetches and moves the working copy to `ref`; `Repo.action` says `"cloned"`, `"synced"`, or `"diverged"` (`keep` could not fast-forward, so `sha` is the local commit). A checkout with local work (changes, untracked files, or commits the remote lacks) is never wiped silently: without `sync`, `repo()` throws and names `"keep"` and `"reset"`.
 
 ```ts
 const checkout = await repo(sandbox, {
   repo: "acme/web",
   ref: "main",
-  sync: "keep", // or "reset" (default)
+  sync: "keep", // or "reset"; unset throws if there is local work
 });
 ```
 

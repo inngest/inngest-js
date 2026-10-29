@@ -46,17 +46,23 @@ export interface RepoOptions {
    * from a thread's snapshot or recycled mid-run. The repository is fetched
    * either way.
    *
-   * - `"reset"` (default): the working copy becomes `ref` as the remote has it.
+   * - not set (default): a checkout with nothing to lose is brought to `ref`.
+   *   One with local work (uncommitted changes, untracked files, or commits
+   *   the remote lacks) is never wiped silently: `repo()` throws and names
+   *   `"keep"` and `"reset"`.
+   * - `"reset"`: the working copy becomes `ref` as the remote has it.
    *   Local commits on that branch, uncommitted changes and untracked files
    *   are discarded, as in a fresh clone; ignored files and submodules are
    *   left alone. A checkout of another repository is repointed at this one.
    * - `"keep"`: nothing the agent did is discarded. `ref` is checked out (a
    *   branch is fast-forwarded to the remote when it can be), uncommitted
    *   changes come along, and a branch that has local commits or diverged
-   *   from the remote stays where it is. Commits that
-   *   only a detached HEAD held move to a `detached-<sha>` branch. A checkout
-   *   that would overwrite local changes, or one of another repository,
-   *   fails.
+   *   from the remote stays where it is, which the result reports as
+   *   `action: "diverged"` with the local `sha`. Commits that only a
+   *   detached HEAD held move to a `detached-<sha>` branch. A branch of your
+   *   own that the remote lacks can be `ref`, and tags you made are not
+   *   overwritten. A checkout that would overwrite local changes, or one of
+   *   another repository, fails.
    */
   sync?: "reset" | "keep";
 }
@@ -71,10 +77,13 @@ export interface Repo {
   path: string;
 
   /**
-   * Whether the repository was cloned into an empty `path` or the checkout
-   * already there was fetched and brought to `ref`.
+   * What `repo()` did: `"cloned"` into an empty `path`; `"synced"`, the
+   * checkout already there was fetched and brought to `ref`; or
+   * `"diverged"` (`sync: "keep"` only), the remote was fetched but the branch
+   * could not be fast-forwarded because it has local commits or has diverged,
+   * so `sha` is the local commit.
    */
-  action: "cloned" | "synced";
+  action: "cloned" | "synced" | "diverged";
 
   /**
    * The commit that is checked out.
@@ -98,10 +107,11 @@ export interface Repo {
 // The token reaches git as configuration in the environment of the one git
 // process that talks to the remote (`auth ...`, a wrapper of `git`), so it never
 // appears in an argument, a URL, a config file or the remote, and no other git
-// process of the script (nor a hook it runs) inherits it. `GIT_TOKEN` itself is
-// dropped from the script's environment at once; a concurrent process of the
-// same user in the sandbox could still read the header from /proc while the
-// command runs.
+// process of the script (nor a hook it runs) inherits it. `GIT_TOKEN` is unset
+// in the script at once, but it stays in /proc/<pid>/environ of the script's
+// shell (the initial environment block), and the header is in that of the git
+// process, while they run: a concurrent process of the same user in the sandbox
+// could read it there.
 //
 // The checkout is in a sandbox that the model can write to, so nothing that
 // holds the token reads its configuration: the process that talks to the remote
@@ -134,6 +144,12 @@ known() {
     g -C "$DIR" show-ref --verify --quiet "refs/tags/$1" ||
     printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{7,64}$'
 }
+# Work in the checkout that a reset would lose: changes, untracked files, or
+# commits no remote-tracking branch has.
+dirty() {
+  [ -n "$(g -C "$DIR" status --porcelain --untracked-files=all 2>/dev/null)" ] ||
+    [ -n "$(g -C "$DIR" rev-list -n1 HEAD --branches --not --remotes 2>/dev/null)" ]
+}
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT
 g init --quiet --bare "$T" || exit 1
@@ -143,6 +159,11 @@ g init --quiet --bare "$T" || exit 1
 // and brings it to the ref. The last line it prints is `repo:<action>:<sha>`.
 const checkoutScript = `${prelude}
 if [ -e "$DIR/.git" ]; then
+  if [ -z "$SYNC" ] && dirty; then
+    printf '%s\\n' "the checkout at $DIR has work a sync would lose (changes, untracked files or commits the remote lacks): pass sync: \"keep\" to keep it or sync: \"reset\" to discard it" >&2
+    exit 1
+  fi
+  action=synced
   have=$(g -C "$DIR" config --local --get remote.origin.url 2>/dev/null || true)
   if [ "$have" != "$URL" ]; then
     if [ "$SYNC" = keep ]; then
@@ -182,8 +203,10 @@ if [ -e "$DIR/.git" ]; then
       else
         g -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
       fi
-      g -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
+      if ! g -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1; then
+        action=diverged
         printf '%s\\n' "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
+      fi
     elif g -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
       g -C "$DIR" checkout --quiet "$REF" || exit 1
     else
@@ -200,13 +223,13 @@ if [ -e "$DIR/.git" ]; then
     fi
     g -C "$DIR" clean --quiet -ffd || exit 1
   fi
-  action=synced
 else
   # No checkout in the clone, which holds the token: filters and attributes
   # run in the tokenless checkout after it.
   auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" || exit 1
   if [ -n "$REF" ] && ! known "$REF"; then
     printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
+    rm -rf "$DIR"
     exit 1
   fi
   # A name that is both a branch and a tag is the branch, as it is on sync.
@@ -257,9 +280,9 @@ export const repo = async (
   sandbox: Pick<DurableSandbox, "commands" | "tools">,
   options: RepoOptions,
 ): Promise<Repo> => {
-  const { ref, path = "/work", sync = "reset" } = options;
+  const { ref, path = "/work", sync } = options;
 
-  if (sync !== "reset" && sync !== "keep") {
+  if (sync !== undefined && sync !== "reset" && sync !== "keep") {
     throw new NonRetriableError(
       `repo sync must be "reset" or "keep", not ${JSON.stringify(sync)}`,
     );
@@ -304,7 +327,7 @@ export const repo = async (
     "clone",
     `git clone or fetch ${options.repo}`,
     checkoutScript,
-    { URL: url, REF: ref === "HEAD" ? "" : (ref ?? ""), SYNC: sync },
+    { URL: url, REF: ref === "HEAD" ? "" : (ref ?? ""), SYNC: sync ?? "" },
   );
   // The script's last line says what it did; anything before it is noise.
   const done = stdout
@@ -312,11 +335,12 @@ export const repo = async (
     .split("\n")
     .reverse()
     .map((line) => {
-      return /^repo:(cloned|synced):([0-9a-f]+)$/.exec(line);
+      return /^repo:(cloned|synced|diverged):([0-9a-f]+)$/.exec(line);
     })
     .find(Boolean);
-  const action: "cloned" | "synced" =
-    done?.[1] === "synced" ? "synced" : "cloned";
+  // Without the marker, as with a sandbox that prints nothing else, it cloned.
+  const action: "cloned" | "synced" | "diverged" =
+    done?.[1] === "synced" || done?.[1] === "diverged" ? done[1] : "cloned";
   const sha = done?.[2] ?? stdout.trim().split("\n").pop() ?? "";
 
   const push = async (branch: string): Promise<void> => {
