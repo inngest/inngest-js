@@ -17,7 +17,7 @@ import {
   type AgentFunctionConfig,
   createAgentFunction,
 } from "./agentFunction.ts";
-import { definitionOf } from "./defs.ts";
+import { definitionOf, type SandboxToolNames } from "./defs.ts";
 import {
   allowBake,
   allowDynamicBake,
@@ -35,6 +35,12 @@ import type {
   ThreadTriggerListEvent,
 } from "./threadTrigger.ts";
 
+/**
+ * What an agent without `sandboxes` has: none, so `sandboxes.anything` and
+ * `sandboxTools.anything` fail to compile.
+ */
+type NoSandboxes = Record<never, never>;
+
 export interface Agents {
   /**
    * Defines an agent: a function whose body owns its loop and reads a
@@ -47,14 +53,22 @@ export interface Agents {
     TOutput = unknown,
     TRequest = unknown,
     TReply = unknown,
+    TSandboxes extends SandboxToolNames = NoSandboxes,
   >(
     config: AgentFunctionConfig<
       TType,
       ThreadTriggerEventOf<TType>,
       TRequest,
-      TReply
+      TReply,
+      TSandboxes
     >,
-    body: AgentBody<ThreadTriggerEventOf<TType>, TOutput, TRequest, TReply>,
+    body: AgentBody<
+      ThreadTriggerEventOf<TType>,
+      TOutput,
+      TRequest,
+      TReply,
+      TSandboxes
+    >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TType>>,
     TOutput,
@@ -85,42 +99,64 @@ export interface Agents {
     TOutput = unknown,
     TRequest = unknown,
     TReply = unknown,
+    TSandboxes extends SandboxToolNames = NoSandboxes,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
       ThreadTriggerEventOf<TOne>,
       TRequest,
-      TReply
+      TReply,
+      TSandboxes
     >,
-    body: AgentBody<ThreadTriggerEventOf<TOne>, TOutput, TRequest, TReply>,
+    body: AgentBody<
+      ThreadTriggerEventOf<TOne>,
+      TOutput,
+      TRequest,
+      TReply,
+      TSandboxes
+    >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TOne>>,
     TOutput,
     TRequest,
     TReply
   >;
-  agent<TOutput = unknown, TRequest = unknown, TReply = unknown>(
+  agent<
+    TOutput = unknown,
+    TRequest = unknown,
+    TReply = unknown,
+    TSandboxes extends SandboxToolNames = NoSandboxes,
+  >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
       ThreadCronEvent,
       TRequest,
-      TReply
+      TReply,
+      TSandboxes
     >,
-    body: AgentBody<ThreadCronEvent, TOutput, TRequest, TReply>,
+    body: AgentBody<ThreadCronEvent, TOutput, TRequest, TReply, TSandboxes>,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
   agent<
     const TMany extends readonly unknown[],
     TOutput = unknown,
     TRequest = unknown,
     TReply = unknown,
+    TSandboxes extends SandboxToolNames = NoSandboxes,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
       ThreadTriggerListEvent<TMany>,
       TRequest,
-      TReply
+      TReply,
+      TSandboxes
     >,
-    body: AgentBody<ThreadTriggerListEvent<TMany>, TOutput, TRequest, TReply>,
+    body: AgentBody<
+      ThreadTriggerListEvent<TMany>,
+      TOutput,
+      TRequest,
+      TReply,
+      TSandboxes
+    >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TMany>>,
     TOutput,

@@ -14,6 +14,7 @@ import { type AgentTool, type SandboxTool, tool } from "../sandbox/tools.ts";
 import {
   type AgentLoopOptions,
   type AgentLoopResult,
+  type AgentMessage,
   type AgentModelRequest,
   type AgentModelResponse,
   type AgentToolRun,
@@ -232,6 +233,26 @@ describe("agent.loop", () => {
     });
     expect(result?.stopped).toBe("done");
   });
+
+  test.each([
+    { name: "an unknown tool", call: "missing", input: {} },
+    { name: "arguments that don't match", call: "add", input: { a: "x" } },
+  ])(
+    "reports a failed run of $name with the name the model sent",
+    async (scenario) => {
+      const { result } = await run(
+        [call(scenario.call, scenario.input), say("ok")],
+        { tools: { add } },
+      );
+
+      expect(result?.toolCalls).toHaveLength(1);
+      expect(result?.toolCalls[0]).toMatchObject({
+        isError: true,
+        name: scenario.call,
+        call: { name: scenario.call, input: scenario.input },
+      });
+    },
+  );
 
   test("keeps the model's message exactly as returned", async () => {
     const thinking = {
@@ -832,6 +853,35 @@ describe("tool types", () => {
       };
 
       return [all, options];
+    };
+
+    expect(typecheck).toBeTypeOf("function");
+  });
+
+  test("passing result.history back needs no annotation when history is declared as AgentMessage[]", () => {
+    const typecheck = async () => {
+      let history: AgentMessage[] = [];
+
+      for (let turn = 0; turn < 2; turn += 1) {
+        const result = await agent.loop({
+          model: agent.model(async () => {
+            return say("done");
+          }),
+          prompt: "go",
+          tools: { lookup },
+          history,
+          onToolResult: (run) => {
+            if (!run.isError) {
+              expectTypeOf(run.name).toEqualTypeOf<"lookup">();
+            }
+          },
+        });
+
+        expectTypeOf(result.toolCalls).toEqualTypeOf<
+          AgentToolRun<{ lookup: typeof lookup }>[]
+        >();
+        history = result.history;
+      }
     };
 
     expect(typecheck).toBeTypeOf("function");

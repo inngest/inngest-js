@@ -27,7 +27,7 @@ import type { SandboxTools } from "../sandbox/tools.ts";
 import {
   type Channel,
   createReporter,
-  parseWith,
+  parseWithAsync,
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
@@ -38,6 +38,8 @@ import {
   resolveConfigValue,
   resolveSandboxes,
   type SandboxesConfig,
+  type SandboxToolNames,
+  type SandboxToolsOf,
   sandboxTools,
   stepSandboxes,
 } from "./defs.ts";
@@ -71,6 +73,7 @@ import { markThreadIdle, threadRecorder } from "./threadState.ts";
 import {
   type CompiledTrigger,
   compileTriggers,
+  dataProblem,
   messageOf,
   schemaProblem,
   singletonKey,
@@ -84,6 +87,7 @@ export interface AgentFunctionConfig<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
 > extends ThreadKeyConfig<TOn> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
@@ -114,7 +118,7 @@ export interface AgentFunctionConfig<
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
    */
-  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>>;
+  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>, TSandboxes>;
 
   /**
    * The destinations of progress and asks, by name: channels made with
@@ -156,6 +160,7 @@ export interface AgentBodyContext<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
 > {
   event: { name: string; data: ThreadMessage<TEvent, TRequest> };
   thread: ThreadHandle<TRequest, TReply>;
@@ -164,13 +169,13 @@ export interface AgentBodyContext<
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
    * except `start: "eager"` ones, which are already being created.
    */
-  sandboxes: Record<string, LazySandbox>;
+  sandboxes: { [K in keyof TSandboxes & string]: LazySandbox };
 
   /**
    * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
    * the `tools` of `agent.loop()`.
    */
-  sandboxTools: SandboxTools;
+  sandboxTools: SandboxToolsOf<TSandboxes>;
 
   /**
    * The agent's channels, by name, as the config resolved them for this run.
@@ -253,7 +258,10 @@ export type AgentBody<
   TOutput = unknown,
   TRequest = unknown,
   TReply = unknown,
-> = (context: AgentBodyContext<TEvent, TRequest, TReply>) => Promise<TOutput>;
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
+> = (
+  context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes>,
+) => Promise<TOutput>;
 
 export interface AgentFunction<
   TInput = Record<string, unknown>,
@@ -315,7 +323,7 @@ const warned = new Set<string>();
 function threadInbox(
   inbox: Subscription<RawEvent>,
   toMessage: (raw: RawEvent) => ThreadMessage,
-  problemOf: (raw: RawEvent) => Promise<string | undefined>,
+  problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
   client: Inngest.Any,
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
   log: { warn: (message: string) => void },
@@ -346,7 +354,7 @@ function threadInbox(
         }
 
         const checked = replySchema
-          ? parseWith(replySchema, answer, "message.reply() data")
+          ? await parseWithAsync(replySchema, answer, "message.reply() data")
           : answer;
 
         await step.run(`reply:${message.seq}`, async () => {
@@ -374,13 +382,11 @@ function threadInbox(
   let delivered = 0;
 
   // An event that breaks its trigger's schema never starts a run in core, so
-  // it does not reach a live one either: it is dropped.
+  // it does not reach a live one either: it is dropped. The event that started
+  // the run was checked by core, except for the payload of a request, which
+  // core does not see.
   async function skipped(raw: InboxMessage<RawEvent>) {
-    if (raw.seq < 1) {
-      return false;
-    }
-
-    const problem = await problemOf(raw.data);
+    const problem = await problemOf(raw.data, raw.seq < 1);
     if (!problem) {
       return false;
     }
@@ -732,7 +738,22 @@ export function createAgentFunction(
               ? messageOf(ref, trigger, raw as unknown as ThreadTriggerEvent)
               : (raw.data as ThreadMessage);
           },
-          async function problemOf(raw) {
+          async function problemOf(raw, started) {
+            // A request's payload is checked against `requests`, which core
+            // does not know. The asker gets no reply, so it times out: the
+            // same as for any event that breaks its schema.
+            if (raw.name === agentMessageEvent) {
+              const data = raw.data as ThreadMessage;
+
+              return data.kind === "request" && config.requests
+                ? dataProblem(config.requests.request, data.payload)
+                : undefined;
+            }
+
+            if (started) {
+              return undefined;
+            }
+
             return schemaProblem(
               triggers.filter((t) => {
                 return t.event === raw.name;
