@@ -30,6 +30,12 @@ export const run = async (
     key?: string;
     saved?: unknown[];
     incoming?: unknown[];
+
+    /**
+     * What a park is answered with instead of the usual wake, whatever the
+     * state holds: `{ closed: true }` is how close() ends a park.
+     */
+    parkAnswer?: unknown;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
   } = {},
 ) => {
@@ -151,6 +157,11 @@ export const run = async (
       } else if (sub.mode === "poll") {
         answer(op.id, saved[(sub.seq as number) - 1] ?? null);
       } else {
+        if (options.parkAnswer !== undefined) {
+          answer(op.id, options.parkAnswer);
+          continue;
+        }
+
         // next: the function is blocked until the message exists.
         while (saved.length < (sub.seq as number)) {
           if (incoming.length === 0) {

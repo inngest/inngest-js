@@ -387,17 +387,23 @@ export async function openSubscription<
     // the message here. The state does not change during a request, so it is read once.
     const messages = read();
 
+    let answered: unknown;
+
     if (messages.length < seq) {
-      await op(`${key}:${seq}`, "park", seq, 0);
+      answered = await op(`${key}:${seq}`, "park", seq, 0);
     } else {
       await skip(`${key}:${seq}`);
     }
 
     const message = messages[seq - 1];
     if (message === undefined) {
-      // The park ended without a message: the subscription was closed while this
-      // read was waiting.
-      return null;
+      // A park that close() ended is answered as closed: the end of the
+      // subscription. Any other park is only answered once its message exists.
+      if ((answered as { closed?: boolean } | null | undefined)?.closed) {
+        return null;
+      }
+
+      throw new Error(`Subscription "${key}": message ${seq} is missing.`);
     }
 
     readCount = seq;

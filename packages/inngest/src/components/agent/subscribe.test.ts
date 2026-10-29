@@ -175,6 +175,25 @@ describe("step.subscribe", () => {
     ]);
   });
 
+  test("a park that close() ended is the end of the subscription; any other park without a message is an error", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+
+        return inbox.next();
+      },
+    );
+
+    const closed = await run(fn, { parkAnswer: { closed: true } });
+    expect(closed.output).toBeNull();
+
+    const missing = await run(fn, { parkAnswer: { seq: 1 } });
+    expect((missing.output as { message?: string }).message).toContain(
+      "message 1 is missing",
+    );
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

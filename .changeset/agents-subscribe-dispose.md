@@ -8,7 +8,7 @@ A subscription is cheaper. Each message is saved as a step named after the subsc
 
 A message is the event it was made from, flat, with its position: `{ seq, id, name, data, ts, user }` (and `v` when the event has one), typed by the event type when you subscribe with one. Read `msg.name`, `msg.data.total` and `msg.seq`; checking `msg.name` narrows `msg.data` for a subscription to several event types. Runs that started before this still replay: a memo that holds `{ seq, data: event }` is read as the event.
 
-A `next()` that is waiting still takes its message even if you stop awaiting it, so do not race `next()` in a plain `Promise.race`. `close()` ends a wait that is still open.
+Every message has the `name` of its event. The options are checked for typos: `{ event, iff }` is a compile error instead of a filter that is silently dropped. An explicit message type, `step.subscribe<MyData>(...)`, is accepted only for events named by a string; with an event type the message data comes from the type. A `next()` that is waiting still takes its message even if you stop awaiting it, so do not race `next()` in a plain `Promise.race`. `close()` ends a wait that is still open.
 
 Nothing is re-sent when a run ends. A message that arrives after the inbox closes, while the thread's singleton still applies, is dropped: it starts no new run and does not reach the finished one. The gap is the time between the body returning and the run ending. An agent's inbox closes when its body returns, and the messages it saved but the body never read are discarded.
 
