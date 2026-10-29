@@ -10,8 +10,17 @@
  * Supported: string and number literals, `true` and `false`, paths from
  * `event` (`event.data.channel`), `has(path)`, `+`
  * (string concatenation or addition), `==`, `!=`, `&&`, `||`, `!`,
- * `condition ? a : b` and parentheses. A path that is missing is an error, as
- * in CEL, so guard optional fields with `has()`.
+ * `condition ? a : b`, parentheses, and `string(value)` to join a number into
+ * a key. A path that is missing is an error, as in CEL, so guard optional
+ * fields with `has()`.
+ *
+ * `string()` takes a string, a boolean, a number of the event or
+ * `int(number)`. The backend reads every JSON number as a double, and CEL
+ * writes a double with Go's shortest `%g`: `12345` is `"12345"` but
+ * `1234567` is `"1.234567e+06"`. For ids use `string(int(event.data.id))`,
+ * which is `"1234567"`. `int()` is only allowed inside `string()`, and a
+ * number literal is refused there, because CEL reads it as an integer and the
+ * SDK cannot tell: write the string.
  *
  * The backend's CEL is the authority. This evaluator mirrors it for the subset
  * above. Where the two could differ (null fields, inherited names, mixed types)
@@ -24,6 +33,51 @@ type Token =
   | { type: "number"; value: number; start: number; end: number }
   | { type: "ident"; value: string; start: number; end: number }
   | { type: "op"; value: string; start: number; end: number };
+
+/**
+ * Writes a double the way CEL does (Go's `strconv.FormatFloat(x, 'g', -1, 64)`):
+ * the shortest digits that read back the same, in the exponent form when the
+ * exponent is below -4 or at least 6.
+ */
+function formatDouble(
+  /**
+   * The number.
+   */
+  value: number,
+  /**
+   * The expression, for the error.
+   */
+  source: string,
+): string {
+  if (!Number.isFinite(value)) {
+    throw new Error(`"${source}": string() of a number that is not finite.`);
+  }
+
+  if (value === 0) {
+    return Object.is(value, -0) ? "-0" : "0";
+  }
+
+  const [mantissa = "", exponent = "0"] = value.toExponential().split("e");
+  const digits = mantissa.replace("-", "").replace(".", "");
+  const exp = Number(exponent);
+  const sign = value < 0 ? "-" : "";
+
+  if (exp < -4 || exp >= 6) {
+    const rest = digits.length > 1 ? `.${digits.slice(1)}` : "";
+    const magnitude = String(Math.abs(exp)).padStart(2, "0");
+
+    return `${sign}${digits[0]}${rest}e${exp < 0 ? "-" : "+"}${magnitude}`;
+  }
+
+  if (exp >= 0) {
+    const whole = digits.padEnd(exp + 1, "0");
+    const fraction = whole.slice(exp + 1);
+
+    return `${sign}${whole.slice(0, exp + 1)}${fraction ? `.${fraction}` : ""}`;
+  }
+
+  return `${sign}0.${"0".repeat(-exp - 1)}${digits}`;
+}
 
 const operators = ["==", "!=", "&&", "||", "+", "!", "?", ":", "(", ")", "."];
 
@@ -95,7 +149,7 @@ function tokenize(source: string): Token[] {
     });
     if (!op) {
       throw new Error(
-        `Unsupported syntax "${char}" in "${source}". A thread key may use paths from event, strings, numbers, has(), +, ==, !=, &&, ||, !, ?: and parentheses.`,
+        `Unsupported syntax "${char}" in "${source}". A thread key may use paths from event, strings, numbers, has(), string(), +, ==, !=, &&, ||, !, ?: and parentheses.`,
       );
     }
 
@@ -251,6 +305,74 @@ function parse(source: string): Node {
         return () => {
           return token.value === "true";
         };
+      }
+
+      if (token.value === "string") {
+        position += 1;
+        expect("(");
+
+        const first = peek();
+        const second = tokens[position + 1];
+
+        if (first?.type === "number") {
+          throw new Error(
+            `"${source}": string() of a number literal reads differently in CEL (an integer) and here; write the string.`,
+          );
+        }
+
+        // string(int(path)): the number as a whole number, as the backend writes it.
+        if (
+          first?.type === "ident" &&
+          first.value === "int" &&
+          second?.type === "op" &&
+          second.value === "("
+        ) {
+          position += 2;
+          const whole = ternary();
+          expect(")");
+          expect(")");
+
+          return (event) => {
+            const value = whole(event);
+
+            if (typeof value !== "number" || !Number.isFinite(value)) {
+              throw new Error(`"${source}": int() needs a number.`);
+            }
+
+            const integer = Math.trunc(value);
+
+            if (Math.abs(integer) >= 2 ** 63) {
+              throw new Error(
+                `"${source}": int() of ${value} is out of range.`,
+              );
+            }
+
+            return BigInt(integer).toString();
+          };
+        }
+
+        const inner = ternary();
+        expect(")");
+
+        return (event) => {
+          const value = inner(event);
+
+          if (typeof value === "string") {
+            return value;
+          }
+
+          if (typeof value === "boolean") {
+            return String(value);
+          }
+
+          return formatDouble(value, source);
+        };
+      }
+
+      if (token.value === "int") {
+        throw new Error(
+          `"${source}": int() is only allowed inside string(), as string(int(event.data.id)).`,
+        );
       }
 
       if (token.value === "has") {
