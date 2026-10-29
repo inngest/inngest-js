@@ -93,72 +93,90 @@ export interface Repo {
   tools: Record<CodeToolName | "push", SandboxTool>;
 }
 
-// The token reaches git as configuration in its environment, so it never
-// appears in an argument, a URL, a config file or the remote.
-const authenticate = `
+// The token reaches git as configuration in the environment of the one git
+// process that talks to the remote (`auth ...`, a wrapper of `git`), so it never appears in an
+// argument, a URL, a config file or the remote, and no other git process of the
+// script (nor a hook it runs) can read it. `GIT_TOKEN` itself is dropped from the
+// script's environment at once. Hooks and the file system monitor are off for
+// every git command here, because the checkout is in a sandbox that the model
+// can write to.
+const prelude = `
+HEADER=
 if [ -n "$GIT_TOKEN" ]; then
-  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader
-  export GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 | tr -d '\\n')"
+  HEADER="Authorization: basic $(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 | tr -d '\\n')"
 fi
+unset GIT_TOKEN
+g() { git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+auth() {
+  if [ -n "$HEADER" ]; then
+    env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader "GIT_CONFIG_VALUE_0=$HEADER" git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"
+  else
+    g "$@"
+  fi
+}
 `;
 
 // Clones into an empty path, or fetches into a checkout that is already there
 // and brings it to the ref. The last line it prints is `repo:<action>:<sha>`.
-const checkoutScript = `${authenticate}
+const checkoutScript = `${prelude}
 if [ -e "$DIR/.git" ]; then
-  have=$(git -C "$DIR" remote get-url origin 2>/dev/null || true)
+  # insteadOf rules in the checkout could send the fetch (and the token) to
+  # another host, so they are removed, and the raw URL is compared.
+  g -C "$DIR" config --local --name-only --get-regexp '^url\\..*\\.(push)?insteadof$' 2>/dev/null |
+    while read -r key; do g -C "$DIR" config --local --unset-all "$key"; done
+  have=$(g -C "$DIR" config --local --get remote.origin.url 2>/dev/null || true)
   if [ "$have" != "$URL" ]; then
     if [ "$SYNC" = keep ]; then
-      echo "the checkout at $DIR is of \${have:-no remote}, not $URL, and keep does not repoint it" >&2
+      printf '%s\n' "the checkout at $DIR is of \${have:-no remote}, not $URL, and keep does not repoint it" >&2
       exit 1
     fi
-    if [ -n "$have" ]; then git -C "$DIR" remote set-url origin "$URL"; else git -C "$DIR" remote add origin "$URL"; fi || exit 1
+    if [ -n "$have" ]; then g -C "$DIR" remote set-url origin "$URL"; else g -C "$DIR" remote add origin "$URL"; fi || exit 1
   fi
-  git -C "$DIR" fetch --force --quiet --tags --prune origin || exit 1
+  auth -C "$DIR" fetch --force --quiet --tags --prune origin || exit 1
   if [ -z "$REF" ]; then
-    git -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
-    REF=$(git -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
-    [ -n "$REF" ] || { echo "cannot find the default branch of origin" >&2; exit 1; }
+    auth -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
+    REF=$(g -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
+    [ -n "$REF" ] || { printf '%s\n' "cannot find the default branch of origin" >&2; exit 1; }
   fi
   if [ "$SYNC" = keep ]; then
     # Commits that only a detached HEAD holds would be left behind: keep them.
-    if ! git -C "$DIR" symbolic-ref -q HEAD >/dev/null && [ -n "$(git -C "$DIR" rev-list -n1 HEAD --not --branches --remotes 2>/dev/null)" ]; then
-      git -C "$DIR" branch "detached-$(git -C "$DIR" rev-parse --short HEAD)" || exit 1
+    if ! g -C "$DIR" symbolic-ref -q HEAD >/dev/null && [ -n "$(g -C "$DIR" rev-list -n1 HEAD --not --branches --remotes 2>/dev/null)" ]; then
+      g -C "$DIR" branch "detached-$(g -C "$DIR" rev-parse --short HEAD)" || exit 1
     fi
-    if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
-      if git -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
-        git -C "$DIR" checkout --quiet "$REF" || exit 1
+    if g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+      if g -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+        g -C "$DIR" checkout --quiet "$REF" || exit 1
       else
-        git -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
+        g -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
       fi
-      git -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
-        echo "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
+      g -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
+        printf '%s\n' "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
     else
-      git -C "$DIR" checkout --quiet --detach "$REF" || exit 1
+      g -C "$DIR" checkout --quiet --detach "$REF" || exit 1
     fi
   else
-    git -C "$DIR" rebase --abort >/dev/null 2>&1
-    git -C "$DIR" merge --abort >/dev/null 2>&1
-    if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
-      git -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
+    g -C "$DIR" rebase --abort >/dev/null 2>&1
+    g -C "$DIR" merge --abort >/dev/null 2>&1
+    if g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+      g -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
     else
-      git -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
+      g -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
     fi
-    git -C "$DIR" clean --quiet -fd || exit 1
+    g -C "$DIR" clean --quiet -fd || exit 1
   fi
   action=synced
 else
-  git clone --quiet "$URL" "$DIR" &&
-  git -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
+  auth clone --quiet -- "$URL" "$DIR" &&
+  g -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
   action=cloned
 fi
-git -C "$DIR" config user.name "Coding agent" &&
-git -C "$DIR" config user.email "agent@users.noreply.github.com" &&
-echo "repo:$action:$(git -C "$DIR" rev-parse HEAD)"
+g -C "$DIR" config user.name "Coding agent" &&
+g -C "$DIR" config user.email "agent@users.noreply.github.com" &&
+printf 'repo:%s:%s\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 `;
 
-const pushScript = `${authenticate}
-git -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+const pushScript = `${prelude}
+auth -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
 `;
 
 /**
@@ -192,6 +210,10 @@ export const repo = async (
     throw new NonRetriableError(
       `repo sync must be "reset" or "keep", not ${JSON.stringify(sync)}`,
     );
+  }
+
+  if (options.repo.startsWith("-")) {
+    throw new NonRetriableError(`repo can't start with "-": ${options.repo}`);
   }
 
   if (ref?.startsWith("-")) {

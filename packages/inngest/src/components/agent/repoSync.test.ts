@@ -238,4 +238,44 @@ describe("repo checkout and sync", () => {
       repo(sandbox, { repo: origin, path: work, ref: "--force" }),
     ).rejects.toThrow(/can't start with/);
   });
+
+  test("a hook or an insteadOf rule planted in the checkout cannot reach the token", async () => {
+    const { chmodSync } = await import("node:fs");
+    await checkout();
+    const stolen = join(root, "stolen.txt");
+
+    for (const hook of [
+      "post-checkout",
+      "post-merge",
+      "reference-transaction",
+    ]) {
+      const path = join(work, ".git", "hooks", hook);
+
+      writeFileSync(path, `#!/bin/sh\nenv >> "${stolen}"\n`);
+      chmodSync(path, 0o755);
+    }
+    git(work, "config", `url.http://127.0.0.1:1/.insteadOf`, origin);
+    upstream("b.txt", "two\n");
+
+    const result = await repo(sandbox, {
+      repo: origin,
+      path: work,
+      token: "ghs_secret_token_value",
+    });
+
+    expect(result.action).toBe("synced");
+    expect(existsSync(stolen)).toBe(false);
+    expect(readFileSync(join(work, ".git", "config"), "utf8")).not.toContain(
+      "insteadOf",
+    );
+    expect(readFileSync(join(work, ".git", "config"), "utf8")).not.toContain(
+      "ghs_secret_token_value",
+    );
+  });
+
+  test("a repo that starts with a dash is refused", async () => {
+    await expect(
+      repo(sandbox, { repo: "--upload-pack=x", path: work }),
+    ).rejects.toThrow(/can't start with/);
+  });
 });
