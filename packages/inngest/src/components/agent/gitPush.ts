@@ -12,6 +12,7 @@ import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
 import {
+  isApiRemote,
   isGitHubRemote,
   manifestScript,
   pushManifest,
@@ -81,7 +82,8 @@ export interface GitPushToolOptions {
    * `fetch`: it rebuilds the commits on a GitHub remote with the Git Data API.
    * It needs a linear history on top of the remote's branch (no merge commits
    * and no submodule changes). Default `"auto"`: the host's `git` when it
-   * runs, else the API for a GitHub remote.
+   * runs, else the API for a remote on github.com (or any `https://host/owner/repo`
+   * when `api` is given).
    */
   transport?: "auto" | "git" | "api";
 
@@ -132,9 +134,9 @@ const validate = (options: GitPushToolOptions): void => {
     );
   }
 
-  if (options.transport === "api" && !isGitHubRemote(options.remote)) {
+  if (options.transport === "api" && !isApiRemote(options.remote)) {
     throw new SandboxValidationError(
-      'transport "api" needs a GitHub remote like https://github.com/owner/repo',
+      'transport "api" needs a remote like https://github.com/owner/repo',
     );
   }
 
@@ -168,7 +170,11 @@ const chooseTransport = async (
 
     return "git";
   } catch (error) {
-    if (wanted === "auto" && isGitHubRemote(options.remote)) {
+    if (
+      wanted === "auto" &&
+      (isGitHubRemote(options.remote) ||
+        (options.api !== undefined && isApiRemote(options.remote)))
+    ) {
       return "api";
     }
 

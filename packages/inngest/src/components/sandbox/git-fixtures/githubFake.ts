@@ -101,7 +101,12 @@ export const fakeGitHub = () => {
   const refs = new Map<string, string>();
   const requests: { method: string; path: string; authorization?: string }[] =
     [];
-  const fail: { match?: RegExp; status: number } = { status: 0 };
+  const fail: {
+    match?: RegExp;
+    status: number;
+    headers?: Record<string, string>;
+    before?: () => void;
+  } = { status: 0 };
 
   const ancestors = (sha: string): Set<string> => {
     const seen = new Set<string>();
@@ -134,7 +139,18 @@ export const fakeGitHub = () => {
     requests.push({ method, path, authorization: headers.authorization });
 
     if (fail.match?.test(`${method} ${path}`)) {
-      return respond({ message: `boom ${headers.authorization}` }, fail.status);
+      fail.before?.();
+
+      const failed = respond(
+        { message: `boom ${headers.authorization}` },
+        fail.status,
+      );
+
+      for (const [name, value] of Object.entries(fail.headers ?? {})) {
+        failed.headers.set(name, value);
+      }
+
+      return failed;
     }
 
     if (method === "GET" && path === "/") {

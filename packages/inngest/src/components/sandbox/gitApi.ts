@@ -102,7 +102,7 @@ const decodeBase64 = (text: string): Uint8Array => {
 };
 
 const decodeText = (text: string): string => {
-  return new TextDecoder().decode(decodeBase64(text));
+  return new TextDecoder("utf-8", { fatal: true }).decode(decodeBase64(text));
 };
 
 const encodeBase64 = (bytes: Uint8Array): string => {
@@ -318,14 +318,32 @@ const apiTarget = (
 };
 
 /**
- * Whether \`remote\` looks like a GitHub repository, which is what the API push
- * can reach.
+ * Whether `remote` is a repository URL the API push can address:
+ * `https://host/owner/repo`.
  */
-export const isGitHubRemote = (remote: string): boolean => {
+export const isApiRemote = (remote: string): boolean => {
   try {
     apiTarget(remote, undefined);
 
     return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether `remote` is on github.com, the one host `transport: "auto"` takes
+ * for GitHub on its own. Another host (GitHub Enterprise) needs `api` or
+ * `transport: "api"`.
+ */
+export const isGitHubRemote = (remote: string): boolean => {
+  try {
+    return (
+      isApiRemote(remote) &&
+      ["github.com", "www.github.com"].includes(
+        new URL(normalizeUrl(remote)).host,
+      )
+    );
   } catch {
     return false;
   }
@@ -338,10 +356,26 @@ class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+
+    /**
+     * Whether trying again can work: a server error, a rate limit.
+     */
+    readonly retryable = false,
   ) {
     super(message);
   }
 }
+
+const isRetryable = (response: Response): boolean => {
+  return (
+    response.status >= 500 ||
+    response.status === 408 ||
+    response.status === 429 ||
+    (response.status === 403 &&
+      (response.headers.get("x-ratelimit-remaining") === "0" ||
+        response.headers.has("retry-after")))
+  );
+};
 
 export interface GitHubClient {
   /**
@@ -405,6 +439,7 @@ const clientFor = (options: {
           secrets,
         ),
         response.status,
+        isRetryable(response),
       );
     }
 
@@ -467,6 +502,7 @@ const clientFor = (options: {
             secrets,
           ),
           response.status,
+          isRetryable(response),
         );
       }
 
@@ -542,8 +578,7 @@ export const remoteState = async (options: {
       error instanceof ApiError &&
       error.status >= 400 &&
       error.status < 500 &&
-      error.status !== 408 &&
-      error.status !== 429
+      !error.retryable
     ) {
       throw new NonRetriableError(
         error.status === 409
@@ -569,11 +604,18 @@ export const isPlainPath = (path: string): boolean => {
     !path.startsWith("/") &&
     !/[\\\u0000-\u001f]/.test(path) &&
     path.split("/").every((part) => {
+      // The names the file systems of other platforms would read as .git.
+      const folded = part
+        .replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, "")
+        .replace(/[. ]+$/, "")
+        .toLowerCase();
+
       return (
         part !== "" &&
         part !== "." &&
         part !== ".." &&
-        part.toLowerCase() !== ".git"
+        folded !== ".git" &&
+        folded !== "git~1"
       );
     })
   );
@@ -626,19 +668,32 @@ const modeIsFile = (mode: string): boolean => {
  * Checks a manifest against the policy and pushes it with the GitHub API. A
  * refusal and a failure of the push come back as data, like \`pushBundle()\`.
  */
-export const pushManifest = (
+export const pushManifest = async (
   options: PushManifestOptions,
 ): Promise<PushOutcome> => {
-  return pushParsed(options, parseManifest(options.manifest));
+  let parsed: Manifest;
+
+  try {
+    parsed = parseManifest(options.manifest);
+  } catch (error) {
+    // Text that isn't UTF-8 in a path, a name or a message can't be rebuilt
+    // the way it was written.
+    return {
+      refused: `this push can't be made without git: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  return pushParsed(options, parsed);
 };
 
 const pushParsed = async (
-  options: Omit<PushManifestOptions, "manifest">,
+  options: Omit<PushManifestOptions, "manifest"> & { skipEmpty?: boolean },
   parsed: Manifest,
 ): Promise<PushOutcome> => {
   const { remote, target, tip, state, policy } = options;
   const client = clientFor(options);
   const { commits, blobs } = parsed;
+  const skipEmpty = "skipEmpty" in options && options.skipEmpty === true;
 
   if (commits.length === 0) {
     return { refused: "there is nothing to push: no new commits" };
@@ -918,6 +973,11 @@ const pushParsed = async (
         base_tree: parentTree,
         tree: entries,
       });
+
+      if (skipEmpty && tree.sha === parentTree) {
+        return { refused: "the commit would change nothing" };
+      }
+
       const made = await client.json<{ sha: string }>("POST", "/git/commits", {
         message: commit.message,
         tree: tree.sha,
@@ -937,9 +997,11 @@ const pushParsed = async (
       try {
         await client.json("POST", "/git/refs", { ref, sha: parent });
       } catch (error) {
-        // The branch was made after the check above.
         if (error instanceof ApiError && error.status === 422) {
-          return { pushed: [pushedRef("non-fast-forward", parent)] };
+          // Made by someone else since the check above, or refused by a rule.
+          return (await client.refSha(name)) !== undefined
+            ? { pushed: [pushedRef("non-fast-forward", parent)] }
+            : { failed: error.message };
         }
 
         throw error;
@@ -952,9 +1014,14 @@ const pushParsed = async (
         });
       } catch (error) {
         if (error instanceof ApiError && error.status === 422) {
-          return {
-            pushed: [pushedRef("non-fast-forward", parent, current)],
-          };
+          // Not a fast-forward if the ref moved or does not sit on the commit
+          // this push builds on; otherwise a rule (a protected branch) said no.
+          return (await client.refSha(name)) !== current ||
+            current !== state.base
+            ? {
+                pushed: [pushedRef("non-fast-forward", parent, current)],
+              }
+            : { failed: error.message };
         }
 
         throw error;
@@ -964,6 +1031,11 @@ const pushParsed = async (
     return { pushed: [pushedRef("pushed", parent, current)] };
   } catch (error) {
     if (error instanceof ApiError) {
+      // A server error or a rate limit is tried again by the step.
+      if (error.retryable) {
+        throw error;
+      }
+
       return { failed: error.message };
     }
 
@@ -1004,7 +1076,8 @@ export interface CommitFilesOptions {
   author?: { name: string; email: string };
 
   /**
-   * When the commit is made, as an ISO date. Default now.
+   * When the commit is made, as an ISO date. Default now; compute it in the
+   * step before calling so that a retry makes the same commit.
    */
   date?: string;
 
@@ -1131,6 +1204,7 @@ export const commitFiles = async (
       state,
       policy: options.policy,
       signal: options.signal,
+      skipEmpty: true,
     },
     {
       commits: [

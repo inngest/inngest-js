@@ -21,6 +21,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { fakeGitHub } from "./git-fixtures/githubFake.ts";
 import {
   commitFiles,
+  isApiRemote,
   isGitHubRemote,
   isPlainPath,
   manifestScript,
@@ -384,7 +385,7 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     expect(manifest).not.toContain(token);
 
     hub.fail.match = /POST \/git\/trees/;
-    hub.fail.status = 500;
+    hub.fail.status = 422;
 
     const outcome = await push("agent/fail");
 
@@ -613,6 +614,9 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     });
     hub.fail.match = /POST \/git\/refs/;
     hub.fail.status = 422;
+    hub.fail.before = () => {
+      hub.refs.set("refs/heads/agent/appears", base);
+    };
 
     await expect(push("agent/appears")).resolves.toMatchObject({
       pushed: [{ status: "non-fast-forward" }],
@@ -626,6 +630,65 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     await expect(
       remoteState({ remote, ref: "refs/heads/x", token, fetch: hub.handle }),
     ).rejects.toBeInstanceOf(NonRetriableError);
+  });
+
+  test("a server error or a rate limit is tried again, a rule's refusal is reported", async () => {
+    branch("agent/retry", () => {
+      writeFileSync(join(work, "t.txt"), "t\n");
+    });
+    hub.fail.match = /POST \/git\/trees/;
+    hub.fail.status = 503;
+    await expect(push("agent/retry")).rejects.toThrow(/503/);
+    hub.fail.status = 403;
+    hub.fail.headers = { "x-ratelimit-remaining": "0" };
+    await expect(push("agent/retry")).rejects.toThrow(/403/);
+    hub.fail.headers = undefined;
+    await expect(push("agent/retry")).resolves.toHaveProperty("failed");
+
+    // A protected branch answers 422 to a valid fast-forward.
+    hub.fail.match = /PATCH \/git\/refs\//;
+    hub.fail.status = 422;
+    hub.refs.set("refs/heads/agent/retry", base);
+    await expect(push("agent/retry")).resolves.toMatchObject({
+      failed: expect.stringContaining("422"),
+    });
+    expect(hub.refs.get("refs/heads/agent/retry")).toBe(base);
+  });
+
+  test("refuses text that isn't UTF-8 in a path, and the NTFS and HFS names of .git", async () => {
+    const sha = "a".repeat(40);
+    const b64 = (bytes: Buffer) => bytes.toString("base64");
+    const run = (path: Buffer) => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${[
+          `COMMIT ${sha} ${base}`,
+          `AUTHOR ${b64(Buffer.from("A"))} ${b64(Buffer.from("a@x"))} 2026-10-28T00:00:00Z`,
+          `COMMITTER ${b64(Buffer.from("A"))} ${b64(Buffer.from("a@x"))} 2026-10-28T00:00:00Z`,
+          `MESSAGE ${b64(Buffer.from("m"))}`,
+          `CHANGE A 000000 100644 ${"0".repeat(40)} ${"b".repeat(40)} ${b64(path)}`,
+          `BLOB ${"b".repeat(40)} ${b64(Buffer.from("x"))}`,
+        ].join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      });
+    };
+
+    await expect(
+      run(Buffer.from([0x63, 0x61, 0x66, 0xe9])),
+    ).resolves.toMatchObject({
+      refused: expect.stringContaining("without git"),
+    });
+    await expect(run(Buffer.from(".git./config"))).resolves.toMatchObject({
+      refused: expect.stringContaining("can't check"),
+    });
+    expect(isPlainPath("GIT~1/x")).toBe(false);
+    expect(isPlainPath(".git /x")).toBe(false);
+    expect(isPlainPath(".gitignore")).toBe(true);
+    expect(isPlainPath("a.git/x")).toBe(true);
   });
 
   test("the sandbox that lacks the remote's commit makes the script exit 4", () => {
@@ -759,6 +822,26 @@ describe("notes and committing files", { timeout: 60_000 }, () => {
       "one.md",
       "two.md",
     ]);
+  });
+
+  test("a commit that changes nothing is refused", async () => {
+    await expect(
+      commitFiles({ ...options(), files: { "keep.txt": "keep\n" } }),
+    ).resolves.toEqual({ refused: "the commit would change nothing" });
+    expect(hub.refs.has(skillRef)).toBe(false);
+  });
+
+  test("keeps the executable bit when asked", async () => {
+    await commitFiles({
+      ...options(),
+      files: { "run.sh": { content: "#!/bin/sh\n", executable: true } },
+    });
+
+    const tree = hub.trees.get(
+      hub.commits.get(hub.refs.get(skillRef) ?? "")?.tree ?? "",
+    );
+
+    expect(tree?.get("run.sh")?.mode).toBe("100755");
   });
 
   test("the policy sees the paths, the files before and after, and an empty sha", async () => {
@@ -899,10 +982,15 @@ describe("remotes", () => {
     expect(isPlainPath(path)).toBe(expected);
   });
 
+  test("isApiRemote takes any https host/owner/repo", () => {
+    expect(isApiRemote("https://ghe.example.com/acme/app")).toBe(true);
+    expect(isApiRemote("https://example.com/one")).toBe(false);
+  });
+
   test.each([
     ["https://github.com/acme/app", true],
     ["https://github.com/acme/app.git", true],
-    ["https://ghe.example.com/acme/app", true],
+    ["https://ghe.example.com/acme/app", false],
     ["https://example.com/just-one", false],
     ["not a url", false],
   ])("%s", (url, expected) => {
