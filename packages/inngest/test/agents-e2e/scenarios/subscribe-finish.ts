@@ -41,8 +41,8 @@ export const subscribeFinish = scenario({
         const second = await inbox.next();
 
         await kv.thread.set("read", [
-          first?.data.content,
-          second?.data.content,
+          first?.data.content ?? null,
+          second?.data.content ?? null,
         ]);
 
         return "done";

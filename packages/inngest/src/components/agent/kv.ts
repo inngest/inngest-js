@@ -523,6 +523,72 @@ export interface KvKey<T> {
 }
 
 /**
+ * Anything JSON can carry. It is the default value type of `KvWrite`; plain-name
+ * writes are checked with `KvJsonSafe`, so interfaces pass.
+ */
+export type KvJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly KvJson[]
+  | { [key: string]: KvJson | undefined };
+
+/**
+ * Types JSON cannot carry: they come back changed, or fail to store.
+ */
+type KvNonJson =
+  | bigint
+  | symbol
+  | undefined
+  | ((...args: never[]) => unknown)
+  | Date
+  | RegExp
+  | Map<never, never>
+  | Set<never>
+  | Promise<unknown>;
+
+/**
+ * `T` with every part JSON cannot carry (a `Date`, `Map`, bigint or function)
+ * turned into `never`. A type is JSON-safe when it is assignable to its own
+ * `KvJsonSafe`. Interfaces and branded primitives pass. An object property may be
+ * `undefined` or optional (JSON drops it); a top-level or array `undefined`
+ * does not pass.
+ */
+export type KvJsonSafe<T> = T extends string | number | boolean | null
+  ? T
+  : T extends KvNonJson
+    ? never
+    : T extends readonly (infer U)[]
+      ? readonly KvJsonSafe<U>[]
+      : T extends object
+        ? { [P in keyof T]: KvJsonProp<T[P]> }
+        : T;
+
+/**
+ * A property of a JSON-safe object. It may be `undefined` or optional, which
+ * JSON drops on write; at the top level or in an array it may not be.
+ */
+type KvJsonProp<V> = [undefined] extends [V]
+  ? KvJsonSafe<Exclude<V, undefined>> | undefined
+  : KvJsonSafe<V>;
+
+/**
+ * What `kvKey<T>(name)` returns: a `KvKey<T>` when `T` is JSON-safe, otherwise
+ * a type that names the problem, so the first use of the key is refused.
+ */
+export type KvKeyOf<T> = [T] extends [KvJsonSafe<T>]
+  ? KvKey<T>
+  : KvValueMustBeJson;
+
+/**
+ * Marks a value type refused by `kvKey`.
+ */
+export interface KvValueMustBeJson {
+  "kv values are stored as JSON: no Date, Map, Set, bigint, symbol or function": never;
+}
+
+/**
  * A key as scope instance methods take it: a plain name (values are
  * `unknown`) or a typed `KvKey`.
  */
@@ -536,6 +602,32 @@ export type KvValue<K extends KvKeyInput> = [K] extends [KvKey<infer T>]
   : unknown;
 
 /**
+ * What `update` returns: the key's type, or the value type the callback gave
+ * for a plain name.
+ */
+export type KvResult<K extends KvKeyInput, V> = [K] extends [KvKey<infer T>]
+  ? T
+  : V;
+
+/**
+ * What a write to a key takes: `T` for a `KvKey<T>`, for a plain name any value
+ * whose type is JSON-safe (checked deeply, so interfaces pass).
+ */
+export type KvWrite<K extends KvKeyInput, V = KvJson> = [K] extends [
+  KvKey<infer T>,
+]
+  ? T
+  : V & KvJsonCheck<V>;
+
+/**
+ * `unknown` (no constraint) when `V` is JSON-safe, otherwise a type that
+ * names the rule.
+ */
+export type KvJsonCheck<V> = [V] extends [KvJsonSafe<V>]
+  ? unknown
+  : KvValueMustBeJson;
+
+/**
  * What a `kvKey` schema must satisfy: its input and output types match, so
  * the value read back is the value that was stored. A schema that does not
  * (a transform, default or coercion) fails with this type in the message.
@@ -544,7 +636,11 @@ export type KvRoundTrips<S extends StandardSchemaV1> = [
   StandardSchemaV1.InferInput<S>,
 ] extends [StandardSchemaV1.InferOutput<S>]
   ? [StandardSchemaV1.InferOutput<S>] extends [StandardSchemaV1.InferInput<S>]
-    ? unknown
+    ? [StandardSchemaV1.InferOutput<S>] extends [
+        KvJsonSafe<StandardSchemaV1.InferOutput<S>>,
+      ]
+      ? unknown
+      : KvSchemaMustRoundTrip
     : KvSchemaMustRoundTrip
   : KvSchemaMustRoundTrip;
 
@@ -552,7 +648,7 @@ export type KvRoundTrips<S extends StandardSchemaV1> = [
  * Marks a schema refused by `kvKey`.
  */
 export interface KvSchemaMustRoundTrip {
-  "kvKey schema: input and output types must match (no transforms, defaults or coercion)": never;
+  "kvKey schema: input and output types must match and be JSON (no transforms, defaults, coercion, Date or Map)": never;
 }
 
 /**
@@ -574,7 +670,7 @@ export interface KvSchemaMustRoundTrip {
  * as stored. Writes are not validated. Without a schema the type is yours to
  * vouch for.
  */
-export function kvKey<T>(name: string): KvKey<T>;
+export function kvKey<T>(name: string): KvKeyOf<T>;
 export function kvKey<S extends StandardSchemaV1>(
   name: string,
   schema: S & KvRoundTrips<S>,
@@ -627,6 +723,24 @@ interface KvRead {
   "~kvRead": true;
   found: boolean;
   value?: unknown;
+
+  /**
+   * The schema failure message, when the stored value did not pass.
+   */
+  invalid?: string;
+}
+
+/**
+ * An update as a step result.
+ */
+interface KvUpdate {
+  "~kvUpdate": true;
+  value?: unknown;
+
+  /**
+   * The schema failure message, when the stored value did not pass.
+   */
+  invalid?: string;
 }
 
 /**
@@ -657,11 +771,60 @@ function unwrapRead(memo: unknown): unknown {
     typeof (memo as Partial<KvRead>).found === "boolean"
   ) {
     const read = memo as KvRead;
+    if (read.invalid !== undefined) {
+      throw new NonRetriableError(read.invalid);
+    }
 
     return read.found ? read.value : undefined;
   }
 
   return memo;
+}
+
+/**
+ * Reads a memoized update step. An older run replays the raw value the step
+ * returned.
+ * @param memo What the step returned or replayed.
+ */
+function unwrapUpdate(memo: unknown): unknown {
+  if (
+    typeof memo === "object" &&
+    memo !== null &&
+    !Array.isArray(memo) &&
+    (memo as Partial<KvUpdate>)["~kvUpdate"] === true
+  ) {
+    const update = memo as KvUpdate;
+    if (update.invalid !== undefined) {
+      throw new NonRetriableError(update.invalid);
+    }
+
+    return update.value;
+  }
+
+  return memo;
+}
+
+/**
+ * Decodes inside a step: a schema failure comes back as a message, so the
+ * caller can throw it outside the step, where it is not retried.
+ * @param key The key read.
+ * @param raw The stored value.
+ */
+async function tryDecode<K extends KvKeyInput>(
+  key: K,
+  raw: unknown,
+): Promise<
+  { ok: true; value: KvValue<K> | undefined } | { ok: false; invalid: string }
+> {
+  try {
+    return { ok: true, value: await decode(key, raw) };
+  } catch (error) {
+    if (error instanceof NonRetriableError) {
+      return { ok: false, invalid: error.message };
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -737,9 +900,9 @@ export interface KvScopeInstance {
    * @param value The value, JSON-serializable.
    * @param options Expiry.
    */
-  set<K extends KvKeyInput>(
+  set<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    value: KvValue<K>,
+    value: KvWrite<K, V>,
     options?: KvSetOptions,
   ): Promise<void>;
 
@@ -758,9 +921,9 @@ export interface KvScopeInstance {
    * const owns = await kv.env.setIfAbsent(`card:${id}`, runId, { ttl: 600 });
    * ```
    */
-  setIfAbsent<K extends KvKeyInput>(
+  setIfAbsent<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    value: KvValue<K>,
+    value: KvWrite<K, V>,
     options?: KvSetOptions,
   ): Promise<boolean>;
 
@@ -773,19 +936,20 @@ export interface KvScopeInstance {
 
   /**
    * Reads, transforms and writes a key in one step. Not atomic across runs.
+   * A stored value that fails its key's schema is a `NonRetriableError`, as
+   * for `get`, and nothing is written.
    * The result never expires, even if the key had a `ttl`: pass nothing to
    * `set` yourself if you need the expiry kept.
    */
-  update<K extends KvKeyInput>(
+  update<K extends KvKeyInput, V = KvValue<K>>(
     key: K,
-    fn: (current: KvValue<K> | undefined) => KvValue<K>,
-  ): Promise<KvValue<K>>;
+    fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
+  ): Promise<KvResult<K, V>>;
 
   /**
    * Reads a key and deletes it in one step. Use it for flags consumed once.
    * A value that fails its key's schema is checked before it is removed, so it
-   * stays readable; inside a function that failure surfaces as a step error,
-   * like `update`'s, not as a `NonRetriableError`.
+   * stays readable. The failure is a `NonRetriableError`, as for `get`.
    * @param key Name or typed key.
    */
   take<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined>;
@@ -1166,17 +1330,27 @@ export function createKv(
           },
         };
       },
-      async update(key, fn) {
+      async update<K extends KvKeyInput, V>(
+        key: K,
+        fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
+      ): Promise<KvResult<K, V>> {
         const name = nameOf(key);
+        const result = await run("update", name, async (h) => {
+          const current = await tryDecode(key, await h.get(name));
+          if (!current.ok) {
+            return {
+              "~kvUpdate": true,
+              invalid: current.invalid,
+            } satisfies KvUpdate;
+          }
 
-        return run("update", name, async (h) => {
-          // A schema failure here reaches the caller as a step error, not a
-          // NonRetriableError, because it is thrown inside the step.
-          const next = fn(await decode(key, await h.get(name)));
+          const next = fn(current.value);
           await h.set(name, next);
 
-          return next;
+          return { "~kvUpdate": true, value: next } satisfies KvUpdate;
         });
+
+        return unwrapUpdate(result) as KvResult<K, V>;
       },
       async take(key) {
         const name = nameOf(key);
@@ -1184,7 +1358,15 @@ export function createKv(
         // stays readable.
         const read = await run("take", name, async (h) => {
           const raw = await h.get(name);
-          await decode(key, raw);
+          const checked = await tryDecode(key, raw);
+          if (!checked.ok) {
+            return {
+              "~kvRead": true,
+              found: false,
+              invalid: checked.invalid,
+            } satisfies KvRead;
+          }
+
           await h.delete(name);
 
           return found(raw);

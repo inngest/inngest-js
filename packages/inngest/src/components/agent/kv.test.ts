@@ -7,6 +7,7 @@ import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { StepOpCode } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
@@ -461,8 +462,33 @@ describe("kv typed keys", () => {
 
     // @ts-expect-error a transform makes the stored and read types differ
     kvKey("when", z.string().transform(Number));
+    // @ts-expect-error coercion makes the input wider than the output
+    kvKey("co", z.coerce.number());
+    // @ts-expect-error a Date is not JSON
+    kvKey("dt", z.date());
+    // @ts-expect-error a type holding a Date is refused when the key is used
+    await bound.set(kvKey<{ at: Date }>("d"), { at: new Date() });
+    // These pass: readonly data, branded primitives, optional and undefined properties.
+    await bound.set("ro", ["a"] as readonly string[]);
+    const branded = kvKey<{ id: string & { __brand: "id" }; note?: string }>(
+      "b",
+    );
+    await bound.set(branded, { id: "x" as string & { __brand: "id" } });
+    await bound.set(kvKey<{ a: string | undefined }>("u2"), { a: undefined });
+    await bound.set(kvKey<readonly string[]>("ro2"), ["a"]);
+    interface Shape {
+      a: string;
+    }
+    const shape: Shape = { a: "x" };
+    await bound.set("iface", shape);
+    await bound.set("list", [shape]);
+    // @ts-expect-error undefined in an array is not JSON
+    await bound.set("holes", [undefined, "a"]);
+    // @ts-expect-error a function is not JSON
+    await bound.set("fn", () => 1);
     // @ts-expect-error a default makes the input wider than the output
     kvKey("dflt", z.string().default("x"));
+    // @ts-expect-error undefined is not JSON
     await expect(bound.set("u", undefined)).rejects.toThrow(/undefined/);
 
     const client = new Inngest({ id: testClientId });
@@ -477,6 +503,7 @@ describe("kv typed keys", () => {
 
         // Refused before the step, so it fails at once instead of retrying.
         out.push(
+          // @ts-expect-error undefined is not JSON
           await kv.env.set("u", undefined).catch((error: Error) => {
             return error.message;
           }),
@@ -613,5 +640,81 @@ describe("kv replay of legacy read memos", () => {
       after: "none",
       list: [1, 2],
     });
+  });
+});
+
+describe("kv schema failures inside a function", () => {
+  test("get, take and update all throw a NonRetriableError and leave the value", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const client = new Inngest({ id: testClientId });
+    const out: unknown[] = [];
+    const fn = client.createFunction(
+      { id: "kvinvalid", triggers: [{ event: "kv/invalid" }] },
+      async () => {
+        const count = kvKey("count", z.number());
+        await kv.env.set("count", "text");
+        for (const attempt of [
+          () => kv.env.get(count),
+          () => kv.env.take(count),
+          () => kv.env.update(count, (n) => (n ?? 0) + 1),
+        ]) {
+          out.push(
+            await attempt().then(
+              () => "ok",
+              (error: unknown) => error instanceof NonRetriableError,
+            ),
+          );
+        }
+        out.push(await kv.env.get("count"));
+      },
+    );
+    const { type } = await runToEnd(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(out.slice(-4)).toEqual([true, true, true, "text"]);
+  });
+
+  test("an update memoized by an older version still replays", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "kvupdlegacy", triggers: [{ event: "kv/updlegacy" }] },
+      async () => {
+        return kv.env.update(kvKey<number>("n"), (n) => (n ?? 0) + 5);
+      },
+    );
+    let stepState: Parameters<typeof runFnWithStack>[1] = {};
+    let output: unknown;
+
+    for (let request = 0; request < 20 && output === undefined; request++) {
+      const result = await runFnWithStack(fn, stepState);
+      if (result.type === "function-resolved") {
+        output = result.data;
+        break;
+      }
+
+      const steps =
+        result.type === "step-ran"
+          ? [result.step]
+          : result.type === "steps-found"
+            ? result.steps
+            : [];
+      for (const step of steps) {
+        if (
+          step.op === StepOpCode.DeferAdd ||
+          step.op === StepOpCode.DeferAbort
+        ) {
+          continue;
+        }
+
+        // Older versions memoized the new value itself.
+        const data = step.userland?.id?.startsWith("kv.update:")
+          ? (step.data as { value?: unknown }).value
+          : step.data;
+        stepState = { ...stepState, [step.id]: { id: step.id, data } };
+      }
+    }
+
+    expect(output).toBe(5);
   });
 });
