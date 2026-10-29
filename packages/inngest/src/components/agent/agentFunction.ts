@@ -452,8 +452,10 @@ export interface AgentBodyFields<
    * The event of `on` that started this run, as it came (`id`, `name`,
    * `data`), typed from `on`: narrow it by `name`. It is `undefined` when a
    * plain thread message started the run (`thread.send()`, a reply in a
-   * thread), because there is no trigger event then. For a cron it is the tick
-   * (`{ cron }`), for `invoke()` the invoke event.
+   * thread), because there is no trigger event then. A run that recovery
+   * resumed keeps the trigger event of the run that failed. For a cron it is
+   * the tick (`{ cron }`), for `invoke()` the invoke event with the caller's
+   * input as `data`, without what the SDK adds for the invoked agent.
    */
   trigger: TEvent | undefined;
 
