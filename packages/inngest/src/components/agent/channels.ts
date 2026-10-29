@@ -208,7 +208,10 @@ export const createReporter = (
   /**
    * Runs a durable step, `step.run`.
    */
-  runStep: (id: string, fn: () => Promise<number>) => Promise<unknown>,
+  runStep: (
+    id: string,
+    fn: () => Promise<number | undefined>,
+  ) => Promise<unknown>,
 
   /**
    * Scores the posts when given: `since` is when the run began (ms since the
@@ -218,8 +221,11 @@ export const createReporter = (
   scores?: { since?: number },
 ): Reporter => {
   let reports = 0;
-  // When the last post finished. Each post step returns it, so a replay has it
-  // from the saved result without running the post again.
+  // Whether a post of this run has finished, live or replayed.
+  let posted = false;
+  // When the last post finished. With scores on, each post step returns it, so
+  // a replay has it from the saved result without running the post again. A
+  // post saved by a run that had no scores returned nothing and has none.
   let lastPostAt: number | undefined;
 
   return async function report(message, options) {
@@ -257,14 +263,21 @@ export const createReporter = (
 
     // Measured from before this report's first post, so a second destination
     // is not scored against its sibling.
-    const first = lastPostAt === undefined;
-    const since = scores ? (lastPostAt ?? scores.since) : undefined;
+    const first = !posted;
+    const since = scores ? (first ? scores.since : lastPostAt) : undefined;
 
     for (const { name, channel, index } of destinations) {
       const postedAt = await runStep(
         `report:${n}:${index}:${name}`,
         async () => {
           await channel.post(normalized);
+
+          // Without scores the step returns what it always did, nothing, so
+          // the saved result of a run does not depend on this setting.
+          if (!scores) {
+            return;
+          }
+
           const now = Date.now();
 
           if (since !== undefined) {
@@ -278,10 +291,8 @@ export const createReporter = (
         },
       );
 
-      // A post saved before posts returned their time has none.
-      if (typeof postedAt === "number") {
-        lastPostAt = postedAt;
-      }
+      posted = true;
+      lastPostAt = typeof postedAt === "number" ? postedAt : undefined;
     }
   };
 };
