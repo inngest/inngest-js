@@ -357,6 +357,17 @@ describe("repo checkout and sync", () => {
     expect((await checkout({ ref: "same" })).sha).toBe(branch);
   });
 
+  test("ref HEAD means the default branch, on a clone and on a sync", async () => {
+    const tip = git(seed, "rev-parse", "HEAD");
+
+    expect((await checkout({ ref: "HEAD" })).sha).toBe(tip);
+    expect(await checkout({ ref: "HEAD" })).toMatchObject({
+      action: "synced",
+      sha: tip,
+    });
+    expect((await checkout({ ref: "HEAD", sync: "keep" })).sha).toBe(tip);
+  });
+
   test("a branch deleted on the remote is gone after a sync", async () => {
     git(seed, "checkout", "--quiet", "-b", "feat");
     writeFileSync(join(seed, "f.txt"), "f\n");
@@ -366,7 +377,9 @@ describe("repo checkout and sync", () => {
     await checkout({ ref: "feat" });
     git(seed, "push", "--quiet", "origin", "--delete", "feat");
 
-    await expect(checkout({ ref: "feat" })).rejects.toThrow();
+    await expect(checkout({ ref: "feat" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
     expect(
       spawnSync("git", [
         "-C",
@@ -389,7 +402,7 @@ describe("repo checkout and sync", () => {
 
     await expect(
       repo(sandbox, { repo: other, path: work, ref: "only-here" }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/is not a branch, tag or commit of/);
   });
 
   test("reset removes untracked directories", async () => {

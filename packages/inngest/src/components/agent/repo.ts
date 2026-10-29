@@ -151,8 +151,9 @@ if [ -e "$DIR/.git" ]; then
     REF=$(auth --git-dir="$T" ls-remote --symref -- "$URL" HEAD | sed -n 's|^ref: refs/heads/\\(.*\\)[[:space:]][[:space:]]*HEAD$|\\1|p')
     [ -n "$REF" ] || { printf '%s\\n' "cannot find the default branch of $URL" >&2; exit 1; }
   fi
-  # Only what the remote has: a branch, a tag or a commit. A branch the remote
-  # deleted can still exist locally, and must not stand in for it.
+  # A branch the remote has, a tag, or a commit. A branch the remote deleted can
+  # still exist locally, and must not stand in for it (a deleted tag does stay,
+  # since pruning tags would delete the agent's own).
   if ! g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF" &&
      ! g -C "$DIR" show-ref --verify --quiet "refs/tags/$REF" &&
      ! printf '%s' "$REF" | grep -Eq '^[0-9a-fA-F]{7,64}$'; then
@@ -286,7 +287,7 @@ export const repo = async (
     "clone",
     `git clone or fetch ${options.repo}`,
     checkoutScript,
-    { URL: url, REF: ref ?? "", SYNC: sync },
+    { URL: url, REF: ref === "HEAD" ? "" : (ref ?? ""), SYNC: sync },
   );
   // The script's last line says what it did; anything before it is noise.
   const done = stdout
