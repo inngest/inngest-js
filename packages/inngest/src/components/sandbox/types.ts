@@ -604,20 +604,15 @@ export interface DurableSandbox {
       idOrOptions: StepOptionsOrId,
       command: SandboxCommand,
       options?: SandboxCommandOptions &
-        (
-          | (SandboxToolsOptions & { exitCodes?: never })
-          | {
-              /**
-               * The exit codes that are not failures. Any other exit rejects,
-               * without retrying. Defaults to `"any"`, so the exit code returns
-               * as data, except that a process ending LOST or FAILED has none
-               * and throws. Can't be used with `tools`.
-               */
-              exitCodes?: SandboxExitCodes;
-              tools?: undefined;
-              toolOptions?: undefined;
-            }
-        ),
+        SandboxToolsOptions & {
+          /**
+           * The exit codes that are not failures. Any other exit rejects,
+           * without retrying. Defaults to `"any"`, so the exit code returns
+           * as data, except that a process ending LOST or FAILED has none
+           * and throws.
+           */
+          exitCodes?: SandboxExitCodes;
+        },
     ): Promise<SandboxCommandResult>;
   };
   /**

@@ -37,6 +37,7 @@ import type {
   SandboxOperationForAction,
   SandboxOperationResultV1,
 } from "./protocol.ts";
+import { installToolBinary } from "./toolBinary.ts";
 import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
@@ -52,7 +53,7 @@ import {
   sandboxTraceMetadata,
   sdkOrigin,
 } from "./trace.ts";
-import { type Sandbox, SandboxValidationError } from "./types.ts";
+import { type Sandbox, SandboxError, SandboxValidationError } from "./types.ts";
 import {
   decodeBase64,
   maxSandboxProcessTimeoutMs,
@@ -124,6 +125,11 @@ interface Round {
   result?: SandboxOperationResultV1;
 }
 
+/**
+ * A reply, or a function that makes it when the wait step runs.
+ */
+type Reply = string | (() => Promise<string>);
+
 const errorMessage = (error: unknown): string => {
   return String(error instanceof Error ? error.message : error).slice(0, 2000);
 };
@@ -181,14 +187,24 @@ export const runCommandWithTools = async (
   host: ToolsHost,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<"exec">,
-  { tools, toolOptions = {} }: SandboxToolsRequest,
+  {
+    tools,
+    toolOptions = {},
+    binary,
+    timeoutMs: requestedTimeoutMs,
+    command: requestedCommand,
+  }: SandboxToolsRequest,
 ): Promise<SandboxOperationResultV1> => {
   validateTools(tools);
 
   const { id } = getStepOptions(idOrOptions);
+  // A command past five minutes waits in longer windows, to spend fewer steps.
   const waitWindowMs = normalizeDurationMs(
-    toolOptions.waitWindow ?? 20_000,
-    120_000,
+    toolOptions.waitWindow ??
+      ((requestedTimeoutMs ?? 0) > maxSandboxProcessTimeoutMs
+        ? 60_000
+        : 20_000),
+    240_000,
     "toolOptions.waitWindow",
   );
   const toolTimeoutMs = normalizeDurationMs(
@@ -203,7 +219,16 @@ export const runCommandWithTools = async (
     );
   }
 
-  const [{ command, environment, cwd, timeoutMs }] = operation.input;
+  const [
+    {
+      command: operationCommand,
+      environment,
+      cwd,
+      timeoutMs: operationTimeoutMs,
+    },
+  ] = operation.input;
+  const command = requestedCommand ?? operationCommand;
+  const timeoutMs = requestedTimeoutMs ?? operationTimeoutMs;
   const { sandbox } = host;
   // Concurrent callers of a group tool share step IDs, so their prefix tells
   // them apart
@@ -279,6 +304,10 @@ export const runCommandWithTools = async (
           stdout: decodeBase64(event.stdout, "stdout"),
           stderr: decodeBase64(event.stderr, "stderr"),
           exitCode: event.code,
+          originalBytes:
+            event.stdoutBytes === undefined || event.stderrBytes === undefined
+              ? undefined
+              : { stdout: event.stdoutBytes, stderr: event.stderrBytes },
         });
       }
     }
@@ -286,7 +315,11 @@ export const runCommandWithTools = async (
     return { now: Date.now(), lines: lines + log.length, requests, result };
   };
 
-  const abort = async (dir: string, reason: string): Promise<never> => {
+  const abort = async (
+    dir: string,
+    reason: string,
+    timedOut = false,
+  ): Promise<never> => {
     await host.run(sdkStep(`${id}:abort`, "Stop command"), async () => {
       await sandbox.commands.run([
         "/bin/sh",
@@ -299,7 +332,15 @@ export const runCommandWithTools = async (
       return { reason };
     });
 
-    throw new Error(reason);
+    // A timeout is the same failure as the exec timing out, so `$` reports it
+    // as one.
+    throw timedOut
+      ? new SandboxError({
+          action: "exec",
+          code: "sandbox_exec_timed_out",
+          message: reason,
+        })
+      : new Error(reason);
   };
 
   const answer = async ({
@@ -308,7 +349,7 @@ export const runCommandWithTools = async (
   }: {
     request: ToolRequest;
     line: string;
-  }): Promise<string> => {
+  }): Promise<Reply> => {
     const stepId = `${id}:tool:${call.tool}:${call.id}`;
     const idempotencyKey = `${scope}${stepId}`;
 
@@ -330,12 +371,37 @@ export const runCommandWithTools = async (
               return resolved.invoke({
                 signal: new AbortController().signal,
                 idempotencyKey,
+                runId: host.runId,
               });
             });
           },
         );
 
         return resultLine(call.id, call.tool, value);
+      }
+
+      if (resolved.memo === "none") {
+        // Runs inside the wait step: a replay of a finished wait never calls
+        // it again, but a retry of that step does, so it must be safe to repeat
+        // (the idempotency key is stable across retries).
+        return async () => {
+          try {
+            const signal = AbortSignal.timeout(toolTimeoutMs);
+            const value = await Promise.race([
+              resolved.invoke({
+                signal,
+                idempotencyKey,
+                runId: host.runId,
+                sandbox,
+              }),
+              timeoutAfter(toolTimeoutMs, call.tool, signal),
+            ]);
+
+            return resultLine(call.id, call.tool, value);
+          } catch (error) {
+            return replyLine(call.id, { error: errorMessage(error) });
+          }
+        };
       }
 
       return await host.run(
@@ -348,7 +414,12 @@ export const runCommandWithTools = async (
         async () => {
           const signal = AbortSignal.timeout(toolTimeoutMs);
           const value = await Promise.race([
-            resolved.invoke({ signal, idempotencyKey }),
+            resolved.invoke({
+              signal,
+              idempotencyKey,
+              runId: host.runId,
+              sandbox,
+            }),
             timeoutAfter(toolTimeoutMs, call.tool, signal),
           ]);
 
@@ -367,6 +438,10 @@ export const runCommandWithTools = async (
       // The step's own ID, which stays distinct when a command ID repeats.
       const stepId = getAsyncCtxSync()?.execution?.executingStep?.id ?? id;
       const dir = `${toolsRoot}/${sha256().update(`${scope}${stepId}`).digest("hex")}`;
+      if (binary) {
+        await installToolBinary(sandbox, binary);
+      }
+
       // The wait doesn't need the process to exist yet, so it runs alongside.
       const [, round] = await Promise.all([
         sandbox.processes.start({
@@ -396,6 +471,7 @@ export const runCommandWithTools = async (
       return abort(
         dir,
         `Command with tools exceeded its ${timeoutMs}ms timeout`,
+        true,
       );
     }
 
@@ -414,7 +490,7 @@ export const runCommandWithTools = async (
       pending.push({ request, line });
     }
 
-    const replies: string[] = [];
+    const replies: Reply[] = [];
     for (let at = 0; at < pending.length; at += maxConcurrentCalls) {
       replies.push(
         ...(await Promise.all(
@@ -424,11 +500,33 @@ export const runCommandWithTools = async (
     }
 
     const { lines } = state;
+    const settle = async (): Promise<string[]> => {
+      const settled: string[] = [];
+      for (let at = 0; at < replies.length; at += maxConcurrentCalls) {
+        settled.push(
+          ...(await Promise.all(
+            replies.slice(at, at + maxConcurrentCalls).map((reply) => {
+              return typeof reply === "function" ? reply() : reply;
+            }),
+          )),
+        );
+      }
+
+      return settled;
+    };
     const remainingMs = timeoutMs - (state.now - started.startedAt);
     state = await host.run(
-      sdkStep(`${id}:wait:${++waits}`, runningNames[commandKind(command)]),
-      () => {
-        return follow(dir, lines, replies, Math.min(waitWindowMs, remainingMs));
+      sdkStep(
+        `${id}:wait:${++waits}`,
+        runningNames[commandKind(operationCommand)],
+      ),
+      async () => {
+        return follow(
+          dir,
+          lines,
+          await settle(),
+          Math.min(waitWindowMs, remainingMs),
+        );
       },
       { ...meta, kind: "wait" },
     );
