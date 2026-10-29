@@ -143,9 +143,13 @@ const refPattern = /^refs\/(heads|tags)\/[A-Za-z0-9._/@+-]+$/;
 /**
  * Whether `ref` is a full branch or tag name a push may name. It is the one
  * check for every ref: the one asked for and the one a policy substitutes.
- * @param ref Full ref name, such as `refs/heads/agent/fix`.
  */
-export const isPushableRef = (ref: string): boolean => {
+export const isPushableRef = (
+  /**
+   * Full ref name, such as `refs/heads/agent/fix`.
+   */
+  ref: string,
+): boolean => {
   // A name part starting with "-" would read as an option to git.
   return refPattern.test(ref) && !ref.includes("..") && !ref.includes("/-");
 };
@@ -158,12 +162,16 @@ export const maxPushCommits = 500;
 
 /**
  * Makes the authorization for one operation on the remote.
- *
- * @param token Called each time, so a short-lived token is fresh.
- * @param username Defaults to `x-access-token`, which GitHub accepts.
  */
 export const gitAuth = async (
+  /**
+   * Called each time, so a short-lived token is fresh.
+   */
   token: () => string | Promise<string>,
+
+  /**
+   * Defaults to `x-access-token`, which GitHub accepts.
+   */
   username = "x-access-token",
 ): Promise<GitAuth> => {
   const secret = await token();

@@ -48,16 +48,24 @@ export interface ThreadList {
   /**
    * The threads that were sent a message, most recent first, as handles.
    * Experimental: the Insights query is unverified on Inngest Cloud.
-   * @param options Session filter, limit and query override.
    */
-  list(options?: ThreadListOptions): Promise<ThreadHandle[]>;
+  list(
+    /**
+     * Session filter, limit and query override.
+     */
+    options?: ThreadListOptions,
+  ): Promise<ThreadHandle[]>;
 }
 
 /**
  * A SQL string literal.
- * @param value The text.
  */
-function literal(value: string): string {
+function literal(
+  /**
+   * The text.
+   */
+  value: string,
+): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
@@ -66,11 +74,16 @@ function literal(value: string): string {
  *
  * Not yet checked against Insights: the columns of the events table are
  * assumed to be `name`, `data`, `meta` and `ts`.
- * @param agent The agent, as `"appId/functionId"`.
- * @param options Session filter and limit.
  */
 export function threadListSql(
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   agent: string,
+
+  /**
+   * Session filter and limit.
+   */
   options: Pick<ThreadListOptions, "session" | "limit"> = {},
 ): string {
   const session = "JSONExtractString(meta, 'sessions', 'agent_session')";
@@ -96,15 +109,26 @@ export function threadListSql(
 
 /**
  * EXPERIMENTAL: Lists the threads of an agent.
- * @param client Inngest client.
- * @param agent The agent, as `"appId/functionId"`.
- * @param options Session filter, limit and query override.
- * @param make Builds the handle of a thread. Default: a plain handle.
  */
 export async function listThreads(
+  /**
+   * Inngest client.
+   */
   client: Inngest.Any,
+
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   agent: string,
+
+  /**
+   * Session filter, limit and query override.
+   */
   options: ThreadListOptions = {},
+
+  /**
+   * Builds the handle of a thread. Default: a plain handle.
+   */
   make: (key: string, session: string) => ThreadHandle = (key, session) => {
     return getThread(client, agent, key, { session });
   },

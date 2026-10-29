@@ -4,6 +4,9 @@
  * with no annotations. An agent triggered by an event type invokes a typed
  * agent, subscribes to typed events, reports to a channel and runs a sandbox
  * tool. The assertions are types; the bodies of agents are never executed.
+ * Each `check` closure holds type-only code that must not run (it would call
+ * into a function context), so `expect(check).toBeTypeOf("function")` only
+ * gives vitest a runtime assertion and keeps the closure used.
  */
 import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
@@ -154,22 +157,26 @@ describe("composition", () => {
 
 describe("pointed errors", () => {
   test("a sandbox tool's run and output follow its schemas", () => {
-    tool.step({
-      input: z.object({ id: z.string() }),
-      // @ts-expect-error the run takes the input schema's output, a string id
-      run: async ({ id }: { id: number }) => {
-        return id;
-      },
-    });
+    const check = () => {
+      tool.step({
+        input: z.object({ id: z.string() }),
+        // @ts-expect-error the run takes the input schema's output, a string id
+        run: async ({ id }: { id: number }) => {
+          return id;
+        },
+      });
 
-    tool.step({
-      input: z.object({ id: z.string() }),
-      output: z.object({ n: z.number() }),
-      // @ts-expect-error the result must match the output schema
-      run: async ({ id }) => {
-        return { n: id };
-      },
-    });
+      tool.step({
+        input: z.object({ id: z.string() }),
+        output: z.object({ n: z.number() }),
+        // @ts-expect-error the result must match the output schema
+        run: async ({ id }) => {
+          return { n: id };
+        },
+      });
+    };
+
+    expect(check).toBeTypeOf("function");
   });
 
   test("a channel needs post, and a loop tool must be a tool", () => {

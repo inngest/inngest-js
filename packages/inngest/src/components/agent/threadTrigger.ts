@@ -50,8 +50,19 @@ import {
 export interface ThreadTriggerEvent<
   TData extends Record<string, unknown> = Record<string, unknown>,
 > {
+  /**
+   * The event's ID, when it has one.
+   */
   id?: string;
+
+  /**
+   * The event's name.
+   */
   name: string;
+
+  /**
+   * The event's data.
+   */
   data: TData;
 }
 
@@ -127,8 +138,19 @@ export interface ThreadEventTrigger<
  */
 export interface ThreadCronTrigger
   extends ThreadTriggerFields<ThreadTriggerEvent<{ cron: string }>> {
+  /**
+   * The cron expression, such as `"0 * * * *"`.
+   */
   cron: string;
+
+  /**
+   * Never set: a trigger is a cron or an event, not both.
+   */
   event?: never;
+
+  /**
+   * Jitter, as for the cron trigger of a function, such as `"30s"`.
+   */
   jitter?: string;
 }
 
@@ -261,21 +283,33 @@ const reservedEvents: string[] = [agentMessageEvent, skillsBakeEvent];
 
 /**
  * Quotes a string as a CEL literal.
- * @param value The string.
  */
-const literal = (value: string): string => {
+const literal = (
+  /**
+   * The string.
+   */
+  value: string,
+): string => {
   return JSON.stringify(value);
 };
 
 /**
  * Why an event cannot trigger an agent, if it cannot.
- * @param name The event's name.
- * @param cron Whether the trigger is a cron.
- * @param plain Whether the event was given as a plain name.
  */
 function refusalOf(
+  /**
+   * The event's name.
+   */
   name: string,
+
+  /**
+   * Whether the trigger is a cron.
+   */
   cron: boolean,
+
+  /**
+   * Whether the event was given as a plain name.
+   */
   plain: boolean,
 ): string | undefined {
   if (name.includes("*")) {
@@ -299,11 +333,16 @@ function refusalOf(
 
 /**
  * Validates and compiles the triggers of a config.
- * @param id The agent's function ID.
- * @param config The thread options.
  */
 export function compileTriggers(
+  /**
+   * The agent's function ID.
+   */
   id: string,
+
+  /**
+   * The thread options.
+   */
   config: ThreadKeyConfig,
 ): CompiledTrigger[] {
   const given = (config.on ? [config.on].flat() : []) as ThreadTrigger[];
@@ -429,11 +468,16 @@ export function compileTriggers(
  * What is wrong with data against one schema, or `undefined` when it is fine.
  * A schema that throws counts as rejecting the data, so one bad schema or
  * event cannot fail the run on every replay.
- * @param schema The schema.
- * @param data The event's data.
  */
 export async function dataProblem(
+  /**
+   * The schema.
+   */
   schema: StandardSchemaV1,
+
+  /**
+   * The event's data.
+   */
   data: unknown,
 ): Promise<string | undefined> {
   try {
@@ -465,11 +509,16 @@ export async function dataProblem(
  * that is replaying. A schema changed while a run is live applies to the
  * messages that run reads after the change; deploy schema changes for new
  * runs.
- * @param triggers The compiled triggers whose event name the event has.
- * @param event The event.
  */
 export async function schemaProblem(
+  /**
+   * The compiled triggers whose event name the event has.
+   */
   triggers: CompiledTrigger[],
+
+  /**
+   * The event.
+   */
   event: { data?: unknown },
 ): Promise<string | undefined> {
   if (triggers.length === 0 || triggers.some((trigger) => !trigger.schema)) {
@@ -496,9 +545,13 @@ export async function schemaProblem(
 /**
  * The singleton key of an agent function: a message uses its `thread`, and
  * each trigger event its own expression.
- * @param triggers The compiled triggers.
  */
-export function singletonKey(triggers: CompiledTrigger[]): string {
+export function singletonKey(
+  /**
+   * The compiled triggers.
+   */
+  triggers: CompiledTrigger[],
+): string {
   return triggers.reduceRight((rest, trigger) => {
     return `event.name == ${literal(trigger.event)} ? (${trigger.thread.source}) : ${rest}`;
   }, "event.data.thread");
@@ -506,13 +559,21 @@ export function singletonKey(triggers: CompiledTrigger[]): string {
 
 /**
  * The message a trigger event is, for the thread it belongs to.
- * @param ref The agent, as `"appId/functionId"`.
- * @param trigger The compiled trigger the event matched.
- * @param event The trigger event.
  */
 export function messageOf(
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   ref: string,
+
+  /**
+   * The compiled trigger the event matched.
+   */
   trigger: CompiledTrigger,
+
+  /**
+   * The trigger event.
+   */
   event: ThreadTriggerEvent,
 ): ThreadMessage {
   return {

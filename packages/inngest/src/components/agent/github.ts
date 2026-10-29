@@ -31,7 +31,14 @@ import {
  * The `data` of a `github/issue_comment` event.
  */
 export interface GithubCommentData {
+  /**
+   * The repository's owner.
+   */
   owner: string;
+
+  /**
+   * The repository's name.
+   */
   repo: string;
 
   /**
@@ -39,7 +46,12 @@ export interface GithubCommentData {
    * from strings only.
    */
   number: string;
+
+  /**
+   * The comment's text.
+   */
   body: string;
+
   /**
    * The commenter's login. Set it so `ignoreAuthors` can work.
    */
@@ -95,8 +107,19 @@ export interface GithubChannelOptions {
  * The issue or pull request a GitHub channel comments on.
  */
 export interface GithubTarget {
+  /**
+   * The repository's owner.
+   */
   owner: string;
+
+  /**
+   * The repository's name.
+   */
   repo: string;
+
+  /**
+   * The issue or pull request number.
+   */
   number: number;
 }
 

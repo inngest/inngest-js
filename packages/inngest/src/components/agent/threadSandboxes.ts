@@ -86,17 +86,28 @@ export interface ThreadSandboxOwner {
    * older generations, and snapshots expire). Keeping the extra generation
    * costs a second snapshot per thread and sandbox name against the
    * environment's snapshot limit.
-   * @param name The sandbox's name in the agent's `sandboxes`.
    */
-  restore(name: string): Promise<string[]>;
+  restore(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+  ): Promise<string[]>;
 
   /**
    * Snapshots a sandbox of this run for the thread's next run. A failed
    * snapshot is a warning on the trace and changes nothing about the run.
-   * @param name The sandbox's name in the agent's `sandboxes`.
-   * @param sandbox The sandbox, still running.
    */
-  save(name: string, sandbox: DurableSandbox): Promise<void>;
+  save(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+    /**
+     * The sandbox, still running.
+     */
+    sandbox: DurableSandbox,
+  ): Promise<void>;
 
   /**
    * Leaves a `keepAlive` sandbox running for the thread's next run instead of
@@ -106,60 +117,96 @@ export interface ThreadSandboxOwner {
    * after `idle` needs an idle timeout on the platform's sandbox, which does
    * not exist (platform ask). It will have to stop the sandbox on every
    * terminal state of the thread's run, with no sweeper.
-   * @param name The sandbox's name in the agent's `sandboxes`.
-   * @param sandbox The sandbox, still running.
-   * @param keepAlive The binding's `keepAlive`.
-   * @param guard The cleanup defer of the sandbox. Returning `true` is a promise
-   * that the sandbox will be stopped on every way the thread's run can end: the
-   * hook registers its own stop defer first, and only then aborts `guard`,
-   * because nothing else will stop a sandbox left running. Anything but a
-   * `true`, and any throw, makes the run save and destroy as usual.
    */
   keep?(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
     name: string,
+
+    /**
+     * The sandbox, still running.
+     */
     sandbox: DurableSandbox,
+
+    /**
+     * The binding's `keepAlive`.
+     */
     keepAlive: { idle: SandboxDuration },
+
+    /**
+     * The cleanup defer of the sandbox. Returning `true` is a promise that the sandbox will be stopped on every way the thread's run can end: the hook registers its own stop defer first, and only then aborts `guard`, because nothing else will stop a sandbox left running. Anything but a `true`, and any throw, makes the run save and destroy as usual.
+     */
     guard: DeferHandle,
   ): Promise<boolean> | boolean;
 
   /**
    * Called when `keep` threw.
-   * @param name The sandbox's name in the agent's `sandboxes`.
-   * @param error What it threw.
    */
-  keepFailed?(name: string, error: unknown): void;
+  keepFailed?(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+    /**
+     * What it threw.
+     */
+    error: unknown,
+  ): void;
 
   /**
    * Called when creating a sandbox from the thread's snapshot failed (for
    * instance the snapshot was deleted meanwhile) and a fresh one is created
    * instead.
-   * @param name The sandbox's name in the agent's `sandboxes`.
-   * @param error What the create failed with.
    */
-  restoreFailed?(name: string, error: unknown): void;
+  restoreFailed?(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+    /**
+     * What the create failed with.
+     */
+    error: unknown,
+  ): void;
 
   /**
    * Registers the defer that saves and destroys the sandbox if the run ends
    * without doing it. Abort the handle once the sandbox is destroyed. It
    * saves only a sandbox the run has marked ready.
-   * @param name The sandbox's name in the agent's `sandboxes`.
-   * @param sandbox The sandbox the run just created.
    */
-  guard(name: string, sandbox: DurableSandbox): DeferHandle;
+  guard(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+    /**
+     * The sandbox the run just created.
+     */
+    sandbox: DurableSandbox,
+  ): DeferHandle;
 
   /**
    * Forgets the run's ready mark of the sandbox, once the run is done with it.
-   * @param name The sandbox's name in the agent's `sandboxes`.
    */
-  release(name: string): Promise<void>;
+  release(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+  ): Promise<void>;
 
   /**
    * Marks the sandbox as finished with its skills and setup, so the cleanup
    * may snapshot it: a half set-up sandbox must never become the thread's
    * next one.
-   * @param name The sandbox's name in the agent's `sandboxes`.
    */
-  ready(name: string): Promise<void>;
+  ready(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+  ): Promise<void>;
 }
 
 export interface ThreadSandboxOptions {
@@ -204,15 +251,26 @@ export interface ThreadSandboxOptions {
 
 /**
  * The cache entry of a thread's sandbox at one generation.
- * @param ref The agent, as `"appId/functionId"`.
- * @param thread The thread key.
- * @param name The sandbox's name in the agent's `sandboxes`.
- * @param generation The run that took the snapshot.
  */
 export const threadSnapshotEntry = (
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
   ref: string,
+
+  /**
+   * The thread key.
+   */
   thread: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
   name: string,
+
+  /**
+   * The run that took the snapshot.
+   */
   generation: string,
 ): SnapshotEntry => {
   // A thread key is free text, so the name carries its hash: bounded, made of
@@ -231,10 +289,17 @@ export const threadSnapshotEntry = (
  * Deletes the ready key. It is housekeeping: its failure must not fail the run
  * or the cleanup, and it is done only once the snapshot is recorded, so a
  * failed save leaves the cleanup able to save.
- * @param scope The thread's KV scope.
- * @param key The ready key.
  */
-const forget = async (scope: KvScopeInstance, key: string): Promise<void> => {
+const forget = async (
+  /**
+   * The thread's KV scope.
+   */
+  scope: KvScopeInstance,
+  /**
+   * The ready key.
+   */
+  key: string,
+): Promise<void> => {
   try {
     await scope.delete(key);
   } catch (error) {
@@ -246,9 +311,11 @@ const forget = async (scope: KvScopeInstance, key: string): Promise<void> => {
 
 /**
  * EXPERIMENTAL: The owner of one run's sandboxes for its thread.
- * @param options The run, its thread and what it uses to remember.
  */
 export const threadSandboxOwner = (
+  /**
+   * The run, its thread and what it uses to remember.
+   */
   options: ThreadSandboxOptions,
 ): ThreadSandboxOwner => {
   const { client, ref, thread, runId, scope } = options;
@@ -401,9 +468,11 @@ export interface CleanupThreadSandboxOptions {
  * timed out, or a destroy that failed). It saves nothing when the sandbox was
  * not marked ready, or when the thread already has a snapshot from this run or
  * a newer one, and destroys the sandbox in every case.
- * @param options The ended run, its thread and the sandbox.
  */
 export const cleanupThreadSandbox = async (
+  /**
+   * The ended run, its thread and the sandbox.
+   */
   options: CleanupThreadSandboxOptions,
 ): Promise<void> => {
   const { client, ref, thread, runId, scope, sandbox } = options;

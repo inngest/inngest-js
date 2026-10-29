@@ -14,9 +14,13 @@ interface Pending {
 
 /**
  * Encodes a command as a RESP array of bulk strings.
- * @param args Command name and arguments.
  */
-export function encodeCommand(args: string[]): Buffer {
+export function encodeCommand(
+  /**
+   * Command name and arguments.
+   */
+  args: string[],
+): Buffer {
   const parts = [`*${args.length}\r\n`];
   const chunks: Buffer[] = [];
 
@@ -35,11 +39,16 @@ export function encodeCommand(args: string[]): Buffer {
 /**
  * Parses one reply from the front of `buf`, or returns `undefined` when more
  * bytes are needed.
- * @param buf Received bytes.
- * @param at Offset to parse from.
  */
 export function parseReply(
+  /**
+   * Received bytes.
+   */
   buf: Buffer,
+
+  /**
+   * Offset to parse from.
+   */
   at = 0,
 ): { reply: Reply; end: number } | undefined {
   const lineEnd = buf.indexOf("\r\n", at);
@@ -119,9 +128,13 @@ export interface RedisClient {
 /**
  * Connects to a `redis://` or `rediss://` URL. Commands run in order over one
  * connection.
- * @param url Redis URL, with optional user, password and database.
  */
-export async function connectRedis(url: string): Promise<RedisClient> {
+export async function connectRedis(
+  /**
+   * Redis URL, with optional user, password and database.
+   */
+  url: string,
+): Promise<RedisClient> {
   // Loaded on use so importing the SDK never pulls in Node networking.
   const [net, tls] = await Promise.all([
     import("node:net"),
@@ -276,9 +289,13 @@ export async function connectRedis(url: string): Promise<RedisClient> {
 /**
  * Returns a function that gives the shared connection to `url`, connecting on
  * first use and again after the connection fails or closes.
- * @param url Redis URL.
  */
-export function redisConnection(url: string): () => Promise<RedisClient> {
+export function redisConnection(
+  /**
+   * Redis URL.
+   */
+  url: string,
+): () => Promise<RedisClient> {
   let connection: Promise<RedisClient> | undefined;
 
   return async function client() {

@@ -16,6 +16,9 @@ import type { ConfigValue } from "./defs.ts";
  * A message to a channel.
  */
 export interface ChannelMessage {
+  /**
+   * The text to post.
+   */
   text: string;
 
   /**
@@ -35,7 +38,14 @@ export interface ChannelAsk {
    * that receives the answer can send it.
    */
   signal: string;
+  /**
+   * The question to show.
+   */
   question: string;
+
+  /**
+   * The answers to offer, such as buttons. Default: none.
+   */
   options?: string[];
 
   /**
@@ -148,6 +158,10 @@ export type ReportTarget = string | Channel;
  */
 export type ReportConfig = ReportTarget | ReportTarget[];
 
+/**
+ * A `report` config: the value, or a function of the run's context `Ctx` that
+ * picks it.
+ */
 export type ReportConfigValue<Ctx> = ConfigValue<ReportConfig, Ctx>;
 
 /**

@@ -74,6 +74,10 @@ export type SandboxToolsFactory<TTool extends string = string> = (
   sandbox: SandboxHandle,
 ) => Record<TTool, SandboxToolEntry>;
 
+/**
+ * Options of `sandbox()`: the sandbox's ID, image, size, environment, tools,
+ * skills and setup.
+ */
 export interface SandboxDefinitionOptions<TTool extends string = string> {
   /**
    * Names the sandbox. Letters, digits, underscores and hyphens.
@@ -84,7 +88,14 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
    * The image to start from. Default: the base image.
    */
   image?: SandboxImage;
+  /**
+   * Virtual CPUs. Default: the platform's.
+   */
   vcpu?: number;
+
+  /**
+   * Memory in megabytes. Default: the platform's.
+   */
   memoryMb?: number;
 
   /**
@@ -160,6 +171,10 @@ export interface SandboxSetupContext {
   restored?: boolean;
 }
 
+/**
+ * Runs once after a sandbox is created and ready; see
+ * `SandboxDefinitionOptions.setup`.
+ */
 export type SandboxSetup = (context: SandboxSetupContext) => Promise<void>;
 
 /**
@@ -177,9 +192,16 @@ export interface SandboxRuntime extends SkillsRuntime {
  */
 export interface SandboxDefinition<TTool extends string = string>
   extends SandboxDefinitionOptions<TTool> {
+  /**
+   * Marks the value as made by `sandbox()`.
+   */
   readonly kind: "inngest/sandbox.definition";
 }
 
+/**
+ * When a sandbox is created: `"lazy"` on the first call that needs it, or
+ * `"eager"` as soon as the agent opens its sandboxes.
+ */
 export type SandboxStart = "lazy" | "eager";
 
 /**
@@ -191,6 +213,9 @@ export interface SandboxBinding<
   TStart = SandboxStart,
   TTool extends string = string,
 > {
+  /**
+   * The sandbox to use, made with `sandbox()`.
+   */
   sandbox: SandboxDefinition<TTool>;
 
   /**
@@ -363,8 +388,22 @@ export interface LazySandbox {
    * The name the agent gives it, such as `work`.
    */
   readonly name: string;
+
+  /**
+   * The sandbox's definition.
+   */
   readonly definition: SandboxDefinition;
+
+  /**
+   * When the sandbox is created: on first need (`"lazy"`) or at the start of
+   * the run (`"eager"`).
+   */
   readonly start: "lazy" | "eager";
+
+  /**
+   * Deprecated and inert: see `SandboxBinding.keepAlive`.
+   * @deprecated Needs a platform idle timeout, which is not available yet.
+   */
   readonly keepAlive?: { idle: SandboxDuration };
 
   /**
@@ -793,12 +832,16 @@ const lazySandbox = (
  * EXPERIMENTAL: Resolves an agent's `sandboxes` config for one run: the config
  * itself, if it is a function, and each binding's `start`, if it is a function.
  * Functions run on every replay, so they must be pure functions of `ctx`.
- *
- * @param config The agent's `sandboxes`, as written.
- * @param ctx What the functions receive, such as `{ event }`.
  */
 export const resolveSandboxes = async <Ctx>(
+  /**
+   * The agent's `sandboxes`, as written.
+   */
   config: SandboxesConfig<Ctx> | undefined,
+
+  /**
+   * What the functions receive, such as `{ event }`.
+   */
   ctx: Ctx,
 ): Promise<Record<string, SandboxDefinition | SandboxBinding>> => {
   const bindings = (await resolveConfigValue(config ?? {}, ctx)) as unknown;
@@ -830,12 +873,16 @@ export const resolveSandboxes = async <Ctx>(
 /**
  * EXPERIMENTAL: One opened sandbox by name. Throws a clear error, naming the
  * sandboxes the agent does have, when there is none by that name.
- *
- * @param opened What `openSandboxes()` returned.
- * @param name The name in the agent's `sandboxes`.
  */
 export const getSandbox = (
+  /**
+   * What `openSandboxes()` returned.
+   */
   opened: Record<string, LazySandbox>,
+
+  /**
+   * The name in the agent's `sandboxes`.
+   */
   name: string,
 ): LazySandbox => {
   const found = Object.hasOwn(opened, name) ? opened[name] : undefined;
@@ -859,18 +906,26 @@ export const getSandbox = (
  * creating at once. If an eager create fails and nothing used the sandbox,
  * `close()` raises the failure (the agent's run logs it as a warning). A
  * sandbox that was used raises its failure to the caller that used it.
- *
- * @param bindings The agent's `sandboxes`, by name.
- * @param sandboxes The `step.sandbox` of the running function.
- * @param runtime What sandboxes with skills or a setup need from the run.
- * @param owner The thread the sandboxes belong to. With it, each sandbox is
- * restored from the thread's newest snapshot on first use, and snapshotted
- * when the run closes it.
  */
 export const openSandboxes = (
+  /**
+   * The agent's `sandboxes`, by name.
+   */
   bindings: Record<string, SandboxDefinition | SandboxBinding>,
+
+  /**
+   * The `step.sandbox` of the running function.
+   */
   sandboxes: DurableSandboxTools,
+
+  /**
+   * What sandboxes with skills or a setup need from the run.
+   */
   runtime?: SandboxRuntime,
+
+  /**
+   * The thread the sandboxes belong to. With it, each sandbox is restored from the thread's newest snapshot on first use, and snapshotted when the run closes it.
+   */
   owner?: ThreadSandboxOwner,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
@@ -900,9 +955,11 @@ export const openSandboxes = (
 
 /**
  * Tools by name for `agent.loop()`, failing on two with one name.
- * @param entries Name and tool pairs.
  */
 const toolsByName = (
+  /**
+   * Name and tool pairs.
+   */
   entries: Iterable<readonly [string, SandboxToolEntry]>,
 ): SandboxTools => {
   const byName: SandboxTools = {};
@@ -945,10 +1002,13 @@ export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
 /**
  * EXPERIMENTAL: The `step.sandbox` of a running function, which only exists
  * when its client has the sandbox middleware.
- *
- * @param step The function's step tools.
  */
-export const stepSandboxes = (step: object): DurableSandboxTools => {
+export const stepSandboxes = (
+  /**
+   * The function's step tools.
+   */
+  step: object,
+): DurableSandboxTools => {
   const sandboxes = (step as { sandbox?: DurableSandboxTools }).sandbox;
 
   if (!sandboxes) {

@@ -82,6 +82,11 @@ import {
   type ThreadTriggers,
 } from "./threadTrigger.ts";
 
+/**
+ * The config of an agent: its ID, what starts it, and what it may use.
+ * `TOn` is the type of `on`, `TEvent` the events of its triggers, and
+ * `TRequest` and `TReply` what other threads ask it and what it answers.
+ */
 export interface AgentFunctionConfig<
   TOn = ThreadTriggers,
   TEvent = TriggerEvent,
@@ -162,7 +167,15 @@ export interface AgentBodyContext<
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
 > {
+  /**
+   * The event that started the run. Its `data` is the thread message, and
+   * `data.event` is the trigger event, typed from `on`.
+   */
   event: { name: string; data: ThreadMessage<TEvent, TRequest> };
+
+  /**
+   * The handle of the thread this run belongs to.
+   */
   thread: ThreadHandle<TRequest, TReply>;
 
   /**
@@ -221,9 +234,13 @@ export interface ThreadInboxMessage<
   /**
    * Answers a request: sends `data` to the thread that asked. It is a step,
    * and it throws for a message that is not a `"request"`.
-   * @param data The reply.
    */
-  reply(data: TReply): Promise<void>;
+  reply(
+    /**
+     * The reply.
+     */
+    data: TReply,
+  ): Promise<void>;
 }
 
 /**
@@ -238,7 +255,16 @@ export interface ThreadInbox<
       "next" | "poll" | "close" | typeof Symbol.asyncIterator
     >,
     AsyncIterable<ThreadInboxMessage<TEvent, TRequest, TReply>> {
+  /**
+   * Waits for the next message, or returns `null` once the inbox is closed
+   * and every saved message has been read.
+   */
   next(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
+
+  /**
+   * Reads the next message if it has already arrived, without waiting. It is a
+   * step, so a replay reads the same answer.
+   */
   poll(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
 
   /**
@@ -263,6 +289,11 @@ export type AgentBody<
   context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes>,
 ) => Promise<TOutput>;
 
+/**
+ * An agent made by `createAgents().agent()`: the functions to serve, its
+ * address, and handles to its threads. `TInput` and `TOutput` type
+ * `agent.invoke(thisAgent, input)`.
+ */
 export interface AgentFunction<
   TInput = Record<string, unknown>,
   TOutput = unknown,
@@ -294,10 +325,17 @@ export interface AgentFunction<
 
   /**
    * The handle of a thread of this agent.
-   * @param key Thread key.
-   * @param session Session the thread belongs to. Default: the thread key.
    */
-  thread(key: string, session?: string): ThreadHandle<TRequest, TReply>;
+  thread(
+    /**
+     * Thread key.
+     */
+    key: string,
+    /**
+     * Session the thread belongs to. Default: the thread key.
+     */
+    session?: string,
+  ): ThreadHandle<TRequest, TReply>;
 
   /**
    * The agent's threads.
@@ -315,16 +353,23 @@ const warned = new Set<string>();
  * The thread's view of its subscription: messages are the `data` of the
  * events, and stop messages are skipped, because while the agent waits for its
  * next message there is nothing to stop.
- * @param inbox The subscription to the thread's events.
- * @param client Inngest client, to send replies.
- * @param recorder Records the thread's status: `waiting()` before the agent
- * waits for a message after the first, `running()` once one is delivered.
  */
 function threadInbox(
+  /**
+   * The subscription to the thread's events.
+   */
   inbox: Subscription<RawEvent>,
   toMessage: (raw: RawEvent) => ThreadMessage,
   problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
+
+  /**
+   * Inngest client, to send replies.
+   */
   client: Inngest.Any,
+
+  /**
+   * Records the thread's status: `waiting()` before the agent waits for a message after the first, `running()` once one is delivered.
+   */
   recorder: Pick<ReturnType<typeof threadRecorder>, "waiting" | "running">,
   log: { warn: (message: string) => void },
   runId: string,
@@ -512,13 +557,21 @@ function quote(value: string) {
 
 /**
  * Defines an agent function. Use `createAgents(client).agent()`.
- * @param client Inngest client.
- * @param config Function ID and KV store.
- * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
  */
 export function createAgentFunction(
+  /**
+   * Inngest client.
+   */
   client: Inngest.Any,
+
+  /**
+   * Function ID and KV store.
+   */
   config: AgentFunctionConfig,
+
+  /**
+   * Your loop. Read `inbox`, call `agent.loop()` with `control`.
+   */
   body: AgentBody,
 ): AgentFunction {
   const ref = `${client.id}/${config.id}`;

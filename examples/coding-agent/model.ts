@@ -12,8 +12,21 @@ export const claude = agent.model(async ({ system, messages, tools }) => {
       system,
       tools,
       messages: messages.map((message) => {
-        if (message.role !== "tool") {
-          return message as Anthropic.MessageParam;
+        if (message.role === "user") {
+          return message;
+        }
+
+        if (message.role === "assistant") {
+          // The loop hands back the content this function returned: the
+          // blocks of a reply.
+          return {
+            role: "assistant",
+            content:
+              Array.isArray(message.content) ||
+              typeof message.content === "string"
+                ? message.content
+                : "",
+          };
         }
 
         return {

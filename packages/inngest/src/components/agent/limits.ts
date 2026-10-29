@@ -20,7 +20,15 @@ export interface AgentBudget {
    * Input plus output tokens.
    */
   tokens?: number;
+
+  /**
+   * Input tokens.
+   */
   input?: number;
+
+  /**
+   * Output tokens.
+   */
   output?: number;
 }
 
@@ -85,11 +93,16 @@ export interface EffectiveLimits {
 export class AgentLimitError extends Error {
   public readonly limit: "depth" | "spawn" | "mayCall" | "budget";
 
-  /**
-   * @param limit Which limit refused the call.
-   * @param message What was refused and why.
-   */
-  constructor(limit: AgentLimitError["limit"], message: string) {
+  constructor(
+    /**
+     * Which limit refused the call.
+     */
+    limit: AgentLimitError["limit"],
+    /**
+     * What was refused and why.
+     */
+    message: string,
+  ) {
     super(message);
     this.name = "AgentLimitError";
     this.limit = limit;
@@ -114,10 +127,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 /**
  * The smaller of two optional caps.
- * @param a One cap.
- * @param b Another.
  */
-const lower = (x: number | undefined, y: number | undefined) => {
+const lower = (
+  /**
+   * One cap.
+   */
+  x: number | undefined,
+
+  /**
+   * Another.
+   */
+  y: number | undefined,
+) => {
   // `Infinity` means no cap, and cannot travel in JSON, so it is left out.
   const a = x !== undefined && Number.isFinite(x) ? x : undefined;
   const b = y !== undefined && Number.isFinite(y) ? y : undefined;
@@ -131,11 +152,16 @@ const lower = (x: number | undefined, y: number | undefined) => {
 
 /**
  * The tighter of two budgets, field by field.
- * @param a One budget.
- * @param b Another.
  */
 const narrowBudget = (
+  /**
+   * One budget.
+   */
   a: AgentBudget | undefined,
+
+  /**
+   * Another.
+   */
   b: AgentBudget | undefined,
 ): AgentBudget | undefined => {
   const narrowed: AgentBudget = {};
@@ -154,11 +180,16 @@ const narrowBudget = (
 /**
  * The limits an agent runs with: its config, never wider than what it
  * inherited.
- * @param own The agent's `limits`. Depth defaults to 1.
- * @param inherited What the agent that started it passed down.
  */
 export const narrowLimits = (
+  /**
+   * The agent's `limits`. Depth defaults to 1.
+   */
   own: AgentLimits | undefined,
+
+  /**
+   * What the agent that started it passed down.
+   */
   inherited: EffectiveLimits | undefined,
 ): EffectiveLimits => {
   const mayCall = [
@@ -177,11 +208,16 @@ export const narrowLimits = (
 /**
  * Combines two sets of inherited limits into the tighter of both, so a thread
  * started again by another agent never ends up with more than it had.
- * @param a The limits stored on the thread, if any.
- * @param b The limits of the new start, if any.
  */
 export const narrowInherited = (
+  /**
+   * The limits stored on the thread, if any.
+   */
   a: EffectiveLimits | undefined,
+
+  /**
+   * The limits of the new start, if any.
+   */
   b: EffectiveLimits | undefined,
 ): EffectiveLimits | undefined => {
   if (!a || !b) {
@@ -215,9 +251,11 @@ export const narrowInherited = (
 /**
  * Reads the limits an invoking agent passed down, if any. It trusts only
  * well-formed numbers and strings, so a malformed payload never widens limits.
- * @param info The `_agent` entry of the invoke payload.
  */
 export const readInheritedLimits = (
+  /**
+   * The `_agent` entry of the invoke payload.
+   */
   info: unknown,
 ): EffectiveLimits | undefined => {
   const raw = isRecord(info) ? info.limits : undefined;
@@ -274,10 +312,17 @@ export const readInheritedLimits = (
 
 /**
  * Whether `target` matches a pattern, where `*` matches any text.
- * @param pattern An allow-list entry such as `"research/*"`.
- * @param target The agent as `"appId/functionId"`.
  */
-export const matchesTarget = (pattern: string, target: string): boolean => {
+export const matchesTarget = (
+  /**
+   * An allow-list entry such as `"research/*"`.
+   */
+  pattern: string,
+  /**
+   * The agent as `"appId/functionId"`.
+   */
+  target: string,
+): boolean => {
   const source = pattern
     .split("*")
     .map((part) => {
@@ -290,11 +335,16 @@ export const matchesTarget = (pattern: string, target: string): boolean => {
 
 /**
  * What is left of a budget after `used`, field by field, never below 0.
- * @param budget The budget.
- * @param used What the thread has spent.
  */
 const remaining = (
+  /**
+   * The budget.
+   */
   budget: AgentBudget | undefined,
+
+  /**
+   * What the thread has spent.
+   */
   used: AgentUsage,
 ): AgentBudget | undefined => {
   if (!budget) {
@@ -321,9 +371,13 @@ const remaining = (
 
 /**
  * Why the budget is spent, or `undefined` while there is some left.
- * @param state The execution's limit state.
  */
-export const budgetReason = (state: LimitState): string | undefined => {
+export const budgetReason = (
+  /**
+   * The execution's limit state.
+   */
+  state: LimitState,
+): string | undefined => {
   const budget = state.limits.budget;
 
   if (!budget) {
@@ -350,10 +404,17 @@ export const budgetReason = (state: LimitState): string | undefined => {
 /**
  * Refuses an `agent.invoke()` the limits do not allow, by throwing an
  * `AgentLimitError`.
- * @param state The execution's limit state.
- * @param target The agent to start, as `"appId/functionId"`.
  */
-export const checkInvoke = (state: LimitState, target: string): void => {
+export const checkInvoke = (
+  /**
+   * The execution's limit state.
+   */
+  state: LimitState,
+  /**
+   * The agent to start, as `"appId/functionId"`.
+   */
+  target: string,
+): void => {
   const { depth, spawn, mayCall } = state.limits;
 
   if (depth !== undefined && depth < 1) {
@@ -396,9 +457,13 @@ export const checkInvoke = (state: LimitState, target: string): void => {
 /**
  * The limits to pass to an agent this execution starts: one level less depth
  * and what is left of the budget.
- * @param state The execution's limit state.
  */
-export const childLimits = (state: LimitState): EffectiveLimits => {
+export const childLimits = (
+  /**
+   * The execution's limit state.
+   */
+  state: LimitState,
+): EffectiveLimits => {
   const { depth, spawn, mayCall, budget } = state.limits;
 
   return {
@@ -417,13 +482,21 @@ const states = new WeakMap<object, LimitState>();
 
 /**
  * Registers the limits an execution runs with.
- * @param instance The execution (`getAsyncCtxSync().execution.instance`).
- * @param limits The agent's limits after narrowing.
- * @param used What the thread has spent so far.
  */
 export const registerLimits = (
+  /**
+   * The execution (`getAsyncCtxSync().execution.instance`).
+   */
   instance: object,
+
+  /**
+   * The agent's limits after narrowing.
+   */
   limits: EffectiveLimits,
+
+  /**
+   * What the thread has spent so far.
+   */
   used: AgentUsage,
 ): LimitState => {
   const state = { limits, used, spawned: 0 };
@@ -437,11 +510,16 @@ export const registerLimits = (
  * The limit state of an execution, or the limits it inherited when it is not
  * an agent (a plain function an agent started), or `undefined` when nothing
  * limits it.
- * @param instance The execution.
- * @param inherited What the invoking agent passed down, if anything.
  */
 export const limitStateOf = (
+  /**
+   * The execution.
+   */
   instance: object,
+
+  /**
+   * What the invoking agent passed down, if anything.
+   */
   inherited: EffectiveLimits | undefined,
 ): LimitState | undefined => {
   const found = states.get(instance);

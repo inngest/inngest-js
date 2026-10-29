@@ -132,12 +132,25 @@ function lookup(event: unknown, path: string[], source: string) {
 /**
  * CEL's `&&` and `||` absorb an error on one side when the other side decides
  * the result (`err || true` is `true`).
- * @param lhs Left side.
- * @param rhs Right side.
- * @param event The event.
- * @param decisive The value that decides: `true` for `||`, `false` for `&&`.
  */
-function absorb(lhs: Node, rhs: Node, event: unknown, decisive: boolean) {
+function absorb(
+  /**
+   * Left side.
+   */
+  lhs: Node,
+  /**
+   * Right side.
+   */
+  rhs: Node,
+  /**
+   * The event.
+   */
+  event: unknown,
+  /**
+   * The value that decides: `true` for `||`, `false` for `&&`.
+   */
+  decisive: boolean,
+) {
   let leftError: unknown;
   let left: boolean | undefined;
 
@@ -409,9 +422,13 @@ export interface Expression {
 /**
  * Rewrites the `event` paths of an expression to `async`, leaving string
  * literals and fields that happen to be called `event` alone.
- * @param source Expression over `event`.
  */
-export function toAsync(source: string): string {
+export function toAsync(
+  /**
+   * Expression over `event`.
+   */
+  source: string,
+): string {
   return source
     .split(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/)
     .map((piece, index) => {
@@ -424,9 +441,13 @@ export function toAsync(source: string): string {
 
 /**
  * Parses an expression of the supported subset.
- * @param source The expression, over `event`.
  */
-export function compileExpression(source: string): Expression {
+export function compileExpression(
+  /**
+   * The expression, over `event`.
+   */
+  source: string,
+): Expression {
   const root = parse(source);
 
   return {
@@ -446,9 +467,13 @@ export function compileExpression(source: string): Expression {
 
 /**
  * Parses a thread key expression, which must evaluate to a non-empty string.
- * @param source The expression, over `event`.
  */
-export function compileKey(source: string): Expression & {
+export function compileKey(
+  /**
+   * The expression, over `event`.
+   */
+  source: string,
+): Expression & {
   key(event: unknown): string;
 } {
   const expression = compileExpression(source);

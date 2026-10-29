@@ -9,9 +9,11 @@ import type { Context } from "../../types.ts";
 /**
  * The sessions a run is in. `ctx.sessions` is only set while session
  * propagation is on, so the trigger events' sessions are read too.
- * @param ctx The running function's context.
  */
 export const currentSessions = (
+  /**
+   * The running function's context.
+   */
   ctx: Pick<Context.Any, "event" | "events" | "sessions">,
 ): Record<string, string> => {
   return {
