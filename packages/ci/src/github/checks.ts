@@ -5,8 +5,10 @@
  * @module
  */
 
+import { runLinks } from "../pipeline/jobReport.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { type StepSpec, steps } from "../pipeline/names.ts";
+import { markJob, pipelinePayload } from "../pipeline/pipelineReport.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { inGitHubSpan } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
@@ -18,6 +20,14 @@ import {
   truncateLabel,
 } from "../util.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
+import type { GraphJob } from "./render/graph.ts";
+import { jobCheck } from "./render/job.ts";
+import { pipelineCheck } from "./render/pipeline.ts";
+import {
+  type CheckAction,
+  type CheckPayload,
+  rerunAllAction,
+} from "./render/types.ts";
 
 /**
  * GitHub rejects `output.summary` over 65535 bytes (not characters), so we
@@ -33,14 +43,11 @@ interface CheckResult {
   conclusion: CheckConclusion;
   title: string;
   summary?: string | undefined;
+  /** Long output, shown below the summary. */
+  text?: string | undefined;
+  /** The buttons the check ends with. Without them it gets the defaults. */
+  actions?: CheckAction[] | undefined;
   annotations?: CheckAnnotation[] | undefined;
-}
-
-/** A button on a failed check, which GitHub sends back as `requested_action`. */
-interface CheckAction {
-  label: string;
-  description: string;
-  identifier: string;
 }
 
 /** What a check that is waiting or running offers: ending the run. */
@@ -104,6 +111,7 @@ export interface CheckReporter {
     run: CiRunScope;
     jobPath: string;
     name?: string;
+    payload?: CheckPayload;
   }): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
@@ -113,6 +121,7 @@ export interface CheckReporter {
     run: CiRunScope;
     jobPath: string;
     name?: string;
+    payload?: CheckPayload;
   }): Promise<number | undefined>;
   /**
    * Complete a job's check. Returns when it completed, read inside the step so
@@ -142,6 +151,18 @@ export interface CheckReporter {
     jobPath?: string;
     name?: string;
     title: string;
+  }): Promise<void>;
+  /**
+   * Show a running job's check as it stands, when a command starts. The one before it is done by then.
+   * What it says is read inside the step, so it is the state at that moment.
+   */
+  jobProgress(args: {
+    run: CiRunScope;
+    jobPath: string;
+    name?: string;
+    /** How many commands have started or finished, which names the step. */
+    count: number;
+    payload: () => CheckPayload;
   }): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
@@ -182,7 +203,8 @@ export interface CheckSink {
     name: string;
     externalId: string;
     detailsUrl: string;
-    title?: string;
+    /** What the check shows and offers while it waits or runs. */
+    payload?: CheckPayload;
   }): Promise<{ id?: number }>;
   complete(args: {
     run: CiRunScope;
@@ -192,6 +214,7 @@ export interface CheckSink {
     conclusion: CheckConclusion;
     title: string;
     summary: string;
+    text?: string;
     /** At most the first batch: the reporter sends the rest through `annotate`. */
     annotations: NormalisedAnnotation[];
     actions?: CheckAction[];
@@ -354,16 +377,46 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       conclusion: read.conclusion,
       title: stripAnsi(read.title),
       summary: truncateSummary(stripAnsi(read.summary ?? "")),
+      ...(read.text === undefined
+        ? {}
+        : { text: truncateSummary(stripAnsi(read.text)) }),
       annotations:
         batchAnnotations(
           (read.annotations ?? []).map(normaliseAnnotation),
         )[0] ?? [],
       actions:
-        read.conclusion === "failure" || read.conclusion === "timed_out"
+        read.actions ??
+        (read.conclusion === "failure" || read.conclusion === "timed_out"
           ? failedActions
-          : [],
+          : []),
       ...idFor(run, key),
     };
+  };
+
+  /**
+   * Bring the pipeline's check up to date when a job's check completes, in the
+   * same step: it is a request, not a step. It never fails the job's.
+   */
+  const showPipelineProgress = async (run: CiRunScope) => {
+    if (!run.checkName) {
+      return;
+    }
+
+    try {
+      const shown = pipelinePayload(run, "running");
+
+      await sink.update?.({
+        run,
+        name: run.checkName,
+        title: shown.title,
+        summary: shown.summary,
+        ...(shown.text === undefined ? {} : { text: shown.text }),
+        actions: shown.actions,
+        ...idFor(run, "pipeline"),
+      });
+    } catch {
+      // The pipeline's check says the same at the end.
+    }
   };
 
   /** A job's check, or the pipeline's when there's no `job`. */
@@ -373,8 +426,20 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     job?: string,
     metadata?: () => Record<string, unknown>,
     state: "queued" | "in_progress" = "in_progress",
+    payload?: CheckPayload,
   ) => {
     const key = job ?? "pipeline";
+
+    const shown =
+      payload ??
+      (job === undefined
+        ? pipelinePayload(run, "running")
+        : jobCheck({
+            ...runLinks(run),
+            name: job,
+            state:
+              state === "queued" ? { kind: "queued" } : { kind: "running" },
+          }));
 
     const result = await githubStep(
       run,
@@ -387,6 +452,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           state,
           name,
           ...identity(run, key),
+          ...(shown ? { payload: shown } : {}),
         });
 
         return { ...started, startedAt: Date.now() };
@@ -396,6 +462,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
     if (result?.id) {
       checkRunIds.set(idKey(run, key), result.id);
+
+      if (job !== undefined) {
+        markJob(run, job, { checkRunId: result.id });
+      }
     }
 
     return result?.startedAt;
@@ -418,6 +488,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         const args = completeArgs(run, key, name, read);
 
         await sink.complete(args);
+
+        if (job) {
+          await showPipelineProgress(run);
+        }
 
         // What is past the first batch comes out of the step, so it is the
         // same on every replay.
@@ -482,7 +556,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       }
     },
 
-    jobQueued: async ({ run, jobPath, name }) => {
+    jobQueued: async ({ run, jobPath, name, payload }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
@@ -493,15 +567,23 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobPath,
         undefined,
         "queued",
+        payload,
       );
     },
 
-    jobStart: async ({ run, jobPath, name }) => {
+    jobStart: async ({ run, jobPath, name, payload }) => {
       if (!run.checkName || !run.jobChecks) {
         return undefined;
       }
 
-      return start(run, jobCheckName(run, jobPath, name), jobPath);
+      return start(
+        run,
+        jobCheckName(run, jobPath, name),
+        jobPath,
+        undefined,
+        "in_progress",
+        payload,
+      );
     },
 
     jobComplete: async ({ run, jobPath, name, ...result }) => {
@@ -585,6 +667,54 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       });
     },
 
+    jobProgress: async ({ run, jobPath, name, count, payload }) => {
+      const parent = run.build?.parent;
+      const check = parent?.check;
+
+      // A job in a run of its own has no check there: it shows on the check of
+      // the run that invoked it.
+      if (parent && check) {
+        await githubStep(run, steps.progressCheck(jobPath, count), async () => {
+          const read = payload();
+
+          await sink.update?.({
+            run: { ...run, runId: parent.runId, pipelineId: parent.pipelineId },
+            name: check.name,
+            title: read.title,
+            summary: read.summary,
+            actions: read.actions,
+            ...(check.checkRunId === undefined
+              ? {}
+              : { checkRunId: check.checkRunId }),
+          });
+
+          return null;
+        });
+
+        return;
+      }
+
+      if (!run.checkName || !run.jobChecks) {
+        return;
+      }
+
+      await githubStep(run, steps.progressCheck(jobPath, count), async () => {
+        const read = payload();
+
+        await sink.update?.({
+          run,
+          name: jobCheckName(run, jobPath, name),
+          title: read.title,
+          summary: read.summary,
+          ...(read.text === undefined ? {} : { text: read.text }),
+          actions: read.actions,
+          ...idFor(run, jobPath),
+        });
+
+        return null;
+      });
+    },
+
     commandRetry: async ({ run, jobPath, attempt, of, error }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
@@ -629,13 +759,21 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       const step = steps.buildingCheck(parent.jobPath);
 
+      const shown = jobCheck({
+        ...runLinks(run),
+        run: detailsUrl,
+        name: parent.jobPath,
+        state: direct ? { kind: "running" } : { kind: "building" },
+      });
+
       await githubStep(run, step, async () => {
         await sink.update?.({
           // The check belongs to the pipeline run that invoked this one.
           run: { ...run, runId: parent.runId, pipelineId: parent.pipelineId },
           name: check.name,
           title: direct ? "Running in its own run" : "Building in its own run",
-          actions: runningActions,
+          summary: shown.summary,
+          actions: shown.actions,
           detailsUrl,
           ...(check.checkRunId === undefined
             ? {}
@@ -681,10 +819,17 @@ export const consoleSink = (
     at: string;
     pipeline: string;
     name: string;
-    status: "queued" | "in_progress" | "completed";
+    status: "queued" | "in_progress" | "updated" | "completed";
     conclusion?: string;
     title?: string;
     summary?: string;
+    annotations?: Array<{
+      path: string;
+      start_line: number;
+      annotation_level: string;
+      title?: string;
+      message: string;
+    }>;
     url?: string;
   }>,
 ): CheckSink => {
@@ -693,12 +838,13 @@ export const consoleSink = (
   };
 
   return {
-    start: async ({ run, state, name, detailsUrl }) => {
+    start: async ({ run, state, name, detailsUrl, payload }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
         name,
         status: state,
+        ...(payload ? { title: payload.title, summary: payload.summary } : {}),
         url: detailsUrl,
       });
 
@@ -709,7 +855,15 @@ export const consoleSink = (
 
       return {};
     },
-    complete: async ({ run, name, conclusion, title, summary, detailsUrl }) => {
+    complete: async ({
+      run,
+      name,
+      conclusion,
+      title,
+      summary,
+      annotations,
+      detailsUrl,
+    }) => {
       history.push({
         at: new Date().toISOString(),
         pipeline: run.pipelineId,
@@ -718,6 +872,7 @@ export const consoleSink = (
         conclusion,
         title,
         summary,
+        annotations,
         url: detailsUrl,
       });
 
@@ -726,7 +881,17 @@ export const consoleSink = (
         { check: name, conclusion, url: detailsUrl },
       );
     },
-    update: async ({ run, name, title, detailsUrl }) => {
+    update: async ({ run, name, title, summary, detailsUrl }) => {
+      history.push({
+        at: new Date().toISOString(),
+        pipeline: run.pipelineId,
+        name,
+        status: "updated",
+        title,
+        ...(summary === undefined ? {} : { summary }),
+        ...(detailsUrl ? { url: detailsUrl } : {}),
+      });
+
       write(
         `[${run.pipelineId}] … ${name}  ${title}${detailsUrl ? `  → ${detailsUrl}` : ""}`,
         { check: name },
@@ -772,7 +937,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
   };
 
   return {
-    start: async ({ run, state, name, externalId, detailsUrl }) => {
+    start: async ({ run, state, name, externalId, detailsUrl, payload }) => {
       const repo = run.repo;
 
       if (!repo?.sha) {
@@ -780,6 +945,17 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       }
 
       const octokit = await clientFor(provider, repo);
+
+      const shown = payload
+        ? {
+            output: {
+              title: stripAnsi(payload.title),
+              summary: truncateSummary(stripAnsi(payload.summary)),
+            },
+          }
+        : {};
+
+      const buttons = payload ? payload.actions : runningActions;
       const existingId = await findCheckRun(octokit, repo, name, externalId);
       const startedAt = new Date().toISOString();
 
@@ -791,7 +967,8 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
             check_run_id: existingId,
             status: "in_progress",
             started_at: startedAt,
-            actions: runningActions,
+            actions: buttons,
+            ...shown,
           });
         }
 
@@ -807,7 +984,8 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         external_id: externalId,
         details_url: detailsUrl,
         ...(state === "in_progress" ? { started_at: startedAt } : {}),
-        actions: runningActions,
+        actions: buttons,
+        ...shown,
       });
 
       return { id: created.data.id };
@@ -821,6 +999,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       conclusion,
       title,
       summary,
+      text,
       annotations,
       actions,
       checkRunId,
@@ -849,6 +1028,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         output: {
           title,
           summary,
+          ...(text === undefined ? {} : { text }),
           ...(annotations.length > 0 ? { annotations } : {}),
         },
         ...(actions ? { actions } : {}),
@@ -894,7 +1074,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       });
     },
 
-    closeOpen: async ({ run, title }) => {
+    closeOpen: async ({ run }) => {
       const repo = run.repo;
 
       if (!repo?.sha) {
@@ -903,12 +1083,13 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
       const octokit = await clientFor(provider, repo);
 
-      // Every check a run starts has its ID in its external ID. All are read
-      // before any is closed, since closing one moves the pages.
-      const mine = new Map<
-        number,
-        { id: number; name: string; output?: { summary?: string | null } }
-      >();
+      // Every check a run starts has its ID in its external ID. All the open
+      // ones are read before any is closed, since closing one moves the pages.
+      type Listed = Awaited<
+        ReturnType<typeof octokit.rest.checks.listForRef>
+      >["data"]["check_runs"][number];
+
+      const listed = new Map<number, Listed>();
 
       for (const status of ["queued", "in_progress"] as const) {
         const found = await octokit.paginate(octokit.rest.checks.listForRef, {
@@ -920,13 +1101,58 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         });
 
         for (const checkRun of found) {
-          if (checkRun.external_id?.startsWith(`${run.runId}:`)) {
-            mine.set(checkRun.id, checkRun);
-          }
+          listed.set(checkRun.id, checkRun);
         }
       }
 
-      for (const checkRun of mine.values()) {
+      const mine = [...listed.values()].filter((checkRun) => {
+        return checkRun.external_id?.startsWith(`${run.runId}:`);
+      });
+
+      const links = {
+        ...(repo.sha
+          ? {
+              commit: {
+                sha: repo.sha.slice(0, 7),
+                url: `https://github.com/${repo.fullName}/commit/${repo.sha}`,
+              },
+            }
+          : {}),
+      };
+
+      const pipeline = mine.find((checkRun) => {
+        return checkRun.external_id === `${run.runId}:pipeline`;
+      });
+
+      for (const checkRun of mine) {
+        if (checkRun.status === "completed") {
+          continue;
+        }
+
+        const isPipeline = checkRun === pipeline;
+
+        const shown = isPipeline
+          ? pipelineCheck({
+              ...links,
+              run: checkRun.details_url ?? "",
+              state: "cancelled",
+              jobs: [],
+              elapsedMs: Math.max(
+                0,
+                Date.now() -
+                  new Date(checkRun.started_at ?? Date.now()).getTime(),
+              ),
+            })
+          : jobCheck({
+              ...links,
+              run: checkRun.details_url ?? "",
+              name: checkRun.name,
+              state: {
+                kind: "cancelled",
+                reason: "the run was cancelled before it finished",
+              },
+            });
+
         await octokit.rest.checks.update({
           owner: repo.owner,
           repo: repo.name,
@@ -934,10 +1160,10 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
           status: "completed",
           conclusion: "cancelled",
           completed_at: new Date().toISOString(),
-          actions: [],
+          actions: shown.actions,
           output: {
-            title,
-            summary: checkRun.output?.summary || checkRun.name,
+            title: shown.title,
+            summary: truncateSummary(shown.summary),
           },
         });
       }

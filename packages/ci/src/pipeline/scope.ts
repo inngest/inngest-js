@@ -11,8 +11,10 @@ import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { DeferFn, DeferHandle } from "inngest/types";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import type { CommandRow } from "../github/render/commands.ts";
 import type { ResolvedSource } from "../github/source.ts";
 import type { CommandState } from "../machine/command.ts";
+import type { Found } from "../report/found.ts";
 import type {
   CheckAnnotation,
   CheckConclusion,
@@ -166,6 +168,27 @@ export interface BuildInfo {
   durationMs: number;
   /** When the snapshot was taken, as an ISO timestamp. */
   createdAt: string;
+}
+
+/** What a job records about itself in the run, for the pipeline's check. */
+export interface JobNode {
+  /** The job's path, which is its ID for the first call of a job. */
+  path: string;
+  /** The jobs it starts from. */
+  parents: string[];
+  state: "queued" | "running" | "ok" | "cached" | "failed" | "stopped";
+  /** When it started and ended, as the clock read inside its check's steps. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Whether it is making a cache entry, or made one. */
+  building?: boolean;
+  built?: boolean;
+  /** The ID of its check on GitHub. */
+  checkRunId?: number;
+  /** Why it failed, when it did. */
+  failure?: { why: string; infra: boolean; stepUrl?: string };
+  /** How many annotations its check carries. */
+  annotations?: number;
 }
 
 export interface JobSummary {
@@ -322,9 +345,19 @@ export interface CiRunScope {
    */
   buildLock?: { name: string; path: string };
   /** What the build's job reported, which the build hands back. */
-  report?: { summaries: string[]; annotations: CheckAnnotation[] };
+  report?: {
+    summaries: string[];
+    annotations: CheckAnnotation[];
+    commands: CommandRow[];
+    found: Found[];
+  };
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
+  /**
+   * What each job has recorded about itself, by path, for the pipeline's check.
+   * Jobs write it as they go; only the check's steps read it.
+   */
+  jobGraph: Map<string, JobNode>;
   /**
    * Job checks that have started and not finished. When a run ends while jobs
    * are still going, these are completed rather than left spinning.
@@ -388,6 +421,11 @@ export interface CiJobScope {
   machine?: Promise<MachineHandle>;
   /** Set when the job builds a snapshot for someone who asked for it. */
   request?: BuildRequest;
+  /**
+   * Set when the job has a check of its own, with its name if it was given
+   * one. A job without it shows nothing on GitHub.
+   */
+  check?: { name?: string };
   fromSnapshotId?: string;
   /** The job this one starts from, and whether its snapshot was made before this run. */
   fromParent?: { id: string; reused: boolean };
@@ -416,6 +454,15 @@ export interface CiJobScope {
   /** The one run of `restoreFallback`, which every other command waits on. */
   fallbackRan?: Promise<void>;
   fromJobIds: string[];
+  /** When the job started, as its check read it. Set once it has. */
+  startedAt?: number;
+  /**
+   * The commands that have started or finished in this job, in the order they
+   * started, for its check. An extra machine shares its job's list.
+   */
+  commands: CommandRow[];
+  /** What tools reported about the code, as paths in the repository. */
+  found: Found[];
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];

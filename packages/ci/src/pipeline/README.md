@@ -16,3 +16,5 @@ The client and the run engine.
 - `snapshotCleanup.ts`: how a run's snapshots are deleted however it ends. A run registers a defer for each snapshot it owns, and `ci-snapshot-cleanup` deletes it by ID when the run ends, including on cancel. A run that deletes its snapshots itself aborts the defers, and a build run that succeeds aborts its own once the run that invoked it has taken them over.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.
+- `jobReport.ts`: what a job's check shows, worked out from its scope: links, machine, the failure's class and excerpt, and the payload for queued, running, cache hit, passed and failed. The wording is in `github/render`.
+- `pipelineReport.ts`: what the pipeline's check shows, from what each job recorded about itself in `run.jobGraph` (`markJob`): progress while running, then passed, failed or cancelled.

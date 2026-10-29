@@ -1045,6 +1045,41 @@ describe("commands", () => {
     ).toBe(true);
   });
 
+  test("a background process's output keeps stdout and stderr in the order they were written", async () => {
+    const { api, ci } = setup();
+
+    api.script([
+      {
+        match: "serve",
+        ticks: 1,
+        chunks: [
+          { stream: "STDOUT", text: "one\n" },
+          { stream: "STDERR", text: "two\n" },
+          { stream: "STDOUT", text: "three\n" },
+        ],
+      },
+    ]);
+
+    let output: string | undefined;
+
+    const job = ci.job("e2e", async () => {
+      const server = await $`serve`.background();
+
+      output = await server.output();
+
+      await server.kill();
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(output).toBe("one\ntwo\nthree\n");
+  });
+
   test("a command that ends during its first wait reports its duration", async () => {
     const { ci } = setup();
 
@@ -3636,7 +3671,7 @@ describe("checks", () => {
       expect.objectContaining({
         name: "pr / test",
         conclusion: "failure",
-        title: "boom (exit 1)",
+        title: "❌ boom (exit 1)",
       }),
       expect.objectContaining({ name: "pr", conclusion: "failure" }),
     ]);
@@ -3745,7 +3780,7 @@ describe("checks", () => {
 
     expect(failed).toMatchObject({
       conclusion: "failure",
-      title: "machine didn't start in 2m",
+      title: "❌ machine didn't start in 2m",
     });
   });
 
@@ -3843,7 +3878,7 @@ describe("checks", () => {
     });
 
     expect(restored?.conclusion).toBe("success");
-    expect(restored?.title).toMatch(/^Cached (just now|.+ ago)$/);
+    expect(restored?.title).toMatch(/^⚡ Cache hit, built (just now|.+ ago)$/);
   });
 
   test("job checks can be turned off for the whole pipeline", async () => {
@@ -3947,7 +3982,7 @@ describe("job durations", () => {
       return entry.status === "completed" && entry.name === "pr / test";
     });
 
-    expect(completed?.title).toMatch(/^Passed in (\d+m )?\d+s$/);
+    expect(completed?.title).toMatch(/^✅ Passed in (\d+m )?\d+s$/);
     expect(completed?.title).not.toMatch(/ms$/);
   });
 
@@ -4318,8 +4353,12 @@ describe("failures that retrying cannot fix", () => {
         return [entry.name, entry.conclusion, entry.title];
       }),
     ).toEqual([
-      ["pr / build", "failure", "machine didn't start in 2m"],
-      ["pr", "failure", "1 of 1 job failed: build: machine didn't start in 2m"],
+      ["pr / build", "failure", "❌ machine didn't start in 2m"],
+      [
+        "pr",
+        "failure",
+        "❌ 1 of 1 job failed: build: machine didn't start in 2m",
+      ],
     ]);
   });
 
@@ -4417,7 +4456,7 @@ describe("commit statuses", () => {
           return (request.body as { description: string }).description;
         });
 
-      expect(descriptions).toContain("ENOTFOUND localhost (exit 1)");
+      expect(descriptions).toContain("❌ ENOTFOUND localhost (exit 1)");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -4474,7 +4513,7 @@ describe("the pipeline's commit status", () => {
       expect(statuses.at(0)).toMatchObject({ state: "pending" });
       expect(statuses.at(-1)).toMatchObject({
         state: "failure",
-        description: "1 of 2 jobs failed: lint: Error: bad (exit 1)",
+        description: "❌ 1 of 2 jobs failed: lint: Error: bad (exit 1)",
       });
     } finally {
       vi.unstubAllEnvs();
@@ -4731,8 +4770,10 @@ describe("how long a pipeline took", () => {
       return entry.name === "pr" && entry.status === "completed";
     });
 
-    expect(done?.title).toMatch(/^3 jobs passed in \d+(ms|s)$/);
-    expect(done?.summary).toMatch(/^\*\*Took \d+(ms|s)\*\*/);
+    expect(done?.title).toMatch(/^✅ Passed: 3 jobs in \d+(ms|s)$/);
+    expect(done?.summary).toMatch(
+      /^> \[!NOTE\]\n> ✅ \*\*3 jobs passed\*\* in \*\*\d+(ms|s)\*\*/,
+    );
   });
 });
 
@@ -4780,8 +4821,8 @@ describe("what the cache saved", () => {
 
     const second = await run();
 
-    expect(second[0]?.title).toMatch(/\(saved \d+s from cache\)$/);
-    expect(second[0]?.summary).toContain("| base |");
+    expect(second[0]?.title).toMatch(/ · ⚡ \d+s saved by cache$/);
+    expect(second[0]?.summary).toContain("| `base` |");
   });
 });
 
@@ -4999,7 +5040,7 @@ describe("what a check shows", () => {
 
       expect(
         summaries.some((summary) => {
-          return summary.startsWith("````\n");
+          return summary.includes("````");
         }),
       ).toBe(true);
     } finally {
@@ -5289,14 +5330,22 @@ describe("re-running from a check", () => {
 
       expect(completed.length).toBeGreaterThan(0);
 
+      const noCache = {
+        label: "Re-run, no cache",
+        description: "Run again from scratch",
+        identifier: "rerun-fresh",
+      };
+
       for (const request of completed) {
-        expect((request.body as { actions: unknown[] }).actions).toEqual([
-          {
-            label: "Re-run, no cache",
-            description: "Run again from scratch",
-            identifier: "rerun-fresh",
-          },
-        ]);
+        const body = request.body as {
+          name: string;
+          actions: Array<{ identifier: string }>;
+        };
+
+        expect(body.actions.at(-1)).toEqual(noCache);
+        expect(body.actions.map((action) => action.identifier)).toEqual(
+          body.name === "pr" ? ["rerun-all", "rerun-fresh"] : ["rerun-fresh"],
+        );
       }
     } finally {
       vi.unstubAllEnvs();
@@ -5530,6 +5579,103 @@ describe("a cancelled run's checks", () => {
       [expect.stringContaining("/check-runs/1"), "cancelled"],
       [expect.stringContaining("/check-runs/2"), "cancelled"],
     ]);
+  });
+});
+
+describe("a cancelled run's pipeline check", () => {
+  test("just says it was cancelled, and offers a re-run", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        total_count: 4,
+        check_runs: [
+          {
+            id: 1,
+            name: "pr",
+            external_id: "01TESTRUN:pipeline",
+            status: "in_progress",
+            started_at: "2026-10-21T09:12:00Z",
+            details_url: "http://localhost:8288/run?runID=01TESTRUN",
+          },
+          {
+            id: 2,
+            name: "pr / lint",
+            external_id: "01TESTRUN:lint",
+            status: "completed",
+            conclusion: "success",
+            started_at: "2026-10-21T09:12:01Z",
+            completed_at: "2026-10-21T09:12:31Z",
+          },
+          {
+            id: 3,
+            name: "pr / test",
+            external_id: "01TESTRUN:test",
+            status: "in_progress",
+            started_at: "2026-10-21T09:12:02Z",
+          },
+          {
+            id: 4,
+            name: "pr / e2e",
+            external_id: "01TESTRUN:e2e",
+            status: "queued",
+          },
+        ],
+      });
+
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/1", { id: 1 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/3", { id: 3 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/4", { id: 4 });
+
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {});
+
+      const cleanup = ci.functions().find((fn) => {
+        return fn.opts.id === "pr/cleanup";
+      });
+
+      if (!cleanup) {
+        throw new Error("no cleanup function");
+      }
+
+      await runFunction(cleanup, {
+        event: {
+          name: "inngest/function.cancelled",
+          data: { run_id: "01TESTRUN", event: prEvent },
+        },
+      });
+
+      const patched = (id: number) => {
+        return gh.requests.find((request) => {
+          return (
+            request.method === "PATCH" &&
+            request.path.endsWith(`/check-runs/${id}`)
+          );
+        })?.body as {
+          conclusion: string;
+          actions: Array<{ identifier: string }>;
+          output: { title: string; summary: string };
+        };
+      };
+
+      const pipeline = patched(1);
+
+      expect(pipeline.conclusion).toBe("cancelled");
+      expect(pipeline.output.title).toMatch(/^🛑 Cancelled after \S+( \S+)?$/);
+      expect(pipeline.output.summary).toContain("> [!NOTE]");
+      expect(pipeline.output.summary).not.toContain("passed");
+      expect(pipeline.actions.map((action) => action.identifier)).toEqual([
+        "rerun-all",
+      ]);
+
+      // The finished job's check is left alone; the others are cancelled.
+      expect(patched(2)).toBeUndefined();
+      expect(patched(3).output.summary).toContain("**Cancelled**");
+      expect(patched(4).output.title).toBe("🛑 Cancelled");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -5869,7 +6015,7 @@ describe("cache builds in their own run", () => {
       reporter.history.find((entry) => {
         return entry.name === "pr / base" && entry.status === "completed";
       })?.title,
-    ).toMatch(/^Passed in /);
+    ).toMatch(/^✅ Passed in /);
   });
 
   test("a hit builds nothing", async () => {

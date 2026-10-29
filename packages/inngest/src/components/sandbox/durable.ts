@@ -34,6 +34,8 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import { validateShims, withShims } from "./shims.ts";
+import { bundledToolBinary } from "./toolBinary.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
 import { commandSpan, namedStep, sdkOrigin } from "./trace.ts";
 import {
@@ -212,18 +214,35 @@ export const execOperationResult = (result: {
   stdout: Uint8Array;
   stderr: Uint8Array;
   exitCode: number;
+  /**
+   * The full sizes of the output, when the bytes given are only a tail of it.
+   */
+  originalBytes?: { stdout: number; stderr: number };
 }): SandboxOperationResultV1 => {
-  const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const fitted = fitDurableSandboxExecOutput(result.stdout, result.stderr);
+  const { originalBytes } = result;
+  const output: typeof fitted.output =
+    originalBytes &&
+    (originalBytes.stdout > fitted.stdout.byteLength ||
+      originalBytes.stderr > fitted.stderr.byteLength)
+      ? {
+          truncated: true,
+          strategy: "tail",
+          originalBytes,
+          retainedBytes: {
+            stdout: fitted.stdout.byteLength,
+            stderr: fitted.stderr.byteLength,
+          },
+        }
+      : fitted.output;
   const {
     encoding,
     values: [stdout, stderr],
-  } = encodeOutput([output.stdout, output.stderr], {
-    truncated: output.output.truncated
+  } = encodeOutput([fitted.stdout, fitted.stderr], {
+    truncated: output.truncated
       ? [
-          output.output.retainedBytes.stdout <
-            output.output.originalBytes.stdout,
-          output.output.retainedBytes.stderr <
-            output.output.originalBytes.stderr,
+          output.retainedBytes.stdout < output.originalBytes.stdout,
+          output.retainedBytes.stderr < output.originalBytes.stderr,
         ]
       : [],
   });
@@ -236,7 +255,7 @@ export const execOperationResult = (result: {
       stderr: stderr!,
       encoding,
       exitCode: result.exitCode,
-      output: output.output,
+      output,
     },
   };
 };
@@ -754,14 +773,34 @@ export const createDurableSandboxFacade = (
     command,
     options,
   ) => {
-    const { tools, toolOptions, exitCodes, ...commandOptions } = options ?? {};
+    const {
+      tools: ownTools,
+      toolOptions,
+      exitCodes,
+      shims,
+      ...commandOptions
+    } = options ?? {};
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
-    if (tools && exitCodes !== undefined) {
-      throw new SandboxValidationError("exitCodes can't be used with tools");
+    const checked = shims === undefined ? [] : validateShims(shims);
+    const binary = checked.some((one) => {
+      return one.kind === "program";
+    })
+      ? await bundledToolBinary()
+      : undefined;
+    const shimmed =
+      checked.length > 0 ? withShims(command, checked, { binary }) : undefined;
+    for (const name of Object.keys(shimmed?.tools ?? {})) {
+      if (ownTools && Object.hasOwn(ownTools, name)) {
+        throw new SandboxValidationError(
+          `The tool name "${name}" is used by shims`,
+        );
+      }
     }
 
+    const tools =
+      ownTools || shimmed ? { ...ownTools, ...shimmed?.tools } : undefined;
     const text = commandText(command);
     const timeoutMs =
       commandOptions.timeout === undefined
@@ -791,10 +830,14 @@ export const createDurableSandboxFacade = (
       });
     }
 
+    // A command with tools is always a process that steps follow in windows,
+    // so its timeout is its own, however long. The operation below only
+    // carries the command, so its timeout stays within what one exec accepts.
+    const toolsTimeoutMs = timeoutMs ?? maxSandboxProcessTimeoutMs;
     const normalized = normalizeSandboxCommandOptions(command, {
       ...commandOptions,
       ...(tools && {
-        timeout: commandOptions.timeout ?? maxSandboxProcessTimeoutMs,
+        timeout: Math.min(toolsTimeoutMs, maxSandboxProcessTimeoutMs),
       }),
     });
     const { timeout: _timeout, ...input } = normalized;
@@ -828,20 +871,31 @@ export const createDurableSandboxFacade = (
     };
 
     // The exit is checked inside the step, so a disallowed one fails the step
-    // and a replay throws it again
+    // and a replay throws it again. A command with tools has no single step
+    // for it, so it is checked on the result, which replays the same.
     const result = await callRawTool(
       rawToolResolver,
       idOrOptions,
       operation,
-      exitCodes && exitCodes !== "any"
+      !tools && exitCodes && exitCodes !== "any"
         ? (wire) => {
             checkExit(exitCodes, { command: text, ...toResult(wire) });
 
             return wire;
           }
         : undefined,
-      tools && { tools, toolOptions },
+      tools && {
+        tools,
+        toolOptions,
+        binary,
+        timeoutMs: toolsTimeoutMs,
+        command: shimmed?.command,
+      },
     );
+
+    if (tools && exitCodes && exitCodes !== "any") {
+      checkExit(exitCodes, { command: text, ...toResult(result) });
+    }
 
     return toResult(result);
   };

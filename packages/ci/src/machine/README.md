@@ -6,3 +6,4 @@ Machines and the commands that run on them.
 - `from.ts`: a job's `from` option: working out the parent, resolving the snapshot it starts from (and its parent's, for its name), and starting the job from it. Children of one parent share one invoke of the build.
 - `sandbox.ts`: `sandbox()`, extra machines alongside a job's own.
 - `command.ts`: the `$` command tag.
+- `machine/reports.ts`: reading what tools reported after a command, or from a file a job names, onto the job's scope.

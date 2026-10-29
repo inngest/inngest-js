@@ -25,6 +25,35 @@ describe("exec output in a step result", () => {
     });
   });
 
+  test("says so when the bytes are only the tail of a larger output", () => {
+    const result = execOperationResult({
+      stdout: bytes("tail"),
+      stderr: bytes(""),
+      exitCode: 0,
+      originalBytes: { stdout: 1000, stderr: 0 },
+    });
+
+    expect(result).toMatchObject({
+      result: {
+        stdout: "tail",
+        output: {
+          truncated: true,
+          strategy: "tail",
+          originalBytes: { stdout: 1000, stderr: 0 },
+          retainedBytes: { stdout: 4, stderr: 0 },
+        },
+      },
+    });
+    expect(
+      execOperationResult({
+        stdout: bytes("tail"),
+        stderr: bytes(""),
+        exitCode: 0,
+        originalBytes: { stdout: 4, stderr: 0 },
+      }),
+    ).toMatchObject({ result: { output: { truncated: false } } });
+  });
+
   test.each([
     {
       name: "stdout is binary",

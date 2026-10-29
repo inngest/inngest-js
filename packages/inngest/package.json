@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "4.26.1",
+  "version": "4.26.2",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.cjs",
   "module": "./index.js",
@@ -11,9 +11,10 @@
   },
   "scripts": {
     "prebuild": "pnpm run pb:version",
+    "build:sandbox-tool": "sh sandbox-tool/build.sh",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto ./src/components/sdkFeatureObservations/protobuf/feature_observations.proto",
-    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts && sh sandbox-tool/build.sh --package",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.config.integration.ts",
     "test:sandbox-live": "pnpm run pb:version && tsx src/components/sandbox/live/run.ts",
