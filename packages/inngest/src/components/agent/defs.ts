@@ -647,10 +647,10 @@ const lazySandbox = (
           existed = true;
           restored = true;
           fromPause = true;
-          arm(sandbox);
           // The workspace was ready when it was paused: a run cancelled from
           // here pauses it again.
           await owner?.ready(name);
+          arm(sandbox);
           await fetchBootSkills(name, sandbox, definition.skills ?? []);
 
           return sandbox;
@@ -896,7 +896,7 @@ const lazySandbox = (
 
         if (paused) {
           saved = true;
-        } else if (used) {
+        } else if (used || fromPause) {
           const ok = await owner.save(name, sandbox, epoch);
 
           // A save took its generation whether or not it worked.

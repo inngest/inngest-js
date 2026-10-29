@@ -625,6 +625,37 @@ describe("cleanupThreadSandbox", () => {
     expect(await s.owner().takePaused("work")).toBe("sb-newer");
   });
 
+  test("a cleanup that replaces an older paused record destroys the sandbox it supersedes", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+    w.durable("sb-1");
+    w.durable("sb-old");
+
+    const s = setup(w, "01B");
+
+    await s.scope.set(sandboxReadyKey(ref, "work", "01B") as never, true);
+    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+      id: "sb-old",
+      generation: "01A",
+    });
+    await cleanupThreadSandbox({
+      client: w.client as never,
+      ref,
+      thread,
+      runId: "01B",
+      scope: s.scope,
+      sandbox: { name: "work", sandboxId: "sb-1" },
+      run: (_id, fn) => {
+        return fn();
+      },
+    });
+
+    expect(w.live.has("sb-old")).toBe(false);
+    expect(w.paused.has("sb-1")).toBe(true);
+    expect(await s.owner().takePaused("work")).toBe("sb-1");
+  });
+
   test("a cleanup of a sandbox that asked for snapshot saves and destroys it", async () => {
     const w = world();
 

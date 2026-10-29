@@ -526,7 +526,12 @@ export const threadSandboxOwner = (
         try {
           await sandbox.pause(`${name}:thread:pause${suffix}`);
         } catch (error) {
-          await forget(scope, key.name);
+          // Back to what the record held, which nothing has replaced.
+          if (held) {
+            await scope.set(key, held);
+          } else {
+            await forget(scope, key.name);
+          }
 
           throw error;
         }
@@ -656,10 +661,29 @@ export const cleanupThreadSandbox = async (
         );
 
         if (paused) {
-          await scope.set(pausedKey, { id: sandbox.sandboxId, generation });
-          await forget(scope, readyKey);
+          // A newer run may have paused its own sandbox while this one was
+          // being paused: its record stays, and this sandbox is not kept.
+          const now = await scope.get(pausedKey);
 
-          return;
+          if (!now || now.generation < generation) {
+            await scope.set(pausedKey, { id: sandbox.sandboxId, generation });
+
+            // The sandbox the record held before is no longer the thread's.
+            if (now && now.id !== sandbox.sandboxId) {
+              await options.run(
+                `${sandbox.name}:thread:superseded`,
+                async () => {
+                  await (await client.sandboxes.get(now.id))?.destroy();
+
+                  return null;
+                },
+              );
+            }
+
+            await forget(scope, readyKey);
+
+            return;
+          }
         }
       } catch (error) {
         if (!(error instanceof StepError)) {

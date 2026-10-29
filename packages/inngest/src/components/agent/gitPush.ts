@@ -435,7 +435,7 @@ if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
           ? await gunzip(packed, size)
           : undefined;
 
-      if (!inflated) {
+      if (!inflated || inflated.byteLength !== size) {
         return fail(
           "the push could not be read in full from the sandbox (its compressed manifest was cut short or larger than declared)",
         );
