@@ -26,23 +26,35 @@ const emptyRecord = (): ThreadRecord => {
  * The writes of one run. Each is one KV step.
  */
 /**
- * The record with the status change noted, if `next` changes the status.
+ * The most status changes a record keeps.
+ */
+const keptTransitions = 64;
+
+/**
+ * The record with the change noted, if `next` changes the status or starts a
+ * new run. A record written before changes were kept starts its list with the
+ * status it had.
  * @param current The record as it was.
  * @param next The record as it will be.
+ * @param at The time of the change, in milliseconds since the epoch.
  */
-const withTransition = (
+export const withTransition = (
   current: ThreadRecord,
   next: ThreadRecord,
+  at = Date.now(),
 ): ThreadRecord => {
-  return next.status === current.status
-    ? next
-    : {
-        ...next,
-        transitions: [
-          ...(current.transitions ?? []),
-          { status: next.status, at: Date.now() },
-        ].slice(-16),
-      };
+  if (next.status === current.status && next.runId === current.runId) {
+    return next;
+  }
+
+  const before = current.transitions ?? [{ status: current.status, at: 0 }];
+
+  return {
+    ...next,
+    transitions: [...before, { status: next.status, at }].slice(
+      -keptTransitions,
+    ),
+  };
 };
 
 export const threadRecorder = (
