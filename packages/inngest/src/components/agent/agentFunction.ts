@@ -47,6 +47,7 @@ import {
   sandboxTools,
   stepSandboxes,
 } from "./defs.ts";
+import { agentMessage } from "./events.ts";
 import { kv as defaultKv, type Kv } from "./kv.ts";
 import {
   type AgentLimits,
@@ -57,6 +58,13 @@ import {
   registerLimits,
 } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import {
+  type AgentRecovery,
+  failureText,
+  finishedOf,
+  type LastRun,
+  type RunFailure,
+} from "./recovery.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, NextOptions, Subscription } from "./subscribe.ts";
@@ -67,6 +75,7 @@ import {
   type ThreadMessage,
   type ThreadRequests,
   type TriggerEvent,
+  threadSessions,
 } from "./thread.ts";
 import { listThreads, type ThreadList } from "./threadList.ts";
 import {
@@ -74,7 +83,7 @@ import {
   type ThreadSandboxCleanup,
   threadSandboxOwner,
 } from "./threadSandboxes.ts";
-import { markThreadIdle, threadRecorder } from "./threadState.ts";
+import { markThreadIdle, recordEnd, threadRecorder } from "./threadState.ts";
 import {
   type CompiledTrigger,
   compileTriggers,
@@ -313,6 +322,17 @@ export interface AgentFunctionConfig<
    * `scores.score()` in the body still works.
    */
   scores?: boolean;
+
+  /**
+   * What the agent does about a run that fails unexpectedly. Off by default.
+   * `true` or an object posts the failure to the agent's channels (`report`)
+   * and resends the turn that was in flight, so a fresh run takes it up; a
+   * turn that fails twice with the same error is not resent, and the failure
+   * is reported as stuck. Cancelled runs and completed runs are never
+   * resumed. How every run ended is kept either way: see `previousRun` and
+   * `thread.state().lastRun`.
+   */
+  recovery?: boolean | AgentRecovery;
 }
 
 /**
@@ -376,6 +396,24 @@ export interface AgentBodyFields<
    * event that started the run (`seq` 0).
    */
   inbox: ThreadInbox<TEvent, TRequest, TReply>;
+
+  /**
+   * How the last run of this thread that ended, ended: `completed`,
+   * `failed` (with the error and what recovery did) or `cancelled`. Use it
+   * to tell the person what happened to the run before this one. It is
+   * `undefined` for a thread that no run has ended on yet, and it stays the
+   * same until this run ends, so decide for yourself when it has been said.
+   */
+  previousRun: LastRun | undefined;
+
+  /**
+   * How many times this run has continued in another process since it began:
+   * a restart, a deploy, or another instance picking the run up. It counts
+   * at the run's state writes, which happen as messages arrive and turns
+   * end, and is the same on every replay at the same point of the body.
+   * Show a line when it grows: `if (restarts > shown) { ... }`.
+   */
+  readonly restarts: number;
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
@@ -520,6 +558,13 @@ export interface AgentFunction<
    * run-scoped KV keys.
    */
   cleanup: InngestFunction.Any;
+
+  /**
+   * Runs when the executor reports that a run of `fn` ended, whichever way,
+   * and writes the thread's `lastRun`. With `recovery` on, it also reports a
+   * failure and resends the turn.
+   */
+  finished: InngestFunction.Any;
 
   /**
    * The agent's address, `"<appId>/<functionId>"`.
@@ -691,7 +736,12 @@ function threadInbox(
       // While the agent waits for its next message there is nothing to stop.
       if (message.data.kind !== "stop") {
         if (delivered > 1) {
-          await recorder.running();
+          await recorder.running(
+            undefined,
+            message.data.kind === "user"
+              ? { content: message.data.content }
+              : undefined,
+          );
         }
 
         return message;
@@ -826,6 +876,119 @@ export function createAgentFunction(
     },
   );
 
+  const recovery: AgentRecovery | undefined =
+    config.recovery === true ? {} : config.recovery || undefined;
+
+  // The executor reports every ending of a run (completed, failed, cancelled)
+  // in one `inngest/function.finished` event with the status and the error.
+  // A `defer` runs after each ending too, but carries no outcome, and
+  // `onFailure` sees failures only.
+  const finished = client.createFunction(
+    {
+      id: `${config.id}-finished`,
+      retries: 3,
+      triggers: [
+        {
+          event: "inngest/function.finished",
+          if: `event.data.function_id == ${quote(`${client.id}-${config.id}`)}`,
+        },
+      ],
+    },
+    async ({ event, step, logger }) => {
+      const data = event.data as Record<string, unknown>;
+      const start = ((data.events as RawEvent[] | undefined)?.[0] ??
+        data.event) as RawEvent;
+      const found = triggers.find((t) => {
+        return t.event === start.name;
+      });
+      const message = found
+        ? messageOf(ref, found, start as unknown as ThreadTriggerEvent)
+        : (start.data as ThreadMessage);
+      const ended = finishedOf(data);
+      const runId = String(data.run_id);
+
+      // How the run ended is written first and whatever else happens next.
+      const record = await recordEnd(store, message.thread, {
+        runId,
+        at: event.ts ?? 0,
+        finished: ended,
+        content: message.kind === "user" ? message.content : undefined,
+        resume:
+          ended.status === "failed" && recovery
+            ? recovery.resume !== false
+            : undefined,
+      });
+      const last = record.lastRun;
+
+      if (!recovery || ended.status !== "failed" || last?.runId !== runId) {
+        return last;
+      }
+
+      const failure: RunFailure = {
+        runId,
+        thread: message.thread,
+        error: last.error ?? "unknown error",
+        fingerprint: last.fingerprint ?? "",
+        resuming: last.recovery === "resumed",
+        repeated: last.recovery === "stuck" && recovery.resume !== false,
+      };
+      const text = (recovery.message ?? failureText)(failure);
+
+      // A post that fails for good must not keep the turn from being taken
+      // up again.
+      if (text !== false) {
+        try {
+          const context = {
+            event: start as unknown as AgentConfigContext["event"],
+          };
+          const channels = await resolveConfigValue(
+            config.channels ?? {},
+            context,
+          );
+          const report = createReporter(
+            channels,
+            config.report === undefined
+              ? undefined
+              : await resolveConfigValue(config.report, context),
+            (id, run) => {
+              return step.run(id, run);
+            },
+          );
+
+          await report(text);
+        } catch (error) {
+          logger.warn(
+            { runId, error: String(error).slice(0, 160) },
+            "The failure of a run could not be reported",
+          );
+        }
+      }
+
+      if (!failure.resuming) {
+        return last;
+      }
+
+      const inflight =
+        record.runId === runId ? record.inflight?.content : undefined;
+      const content =
+        inflight ?? (message.kind === "user" ? message.content : undefined);
+      const session = found?.session?.key(start as never);
+
+      await step.sendEvent(
+        "recover-resend",
+        agentMessage.create(
+          { agent: ref, thread: message.thread, kind: "user", content },
+          {
+            id: `recover-${runId}`,
+            meta: { sessions: threadSessions(message.thread, session) },
+          },
+        ),
+      );
+
+      return last;
+    },
+  );
+
   const fn = client.createFunction(
     {
       ...functionOptions(config),
@@ -887,6 +1050,7 @@ export function createAgentFunction(
                 : data) as Record<string, unknown>
             )._agent,
           ),
+          data.kind === "user" ? { content: data.content } : undefined,
         );
 
         // Limits apply to what `agent.invoke()` starts and to the loop's budget.
@@ -1115,6 +1279,10 @@ export function createAgentFunction(
             report,
             scores: agentScores,
             inbox,
+            previousRun: started.lastRun,
+            get restarts() {
+              return recorder.restarts;
+            },
             control,
           });
 
@@ -1165,6 +1333,7 @@ export function createAgentFunction(
   return {
     fn,
     cleanup,
+    finished,
     ref,
     thread(key, session) {
       return getThread(client, ref, key, {

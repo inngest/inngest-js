@@ -20,6 +20,7 @@ import { agentMessage } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
+import type { LastRun } from "./recovery.ts";
 
 /**
  * The name of the event every thread message is sent as.
@@ -197,6 +198,14 @@ export interface ThreadState {
    * The keys your code set in the thread's KV scope.
    */
   keys: Record<string, unknown>;
+
+  /**
+   * How the last run that ended, ended: `completed`, `failed` or
+   * `cancelled`, with the error for a failure and what recovery did. Written
+   * when the executor reports the ending, so it appears a moment after the
+   * run stops. `undefined` before any run has ended.
+   */
+  lastRun: LastRun | undefined;
 }
 
 /**
@@ -221,6 +230,24 @@ export interface ThreadRecord {
    * the record of a newer one.
    */
   runId?: string;
+
+  /**
+   * How the last run that ended, ended.
+   */
+  lastRun?: LastRun;
+
+  /**
+   * The message the run is answering, from its delivery until the run waits
+   * for the next one. A failed run resends it.
+   */
+  inflight?: { content?: string };
+
+  /**
+   * The process (boot) that wrote the record last, and how many times the
+   * run has continued in another process since it began.
+   */
+  host?: string;
+  restarts?: number;
 }
 
 export const threadRecordKey = "__state";
@@ -344,6 +371,7 @@ export function threadStateOf(
     turn: record?.turn ?? 0,
     summary: record?.summary,
     usage: record?.usage ?? { input: 0, output: 0 },
+    lastRun: record?.lastRun,
     keys: Object.fromEntries(
       Object.entries(all).filter(([name]) => {
         return !name.startsWith("__");
