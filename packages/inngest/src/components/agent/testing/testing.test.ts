@@ -4,7 +4,10 @@
  * keeps every call it is sent, the thread helper returns the keys the agent
  * set, and the git remote asks for its token.
  */
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import {
   backendPath,
@@ -126,6 +129,7 @@ describe("withKeys", () => {
 describe.skipIf(!backendPath)("startGitRemote", () => {
   test("serves a repository for the token only", async () => {
     const remote = await startGitRemote("secret");
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-"));
 
     try {
       const rejected = await fetch(
@@ -133,8 +137,6 @@ describe.skipIf(!backendPath)("startGitRemote", () => {
       );
 
       expect(rejected.status).toBe(401);
-
-      const dir = execFileSync("mktemp", ["-d"], { encoding: "utf8" }).trim();
 
       // Asynchronous: the remote is served by this process, so a blocking
       // clone would wait for a server that cannot run.
@@ -150,6 +152,7 @@ describe.skipIf(!backendPath)("startGitRemote", () => {
       expect(git(`${dir}/clone`, "log", "--oneline")).not.toBe("");
     } finally {
       await remote.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

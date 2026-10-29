@@ -49,6 +49,9 @@ export const git = (cwd: string, ...args: string[]): string => {
   }).trim();
 };
 
+/**
+ * A running git remote.
+ */
 export interface GitRemote {
   /**
    * The HTTP URL of the repository, without credentials.

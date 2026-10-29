@@ -2,12 +2,16 @@
  * @module
  * EXPERIMENTAL: one in-process HTTP server that plays the fake Slack, the
  * fake GitHub and the recorder the fake sandbox reports to. Every call is
- * kept, so a test asserts on what the agents posted. The shapes follow the Slack Web
- * API (`chat.postMessage`, `chat.update`, `reactions.add`, Block Kit actions
- * for ask buttons) and the GitHub REST API (issue comments, PR reviews).
+ * kept, so a test asserts on what the agents posted. The shapes follow the
+ * Slack Web API (`chat.postMessage`, `chat.update`, `reactions.add`, Block Kit
+ * actions for ask buttons) and the GitHub REST API (issue comments, PR
+ * reviews).
  */
 import { createServer, type IncomingMessage } from "node:http";
 
+/**
+ * One call the fakes server received.
+ */
 export interface Call {
   channel: "slack" | "github" | "sandbox";
 
@@ -25,12 +29,18 @@ export interface Call {
   body: Record<string, unknown>;
 }
 
+/**
+ * Which calls `posts()` returns: those that match every field given.
+ */
 export interface CallFilter {
   channel?: Call["channel"];
   method?: string;
   thread?: string;
 }
 
+/**
+ * The running fakes server and what it recorded.
+ */
 export interface Fakes {
   url: string;
   calls: Call[];

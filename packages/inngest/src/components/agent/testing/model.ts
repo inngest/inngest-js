@@ -5,6 +5,9 @@
  */
 import { agent, type AgentModelRequest as Request } from "../loop.ts";
 
+/**
+ * One step of a scripted model: say something, or call a tool.
+ */
 export type ScriptStep =
   | { say: string; when?: (request: Request) => boolean }
   | {

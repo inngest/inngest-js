@@ -18,6 +18,9 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+/**
+ * Options of `fakeSandbox()`.
+ */
 export interface FakeSandboxOptions {
   /**
    * The URL of the fakes server (`startFakes().url`) the operations are
