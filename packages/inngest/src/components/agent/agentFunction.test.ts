@@ -202,6 +202,44 @@ describe("agent function", () => {
     ]);
   });
 
+  test("the event's fields win over a thread message field of the same name", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const second = await inbox.next();
+
+        return [
+          second?.id,
+          second?.name,
+          second?.data,
+          second?.ts,
+          second?.seq,
+        ];
+      },
+    );
+    const colliding = message("steer", "left", "t1", {
+      id: "from-thread",
+      name: "from-thread",
+      ts: -1,
+      seq: -1,
+    });
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [{ ...colliding, id: "evt-real", ts: 1234 }],
+    });
+
+    expect(output).toEqual([
+      "evt-real",
+      "agent/message",
+      colliding.data,
+      1234,
+      1,
+    ]);
+  });
+
   test("a thread message made from a trigger event (sent again by recovery) is that event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
