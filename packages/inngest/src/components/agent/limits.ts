@@ -9,6 +9,7 @@
  * another agent is not checked, and `budget` only stops a loop that is given
  * the body's `control` (see {@link AgentLimits.budget}).
  */
+import type { AgentPrice } from "./cost.ts";
 import type { AgentUsage } from "./loop.ts";
 
 /**
@@ -30,6 +31,13 @@ export interface AgentBudget {
    * Output tokens.
    */
   output?: number;
+
+  /**
+   * Cost in US dollars, summed from the prices of `limits.price`. Every agent
+   * that spends against a `usd` budget needs a `price`: without one its calls
+   * count nothing toward it.
+   */
+  usd?: number;
 }
 
 /**
@@ -65,6 +73,13 @@ export interface AgentLimits {
    * so pair it with `spawn`.
    */
   budget?: AgentBudget;
+
+  /**
+   * What a model call costs, for `budget.usd`: a function of the call's tokens
+   * and model that returns US dollars, or rates per million tokens by model
+   * name. Spread `...control` into `agent.loop()` to use it. See `AgentPrice`.
+   */
+  price?: AgentPrice;
 }
 
 /**
@@ -119,7 +134,29 @@ export interface LimitState {
   spawned: number;
 }
 
-const budgetFields = ["tokens", "input", "output"] as const;
+const budgetFields = ["tokens", "input", "output", "usd"] as const;
+
+/**
+ * Dollars for a message: cents when it is a cent or more, else two significant
+ * digits, so $0.000030 does not show as $0.00.
+ */
+const dollars = (amount: number): string => {
+  return amount >= 0.01 || amount === 0
+    ? amount.toFixed(2)
+    : amount.toPrecision(2);
+};
+
+/**
+ * What the thread has spent, field by field.
+ */
+const spentOf = (used: AgentUsage) => {
+  return {
+    tokens: used.input + used.output,
+    input: used.input,
+    output: used.output,
+    usd: used.usd ?? 0,
+  };
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -351,11 +388,7 @@ const remaining = (
     return undefined;
   }
 
-  const spent = {
-    tokens: used.input + used.output,
-    input: used.input,
-    output: used.output,
-  };
+  const spent = spentOf(used);
   const left: AgentBudget = {};
 
   for (const field of budgetFields) {
@@ -384,17 +417,15 @@ export const budgetReason = (
     return undefined;
   }
 
-  const spent = {
-    tokens: state.used.input + state.used.output,
-    input: state.used.input,
-    output: state.used.output,
-  };
+  const spent = spentOf(state.used);
 
   for (const field of budgetFields) {
     const limit = budget[field];
 
     if (limit !== undefined && spent[field] >= limit) {
-      return `Budget spent: ${spent[field]} of ${limit} ${field === "tokens" ? "tokens" : `${field} tokens`} used.`;
+      return field === "usd"
+        ? `Budget spent: $${dollars(spent.usd)} of $${dollars(limit)} used.`
+        : `Budget spent: ${spent[field]} of ${limit} ${field === "tokens" ? "tokens" : `${field} tokens`} used.`;
     }
   }
 

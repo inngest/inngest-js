@@ -49,6 +49,7 @@ import {
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
+import type { AgentPrice } from "./cost.ts";
 import {
   type ConfigValue,
   type LazySandbox,
@@ -626,6 +627,12 @@ export interface AgentBodyFields<
     onTurn: (turn: AgentTurn) => Promise<void>;
     budget: () => string | undefined;
     scores: boolean;
+
+    /**
+     * The agent's `limits.price`, if it has one, so that the loop prices each
+     * model call for `limits.budget.usd`.
+     */
+    price?: AgentPrice;
   };
 }
 
@@ -1856,6 +1863,7 @@ export function createAgentFunction(
             return budgetReason(limits);
           },
           scores: scoring,
+          ...(config.limits?.price && { price: config.limits.price }),
           async onTurn(turn: AgentTurn) {
             const next = await recorder.turn(turn);
 

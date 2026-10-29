@@ -2,6 +2,7 @@
  * @module
  * Tests for agent limits: narrowing, the allow-list, refusals and the budget.
  */
+
 import {
   AgentLimitError,
   budgetReason,
@@ -13,10 +14,11 @@ import {
   narrowLimits,
   readInheritedLimits,
 } from "./limits.ts";
+import type { AgentUsage } from "./loop.ts";
 
 const state = (
   limits: LimitState["limits"],
-  used = { input: 0, output: 0 },
+  used: AgentUsage = { input: 0, output: 0 },
   spawned = 0,
 ): LimitState => {
   return { limits, used, spawned };
@@ -130,6 +132,53 @@ describe("checkInvoke", () => {
     });
 
     expect(error.limit).toBe("budget");
+  });
+});
+
+describe("usd budget", () => {
+  test("is spent when the dollars reach it, and says so in dollars", () => {
+    const limits = { budget: { usd: 0.02 } };
+
+    expect(
+      budgetReason(state(limits, { input: 9, output: 9, usd: 0.0199 })),
+    ).toBe(undefined);
+    expect(
+      budgetReason(state(limits, { input: 0, output: 0, usd: 0.02 })),
+    ).toBe("Budget spent: $0.02 of $0.02 used.");
+    expect(
+      budgetReason(
+        state(
+          { budget: { usd: 0.00002 } },
+          { input: 1, output: 1, usd: 0.00003 },
+        ),
+      ),
+    ).toBe("Budget spent: $0.000030 of $0.000020 used.");
+  });
+
+  test("a budget with dollars but no priced usage is never spent", () => {
+    expect(
+      budgetReason(state({ budget: { usd: 1 } }, { input: 1e9, output: 1e9 })),
+    ).toBeUndefined();
+  });
+
+  test("narrows with the other fields, passes down what is left, and a bad payload closes it", () => {
+    expect(
+      narrowLimits({ budget: { usd: 5 } }, { budget: { usd: 3, tokens: 9 } })
+        .budget,
+    ).toEqual({ usd: 3, tokens: 9 });
+    expect(
+      childLimits(
+        state({ budget: { usd: 1 } }, { input: 1, output: 1, usd: 0.25 }),
+      ).budget,
+    ).toEqual({ usd: 0.75 });
+    expect(
+      childLimits(
+        state({ budget: { usd: 1 } }, { input: 1, output: 1, usd: 4 }),
+      ).budget,
+    ).toEqual({ usd: 0 });
+    expect(
+      readInheritedLimits({ limits: { budget: { usd: "lots" } } })?.budget,
+    ).toEqual({ usd: 0 });
   });
 });
 

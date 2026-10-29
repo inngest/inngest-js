@@ -191,9 +191,10 @@ export interface ThreadState {
   summary: string | undefined;
 
   /**
-   * Tokens used by every model call of the thread, across runs.
+   * Tokens used by every model call of the thread, across runs, and what they
+   * cost in US dollars when the agent has a `limits.price`.
    */
-  usage: { input: number; output: number };
+  usage: { input: number; output: number; usd?: number };
 
   /**
    * The keys your code set in the thread's KV scope.
@@ -217,7 +218,7 @@ export interface ThreadRecord {
   status: ThreadStatus;
   turn: number;
   summary?: string;
-  usage: { input: number; output: number };
+  usage: { input: number; output: number; usd?: number };
 
   /**
    * The limits the agent that started this thread passed down, narrowed over

@@ -213,6 +213,9 @@ export const threadRecorder = (
           usage: {
             input: current.usage.input + turn.usage.input,
             output: current.usage.output + turn.usage.output,
+            ...(current.usage.usd !== undefined || turn.usage.usd !== undefined
+              ? { usd: (current.usage.usd ?? 0) + (turn.usage.usd ?? 0) }
+              : {}),
           },
         };
       });

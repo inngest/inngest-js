@@ -122,6 +122,36 @@ export const spawnLimits = scenario({
       },
     );
 
+    // dollars: $0.00002 at $1 per million tokens, 15 tokens (\$0.000015) per call.
+    agents.agent(
+      {
+        id: "sl-dollars",
+        limits: {
+          budget: { usd: 0.00002 },
+          price: { "*": { input: 1, output: 1 } },
+        },
+      },
+      async ({ inbox, control }) => {
+        await first(inbox);
+        const result = await agent.loop({
+          model: script([
+            { call: { name: "noop", input: {} } },
+            { call: { name: "noop", input: {} } },
+            { say: "never reached" },
+          ]),
+          prompt: "spend dollars",
+          tools: { noop },
+          ...control,
+        });
+        await kv.thread.set("result", {
+          stopped: result.stopped,
+          reason: result.reason,
+          turns: result.turns,
+          usd: result.usage.usd,
+        });
+      },
+    );
+
     return agents.functions();
   },
   run: async (ctx) => {
@@ -185,6 +215,21 @@ export const spawnLimits = scenario({
         spender.turns === 2 &&
         spender.reason.includes("30 of 20 tokens"),
       spender,
+    );
+
+    const dollars = (await result("sl-dollars")) as {
+      stopped: string;
+      reason: string;
+      turns: number;
+      usd: number;
+    };
+    ctx.check(
+      "a spent dollar budget stops the loop like a token budget, with the price the app gave",
+      dollars.stopped === "budget" &&
+        dollars.turns === 2 &&
+        dollars.reason.includes("$0.000030 of $0.000020") &&
+        Math.abs(dollars.usd - 0.00003) < 1e-12,
+      dollars,
     );
   },
 });

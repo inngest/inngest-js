@@ -287,6 +287,65 @@ describe("agent.loop", () => {
     expect(check).toBeTypeOf("function");
   });
 
+  test("prices each model call with the price given, and reports it per turn and in the usage", async () => {
+    const turns: unknown[] = [];
+    const prices: unknown[] = [];
+    const { result } = await run(
+      [
+        { ...call("add", { a: 1, b: 2 }), model: "claude-x" },
+        { ...say("done"), model: "claude-y" },
+      ],
+      {
+        price: (usage, model) => {
+          prices.push([usage, model]);
+
+          return 0.25;
+        },
+        onTurn: (turn) => {
+          turns.push(turn.usage);
+        },
+      },
+    );
+
+    // The function runs again for each step, so the price runs again too.
+    const distinct = (items: unknown[]) => {
+      return [...new Set(items.map((item) => JSON.stringify(item)))];
+    };
+
+    expect(distinct(prices)).toEqual([
+      JSON.stringify([{ input: 10, output: 5 }, "claude-x"]),
+      JSON.stringify([{ input: 10, output: 5 }, "claude-y"]),
+    ]);
+    expect(distinct(turns)).toEqual([
+      JSON.stringify({ input: 10, output: 5, usd: 0.25 }),
+    ]);
+    expect(result?.usage).toEqual({ input: 20, output: 10, usd: 0.5 });
+  });
+
+  test("prices from a table of rates per million tokens", async () => {
+    const { result } = await run(
+      [
+        { ...call("add", { a: 1, b: 2 }), model: "claude-x" },
+        { ...say("done"), model: "unlisted" },
+      ],
+      {
+        price: {
+          "claude-x": { input: 3_000_000, output: 15_000_000 },
+          "*": { input: 1_000_000, output: 1_000_000 },
+        },
+      },
+    );
+
+    // 10 in and 5 out at $3 and $15 per token, then at $1 and $1.
+    expect(result?.usage.usd).toBeCloseTo(10 * 3 + 5 * 15 + 10 + 5);
+  });
+
+  test("without a price the usage has no dollars", async () => {
+    const { result } = await run([say("done")]);
+
+    expect(result?.usage).toEqual({ input: 10, output: 5 });
+  });
+
   test("keeps the model's message exactly as returned", async () => {
     const thinking = {
       type: "thinking",
