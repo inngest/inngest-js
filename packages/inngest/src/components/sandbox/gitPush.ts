@@ -177,14 +177,19 @@ const readBlob = (
     }
 
     const entry = ok(
-      await hostGit(["ls-tree", "-z", rev, "--", path], { cwd: repo }),
+      await hostGit(["--literal-pathspecs", "ls-tree", "-z", rev, "--", path], {
+        cwd: repo,
+      }),
       `looking up ${path}`,
     ).split("\0")[0];
     if (!entry) {
       return undefined;
     }
 
-    const [meta = "", name = ""] = entry.split("\t");
+    // The path follows the first tab and may itself hold tabs.
+    const tab = entry.indexOf("\t");
+    const meta = entry.slice(0, tab);
+    const name = entry.slice(tab + 1);
     const [, type = "", sha = ""] = meta.split(" ");
     if (name !== path || type === "tree") {
       return undefined;

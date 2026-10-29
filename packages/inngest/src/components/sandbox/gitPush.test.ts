@@ -275,7 +275,7 @@ describe.skipIf(!backendPath)("pushBundle", { timeout: 60_000 }, () => {
 
   test("paths with spaces, colons and a leading dash are read", async () => {
     git(work, "checkout", "--quiet", "-B", "agent/names", "origin/main");
-    for (const name of ["a b.txt", "c:d.txt", "-dash.txt"]) {
+    for (const name of ["a b.txt", "c:d.txt", "-dash.txt", ":!x.txt"]) {
       writeFileSync(join(work, name), `${name}\n`);
     }
     git(work, "add", ".");
@@ -289,6 +289,7 @@ describe.skipIf(!backendPath)("pushBundle", { timeout: 60_000 }, () => {
     });
 
     expect(seen).toEqual({
+      ":!x.txt": ":!x.txt\n",
       "-dash.txt": "-dash.txt\n",
       "a b.txt": "a b.txt\n",
       "c:d.txt": "c:d.txt\n",
