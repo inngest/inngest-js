@@ -178,10 +178,7 @@ describe("agent function", () => {
 });
 
 describe("inbox arrival", () => {
-  const loopOnce = async (
-    seen: unknown[][],
-    options: { control?: boolean } = {},
-  ) => {
+  const loopOnce = (seen: unknown[][]) => {
     return agent.model(async (request) => {
       seen.push(userTexts(request.messages));
 
@@ -202,7 +199,7 @@ describe("inbox arrival", () => {
 
         // No `...control`: the loop finds the inbox itself.
         const result = await agent.loop({
-          model: await loopOnce(seen),
+          model: loopOnce(seen),
           prompt: first?.data.content ?? "",
           tools: {},
         });
