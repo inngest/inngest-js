@@ -793,7 +793,9 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * stop message arrived. Messages that start the next turn stay in the inbox.
    * `onTurn` records the turn, the usage and a summary for
    * `thread.state()`: if you pass your own `onTurn`, put `...control` first
-   * and call `control.onTurn(turn)` from yours.
+   * and call `control.onTurn(turn)` from yours with the turn unchanged: the
+   * record of the turn is written inside the model call's step, and
+   * `control.onTurn` reads it back.
    */
   control: {
     steer: () => Promise<string[]>;
@@ -1853,22 +1855,34 @@ export function createAgentFunction(
               : data) as Record<string, unknown>
           )._agent,
         );
+        // A run that began with the start as separate KV steps replays them
+        // as they were: the KV steps are numbered by how many came before, so
+        // folding the start would shift every later one.
+        const startedBefore =
+          getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
+            .found === true;
+        const startWith = async (inStep?: string) => {
+          return {
+            started: await recorder.running(
+              passed,
+              data.kind === "user" ? { content: data.content } : null,
+              inStep,
+            ),
+            previousRun: (await readLastRun(store, inStep)) ?? null,
+          };
+        };
+
         // How the run before this one ended is a key of its own, read apart
         // from the record. Both are KV calls inside one step, so the start
         // costs one step; the write is safe to repeat if the step is retried.
-        const begun = await step.run(
-          { id: "thread:start", name: "Thread state" },
-          async () => {
-            return {
-              started: await recorder.running(
-                passed,
-                data.kind === "user" ? { content: data.content } : null,
-                thread.key,
-              ),
-              previousRun: (await readLastRun(store, thread.key)) ?? null,
-            };
-          },
-        );
+        const begun = startedBefore
+          ? await startWith()
+          : await step.run(
+              { id: "thread:start", name: "Thread state" },
+              async () => {
+                return startWith(thread.key);
+              },
+            );
         const started = begun.started as ThreadRecord;
         const previousRun = begun.previousRun ?? undefined;
 

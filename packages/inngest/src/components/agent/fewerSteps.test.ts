@@ -187,6 +187,7 @@ describe("a run that began before these steps", () => {
     // write, no model call.
     expect(ops).not.toContain("inbox:open:all");
     expect(ops.filter((id) => id.endsWith(":open"))).toEqual([]);
+    expect(steps).not.toContain("thread:start");
     expect(steps).not.toContain("agent:model:1");
     expect(steps).not.toContain("kv.update:thread:__state:1");
   });
