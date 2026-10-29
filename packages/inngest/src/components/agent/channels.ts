@@ -16,11 +16,22 @@ import { scoreThisStep } from "./scores.ts";
 /**
  * A message to a channel.
  */
-export interface ChannelMessage {
+export interface ChannelMessage<
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> {
   /**
    * The text to post.
    */
   text: string;
+
+  /**
+   * Structured data beside the text, such as the rows of a table or the
+   * numbers of a result. The channel gets it with the text and decides how to
+   * show it (the Slack and GitHub adapters show only the text), and it is
+   * saved in the post step's result, so a trace or dashboard can render it.
+   * It must be plain JSON, a plain object of at most 32 KB.
+   */
+  data?: TData;
 
   /**
    * What the message is. The Slack and GitHub adapters mark `"error"`
@@ -439,11 +450,11 @@ export interface Reporter {
    * (the trigger event to the post) and each later one `agent.output_gap_ms`
    * (the previous post to this one), on the post's own step.
    */
-  (
+  <TData extends Record<string, unknown> = Record<string, unknown>>(
     /**
-     * The text, or a message with a kind.
+     * The text, or a message with a kind and structured `data`.
      */
-    message: string | ChannelMessage,
+    message: string | ChannelMessage<TData>,
     options?: {
       /**
        * Overrides the configured destinations for this report.
@@ -558,6 +569,44 @@ interface CardStreamState {
 }
 
 const summaryCardId = "summary";
+
+const maxDataBytes = 32 * 1024;
+
+/**
+ * Throws a `NonRetriableError` unless `data` is nothing or a plain JSON object
+ * small enough to save in a step result.
+ */
+const checkData = (data: unknown): void => {
+  if (data === undefined) {
+    return;
+  }
+
+  let size = Number.POSITIVE_INFINITY;
+
+  try {
+    const json = JSON.stringify(data);
+
+    size =
+      json === undefined
+        ? Number.POSITIVE_INFINITY
+        : new TextEncoder().encode(json).length;
+  } catch {
+    // Not serializable: refused below.
+  }
+
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    Array.isArray(data) ||
+    (Object.getPrototypeOf(data) !== Object.prototype &&
+      Object.getPrototypeOf(data) !== null) ||
+    size > maxDataBytes
+  ) {
+    throw new NonRetriableError(
+      "report: `data` must be a plain JSON object of at most 32 KB.",
+    );
+  }
+};
 
 const cardStatuses = ["pending", "running", "done", "error"];
 
@@ -806,6 +855,8 @@ export const createReporter = (
     const normalized: ChannelMessage =
       typeof message === "string" ? { text: message } : message;
 
+    checkData(normalized.data);
+
     const n = ++reports;
     const destinations = destinationsOf(options);
 
@@ -817,30 +868,35 @@ export const createReporter = (
     for (const { name, channel, index } of destinations) {
       const postedAt = await runStep(
         `report:${n}:${index}:${name}`,
-        async () => {
+        (async () => {
           await channel.post(normalized);
 
-          // Without scores the step returns what it always did, nothing, so
-          // the saved result of a run does not depend on this setting.
-          if (!scores) {
-            return;
-          }
+          // Without scores or data the step returns what it always did,
+          // nothing, so the saved result of a run does not depend on these.
+          const now = scores ? Date.now() : undefined;
 
-          const now = Date.now();
-
-          if (since !== undefined) {
+          if (now !== undefined && since !== undefined) {
             scoreThisStep(
               first ? "agent.first_output_ms" : "agent.output_gap_ms",
               Math.max(0, now - since),
             );
           }
 
-          return now;
-        },
+          // The data rides in the result, where a trace or dashboard reads it.
+          return normalized.data === undefined
+            ? now
+            : {
+                ...(now === undefined ? {} : { at: now }),
+                data: normalized.data,
+              };
+        }) as unknown as () => Promise<number | undefined>,
       );
 
       posted = true;
-      lastPostAt = typeof postedAt === "number" ? postedAt : undefined;
+      lastPostAt =
+        typeof postedAt === "number"
+          ? postedAt
+          : (postedAt as { at?: number } | null | undefined)?.at;
     }
   }
   // Where each destination's card stream stands, and the end of the queue of

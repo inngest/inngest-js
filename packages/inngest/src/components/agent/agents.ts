@@ -10,6 +10,7 @@
 
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import {
   type AgentBody,
@@ -55,13 +56,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
       ThreadTriggerEventOf<TType>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerEventOf<TType>,
@@ -69,7 +72,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TType>>,
@@ -83,13 +87,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
       ThreadTriggerListEvent<TTypes>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerListEvent<TTypes>,
@@ -97,7 +103,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TTypes>>,
@@ -111,13 +118,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
       ThreadTriggerEventOf<TOne>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerEventOf<TOne>,
@@ -125,7 +134,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TOne>>,
@@ -138,13 +148,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
       ThreadCronEvent,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadCronEvent,
@@ -152,7 +164,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
   agent<
@@ -161,13 +174,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
       ThreadTriggerListEvent<TMany>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerListEvent<TMany>,
@@ -175,7 +190,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TMany>>,
