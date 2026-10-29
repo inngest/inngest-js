@@ -156,6 +156,52 @@ describe("agent function", () => {
     expect(output).toEqual(["stopped", 1, "next"]);
   });
 
+  test("an inbox message is the event flat, with the thread message fields beside it", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const second = await inbox.next();
+
+        return [first, second].map((m) => {
+          return {
+            name: m?.name,
+            seq: m?.seq,
+            kind: m?.kind,
+            content: m?.content,
+            hasEvent: m ? "event" in m : null,
+            isMessage: m?.is("agent/message"),
+          };
+        });
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("steer", "left")],
+    });
+
+    expect(output).toEqual([
+      {
+        name: "agent/message",
+        seq: 0,
+        kind: "user",
+        content: "go",
+        hasEvent: false,
+        isMessage: true,
+      },
+      {
+        name: "agent/message",
+        seq: 1,
+        kind: "steer",
+        content: "left",
+        hasEvent: false,
+        isMessage: true,
+      },
+    ]);
+  });
+
   test("a stop message that arrives while waiting is skipped", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
