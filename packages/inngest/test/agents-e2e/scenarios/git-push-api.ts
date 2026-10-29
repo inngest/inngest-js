@@ -13,9 +13,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { GitPush, LazySandbox } from "inngest/experimental/agents";
 import {
   agent,
   openSandboxes,
+  pushBranch,
   sandbox,
   sandboxTools,
 } from "inngest/experimental/agents";
@@ -81,6 +83,7 @@ const prepare = () => {
     "config.ts",
     'export const key = "AKIAIOSFODNN7EXAMPLE";\n',
   );
+  branch("agent/direct", "DIRECT.md", "pushed by pushBranch\n");
   branch(
     "agent/scripts",
     "package.json",
@@ -105,43 +108,44 @@ export const gitPushApi = scenario({
         { id: "git-push-api-fn", triggers: [{ event: event("go") }] },
         async ({ step }) => {
           const hub = prepare();
-          const bench = sandbox({
-            id: "workbench",
-            tools: sandbox.tools.git({
-              remote: "https://github.com/acme/app",
-              token: () => {
-                return token;
-              },
-              transport: "api",
-              fetch: hub.handle,
-              cwd: work,
-              policy: async (push) => {
-                if (!push.branch?.startsWith("agent/")) {
-                  return { refuse: "only agent/* branches may be pushed" };
-                }
+          const pushOptions = {
+            remote: "https://github.com/acme/app",
+            token: () => {
+              return token;
+            },
+            transport: "api" as const,
+            fetch: hub.handle,
+            cwd: work,
+            policy: async (push: GitPush) => {
+              if (!push.branch?.startsWith("agent/")) {
+                return { refuse: "only agent/* branches may be pushed" };
+              }
 
-                if (/AKIA[0-9A-Z]{16}/.test(await push.patch())) {
-                  return { refuse: "the changes contain a secret" };
-                }
+              if (/AKIA[0-9A-Z]{16}/.test(await push.patch())) {
+                return { refuse: "the changes contain a secret" };
+              }
 
-                for (const file of push.files) {
-                  const after = await file.after();
+              for (const file of push.files) {
+                const after = await file.after();
 
-                  if (file.path === "package.json" && after?.text) {
-                    const before = (await file.before())?.text;
-                    const scripts = (text: string | undefined) => {
-                      return JSON.stringify(JSON.parse(text ?? "{}").scripts);
-                    };
+                if (file.path === "package.json" && after?.text) {
+                  const before = (await file.before())?.text;
+                  const scripts = (text: string | undefined) => {
+                    return JSON.stringify(JSON.parse(text ?? "{}").scripts);
+                  };
 
-                    if (scripts(before) !== scripts(after.text)) {
-                      return { refuse: "package.json scripts changed" };
-                    }
+                  if (scripts(before) !== scripts(after.text)) {
+                    return { refuse: "package.json scripts changed" };
                   }
                 }
+              }
 
-                return undefined;
-              },
-            }),
+              return { notes: [`checked ${push.paths.length} path(s)`] };
+            },
+          };
+          const bench = sandbox({
+            id: "workbench",
+            tools: sandbox.tools.git(pushOptions),
           });
           const sandboxes = openSandboxes({ work: bench }, step.sandbox);
 
@@ -172,6 +176,12 @@ export const gitPushApi = scenario({
               prompt: "push everything",
               tools: sandboxTools(sandboxes),
             });
+            const direct = await pushBranch(
+              sandboxes.work as LazySandbox,
+              pushOptions,
+              "agent/direct",
+              { idempotencyKey: "direct" },
+            );
             const refs = await step.run("remote-refs", () => {
               return Object.fromEntries(
                 [...hub.refs].sort(([a], [b]) => {
@@ -192,6 +202,10 @@ export const gitPushApi = scenario({
                 };
               }),
               sameHash: refs["refs/heads/agent/ok"] === tips["agent/ok"],
+              direct: JSON.stringify(direct).replace(
+                /"sha":"[0-9a-f]+"/g,
+                '"sha":"<sha>"',
+              ),
               heads: Object.keys(refs),
             };
           } finally {
@@ -216,7 +230,8 @@ export const gitPushApi = scenario({
       pushes: [
         {
           isError: false,
-          output: '{"pushed":[{"ref":"refs/heads/agent/ok","sha":"<sha>"}]}',
+          output:
+            '{"pushed":[{"ref":"refs/heads/agent/ok","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
         },
         {
           isError: true,
@@ -226,7 +241,13 @@ export const gitPushApi = scenario({
         { isError: true, output: '"refused: package.json scripts changed"' },
       ],
       sameHash: true,
-      heads: ["refs/heads/agent/ok", "refs/heads/main"],
+      direct:
+        '{"ok":true,"pushed":[{"ref":"refs/heads/agent/direct","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
+      heads: [
+        "refs/heads/agent/direct",
+        "refs/heads/agent/ok",
+        "refs/heads/main",
+      ],
     });
 
     const calls = JSON.stringify(ctx.fakes.posts({ channel: "sandbox" }));

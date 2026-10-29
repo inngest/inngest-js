@@ -261,11 +261,14 @@ const readBlob = (
 /**
  * What a policy decides: nothing allows the push, `{ refuse }` stops it with a
  * message for whoever asked for the push, and `{ ref }` pushes to another ref
- * instead.
+ * instead. A policy that allows the push, or moves it, may add `notes`: lines
+ * that come back with the result (`PushedRef.notes`) for an audit trail,
+ * since anything the policy did as a side effect is lost when the push step
+ * replays.
  */
 export type GitPolicyResult =
   | { refuse: string }
-  | { ref: string }
+  | { ref?: string; notes?: string[] }
   | undefined
   // biome-ignore lint/suspicious/noConfusingVoidType: a policy that returns nothing has the type void
   | void;
@@ -524,7 +527,52 @@ export interface PushedRef {
    * Whether `ref` is the one that was asked for.
    */
   asked: boolean;
+
+  /**
+   * The notes the policy returned, if any.
+   */
+  notes?: string[];
 }
+
+const maxNotes = 20;
+const maxNoteChars = 500;
+
+/**
+ * Reads what a policy returned: a refusal, or the ref to push to and the
+ * notes to keep. An invalid ref or malformed notes throw, which fails the push.
+ */
+export const readVerdict = (
+  decision: GitPolicyResult,
+  asked: string,
+): { refuse: string } | { ref: string; notes: string[] } => {
+  const verdict = decision as Exclude<GitPolicyResult, void>;
+
+  if (verdict && "refuse" in verdict) {
+    return { refuse: verdict.refuse };
+  }
+
+  const ref = verdict?.ref ?? asked;
+
+  if (!isPushableRef(ref)) {
+    throw new Error(`The policy named an invalid ref: ${ref}`);
+  }
+
+  const notes = verdict?.notes ?? [];
+
+  if (
+    !Array.isArray(notes) ||
+    notes.length > maxNotes ||
+    notes.some((note) => {
+      return typeof note !== "string" || note.length > maxNoteChars;
+    })
+  ) {
+    throw new Error(
+      `The policy's notes must be at most ${maxNotes} strings of at most ${maxNoteChars} characters`,
+    );
+  }
+
+  return { ref, notes };
+};
 
 export type PushOutcome =
   | { pushed: PushedRef[] }
@@ -701,6 +749,7 @@ export const pushBundle = async (
           })
         ).exitCode === 0;
       let ref = target.dst;
+      let notes: string[] = [];
 
       if (policy) {
         // The file before the push is the file where this push forks from the
@@ -772,19 +821,14 @@ export const pushBundle = async (
             return printed.stdout;
           },
         });
-        const verdict = decision as Exclude<GitPolicyResult, void>;
+        const verdict = readVerdict(decision, ref);
 
-        if (verdict && "refuse" in verdict) {
+        if ("refuse" in verdict) {
           return { refused: verdict.refuse };
         }
 
-        if (verdict && "ref" in verdict) {
-          if (!isPushableRef(verdict.ref)) {
-            throw new Error(`The policy named an invalid ref: ${verdict.ref}`);
-          }
-
-          ref = verdict.ref;
-        }
+        ref = verdict.ref;
+        notes = verdict.notes;
       }
 
       const asked = ref === target.dst;
@@ -797,6 +841,7 @@ export const pushBundle = async (
           ...(oldSha !== undefined && { oldSha }),
           status: "non-fast-forward",
           asked,
+          ...(notes.length > 0 && { notes }),
         });
         continue;
       }
@@ -818,6 +863,7 @@ export const pushBundle = async (
         ...(oldSha !== undefined && { oldSha }),
         status: "pushed",
         asked,
+        ...(notes.length > 0 && { notes }),
       });
     }
 

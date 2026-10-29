@@ -176,18 +176,205 @@ const chooseTransport = async (
   }
 };
 
-const describe = (pushed: PushedRef): Record<string, unknown> => {
+const describe = (
+  pushed: PushedRef,
+): { ref: string; sha: string; previous?: string; notes?: string[] } => {
   return {
     ref: pushed.ref,
     sha: pushed.sha,
     ...(pushed.oldSha !== undefined && { previous: pushed.oldSha }),
+    ...(pushed.notes && { notes: pushed.notes }),
   };
+};
+
+/**
+ * The outcome of `pushBranch()`: the refs it pushed, or why it did not.
+ */
+export type PushBranchResult =
+  | {
+      ok: true;
+      pushed: {
+        ref: string;
+        sha: string;
+        previous?: string;
+
+        /**
+         * What the policy returned in `notes`.
+         */
+        notes?: string[];
+      }[];
+    }
+  | { ok: false; error: string };
+
+const fail = (error: string): PushBranchResult => {
+  return { ok: false, error };
+};
+
+/**
+ * EXPERIMENTAL: Pushes `branch` of the repository in `sandbox` the way the
+ * `git_push` tool does, and returns the result as a value. Call it from your
+ * own code in a function run (a routine, a tool of your own, a test with a fake
+ * sandbox and `fetch`) instead of casting the tool's `run`. A refusal, a
+ * rejection by the remote and a branch that is behind come back as
+ * `{ ok: false, error }`; only a broken setup throws.
+ *
+ * @example
+ * ```ts
+ * const result = await pushBranch(sandbox, { remote, token }, "agent/fix", {
+ *   idempotencyKey: runId,
+ * });
+ * ```
+ */
+export const pushBranch = async (
+  sandbox: SandboxHandle,
+  options: GitPushToolOptions,
+  branch: string,
+  context: {
+    /**
+     * Names the files the push uses in the sandbox; keep it the same on a retry.
+     */
+    idempotencyKey: string;
+    signal?: AbortSignal;
+  },
+): Promise<PushBranchResult> => {
+  validate(options);
+
+  const { cwd = "/work", maxBytes = defaultMaxBytes } = options;
+  const { remote } = options;
+  const { idempotencyKey, signal } = context;
+  const ref = `refs/heads/${branch}`;
+
+  if (!isPushableRef(ref)) {
+    return fail(`${branch} is not a branch name git_push can push`);
+  }
+
+  const transport = await chooseTransport(options);
+  const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.${transport === "api" ? "manifest" : "bundle"}`;
+  const remoteInfo =
+    transport === "api"
+      ? await step.run("git-push:remote", async () => {
+          return remoteState({
+            remote,
+            ref,
+            token: await options.token(),
+            api: options.api,
+            fetch: options.fetch,
+            signal,
+          });
+        })
+      : undefined;
+  let tip = "";
+
+  try {
+    const bundled = await sandbox.commands.run(
+      "git-push:bundle",
+      remoteInfo
+        ? [
+            "/bin/sh",
+            "-c",
+            `tip=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "no such branch" >&2; exit 3; }
+set -- "$1" "$tip" "$3"
+${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
+            "sh",
+            remoteInfo.base,
+            ref,
+            path,
+          ]
+        : [
+            "/bin/sh",
+            "-c",
+            'git rev-parse --verify --quiet "$1^{commit}" >/dev/null || { echo "no such branch" >&2; exit 3; }; git bundle create --quiet "$2" "$1" && wc -c < "$2"',
+            "sh",
+            ref,
+            path,
+          ],
+      { cwd },
+    );
+
+    if (bundled.exitCode !== 0) {
+      return fail(
+        bundled.exitCode === 3
+          ? `${branch} is not a branch in this repository`
+          : bundled.exitCode === 4
+            ? `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`
+            : `could not bundle ${branch}: ${bundled.stderr.trim().slice(0, 300)}`,
+      );
+    }
+
+    const printed = bundled.stdout.trim().split("\n");
+
+    tip = remoteInfo ? (printed[0] ?? "") : "";
+
+    const size = Number(printed.at(-1));
+
+    if (!(size <= maxBytes)) {
+      return fail(
+        `the push is ${size} bytes, more than the ${maxBytes} git_push accepts`,
+      );
+    }
+
+    const bundle = await sandbox.files.read("git-push:read", path);
+
+    if (bundle.byteLength > maxBytes) {
+      return fail(
+        `the push is more than the ${maxBytes} bytes git_push accepts`,
+      );
+    }
+
+    const outcome = await step.run("git-push:push", async () => {
+      if (remoteInfo) {
+        return pushManifest({
+          remote,
+          token: await options.token(),
+          api: options.api,
+          fetch: options.fetch,
+          manifest: new TextDecoder().decode(bundle),
+          target: { src: ref, dst: ref },
+          tip,
+          state: remoteInfo,
+          policy: options.policy,
+          signal,
+        });
+      }
+
+      return pushBundle({
+        remote,
+        auth: await gitAuth(options.token, options.username),
+        bundle,
+        targets: [{ src: ref, dst: ref }],
+        policy: options.policy,
+        signal,
+      });
+    });
+
+    if ("refused" in outcome) {
+      return fail(`refused: ${outcome.refused}`);
+    }
+
+    if ("failed" in outcome) {
+      return fail(`the remote rejected the push: ${outcome.failed}`);
+    }
+
+    const [result] = outcome.pushed;
+
+    if (!result || result.status === "non-fast-forward") {
+      return fail(
+        `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`,
+      );
+    }
+
+    return { ok: true, pushed: outcome.pushed.map(describe) };
+  } finally {
+    await sandbox.commands.run("git-push:cleanup", ["rm", "-f", path], {
+      cwd,
+    });
+  }
 };
 
 /**
  * EXPERIMENTAL: Builds the `git_push` tool for the sandbox behind `sandbox`.
  * Most code uses `sandbox.tools.git()` instead, which does this for the
- * sandbox it is defined on.
+ * sandbox it is defined on. To push from your own code, use `pushBranch()`.
  *
  * It pushes one branch, to the branch of the same name on `remote`. It never
  * forces, deletes, or pushes elsewhere. A refusal is an error result the model
@@ -199,150 +386,21 @@ export const gitPushTool = (
 ): AgentTool => {
   validate(options);
 
-  const { cwd = "/work", maxBytes = defaultMaxBytes } = options;
-  const { remote } = options;
-
   return tool({
     id: "git_push",
     group: true,
-    description: `Pushes a branch of the repository in the sandbox to ${normalizeUrl(remote)}. The push is checked first and may be refused. It never forces and never deletes.`,
+    description: `Pushes a branch of the repository in the sandbox to ${normalizeUrl(options.remote)}. The push is checked first and may be refused. It never forces and never deletes.`,
     input: z.object({
       branch: z
         .string()
         .describe("The local branch to push, such as agent/fix-typo"),
     }),
-    run: async ({ branch }, { idempotencyKey, signal }) => {
-      const ref = `refs/heads/${branch}`;
+    run: async ({ branch }, context) => {
+      const result = await pushBranch(sandbox, options, branch, context);
 
-      if (!isPushableRef(ref)) {
-        return agent.toolError(
-          `${branch} is not a branch name git_push can push`,
-        );
-      }
-
-      const transport = await chooseTransport(options);
-      const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.${transport === "api" ? "manifest" : "bundle"}`;
-      const remoteInfo =
-        transport === "api"
-          ? await step.run("git-push:remote", async () => {
-              return remoteState({
-                remote,
-                ref,
-                token: await options.token(),
-                api: options.api,
-                fetch: options.fetch,
-                signal,
-              });
-            })
-          : undefined;
-      let tip = "";
-
-      try {
-        const bundled = await sandbox.commands.run(
-          "git-push:bundle",
-          remoteInfo
-            ? [
-                "/bin/sh",
-                "-c",
-                `tip=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "no such branch" >&2; exit 3; }
-set -- "$1" "$tip" "$3"
-${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
-                "sh",
-                remoteInfo.base,
-                ref,
-                path,
-              ]
-            : [
-                "/bin/sh",
-                "-c",
-                'git rev-parse --verify --quiet "$1^{commit}" >/dev/null || { echo "no such branch" >&2; exit 3; }; git bundle create --quiet "$2" "$1" && wc -c < "$2"',
-                "sh",
-                ref,
-                path,
-              ],
-          { cwd },
-        );
-
-        if (bundled.exitCode !== 0) {
-          return agent.toolError(
-            bundled.exitCode === 3
-              ? `${branch} is not a branch in this repository`
-              : bundled.exitCode === 4
-                ? `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`
-                : `could not bundle ${branch}: ${bundled.stderr.trim().slice(0, 300)}`,
-          );
-        }
-
-        const printed = bundled.stdout.trim().split("\n");
-
-        tip = remoteInfo ? (printed[0] ?? "") : "";
-
-        const size = Number(printed.at(-1));
-
-        if (!(size <= maxBytes)) {
-          return agent.toolError(
-            `the push is ${size} bytes, more than the ${maxBytes} git_push accepts`,
-          );
-        }
-
-        const bundle = await sandbox.files.read("git-push:read", path);
-
-        if (bundle.byteLength > maxBytes) {
-          return agent.toolError(
-            `the push is more than the ${maxBytes} bytes git_push accepts`,
-          );
-        }
-
-        const outcome = await step.run("git-push:push", async () => {
-          if (remoteInfo) {
-            return pushManifest({
-              remote,
-              token: await options.token(),
-              api: options.api,
-              fetch: options.fetch,
-              manifest: new TextDecoder().decode(bundle),
-              target: { src: ref, dst: ref },
-              tip,
-              state: remoteInfo,
-              policy: options.policy,
-              signal,
-            });
-          }
-
-          return pushBundle({
-            remote,
-            auth: await gitAuth(options.token, options.username),
-            bundle,
-            targets: [{ src: ref, dst: ref }],
-            policy: options.policy,
-            signal,
-          });
-        });
-
-        if ("refused" in outcome) {
-          return agent.toolError(`refused: ${outcome.refused}`);
-        }
-
-        if ("failed" in outcome) {
-          return agent.toolError(
-            `the remote rejected the push: ${outcome.failed}`,
-          );
-        }
-
-        const [result] = outcome.pushed;
-
-        if (!result || result.status === "non-fast-forward") {
-          return agent.toolError(
-            `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`,
-          );
-        }
-
-        return { pushed: outcome.pushed.map(describe) };
-      } finally {
-        await sandbox.commands.run("git-push:cleanup", ["rm", "-f", path], {
-          cwd,
-        });
-      }
+      return result.ok
+        ? { pushed: result.pushed }
+        : agent.toolError(result.error);
     },
   });
 };

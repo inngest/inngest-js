@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fakeGitHub } from "./git-fixtures/githubFake.ts";
 import {
+  commitFiles,
   isGitHubRemote,
   manifestScript,
   parseManifest,
@@ -466,6 +467,232 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     });
 
     expect(kinds).toEqual([true]);
+  });
+});
+
+describe("notes and committing files", { timeout: 60_000 }, () => {
+  let work: string;
+  let base: string;
+  let hub: ReturnType<typeof fakeGitHub>;
+
+  beforeEach(() => {
+    work = mkdtempSync(join(tmpdir(), "git-api-files-"));
+    git(work, "init", "--quiet", "-b", "main");
+    writeFileSync(join(work, "keep.txt"), "keep\n");
+    writeFileSync(join(work, "drop.txt"), "drop\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "base");
+    base = git(work, "rev-parse", "HEAD");
+    hub = fakeGitHub();
+    hub.seed(work, base, "refs/heads/main");
+  });
+
+  afterEach(() => {
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  const files = (commit: string) => {
+    const tree = hub.trees.get(hub.commits.get(commit)?.tree ?? "");
+
+    return Object.fromEntries(
+      [...(tree ?? [])].map(([path, entry]) => {
+        return [path, Buffer.from(hub.blobs.get(entry.sha) as Uint8Array)];
+      }),
+    );
+  };
+
+  const skillRef = "refs/heads/skills/triage";
+  const options = () => {
+    return {
+      remote,
+      token,
+      fetch: hub.handle,
+      ref: skillRef,
+      message: "Add the triage skill",
+    };
+  };
+
+  test("commits a file set to a new branch off the default branch: text, bytes and a delete", async () => {
+    const outcome = await commitFiles({
+      ...options(),
+      files: {
+        "triage/SKILL.md": "# triage\n",
+        "bin.dat": new Uint8Array([0, 1, 2, 255]),
+        "drop.txt": null,
+      },
+      date: "2026-10-28T12:00:00Z",
+    });
+
+    expect(outcome).toMatchObject({
+      pushed: [
+        { ref: "refs/heads/skills/triage", status: "pushed", asked: true },
+      ],
+    });
+
+    const sha = hub.refs.get("refs/heads/skills/triage") ?? "";
+    const made = hub.commits.get(sha);
+
+    expect(made?.parents).toEqual([base]);
+    expect(made?.message).toBe("Add the triage skill");
+    expect(made?.author).toMatchObject({
+      name: "inngest-agent",
+      date: "2026-10-28T12:00:00Z",
+    });
+
+    const tree = files(sha);
+
+    expect(Object.keys(tree).sort()).toEqual([
+      "bin.dat",
+      "keep.txt",
+      "triage/SKILL.md",
+    ]);
+    expect(tree["triage/SKILL.md"]?.toString()).toBe("# triage\n");
+    expect([...(tree["bin.dat"] ?? [])]).toEqual([0, 1, 2, 255]);
+    expect(
+      hub.requests.every((request) => {
+        return request.authorization === `Bearer ${token}`;
+      }),
+    ).toBe(true);
+  });
+
+  test("adds a commit to a branch that exists, and a second call builds on the first", async () => {
+    await commitFiles({ ...options(), files: { "one.md": "1\n" } });
+
+    const first = hub.refs.get(skillRef);
+    const outcome = await commitFiles({
+      ...options(),
+      message: "second",
+      files: { "two.md": "2\n" },
+    });
+
+    expect(outcome).toMatchObject({
+      pushed: [{ status: "pushed", oldSha: first }],
+    });
+    expect(Object.keys(files(hub.refs.get(skillRef) ?? "")).sort()).toEqual([
+      "drop.txt",
+      "keep.txt",
+      "one.md",
+      "two.md",
+    ]);
+  });
+
+  test("the policy sees the paths, the files before and after, and an empty sha", async () => {
+    const seen: unknown[] = [];
+
+    await commitFiles({
+      ...options(),
+      files: {
+        "keep.txt": "kept, edited\n",
+        "new.md": "new\n",
+        "drop.txt": null,
+      },
+      policy: async (push) => {
+        seen.push({
+          sha: push.sha,
+          branch: push.branch,
+          paths: push.paths,
+          commits: push.commits.map((commit) => {
+            return commit.subject;
+          }),
+        });
+        seen.push(
+          Object.fromEntries(
+            await Promise.all(
+              push.files.map(async (file) => {
+                return [
+                  file.path,
+                  [(await file.before())?.text, (await file.after())?.text],
+                ] as const;
+              }),
+            ),
+          ),
+        );
+        seen.push(await push.patch());
+
+        return undefined;
+      },
+    });
+
+    expect(seen[0]).toEqual({
+      sha: "",
+      branch: "skills/triage",
+      paths: ["drop.txt", "keep.txt", "new.md"],
+      commits: ["Add the triage skill"],
+    });
+    expect(seen[1]).toEqual({
+      "drop.txt": ["drop\n", undefined],
+      "keep.txt": ["keep\n", "kept, edited\n"],
+      "new.md": [undefined, "new\n"],
+    });
+    expect(seen[2]).toContain("+kept, edited");
+    expect(seen[2]).toContain("-drop");
+  });
+
+  test("a policy refusal commits nothing, and an empty file set is refused", async () => {
+    hub.requests.length = 0;
+
+    await expect(
+      commitFiles({
+        ...options(),
+        files: { ".github/ci.yml": "x\n" },
+        policy: () => {
+          return { refuse: "no workflows" };
+        },
+      }),
+    ).resolves.toEqual({ refused: "no workflows" });
+    await expect(commitFiles({ ...options(), files: {} })).resolves.toEqual({
+      refused: "there are no files to commit",
+    });
+    expect(hub.requests.filter((request) => request.method !== "GET")).toEqual(
+      [],
+    );
+    expect(hub.refs.has(skillRef)).toBe(false);
+  });
+
+  test("the policy's notes come back in the result, from either way of pushing", async () => {
+    const outcome = await commitFiles({
+      ...options(),
+      files: { "a.md": "a\n" },
+      policy: (push) => {
+        return { notes: [`allowed ${push.paths.join(",")}`, "audited"] };
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      pushed: [{ notes: ["allowed a.md", "audited"] }],
+    });
+
+    const moved = await commitFiles({
+      ...options(),
+      ref: "refs/heads/skills/other",
+      files: { "b.md": "b\n" },
+      policy: () => {
+        return { ref: "refs/heads/skills/safe", notes: ["moved"] };
+      },
+    });
+
+    expect(moved).toMatchObject({
+      pushed: [
+        { ref: "refs/heads/skills/safe", asked: false, notes: ["moved"] },
+      ],
+    });
+  });
+
+  test("malformed notes fail the push before anything is created", async () => {
+    hub.requests.length = 0;
+
+    await expect(
+      commitFiles({
+        ...options(),
+        files: { "a.md": "a\n" },
+        policy: () => {
+          return { notes: ["x".repeat(501)] };
+        },
+      }),
+    ).rejects.toThrow(/notes must be at most/);
+    expect(hub.requests.filter((request) => request.method !== "GET")).toEqual(
+      [],
+    );
   });
 });
 

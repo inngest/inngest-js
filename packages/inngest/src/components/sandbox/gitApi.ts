@@ -32,6 +32,7 @@ import {
   once,
   type PushedRef,
   type PushOutcome,
+  readVerdict,
 } from "./gitPush.ts";
 
 /**
@@ -545,12 +546,18 @@ const modeIsFile = (mode: string): boolean => {
  * Checks a manifest against the policy and pushes it with the GitHub API. A
  * refusal and a failure of the push come back as data, like \`pushBundle()\`.
  */
-export const pushManifest = async (
+export const pushManifest = (
   options: PushManifestOptions,
 ): Promise<PushOutcome> => {
-  const { remote, manifest, target, tip, state, policy } = options;
+  return pushParsed(options, parseManifest(options.manifest));
+};
+
+const pushParsed = async (
+  options: Omit<PushManifestOptions, "manifest">,
+  parsed: Manifest,
+): Promise<PushOutcome> => {
+  const { remote, target, tip, state, policy } = options;
   const client = clientFor(options);
-  const parsed = parseManifest(manifest);
   const { commits, blobs } = parsed;
 
   if (commits.length === 0) {
@@ -651,6 +658,7 @@ export const pushManifest = async (
   };
 
   let ref = target.dst;
+  let notes: string[] = [];
 
   if (policy) {
     const files: GitPushFile[] = paths.map((path) => {
@@ -704,19 +712,14 @@ export const pushManifest = async (
         return out.join("");
       },
     } satisfies GitPush);
-    const verdict = decision as Exclude<GitPolicyResult, void>;
+    const verdict = readVerdict(decision, ref);
 
-    if (verdict && "refuse" in verdict) {
+    if ("refuse" in verdict) {
       return { refused: verdict.refuse };
     }
 
-    if (verdict && "ref" in verdict) {
-      if (!isPushableRef(verdict.ref)) {
-        throw new Error(`The policy named an invalid ref: ${verdict.ref}`);
-      }
-
-      ref = verdict.ref;
-    }
+    ref = verdict.ref;
+    notes = verdict.notes;
   }
 
   const asked = ref === target.dst;
@@ -728,6 +731,7 @@ export const pushManifest = async (
       ...(state.oldSha !== undefined && { oldSha: state.oldSha }),
       status,
       asked,
+      ...(notes.length > 0 && { notes }),
     };
   };
 
@@ -839,4 +843,158 @@ export const pushManifest = async (
 
     throw error;
   }
+};
+
+export interface CommitFilesOptions {
+  remote: string;
+
+  /**
+   * The token, used only for the requests the host makes.
+   */
+  token: string;
+  api?: string;
+  fetch?: typeof fetch;
+
+  /**
+   * The full ref to commit to, such as `refs/heads/skills/fix`. A branch that
+   * does not exist yet starts from the repository's default branch.
+   */
+  ref: string;
+  message: string;
+
+  /**
+   * The files by path: text or bytes to write, or `null` to delete the path.
+   */
+  files: Record<string, string | Uint8Array | null>;
+  author?: { name: string; email: string };
+
+  /**
+   * When the commit is made, as an ISO date. Default now.
+   */
+  date?: string;
+
+  /**
+   * Checks the commit like `git_push`'s policy does. The push it sees has
+   * `sha` empty, since the commit does not exist until it is made.
+   */
+  policy?: GitPolicy;
+  signal?: AbortSignal;
+}
+
+const gitBlobSha = async (bytes: Uint8Array): Promise<string> => {
+  const head = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const whole = new Uint8Array(head.length + bytes.length);
+
+  whole.set(head);
+  whole.set(bytes, head.length);
+
+  const digest = await crypto.subtle.digest("SHA-1", whole);
+
+  return [...new Uint8Array(digest)]
+    .map((byte) => {
+      return byte.toString(16).padStart(2, "0");
+    })
+    .join("");
+};
+
+/**
+ * EXPERIMENTAL: Commits a set of files to a GitHub repository from your app,
+ * with no sandbox and no `git`: one commit on top of the branch (or of the
+ * default branch, for a new one), made with the Git Data API and a token that
+ * stays in your app. It answers to the same `GitPolicy` and returns the same
+ * result as the `git_push` tool's push, so a file set an agent wrote, a skill
+ * or an experiment goes through the same checks. Call it inside a step.
+ *
+ * @example
+ * ```ts
+ * const outcome = await commitFiles({
+ *   remote: "https://github.com/acme/skills",
+ *   token,
+ *   ref: "refs/heads/skills/triage",
+ *   message: "Add the triage skill",
+ *   files: { "triage/SKILL.md": text, "old/SKILL.md": null },
+ * });
+ * ```
+ */
+export const commitFiles = async (
+  options: CommitFilesOptions,
+): Promise<PushOutcome> => {
+  const paths = Object.keys(options.files);
+
+  if (paths.length === 0) {
+    return { refused: "there are no files to commit" };
+  }
+
+  if (!isPushableRef(options.ref)) {
+    throw new Error(`${options.ref} is not a ref a commit may be pushed to`);
+  }
+
+  const state = await remoteState(options);
+  const blobs = new Map<string, Uint8Array>();
+  const changes: ManifestCommit["changes"] = [];
+
+  for (const path of paths) {
+    const content = options.files[path];
+
+    if (content === null || content === undefined) {
+      changes.push({
+        status: "D",
+        oldMode: "100644",
+        mode: "000000",
+        oldSha: "",
+        sha: "0".repeat(40),
+        path,
+      });
+
+      continue;
+    }
+
+    const bytes =
+      typeof content === "string" ? new TextEncoder().encode(content) : content;
+    const sha = await gitBlobSha(bytes);
+
+    blobs.set(sha, bytes);
+    changes.push({
+      status: "M",
+      oldMode: "100644",
+      mode: "100644",
+      oldSha: "",
+      sha,
+      path,
+    });
+  }
+
+  const who = options.author ?? {
+    name: "inngest-agent",
+    email: "agent@users.noreply.github.com",
+  };
+  const date = options.date ?? new Date().toISOString();
+  const person = { ...who, date };
+
+  return pushParsed(
+    {
+      remote: options.remote,
+      token: options.token,
+      api: options.api,
+      fetch: options.fetch,
+      target: { src: options.ref, dst: options.ref },
+      tip: "",
+      state,
+      policy: options.policy,
+      signal: options.signal,
+    },
+    {
+      commits: [
+        {
+          sha: "",
+          parents: [state.base],
+          author: person,
+          committer: person,
+          message: options.message,
+          changes,
+        },
+      ],
+      blobs,
+    },
+  );
 };
