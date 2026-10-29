@@ -457,6 +457,53 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
+  test("a wait that expires marks the thread running again when a message was delivered", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.next({ timeout: "1s" }).catch(() => undefined);
+        seen.push(
+          ((await record(kv)) as { status?: string } | undefined)?.status,
+        );
+      },
+    );
+
+    await run(fn, { event: trigger("one"), timeouts: 1 });
+
+    // The wait marked the thread waiting; its expiry means the agent goes on.
+    expect(seen.at(-1)).toBe("running");
+  });
+
+  test("a wait that expires before any message was delivered leaves the status alone", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        const before = ((await record(kv)) as { status?: string } | undefined)
+          ?.status;
+        // The trigger is a stop, which the inbox skips: nothing is delivered.
+        const expired = await inbox.next({ timeout: "1s" });
+
+        seen.push(
+          expired,
+          before,
+          ((await record(kv)) as { status?: string } | undefined)?.status,
+        );
+      },
+    );
+
+    await run(fn, { event: message("stop"), timeouts: 1 });
+
+    expect(seen[0]).toBeUndefined();
+    expect(seen[2]).toBe(seen[1]);
+  });
+
   test("honoring a stop request marks the thread stopped", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const { fn } = createAgentFunction(
