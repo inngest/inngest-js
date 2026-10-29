@@ -417,6 +417,14 @@ export const steps = {
     };
   },
 
+  progressCheck: (job: string, count: number): StepSpec => {
+    return {
+      id: joinId("github", `check:${job}:progress:${count}`),
+      name: report(job, "progress"),
+      unmarked: true,
+    };
+  },
+
   buildingCheck: (job: string): StepSpec => {
     return {
       id: joinId("github", `check:${job}:building`),
@@ -439,11 +447,11 @@ export const steps = {
   },
 
   recordRunDetails: named("Record run details"),
-
-  checkBuildLock: named("Check build"),
 };
 
 export const traceName = {
+  /** The step that looks for the run holding a build lock. */
+
   /**
    * A job's span: its `name`, or its path when it has none. A later direct
    * call, whose path is `${id} (n)`, keeps its `(n)` after the name.
