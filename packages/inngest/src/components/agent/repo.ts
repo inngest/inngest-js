@@ -3,7 +3,7 @@
  * EXPERIMENTAL: `repo()`, which checks a git repository out into a sandbox
  * (or brings the checkout a restored sandbox already holds up to date) and
  * pushes branches from it. The token is only in the environment of the one
- * command that clones or pushes (redacted from traces), and never written to
+ * git process that talks to the remote (redacted from traces), and never written to
  * git config or a file, so the model's own commands can't read it.
  */
 import { z } from "zod/v4";
@@ -141,6 +141,9 @@ if [ -e "$DIR/.git" ]; then
     fi
     if [ -n "$have" ]; then g -C "$DIR" remote set-url origin "$URL"; else g -C "$DIR" remote add origin "$URL"; fi || exit 1
   fi
+  # What the checkout already has seeds the throwaway repository, without the
+  # token, so the fetch from the remote only downloads what is new.
+  g --git-dir="$T" fetch --quiet --no-recurse-submodules "$DIR" '+refs/remotes/origin/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
   auth --git-dir="$T" fetch --force --quiet --no-recurse-submodules --tags -- "$URL" '+refs/heads/*:refs/remotes/origin/*' || exit 1
   g -C "$DIR" fetch --force --quiet --no-recurse-submodules --prune "$T" '+refs/remotes/origin/*:refs/remotes/origin/*' || exit 1
   g -C "$DIR" fetch --force --quiet --no-recurse-submodules "$T" '+refs/tags/*:refs/tags/*' || exit 1
@@ -177,8 +180,10 @@ if [ -e "$DIR/.git" ]; then
   fi
   action=synced
 else
-  auth clone --quiet --no-recurse-submodules -- "$URL" "$DIR" &&
-  g -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
+  # No checkout in the clone, which holds the token: filters and attributes
+  # run in the tokenless checkout after it.
+  auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" &&
+  g -C "$DIR" checkout --quiet -f "\${REF:-HEAD}" || exit 1
   action=cloned
 fi
 g -C "$DIR" config user.name "Coding agent" &&

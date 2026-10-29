@@ -243,7 +243,7 @@ describe("repo checkout and sync", () => {
     ).rejects.toThrow(/can't start with/);
   });
 
-  test("hooks and config planted in the checkout neither run nor redirect the fetch", async () => {
+  test("config and hooks planted in the checkout neither redirect the fetch nor run", async () => {
     const { chmodSync } = await import("node:fs");
     await checkout();
     const stolen = join(root, "stolen.txt");
@@ -324,10 +324,38 @@ describe("repo checkout and sync", () => {
     git(seed, "push", "--quiet", "origin", "other");
 
     await expect(checkout({ ref: "other", sync: "keep" })).rejects.toThrow(
-      /overwritten|checkout/,
+      /overwritten/,
     );
     expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
     expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("local edit\n");
+  });
+
+  test("reset keeps files the remote's .gitignore ignores", async () => {
+    writeFileSync(join(seed, ".gitignore"), "cache/\n");
+    upstream(".gitignore", "cache/\n");
+    await checkout();
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(work, "cache"));
+    writeFileSync(join(work, "cache", "x"), "x");
+    upstream("b.txt", "two\n");
+
+    await checkout();
+
+    expect(existsSync(join(work, "cache", "x"))).toBe(true);
+  });
+
+  test("a branch and a tag with the same name sync", async () => {
+    git(seed, "tag", "same");
+    git(seed, "push", "--quiet", "origin", "refs/tags/same");
+    git(seed, "checkout", "--quiet", "-b", "same");
+    writeFileSync(join(seed, "s.txt"), "s\n");
+    git(seed, "add", ".");
+    git(seed, "commit", "--quiet", "-m", "branch same");
+    git(seed, "push", "--quiet", "origin", "refs/heads/same");
+    const branch = git(seed, "rev-parse", "HEAD");
+    await checkout();
+
+    expect((await checkout({ ref: "same" })).sha).toBe(branch);
   });
 
   test("reset removes untracked directories", async () => {
