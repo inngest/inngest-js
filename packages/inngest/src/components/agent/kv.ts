@@ -1028,7 +1028,10 @@ export interface KvScopeInstance {
    * Reads, transforms and writes a key in one step. It is a compare-and-set:
    * when another run changes the key between the read and the write, the
    * update reads again and calls `fn` again, so `fn` must be a pure function
-   * of its argument. Two runs updating one key never lose an update.
+   * of its argument. Two runs updating one key never lose an update. A key
+   * that loses 25 races in a row (many writers at once, with no backoff)
+   * throws. A run that is retried after the write but before its step was saved
+   * applies `fn` again, so `fn` must also tolerate being applied twice.
    * A stored value that fails its key's schema is a `NonRetriableError`, as
    * for `get`, and nothing is written.
    * The result never expires, even if the key had a `ttl`: pass nothing to

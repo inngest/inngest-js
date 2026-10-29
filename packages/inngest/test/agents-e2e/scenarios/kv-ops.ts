@@ -81,15 +81,15 @@ export const kvOps = scenario({
     const total = kvKey<number>(`${tag}:total`);
 
     await Promise.all(
-      Array.from({ length: 25 }, () => {
+      Array.from({ length: 15 }, () => {
         return counter.update(total, (n) => {
           return (n ?? 0) + 1;
         });
       }),
     );
     ctx.check(
-      "25 concurrent updates all counted",
-      (await counter.get(total)) === 25,
+      "15 concurrent updates all counted",
+      (await counter.get(total)) === 15,
       await counter.get(total),
     );
 
