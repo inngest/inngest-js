@@ -67,8 +67,8 @@ import { agentMessage } from "./events.ts";
 import {
   createInboxTools,
   type InboxToolInbox,
-  type InboxToolName,
   type InboxToolsConfig,
+  type InboxToolsOf,
 } from "./inboxTools.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
@@ -314,6 +314,9 @@ export interface AgentFunctionConfig<
   TMiddleware extends Middleware.Class[] | undefined =
     | Middleware.Class[]
     | undefined,
+  TInboxTools extends InboxToolsConfig | undefined =
+    | InboxToolsConfig
+    | undefined,
 > extends ThreadKeyConfig<TOn>,
     AgentFunctionOptions<TMiddleware> {
   /**
@@ -371,7 +374,7 @@ export interface AgentFunctionConfig<
    * `if` can only narrow. A message that arrives while the model works is
    * folded into its next turn by `control.steer()` when `foldMessages` allows.
    */
-  inboxTools?: InboxToolsConfig;
+  inboxTools?: TInboxTools;
 
   /**
    * Which messages that arrive during a turn `control.steer()` (and so
@@ -533,6 +536,9 @@ export interface AgentBodyFields<
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
+  TInboxTools extends InboxToolsConfig | undefined =
+    | InboxToolsConfig
+    | undefined,
 > {
   /**
    * The event that started the run. Its `data` is the thread message, and
@@ -569,10 +575,11 @@ export interface AgentBodyFields<
   sandboxTools: SandboxToolsOf<TSandboxes>;
 
   /**
-   * The model's inbox tools, as the config's `inboxTools` allows: `inbox_listen`,
-   * `inbox_wait`, `inbox_read` and `inbox_stop`. Empty without `inboxTools`.
+   * The model's inbox tools: `inbox_listen`, `inbox_wait`, `inbox_read` and
+   * `inbox_stop`, all of them when the config has `inboxTools` and none
+   * without it.
    */
-  inboxTools: Partial<Record<InboxToolName, SandboxTool>>;
+  inboxTools: InboxToolsOf<TInboxTools>;
 
   /**
    * The agent's channels, by name, as the config resolved them for this run.
@@ -853,8 +860,11 @@ export type AgentBodyContext<
   TSandboxes extends SandboxToolNames = SandboxToolNames,
   TClient extends Inngest.Any = Inngest.Any,
   TMiddleware extends Middleware.Class[] | undefined = undefined,
+  TInboxTools extends InboxToolsConfig | undefined =
+    | InboxToolsConfig
+    | undefined,
 > = AgentFunctionInput<TClient, TMiddleware> &
-  AgentBodyFields<TEvent, TRequest, TReply, TSandboxes>;
+  AgentBodyFields<TEvent, TRequest, TReply, TSandboxes, TInboxTools>;
 
 /**
  * The body of an agent. `TEvent` is the events of its `on` triggers and
@@ -868,6 +878,9 @@ export type AgentBody<
   TSandboxes extends SandboxToolNames = SandboxToolNames,
   TClient extends Inngest.Any = Inngest.Any,
   TMiddleware extends Middleware.Class[] | undefined = undefined,
+  TInboxTools extends InboxToolsConfig | undefined =
+    | InboxToolsConfig
+    | undefined,
 > = (
   context: AgentBodyContext<
     TEvent,
@@ -875,7 +888,8 @@ export type AgentBody<
     TReply,
     TSandboxes,
     TClient,
-    TMiddleware
+    TMiddleware,
+    TInboxTools
   >,
 ) => Promise<TOutput>;
 
