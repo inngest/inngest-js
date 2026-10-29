@@ -11,6 +11,8 @@ export type {
   GitPolicy,
   GitPolicyResult,
   GitPush,
+  GitPushBlob,
+  GitPushFile,
 } from "../sandbox/gitPush.ts";
 export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
@@ -57,5 +59,7 @@ export type {
   AgentUsage,
 } from "./loop.ts";
 export { agent } from "./loop.ts";
+export type { UntrustedOptions } from "./modelErrors.ts";
+export { classifyModelError, untrusted, untrustedTag } from "./modelErrors.ts";
 export type { Repo, RepoOptions } from "./repo.ts";
 export { repo } from "./repo.ts";

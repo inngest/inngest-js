@@ -276,6 +276,10 @@ export const createAgents = <TClient extends Inngest.Any>(
   let bakes = false;
 
   return {
+    // One implementation backs every overload of `Agents["agent"]`. The
+    // overloads differ only in how they type `config` and `body`, which the
+    // implementation takes as `any`, so the compiler cannot relate them; each
+    // overload is checked at the call site, not here.
     agent: ((
       config: AgentFunctionConfig<unknown, any>,
       body: AgentBody<any, any, any, any, any, any>,
@@ -320,22 +324,31 @@ export const createAgents = <TClient extends Inngest.Any>(
 export type {
   AgentBody,
   AgentBodyContext,
+  AgentBodyFields,
   AgentFunction,
   AgentFunctionConfig,
+  AgentFunctionInput,
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
 export type {
   Channel,
   ChannelAsk,
+  ChannelCard,
   ChannelMessage,
+  ChannelStream,
+  ChannelStreamLimits,
   ChannelTrigger,
   ReportConfig,
   ReportConfigValue,
   Reporter,
   ReportTarget,
 } from "./channels.ts";
-export { askThrough, defineChannel } from "./channels.ts";
+export {
+  askThrough,
+  ChannelStreamEnded,
+  defineChannel,
+} from "./channels.ts";
 export { agentMessage } from "./events.ts";
 export type {
   GithubChannelOptions,
