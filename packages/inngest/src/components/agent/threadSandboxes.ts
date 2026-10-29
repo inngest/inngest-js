@@ -67,7 +67,7 @@ export const threadSnapshotScope = "thread";
 /**
  * The generation a snapshot is saved as. A run's first snapshot of a sandbox
  * is the run ID. A sandbox recycled mid-run saves again, and each save is a
- * later generation of the same run (`<run ID>.001`, `.002`), which sorts after
+ * later generation of the same run (`<run ID>.000001`, `.000002`), which sorts after
  * the one before it.
  */
 export const sandboxGeneration = (
@@ -81,7 +81,7 @@ export const sandboxGeneration = (
    */
   recycles = 0,
 ): string => {
-  return recycles > 0 ? `${runId}.${String(recycles).padStart(3, "0")}` : runId;
+  return recycles > 0 ? `${runId}.${String(recycles).padStart(6, "0")}` : runId;
 };
 
 /**
@@ -124,6 +124,8 @@ export interface ThreadSandboxOwner {
   /**
    * Snapshots a sandbox of this run for the thread's next run. A failed
    * snapshot is a warning on the trace and changes nothing about the run.
+   * Returns `false` when nothing was saved, so a caller that is about to
+   * destroy the sandbox can keep it instead.
    */
   save(
     /**
@@ -140,7 +142,7 @@ export interface ThreadSandboxOwner {
      * Default 0.
      */
     recycles?: number,
-  ): Promise<void>;
+  ): Promise<boolean | undefined | void>;
 
   /**
    * Leaves a `keepAlive` sandbox running for the thread's next run instead of
@@ -402,7 +404,7 @@ export const threadSandboxOwner = (
 
         // A snapshot without its name can't be found again.
         if (!taken.named) {
-          return;
+          return false;
         }
 
         await recordSandboxGeneration(scope, ref, name, generation);
@@ -420,7 +422,7 @@ export const threadSandboxOwner = (
         const older = previous.slice(0, -1);
 
         if (older.length === 0) {
-          return;
+          return true;
         }
 
         await options.run(`${name}:thread:replace${suffix}`, async () => {
@@ -442,10 +444,14 @@ export const threadSandboxOwner = (
         for (const { member } of older) {
           await generations.remove(member);
         }
+
+        return true;
       } catch (error) {
         if (!(error instanceof StepError)) {
           throw error;
         }
+
+        return false;
       }
     },
 

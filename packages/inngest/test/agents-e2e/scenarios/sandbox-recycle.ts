@@ -139,5 +139,29 @@ export const sandboxRecycle = scenario({
         return read === "survives a recycle";
       },
     );
+
+    // The scenario ends only once its last run has saved, destroyed and pruned,
+    // so none of it lands in the next scenario's window.
+    await ctx.until(
+      async () => {
+        return [
+          calls("sandbox.destroy").length,
+          calls("snapshot.delete").length,
+        ];
+      },
+      ([destroyed, deleted]) => {
+        return (destroyed ?? 0) >= 4 && (deleted ?? 0) >= 2;
+      },
+      90_000,
+    );
+    ctx.check(
+      "older generations of the run were pruned, the newest kept",
+      calls("snapshot.create").length === 4 &&
+        calls("snapshot.delete").length === 2,
+      {
+        created: calls("snapshot.create").length,
+        deleted: calls("snapshot.delete").length,
+      },
+    );
   },
 });

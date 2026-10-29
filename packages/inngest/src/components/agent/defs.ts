@@ -441,6 +441,13 @@ export interface LazySandbox {
    * run restores the newest one. Call it only when nothing is using the
    * sandbox: a command still running in it is lost. Durable: a replay
    * returns the same saves and destroys.
+   *
+   * It needs a sandbox that belongs to a thread; without one it throws, since
+   * nothing would keep the files. It throws, and leaves the sandbox as it
+   * was, when the snapshot could not be taken or the sandbox could not be
+   * destroyed. The restored sandbox runs the definition's skills and `setup`
+   * again (with `restored` true), and `keepAlive` is ignored: a recycle always
+   * destroys.
    */
   recycle(): Promise<void>;
 }
@@ -794,8 +801,16 @@ const lazySandbox = (
           return;
         }
 
-        if (used) {
-          await owner?.save(name, sandbox, recycles);
+        if (!owner) {
+          throw new SandboxValidationError(
+            `Sandbox "${name}" can't be recycled: it doesn't belong to a thread, so nothing would keep its files`,
+          );
+        }
+
+        if (used && (await owner.save(name, sandbox, recycles)) === false) {
+          throw new Error(
+            `Sandbox "${name}" was not recycled: its snapshot could not be taken, so it is still running`,
+          );
         }
 
         let given = false;
@@ -808,9 +823,13 @@ const lazySandbox = (
 
         await destroyQuietly(sandbox, `${name}:destroy`, cleanup);
 
-        if (given) {
-          await owner?.release(name);
+        if (!given) {
+          throw new Error(
+            `Sandbox "${name}" was not recycled: it could not be destroyed, so it is still running`,
+          );
         }
+
+        await owner.release(name);
 
         // The next `get()` starts over, from the snapshot just taken.
         raw = undefined;
