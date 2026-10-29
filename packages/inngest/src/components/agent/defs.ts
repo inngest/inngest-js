@@ -570,10 +570,11 @@ const lazySandbox = (
   let guard: DeferHandle | undefined;
   let restored = false;
 
-  // How many times the sandbox has been recycled. It names the generation of
-  // each save and the cleanup defer of each sandbox, so a recycled sandbox
-  // never reuses either.
-  let recycles = 0;
+  // Rises with every save and every recycle. It names the generation of each
+  // save and the cleanup defer of each sandbox, so neither is ever reused: a
+  // save whose destroy then failed has taken its generation, and the next save
+  // is a later one.
+  let epoch = 0;
 
   // The recycle in progress, which `get()` and `close()` wait for.
   let recycling: Promise<void> | undefined;
@@ -590,7 +591,7 @@ const lazySandbox = (
   // It saves the sandbox only once `owner.ready()` says its skills and setup
   // have finished.
   const arm = (sandbox: DurableSandbox) => {
-    guard = owner?.guard(name, sandbox, recycles);
+    guard = owner?.guard(name, sandbox, epoch);
   };
 
   // The bare sandbox: restored from the thread's newest snapshot when it has
@@ -807,13 +808,21 @@ const lazySandbox = (
           );
         }
 
-        if (used && (await owner.save(name, sandbox, recycles)) === false) {
-          throw new Error(
-            `Sandbox "${name}" was not recycled: its snapshot could not be taken, so it is still running`,
-          );
+        let saved = false;
+
+        if (used) {
+          if ((await owner.save(name, sandbox, epoch)) === false) {
+            throw new Error(
+              `Sandbox "${name}" was not recycled: its snapshot could not be taken, so it is still running`,
+            );
+          }
+
+          saved = true;
+          epoch++;
         }
 
-        let given = false;
+        // Without a cleanup defer there is nothing to read the outcome from.
+        let given = guard === undefined;
         const cleanup = guard && {
           abort: () => {
             given = true;
@@ -838,7 +847,10 @@ const lazySandbox = (
         guard = undefined;
         used = false;
         restored = false;
-        recycles++;
+
+        if (!saved) {
+          epoch++;
+        }
       });
 
       recycling = next.catch(() => {});
@@ -868,7 +880,7 @@ const lazySandbox = (
           const worthKeeping = !failed && used;
 
           if (worthKeeping) {
-            await owner?.save(name, sandbox, recycles);
+            await owner?.save(name, sandbox, epoch);
           }
 
           // The owner may keep a keepAlive sandbox running for the thread's

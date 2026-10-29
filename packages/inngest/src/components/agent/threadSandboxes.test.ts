@@ -1234,7 +1234,7 @@ describe("recycling a lazy sandbox", () => {
       "work:thread:cleanup",
       "work:thread:cleanup:g1",
     ]);
-    expect(s.defer.mock.calls[1]?.[1]).toMatchObject({ recycles: 1 });
+    expect(s.defer.mock.calls[1]?.[1]).toMatchObject({ epoch: 1 });
     expect(first?.value.abort).toHaveBeenCalledTimes(1);
   });
 
@@ -1293,6 +1293,26 @@ describe("recycling a lazy sandbox", () => {
     expect(await opened.work?.get()).toBe(sandboxNow);
   });
 
+  test("after a failed destroy the next save is a later generation, not a reuse of the first", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const { opened } = open(w, s);
+    const sandboxNow = await opened.work?.get();
+
+    (sandboxNow?.destroy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new StepError("sb:destroy", new Error("destroy failed")),
+    );
+
+    await expect(opened.work?.recycle()).rejects.toThrow(
+      /could not be destroyed/,
+    );
+    await opened.work?.close();
+
+    // The snapshot taken before the failed destroy, and a new one from close.
+    expect(w.rows).toHaveLength(2);
+    expect(await newest(s.scope)).toBe("01A.000001");
+  });
+
   test("a sandbox that belongs to no thread cannot be recycled", async () => {
     const w = world();
     const opened = openSandboxes({ work: box }, {
@@ -1324,7 +1344,7 @@ describe("recycling a lazy sandbox", () => {
     expect([...w.live]).toEqual([]);
   });
 
-  test("generations keep their order past a thousand recycles", () => {
+  test("generations keep their order past a thousand epoch", () => {
     expect(sandboxGeneration("01A", 999) < sandboxGeneration("01A", 1000)).toBe(
       true,
     );
@@ -1380,7 +1400,7 @@ describe("recycling a lazy sandbox", () => {
       thread,
       runId: "01A",
       scope: s.scope,
-      sandbox: { name: "work", sandboxId: "sb-2", recycles: 1 },
+      sandbox: { name: "work", sandboxId: "sb-2", epoch: 1 },
       run: (_id, fn) => {
         return fn();
       },
