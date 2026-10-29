@@ -4,12 +4,14 @@
  * @module
  */
 
+import { readReportFile } from "./machine/reports.ts";
 import { ciRun } from "./pipeline/metadata.ts";
 import { steps } from "./pipeline/names.ts";
 import {
   countApi,
   getJobScope,
   nextStepId,
+  requireJobScope,
   requireRunScope,
 } from "./pipeline/scope.ts";
 import type { CheckAnnotation } from "./types.ts";
@@ -109,5 +111,36 @@ export const report = {
     }
 
     run.pipelineAnnotations.push(...valid);
+  },
+
+  /**
+   * Annotate the diff from a report file a tool wrote on the job's machine:
+   * failed tests from vitest or jest (`--reporter=json`, `--json`), lint from
+   * eslint (`-f json`) or biome (`--reporter=json`), or type errors from the
+   * text of `tsc --pretty false`.
+   *
+   * A command that asks for its report as a direct call, such as
+   * `vitest run --reporter=json --outputFile=out.json`, is read without this.
+   * Use it when a script runs the tool.
+   *
+   * ```ts
+   * await $`pnpm test:ci`.nothrow();
+   * await report.results("vitest", "test-results.json");
+   * ```
+   *
+   * A file that is not in that format adds nothing.
+   *
+   * @throws {CiUsageError} When called outside a job.
+   */
+  results: async (
+    format: "vitest" | "jest" | "eslint" | "biome" | "tsc",
+    /** Where the report is, relative to the job's working directory. */
+    path: string,
+  ): Promise<void> => {
+    const job = requireJobScope("report.results");
+
+    countApi("report");
+
+    await readReportFile(job, format, path);
   },
 };

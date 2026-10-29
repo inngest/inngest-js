@@ -45,6 +45,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     cached: new Map(),
     createdSnapshots: new Set(),
     cacheSaved: new Map(),
+    jobGraph: new Map(),
     sandboxes: new Set(),
     summaries: [],
     counters: new Map(),
@@ -523,6 +524,34 @@ describe("a required check never hangs", () => {
     expect(pipelineCheck).toHaveLength(1);
     expect(pipelineCheck[0]?.conclusion).toBe("failure");
     expect(pipelineCheck[0]?.title).toContain("something went wrong");
+  });
+
+  test("a job with check: false posts no check of its own while it runs", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    const quiet = ci.job({ id: "quiet", check: false }, async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }], retries: 0 },
+      async () => {
+        return quiet();
+      },
+    );
+
+    const result = await runFunction(pipeline);
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      reporter.history.filter((entry) => {
+        return entry.name.includes("quiet");
+      }),
+    ).toEqual([]);
   });
 
   test("a settled failed job leaves the pipeline passing", async () => {

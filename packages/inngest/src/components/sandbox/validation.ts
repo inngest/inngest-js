@@ -795,6 +795,8 @@ export const validateDollarOptions = (options: unknown): void => {
         env: z.unknown(),
         cwd: z.unknown(),
         exitCodes: exitCodesSchema.optional(),
+        shims: z.unknown(),
+        toolOptions: z.unknown(),
       })
       .strict(),
     options,
