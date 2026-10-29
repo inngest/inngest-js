@@ -1,0 +1,26 @@
+/**
+ * @module
+ * EXPERIMENTAL: `inngest/experimental/agents/testing`. What a test of an agent
+ * needs and an app would otherwise copy: a scripted model that needs no API
+ * key, a fake Sandboxes API, fake Slack and GitHub servers that keep every
+ * call, a git remote that wants a token, and a thread handle that returns the
+ * keys the agent set. These run in Node and are for tests, never for
+ * production code.
+ *
+ * ```ts
+ * import { fakeSandbox, script, startFakes } from "inngest/experimental/agents/testing";
+ *
+ * const fakes = await startFakes();
+ * const client = new Inngest({
+ *   id: "app",
+ *   fetch: fakeSandbox({ recordUrl: fakes.url, commands: { "npm test": { stdout: "ok" } } }).fetch,
+ * });
+ * // agent.loop({ model: script([{ call: { name: "run", input: {} } }, { say: "done" }]), ... })
+ * // expect(fakes.posts({ channel: "sandbox", method: "sandbox.exec" })).toHaveLength(1);
+ * ```
+ */
+export * from "../../components/agent/testing/fakes.ts";
+export * from "../../components/agent/testing/gitRemote.ts";
+export * from "../../components/agent/testing/model.ts";
+export * from "../../components/agent/testing/sandbox.ts";
+export * from "../../components/agent/testing/threads.ts";

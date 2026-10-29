@@ -235,6 +235,14 @@
       "import": "./experimental/agents/index.js",
       "require": "./experimental/agents/index.cjs"
     },
+    "./experimental/agents/testing": {
+      "types": {
+        "import": "./experimental/agents/testing.d.ts",
+        "require": "./experimental/agents/testing.d.cts"
+      },
+      "import": "./experimental/agents/testing.js",
+      "require": "./experimental/agents/testing.cjs"
+    },
     "./experimental/durable-endpoints": {
       "types": {
         "import": "./experimental/durable-endpoints/index.d.ts",
