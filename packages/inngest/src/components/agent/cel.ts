@@ -313,12 +313,21 @@ function parse(source: string): Node {
 
         const first = peek();
         const second = tokens[position + 1];
+        const argumentStart = position;
 
-        if (first?.type === "number") {
-          throw new Error(
-            `"${source}": string() of a number literal reads differently in CEL (an integer) and here; write the string.`,
-          );
-        }
+        // A number literal anywhere inside is an integer to CEL, and the SDK
+        // cannot tell it from a double: refuse it rather than guess.
+        const refuseLiterals = () => {
+          const literal = tokens.slice(argumentStart, position).find((t) => {
+            return t.type === "number";
+          });
+
+          if (literal) {
+            throw new Error(
+              `"${source}": a number literal inside string() reads as an integer in CEL, which the SDK cannot tell from a double; write the string.`,
+            );
+          }
+        };
 
         // string(int(path)): the number as a whole number, as the backend writes it.
         if (
@@ -331,6 +340,7 @@ function parse(source: string): Node {
           const whole = ternary();
           expect(")");
           expect(")");
+          refuseLiterals();
 
           return (event) => {
             const value = whole(event);
@@ -353,6 +363,7 @@ function parse(source: string): Node {
 
         const inner = ternary();
         expect(")");
+        refuseLiterals();
 
         return (event) => {
           const value = inner(event);
@@ -363,6 +374,12 @@ function parse(source: string): Node {
 
           if (typeof value === "boolean") {
             return String(value);
+          }
+
+          if (typeof value !== "number") {
+            throw new Error(
+              `"${source}": string() needs a string, boolean or number.`,
+            );
           }
 
           return formatDouble(value, source);

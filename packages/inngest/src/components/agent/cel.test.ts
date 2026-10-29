@@ -106,6 +106,9 @@ describe("thread key expressions", () => {
   test("string() refuses what CEL and the SDK would write differently or cannot write", () => {
     for (const source of [
       "string(1234567)",
+      "string((1234567))",
+      "string(true ? 1234567 : 0)",
+      "string(1234567 + 0)",
       "int(event.data.n)",
       'string(int("12"))',
     ]) {
