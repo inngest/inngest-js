@@ -142,6 +142,7 @@ export interface ThreadSandboxOwner {
      * the generation. Default 0.
      */
     epoch?: number,
+    // biome-ignore lint/suspicious/noConfusingVoidType: an owner that returns nothing saved as before
   ): Promise<boolean | undefined | void>;
 
   /**
