@@ -13,14 +13,26 @@
  * const fakes = await startFakes();
  * const client = new Inngest({
  *   id: "app",
- *   fetch: fakeSandbox({ recordUrl: fakes.url, commands: { "npm test": { stdout: "ok" } } }).fetch,
+ *   fetch: fakeSandbox({ fakes, commands: { "npm test": { stdout: "ok" }, "": {} } }).fetch,
  * });
  * // agent.loop({ model: script([{ call: { name: "run", input: {} } }, { say: "done" }]), ... })
  * // expect(fakes.posts({ channel: "sandbox", method: "sandbox.exec" })).toHaveLength(1);
  * ```
  */
-export * from "../../components/agent/testing/fakes.ts";
-export * from "../../components/agent/testing/gitRemote.ts";
-export * from "../../components/agent/testing/model.ts";
-export * from "../../components/agent/testing/sandbox.ts";
-export * from "../../components/agent/testing/threads.ts";
+export type {
+  Call,
+  CallFilter,
+  Fakes,
+} from "../../components/agent/testing/fakes.ts";
+export { startFakes } from "../../components/agent/testing/fakes.ts";
+export type { GitRemote } from "../../components/agent/testing/gitRemote.ts";
+export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
+export type { ScriptStep } from "../../components/agent/testing/model.ts";
+export { script } from "../../components/agent/testing/model.ts";
+export type {
+  FakeSandbox,
+  FakeSandboxOptions,
+} from "../../components/agent/testing/sandbox.ts";
+export { fakeSandbox } from "../../components/agent/testing/sandbox.ts";
+export type { ThreadHandleWithKeys } from "../../components/agent/testing/threads.ts";
+export { withKeys } from "../../components/agent/testing/threads.ts";
