@@ -470,6 +470,24 @@ describe("repo checkout and sync", () => {
     expect(await checkout()).toMatchObject({ action: "cloned" });
   });
 
+  test("a failed clone into a directory that held files leaves them", async () => {
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "keep.txt"), "mine\n");
+
+    await expect(checkout()).rejects.toThrow();
+    expect(readFileSync(join(work, "keep.txt"), "utf8")).toBe("mine\n");
+  });
+
+  test("a failed clone into an empty directory empties it again", async () => {
+    const { mkdirSync, readdirSync } = await import("node:fs");
+    mkdirSync(work, { recursive: true });
+
+    await expect(checkout({ ref: "deadbeef" })).rejects.toThrow();
+    expect(readdirSync(work)).toEqual([]);
+    expect(await checkout()).toMatchObject({ action: "cloned" });
+  });
+
   test("a checkout git cannot read counts as work, so the default refuses it", async () => {
     await checkout();
     writeFileSync(join(work, ".git", "index"), "garbage");

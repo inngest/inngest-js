@@ -162,7 +162,12 @@ dirty() {
 T=$(mktemp -d) || exit 1
 # A clone that fails part way leaves a checkout that looks like work: remove it.
 CLONING=
-trap 'rc=$?; rm -rf "$T"; if [ "$rc" -ne 0 ] && [ -n "$CLONING" ]; then rm -rf "$DIR"; fi' EXIT
+# Only a directory this script is the one to fill: absent (removed whole) or empty
+# (emptied), never one that already held files.
+trap 'rc=$?; rm -rf "$T"; if [ "$rc" -ne 0 ]; then
+  if [ "$CLONING" = new ]; then rm -rf "$DIR";
+  elif [ "$CLONING" = empty ]; then find "$DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi
+fi' EXIT
 g init --quiet --bare "$T" || exit 1
 `;
 
@@ -237,7 +242,8 @@ if [ -e "$DIR/.git" ]; then
 else
   # No checkout in the clone, which holds the token: filters and attributes
   # run in the tokenless checkout after it.
-  CLONING=1
+  if [ ! -e "$DIR" ]; then CLONING=new
+  elif [ -d "$DIR" ] && [ -z "$(ls -A "$DIR" 2>/dev/null)" ]; then CLONING=empty; fi
   auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" || exit 1
   if [ -n "$REF" ] && ! known "$REF"; then
     printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
@@ -260,11 +266,12 @@ printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 // Pushes through the throwaway repository, so the process that holds the token
 // reads none of the checkout's configuration.
 const pushScript = `${prelude}
-g -C "$DIR" push --quiet "$T" "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
-auth --git-dir="$T" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
+SHA=$(g -C "$DIR" rev-parse --verify "refs/heads/$BRANCH") || exit 1
+g -C "$DIR" push --quiet "$T" "$SHA:refs/heads/$BRANCH" || exit 1
+auth --git-dir="$T" push --quiet -- "$URL" "$SHA:refs/heads/$BRANCH" || exit 1
 # The push went to the URL, not a remote, so the checkout would not know the
 # remote has these commits (a later sync would call them local work).
-g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "refs/heads/$BRANCH"
+g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "$SHA"
 `;
 
 /**
