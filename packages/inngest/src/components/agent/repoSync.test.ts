@@ -353,9 +353,43 @@ describe("repo checkout and sync", () => {
     git(seed, "commit", "--quiet", "-m", "branch same");
     git(seed, "push", "--quiet", "origin", "refs/heads/same");
     const branch = git(seed, "rev-parse", "HEAD");
-    await checkout();
-
     expect((await checkout({ ref: "same" })).sha).toBe(branch);
+    expect((await checkout({ ref: "same" })).sha).toBe(branch);
+  });
+
+  test("a branch deleted on the remote is gone after a sync", async () => {
+    git(seed, "checkout", "--quiet", "-b", "feat");
+    writeFileSync(join(seed, "f.txt"), "f\n");
+    git(seed, "add", ".");
+    git(seed, "commit", "--quiet", "-m", "feat");
+    git(seed, "push", "--quiet", "origin", "feat");
+    await checkout({ ref: "feat" });
+    git(seed, "push", "--quiet", "origin", "--delete", "feat");
+
+    await expect(checkout({ ref: "feat" })).rejects.toThrow();
+    expect(
+      spawnSync("git", [
+        "-C",
+        work,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "origin/feat",
+      ]).status,
+    ).not.toBe(0);
+  });
+
+  test("a checkout repointed to another repository forgets the old one's branches", async () => {
+    git(seed, "checkout", "--quiet", "-b", "only-here");
+    git(seed, "push", "--quiet", "origin", "only-here");
+    await checkout({ ref: "only-here" });
+    const other = join(root, "other.git");
+    git(root, "init", "--quiet", "--bare", "-b", "main", other);
+    git(seed, "push", "--quiet", other, "main");
+
+    await expect(
+      repo(sandbox, { repo: other, path: work, ref: "only-here" }),
+    ).rejects.toThrow();
   });
 
   test("reset removes untracked directories", async () => {

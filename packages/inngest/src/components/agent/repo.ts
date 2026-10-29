@@ -144,12 +144,20 @@ if [ -e "$DIR/.git" ]; then
   # What the checkout already has seeds the throwaway repository, without the
   # token, so the fetch from the remote only downloads what is new.
   g --git-dir="$T" fetch --quiet --no-recurse-submodules "$DIR" '+refs/remotes/origin/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
-  auth --git-dir="$T" fetch --force --quiet --no-recurse-submodules --tags -- "$URL" '+refs/heads/*:refs/remotes/origin/*' || exit 1
+  auth --git-dir="$T" fetch --force --prune --quiet --no-recurse-submodules --tags -- "$URL" '+refs/heads/*:refs/remotes/origin/*' || exit 1
   g -C "$DIR" fetch --force --quiet --no-recurse-submodules --prune "$T" '+refs/remotes/origin/*:refs/remotes/origin/*' || exit 1
   g -C "$DIR" fetch --force --quiet --no-recurse-submodules "$T" '+refs/tags/*:refs/tags/*' || exit 1
   if [ -z "$REF" ]; then
     REF=$(auth --git-dir="$T" ls-remote --symref -- "$URL" HEAD | sed -n 's|^ref: refs/heads/\\(.*\\)[[:space:]][[:space:]]*HEAD$|\\1|p')
     [ -n "$REF" ] || { printf '%s\\n' "cannot find the default branch of $URL" >&2; exit 1; }
+  fi
+  # Only what the remote has: a branch, a tag or a commit. A branch the remote
+  # deleted can still exist locally, and must not stand in for it.
+  if ! g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF" &&
+     ! g -C "$DIR" show-ref --verify --quiet "refs/tags/$REF" &&
+     ! printf '%s' "$REF" | grep -Eq '^[0-9a-fA-F]{7,64}$'; then
+    printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
+    exit 1
   fi
   if [ "$SYNC" = keep ]; then
     # Commits that only a detached HEAD holds would be left behind: keep them.
@@ -182,8 +190,13 @@ if [ -e "$DIR/.git" ]; then
 else
   # No checkout in the clone, which holds the token: filters and attributes
   # run in the tokenless checkout after it.
-  auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" &&
-  g -C "$DIR" checkout --quiet -f "\${REF:-HEAD}" || exit 1
+  auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" || exit 1
+  # A name that is both a branch and a tag is the branch, as it is on sync.
+  if [ -n "$REF" ] && g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+    g -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
+  else
+    g -C "$DIR" checkout --quiet -f "\${REF:-HEAD}" || exit 1
+  fi
   action=cloned
 fi
 g -C "$DIR" config user.name "Coding agent" &&
@@ -206,7 +219,7 @@ auth --git-dir="$T" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANC
  * environment of the clone, fetch and push commands. Git hooks are off for
  * these commands (the checkout is writable by the model, so a hook there could
  * read the token): a repository that relies on a `pre-push` hook, Git LFS for
- * one, does not get it.
+ * one, does not get it, and neither does the LFS filter, which runs in a checkout that holds no token (a private repository's LFS files fail the checkout).
  *
  * @example
  * ```ts
