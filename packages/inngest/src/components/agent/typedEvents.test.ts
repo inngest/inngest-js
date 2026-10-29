@@ -8,8 +8,10 @@ import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
+import type { ThreadMessageFields } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { agent } from "./loop.ts";
+import type { InboxMessage } from "./subscribe.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
@@ -190,6 +192,17 @@ describe("typed events", () => {
         return undefined;
       },
     );
+  });
+
+  test("the fields of a thread message never share a name with the fields of an event", () => {
+    // If a thread message gains a field named like an event field, its value
+    // would sit where the event's is: this stops compiling instead.
+    type Shared = Extract<
+      keyof ThreadMessageFields,
+      keyof InboxMessage | "reply"
+    >;
+
+    expectTypeOf<Shared>().toEqualTypeOf<never>();
   });
 
   test("a name is any record, a cron alone is a tick", () => {

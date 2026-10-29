@@ -651,7 +651,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
  */
 export type ThreadMessageFields<TRequest = unknown> = DistributiveOmit<
   ThreadMessage<never, TRequest>,
-  "event"
+  "event" | keyof InboxMessage | "reply"
 >;
 
 /**
@@ -1020,12 +1020,15 @@ function threadInbox(
     const { event: made, ...fields } = data as ThreadMessage & {
       event?: { id?: string; name: string; data: unknown };
     };
+    // The event's own fields come last, so a field a thread message may one day
+    // have can never overwrite them (`ThreadMessageFields` is checked against
+    // the event's fields in the type tests).
     const unwrapped = withIs({
+      ...fields,
       ...message,
       ...(made
         ? { id: made.id ?? message.id, name: made.name, data: made.data }
         : {}),
-      ...fields,
       async reply(answer: unknown) {
         if (data.kind !== "request" || !data.replyTo) {
           throw new Error(
@@ -1047,10 +1050,15 @@ function threadInbox(
     });
     raws.set(unwrapped, message);
 
+    // One cast: the spread above is a plain object, and `ThreadInboxMessage` is
+    // a union that depends on the caller's `on` triggers, which the runtime
+    // cannot derive.
     return unwrapped as unknown as ThreadInboxMessage;
   }
 
   function rawOf(message: ThreadInboxMessage): InboxMessage {
+    // A message that did not come from `unwrap` is already an event; its type
+    // cannot be derived from the `ThreadInboxMessage` union.
     return raws.get(message) ?? (message as unknown as InboxMessage);
   }
 
