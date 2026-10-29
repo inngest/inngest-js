@@ -38,6 +38,15 @@ import { agent } from "./loop.ts";
 const defaultMaxBytes = 1024 * 1024;
 
 /**
+ * Without git the manifest is read in pieces of this size, each in a step of
+ * its own, so a push can be far bigger than one step's output.
+ */
+const manifestChunkBytes = 512 * 1024;
+const defaultMaxApiBytes = 4 * 1024 * 1024;
+const maxApiBytes = 8 * 1024 * 1024;
+const maxBundleBytes = 1536 * 1024;
+
+/**
  * Options of `gitPushTool()` and `sandbox.tools.git()`: where to push, with
  * what credentials, and which pushes to allow.
  */
@@ -71,8 +80,10 @@ export interface GitPushToolOptions {
   cwd?: string;
 
   /**
-   * The most a bundle (or, without git, a manifest) may weigh. It moves
-   * through memoized steps, so it can't exceed about 2 MiB. Default 1 MiB.
+   * The most a push may weigh. With the host's git it is a bundle, which moves
+   * through one memoized step, so it can't exceed 1.5 MiB (default 1 MiB).
+   * Without git it is a manifest with the new files in base64, read in
+   * pieces: up to 8 MiB (default 4 MiB), so files of a few MiB can be pushed.
    */
   maxBytes?: number;
 
@@ -145,10 +156,13 @@ const validate = (options: GitPushToolOptions): void => {
     options.maxBytes !== undefined &&
     (!Number.isInteger(options.maxBytes) ||
       options.maxBytes < 1 ||
-      options.maxBytes > 1536 * 1024)
+      options.maxBytes >
+        (options.transport === "git" ? maxBundleBytes : maxApiBytes))
   ) {
     throw new SandboxValidationError(
-      "maxBytes must be a whole number from 1 to 1572864 (1.5 MiB), since a bundle moves through a memoized step",
+      options.transport === "git"
+        ? "maxBytes must be a whole number from 1 to 1572864 (1.5 MiB), since a bundle moves through a memoized step"
+        : "maxBytes must be a whole number from 1 to 8388608 (8 MiB); with the host's git it is held to 1.5 MiB",
     );
   }
 };
@@ -185,12 +199,19 @@ const chooseTransport = async (
 
 const describe = (
   pushed: PushedRef,
-): { ref: string; sha: string; previous?: string; notes?: string[] } => {
+): {
+  ref: string;
+  sha: string;
+  previous?: string;
+  notes?: string[];
+  sandboxSha?: string;
+} => {
   return {
     ref: pushed.ref,
     sha: pushed.sha,
     ...(pushed.oldSha !== undefined && { previous: pushed.oldSha }),
     ...(pushed.notes && { notes: pushed.notes }),
+    ...(pushed.sandboxSha !== undefined && { sandboxSha: pushed.sandboxSha }),
   };
 };
 
@@ -200,6 +221,12 @@ const describe = (
 export type PushBranchResult =
   | {
       ok: true;
+
+      /**
+       * Set when the push was rebuilt without git and the remote's commit hashes
+       * differ from the sandbox's.
+       */
+      warning?: string;
       pushed: {
         ref: string;
         sha: string;
@@ -209,6 +236,7 @@ export type PushBranchResult =
          * What the policy returned in `notes`.
          */
         notes?: string[];
+        sandboxSha?: string;
       }[];
     }
   | { ok: false; error: string };
@@ -241,12 +269,16 @@ export const pushBranch = async (
      * Names the files the push uses in the sandbox; keep it the same on a retry.
      */
     idempotencyKey: string;
+
+    /**
+     * Aborts the requests of the push.
+     */
     signal?: AbortSignal;
   },
 ): Promise<PushBranchResult> => {
   validate(options);
 
-  const { cwd = "/work", maxBytes = defaultMaxBytes } = options;
+  const { cwd = "/work" } = options;
   const { remote } = options;
   const { idempotencyKey, signal } = context;
   const ref = `refs/heads/${branch}`;
@@ -283,6 +315,14 @@ export const pushBranch = async (
         })
       : undefined;
   let tip = "";
+  const maxBytes =
+    options.maxBytes ?? (remoteInfo ? defaultMaxApiBytes : defaultMaxBytes);
+
+  if (!remoteInfo && maxBytes > maxBundleBytes) {
+    return fail(
+      `maxBytes is ${maxBytes}, but a push through the host's git is held to ${maxBundleBytes} bytes`,
+    );
+  }
 
   try {
     const bundled = await sandbox.commands.run(
@@ -315,7 +355,9 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
         bundled.exitCode === 3
           ? `${branch} is not a branch in this repository`
           : bundled.exitCode === 4
-            ? `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`
+            ? remoteInfo && remoteInfo.oldSha === undefined
+              ? `this repository doesn't have ${remoteInfo.base.slice(0, 10)}, the tip of the remote's default branch, so ${branch} can't be compared with it; fetch it or clone again`
+              : `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`
             : `could not bundle ${branch}: ${bundled.stderr.trim().slice(0, 300)}`,
       );
     }
@@ -332,7 +374,40 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
       );
     }
 
-    const bundle = await sandbox.files.read("git-push:read", path);
+    let bundle: Uint8Array;
+
+    if (remoteInfo && size > manifestChunkBytes) {
+      // The manifest is plain text; each piece is a step of its own.
+      const pieces: string[] = [];
+
+      for (let at = 0; at * manifestChunkBytes < size; at += 1) {
+        const piece = await sandbox.commands.run(
+          `git-push:read:${at}`,
+          [
+            "/bin/sh",
+            "-c",
+            'tail -c +"$1" "$2" | head -c "$3"',
+            "sh",
+            String(at * manifestChunkBytes + 1),
+            path,
+            String(manifestChunkBytes),
+          ],
+          { cwd },
+        );
+
+        pieces.push(piece.stdout);
+      }
+
+      bundle = new TextEncoder().encode(pieces.join(""));
+    } else {
+      bundle = await sandbox.files.read("git-push:read", path);
+    }
+
+    if (bundle.byteLength !== size) {
+      return fail(
+        `the push could not be read in full from the sandbox (${bundle.byteLength} of ${size} bytes)`,
+      );
+    }
 
     if (bundle.byteLength > maxBytes) {
       return fail(
@@ -378,11 +453,24 @@ ${manifestScript}printf '%s\\n' "$tip"; wc -c < "$3"`,
 
     if (!result || result.status === "non-fast-forward") {
       return fail(
-        `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`,
+        remoteInfo && remoteInfo.oldSha === undefined
+          ? `${branch} doesn't continue from a commit of the remote's default branch (or it was created on the remote meanwhile), so a push without git can't create it; rebase it onto the default branch`
+          : `${branch} is behind the remote branch, which has commits this repository lacks, so it can't be pushed as is`,
       );
     }
 
-    return { ok: true, pushed: outcome.pushed.map(describe) };
+    const rebuilt = outcome.pushed.some((pushed) => {
+      return pushed.sandboxSha !== undefined;
+    });
+
+    return {
+      ok: true,
+      pushed: outcome.pushed.map(describe),
+      ...(rebuilt && {
+        warning:
+          "The remote's commits have different hashes than this repository's, so this branch does not contain them: clone again or fetch before the next push.",
+      }),
+    };
   } finally {
     await sandbox.commands.run("git-push:cleanup", ["rm", "-f", path], {
       cwd,
@@ -418,7 +506,10 @@ export const gitPushTool = (
       const result = await pushBranch(sandbox, options, branch, context);
 
       return result.ok
-        ? { pushed: result.pushed }
+        ? {
+            pushed: result.pushed,
+            ...(result.warning && { warning: result.warning }),
+          }
         : agent.toolError(result.error);
     },
   });

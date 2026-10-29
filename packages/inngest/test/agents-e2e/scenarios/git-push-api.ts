@@ -84,6 +84,14 @@ const prepare = () => {
     'export const key = "AKIAIOSFODNN7EXAMPLE";\n',
   );
   branch("agent/direct", "DIRECT.md", "pushed by pushBranch\n");
+  // Over 600 KB of text, so its manifest is read in more than one piece.
+  branch(
+    "agent/large",
+    "large.txt",
+    Array.from({ length: 30_000 }, (_, at) => {
+      return `line ${at} of a large file\n`;
+    }).join(""),
+  );
   branch(
     "agent/scripts",
     "package.json",
@@ -171,6 +179,12 @@ export const gitPushApi = scenario({
                     input: { branch: "agent/scripts" },
                   },
                 },
+                {
+                  call: {
+                    name: "work_git_push",
+                    input: { branch: "agent/large" },
+                  },
+                },
                 { say: "done" },
               ]),
               prompt: "push everything",
@@ -202,6 +216,9 @@ export const gitPushApi = scenario({
                 };
               }),
               sameHash: refs["refs/heads/agent/ok"] === tips["agent/ok"],
+              largeStored: [...hub.blobs.values()].some((bytes) => {
+                return bytes.length > 600_000;
+              }),
               direct: JSON.stringify(direct).replace(
                 /"sha":"[0-9a-f]+"/g,
                 '"sha":"<sha>"',
@@ -239,12 +256,19 @@ export const gitPushApi = scenario({
         },
         { isError: true, output: '"refused: the changes contain a secret"' },
         { isError: true, output: '"refused: package.json scripts changed"' },
+        {
+          isError: false,
+          output:
+            '{"pushed":[{"ref":"refs/heads/agent/large","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
+        },
       ],
+      largeStored: true,
       sameHash: true,
       direct:
         '{"ok":true,"pushed":[{"ref":"refs/heads/agent/direct","sha":"<sha>","notes":["checked 1 path(s)"]}]}',
       heads: [
         "refs/heads/agent/direct",
+        "refs/heads/agent/large",
         "refs/heads/agent/ok",
         "refs/heads/main",
       ],
