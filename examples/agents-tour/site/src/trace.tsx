@@ -19,7 +19,8 @@ const isHousekeeping = (step: TraceStep) => {
 };
 
 // A gap this long between two steps of a run is the run parked, waiting for
-// a message: the executor stores no span for a park.
+// a message: the executor stores no span for a park, so the gap is the
+// `inbox.next()` row, whatever (even housekeeping) step ends it.
 const waitGapMs = 600;
 
 type Row =
@@ -48,6 +49,61 @@ const endOf = (step: TraceStep, now: number): number | null => {
   return time(step.endedAt) ?? (step.status === "RUNNING" ? now : start);
 };
 
+type IconKind = "inbox" | "event" | "step" | "kv" | "wait" | "agent" | "code";
+
+const kindOf = (step: TraceStep): IconKind => {
+  if (/^inbox/.test(step.name)) {
+    return "inbox";
+  }
+
+  if (/^kv\./.test(step.name)) {
+    return "kv";
+  }
+
+  if (/sleep|wait/i.test(step.name) || step.type === "step.sleep") {
+    return "wait";
+  }
+
+  if (step.name === "executor.nonstep") {
+    return "code";
+  }
+
+  if (step.group || step.children.length > 0) {
+    return "agent";
+  }
+
+  return "step";
+};
+
+const paths: Record<IconKind, string> = {
+  inbox: "M2 4h12v8H2zM2 4l6 5 6-5",
+  event: "M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z",
+  step: "M4 3l8 5-8 5z",
+  kv: "M10.5 2a3.5 3.5 0 1 0 .6 6.9L14 12v2h-2v-1.5H10.5V11H9L7.2 9.2A3.5 3.5 0 0 0 10.5 2z",
+  wait: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 5v3.5L10.5 10",
+  agent: "M2 4h12M2 8h9M2 12h6",
+  code: "M6 4 2 8l4 4M10 4l4 4-4 4",
+};
+
+const Icon = ({ kind }: { kind: IconKind }) => {
+  return (
+    <svg
+      className="wf-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={paths[kind]} />
+    </svg>
+  );
+};
+
 const label = (step: TraceStep) => {
   if (step.name === "executor.nonstep") {
     return "Function code";
@@ -71,7 +127,6 @@ const rounded = (ms: number) => {
 const rowsOf = (
   steps: TraceStep[],
   everything: boolean,
-  opened: Set<string>,
   now: number,
   live: boolean,
   depth = 0,
@@ -86,15 +141,12 @@ const rowsOf = (
       return;
     }
 
-    const key = `${prefix}h:${pending[0]?.id}`;
-
-    if (opened.has(key)) {
-      for (const step of pending) {
-        rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
-      }
-    } else {
-      rows.push({ kind: "hidden", key, steps: pending, depth });
-    }
+    rows.push({
+      kind: "hidden",
+      key: `${prefix}h:${pending[0]?.id}`,
+      steps: pending,
+      depth,
+    });
 
     pending = [];
   };
@@ -104,7 +156,6 @@ const rowsOf = (
 
     if (
       depth === 0 &&
-      !isHousekeeping(step) &&
       lastEnd !== null &&
       start !== null &&
       start - lastEnd > waitGapMs
@@ -129,7 +180,6 @@ const rowsOf = (
         ...rowsOf(
           step.children,
           everything,
-          opened,
           now,
           live,
           depth + 1,
@@ -183,7 +233,8 @@ const token =
  * Pretty JSON with the keys, strings, numbers and booleans in colour.
  */
 export const Json = ({ value }: { value: unknown }) => {
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 2);
   let offset = 0;
 
   return (
@@ -269,12 +320,6 @@ const Detail = ({ outputID }: { outputID: string | null }) => {
   );
 };
 
-const firstContent = (data: Record<string, unknown>) => {
-  const content = data.content;
-
-  return typeof content === "string" ? content : JSON.stringify(data);
-};
-
 const Result = ({ run }: { run: TraceRun }) => {
   const [text, setText] = useState<{ error: boolean; value: string }>();
 
@@ -329,17 +374,12 @@ const Trigger = ({ run }: { run: TraceRun }) => {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span className="dot completed" aria-hidden="true" />
         <span className="wf-name">
-          {message ? "inbox.next()" : run.trigger.name}{" "}
-          <em>
-            {message
-              ? "returned message 1, the event that triggered the run"
-              : "triggered the run"}
-          </em>
+          <Icon kind={message ? "inbox" : "event"} />
+          {message ? "inbox.next()" : run.trigger.name}
         </span>
-        <span className="wf-track trigger-content">
-          {message ? firstContent(run.trigger.data) : ""}
+        <span className="wf-track">
+          <i className="wf-bar completed" style={{ left: 0 }} />
         </span>
         <span className="wf-time" />
       </button>
@@ -360,10 +400,12 @@ const Run = ({
   run,
   everything,
   now,
+  onToggle,
 }: {
   run: TraceRun;
   everything: boolean;
   now: number;
+  onToggle: () => void;
 }) => {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [showResult, setShowResult] = useState(false);
@@ -384,8 +426,8 @@ const Run = ({
     });
   };
   const rows = useMemo(() => {
-    return rowsOf(run.steps, everything, open, now, live);
-  }, [run.steps, everything, open, now, live]);
+    return rowsOf(run.steps, everything, now, live);
+  }, [run.steps, everything, now, live]);
 
   const starts = [time(run.queuedAt), time(run.startedAt)].filter(
     (value): value is number => {
@@ -412,15 +454,11 @@ const Run = ({
   };
   const all = walk(run.steps, [...starts]);
   const t0 = Math.min(...all, now);
-  const t1 = Math.max(
-    ...all,
-    live ? now : (time(run.endedAt) ?? t0),
-    t0 + 500,
-  );
+  const t1 = Math.max(...all, live ? now : (time(run.endedAt) ?? t0), t0 + 500);
   const span = t1 - t0;
   const bar = (from: number, to: number) => {
     return {
-      left: `${((from - t0) / span) * 100}%`,
+      left: `min(${((from - t0) / span) * 100}%, calc(100% - 12px))`,
       width: `${Math.max(0.8, ((to - from) / span) * 100)}%`,
     };
   };
@@ -440,14 +478,14 @@ const Run = ({
         />
         <strong>{run.fn}</strong>
         <span className="status">{run.status.toLowerCase()}</span>
-        <Result run={run} />
+        {showResult ? null : <Result run={run} />}
         <span className="run-total">{rounded(t1 - t0)}</span>
       </button>
       {showResult ? <Detail outputID={run.output} /> : null}
       <div className="wf" role="list">
         <Trigger run={run} />
         {rows.map((row) => {
-          const pad = { paddingLeft: 12 + row.depth * 16 };
+          const pad = { paddingLeft: 20 + row.depth * 16 };
 
           if (row.kind === "hidden") {
             return (
@@ -457,7 +495,7 @@ const Run = ({
                   className="wf-row hidden-row"
                   data-row
                   style={pad}
-                  onClick={() => toggle(row.key)}
+                  onClick={onToggle}
                 >
                   <span className="wf-name">
                     {row.steps.length} hidden{" "}
@@ -478,13 +516,15 @@ const Run = ({
                   tabIndex={-1}
                   style={pad}
                 >
-                  <span className="dot waiting" aria-hidden="true" />
                   <span className="wf-name">
-                    inbox.next{" "}
-                    <em>{row.live ? "waiting for a message" : "waited"}</em>
+                    <Icon kind="inbox" />
+                    inbox.next()
                   </span>
                   <span className="wf-track">
-                    <i className="wf-bar waiting" style={bar(row.from, row.to)} />
+                    <i
+                      className="wf-bar waiting"
+                      style={bar(row.from, row.to)}
+                    />
                   </span>
                   <span className="wf-time">{rounded(row.to - row.from)}</span>
                 </div>
@@ -508,11 +548,8 @@ const Run = ({
                 aria-expanded={expanded}
                 onClick={() => toggle(row.key)}
               >
-                <span
-                  className={`dot ${step.status.toLowerCase()}`}
-                  aria-hidden="true"
-                />
                 <span className="wf-name">
+                  <Icon kind={kindOf(step)} />
                   {label(step)}
                   {attempts ? (
                     <em className="tries"> attempt {step.attempts}</em>
@@ -670,10 +707,20 @@ export const TracePanel = ({
           );
         })}
       {runs.length === 0 ? (
-        <p className="empty">Waiting for a run. Press Run, or send a message.</p>
+        <p className="empty">
+          Waiting for a run. Press Run, or send a message.
+        </p>
       ) : null}
       {[...runs].reverse().map((run) => {
-        return <Run run={run} everything={everything} now={now} key={run.id} />;
+        return (
+          <Run
+            run={run}
+            everything={everything}
+            now={now}
+            onToggle={onToggle}
+            key={run.id}
+          />
+        );
       })}
       <Console
         lines={lines.filter((line) => {

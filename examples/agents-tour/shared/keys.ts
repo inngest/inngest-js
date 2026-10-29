@@ -24,6 +24,18 @@ export type ActionId =
   | "runEvent"
   | "trace"
   | "message"
+  | "slack"
+  | "github"
+  | "events"
+  | "slackCompose"
+  | "slackNew"
+  | "slackChannel"
+  | "slackReact"
+  | "approve"
+  | "deny"
+  | "githubIssue"
+  | "githubPull"
+  | "sendEvent"
   | "everything"
   | "file"
   | "devserver"
@@ -37,7 +49,7 @@ export type ActionId =
 export interface KeyDef {
   id: ActionId;
   label: string;
-  group: "Code" | "Pages" | "Panes" | "Trace" | "Focus";
+  group: "Code" | "Pages" | "Panes" | "Slack" | "GitHub" | "Trace" | "Focus";
   // Bindings that work while the editor or another text field has focus.
   inField: string[];
   // Bindings that work when focus is not in a text field.
@@ -120,7 +132,7 @@ export const keys: KeyDef[] = [
   },
   {
     id: "runEvent",
-    label: "Show the event Run sends",
+    label: "Show the event Run sends (run.ts)",
     group: "Code",
     inField: ["Alt+Shift+2"],
     outside: ["2"],
@@ -138,6 +150,90 @@ export const keys: KeyDef[] = [
     group: "Panes",
     inField: ["Alt+Shift+T"],
     outside: ["4", "g t"],
+  },
+  {
+    id: "slack",
+    label: "Slack pane",
+    group: "Panes",
+    inField: ["Alt+Shift+S"],
+    outside: ["5", "g s"],
+  },
+  {
+    id: "github",
+    label: "GitHub pane",
+    group: "Panes",
+    inField: ["Alt+Shift+G"],
+    outside: ["6", "g h"],
+  },
+  {
+    id: "events",
+    label: "Event sender pane",
+    group: "Panes",
+    inField: ["Alt+Shift+V"],
+    outside: ["7", "g v"],
+  },
+  {
+    id: "sendEvent",
+    label: "Send the event",
+    group: "Panes",
+    inField: ["Alt+Shift+Enter"],
+    outside: ["s"],
+  },
+  {
+    id: "slackCompose",
+    label: "Write in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+Q"],
+    outside: ["i"],
+  },
+  {
+    id: "slackChannel",
+    label: "Switch Slack channel",
+    group: "Slack",
+    inField: ["Alt+Shift+X"],
+    outside: ["c"],
+  },
+  {
+    id: "slackNew",
+    label: "Start a new Slack thread",
+    group: "Slack",
+    inField: ["Alt+Shift+W"],
+    outside: ["w"],
+  },
+  {
+    id: "slackReact",
+    label: "React with eyes to the last message",
+    group: "Slack",
+    inField: ["Alt+Shift+Z"],
+    outside: ["z"],
+  },
+  {
+    id: "approve",
+    label: "Click Approve in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+Y"],
+    outside: ["y"],
+  },
+  {
+    id: "deny",
+    label: "Click Deny in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+N"],
+    outside: ["n"],
+  },
+  {
+    id: "githubPull",
+    label: "Open a pull request",
+    group: "GitHub",
+    inField: ["Alt+Shift+B"],
+    outside: ["p"],
+  },
+  {
+    id: "githubIssue",
+    label: "Open an issue",
+    group: "GitHub",
+    inField: ["Alt+Shift+J"],
+    outside: ["o"],
   },
   {
     id: "everything",

@@ -8,7 +8,7 @@ import type { DevServer } from "./devserver.ts";
 
 const spanFields = `
   spanID name status stepOp stepID attempts duration startedAt endedAt
-  outputID isUserland
+  outputID isUserland stepType groupKind
 `;
 
 const runsQuery = `
@@ -48,6 +48,8 @@ interface Span {
   endedAt: string | null;
   outputID: string | null;
   isUserland: boolean;
+  stepType: string | null;
+  groupKind: string | null;
   childrenSpans?: Span[];
 }
 
@@ -75,6 +77,8 @@ const stepOf = (span: Span): TraceStep => {
     endedAt: span.endedAt,
     outputID: span.outputID,
     userland: span.isUserland,
+    type: span.stepType,
+    group: span.groupKind,
     children: (span.childrenSpans ?? []).map(stepOf),
   };
 };
@@ -101,10 +105,9 @@ const triggerOf = async (devServer: DevServer, id: string | undefined) => {
 
   const data = await devServer.gql<{
     event: { name: string; raw: string } | null;
-  }>(
-    `query Event($id: ID!) { event(query: { eventId: $id }) { name raw } }`,
-    { id },
-  );
+  }>(`query Event($id: ID!) { event(query: { eventId: $id }) { name raw } }`, {
+    id,
+  });
   const raw = data.event
     ? (JSON.parse(data.event.raw) as { data?: Record<string, unknown> })
     : null;

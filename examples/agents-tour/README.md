@@ -9,16 +9,23 @@ This is phase 1: the runtime, the site and the first lesson (pages 1 to 8). The 
 You need Node 24, pnpm, git and Go. Go builds the Dev Server (see below); nothing else is downloaded or installed outside this checkout and a cache directory.
 
 ```bash
-git clone https://github.com/inngest/inngest-js.git   # or cd into your checkout
-cd inngest-js
-git checkout jack/agent-primitives
-git pull
-pnpm install
-pnpm --filter inngest build
-cd examples/agents-tour
-pnpm install --ignore-workspace --config.lockfile=false
-pnpm tour:devserver
-pnpm tour
+# try-the-tour.sh
+(
+  set -e
+  corepack enable
+  node -e 'process.exit(+process.versions.node.split(".")[0] < 24)' || { echo "Node 24 or newer is required"; exit 1; }
+  [ -d inngest-js ] || git clone https://github.com/inngest/inngest-js
+  cd inngest-js
+  git fetch origin
+  git checkout jack/agent-primitives
+  git pull --ff-only
+  pnpm install
+  pnpm --filter inngest build
+  cd examples/agents-tour
+  pnpm install --ignore-workspace --config.lockfile=false
+  pnpm tour:devserver
+  pnpm tour
+)
 ```
 
 `pnpm tour` prints the address and opens your browser. Press Ctrl-C to stop everything it started.

@@ -109,7 +109,9 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
           // Arrow keys belong to a tab list or a divider that has focus.
           if (
             binding.startsWith("Arrow") &&
-            (target as HTMLElement).closest?.('[role="tablist"], [role="separator"]')
+            (target as HTMLElement).closest?.(
+              '[role="tablist"], [role="separator"]',
+            )
           ) {
             continue;
           }
