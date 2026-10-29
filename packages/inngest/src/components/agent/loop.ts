@@ -11,6 +11,7 @@
 import hashjs from "hash.js";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
+import { expandMcpTools } from "../sandbox/mcp.ts";
 import {
   isToolError,
   resolveToolCall,
@@ -785,13 +786,14 @@ const loop = async <TTools extends SandboxTools>(
   const {
     model,
     system,
-    tools = {} as TTools,
     maxTurns = 40,
     maxToolOutput = 100_000,
     parallelTools = true,
     scores = true,
   } = options;
   const id = uniqueLoopId(options.id ?? "agent");
+  // The key of an MCP server in `tools` names its tools; its list is a step.
+  const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
   const definitions = toolDefinitions(tools);
   const messages: AgentMessage[] = [
     ...(options.history ?? []),

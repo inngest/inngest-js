@@ -22,6 +22,8 @@ import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
 import { isInternalTool } from "./internalTool.ts";
+import { McpServer, mcp } from "./mcp.ts";
+import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
 import {
@@ -96,45 +98,11 @@ type ToolInputOf<TInput extends ToolInput | undefined> =
       ? Record<string, unknown>
       : never;
 
-/**
- * What `agent.toolError(body)` returns: a tool's way to give the model an
- * error result instead of a value. A tool whose `output` schema describes its
- * values may return it too; it is not checked against the schema.
- */
-export interface ToolErrorResult {
-  /**
-   * The error body the model reads.
-   */
-  readonly "~error": unknown;
-}
-
-const toolErrorKey = "~error";
-
-/**
- * Makes a tool error result. See `agent.toolError()`.
- */
-export const toolErrorOf = (
-  /**
-   * What the model should read as the error.
-   */
-  body: unknown,
-): ToolErrorResult => {
-  return { [toolErrorKey]: body };
-};
-
-/**
- * Whether a tool returned an error result.
- */
-export const isToolError = (
-  /**
-   * What the tool returned.
-   */
-  output: unknown,
-): output is ToolErrorResult => {
-  return (
-    typeof output === "object" && output !== null && toolErrorKey in output
-  );
-};
+export {
+  isToolError,
+  type ToolErrorResult,
+  toolErrorOf,
+} from "./toolError.ts";
 
 type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
   TOutput extends StandardSchemaV1
@@ -196,7 +164,8 @@ export type SandboxToolEntry =
   | SandboxTool
   | ((...args: never[]) => unknown)
   | InngestFunction.Any
-  | InngestFunctionReference.Any;
+  | InngestFunctionReference.Any
+  | McpServer;
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
 
@@ -407,6 +376,26 @@ const toolMethods = {
   shim,
 
   /**
+   * EXPERIMENTAL: A remote MCP server as tools. Put the handle in
+   * `agent.loop({ tools: { hex } })` and the model sees the server's tools
+   * as `hex_<tool>`. For a sandbox's `run_code`, use
+   * `sandbox.tools.code({ tools: await hex.tools() })`. Each call is a
+   * durable step that reads the credential inside the call.
+   *
+   * @example
+   * ```ts
+   * const hex = tool.mcp({
+   *   url: "https://app.hex.tech/mcp",
+   *   auth: { bearer: secret("HEX_TOKEN") },
+   *   tools: ["create_thread", "get_thread"],
+   * });
+   *
+   * await agent.loop({ model, prompt, tools: { hex } });
+   * ```
+   */
+  mcp,
+
+  /**
    * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
    * running as one durable step, `run` can use the global `step`
    * (`import { step } from "inngest"`) to run steps, invoke functions, send
@@ -557,6 +546,12 @@ const functionTool = (
 };
 
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
+  if (entry instanceof McpServer) {
+    throw new SandboxValidationError(
+      "An MCP server goes in agent.loop({ tools }) as it is; anywhere else, spread its tools: { ...(await server.tools()) }",
+    );
+  }
+
   if (typeof entry === "function") {
     return { run: entry };
   }

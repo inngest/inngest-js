@@ -49,3 +49,14 @@ export type {
 export { fakeSandbox } from "../../components/agent/testing/sandbox.ts";
 export type { ThreadHandleWithKeys } from "../../components/agent/testing/threads.ts";
 export { withKeys } from "../../components/agent/testing/threads.ts";
+export type {
+  FakeMcp,
+  FakeMcpCall,
+  FakeMcpOptions,
+  FakeMcpServer,
+  FakeMcpTool,
+} from "../../components/agent/testing/mcp.ts";
+export {
+  fakeMcpFetch,
+  fakeMcpServer,
+} from "../../components/agent/testing/mcp.ts";

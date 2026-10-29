@@ -134,6 +134,13 @@ export {
   snapshotSlot,
 } from "./components/sandbox/snapshotCache.ts";
 export type {
+  McpAuth,
+  McpServer,
+  McpServerOptions,
+} from "./components/sandbox/mcp.ts";
+export type { Secret, SecretSource } from "./components/sandbox/secret.ts";
+export { secret } from "./components/sandbox/secret.ts";
+export type {
   AgentTool,
   AgentToolDefinition,
   JsonSchemaObject,

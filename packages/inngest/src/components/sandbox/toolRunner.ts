@@ -49,6 +49,7 @@ import { toolsRoot, waiterScript, wrapperScript } from "./toolStubs.ts";
 import {
   byteLength,
   callWaits,
+  isToolError,
   maxToolReplyBytes,
   parseToolEvent,
   resolveToolCall,
@@ -203,6 +204,15 @@ const replyLine = (
  * The reply line for a tool's result.
  */
 const resultLine = (id: number, name: string, value: unknown): string => {
+  // An error result is an error to the code, as it is to a model.
+  if (isToolError(value)) {
+    const body = value["~error"];
+
+    return replyLine(id, {
+      error: errorMessage(typeof body === "string" ? body : JSON.stringify(body)),
+    });
+  }
+
   const line = replyLine(id, { result: value ?? null });
 
   if (byteLength(line) > maxToolReplyBytes) {
