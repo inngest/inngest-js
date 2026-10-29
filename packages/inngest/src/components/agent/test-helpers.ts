@@ -36,6 +36,12 @@ export const run = async (
      * state holds: `{ closed: true }` is how close() ends a park.
      */
     parkAnswer?: unknown;
+
+    /**
+     * How many parks that carry a timeout end unanswered before a message is
+     * allowed to arrive.
+     */
+    timeouts?: number;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
     /**
      * Called with each `step.run` step as it ran, metadata included.
@@ -46,6 +52,7 @@ export const run = async (
   const key = options.key ?? "inbox";
   const prefix = subscriptionMessageIdPrefix(key);
   const incoming = [...(options.incoming ?? [])];
+  let timeoutsLeft = options.timeouts ?? 0;
   const ops: { id: string; mode: string; seq?: number }[] = [];
   const saved: unknown[] = [];
   const stack: string[] = [];
@@ -171,6 +178,17 @@ export const run = async (
           continue;
         }
 
+        // A park with a timeout ends unanswered while timeouts are left.
+        if (
+          (sub as { timeout?: string }).timeout !== undefined &&
+          timeoutsLeft > 0 &&
+          saved.length < (sub.seq as number)
+        ) {
+          timeoutsLeft -= 1;
+          answer(op.id, null);
+          continue;
+        }
+
         // next: the function is blocked until the message exists.
         while (saved.length < (sub.seq as number)) {
           if (incoming.length === 0) {
@@ -181,7 +199,9 @@ export const run = async (
         }
 
         // The executor answers the wait with the ID of the message it waited for.
-        answer(op.id, `${prefix}${sub.seq}`);
+        if (saved.length >= (sub.seq as number)) {
+          answer(op.id, `${prefix}${sub.seq}`);
+        }
       }
     }
   }

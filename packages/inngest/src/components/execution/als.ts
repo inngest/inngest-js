@@ -114,6 +114,13 @@ export interface AsyncContext {
      * in the state, so it is not waited for. Only subscriptions use it.
      */
     skipStep?: (id: string) => Promise<void>;
+
+    /**
+     * The answer the run's state holds for a step, if it has one. Only
+     * subscriptions use it, to tell a park that timed out from one that has not
+     * been answered.
+     */
+    stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
 

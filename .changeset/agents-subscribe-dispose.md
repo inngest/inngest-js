@@ -17,3 +17,7 @@ Nothing is re-sent when a run ends. A message that arrives after the inbox close
 `thread.stop()` now returns `{ stopped }`: `"now"` answers `{ stopped: false }` when the thread has no record or no live run, instead of doing nothing silently, and throws when the cancel fails.
 
 Removed from `inngest/experimental/agents`: the `agentStop` event type, `agentStopEvent` and the `ThreadStop` type (nothing sends or listens for a stop event any more), `Subscription.ack()` and `InboxMessage.source`.
+
+`inbox.next({ timeout })` stops waiting after the timeout, like `step.waitForEvent()`: it returns `undefined`, the run goes on, and a message sent later is read by the next call. A timeout that expired stays expired when the run replays. The options of a subscription and of each event in `events` are checked for unknown fields.
+
+A read that finds no message after its park was answered throws instead of returning `null`; `null` is only the end of a subscription that `close()` ended.

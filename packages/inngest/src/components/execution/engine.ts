@@ -344,6 +344,13 @@ class InngestExecutionEngine
                   await this.middlewareManager.onMemoizationEnd();
                 }
               },
+              stepAnswer: (id: string) => {
+                const answer = this.options.stepState[hashId(id)];
+
+                return answer
+                  ? { found: true, data: answer.data }
+                  : { found: false };
+              },
               stream: this.streamTools,
             },
           },
