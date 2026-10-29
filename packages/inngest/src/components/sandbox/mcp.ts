@@ -33,7 +33,9 @@ import { type SandboxDuration, SandboxValidationError } from "./types.ts";
 export const maxMcpResultBytes = 256 * 1024;
 
 const maxDescriptionLength = 1000;
-const defaultCallTimeout = "60s";
+// Under the 30s a sandbox allows a tool call, so the client gives up first and
+// the outcome is reported as unknown instead of the step being retried.
+const defaultCallTimeout = "25s";
 const listTimeoutMs = 15_000;
 
 /**
@@ -70,7 +72,9 @@ export interface McpServerOptions {
   tools?: string[];
 
   /**
-   * The longest one call may take. Default 60s.
+   * The longest one call may take. Default 25s. In a sandbox the tool
+   * timeout (`toolOptions.toolTimeout`, default 30s) ends a call first, and the
+   * step is then retried: raise it above this when you raise this.
    */
   timeout?: SandboxDuration;
 

@@ -49,6 +49,7 @@ const server = () => {
 export const toolMcp = scenario({
   id: "tool-mcp",
   owner: "agents-tool-mcp",
+  needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const analyst = async (drop: boolean) => {
       const fake = await server();

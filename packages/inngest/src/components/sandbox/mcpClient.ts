@@ -326,16 +326,23 @@ export class McpClient {
     try {
       const result = await this.#send(method, params, auth, timeout);
       const text = JSON.stringify(result) ?? "";
+      // JSON escapes quotes and backslashes, so look for that form too.
+      const forms = auth.secrets.flatMap((secret) => {
+        return [secret, JSON.stringify(secret).slice(1, -1)];
+      });
 
       // A server that echoes a credential doesn't get to pass it on.
-      return auth.secrets.some((secret) => {
-        return secret.length >= 4 && text.includes(secret);
+      return forms.some((form) => {
+        return form.length >= 4 && text.includes(form);
       })
-        ? JSON.parse(redact(text, auth.secrets))
+        ? JSON.parse(redact(text, forms))
         : result;
     } catch (error) {
       if (error instanceof Error) {
+        // The stack repeats the message, and a cause may echo a header.
         error.message = redact(error.message, auth.secrets);
+        error.stack = redact(error.stack ?? "", auth.secrets);
+        Object.defineProperty(error, "cause", { value: undefined });
       }
 
       throw error;

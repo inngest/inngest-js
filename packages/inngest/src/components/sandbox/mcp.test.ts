@@ -268,6 +268,17 @@ describe("tool.mcp", () => {
     expect(error.message).not.toContain("wrong-token-value");
   });
 
+  test("an error that echoes the credential is scrubbed, stack and cause too", async () => {
+    const { hex, server } = connect();
+
+    server.failNext(1, 200);
+
+    const error = await hex["~list"]().catch((caught) => caught);
+
+    expect(String(error.stack)).not.toContain(token);
+    expect(error.cause).toBeUndefined();
+  });
+
   test("a missing secret fails without retrying", async () => {
     const { hex } = connect({ auth: { bearer: secret("MCP_TEST_UNSET") } });
 
