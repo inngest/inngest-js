@@ -66,6 +66,7 @@ import {
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import { requestBuild, takesBuildLock } from "./buildLock.ts";
+import { ownSnapshot } from "./snapshotCleanup.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
@@ -669,12 +670,19 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
     run.cacheSaved.set(id, ms);
   }
 
+  // A build run that only reused another build's snapshot gets no defer for
+  // it: its failure must not delete what the rest of the pipeline starts from.
+  // The run that invoked the build still owns it.
+  const borrowed = run.build && built.reused ? built.snapshotId : undefined;
+
   for (const id of built.createdSnapshots) {
-    run.createdSnapshots.add(id);
+    ownSnapshot(run, id, { defer: id !== borrowed });
   }
 
   if (built.snapshotId && !built.cached) {
-    run.createdSnapshots.add(built.snapshotId);
+    ownSnapshot(run, built.snapshotId, {
+      defer: built.snapshotId !== borrowed,
+    });
   }
 };
 
@@ -1220,6 +1228,12 @@ const snapshotBuilt = async (
     ...(scope.request?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
+
+  // A snapshot only this run or the one that asked for the build needs is
+  // deleted when this run ends in failure, and handed over when it succeeds.
+  if (taken && !(scope.config.cache && taken.named)) {
+    ownSnapshot(run, taken.snapshotId, { defer: !taken.reused });
+  }
 
   setOutcome(scope, {
     ...(taken ? { snapshotId: taken.snapshotId } : {}),

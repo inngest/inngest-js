@@ -12,6 +12,7 @@ import { $ } from "../machine/command.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createCi } from "./createCi.ts";
+import { snapshotCleanupFunctionId } from "./snapshotCleanup.ts";
 
 const optionsOf = (
   fn: InngestFunction.Any,
@@ -41,7 +42,13 @@ describe("functions that run a pipeline", () => {
     const running = ci.functions().filter((fn) => {
       const id = optionsOf(fn).id ?? "";
 
-      return !id.endsWith("/cleanup") && !id.endsWith("/check-rerequested");
+      // The snapshot cleanup defers a single step, so there is nothing to
+      // optimize.
+      return (
+        !id.endsWith("/cleanup") &&
+        !id.endsWith("/check-rerequested") &&
+        id !== snapshotCleanupFunctionId
+      );
     });
 
     expect(running.length).toBeGreaterThan(1);

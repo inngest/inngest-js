@@ -13,6 +13,7 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
 import type { EventPayload, InngestFunction } from "inngest";
 import { busOf, createdFunctions } from "./client.ts";
 import type { BusEvent, EventBus } from "./eventBus.ts";
@@ -25,7 +26,23 @@ const StepOpCode = {
   StepError: "StepError",
   StepFailed: "StepFailed",
   StepPlanned: "StepPlanned",
+  DeferAdd: "DeferAdd",
+  DeferAbort: "DeferAbort",
+  RunComplete: "RunComplete",
 } as const;
+
+/** The ID the SDK gives the op that ends a run, which is hashed like any step's. */
+const runCompleteId = createHash("sha1").update("complete").digest("hex");
+
+/** A defer a run registered and didn't abort, which starts when the run ends. */
+export interface RegisteredDefer {
+  /** The ID the run gave it. */
+  id: string;
+  /** The ID of the function it starts, with its app's. */
+  functionSlug: string;
+  /** What the function gets as `event.data`. */
+  data: unknown;
+}
 
 /** A metadata update a step carried on its result, as the executor gets it. */
 export interface MetadataUpdate {
@@ -89,6 +106,11 @@ export interface RunResult {
   /** The origin of each step that has one, keyed by step ID. */
   origins: Record<string, string>;
   /**
+   * The defers the run registered and did not abort, in the order it
+   * registered them. They start when the run ends, however it ends.
+   */
+  defers: RegisteredDefer[];
+  /**
    * What each `step.run` step was planned with, keyed by step ID: the options
    * the SDK sent the executor, such as a sandbox call's input.
    */
@@ -127,10 +149,22 @@ export interface RunFunctionOptions {
    * `inTurn`).
    */
   functions?: InngestFunction.Any[];
+  /**
+   * Stop the run, as a cancel does, once this many execution requests have
+   * been made. The result's type is `function-cancelled`; its defers are
+   * what the run registered up to then.
+   */
+  cancelAfterRequests?: number;
   /** The run's ID. Defaults to `01TESTRUN`. */
   runId?: string;
   /** Set for a run another run started, which does not wait for the rest. */
   nested?: boolean;
+  /**
+   * Where every run in a test collects the defers it ended with, so the
+   * outermost run's result has those of the runs it started too. Set by the
+   * outermost run.
+   */
+  deferSink?: RegisteredDefer[];
 }
 
 let invokedRuns = 0;
@@ -296,7 +330,7 @@ export const runFunction = async (
   const bus = busOf(client);
 
   if (!bus) {
-    return driveFunction(fn, opts);
+    return driveFunction(fn, withSink(opts));
   }
 
   wireEvents(client, bus, opts);
@@ -304,7 +338,7 @@ export const runFunction = async (
   bus.enter();
 
   try {
-    return await driveFunction(fn, opts, bus);
+    return await driveFunction(fn, withSink(opts), bus);
   } finally {
     bus.leave();
 
@@ -314,6 +348,10 @@ export const runFunction = async (
       await bus.drain();
     }
   }
+};
+
+const withSink = (opts: RunFunctionOptions): RunFunctionOptions => {
+  return opts.nested ? opts : { ...opts, deferSink: opts.deferSink ?? [] };
 };
 
 const wired = new WeakSet<object>();
@@ -408,10 +446,72 @@ const driveFunction = async (
   const inputs: Record<string, unknown> = {};
   const metadata: RunResult["metadata"] = [];
 
+  const defers = new Map<string, RegisteredDefer>();
+  const abortedDefers = new Set<string>();
+  let requests = 0;
+
+  const registeredDefers = (): RegisteredDefer[] => {
+    return [...defers.values()];
+  };
+
+  // What the run ends with joins the sink, which the outermost run reports.
+  const endedDefers = (): RegisteredDefer[] => {
+    const own = registeredDefers();
+
+    if (!opts.deferSink) {
+      return own;
+    }
+
+    opts.deferSink.push(...own);
+
+    return opts.nested ? own : [...opts.deferSink];
+  };
+
+  // The SDK ships what a run defers with whatever it sends next, and a run
+  // that has been replayed ships it again, so each defer is kept once.
+  const takeLazyOps = (steps: Step[]): Step[] => {
+    return steps.filter((planned) => {
+      if (planned.op === StepOpCode.DeferAbort) {
+        const target = (planned.opts as { target_hashed_id?: string })
+          ?.target_hashed_id;
+
+        if (target) {
+          abortedDefers.add(target);
+          defers.delete(target);
+        }
+
+        return false;
+      }
+
+      if (planned.op === StepOpCode.DeferAdd) {
+        const added = planned.opts as unknown as {
+          fn_slug: string;
+          input: unknown;
+        };
+
+        if (!abortedDefers.has(planned.id) && !defers.has(planned.id)) {
+          defers.set(planned.id, {
+            id: stepId(planned),
+            functionSlug: added.fn_slug,
+            data: added.input,
+          });
+        }
+
+        return false;
+      }
+
+      return true;
+    });
+  };
+
+  // A request that carries defers comes back as a batch of ops. This turns it
+  // back into what it would have been without them.
   const request = async (runStep?: string): Promise<ExecutionResult> => {
     opts.beforeRequest?.();
 
-    return runOnce(
+    requests++;
+
+    const result = await runOnce(
       fn,
       event,
       stepState,
@@ -420,6 +520,43 @@ const driveFunction = async (
       runId,
       runStep,
     );
+
+    if (result.type !== "steps-found" || !result.steps) {
+      return result;
+    }
+
+    const rest = takeLazyOps(result.steps);
+    const ending = rest.find((planned) => {
+      return (
+        planned.op === StepOpCode.RunComplete ||
+        (planned.id === runCompleteId &&
+          (planned.op === StepOpCode.StepFailed ||
+            planned.op === StepOpCode.StepError))
+      );
+    });
+
+    if (ending?.op === StepOpCode.RunComplete) {
+      return { type: "function-resolved", data: ending.data };
+    }
+
+    if (ending) {
+      return {
+        type: "function-rejected",
+        error: ending.error ?? ending.data,
+        retriable: ending.op === StepOpCode.StepError,
+      };
+    }
+
+    // A step that ran, with the defers it registered.
+    if (runStep && rest.length === 1 && rest[0]?.id === runStep) {
+      return {
+        type: "step-ran",
+        step: rest[0],
+        retriable: rest[0].op !== StepOpCode.StepFailed,
+      };
+    }
+
+    return { ...result, steps: rest };
   };
 
   const record = (step: Step): void => {
@@ -522,6 +659,34 @@ const driveFunction = async (
   for (let i = 0; i < maxRequests; i++) {
     settleInvokes();
 
+    if (
+      opts.cancelAfterRequests !== undefined &&
+      requests >= opts.cancelAfterRequests
+    ) {
+      for (const drop of drops) {
+        drop();
+      }
+
+      // The runs it started stop as it does, and their defers are part of
+      // what the cancel leaves.
+      await untilSettled(bus, () => {
+        return Promise.allSettled(inflight.values());
+      });
+
+      return {
+        type: "function-cancelled",
+        stepIds,
+        batches,
+        names,
+        steps,
+        spans,
+        origins,
+        defers: endedDefers(),
+        inputs,
+        metadata,
+      };
+    }
+
     let progressed = false;
 
     const result = await request();
@@ -542,6 +707,7 @@ const driveFunction = async (
         steps,
         spans,
         origins,
+        defers: endedDefers(),
         inputs,
         metadata,
       };
@@ -564,6 +730,7 @@ const driveFunction = async (
         steps,
         spans,
         origins,
+        defers: endedDefers(),
         inputs,
         metadata,
       };
@@ -732,7 +899,14 @@ const runOnce = async (
   const execution = internals["createExecution"]({
     partialOptions: {
       client,
-      data: { event, events: [event], runId, attempt },
+      // Separate objects, as on the wire: a defer function strips its metadata
+      // off each in place, so no request may see another's.
+      data: {
+        event: structuredClone(event),
+        events: [structuredClone(event)],
+        runId,
+        attempt,
+      },
       runId,
       stepState,
       stepCompletionOrder: completionOrder,
