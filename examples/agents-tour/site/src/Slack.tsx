@@ -233,10 +233,16 @@ const MessageView = ({
 export const Slack = () => {
   const state = useFake<State>("/api/slack/state", "slack");
   const [channelId, setChannelId] = useState("C02ENG");
-  const [thread, setThread] = useState<string>();
+  const [picked, setThread] = useState<string>();
+  // Until a thread is picked or a new one is started, the latest one is open.
+  const [fresh, setFresh] = useState(false);
   const [text, setText] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const lastRoot = [...(state?.messages ?? [])].reverse().find((message) => {
+    return message.channel === channelId && !message.threadTs;
+  });
+  const thread = picked ?? (fresh ? undefined : lastRoot?.ts);
   const latest = useRef({ state, channelId, thread });
 
   latest.current = { state, channelId, thread };
@@ -260,6 +266,7 @@ export const Slack = () => {
       threadTs: thread,
     });
 
+    setFresh(false);
     setThread(String(result.threadTs ?? thread ?? ""));
   };
 
@@ -268,6 +275,7 @@ export const Slack = () => {
   });
   useAction("slackNew", () => {
     setThread(undefined);
+    setFresh(true);
     box.current?.focus();
   });
   const cycleChannel = () => {
@@ -278,6 +286,7 @@ export const Slack = () => {
     if (next) {
       setChannelId(next.id);
       setThread(undefined);
+      setFresh(false);
     }
   };
   const react = () => {
@@ -368,6 +377,7 @@ export const Slack = () => {
             className="ghost"
             onClick={() => {
               setThread(undefined);
+              setFresh(true);
               box.current?.focus();
             }}
           >

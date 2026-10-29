@@ -10,6 +10,8 @@ export const client = new Inngest({ id: "tour", isDev: true });
 
 export const agents = createAgents(client, { store: memoryKvAdapter() });
 
+declare const process: { env: Record<string, string | undefined> };
+
 export const slackApi = `${process.env.TOUR_URL}/slack/api`;
 
 export const githubApi = `${process.env.TOUR_URL}/github`;
