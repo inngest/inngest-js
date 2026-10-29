@@ -478,7 +478,7 @@ describe("thread state", () => {
     expect(seen.at(-1)).toBe("running");
   });
 
-  test("a wait that expires before any message was delivered leaves the status alone", async () => {
+  test("a wait that expires after only a skipped stop leaves a running thread running", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const seen: unknown[] = [];
     const { fn } = createAgentFunction(
