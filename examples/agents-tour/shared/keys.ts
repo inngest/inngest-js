@@ -20,10 +20,16 @@ export type ActionId =
   | "cheat"
   | "contents"
   | "search"
-  | "output"
+  | "text"
+  | "runEvent"
   | "trace"
   | "message"
   | "everything"
+  | "file"
+  | "devserver"
+  | "rowDown"
+  | "rowUp"
+  | "rowOpen"
   | "editor"
   | "undo"
   | "theme";
@@ -31,12 +37,14 @@ export type ActionId =
 export interface KeyDef {
   id: ActionId;
   label: string;
-  group: "Code" | "Pages" | "Panels" | "Focus";
+  group: "Code" | "Pages" | "Panes" | "Trace" | "Focus";
   // Bindings that work while the editor or another text field has focus.
   inField: string[];
   // Bindings that work when focus is not in a text field.
   outside: string[];
   note?: string;
+  // Handled by the pane that owns it, not by the window.
+  local?: boolean;
 }
 
 export const keys: KeyDef[] = [
@@ -104,32 +112,77 @@ export const keys: KeyDef[] = [
     outside: ["?"],
   },
   {
-    id: "output",
-    label: "Output panel",
-    group: "Panels",
-    inField: ["Alt+Shift+O"],
-    outside: ["1", "g o"],
+    id: "text",
+    label: "Lesson text",
+    group: "Panes",
+    inField: ["Alt+Shift+1"],
+    outside: ["1"],
   },
   {
-    id: "trace",
-    label: "Trace panel",
-    group: "Panels",
-    inField: ["Alt+Shift+T"],
-    outside: ["2", "g t"],
+    id: "runEvent",
+    label: "Show the event Run sends",
+    group: "Code",
+    inField: ["Alt+Shift+2"],
+    outside: ["2"],
   },
   {
     id: "message",
-    label: "Message panel",
-    group: "Panels",
+    label: "Play pane (message box)",
+    group: "Panes",
     inField: ["Alt+Shift+M"],
     outside: ["3", "g m"],
   },
   {
+    id: "trace",
+    label: "Trace",
+    group: "Panes",
+    inField: ["Alt+Shift+T"],
+    outside: ["4", "g t"],
+  },
+  {
     id: "everything",
     label: "Show every trace step",
-    group: "Panels",
+    group: "Trace",
     inField: ["Alt+Shift+H"],
     outside: ["h"],
+  },
+  {
+    id: "rowDown",
+    label: "Next trace row",
+    group: "Trace",
+    inField: [],
+    outside: ["ArrowDown"],
+    local: true,
+  },
+  {
+    id: "rowUp",
+    label: "Previous trace row",
+    group: "Trace",
+    inField: [],
+    outside: ["ArrowUp"],
+    local: true,
+  },
+  {
+    id: "rowOpen",
+    label: "Open a trace row or its hidden steps",
+    group: "Trace",
+    inField: [],
+    outside: ["Enter"],
+    local: true,
+  },
+  {
+    id: "file",
+    label: "Switch between the code files",
+    group: "Code",
+    inField: ["Alt+Shift+L"],
+    outside: ["l"],
+  },
+  {
+    id: "devserver",
+    label: "Open the Dev Server",
+    group: "Pages",
+    inField: ["Alt+Shift+."],
+    outside: ["."],
   },
   {
     id: "undo",
@@ -183,6 +236,7 @@ const codeOf = (key: string) => {
     "]": "BracketRight",
     "[": "BracketLeft",
     "/": "Slash",
+    ".": "Period",
   };
 
   return symbols[key] ?? key;

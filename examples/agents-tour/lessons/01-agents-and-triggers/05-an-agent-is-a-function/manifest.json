@@ -1,5 +1,9 @@
 {
-  "panels": ["output", "trace"],
-  "open": "output",
-  "start": [{ "agent": "blank", "thread": "main", "message": "Hi" }]
+  "start": [
+    {
+      "agent": "blank",
+      "thread": "main",
+      "message": "Hi"
+    }
+  ]
 }

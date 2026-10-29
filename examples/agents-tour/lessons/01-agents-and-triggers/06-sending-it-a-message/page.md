@@ -2,6 +2,7 @@
 
 An agent has an `inbox`. `inbox.next()` waits for a message and returns it.
 
-The first message is the one that started the run.
+Run sends an event. That event starts the run and is also the inbox's first message, so the first `next()` returns it straight away.
 
-Run it, then type something in the message box and send it.
+The second `next()` has nothing to return yet, so the run waits.
+Type a message in the box on the left and press Enter.
