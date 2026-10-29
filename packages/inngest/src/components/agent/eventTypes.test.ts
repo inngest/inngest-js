@@ -16,6 +16,7 @@ import { createAgents } from "./agents.ts";
 import { agentMessage } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { skillsBake } from "./skills.ts";
+import type { SubscribedEvent } from "./subscribe.ts";
 import { run } from "./test-helpers.ts";
 import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
 import {
@@ -178,7 +179,12 @@ describe("step.subscribe", () => {
     const one = await step.subscribe("one", { event: order });
     const message = await one.next();
 
+    // The message carries the whole event; its data is typed by the schema.
     expectTypeOf(message?.data).toEqualTypeOf<
+      | SubscribedEvent<"shop/order.created", { id: string; total: number }>
+      | undefined
+    >();
+    expectTypeOf(message?.data.data).toEqualTypeOf<
       { id: string; total: number } | undefined
     >();
 
@@ -190,7 +196,7 @@ describe("step.subscribe", () => {
     });
     const either = await many.next();
 
-    expectTypeOf(either?.data).toEqualTypeOf<
+    expectTypeOf(either?.data.data).toEqualTypeOf<
       | { id: string; total: number }
       | { order: string; amount: number }
       | undefined
@@ -231,19 +237,19 @@ describe("step.subscribe", () => {
     >();
 
     if (firstOfMany?.name === "shop/order.created") {
-      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
+      expectTypeOf(firstOfMany.data.data).toEqualTypeOf<{
         id: string;
         total: number;
       }>();
     } else if (firstOfMany) {
-      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
+      expectTypeOf(firstOfMany.data.data).toEqualTypeOf<{
         order: string;
         amount: number;
       }>();
     }
 
     // @ts-expect-error an event type's data has no such field
-    (await one.next())?.data.amount;
+    (await one.next())?.data.data.amount;
   };
 
   test("takes event types and infers the message data", () => {

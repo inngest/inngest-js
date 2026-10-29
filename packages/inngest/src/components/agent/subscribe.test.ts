@@ -117,6 +117,32 @@ describe("step.subscribe", () => {
     expect(output).toEqual(["shop/order.created", "shop/refund.created"]);
   });
 
+  test("message.data is the whole event the executor saved, and its data is message.data.data", async () => {
+    const event = {
+      id: "evt-1",
+      name: "shop/order.created",
+      data: { total: 5 },
+      ts: 1,
+      user: {},
+    };
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+
+        return [
+          first?.data,
+          (first?.data as { data?: unknown } | undefined)?.data,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, { saved: [event] });
+
+    expect(output).toEqual([event, { total: 5 }]);
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

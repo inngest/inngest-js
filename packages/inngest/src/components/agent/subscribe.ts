@@ -44,7 +44,8 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
   name: TName;
 
   /**
-   * The event that was sent.
+   * The event that was sent, whole: its `id`, `name`, `data`, `ts` and
+   * `user`. The `data` of the event is `message.data.data`.
    */
   data: TData;
 }
@@ -100,14 +101,59 @@ export type NamedOptions =
     };
 
 /**
- * The data of the messages of an event source: the schema's for an
- * `eventType()`, unknown for a name.
+ * The event as a subscription's message carries it: what the executor saved,
+ * not just the `data` of the event.
  */
-type SourceData<TSource> = TSource extends EventType<string, infer TSchema>
-  ? TSchema extends StandardSchemaV1<infer TData>
-    ? TData
-    : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
-      Record<string, any>
+export interface SubscribedEvent<
+  TName extends string = string,
+  TData = unknown,
+> {
+  /**
+   * The ID of the event.
+   */
+  id: string;
+
+  /**
+   * The name of the event.
+   */
+  name: TName;
+
+  /**
+   * The data of the event, typed by its schema.
+   */
+  data: TData;
+
+  /**
+   * When the event was sent, in milliseconds since the epoch.
+   */
+  ts: number;
+
+  /**
+   * The `user` object of the event.
+   */
+  user: Record<string, unknown>;
+
+  /**
+   * The version of the event, when it was sent with one.
+   */
+  v?: string;
+}
+
+/**
+ * The message data of an event source: the whole event, typed by the schema of
+ * an `eventType()`, unknown for a name.
+ */
+type SourceData<TSource> = TSource extends EventType<
+  infer TName extends string,
+  infer TSchema
+>
+  ? SubscribedEvent<
+      TName,
+      TSchema extends StandardSchemaV1<infer TData>
+        ? TData
+        : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
+          Record<string, any>
+    >
   : unknown;
 
 /**

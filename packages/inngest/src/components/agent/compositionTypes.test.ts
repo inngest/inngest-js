@@ -76,14 +76,16 @@ describe("composition", () => {
         const refunds = await step.subscribe("refunds", { event: refund });
         const refunded = await refunds.next();
 
-        expectTypeOf(refunded?.data.amount).toEqualTypeOf<number | undefined>();
+        expectTypeOf(refunded?.data.data.amount).toEqualTypeOf<
+          number | undefined
+        >();
 
         const mixed = await step.subscribe("mixed", {
           events: [{ event: order }, { event: refund }],
         });
         const either = await mixed.next();
 
-        expectTypeOf(either?.data).toEqualTypeOf<
+        expectTypeOf(either?.data.data).toEqualTypeOf<
           | { id: string; total: number }
           | { order: string; amount: number }
           | undefined
