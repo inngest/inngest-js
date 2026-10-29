@@ -220,6 +220,10 @@ export const startGitRemote = async (
   } = typeof options === "string" ? { token: options } : options;
   const backend = backendPath();
 
+  if (Object.keys(repos).length === 0) {
+    throw new Error("startGitRemote needs at least one repository in `repos`.");
+  }
+
   if (!backend) {
     throw new Error("git http-backend is not available");
   }
@@ -267,7 +271,7 @@ export const startGitRemote = async (
         GIT_PROJECT_ROOT: root,
         GIT_HTTP_EXPORT_ALL: "1",
         REQUEST_METHOD: req.method ?? "GET",
-        PATH_INFO: url.pathname,
+        PATH_INFO: decodeURIComponent(url.pathname),
         QUERY_STRING: url.search.slice(1),
         CONTENT_TYPE: req.headers["content-type"] ?? "",
         ...(req.headers["content-length"] && {
@@ -350,7 +354,7 @@ export const startGitRemote = async (
       return [
         name,
         {
-          url: `http://127.0.0.1:${port}/${name}.git`,
+          url: `http://127.0.0.1:${port}/${encodeURIComponent(name)}.git`,
           dir: repo.dir,
           heads: repo.heads,
         },

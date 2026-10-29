@@ -65,7 +65,8 @@ export interface FakeSandboxOptions {
   localDirs?: string[];
 
   /**
-   * More sandbox paths (a path, or a prefix ending in `/`) whose files live on
+   * More sandbox paths (a file, or a directory with everything under it; not
+   * under `/work`, which is on the host already) whose files live on
    * this machine, next to `/inngest/tools`, `/work/` and
    * `/tmp/inngest-run-code-`: an upload is written to a directory of the
    * sandbox's own and a read comes from there, and a command that mentions
@@ -75,7 +76,7 @@ export interface FakeSandboxOptions {
 }
 
 const killTree = (child: ReturnType<typeof spawn> | undefined) => {
-  if (!child?.pid) {
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) {
     return;
   }
 
@@ -225,17 +226,29 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
   // sandboxes never share a file.
   // One pass over the text, at path boundaries, so a path is never rewritten
   // twice and `/workspace` or `/my/data` are left alone.
+  // Directories or files, without a trailing slash; none under /work, which
+  // is a host directory already.
+  const disks = (options.diskPaths ?? [])
+    .map((disk) => {
+      return disk.replace(/\/+$/, "");
+    })
+    .filter((disk) => {
+      return disk !== "";
+    });
+
+  for (const disk of disks) {
+    if (disk === "/work" || disk.startsWith("/work/")) {
+      throw new Error(
+        `FakeSandbox: diskPaths cannot be under /work (${disk}); /work is on the host already.`,
+      );
+    }
+  }
+
   const escapeForRegExp = (text: string) => {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   };
   const sandboxPaths = new RegExp(
-    `(?<![\\w./-])(${[
-      "/inngest/tools",
-      "/work",
-      ...(options.diskPaths ?? []).map((disk) => {
-        return disk.replace(/\/$/, "");
-      }),
-    ]
+    `(?<![\\w./-])(${["/inngest/tools", "/work", ...disks]
       .map(escapeForRegExp)
       .sort((a, b) => {
         return b.length - a.length;
@@ -269,8 +282,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       path === "/work" ||
       path.startsWith("/work/") ||
       path.startsWith("/tmp/inngest-run-code-") ||
-      (options.diskPaths ?? []).some((disk) => {
-        return disk.endsWith("/") ? path.startsWith(disk) : path === disk;
+      disks.some((disk) => {
+        return path === disk || path.startsWith(`${disk}/`);
       })
     );
   };
@@ -332,10 +345,14 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       Object.values(request.environment ?? {}).some(mentionsHostPath);
     const inLocalDir =
       request.cwd !== undefined &&
-      (options.localDirs?.some((dir) => {
-        return request.cwd?.startsWith(dir);
-      }) ??
-        false);
+      (options.localDirs ?? []).some((dir) => {
+        const base = dir.replace(/\/+$/, "");
+
+        return (
+          base !== "" &&
+          (request.cwd === base || request.cwd?.startsWith(`${base}/`))
+        );
+      });
     const tools = text.includes("/inngest/tools") || text.includes("ops.log");
 
     return {
@@ -437,6 +454,13 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
     const [, id, rest = ""] = match;
     const local = localFor(id ?? "");
+    // A working directory of the sandbox exists on the host before a command
+    // runs in it, as it would in a real sandbox.
+    const ensureCwd = (cwd: string | undefined) => {
+      if (cwd !== undefined && mentionsHostPath(cwd)) {
+        mkdirSync(local(cwd), { recursive: true });
+      }
+    };
     // What a command run here sees: the sandbox's own /work as SANDBOX_WORK,
     // and its environment with the sandbox paths moved to this machine.
     const environmentOf = (environment: Record<string, string> = {}) => {
@@ -558,6 +582,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       });
 
       if (plan.here) {
+        ensureCwd(request.cwd);
+
         const ran = await runLocal(
           request.command.map(local),
           request.cwd === undefined ? undefined : local(request.cwd),
@@ -644,6 +670,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       processes.set(process.id, process);
 
       if (plan.here) {
+        ensureCwd(request.cwd);
+
         const child = spawn(
           local(request.command[0] as string),
           request.command.slice(1).map(local),
@@ -726,13 +754,17 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         return Response.json({ data: { path, bytesWritten: body.length } });
       }
 
-      let found = filesOf(id).get(path);
+      let found: Uint8Array | undefined;
 
-      if (!found && (path.startsWith("/tmp/inngest-git-") || onDisk(path))) {
+      // A file on the host may have been changed by a command since it was
+      // uploaded: the host copy is the truth.
+      if (path.startsWith("/tmp/inngest-git-") || onDisk(path)) {
         try {
           found = new Uint8Array(readFileSync(local(path)));
         } catch {}
       }
+
+      found ??= filesOf(id).get(path);
 
       return found
         ? new Response(found as BodyInit)

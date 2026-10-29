@@ -6,7 +6,13 @@
  * remote asks for its token and leaves nothing behind.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -687,7 +693,10 @@ describe("fakeGitDataApi", () => {
           },
         );
 
-        return (await response.json()) as Record<string, any>;
+        return (await response.json()) as {
+          sha: string;
+          tree: { sha: string };
+        };
       };
       const blob = await call("POST", "/git/blobs", {
         content: Buffer.from("b\n").toString("base64"),
@@ -807,5 +816,98 @@ describe.skipIf(!backendPath())("startGitRemote seeds", () => {
     });
 
     expect(Object.keys(remote.repos.only?.heads ?? {})).toEqual(["main", "pr"]);
+  });
+});
+
+describe("fakeSandbox host files and directories", () => {
+  test("a file a command changed is read back as changed, not as uploaded", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+    const file = `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/x.txt`;
+
+    await sandbox.fetch(file, { method: "PUT", body: "uploaded\n" });
+    await post(sandbox, `/v2/sandboxes/${id}/exec`, {
+      command: ["sh", "-c", "echo changed > /work/x.txt"],
+    });
+
+    expect(await (await sandbox.fetch(file)).text()).toBe("changed\n");
+  });
+
+  test("a disk directory works as a cwd before anything is uploaded, whether it is written with a slash or not", async () => {
+    await using sandbox = fakeSandbox({ diskPaths: ["/data/"] });
+    const id = await create(sandbox);
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, {
+      command: ["sh", "-c", "echo hi > out.txt && cat out.txt"],
+      cwd: "/data",
+    });
+    const { data } = (await response.json()) as {
+      data: { stdout: string; exitCode: number };
+    };
+
+    expect(data.exitCode).toBe(0);
+    expect(Buffer.from(data.stdout, "base64").toString()).toBe("hi\n");
+  });
+
+  test("diskPaths under /work are refused", () => {
+    expect(() => {
+      return fakeSandbox({ diskPaths: ["/work/sub"] });
+    }).toThrow(/under \/work/);
+  });
+
+  test("localDirs match whole directories", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-dirs-"));
+    const sibling = `${dir}-sibling`;
+
+    try {
+      await using sandbox = fakeSandbox({ localDirs: [dir] });
+      const id = await create(sandbox);
+      const response = (cwd: string) => {
+        return post(sandbox, `/v2/sandboxes/${id}/exec`, {
+          command: ["pwd"],
+          cwd,
+        });
+      };
+
+      mkdirSync(sibling);
+
+      const inside = (await (await response(dir)).json()) as {
+        data: { exitCode: number };
+      };
+      const beside = (await (await response(sibling)).json()) as {
+        data: { exitCode: number };
+      };
+
+      expect(inside.data.exitCode).toBe(0);
+      expect(beside.data.exitCode).toBe(127);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(sibling, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote names", () => {
+  test("a repository name that needs URL encoding is served, and no repositories is an error", async () => {
+    await expect(startGitRemote({ token: "t", repos: {} })).rejects.toThrow(
+      /at least one repository/,
+    );
+
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-names-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "t",
+        anonymousReads: true,
+        repos: { "my repo": { "a.txt": "a\n" } },
+      });
+
+      await promisify(execFile)("git", ["clone", "--quiet", remote.url, "c"], {
+        cwd: dir,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      expect(existsSync(join(dir, "c", "a.txt"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
