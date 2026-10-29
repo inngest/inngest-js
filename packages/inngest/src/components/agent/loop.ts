@@ -19,6 +19,7 @@ import {
   toolDefinitions,
 } from "../sandbox/tools.ts";
 import { clipContext } from "./context.ts";
+import { type AgentPrice, priceOf } from "./cost.ts";
 import { invoke } from "./invoke.ts";
 import { classifyModelError, untrusted } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
@@ -113,6 +114,11 @@ export interface AgentUsage {
    * Output tokens.
    */
   output: number;
+
+  /**
+   * Cost in US dollars, when the loop was given a `price`.
+   */
+  usd?: number;
 }
 
 /**
@@ -178,6 +184,12 @@ export interface AgentModelResponse {
    * Tokens this call used, which the loop adds up. Default: none counted.
    */
   usage?: AgentUsage;
+
+  /**
+   * The model that answered, such as `claude-sonnet-5-5`. It is given to
+   * `price` to work out what the call cost.
+   */
+  model?: string;
 }
 
 /**
@@ -389,6 +401,16 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * `turn`) to post to Slack or a database once. An error fails the run.
    */
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
+
+  /**
+   * What a model call costs: a function of that call's tokens and model that
+   * returns US dollars, or rates per million tokens by model name (`"*"` for
+   * any other). The loop adds the cost of each call to `usage.usd` and to the
+   * turn's `usage.usd`, which is what `limits.budget.usd` counts. The SDK has no
+   * prices of its own. A function must be pure, since it runs again on replay.
+   * Spread `...control` to take the agent's `limits.price`.
+   */
+  price?: AgentPrice;
 
   /**
    * Whether the loop scores itself. Default: `true`. Each score is written on
@@ -716,8 +738,20 @@ const loop = async <TTools extends SandboxTools>(
     )) as AgentModelResponse;
     steered = 0;
 
-    usage.input += reply.usage?.input ?? 0;
-    usage.output += reply.usage?.output ?? 0;
+    // What the call cost, when the loop has a price; a reply that reported no
+    // tokens costs nothing.
+    const callUsage = reply.usage ?? { input: 0, output: 0 };
+    const cost = options.price
+      ? priceOf(options.price, callUsage, reply.model)
+      : undefined;
+
+    usage.input += callUsage.input;
+    usage.output += callUsage.output;
+
+    if (cost !== undefined) {
+      usage.usd = (usage.usd ?? 0) + cost;
+    }
+
     text = reply.text ?? "";
     messages.push(reply.message);
 
@@ -726,7 +760,7 @@ const loop = async <TTools extends SandboxTools>(
       stepId: modelStep,
       text,
       toolCalls: reply.toolCalls,
-      usage: reply.usage ?? { input: 0, output: 0 },
+      usage: { ...callUsage, ...(cost !== undefined && { usd: cost }) },
     });
 
     if (reply.toolCalls.length === 0) {

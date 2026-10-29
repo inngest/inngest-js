@@ -20,6 +20,11 @@ export type {
 } from "../sandbox/gitPush.ts";
 export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
+  AgentPrice,
+  AgentPriceFunction,
+  AgentPriceTable,
+} from "./cost.ts";
+export type {
   ConfigValue,
   LazySandbox,
   SandboxBinding,
