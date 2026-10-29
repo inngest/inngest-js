@@ -403,6 +403,9 @@ export const App = () => {
     deny: () => {
       playTo("slack", "deny");
     },
+    sendOther: () => {
+      playTo("message", "sendOther");
+    },
     githubComment: () => {
       playTo("github", "githubComment");
     },

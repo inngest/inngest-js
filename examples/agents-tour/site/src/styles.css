@@ -1125,3 +1125,17 @@ main.single .text {
   color: var(--muted);
   font-size: 14px;
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .wf-bar {
+    transition:
+      left 0.15s linear,
+      width 0.15s linear;
+  }
+}
+
+.message-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

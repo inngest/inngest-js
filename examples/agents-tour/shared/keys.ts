@@ -36,6 +36,7 @@ export type ActionId =
   | "githubIssue"
   | "githubPull"
   | "sendEvent"
+  | "sendOther"
   | "everything"
   | "file"
   | "devserver"
@@ -178,6 +179,13 @@ export const keys: KeyDef[] = [
     group: "Panes",
     inField: ["Alt+Shift+Enter"],
     outside: ["s"],
+  },
+  {
+    id: "sendOther",
+    label: "Send to the second thread",
+    group: "Panes",
+    inField: ["Alt+Shift+9"],
+    outside: ["9"],
   },
   {
     id: "slackCompose",
