@@ -172,14 +172,23 @@ const seedRepo = (bare: string, seed: GitSeed): Record<string, string> => {
   mkdirSync(work, { recursive: true });
   git(work, "init", "--quiet", "-b", "main");
 
-  for (const [branch, files] of Object.entries(branches)) {
+  // `main` is always there, empty when the seed does not name it, and every
+  // other branch starts from it.
+  const ordered: [string, GitFiles][] = [
+    ["main", branches.main ?? {}],
+    ...Object.entries(branches).filter(([branch]) => {
+      return branch !== "main";
+    }),
+  ];
+
+  for (const [branch, files] of ordered) {
     git(
       work,
       "checkout",
       "--quiet",
       "-B",
       branch,
-      ...(branch === "main" || Object.keys(heads).length === 0 ? [] : ["main"]),
+      ...(branch === "main" ? [] : ["main"]),
     );
 
     for (const [path, text] of Object.entries(files)) {
@@ -236,7 +245,7 @@ export const startGitRemote = async (
     seen.push(req.headers.authorization ?? "");
 
     const url = new URL(req.url ?? "/", "http://localhost");
-    const pushing = url.href.includes("git-receive-pack");
+    const pushing = url.pathname.endsWith("/git-receive-pack");
 
     if (pushing) {
       pushAuth.push(req.headers.authorization ?? "");

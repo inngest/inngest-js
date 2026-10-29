@@ -74,6 +74,18 @@ export interface FakeSandboxOptions {
   diskPaths?: string[];
 }
 
+const killTree = (child: ReturnType<typeof spawn> | undefined) => {
+  if (!child?.pid) {
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+};
+
 const encode = (text: string) => {
   return Buffer.from(text).toString("base64");
 };
@@ -211,25 +223,50 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
   // Where a path or command of the sandbox lives on this machine. The paths
   // of `diskPaths` move into a directory of the sandbox's own, so two
   // sandboxes never share a file.
+  // One pass over the text, at path boundaries, so a path is never rewritten
+  // twice and `/workspace` or `/my/data` are left alone.
+  const escapeForRegExp = (text: string) => {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  };
+  const sandboxPaths = new RegExp(
+    `(?<![\\w./-])(${[
+      "/inngest/tools",
+      "/work",
+      ...(options.diskPaths ?? []).map((disk) => {
+        return disk.replace(/\/$/, "");
+      }),
+    ]
+      .map(escapeForRegExp)
+      .sort((a, b) => {
+        return b.length - a.length;
+      })
+      .join("|")})(?![\\w-])`,
+    "g",
+  );
   const localFor = (sandboxId: string) => {
     return (text: string) => {
-      let moved = text;
+      return text.replace(sandboxPaths, (path) => {
+        if (path === "/inngest/tools") {
+          return toolsDir;
+        }
 
-      for (const disk of options.diskPaths ?? []) {
-        moved = moved.replaceAll(
-          disk,
-          join(workOf(sandboxId), ".fake-disk", disk),
-        );
-      }
+        if (path === "/work") {
+          return workOf(sandboxId);
+        }
 
-      return moved
-        .replaceAll("/inngest/tools", toolsDir)
-        .replace(/\/work(?![\w-])/g, workOf(sandboxId));
+        return join(workOf(sandboxId), ".fake-disk", path);
+      });
     };
+  };
+  // Whether a command, a cwd or an environment value names a path that lives
+  // on this machine.
+  const mentionsHostPath = (text: string) => {
+    return new RegExp(sandboxPaths.source).test(text);
   };
   const onDisk = (path: string) => {
     return (
       path.startsWith("/inngest/tools") ||
+      path === "/work" ||
       path.startsWith("/work/") ||
       path.startsWith("/tmp/inngest-run-code-") ||
       (options.diskPaths ?? []).some((disk) => {
@@ -290,14 +327,9 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       return key !== "" && text.includes(key);
     });
     const touchesWork =
-      (options.diskPaths ?? []).some((disk) => {
-        return text.includes(disk);
-      }) ||
-      text.includes("/work") ||
-      request.cwd?.startsWith("/work") === true ||
-      Object.values(request.environment ?? {}).some((value) => {
-        return value.includes("/work");
-      });
+      mentionsHostPath(text) ||
+      mentionsHostPath(request.cwd ?? "") ||
+      Object.values(request.environment ?? {}).some(mentionsHostPath);
     const inLocalDir =
       request.cwd !== undefined &&
       (options.localDirs?.some((dir) => {
@@ -571,7 +603,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       }
 
       if (processMatch[2] === "signals") {
-        known.child?.kill();
+        killTree(known.child);
 
         return new Response(null, { status: 204 });
       }
@@ -613,7 +645,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
       if (plan.here) {
         const child = spawn(
-          request.command[0] as string,
+          local(request.command[0] as string),
           request.command.slice(1).map(local),
           {
             cwd: request.cwd === undefined ? undefined : local(request.cwd),
@@ -622,6 +654,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
               ...environmentOf(request.environment),
             },
             stdio: ["ignore", "pipe", "pipe"],
+            // Its own process group, so closing kills what a shell started too.
+            detached: true,
           },
         );
 
@@ -725,7 +759,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     closed = true;
 
     for (const child of children) {
-      child.kill("SIGKILL");
+      killTree(child);
     }
 
     children.clear();

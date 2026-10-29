@@ -724,3 +724,88 @@ describe("fakeGitDataApi", () => {
     }
   });
 });
+
+describe("fakeSandbox paths and processes in detail", () => {
+  const exec = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("only /work itself is a host path: /workspace is not", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    const other = await exec(sandbox, id, { command: ["cat", "/workspace/x"] });
+
+    // Not run on the host: it is not described, so it fails loudly.
+    expect(other.exitCode).toBe(127);
+  });
+
+  test("a disk path is rewritten once and only as a whole path", async () => {
+    await using sandbox = fakeSandbox({
+      diskPaths: ["/data/"],
+      commands: { "": {} },
+    });
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/data/f.txt`,
+      { method: "PUT", body: "disk\n" },
+    );
+
+    expect(
+      await exec(sandbox, id, { command: ["cat", "/data/f.txt"] }),
+    ).toMatchObject({ stdout: "disk\n" });
+    // Another path that merely ends in /data is left alone: canned, not run.
+    expect(
+      await exec(sandbox, id, { command: ["cat", "/my/data/f.txt"] }),
+    ).toMatchObject({ stdout: "", exitCode: 0 });
+  });
+
+  test("a process started from a script under /work runs, and close kills its children", async () => {
+    const sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/run.sh`,
+      { method: "PUT", body: "#!/bin/sh\nsleep 60 &\nwait\n" },
+    );
+    await exec(sandbox, id, { command: ["chmod", "+x", "/work/run.sh"] });
+
+    const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
+      command: ["/work/run.sh"],
+    });
+    const { pid } = ((await started.json()) as { data: { pid: number } }).data;
+
+    expect(pid).toBeGreaterThan(1);
+    expect(() => process.kill(pid, 0)).not.toThrow();
+
+    await sandbox.close();
+
+    await vi.waitFor(() => {
+      expect(() => process.kill(pid, 0)).toThrow();
+    });
+  });
+});
+
+describe.skipIf(!backendPath())("startGitRemote seeds", () => {
+  test("a seed without main still gets one, and other branches start from it", async () => {
+    await using remote = await startGitRemote({
+      token: "t",
+      repos: { only: { pr: { "a.txt": "a\n" } } },
+    });
+
+    expect(Object.keys(remote.repos.only?.heads ?? {})).toEqual(["main", "pr"]);
+  });
+});
