@@ -36,8 +36,8 @@ export interface InboxToolSource {
   if?: string;
 
   /**
-   * The most listeners the model may start on this source in a run. Default
-   * unlimited, up to `maxListeners`.
+   * The most listeners the model may start on this source in a run. Stopping
+   * one does not give its place back. Default 3.
    */
   maxPerRun?: number;
 }
@@ -59,6 +59,12 @@ export interface InboxToolsConfig {
    * string. Default `"30m"`.
    */
   maxWait?: number | string;
+
+  /**
+   * The most the model may wait in all in a run, counting the timeout of each
+   * `inbox_wait`. Default `"2h"`.
+   */
+  maxTotalWait?: number | string;
 }
 
 /**
@@ -104,6 +110,8 @@ const defaultMaxListeners = 5;
 const defaultMaxWait = "30m";
 const maxMessageChars = 4_000;
 const maxIfChars = 500;
+const defaultMaxPerRun = 3;
+const defaultMaxTotalWait = "2h";
 const maxReadMessages = 20;
 
 const eventName = (source: InboxToolSource): string => {
@@ -119,13 +127,19 @@ const eventName = (source: InboxToolSource): string => {
  */
 export const isWrappable = (expression: string): boolean => {
   for (let at = 0; at < expression.length; at += 1) {
-    if (expression.charCodeAt(at) < 32) {
+    const code = expression.charCodeAt(at);
+
+    // Control characters, and the line breaks beyond ASCII (NEL, LS, PS).
+    if (code < 32 || code === 0x85 || code === 0x2028 || code === 0x2029) {
       return false;
     }
   }
 
   let depth = 0;
   let quote: string | undefined;
+  // What is outside the strings, to look for `event[`: the SDK rewrites
+  // `event.x` for the filter and would not rewrite `event["x"]`.
+  let outside = "";
 
   for (let at = 0; at < expression.length; at += 1) {
     const char = expression[at] as string;
@@ -137,6 +151,8 @@ export const isWrappable = (expression: string): boolean => {
         quote = undefined;
       }
     } else if (char === '"' || char === "'") {
+      outside += " ";
+
       const before = expression.slice(0, at);
 
       if (
@@ -154,17 +170,21 @@ export const isWrappable = (expression: string): boolean => {
     ) {
       return false;
     } else if (char === "(") {
+      outside += char;
       depth += 1;
     } else if (char === ")") {
+      outside += char;
       depth -= 1;
 
       if (depth < 0) {
         return false;
       }
+    } else {
+      outside += char;
     }
   }
 
-  return depth === 0 && quote === undefined;
+  return depth === 0 && quote === undefined && !/\bevent\s*\[/.test(outside);
 };
 
 const render = (message: InboxToolMessage) => {
@@ -219,6 +239,12 @@ export const createInboxTools = (
   config: InboxToolsConfig,
 ): Record<InboxToolName, SandboxTool> => {
   const maxListeners = config.maxListeners ?? defaultMaxListeners;
+  const maxTotalWaitMs = durationToMs(
+    config.maxTotalWait ?? defaultMaxTotalWait,
+    { name: "inboxTools.maxTotalWait" },
+  );
+  // The timeouts asked for so far, which a replay asks for again in order.
+  let waited = 0;
   const maxWaitMs = durationToMs(config.maxWait ?? defaultMaxWait, {
     name: "inboxTools.maxWait",
   });
@@ -307,9 +333,11 @@ export const createInboxTools = (
 
         const count = started.get(name) ?? 0;
 
-        if (source.maxPerRun !== undefined && count >= source.maxPerRun) {
+        const perRun = source.maxPerRun ?? defaultMaxPerRun;
+
+        if (count >= perRun) {
           throw new Error(
-            `${name} can be listened to ${source.maxPerRun} times in a run and already was.`,
+            `${name} can be listened to ${perRun} times in a run and already was.`,
           );
         }
 
@@ -386,6 +414,14 @@ export const createInboxTools = (
             `inbox_wait can wait at most ${String(config.maxWait ?? defaultMaxWait)}.`,
           );
         }
+
+        if (waited + ms > maxTotalWaitMs) {
+          throw new Error(
+            `This run may wait ${String(config.maxTotalWait ?? defaultMaxTotalWait)} in all and has used ${Math.round(waited / 1000)} s.`,
+          );
+        }
+
+        waited += ms;
 
         const views = await viewsFor(as);
 
