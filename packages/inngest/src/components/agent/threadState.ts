@@ -20,6 +20,7 @@ import {
   fingerprint,
   type LastRun,
   summarize,
+  turnInFlight,
   turnOf,
 } from "./recovery.ts";
 import { scoreThisStep } from "./scores.ts";
@@ -105,7 +106,7 @@ export const threadRecorder = (
        * The message the turn answers, kept until the run waits for the next
        * one: a failed run resends it.
        */
-      inflight?: { content?: string },
+      inflight?: { content?: string } | null,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
@@ -113,6 +114,9 @@ export const threadRecorder = (
         return {
           status: "running",
           ...(inherited && { inherited }),
+          // `null` clears it: a run that does not begin with a message must
+          // not keep the one the run before it left behind.
+          ...(inflight === null && { inflight: undefined }),
           ...(inflight && { inflight }),
         };
       });
@@ -235,9 +239,11 @@ export const recordEnd = (
     finished: Finished;
 
     /**
-     * The message the run was answering when the start event carried one.
+     * The message that started the run, if it carried one, and whether the
+     * run began by answering a message.
      */
     content?: string;
+    turn: boolean;
 
     /**
      * Whether a failed turn is resent (recovery on). `undefined`: recovery
@@ -268,10 +274,14 @@ export const recordEnd = (
       const error = summarize(finished.error.message);
       const print = fingerprint(finished.error.name, finished.error.message);
 
-      // The message the failed run was answering, as the record kept it.
-      const content =
-        (current.runId === end.runId ? current.inflight?.content : undefined) ??
-        end.content;
+      const turn = turnInFlight(
+        current,
+        end.runId,
+        { content: end.content, turn: end.turn },
+        (a, b) => {
+          return runScore(a) < runScore(b);
+        },
+      );
 
       last =
         end.resume === undefined
@@ -281,8 +291,8 @@ export const recordEnd = (
               at: end.at,
               error,
               fingerprint: print,
-              turn: turnOf(content),
-              resume: end.resume,
+              turn: turnOf(turn.content),
+              resume: end.resume && turn.resendable,
             }).last;
     }
 

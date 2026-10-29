@@ -61,9 +61,12 @@ import type { AgentTurn } from "./loop.ts";
 import {
   type AgentRecovery,
   failureText,
+  fingerprint,
   finishedOf,
   type LastRun,
   type RunFailure,
+  summarize,
+  turnInFlight,
 } from "./recovery.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
@@ -83,7 +86,12 @@ import {
   type ThreadSandboxCleanup,
   threadSandboxOwner,
 } from "./threadSandboxes.ts";
-import { markThreadIdle, recordEnd, threadRecorder } from "./threadState.ts";
+import {
+  markThreadIdle,
+  recordEnd,
+  runScore,
+  threadRecorder,
+} from "./threadState.ts";
 import {
   type CompiledTrigger,
   compileTriggers,
@@ -913,6 +921,9 @@ export function createAgentFunction(
         at: event.ts ?? 0,
         finished: ended,
         content: message.kind === "user" ? message.content : undefined,
+        turn:
+          message.kind === "user" &&
+          (message.content !== undefined || message.event !== undefined),
         resume:
           ended.status === "failed" && recovery
             ? recovery.resume !== false
@@ -920,17 +931,22 @@ export function createAgentFunction(
       });
       const last = record.lastRun;
 
-      if (!recovery || ended.status !== "failed" || last?.runId !== runId) {
+      if (!recovery || ended.status !== "failed") {
         return last;
       }
 
+      // A late report for an older run, after a newer one has ended, is still
+      // said; it is not resumed.
+      const mine = last?.runId === runId ? last : undefined;
+      const reason = ended.error?.message ?? "unknown error";
       const failure: RunFailure = {
         runId,
         thread: message.thread,
-        error: last.error ?? "unknown error",
-        fingerprint: last.fingerprint ?? "",
-        resuming: last.recovery === "resumed",
-        repeated: last.recovery === "stuck" && recovery.resume !== false,
+        error: mine?.error ?? summarize(reason),
+        fingerprint:
+          mine?.fingerprint ?? fingerprint(ended.error?.name, reason),
+        resuming: mine?.recovery === "resumed",
+        repeated: mine?.recovery === "stuck" && recovery.resume !== false,
       };
       const text = (recovery.message ?? failureText)(failure);
 
@@ -968,16 +984,31 @@ export function createAgentFunction(
         return last;
       }
 
-      const inflight =
-        record.runId === runId ? record.inflight?.content : undefined;
-      const content =
-        inflight ?? (message.kind === "user" ? message.content : undefined);
+      const { content } = turnInFlight(
+        record,
+        runId,
+        {
+          content: message.kind === "user" ? message.content : undefined,
+          turn:
+            message.kind === "user" &&
+            (message.content !== undefined || message.event !== undefined),
+        },
+        (a, b) => {
+          return runScore(a) < runScore(b);
+        },
+      );
       const session = found?.session?.key(start as never);
 
       await step.sendEvent(
         "recover-resend",
         agentMessage.create(
-          { agent: ref, thread: message.thread, kind: "user", content },
+          {
+            agent: ref,
+            thread: message.thread,
+            kind: "user",
+            content,
+            event: message.event,
+          },
           {
             id: `recover-${runId}`,
             meta: { sessions: threadSessions(message.thread, session) },
@@ -1050,7 +1081,7 @@ export function createAgentFunction(
                 : data) as Record<string, unknown>
             )._agent,
           ),
-          data.kind === "user" ? { content: data.content } : undefined,
+          data.kind === "user" ? { content: data.content } : null,
         );
 
         // Limits apply to what `agent.invoke()` starts and to the loop's budget.

@@ -202,6 +202,69 @@ export const turnOf = (
 };
 
 /**
+ * The turn a failed run left in flight, and whether it can be resent.
+ */
+export interface Turn {
+  /**
+   * The message the run was answering.
+   */
+  content?: string;
+
+  /**
+   * Whether there is a turn to resend: the run was answering a message when it
+   * failed. It is not when the run had answered and was waiting for the next
+   * message, or when a newer run has taken the thread over.
+   */
+  resendable: boolean;
+}
+
+/**
+ * Finds the turn a failed run left in flight from the thread's record.
+ */
+export const turnInFlight = (
+  /**
+   * The thread's record.
+   */
+  record: {
+    runId?: string;
+    inflight?: { content?: string };
+  },
+
+  /**
+   * The failed run.
+   */
+  runId: string,
+
+  /**
+   * The message that started the failed run, if it carried one, and whether
+   * the run began with a turn at all.
+   */
+  start: { content?: string; turn: boolean },
+
+  /**
+   * Whether a run's ID is older than another's.
+   */
+  older: (a: string, b: string) => boolean,
+): Turn => {
+  // The run wrote the record: it kept the turn it was answering until it
+  // waited for the next message.
+  if (record.runId === runId) {
+    return record.inflight
+      ? { content: record.inflight.content, resendable: true }
+      : { resendable: false };
+  }
+
+  // A newer run owns the record: the failed run's turn is not known.
+  if (record.runId && !older(record.runId, runId)) {
+    return { resendable: false };
+  }
+
+  // The run failed before it wrote anything: it was answering its first
+  // message.
+  return { content: start.content, resendable: start.turn };
+};
+
+/**
  * What a run's `inngest/function.finished` event says about how it ended.
  */
 export interface Finished {
@@ -226,7 +289,7 @@ export const finishedOf = (data: Record<string, unknown>): Finished => {
     return { status: "cancelled" };
   }
 
-  if (status === "failed") {
+  if (status === "failed" || (status === "" && data.error !== undefined)) {
     return {
       status: "failed",
       error:

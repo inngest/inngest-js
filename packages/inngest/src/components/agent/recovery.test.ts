@@ -226,7 +226,19 @@ describe("the finished function", () => {
         | undefined;
     };
 
-    return { agent, sent, posts, lastRun };
+    const seed = async (record: Record<string, unknown>) => {
+      await store
+        .with(client)
+        .scope("thread", "t1")
+        .set("__state", {
+          status: "idle",
+          turn: 0,
+          usage: { input: 0, output: 0 },
+          ...record,
+        });
+    };
+
+    return { agent, sent, posts, lastRun, seed };
   };
 
   test("is one function of the agent, listening for how its runs end", () => {
@@ -353,6 +365,101 @@ describe("the finished function", () => {
     expect(sent).toHaveLength(1);
   });
 
+  test("a run that had answered and was waiting when it failed resends nothing", async () => {
+    const { agent, sent, posts, seed, lastRun } = setup({ recovery: true });
+
+    await seed({ status: "waiting", runId: "r1" });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
+    });
+
+    expect(posts).toEqual(["Hit an error: boom."]);
+    expect(sent).toEqual([]);
+    expect((await lastRun())?.lastRun?.recovery).toBeUndefined();
+  });
+
+  test("the turn in flight is the one resent, not the message that started the run", async () => {
+    const { agent, sent, seed } = setup({ recovery: true });
+
+    await seed({
+      status: "running",
+      runId: "r1",
+      inflight: { content: "second" },
+    });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
+    });
+
+    expect(sent).toMatchObject([{ data: { content: "second" } }]);
+  });
+
+  test("a newer run owning the record is told about, not resumed", async () => {
+    const { agent, sent, posts, seed } = setup({ recovery: true });
+    const newer = "01K00000000000000000000009";
+    const older = "01J00000000000000000000001";
+
+    await seed({ status: "running", runId: newer, inflight: { content: "x" } });
+    await run(agent.finished, {
+      event: finishedEvent(older, "Failed", { name: "Error", message: "boom" }),
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  test("a late report for an older run is still said after a newer run ended", async () => {
+    const { agent, sent, posts } = setup({ recovery: true });
+    const newer = "01K00000000000000000000009";
+    const older = "01J00000000000000000000001";
+
+    await run(agent.finished, { event: finishedEvent(newer, "Completed") });
+    await run(agent.finished, {
+      event: finishedEvent(older, "Failed", { name: "Error", message: "late" }),
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain("late");
+    expect(sent).toEqual([]);
+  });
+
+  test("the resent turn keeps the event that started the run", async () => {
+    const { agent, sent } = setup({
+      recovery: true,
+      on: {
+        event: "shop/order",
+        thread: "event.data.id",
+        message: () => {
+          return "order";
+        },
+      },
+    } as never);
+    const order = { name: "shop/order", data: { id: "t1" } };
+
+    await run(agent.finished, {
+      event: {
+        name: "inngest/function.finished",
+        data: {
+          function_id: `${testClientId}-bot`,
+          run_id: "r1",
+          events: [order],
+          event: order,
+          _inngest: { status: "Failed" },
+          error: { name: "Error", message: "boom" },
+        },
+      },
+    });
+
+    expect(sent).toMatchObject([
+      {
+        data: {
+          kind: "user",
+          thread: "t1",
+          event: { name: "shop/order", data: { id: "t1" } },
+        },
+      },
+    ]);
+  });
+
   test("a run that ended before a newer one's record does not overwrite it", async () => {
     const { agent, lastRun } = setup();
     const newer = "01K00000000000000000000009";
@@ -439,6 +546,22 @@ describe("what the body is told", () => {
     await run(agent.fn, { event: trigger });
 
     expect((await read())?.inflight).toEqual({ content: "hi" });
+  });
+
+  test("a run that begins without a message does not keep the one the run before it left", async () => {
+    const { agent, read } = await seeded(
+      { runId: "older-run", inflight: { content: "stale" } },
+      async () => {},
+    );
+
+    await run(agent.fn, {
+      event: {
+        name: "agent/message",
+        data: { ...trigger.data, kind: "steer", content: "faster" },
+      },
+    });
+
+    expect((await read())?.inflight).toBeUndefined();
   });
 
   test("restarts counts the times the run continued in another process", async () => {
