@@ -406,6 +406,63 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     ]);
   });
 
+  test("two listeners on one event share its messages, so a read shows each once", async () => {
+    const { call, push } = setup({ maxListeners: 5 });
+
+    await call("inbox_listen", { source: "github/check_run", as: "a" });
+    await call("inbox_listen", {
+      source: "github/check_run",
+      as: "b",
+      if: "event.data.pr == 1",
+    });
+    push("github/check_run", { name: "github/check_run", data: { pr: 1 } });
+
+    const { messages } = (await call("inbox_read")) as {
+      messages: unknown[];
+    };
+
+    expect(messages).toHaveLength(1);
+  });
+
+  test("a failed listen gives back its own slot, not the count it saw", async () => {
+    const fake = fakeInbox();
+    let first = true;
+    const tools = createInboxTools(
+      {
+        ...fake.inbox,
+        listen: async (event, options) => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 5);
+          });
+
+          if (first) {
+            first = false;
+
+            throw new Error("backend down");
+          }
+
+          return fake.inbox.listen(event, options);
+        },
+      },
+      { listen: [{ event: "ci/status", thread: "t", maxPerRun: 2 }] },
+    );
+    const run = tools.inbox_listen.run as unknown as Call;
+    const results = await Promise.allSettled([
+      run({ source: "ci/status", as: "a" }),
+      run({ source: "ci/status", as: "b" }),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual([
+      "rejected",
+      "fulfilled",
+    ]);
+    // One listener runs, so one more is allowed and a third is not.
+    await run({ source: "ci/status", as: "c" });
+    await expect(run({ source: "ci/status", as: "d" })).rejects.toThrow(
+      "can be listened to 2 times",
+    );
+  });
+
   test("stop stops the listener and frees its name and its slot", async () => {
     const { call, stopped } = setup();
 
@@ -435,6 +492,12 @@ describe("isWrappable", () => {
     ['r"x"', false],
     ["a\nb", false],
     ["event.data.driver == 1", true],
+    ['event.data.url.startsWith("https://x")', true],
+    ['event.data.title.contains("#12")', true],
+    ["event.data.k == 'r'", true],
+    ['event.data.k == "a\\"r"', true],
+    ['"""a""" == b', false],
+    ["rb'x'", false],
   ])("%s", (expression, ok) => {
     expect(isWrappable(expression)).toBe(ok);
   });

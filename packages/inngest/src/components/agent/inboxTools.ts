@@ -113,11 +113,12 @@ const eventName = (source: InboxToolSource): string => {
 /**
  * Whether the parentheses and quotes of a CEL expression balance, so that
  * wrapping it as `(<expression>)` cannot be closed early by the expression.
+ * An expression with a line break or other control character, a comment (`//`
+ * or `#` outside a string), a raw string or a triple-quoted string is refused,
+ * since this check would read it differently from the evaluator.
  */
 export const isWrappable = (expression: string): boolean => {
-  // A comment or a raw string would hide a parenthesis from this check and
-  // not from the evaluator, and a line break could end the wrapping one.
-  if (/[\u0000-\u001f]|\/\/|#|\br["']/i.test(expression)) {
+  if (/[\u0000-\u001f]/.test(expression)) {
     return false;
   }
 
@@ -134,7 +135,18 @@ export const isWrappable = (expression: string): boolean => {
         quote = undefined;
       }
     } else if (char === '"' || char === "'") {
+      const before = expression.slice(0, at);
+
+      if (
+        expression.startsWith(char.repeat(3), at) ||
+        /(?:^|[^A-Za-z0-9_])(?:r[b]?|b?r)$/i.test(before)
+      ) {
+        return false;
+      }
+
       quote = char;
+    } else if (char === "#" || (char === "/" && expression[at + 1] === "/")) {
+      return false;
     } else if (char === "(") {
       depth += 1;
     } else if (char === ")") {
@@ -171,18 +183,22 @@ const render = (message: InboxToolMessage) => {
  *
  * - `inbox_listen({ source, if?, as })` starts listening in the background to
  *   an allowed source. `as` names the listener.
- * - `inbox_wait({ timeout })` waits for the next message and returns it, or
- *   says that nothing came. In `run_code` it suspends the script like any
- *   waiting tool, so the wait can be long.
- * - `inbox_read({ all? })` returns what has arrived since the last read,
- *   without waiting (`inbox.unread()`). With `all` it returns the latest 20 of
- *   everything so far, without moving the read position (`inbox.current()`).
+ * - `inbox_wait({ timeout, as? })` waits for the next message of a listener's
+ *   event and returns it, or says that nothing came. In `run_code` it
+ *   suspends the script like any waiting tool, so the wait can be long.
+ * - `inbox_read({ as?, all? })` returns what has arrived since the last read,
+ *   without waiting (`view.unread()`). With `all` it returns the latest 20 of
+ *   everything so far, without moving the read position (`view.current()`).
  * - `inbox_stop({ as })` stops a listener.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
- * outside. `inbox_wait` and `inbox_read` return the next messages of the whole
- * inbox, tagged by `source`, not only one listener's. The loop's steering
- * hands the model what arrives between model calls.
+ * outside. `inbox_wait` and `inbox_read` read the messages of the event a
+ * listener listens to through a view of their own, so they never take a stop,
+ * a user message or a request from the loop, and a message the loop's steering
+ * already handed to the model can still be read. `as` picks the listener's
+ * event; the model's own `if` narrows what is saved from the moment it listens,
+ * and the messages of the event already in the thread are read as they are.
+ * Two listeners on one event share its messages.
  *
  * @example
  * ```ts
@@ -225,6 +241,9 @@ export const createInboxTools = (
     }
   >();
   const started = new Map<string, number>();
+  // One view per event, made as soon as the first listener for it is taken
+  // (before any await), so view numbers follow the order of the calls.
+  const views = new Map<string, InboxToolView>();
   // The readers to use for `as`: that listener's, or every listener's.
   const viewsFor = async (as: string | undefined): Promise<InboxToolView[]> => {
     if (as !== undefined) {
@@ -243,11 +262,14 @@ export const createInboxTools = (
       throw new Error("You are not listening to anything. Use inbox_listen.");
     }
 
-    return Promise.all(
+    const ready = await Promise.all(
       [...listeners.values()].map(async (listener) => {
         return (await listener.ready).view;
       }),
     );
+
+    // Listeners on one event share a view.
+    return [...new Set(ready)];
   };
 
   return {
@@ -301,6 +323,13 @@ export const createInboxTools = (
         });
         // Taken before the first await, so that listens made at the same time
         // can't pass the same checks.
+        let view = views.get(name);
+
+        if (!view) {
+          view = inbox.of(source.event);
+          views.set(name, view);
+        }
+
         const reserved = (async () => {
           const listener = await inbox.listen(source.event, {
             thread: source.thread,
@@ -313,7 +342,7 @@ export const createInboxTools = (
             }),
           });
 
-          return { listener, view: inbox.of(source.event) };
+          return { listener, view };
         })();
 
         started.set(name, count + 1);
@@ -323,7 +352,7 @@ export const createInboxTools = (
           await reserved;
         } catch (error) {
           listeners.delete(as);
-          started.set(name, count);
+          started.set(name, (started.get(name) ?? 1) - 1);
 
           throw error;
         }
