@@ -176,7 +176,24 @@ export const fakeGitHub = () => {
         return respond({ message: "Not Found" }, 404);
       }
 
+      const treeOf = (sha: string) => {
+        return (
+          trees.get(commits.get(sha)?.tree ?? "") ?? new Map<string, Entry>()
+        );
+      };
+      const left = treeOf(from);
+      const right = treeOf(to);
+      const files = [...new Set([...left.keys(), ...right.keys()])]
+        .filter((name) => {
+          return (
+            left.get(name)?.sha !== right.get(name)?.sha ||
+            left.get(name)?.mode !== right.get(name)?.mode
+          );
+        })
+        .map((filename) => ({ filename }));
+
       return respond({
+        files,
         status:
           from === to
             ? "identical"

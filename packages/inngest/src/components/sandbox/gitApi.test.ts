@@ -765,11 +765,26 @@ describe("the git-free push", { timeout: 60_000 }, () => {
       writeFileSync(join(work, "mine.txt"), "mine\n");
     });
 
-    const outcome = await push("agent/old-base");
+    const seen: Record<string, unknown> = {};
+    const outcome = await push("agent/old-base", async (pushed) => {
+      const later = pushed.files.find((file) => file.path === "later.txt");
+
+      seen.paths = pushed.paths;
+      seen.laterBefore = (await later?.before())?.text;
+      seen.laterAfter = (await later?.after())?.text;
+      seen.patch = await pushed.patch();
+    });
 
     expect(outcome).toMatchObject({
       pushed: [{ status: "pushed", ref: "refs/heads/agent/old-base" }],
     });
+    // The branch lacks what main gained since, so the policy sees it as part
+    // of the push: the default tip's file there, and nothing after.
+    expect(seen.paths).toEqual(["later.txt", "mine.txt"]);
+    expect(seen.laterBefore).toBe("later\n");
+    expect(seen.laterAfter).toBeUndefined();
+    expect(seen.patch).toContain("the default branch's tip");
+    expect(seen.patch).toContain("-later");
 
     const pushedSha = hub.refs.get("refs/heads/agent/old-base") ?? "";
 
@@ -823,6 +838,35 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     expect(hub.requests.filter((request) => request.method === "POST")).toEqual(
       [],
     );
+  });
+
+  test("an unknown or unreadable base ends cleanly, and a rights error is not 'behind'", async () => {
+    const sha = "a".repeat(40);
+    const b64 = (text: string) => Buffer.from(text).toString("base64");
+    const run = (parent: string) => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${[
+          `COMMIT ${sha} ${parent}`,
+          `AUTHOR ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `COMMITTER ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `MESSAGE ${b64("m")}`,
+        ].join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      });
+    };
+
+    await expect(run("c".repeat(40))).resolves.toMatchObject({
+      pushed: [{ status: "non-fast-forward" }],
+    });
+
+    hub.fail.match = /GET \/compare\//;
+    hub.fail.status = 401;
+    await expect(run("c".repeat(40))).rejects.toBeInstanceOf(NonRetriableError);
   });
 
   test("says when the remote's hashes differ from the sandbox's", async () => {

@@ -456,20 +456,37 @@ const clientFor = (options: {
       }
     },
     /**
-     * Whether `sha` is the commit `tip` points at or one of its ancestors.
-     * Anything the API can't say is no.
+     * How `tip` relates to `sha` (`ahead` or `identical` when `sha` is the tip
+     * or an ancestor of it), the paths that differ between them, and whether
+     * that list is complete (the API lists at most 300 files). A commit the API
+     * doesn't know is `"unknown"`.
      */
-    isAncestor: async (sha: string, tip: string): Promise<boolean> => {
+    compare: async (
+      sha: string,
+      tip: string,
+    ): Promise<{ status: string; files: string[]; complete: boolean }> => {
       try {
-        const compared = await json<{ status: string }>(
-          "GET",
-          `/compare/${sha}...${tip}`,
-        );
+        const compared = await json<{
+          status: string;
+          files?: { filename: string; previous_filename?: string }[];
+        }>("GET", `/compare/${sha}...${tip}`);
 
-        return compared.status === "ahead" || compared.status === "identical";
+        return {
+          status: compared.status,
+          files: (compared.files ?? []).flatMap((file) => {
+            return file.previous_filename
+              ? [file.filename, file.previous_filename]
+              : [file.filename];
+          }),
+          complete: (compared.files?.length ?? 0) < 300,
+        };
       } catch (error) {
+        if (error instanceof ApiError && [404, 422].includes(error.status)) {
+          return { status: "unknown", files: [], complete: false };
+        }
+
         if (error instanceof ApiError && !error.retryable) {
-          return false;
+          throw new NonRetriableError(error.message, { cause: error });
         }
 
         throw error;
@@ -799,18 +816,29 @@ const pushParsed = async (
   // from any other commit the repository has, such as an older commit of the
   // default branch.
   let chainBase = state.base;
+  // The paths where an older base differs from the default branch's tip. The
+  // policy sees them as part of the push, since the new branch has the older
+  // content there.
+  let divergent: string[] = [];
   const firstParent = commits[0]?.parents[0];
 
   if (
     state.oldSha === undefined &&
     firstParent !== undefined &&
-    firstParent !== state.base &&
-    // Only a commit the default branch contains: the policy sees the files
-    // the push changes against that commit, and an unreviewed commit from a
-    // fork or a deleted branch could carry other changes underneath.
-    (await client.isAncestor(firstParent, state.base))
+    firstParent !== state.base
   ) {
-    chainBase = firstParent;
+    // Only a commit the default branch contains: an unreviewed commit from a
+    // fork or a deleted branch could carry other changes underneath, and a
+    // list of differences that is cut short can't be shown to the policy.
+    const compared = await client.compare(firstParent, state.base);
+
+    if (
+      (compared.status === "ahead" || compared.status === "identical") &&
+      compared.complete
+    ) {
+      chainBase = firstParent;
+      divergent = compared.files;
+    }
   }
 
   const linear = commits.every((commit, at) => {
@@ -819,11 +847,12 @@ const pushParsed = async (
   const fastForward =
     linear && (state.oldSha === undefined || state.oldSha === state.base);
   const paths = [
-    ...new Set(
-      commits.flatMap((commit) => {
+    ...new Set([
+      ...commits.flatMap((commit) => {
         return commit.changes.map((change) => change.path);
       }),
-    ),
+      ...divergent,
+    ]),
   ].sort();
   const newestFirst = [...commits].reverse();
   const afterBlob = (change: ManifestCommit["changes"][number]) => {
@@ -831,22 +860,23 @@ const pushParsed = async (
       ? undefined
       : { ...blobOf(blobs.get(change.sha) as Uint8Array), mode: change.mode };
   };
-  const baseFile = once(async () => {
-    return new Map<string, GitPushBlob | undefined>();
-  });
-  const fromBase = async (path: string): Promise<GitPushBlob | undefined> => {
-    const cache = await baseFile();
+  // A file as a commit has it. The contents API says nothing of a file's
+  // mode, and the manifest's word for it is not checked, so there is no mode.
+  const reader = (at: string) => {
+    const cache = new Map<string, GitPushBlob | undefined>();
 
-    if (!cache.has(path)) {
-      const bytes = await client.file(path, chainBase);
+    return async (path: string): Promise<GitPushBlob | undefined> => {
+      if (!cache.has(path)) {
+        const bytes = await client.file(path, at);
 
-      // The contents API says nothing of a file's mode, and the manifest's
-      // word for it is not checked, so the file before has no mode here.
-      cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
-    }
+        cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
+      }
 
-    return cache.get(path);
+      return cache.get(path);
+    };
   };
+  const fromBase = reader(chainBase);
+  const atTip = chainBase === state.base ? fromBase : reader(state.base);
   // The content of \`path\` just before commit \`index\`.
   const contentBefore = async (
     index: number,
@@ -875,8 +905,9 @@ const pushParsed = async (
     const files: GitPushFile[] = paths.map((path) => {
       return {
         path,
+        // What the remote's default branch (or the branch itself) has now.
         before: once(() => {
-          return fromBase(path);
+          return atTip(path);
         }),
         after: once(() => {
           return contentAfter(path);
@@ -919,6 +950,18 @@ const pushParsed = async (
                   await contentBefore(index, change.path),
                   afterBlob(change),
                 ),
+              );
+            }
+          }
+
+          if (divergent.length > 0) {
+            out.push(
+              `${state.base} (the default branch's tip, which this branch is cut before)\n`,
+            );
+
+            for (const path of divergent) {
+              out.push(
+                unifiedDiff(path, await atTip(path), await contentAfter(path)),
               );
             }
           }
