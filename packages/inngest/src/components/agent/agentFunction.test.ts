@@ -200,6 +200,27 @@ describe("inbox timeouts", () => {
     expect(output).toEqual(["a", undefined, "b"]);
   });
 
+  test("a stop message that is skipped starts a new wait, which can expire", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const expired = await inbox.next({ timeout: "1s" });
+
+        return expired === undefined ? "expired" : "message";
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("a"),
+      saved: [message("stop")],
+      timeouts: 1,
+    });
+
+    expect(output).toBe("expired");
+  });
+
   test("a message that arrives before the timeout is returned", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
