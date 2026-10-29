@@ -719,7 +719,25 @@ const pushParsed = async (
       };
     }
 
+    // Two entries for a path (or a file where a directory is) would leave the
+    // policy checking one and the tree holding another.
+    const seen = new Set<string>();
+
     for (const change of commit.changes) {
+      const clash =
+        seen.has(change.path) ||
+        commit.changes.some((other) => {
+          return other.path.startsWith(`${change.path}/`);
+        });
+
+      if (clash) {
+        return {
+          refused: `${change.path} appears twice in a commit of this push`,
+        };
+      }
+
+      seen.add(change.path);
+
       if (change.path.startsWith('"') || !isPlainPath(change.path)) {
         return {
           refused: "a path in this push has characters git_push can't check",
@@ -765,22 +783,6 @@ const pushParsed = async (
       ? undefined
       : { ...blobOf(blobs.get(change.sha) as Uint8Array), mode: change.mode };
   };
-  // The mode the push's first change to a path says the path had before.
-  const modeBefore = (path: string): string | undefined => {
-    for (const commit of commits) {
-      const change = commit.changes.find((entry) => {
-        return entry.path === path;
-      });
-
-      if (change) {
-        return /^\d{6}$/.test(change.oldMode) && change.oldMode !== "000000"
-          ? change.oldMode
-          : undefined;
-      }
-    }
-
-    return undefined;
-  };
   const baseFile = once(async () => {
     return new Map<string, GitPushBlob | undefined>();
   });
@@ -790,12 +792,9 @@ const pushParsed = async (
     if (!cache.has(path)) {
       const bytes = await client.file(path, state.base);
 
-      cache.set(
-        path,
-        bytes === undefined
-          ? undefined
-          : { ...blobOf(bytes), mode: modeBefore(path) },
-      );
+      // The contents API says nothing of a file's mode, and the manifest's
+      // word for it is not checked, so the file before has no mode here.
+      cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
     }
 
     return cache.get(path);
@@ -836,46 +835,58 @@ const pushParsed = async (
         }),
       };
     });
-    const decision = await policy({
-      remote,
-      ref,
-      ...(ref.startsWith("refs/heads/") && {
-        branch: ref.slice("refs/heads/".length),
-      }),
-      sha: tip,
-      ...(state.oldSha !== undefined && { oldSha: state.oldSha }),
-      fastForward,
-      commits: newestFirst.map((commit) => {
-        return {
-          sha: commit.sha,
-          author: commit.author.name,
-          subject: commit.message.split("\n")[0] ?? "",
-        };
-      }),
-      paths,
-      files,
-      patch: async () => {
-        const out: string[] = [];
+    let decision: GitPolicyResult;
 
-        for (const commit of newestFirst) {
-          const index = commits.indexOf(commit);
+    try {
+      decision = await policy({
+        remote,
+        ref,
+        ...(ref.startsWith("refs/heads/") && {
+          branch: ref.slice("refs/heads/".length),
+        }),
+        sha: tip,
+        ...(state.oldSha !== undefined && { oldSha: state.oldSha }),
+        fastForward,
+        commits: newestFirst.map((commit) => {
+          return {
+            sha: commit.sha,
+            author: commit.author.name,
+            subject: commit.message.split("\n")[0] ?? "",
+          };
+        }),
+        paths,
+        files,
+        patch: async () => {
+          const out: string[] = [];
 
-          out.push(`${commit.sha} ${commit.message.split("\n")[0] ?? ""}\n`);
+          for (const commit of newestFirst) {
+            const index = commits.indexOf(commit);
 
-          for (const change of commit.changes) {
-            out.push(
-              unifiedDiff(
-                change.path,
-                await contentBefore(index, change.path),
-                afterBlob(change),
-              ),
-            );
+            out.push(`${commit.sha} ${commit.message.split("\n")[0] ?? ""}\n`);
+
+            for (const change of commit.changes) {
+              out.push(
+                unifiedDiff(
+                  change.path,
+                  await contentBefore(index, change.path),
+                  afterBlob(change),
+                ),
+              );
+            }
           }
-        }
 
-        return out.join("");
-      },
-    } satisfies GitPush);
+          return out.join("");
+        },
+      } satisfies GitPush);
+    } catch (error) {
+      // A file the policy reads can fail to load; a retry helps only if the
+      // API's answer was a temporary one.
+      if (error instanceof ApiError && !error.retryable) {
+        return { failed: error.message };
+      }
+
+      throw error;
+    }
     const verdict = readVerdict(decision, ref);
 
     if ("refuse" in verdict) {
@@ -1017,7 +1028,7 @@ const pushParsed = async (
           // Not a fast-forward if the ref moved or does not sit on the commit
           // this push builds on; otherwise a rule (a protected branch) said no.
           return (await client.refSha(name)) !== current ||
-            current !== state.base
+            (asked && current !== state.base)
             ? {
                 pushed: [pushedRef("non-fast-forward", parent, current)],
               }

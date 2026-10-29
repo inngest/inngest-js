@@ -476,7 +476,7 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     });
 
     expect(seen["keep.txt"]).toEqual({
-      before: { mode: "100644", size: 5 },
+      before: { mode: undefined, size: 5 },
       after: { mode: "100755", text: "keep\n" },
     });
     expect(seen.link).toEqual({
@@ -484,7 +484,7 @@ describe("the git-free push", { timeout: 60_000 }, () => {
       after: { mode: "120000", text: "../outside" },
     });
     expect(seen["big.txt"]).toMatchObject({
-      before: { mode: "100644", size: 1_300_000 },
+      before: { mode: undefined, size: 1_300_000 },
     });
   });
 
@@ -630,6 +630,67 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     await expect(
       remoteState({ remote, ref: "refs/heads/x", token, fetch: hub.handle }),
     ).rejects.toBeInstanceOf(NonRetriableError);
+  });
+
+  test("a path twice in one commit, or a file where a directory is, is refused", async () => {
+    const sha = "a".repeat(40);
+    const b64 = (text: string) => Buffer.from(text).toString("base64");
+    const zero = "0".repeat(40);
+    const run = (paths: string[]) => {
+      return pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${[
+          `COMMIT ${sha} ${base}`,
+          `AUTHOR ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `COMMITTER ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `MESSAGE ${b64("m")}`,
+          ...paths.map((path) => {
+            return `CHANGE A 000000 100644 ${zero} ${"b".repeat(40)} ${b64(path)}`;
+          }),
+          `BLOB ${"b".repeat(40)} ${b64("x")}`,
+        ].join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      });
+    };
+
+    await expect(run(["docs/ok.md", "docs/ok.md"])).resolves.toMatchObject({
+      refused: expect.stringContaining("appears twice"),
+    });
+    await expect(run(["a", "a/b"])).resolves.toMatchObject({
+      refused: expect.stringContaining("appears twice"),
+    });
+    expect(hub.requests.filter((request) => request.method === "POST")).toEqual(
+      [],
+    );
+  });
+
+  test("a policy that can't read a file reports it; a redirected protected ref is not 'behind'", async () => {
+    branch("agent/unreadable", () => {
+      writeFileSync(join(work, "keep.txt"), "changed\n");
+    });
+    hub.fail.match = /GET \/contents\//;
+    hub.fail.status = 401;
+
+    await expect(
+      push("agent/unreadable", async (pushed) => {
+        await pushed.files[0]?.before();
+      }),
+    ).resolves.toMatchObject({ failed: expect.stringContaining("401") });
+
+    // The policy sends the push to a branch that exists at an ancestor of the
+    // base and is protected: the answer is the rule's, not "behind".
+    hub.fail.match = /PATCH \/git\/refs\//;
+    hub.fail.status = 422;
+    hub.refs.set("refs/heads/agent/protected", base);
+    await expect(
+      push("agent/unreadable", () => {
+        return { ref: "refs/heads/agent/protected" };
+      }),
+    ).resolves.toMatchObject({ failed: expect.stringContaining("422") });
   });
 
   test("a server error or a rate limit is tried again, a rule's refusal is reported", async () => {

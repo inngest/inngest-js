@@ -11,6 +11,7 @@
 import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import {
   isApiRemote,
   isGitHubRemote,
@@ -256,8 +257,16 @@ export const pushBranch = async (
 
   // Decided once in a step, so a replay on another runtime keeps the first
   // run's choice.
-  const transport = await step.run("git-push:transport", () => {
-    return chooseTransport(options);
+  const transport = await step.run("git-push:transport", async () => {
+    try {
+      return await chooseTransport(options);
+    } catch (error) {
+      // No git on this machine does not change on a retry.
+      throw new NonRetriableError(
+        error instanceof Error ? error.message : String(error),
+        { cause: error },
+      );
+    }
   });
   const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.${transport === "api" ? "manifest" : "bundle"}`;
   const remoteInfo =

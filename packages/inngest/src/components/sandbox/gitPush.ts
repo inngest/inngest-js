@@ -96,9 +96,12 @@ export interface GitPushBlob {
   bytes: Uint8Array;
 
   /**
-   * The git file mode where the file is known to have one: `100644`, `100755`
+   * The git file mode where it is known: with the host's git for both sides of
+   * a change, and on the API transport for the file after the push (the file
+   * before has none there). One of `100644`, `100755`
    * (executable) or `120000` (a symlink, whose content is the link's target).
-   * A change of mode alone shows in `before.mode` and `after.mode`.
+   * With the host's git, a change of mode alone shows in `before.mode` and
+   * `after.mode`; on the API transport only `after.mode` is known.
    */
   mode?: string;
 
