@@ -342,6 +342,7 @@ export type {
   ChannelAsk,
   ChannelCard,
   ChannelMessage,
+  ChannelStatus,
   ChannelStream,
   ChannelStreamLimits,
   ChannelTrigger,

@@ -667,3 +667,182 @@ describe("the Slack stream", () => {
     ).toEqual(["summary", "c2"]);
   });
 });
+
+describe("report.status and the Slack status line", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("a status goes to the channels that have one, in order with cards, and a replay shows nothing twice", async () => {
+    const shown: string[] = [];
+    const withStatus = defineChannel({
+      post: async () => {},
+      status: async (status) => {
+        shown.push(status);
+      },
+    });
+    const plain = defineChannel({ post: async () => {} });
+    const first = stepper();
+    const report = createReporter(
+      { a: withStatus, b: plain },
+      ["a", "b"],
+      first.runStep,
+    );
+
+    await report.status("working");
+    await report.status("idle");
+    expect(shown).toEqual(["working", "idle"]);
+    expect(first.ran).toEqual(["report:status:1:0:a", "report:status:2:0:a"]);
+
+    const again = stepper(first.results);
+    const replay = createReporter({ a: withStatus }, ["a"], again.runStep);
+
+    await replay.status("working");
+    await replay.status("idle");
+    expect(shown).toEqual(["working", "idle"]);
+    expect(again.ran).toEqual([]);
+  });
+
+  test("a status that throws never fails the run, and a bad destination or status rejects", async () => {
+    const throwing = defineChannel({
+      post: async () => {},
+      status: async () => {
+        throw new Error("no status for you");
+      },
+    });
+    const report = createReporter(
+      { main: throwing },
+      undefined,
+      stepper().runStep,
+    );
+
+    await expect(report.status("working")).resolves.toBeUndefined();
+    await expect(report.status("working", { to: "nope" })).rejects.toThrow(
+      "no channel named",
+    );
+    await expect(report.status("busy" as never)).rejects.toThrow(
+      "the status is one of",
+    );
+  });
+
+  test("a card's output and sources are checked", async () => {
+    const report = createReporter({}, undefined, stepper().runStep);
+
+    await expect(
+      report.card({ id: "a", title: "A", output: 1 as never }),
+    ).rejects.toThrow("details and output are text");
+    await expect(
+      report.card({
+        id: "a",
+        title: "A",
+        sources: [{ url: "", text: "x" }],
+      }),
+    ).rejects.toThrow("sources are up to");
+    await expect(
+      report.card({
+        id: "a",
+        title: "A",
+        sources: Array.from({ length: 21 }, () => {
+          return { url: "https://x.test", text: "x" };
+        }),
+      }),
+    ).rejects.toThrow("sources are up to");
+  });
+
+  test("a channel's status must be a function", () => {
+    expect(() => {
+      return defineChannel({ post: async () => {}, status: 1 as never });
+    }).toThrow("status");
+  });
+
+  const stubCalls = (answer: (method: string) => Record<string, unknown>) => {
+    const sent: { method: string; body: Record<string, unknown> }[] = [];
+
+    vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
+      const method = String(url).split("/").at(-1) as string;
+
+      sent.push({ method, body: JSON.parse(init.body) });
+
+      return new Response(JSON.stringify(answer(method)), { status: 200 });
+    });
+
+    return sent;
+  };
+
+  const channel = () => {
+    return slack.channel(
+      { channel: "C1", threadTs: "1.1" },
+      { in: ["C1"], token: "t", user: "U1", team: "T1" },
+    );
+  };
+
+  test("Slack shows the status with the agents API", async () => {
+    const sent = stubCalls(() => {
+      return { ok: true };
+    });
+
+    await channel().status?.("working");
+    await channel().status?.("idle");
+    await channel().status?.("waiting");
+
+    expect(
+      sent.map((s) => {
+        return [s.method, s.body.status];
+      }),
+    ).toEqual([
+      ["agents.sessions.setStatus", "processing"],
+      ["agents.sessions.setStatus", "active"],
+      ["agents.sessions.setStatus", "suspended"],
+    ]);
+    expect(sent[0]?.body).toMatchObject({ channel_id: "C1", thread_ts: "1.1" });
+  });
+
+  test("it falls back to the assistant thread status, and shows none if that fails too", async () => {
+    const sent = stubCalls((method) => {
+      return method === "agents.sessions.setStatus"
+        ? { ok: false, error: "not_allowed_token_type" }
+        : { ok: true };
+    });
+
+    await channel().status?.("working");
+    await channel().status?.("idle");
+
+    expect(
+      sent.map((s) => {
+        return [s.method, s.body.status];
+      }),
+    ).toEqual([
+      ["agents.sessions.setStatus", "processing"],
+      ["assistant.threads.setStatus", "is working..."],
+      ["agents.sessions.setStatus", "active"],
+      ["assistant.threads.setStatus", ""],
+    ]);
+
+    stubCalls(() => {
+      return { ok: false, error: "channel_not_found" };
+    });
+    await expect(channel().status?.("working")).resolves.toBeUndefined();
+  });
+
+  test("a card's output and sources reach Slack as chunk fields", async () => {
+    const sent = stubCalls(() => {
+      return { ok: true };
+    });
+
+    await channel().stream?.append("9.9", [
+      {
+        id: "c1",
+        title: "Read",
+        output: "done & dusted",
+        sources: [{ url: "https://x.test/a", text: "A <page>" }],
+      },
+    ]);
+
+    expect((sent[0]?.body.chunks as unknown[])[0]).toMatchObject({
+      output: "done &amp; dusted",
+      sources: [
+        { type: "url", url: "https://x.test/a", text: "A &lt;page&gt;" },
+      ],
+    });
+  });
+});

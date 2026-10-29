@@ -93,7 +93,24 @@ export interface ChannelCard {
    * More to show under the title.
    */
   details?: string;
+
+  /**
+   * What the step produced, shown with the card.
+   */
+  output?: string;
+
+  /**
+   * Where the step looked, such as pages it read: shown as links on the card.
+   */
+  sources?: { url: string; text: string }[];
 }
+
+/**
+ * Whether the agent is working on a thread, as a surface shows it (Slack's
+ * status line under the thread): `"working"` while a turn runs, `"idle"`
+ * when it waits for the next message, `"waiting"` when it waits for a person.
+ */
+export type ChannelStatus = "working" | "idle" | "waiting";
 
 /**
  * What one surface allows a progress stream to hold. The surface's adapter
@@ -185,6 +202,18 @@ export interface ChannelStream {
  */
 export interface Channel {
   /**
+   * Shows whether the agent is working, for `report.status()`. Runs inside a
+   * step. Best effort: the reporter ignores a throw, as a status line is never
+   * worth failing a run. A channel without one ignores statuses.
+   */
+  status?(
+    /**
+     * What to show.
+     */
+    status: ChannelStatus,
+  ): Promise<void>;
+
+  /**
    * The channel's streamed progress, for `report.card()`. A channel without
    * one ignores cards.
    */
@@ -237,6 +266,10 @@ export const defineChannel = (
 
   if (adapter.ask !== undefined && typeof adapter.ask !== "function") {
     throw new Error("A channel's `ask` must be a function.");
+  }
+
+  if (adapter.status !== undefined && typeof adapter.status !== "function") {
+    throw new Error("A channel's `status` must be a function.");
   }
 
   if (adapter.stream !== undefined) {
@@ -330,6 +363,25 @@ export interface Reporter {
   ): Promise<void>;
 
   /**
+   * Shows whether the agent is working on the thread, on the destinations
+   * whose channel has a `status` (Slack's status line); the others ignore it.
+   * Each is a step, so a replay shows nothing twice, and it is written in
+   * order with the cards.
+   */
+  status(
+    /**
+     * What to show.
+     */
+    status: ChannelStatus,
+    options?: {
+      /**
+       * Overrides the configured destinations for this status.
+       */
+      to?: ReportConfig;
+    },
+  ): Promise<void>;
+
+  /**
    * Shows a task card in the progress stream of the destinations that have
    * one (a channel with a `stream`); the others ignore it. The channel's
    * limits are kept for you: when a stream is about to hold more unique cards
@@ -388,6 +440,10 @@ const summaryCardId = "summary";
 
 const cardStatuses = ["pending", "running", "done", "error"];
 
+const channelStatuses = ["working", "idle", "waiting"];
+
+const maxSources = 20;
+
 const checkCard = (card: ChannelCard): void => {
   if (
     typeof card?.id !== "string" ||
@@ -396,10 +452,23 @@ const checkCard = (card: ChannelCard): void => {
     card.id === summaryCardId ||
     typeof card.title !== "string" ||
     card.title.length < 1 ||
-    (card.status !== undefined && !cardStatuses.includes(card.status))
+    (card.status !== undefined && !cardStatuses.includes(card.status)) ||
+    (card.details !== undefined && typeof card.details !== "string") ||
+    (card.output !== undefined && typeof card.output !== "string") ||
+    (card.sources !== undefined &&
+      (!Array.isArray(card.sources) ||
+        card.sources.length > maxSources ||
+        card.sources.some((source) => {
+          return (
+            typeof source?.url !== "string" ||
+            source.url.length < 1 ||
+            typeof source.text !== "string" ||
+            source.text.length < 1
+          );
+        })))
   ) {
     throw new NonRetriableError(
-      `report.card: a card needs a title, an id of 1 to 100 characters other than "${summaryCardId}", and a status of ${cardStatuses.join(", ")} if it has one.`,
+      `report.card: a card needs a title, an id of 1 to 100 characters other than "${summaryCardId}", and a status of ${cardStatuses.join(", ")} if it has one; details and output are text, and sources are up to ${maxSources} of { url, text }.`,
     );
   }
 };
@@ -595,6 +664,45 @@ export const createReporter = (
   let queue: Promise<unknown> = Promise.resolve();
   let cards = 0;
 
+  let statuses = 0;
+
+  async function status(
+    status: ChannelStatus,
+    options?: { to?: ReportConfig },
+  ) {
+    if (!channelStatuses.includes(status)) {
+      throw new NonRetriableError(
+        `report.status: the status is one of ${channelStatuses.join(", ")}.`,
+      );
+    }
+
+    const n = ++statuses;
+    const destinations = destinationsOf(options).filter(({ channel }) => {
+      return channel.status !== undefined;
+    });
+
+    const write = queue.then(async () => {
+      for (const { name, channel, index } of destinations) {
+        await runStep(`report:status:${n}:${index}:${name}`, async () => {
+          // A status line is never worth failing a run.
+          try {
+            await channel.status?.(status);
+          } catch {
+            // Best effort, as the channel's `status` documents.
+          }
+
+          return undefined;
+        });
+      }
+    });
+
+    queue = write.catch(() => {
+      return undefined;
+    });
+
+    return write;
+  }
+
   async function card(card: ChannelCard, options?: { to?: ReportConfig }) {
     checkCard(card);
 
@@ -627,7 +735,7 @@ export const createReporter = (
     return write;
   }
 
-  return Object.assign(report, { card }) as Reporter;
+  return Object.assign(report, { card, status }) as Reporter;
 };
 
 /**
