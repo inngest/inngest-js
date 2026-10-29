@@ -321,7 +321,7 @@ const warned = new Set<string>();
  * waits for a message after the first, `running()` once one is delivered.
  */
 function threadInbox(
-  inbox: Subscription<RawEvent>,
+  inbox: Subscription<unknown>,
   toMessage: (raw: RawEvent) => ThreadMessage,
   problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
   client: Inngest.Any,
@@ -333,19 +333,16 @@ function threadInbox(
   inbox: ThreadInbox;
 } {
   // The event each message was made from, to put it back as it came.
-  const raws = new WeakMap<object, InboxMessage<RawEvent>>();
+  const raws = new WeakMap<object, InboxMessage>();
 
-  function unwrap(
-    message: InboxMessage<RawEvent> | null,
-  ): ThreadInboxMessage | null {
+  function unwrap(message: InboxMessage | null): ThreadInboxMessage | null {
     if (!message) {
       return null;
     }
 
-    const data = toMessage(message.data);
+    const data = toMessage(message);
     const unwrapped: ThreadInboxMessage = {
-      seq: message.seq,
-      name: message.name,
+      ...message,
       data,
       async reply(answer) {
         if (data.kind !== "request" || !data.replyTo) {
@@ -371,14 +368,8 @@ function threadInbox(
     return unwrapped;
   }
 
-  function rawOf(message: InboxMessage<ThreadMessage>) {
-    return (
-      raws.get(message) ?? {
-        seq: message.seq,
-        name: message.name,
-        data: { name: message.name, data: message.data },
-      }
-    );
+  function rawOf(message: InboxMessage<ThreadMessage>): InboxMessage {
+    return raws.get(message) ?? message;
   }
 
   let delivered = 0;
@@ -387,8 +378,8 @@ function threadInbox(
   // it does not reach a live one either: it is dropped. The event that started
   // the run was checked by core, except for the payload of a request, which
   // core does not see.
-  async function skipped(raw: InboxMessage<RawEvent>) {
-    const problem = await problemOf(raw.data, raw.seq < 1);
+  async function skipped(raw: InboxMessage) {
+    const problem = await problemOf(raw, raw.seq < 1);
     if (!problem) {
       return false;
     }
@@ -401,8 +392,8 @@ function threadInbox(
   // The drop is decided again when the run replays, and the handler's logger
   // is quiet while a run replays, so the warning goes to the client's own
   // logger once per message and process.
-  function warnOnce(raw: InboxMessage<RawEvent>, problem: string) {
-    const id = `${runId}:${raw.data.id ?? raw.seq}`;
+  function warnOnce(raw: InboxMessage, problem: string) {
+    const id = `${runId}:${raw.id || raw.seq}`;
     if (warned.has(id)) {
       return;
     }
@@ -414,7 +405,7 @@ function threadInbox(
 
     warned.add(id);
     log.warn(
-      `Dropped ${raw.data.name} from the inbox: it breaks its schema (${problem}).`,
+      `Dropped ${raw.name} from the inbox: it breaks its schema (${problem}).`,
     );
   }
 
@@ -643,7 +634,7 @@ export function createAgentFunction(
         // milliseconds between the run starting and this op.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the subscription.
-        await using subscription = await step.subscribe<RawEvent>("inbox", {
+        await using subscription = await step.subscribe("inbox", {
           events: [
             {
               event: agentMessageEvent,
@@ -666,8 +657,11 @@ export function createAgentFunction(
         subscription.putBack([
           {
             seq: 0,
+            id: event.id ?? "",
             name: event.name,
-            data: { id: event.id, name: event.name, data: event.data },
+            data: event.data,
+            ts: event.ts ?? 0,
+            user: {},
           },
         ]);
 

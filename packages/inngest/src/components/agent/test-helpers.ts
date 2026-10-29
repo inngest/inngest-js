@@ -41,9 +41,27 @@ export const run = async (
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
 
-  // The executor saves a message as a step named after the event.
-  const save = (data: unknown) => {
+  // The executor saves a message as a step named after the event, holding the
+  // whole event. A value that is not an event is the data of one.
+  const save = (value: unknown) => {
     const id = `${prefix}${saved.length + 1}`;
+    // An event, or a memo from before messages were flat ({ seq, data: event }),
+    // is saved as it is.
+    const isEvent =
+      typeof value === "object" &&
+      value !== null &&
+      "data" in value &&
+      ("name" in value || "seq" in value);
+    const data = isEvent
+      ? value
+      : {
+          id: `evt-${saved.length + 1}`,
+          name: "msg",
+          data: value,
+          ts: 0,
+          user: {},
+        };
+
     saved.push(data);
     stack.push(id);
     state = { ...state, [id]: { id, data } };

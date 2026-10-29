@@ -38,15 +38,36 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
   seq: number;
 
   /**
+   * The ID of the event.
+   */
+  id: string;
+
+  /**
    * The name of the event, so the messages of a subscription to several events
    * can be told apart.
    */
   name: TName;
 
   /**
-   * The event that was sent.
+   * The data of the event, typed by its schema when the subscription is to an
+   * event type.
    */
   data: TData;
+
+  /**
+   * When the event was sent, in milliseconds since the epoch.
+   */
+  ts: number;
+
+  /**
+   * The `user` object of the event.
+   */
+  user: Record<string, unknown>;
+
+  /**
+   * The version of the event, when it was sent with one.
+   */
+  v?: string;
 }
 
 /**
@@ -307,9 +328,20 @@ export async function openSubscription<
   let polls = 0;
   let total: number | undefined;
 
-  // The name of the event a message is.
-  const nameOf = (data: unknown): string => {
-    return (data as { name?: string } | null | undefined)?.name ?? "";
+  // A message is the event the executor saved, with its `seq`. Memos from before
+  // messages were flat held `{ seq, data: event }`; those are unwrapped.
+  const messageOf = (saved: unknown, seq: number): InboxMessage<TData> => {
+    const value = (saved ?? {}) as Record<string, unknown>;
+    const inner = value.data as Record<string, unknown> | undefined;
+    const event =
+      typeof value.seq === "number" &&
+      inner !== null &&
+      typeof inner === "object" &&
+      "name" in inner
+        ? inner
+        : value;
+
+    return { ...event, seq } as unknown as InboxMessage<TData>;
   };
 
   // Messages put back, oldest first.
@@ -370,7 +402,7 @@ export async function openSubscription<
 
     readCount = seq;
 
-    return { seq, name: nameOf(message), data: message as TData };
+    return messageOf(message, seq);
   }
 
   function poll(): Promise<InboxMessage<TData> | null> {
@@ -396,7 +428,7 @@ export async function openSubscription<
 
     readCount = seq;
 
-    return { seq, name: nameOf(message), data: message as TData };
+    return messageOf(message, seq);
   }
 
   let closing: Promise<InboxMessage<TData>[]> | undefined;
@@ -432,11 +464,7 @@ export async function openSubscription<
       const messages = read();
 
       for (let seq = readCount + 1; seq <= count; seq++) {
-        unread.push({
-          seq,
-          name: nameOf(messages[seq - 1]),
-          data: messages[seq - 1] as TData,
-        });
+        unread.push(messageOf(messages[seq - 1], seq));
       }
       readCount = count;
 

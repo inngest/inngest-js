@@ -6,6 +6,8 @@ A `step.subscribe()` subscription closes itself when its scope ends. Await it an
 
 A subscription is cheaper. Each message is saved as a step named after the subscription and the event, and nothing else happens when it is saved. The k-th `next()` returns the k-th message of the run's steps, so reading a message that has already arrived costs no step. When there is none the function parks: the executor records a marker, and a message arriving wakes only a parked run, so a busy run never gets a wake it does not need. A subscription costs one step to open and one to close each event, one park whenever the function had to wait, and one per `poll()`. The same event delivered twice is one message. `ack()` is gone: nothing used it once the run-end re-send was removed.
 
+A message is the event it was made from, flat, with its position: `{ seq, id, name, data, ts, user }` (and `v` when the event has one), typed by the event type when you subscribe with one. Read `msg.name`, `msg.data.total` and `msg.seq`; checking `msg.name` narrows `msg.data` for a subscription to several event types. Runs that started before this still replay: a memo that holds `{ seq, data: event }` is read as the event.
+
 A `next()` that is waiting still takes its message even if you stop awaiting it, so do not race `next()` in a plain `Promise.race`. `close()` ends a wait that is still open.
 
 Nothing is re-sent when a run ends. A message that arrives after the inbox closes, while the thread's singleton still applies, is dropped: it starts no new run and does not reach the finished one. The gap is the time between the body returning and the run ending. An agent's inbox closes when its body returns, and the messages it saved but the body never read are discarded.
