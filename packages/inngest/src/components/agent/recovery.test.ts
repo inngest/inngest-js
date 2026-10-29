@@ -162,7 +162,10 @@ describe("finishedOf", () => {
         _inngest: { status: "Failed" },
         error: { name: "Error", message: "boom" },
       }),
-    ).toEqual({ status: "failed", error: { name: "Error", message: "boom" } });
+    ).toEqual({
+      status: "failed",
+      error: { name: "Error", message: "boom", nonRetriable: false },
+    });
   });
 
   test("a turn is named by its message", () => {
@@ -322,6 +325,30 @@ describe("the finished function", () => {
     ]);
   });
 
+  test("a run that failed with a NonRetriableError is reported and never resent", async () => {
+    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", {
+        name: "NonRetriableError",
+        message: "bad input",
+      }),
+    });
+
+    expect(posts).toEqual(["Hit an error: bad input."]);
+    expect(await lastRun()).toMatchObject({ status: "failed" });
+    expect((await lastRun())?.recovery).toBeUndefined();
+    expect(sent).toEqual([]);
+  });
+
+  test("an error the executor marked noRetry is not resent either", () => {
+    expect(
+      finishedOf({
+        _inngest: { status: "Failed" },
+        error: { name: "Error", message: "x", noRetry: true },
+      }).error?.nonRetriable,
+    ).toBe(true);
+  });
   test("the same error failing the same turn again says so and resends nothing", async () => {
     const { agent, lastRun, sent, posts } = setup({ recovery: true });
     const failure = { name: "Error", message: "boom" };

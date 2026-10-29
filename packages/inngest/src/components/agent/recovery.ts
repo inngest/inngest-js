@@ -16,7 +16,9 @@
  * it says so on the agent's channels and resends the turn that was in flight,
  * so a fresh run takes it up. The guard against a loop is the error's
  * fingerprint, not a count: a turn that fails with the same error twice is
- * not resent, and the failure is reported as stuck.
+ * not resent, and the failure is reported as stuck. A run that failed with a
+ * `NonRetriableError` is reported but never resent: its failure was declared
+ * final, and a fresh run would only repeat it.
  */
 import hashjs from "hash.js";
 
@@ -119,7 +121,8 @@ export interface RunFailure {
 export interface AgentRecovery {
   /**
    * Resends the turn that was in flight, so a fresh run takes it up. A turn
-   * that has failed with the same error before is not resent. Default `true`.
+   * that has failed with the same error before is not resent, and neither is
+   * one whose run failed with a `NonRetriableError`. Default `true`.
    */
   resume?: boolean;
 
@@ -284,7 +287,7 @@ export interface Finished {
   /**
    * For a failed run: the error's name and message.
    */
-  error?: { name?: string; message: string };
+  error?: { name?: string; message: string; nonRetriable: boolean };
 }
 
 /**
@@ -296,7 +299,7 @@ export const finishedOf = (data: Record<string, unknown>): Finished => {
     (data._inngest as { status?: unknown } | undefined)?.status ?? "",
   ).toLowerCase();
   const error = data.error as
-    | { name?: string; message?: string }
+    | { name?: string; message?: string; noRetry?: boolean }
     | string
     | undefined;
 
@@ -309,8 +312,15 @@ export const finishedOf = (data: Record<string, unknown>): Finished => {
       status: "failed",
       error:
         typeof error === "string"
-          ? { message: error }
-          : { name: error?.name, message: error?.message ?? "unknown error" },
+          ? { message: error, nonRetriable: false }
+          : {
+              name: error?.name,
+              message: error?.message ?? "unknown error",
+              // The SDK serializes the error's class name, and the executor
+              // sets `noRetry` when the function declared the failure final.
+              nonRetriable:
+                error?.name === "NonRetriableError" || error?.noRetry === true,
+            },
     };
   }
 

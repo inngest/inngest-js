@@ -1365,7 +1365,7 @@ export function createAgentFunction(
           (message.content !== undefined || message.event !== undefined),
         resume:
           ended.status === "failed" && recovery
-            ? recovery.resume !== false
+            ? recovery.resume !== false && !ended.error?.nonRetriable
             : undefined,
       });
       if (!recovery || ended.status !== "failed") {
