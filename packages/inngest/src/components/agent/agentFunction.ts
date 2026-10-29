@@ -1834,7 +1834,7 @@ export function createAgentFunction(
         },
       );
 
-      if (!inflight) {
+      if (!inflight || (!inflight.event && inflight.text === undefined)) {
         return last;
       }
 
