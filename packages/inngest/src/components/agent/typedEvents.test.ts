@@ -166,6 +166,32 @@ describe("typed events", () => {
     );
   });
 
+  test("is() narrows the messages of on, and a source's messages are typed through a view", () => {
+    agents.agent(
+      {
+        id: "a-src",
+        on: { event: order, thread: "event.data.id" },
+        inbox: [{ event: refund, thread: "event.data.order" }],
+      },
+      async ({ inbox }) => {
+        const message = await inbox.next();
+
+        if (message?.is(order)) {
+          expectTypeOf(message.name).toEqualTypeOf<"shop/order.created">();
+          expectTypeOf(message.data.total).toBeNumber();
+          expectTypeOf(message.content).toEqualTypeOf<string | undefined>();
+        }
+
+        // A source's message keeps its own event name; the view types it.
+        const refunds = await inbox.of(refund).next();
+
+        expectTypeOf(refunds?.data.amount).toEqualTypeOf<number | undefined>();
+
+        return undefined;
+      },
+    );
+  });
+
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },

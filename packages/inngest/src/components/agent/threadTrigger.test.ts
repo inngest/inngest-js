@@ -81,6 +81,38 @@ describe("thread key from a trigger", () => {
     );
   });
 
+  test("a message made from a trigger comes back as itself after putBack", async () => {
+    const agent = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv,
+        on: {
+          event: "slack/message",
+          thread: slackThread,
+          message: (event) => {
+            return event.data.text as string;
+          },
+        },
+      },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        if (first) {
+          inbox.putBack([first]);
+        }
+
+        const again = await inbox.next();
+
+        return [again?.name, again?.id, again?.kind, again?.content];
+      },
+    );
+
+    const { output } = await run(agent.fn, { event: slackMessage });
+
+    expect(output).toEqual(["slack/message", "evt1", "user", "hi"]);
+  });
+
   test("the run starts from the trigger event: its thread, session, message and a subscription per event", async () => {
     const seen: { event?: string; if?: string }[] = [];
     let message: unknown;

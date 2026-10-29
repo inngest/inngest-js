@@ -641,8 +641,8 @@ type ThreadMessageEvent<TEvent, TRequest> =
  * trigger event for a message made from a trigger (narrow it by `name`), and
  * `agent/message` for a plain thread message (`thread.send()`, a reply, a
  * request), whose `data` is the message itself. A message from an inbox source
- * is its event too, under the event's own `name`; narrow it with
- * `msg.is(type)`. A `"request"` message from another thread's
+ * is its event too, under the event's own `name`; it is not in the type of
+ * `on`, so read it typed through `inbox.of(type)`. A `"request"` message from another thread's
  * `handle.request()` is answered with `reply()`.
  */
 export type ThreadInboxMessage<
@@ -922,8 +922,9 @@ const triggerOf = (event: TriggerEvent | undefined) => {
 };
 
 /**
- * The thread's view of its subscription: messages are the `data` of the
- * events, and stop messages are skipped, because while the agent waits for its
+ * The thread's view of its subscription: a message is the event it was made
+ * from, flat, with the thread message's fields beside it, and stop messages are
+ * skipped, because while the agent waits for its
  * next message there is nothing to stop.
  */
 function threadInbox(
