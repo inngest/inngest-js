@@ -15,6 +15,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "inbox-sources-agent";
@@ -47,7 +48,7 @@ export const inboxSources = scenario({
         let listener: Awaited<ReturnType<typeof inbox.listen>> | undefined;
 
         for await (const message of inbox) {
-          const content = message.content ?? "";
+          const content = textOf(message) ?? "";
           const source = message.name;
 
           if (source === event("ci")) {

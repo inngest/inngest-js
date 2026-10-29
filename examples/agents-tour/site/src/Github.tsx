@@ -3,7 +3,6 @@
  * The GitHub panel: the issues and pull requests of the fake GitHub, each
  * with its comments, and two buttons that open a new one as a person would.
  */
-import { useRef, useState } from "react";
 import { Kbd } from "./keyboard.tsx";
 import { postJson, useAction, useFake } from "./live.ts";
 
@@ -34,138 +33,92 @@ interface State {
   comments: Comment[];
 }
 
-const stateOf = (item: Item) => {
-  if (item.merged) {
-    return "merged";
-  }
-
-  return item.state;
-};
+const repo = "acme/web";
 
 export const Github = () => {
   const state = useFake<State>("/api/github/state", "github");
-  const [repo, setRepo] = useState("acme/web");
-  const [open, setOpen] = useState<number>();
-  const latest = useRef(repo);
 
-  latest.current = repo;
-
-  const create = async (kind: "issues" | "pulls") => {
-    const result = await postJson(`/api/github/${latest.current}/${kind}`);
-
-    setOpen(Number(result.number));
+  const act = (path: string) => {
+    return postJson(`/api/github/${repo}/${path}`);
   };
 
   useAction("githubPull", () => {
-    void create("pulls");
+    void act("pulls");
   });
   useAction("githubIssue", () => {
-    void create("issues");
+    void act("issues");
+  });
+  useAction("githubComment", () => {
+    void act("comment");
+  });
+  useAction("githubApprove", () => {
+    void act("approve");
   });
 
   if (!state) {
     return <p className="empty">Loading...</p>;
   }
 
-  const items = state.items.filter((item) => {
-    return item.repo === repo;
-  });
-  const current = items.find((item) => {
-    return item.number === open;
-  });
-  const comments = state.comments.filter((comment) => {
-    return comment.repo === repo && comment.number === open;
-  });
+  const items = [
+    ...state.items.filter((item) => {
+      return item.repo === repo;
+    }),
+  ].reverse();
 
   return (
     <div className="github">
       <header className="gh-head">
-        <label>
-          Repository
-          <select
-            value={repo}
-            onChange={(event) => {
-              setRepo(event.target.value);
-              setOpen(undefined);
-            }}
-          >
-            {state.repos.map((name) => {
-              return <option key={name}>{name}</option>;
-            })}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            void create("issues");
-          }}
-        >
-          Open an issue <Kbd action="githubIssue" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            void create("pulls");
-          }}
-        >
-          Open a pull request <Kbd action="githubPull" />
-        </button>
+        <span className="topic">{repo}</span>
+        {(
+          [
+            ["issues", "Create issue", "githubIssue"],
+            ["pulls", "Open PR", "githubPull"],
+            ["comment", "Comment", "githubComment"],
+            ["approve", "Approve", "githubApprove"],
+          ] as const
+        ).map(([path, name, action]) => {
+          return (
+            <button
+              type="button"
+              key={path}
+              onClick={() => {
+                void act(path);
+              }}
+            >
+              {name} <Kbd action={action} />
+            </button>
+          );
+        })}
       </header>
-      <div className="gh-body">
-        <ul className="gh-list" aria-label="Issues and pull requests">
-          {items.map((item) => {
-            return (
-              <li key={item.number}>
-                <button
-                  type="button"
-                  className={item.number === open ? "gh-item on" : "gh-item"}
-                  onClick={() => {
-                    setOpen(item.number);
-                  }}
-                >
-                  <span className={`gh-state ${stateOf(item)}`}>
-                    {item.kind === "issue" ? "Issue" : "PR"} {stateOf(item)}
-                  </span>
-                  <span className="gh-title">
-                    #{item.number} {item.title}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-          {items.length === 0 ? (
-            <li className="empty">Nothing in {repo} yet.</li>
-          ) : null}
-        </ul>
-        <div className="gh-detail" aria-live="polite">
-          {current ? (
-            <>
-              <h3>
-                #{current.number} {current.title}
-              </h3>
-              <p className="gh-meta">
-                {current.author}
-                {current.branch ? ` wants to merge ${current.branch}` : ""}
-                {current.labels.length > 0
-                  ? ` ${current.labels.join(", ")}`
-                  : ""}
-              </p>
-              {comments.length === 0 ? (
-                <p className="empty">No comments.</p>
-              ) : null}
-              {comments.map((comment) => {
-                return (
-                  <div key={comment.id} className="gh-comment">
-                    <strong>{comment.author}</strong>
-                    <span>{comment.body}</span>
-                  </div>
-                );
-              })}
-            </>
-          ) : (
-            <p className="empty">Pick an item, or open a new one.</p>
-          )}
-        </div>
+      <div className="gh-feed">
+        {items.length === 0 ? <p className="empty">Nothing yet.</p> : null}
+        {items.map((item) => {
+          return (
+            <div key={item.number} className="gh-entry">
+              <div className="gh-title">
+                <span className="gh-state">
+                  {item.kind === "issue" ? "Issue" : "PR"}{" "}
+                  {item.merged ? "merged" : item.state}
+                </span>
+                #{item.number} {item.title}
+              </div>
+              {state.comments
+                .filter((comment) => {
+                  return (
+                    comment.repo === repo && comment.number === item.number
+                  );
+                })
+                .map((comment) => {
+                  return (
+                    <div key={comment.id} className="gh-comment">
+                      <strong>{comment.author}</strong>
+                      <span>{comment.body}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

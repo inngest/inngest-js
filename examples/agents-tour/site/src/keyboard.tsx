@@ -96,6 +96,23 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
         return;
       }
 
+      if (pending === "g") {
+        const second = event.key.toLowerCase();
+
+        pending = "";
+        window.clearTimeout(timer);
+
+        for (const def of keys) {
+          if (def.outside.includes(`g ${second}`)) {
+            fire(def.id);
+
+            return;
+          }
+        }
+
+        return;
+      }
+
       for (const def of keys) {
         if (def.local) {
           continue;
@@ -123,23 +140,6 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
             return;
           }
         }
-      }
-
-      if (pending === "g") {
-        const second = event.key.toLowerCase();
-
-        pending = "";
-        window.clearTimeout(timer);
-
-        for (const def of keys) {
-          if (def.outside.includes(`g ${second}`)) {
-            fire(def.id);
-
-            return;
-          }
-        }
-
-        return;
       }
 
       if (

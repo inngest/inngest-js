@@ -18,6 +18,7 @@ import {
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "thread-sandboxes-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -35,7 +36,7 @@ export const threadSandboxes = scenario({
       { id: agentId, sandboxes: { work: { sandbox: box, idle: "snapshot" } } },
       async ({ inbox, sandboxes }) => {
         const first = await inbox.next();
-        const [command, text] = (first?.content ?? "").split(":") as [
+        const [command, text] = (textOf(first) ?? "").split(":") as [
           string,
           string | undefined,
         ];

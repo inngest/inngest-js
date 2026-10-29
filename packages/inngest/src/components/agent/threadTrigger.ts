@@ -40,12 +40,14 @@ import { compileKey, toAsync } from "./cel.ts";
 import { skillsBakeEvent } from "./skills.ts";
 import {
   agentMessageEvent,
-  type ThreadMessage,
+  agentRequestEvent,
+  agentSteerEvent,
+  agentStopEvent,
   type TriggerEvent,
 } from "./thread.ts";
 
 /**
- * The trigger event, as `message` sees it.
+ * The trigger event.
  */
 export interface ThreadTriggerEvent<
   TData extends Record<string, unknown> = Record<string, unknown>,
@@ -88,7 +90,7 @@ export type ThreadTriggerData<T> = T extends EventType<string, infer TSchema>
 /**
  * The fields every kind of trigger shares.
  */
-export interface ThreadTriggerFields<TEvent extends ThreadTriggerEvent> {
+export interface ThreadTriggerFields {
   /**
    * The thread key, a CEL expression over `event` that gives a string, such
    * as `event.data.channel + "/" + event.data.thread_ts`.
@@ -105,12 +107,6 @@ export interface ThreadTriggerFields<TEvent extends ThreadTriggerEvent> {
    * the thread key.
    */
   session?: string;
-
-  /**
-   * The text of the message the event carries. Default: none; the body reads
-   * the event itself from `data.event`. Runs in the SDK, not in the backend.
-   */
-  message?(event: TEvent): string | undefined;
 }
 
 /**
@@ -119,7 +115,7 @@ export interface ThreadTriggerFields<TEvent extends ThreadTriggerEvent> {
  */
 export interface ThreadEventTrigger<
   TSource extends ThreadTriggerEventSource = ThreadTriggerEventSource,
-> extends ThreadTriggerFields<ThreadTriggerEvent<ThreadTriggerData<TSource>>> {
+> extends ThreadTriggerFields {
   /**
    * The event: a plain name (no wildcard, and not `agent/message`) or an
    * `eventType()`, which also types and validates the event.
@@ -136,8 +132,7 @@ export interface ThreadEventTrigger<
  * A schedule that starts the agent, like `{ cron }` of a function. Its thread
  * is the agent's ID unless `thread` is set.
  */
-export interface ThreadCronTrigger
-  extends ThreadTriggerFields<ThreadTriggerEvent<{ cron: string }>> {
+export interface ThreadCronTrigger extends ThreadTriggerFields {
   /**
    * The cron expression, such as `"0 * * * *"`.
    */
@@ -197,8 +192,7 @@ export type ThreadTriggerListEvent<TMany extends readonly unknown[]> = {
 }[number];
 
 /**
- * A list of triggers in which each one types its own `message` from its own
- * event.
+ * A list of triggers in which each one types its own event.
  */
 export type ThreadTriggerList<TMany extends readonly unknown[]> = {
   [K in keyof TMany]: TMany[K] extends ThreadTriggerEventSource
@@ -271,7 +265,6 @@ export interface CompiledTrigger {
    * events that reach a live run against the same schema.
    */
   schema?: StandardSchemaV1;
-  message?: ThreadTriggerFields<ThreadTriggerEvent>["message"];
 }
 
 const cronEvent = internalEvents.ScheduledTimer;
@@ -279,7 +272,13 @@ const cronEvent = internalEvents.ScheduledTimer;
 /**
  * The events the agent layer owns, which cannot trigger an agent.
  */
-const reservedEvents: string[] = [agentMessageEvent, skillsBakeEvent];
+const reservedEvents: string[] = [
+  agentMessageEvent,
+  agentSteerEvent,
+  agentStopEvent,
+  agentRequestEvent,
+  skillsBakeEvent,
+];
 
 /**
  * Quotes a string as a CEL literal.
@@ -418,10 +417,10 @@ export function compileTriggers(
       );
     }
 
-    // The first cron's `session` and `message` apply to every tick.
-    if (same && (own?.session || own?.message)) {
+    // The first cron's `session` applies to every tick.
+    if (same && own?.session) {
       throw new Error(
-        `Agent "${id}": set \`session\` and \`message\` on the first cron trigger only; they apply to every tick.`,
+        `Agent "${id}": set \`session\` on the first cron trigger only; it applies to every tick.`,
       );
     }
 
@@ -451,7 +450,6 @@ export function compileTriggers(
         schema: source instanceof EventType ? source.schema : undefined,
         thread: compileKey(thread),
         session: session ? compileKey(session) : undefined,
-        message: own?.message as CompiledTrigger["message"],
       });
     } catch (err) {
       throw new Error(
@@ -558,9 +556,10 @@ export function singletonKey(
 }
 
 /**
- * The message a trigger event is, for the thread it belongs to.
+ * What a run that a trigger event started carries as its start: the agent, the
+ * thread the event belongs to, and the event.
  */
-export function messageOf(
+export function startOf(
   /**
    * The agent, as `"appId/functionId"`.
    */
@@ -575,12 +574,10 @@ export function messageOf(
    * The trigger event.
    */
   event: ThreadTriggerEvent,
-): ThreadMessage {
+): { agent: string; thread: string; event: TriggerEvent } {
   return {
     agent: ref,
     thread: trigger.thread.key(event),
-    kind: "user",
-    content: trigger.message?.({ ...event, data: event.data ?? {} }),
     event: { id: event.id, name: event.name, data: event.data },
   };
 }
