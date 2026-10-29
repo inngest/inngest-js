@@ -15,6 +15,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -62,6 +63,15 @@ export interface FakeSandboxOptions {
    * served from disk, so a scenario can use real git.
    */
   localDirs?: string[];
+
+  /**
+   * More sandbox paths (a path, or a prefix ending in `/`) whose files live on
+   * this machine, next to `/inngest/tools`, `/work/` and
+   * `/tmp/inngest-run-code-`: an upload is written to a directory of the
+   * sandbox's own and a read comes from there, and a command that mentions
+   * the path runs for real with it moved there.
+   */
+  diskPaths?: string[];
 }
 
 const encode = (text: string) => {
@@ -75,6 +85,7 @@ const now = () => {
 const runLocal = (
   command: string[],
   cwd?: string,
+  environment: Record<string, string> = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
   return new Promise((resolve) => {
     execFile(
@@ -86,6 +97,7 @@ const runLocal = (
         maxBuffer: 64 * 1024 * 1024,
         env: {
           ...process.env,
+          ...environment,
           GIT_AUTHOR_NAME: "fake-sandbox",
           GIT_AUTHOR_EMAIL: "fake-sandbox@example.com",
           GIT_COMMITTER_NAME: "fake-sandbox",
@@ -109,6 +121,18 @@ const runLocal = (
     );
   });
 };
+
+/**
+ * A process the agent started: what it printed, and how it ended.
+ */
+interface FakeProcess {
+  id: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  done: Promise<void>;
+  child?: ReturnType<typeof spawn>;
+}
 
 /**
  * A fake Sandboxes API and what it recorded.
@@ -153,6 +177,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
   const realFetch = globalThis.fetch;
   const calls: Call[] = [];
   const children = new Set<ReturnType<typeof spawn>>();
+  const processes = new Map<string, FakeProcess>();
   // Files by sandbox, and the copy a snapshot keeps, so a sandbox created from
   // a snapshot starts with the files its source had.
   const files = new Map<string, Map<string, Uint8Array>>();
@@ -168,14 +193,48 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     return found;
   };
   const toolsDir = mkdtempSync(join(tmpdir(), "fake-sandbox-tools-"));
-  // Where a path or command of the sandbox lives on this machine
-  const local = (text: string) => {
-    return text.replaceAll("/inngest/tools", toolsDir);
+  // Every sandbox has a /work of its own on this machine, so a new sandbox
+  // starts empty; a snapshot keeps a copy, and a sandbox made from it starts
+  // with that copy.
+  const workDirs = new Map<string, string>();
+  const snapshotDirs = new Map<string, string>();
+  const workOf = (sandboxId: string) => {
+    let dir = workDirs.get(sandboxId);
+
+    if (!dir) {
+      dir = mkdtempSync(join(tmpdir(), "fake-sandbox-work-"));
+      workDirs.set(sandboxId, dir);
+    }
+
+    return dir;
+  };
+  // Where a path or command of the sandbox lives on this machine. The paths
+  // of `diskPaths` move into a directory of the sandbox's own, so two
+  // sandboxes never share a file.
+  const localFor = (sandboxId: string) => {
+    return (text: string) => {
+      let moved = text;
+
+      for (const disk of options.diskPaths ?? []) {
+        moved = moved.replaceAll(
+          disk,
+          join(workOf(sandboxId), ".fake-disk", disk),
+        );
+      }
+
+      return moved
+        .replaceAll("/inngest/tools", toolsDir)
+        .replace(/\/work(?![\w-])/g, workOf(sandboxId));
+    };
   };
   const onDisk = (path: string) => {
     return (
       path.startsWith("/inngest/tools") ||
-      path.startsWith("/tmp/inngest-run-code-")
+      path.startsWith("/work/") ||
+      path.startsWith("/tmp/inngest-run-code-") ||
+      (options.diskPaths ?? []).some((disk) => {
+        return disk.endsWith("/") ? path.startsWith(disk) : path === disk;
+      })
     );
   };
   const snapshots = new Map<
@@ -209,6 +268,55 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       createdAt: now(),
       startedAt: now(),
     };
+  };
+
+  // What to do with a command: run it on this machine, or answer it from
+  // `commands`. The tools and their log always run for real; a command that
+  // touches this sandbox's /work or runs in one of `localDirs` runs for real
+  // unless an entry describes it.
+  const planOf = (request: {
+    command: string[];
+    cwd?: string;
+    environment?: Record<string, string>;
+  }) => {
+    const text = request.command.join(" ");
+    const entries = Object.entries(options.commands ?? {});
+    const canned = entries.find(([key]) => {
+      return text.includes(key);
+    })?.[1];
+    // The key "" matches everything, so it must not stop a command meant to
+    // run for real.
+    const described = entries.some(([key]) => {
+      return key !== "" && text.includes(key);
+    });
+    const touchesWork =
+      (options.diskPaths ?? []).some((disk) => {
+        return text.includes(disk);
+      }) ||
+      text.includes("/work") ||
+      request.cwd?.startsWith("/work") === true ||
+      Object.values(request.environment ?? {}).some((value) => {
+        return value.includes("/work");
+      });
+    const inLocalDir =
+      request.cwd !== undefined &&
+      (options.localDirs?.some((dir) => {
+        return request.cwd?.startsWith(dir);
+      }) ??
+        false);
+    const tools = text.includes("/inngest/tools") || text.includes("ops.log");
+
+    return {
+      text,
+      canned,
+      here: tools || (!described && (touchesWork || inLocalDir)),
+    };
+  };
+  const unmatched = (text: string) => {
+    return {
+      stderr: `FakeSandbox: no entry of \`commands\` matches "${text}". Add one, or the key "" to match any command.\n`,
+      exitCode: 127,
+    } as { stdout?: string; stderr?: string; exitCode?: number };
   };
 
   let closed = false;
@@ -296,6 +404,19 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     }
 
     const [, id, rest = ""] = match;
+    const local = localFor(id ?? "");
+    // What a command run here sees: the sandbox's own /work as SANDBOX_WORK,
+    // and its environment with the sandbox paths moved to this machine.
+    const environmentOf = (environment: Record<string, string> = {}) => {
+      return {
+        SANDBOX_WORK: workOf(id ?? ""),
+        ...Object.fromEntries(
+          Object.entries(environment).map(([key, value]) => {
+            return [key, local(value)];
+          }),
+        ),
+      };
+    };
 
     if (id && rest === "/snapshots" && method === "POST") {
       const request = JSON.parse(String(init?.body || "{}")) as {
@@ -338,6 +459,11 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
       snapshots.set(created.id, created);
       snapshotFiles.set(created.id, new Map(filesOf(id)));
+
+      const kept = mkdtempSync(join(tmpdir(), "fake-snapshot-"));
+
+      cpSync(workOf(id), kept, { recursive: true });
+      snapshotDirs.set(created.id, kept);
       await record("snapshot.create", {
         id: created.id,
         name: request.name,
@@ -359,6 +485,12 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           created.id,
           new Map(snapshotFiles.get(request.snapshotId) ?? []),
         );
+
+        const kept = snapshotDirs.get(request.snapshotId);
+
+        if (kept) {
+          cpSync(kept, workOf(created.id), { recursive: true });
+        }
       }
 
       await record("sandbox.create", {
@@ -383,17 +515,9 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       const request = JSON.parse(String(init?.body)) as {
         command: string[];
         cwd?: string;
+        environment?: Record<string, string>;
       };
-      const text = request.command.join(" ");
-      const entries = Object.entries(options.commands ?? {});
-      const canned = entries.find(([key]) => {
-        return text.includes(key);
-      })?.[1];
-      // The key "" matches everything, so it must not stop a command meant to
-      // run in a local directory.
-      const described = entries.some(([key]) => {
-        return key !== "" && text.includes(key);
-      });
+      const plan = planOf(request);
 
       await record("sandbox.exec", {
         id,
@@ -401,8 +525,12 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         cwd: request.cwd,
       });
 
-      if (text.includes("/inngest/tools") || text.includes("ops.log")) {
-        const ran = await runLocal(request.command.map(local), undefined);
+      if (plan.here) {
+        const ran = await runLocal(
+          request.command.map(local),
+          request.cwd === undefined ? undefined : local(request.cwd),
+          environmentOf(request.environment),
+        );
 
         return Response.json({
           data: {
@@ -414,44 +542,54 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         });
       }
 
-      if (
-        !described &&
-        request.cwd !== undefined &&
-        options.localDirs?.some((dir) => {
-          return request.cwd?.startsWith(dir);
-        })
-      ) {
-        const ran = await runLocal(request.command, request.cwd);
+      const answer = plan.canned ?? unmatched(plan.text);
+
+      return Response.json({
+        data: {
+          stdout: encode(answer.stdout ?? ""),
+          stderr: encode(answer.stderr ?? ""),
+          encoding: "base64",
+          exitCode: answer.exitCode ?? 0,
+        },
+      });
+    }
+
+    const processMatch = /^\/processes\/([^/]+)\/(wait|output|signals)$/.exec(
+      rest,
+    );
+    const known = processMatch
+      ? processes.get(processMatch[1] ?? "")
+      : undefined;
+
+    if (processMatch && known) {
+      if (processMatch[2] === "wait") {
+        await known.done;
 
         return Response.json({
-          data: {
-            stdout: encode(ran.stdout),
-            stderr: encode(ran.stderr),
-            encoding: "base64",
-            exitCode: ran.exitCode,
-          },
+          data: { id: known.id, state: "EXITED", exitCode: known.exitCode },
         });
       }
 
-      if (!canned) {
-        return Response.json({
-          data: {
-            stdout: encode(""),
-            stderr: encode(
-              `FakeSandbox: no entry of \`commands\` matches "${text}". Add one, or the key "" to match any command.\n`,
-            ),
-            encoding: "base64",
-            exitCode: 127,
-          },
-        });
+      if (processMatch[2] === "signals") {
+        known.child?.kill();
+
+        return new Response(null, { status: 204 });
       }
 
       return Response.json({
         data: {
-          stdout: encode(canned.stdout ?? ""),
-          stderr: encode(canned.stderr ?? ""),
-          encoding: "base64",
-          exitCode: canned.exitCode ?? 0,
+          chunks: [
+            {
+              stream: "STDOUT",
+              data: encode(known.stdout),
+              encoding: "base64",
+            },
+            {
+              stream: "STDERR",
+              data: encode(known.stderr),
+              encoding: "base64",
+            },
+          ],
         },
       });
     }
@@ -462,36 +600,68 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         environment?: Record<string, string>;
         cwd?: string;
       };
-      const child = spawn(
-        request.command[0] as string,
-        request.command.slice(1).map(local),
-        {
-          cwd: request.cwd,
-          env: {
-            ...process.env,
-            ...Object.fromEntries(
-              Object.entries(request.environment ?? {}).map(([key, value]) => {
-                return [key, local(value)];
-              }),
-            ),
-          },
-          stdio: "ignore",
-        },
-      );
+      const plan = planOf(request);
+      const process: FakeProcess = {
+        id: randomUUID(),
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        done: Promise.resolve(),
+      };
 
-      children.add(child);
-      child.on("error", () => {});
-      child.on("close", () => {
-        children.delete(child);
-      });
+      processes.set(process.id, process);
+
+      if (plan.here) {
+        const child = spawn(
+          request.command[0] as string,
+          request.command.slice(1).map(local),
+          {
+            cwd: request.cwd === undefined ? undefined : local(request.cwd),
+            env: {
+              ...globalThis.process.env,
+              ...environmentOf(request.environment),
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+
+        process.child = child;
+        children.add(child);
+        child.stdout.on("data", (chunk: Buffer) => {
+          process.stdout += chunk.toString();
+        });
+        child.stderr.on("data", (chunk: Buffer) => {
+          process.stderr += chunk.toString();
+        });
+        process.done = new Promise<void>((resolve) => {
+          child.on("error", (error) => {
+            process.stderr += String(error);
+            process.exitCode = 127;
+            children.delete(child);
+            resolve();
+          });
+          child.on("close", (code) => {
+            process.exitCode = code ?? 1;
+            children.delete(child);
+            resolve();
+          });
+        });
+      } else {
+        const answer = plan.canned ?? unmatched(plan.text);
+
+        process.stdout = answer.stdout ?? "";
+        process.stderr = answer.stderr ?? "";
+        process.exitCode = answer.exitCode ?? 0;
+      }
+
       await record("sandbox.process", { id, command: request.command });
 
       return Response.json(
         {
           data: {
-            id: randomUUID(),
+            id: process.id,
             command: request.command,
-            pid: child.pid ?? 1,
+            pid: process.child?.pid ?? 1,
             state: "RUNNING",
             startedAt: now(),
           },
@@ -560,6 +730,10 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
 
     children.clear();
     rmSync(toolsDir, { recursive: true, force: true });
+
+    for (const dir of [...workDirs.values(), ...snapshotDirs.values()]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   };
 
   return {

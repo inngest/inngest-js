@@ -287,6 +287,7 @@ describe("fakeSandbox", () => {
     const id = await create(sandbox);
     const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
       command: ["sleep", "60"],
+      cwd: "/work",
     });
     const { pid } = ((await started.json()) as { data: { pid: number } }).data;
 
@@ -452,5 +453,192 @@ describe.skipIf(!backendPath())("startGitRemote with repos", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("fakeSandbox /work, processes and disk paths", () => {
+  const upload = (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    path: string,
+    text: string,
+  ) => {
+    return sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent(path)}`,
+      { method: "PUT", body: text },
+    );
+  };
+  const execWith = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      stderr: Buffer.from(data.stderr, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("every sandbox has a /work of its own that commands run against for real", async () => {
+    await using sandbox = fakeSandbox();
+    const first = await create(sandbox);
+    const second = await create(sandbox);
+
+    await upload(sandbox, first, "/work/a.txt", "from first\n");
+
+    expect(
+      await execWith(sandbox, first, { command: ["cat", "/work/a.txt"] }),
+    ).toMatchObject({ stdout: "from first\n", exitCode: 0 });
+    // Not shared: the second sandbox has no such file.
+    expect(
+      (await execWith(sandbox, second, { command: ["cat", "/work/a.txt"] }))
+        .exitCode,
+    ).not.toBe(0);
+  });
+
+  test("a cwd or an environment value under /work runs for real, with SANDBOX_WORK set", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await upload(sandbox, id, "/work/n.txt", "42\n");
+
+    expect(
+      await execWith(sandbox, id, {
+        command: ["sh", "-c", "cat $FILE"],
+        environment: { FILE: "/work/n.txt" },
+      }),
+    ).toMatchObject({ stdout: "42\n" });
+
+    const where = await execWith(sandbox, id, {
+      command: ["pwd"],
+      cwd: "/work",
+    });
+
+    expect(where.stdout.trim()).toContain("fake-sandbox-work-");
+    expect(
+      (
+        await execWith(sandbox, id, {
+          command: ["sh", "-c", "echo $SANDBOX_WORK"],
+        })
+      ).exitCode,
+    ).toBe(127);
+    expect(
+      (
+        await execWith(sandbox, id, {
+          command: ["sh", "-c", "echo $SANDBOX_WORK"],
+          cwd: "/work",
+        })
+      ).stdout.trim(),
+    ).toBe(where.stdout.trim());
+  });
+
+  test("a snapshot keeps /work and a sandbox made from it starts with it", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    await upload(sandbox, id, "/work/kept.txt", "kept\n");
+
+    const snapshot = await post(sandbox, `/v2/sandboxes/${id}/snapshots`, {
+      name: "s1",
+    });
+    const snapshotId = ((await snapshot.json()) as { data: { id: string } })
+      .data.id;
+    // Changes after the snapshot are not in it.
+    await upload(sandbox, id, "/work/later.txt", "later\n");
+
+    const restored = await post(sandbox, "/v2/sandboxes", { snapshotId });
+    const restoredId = ((await restored.json()) as { data: { id: string } })
+      .data.id;
+
+    expect(
+      await execWith(sandbox, restoredId, {
+        command: ["cat", "/work/kept.txt"],
+      }),
+    ).toMatchObject({ stdout: "kept\n" });
+    expect(
+      (
+        await execWith(sandbox, restoredId, {
+          command: ["cat", "/work/later.txt"],
+        })
+      ).exitCode,
+    ).not.toBe(0);
+  });
+
+  test("diskPaths are files of the sandbox's own that commands see", async () => {
+    await using sandbox = fakeSandbox({ diskPaths: ["/tmp/ws.tgz"] });
+    const first = await create(sandbox);
+    const second = await create(sandbox);
+
+    await upload(sandbox, first, "/tmp/ws.tgz", "tarball\n");
+
+    expect(
+      await execWith(sandbox, first, { command: ["cat", "/tmp/ws.tgz"] }),
+    ).toMatchObject({ stdout: "tarball\n" });
+    expect(
+      (await execWith(sandbox, second, { command: ["cat", "/tmp/ws.tgz"] }))
+        .exitCode,
+    ).not.toBe(0);
+  });
+
+  test("processes keep their output and can be waited for; canned commands answer them too", async () => {
+    await using sandbox = fakeSandbox({
+      commands: { build: { stdout: "built\n", exitCode: 0 } },
+    });
+    const id = await create(sandbox);
+    const start = async (body: Record<string, unknown>) => {
+      const response = await post(
+        sandbox,
+        `/v2/sandboxes/${id}/processes`,
+        body,
+      );
+
+      return ((await response.json()) as { data: { id: string } }).data.id;
+    };
+    const wait = async (processId: string) => {
+      const response = await post(
+        sandbox,
+        `/v2/sandboxes/${id}/processes/${processId}/wait`,
+        {},
+      );
+
+      return ((await response.json()) as { data: { exitCode: number } }).data
+        .exitCode;
+    };
+    const output = async (processId: string) => {
+      const response = await sandbox.fetch(
+        `http://sandboxes.test/v2/sandboxes/${id}/processes/${processId}/output`,
+      );
+      const { data } = (await response.json()) as {
+        data: { chunks: { stream: string; data: string }[] };
+      };
+
+      return data.chunks.map((chunk) => {
+        return Buffer.from(chunk.data, "base64").toString();
+      });
+    };
+
+    const real = await start({
+      command: ["sh", "-c", "echo hi; exit 3"],
+      cwd: "/work",
+    });
+
+    expect(await wait(real)).toBe(3);
+    expect((await output(real))[0]).toBe("hi\n");
+
+    const canned = await start({ command: ["build", "--all"] });
+
+    expect(await wait(canned)).toBe(0);
+    expect((await output(canned))[0]).toBe("built\n");
+
+    const typo = await start({ command: ["biuld"] });
+
+    expect(await wait(typo)).toBe(127);
+    expect((await output(typo))[1]).toContain("no entry of `commands`");
   });
 });
