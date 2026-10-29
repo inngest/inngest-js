@@ -513,8 +513,7 @@ describe("request and reply", () => {
       request: z.object({ n: z.number() }),
       reply: z.object({ answer: z.number() }),
     };
-    const answering = (signals: unknown[]) => {
-      const client = makeClient();
+    const answering = (signals: unknown[], client = makeClient()) => {
       client.sendSignal = (async (signal: unknown) => {
         signals.push(signal);
 
@@ -561,8 +560,15 @@ describe("request and reply", () => {
 
     test("a request that breaks the schema is dropped, whether it started the run or came later", async () => {
       const signals: unknown[] = [];
+      const client = makeClient();
+      const warn = vi.spyOn(
+        (client as unknown as Record<symbol, { warn: (m: string) => void }>)[
+          Symbol.for("inngest.internalLogger")
+        ] as { warn: (m: string) => void },
+        "warn",
+      );
 
-      const { output } = await run(answering(signals).fn, {
+      const { output } = await run(answering(signals, client).fn, {
         event: message("request", undefined, "t1", {
           payload: { n: "x" },
           replyTo: "sig-1",
@@ -572,6 +578,7 @@ describe("request and reply", () => {
             payload: {},
             replyTo: "sig-2",
           }),
+          message("request", undefined, "t1", { replyTo: "sig-4" }),
           message("user", "ok"),
           message("request", undefined, "t1", {
             payload: { n: 5 },
@@ -582,6 +589,56 @@ describe("request and reply", () => {
 
       expect(output).toEqual(["ok", { n: 5 }]);
       expect(signals).toEqual([{ signal: "sig-3", data: { answer: 10 } }]);
+
+      // One warning per dropped request: the starting one, one with the wrong
+      // shape and one with no payload at all.
+      const dropped = warn.mock.calls.filter(([text]) => {
+        return String(text).includes("Dropped agent/message");
+      });
+
+      expect(dropped).toHaveLength(3);
+      expect(String(dropped[0]?.[0])).toContain("n:");
+      warn.mockRestore();
+    });
+
+    test("a request without a payload is delivered when the schema allows it", async () => {
+      const signals: unknown[] = [];
+      const client = makeClient();
+      client.sendSignal = (async (signal: unknown) => {
+        signals.push(signal);
+
+        return { runId: "r" };
+      }) as typeof client.sendSignal;
+
+      const { output } = await run(
+        createAgentFunction(
+          client,
+          {
+            id: "bot",
+            kv: createKv({ adapter: memoryKvAdapter() }),
+            requests: {
+              request: z.object({ n: z.number() }).optional(),
+              reply: z.object({ answer: z.string() }),
+            },
+          },
+          async ({ inbox }) => {
+            const m = await inbox.next();
+            if (m?.data.kind !== "request") {
+              return "not a request";
+            }
+
+            await m.reply({ answer: "no payload" });
+
+            return m.data.payload ?? "undefined payload";
+          },
+        ).fn,
+        { event: message("request", undefined, "t1", { replyTo: "sig-1" }) },
+      );
+
+      expect(output).toBe("undefined payload");
+      expect(signals).toEqual([
+        { signal: "sig-1", data: { answer: "no payload" } },
+      ]);
     });
 
     test("an async schema works", async () => {
