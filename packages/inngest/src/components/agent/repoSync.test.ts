@@ -239,7 +239,7 @@ describe("repo checkout and sync", () => {
     ).rejects.toThrow(/can't start with/);
   });
 
-  test("a hook or an insteadOf rule planted in the checkout cannot reach the token", async () => {
+  test("hooks planted in the checkout do not run and insteadOf rules are removed on sync", async () => {
     const { chmodSync } = await import("node:fs");
     await checkout();
     const stolen = join(root, "stolen.txt");
@@ -277,5 +277,60 @@ describe("repo checkout and sync", () => {
     await expect(
       repo(sandbox, { repo: "--upload-pack=x", path: work }),
     ).rejects.toThrow(/can't start with/);
+  });
+
+  test("a push goes to the repo's URL, whatever the checkout's config says", async () => {
+    const checkoutOf = await checkout();
+    const elsewhere = join(root, "elsewhere.git");
+    git(root, "init", "--quiet", "--bare", "-b", "main", elsewhere);
+
+    git(work, "checkout", "--quiet", "-b", "agent/fix");
+    writeFileSync(join(work, "fix.txt"), "fix\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "fix");
+    // The model plants a push URL and a rewrite rule after the checkout.
+    git(work, "config", "remote.origin.pushurl", elsewhere);
+    git(work, "config", `url.${elsewhere}.pushInsteadOf`, origin);
+
+    await checkoutOf.push("agent/fix");
+
+    expect(git(origin, "rev-parse", "refs/heads/agent/fix")).toHaveLength(40);
+    expect(
+      spawnSync("git", ["-C", elsewhere, "rev-parse", "agent/fix"]).status,
+    ).not.toBe(0);
+  });
+
+  test("keep fails rather than overwrite local changes", async () => {
+    await checkout();
+    writeFileSync(join(work, "a.txt"), "local edit\n");
+    git(seed, "pull", "--quiet", "origin", "main");
+    writeFileSync(join(seed, "a.txt"), "remote edit\n");
+    git(seed, "commit", "--quiet", "-am", "edit a");
+    git(seed, "push", "--quiet", "origin", "main");
+    git(seed, "checkout", "--quiet", "-b", "other");
+    writeFileSync(join(seed, "a.txt"), "other edit\n");
+    git(seed, "commit", "--quiet", "-am", "other");
+    git(seed, "push", "--quiet", "origin", "other");
+
+    await expect(checkout({ ref: "other", sync: "keep" })).rejects.toThrow();
+    expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("local edit\n");
+  });
+
+  test("reset removes untracked directories", async () => {
+    await checkout();
+    writeFileSync(join(work, ".gitignore"), "cache/\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "ignore");
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(work, "cache"));
+    writeFileSync(join(work, "cache", "x"), "x");
+    mkdirSync(join(work, "scratch"));
+    writeFileSync(join(work, "scratch", "y"), "y");
+
+    await checkout();
+
+    expect(existsSync(join(work, "scratch"))).toBe(false);
+    // The ignore rule was in a commit the reset discarded, so cache is untracked.
+    expect(existsSync(join(work, "cache", "x"))).toBe(false);
   });
 });

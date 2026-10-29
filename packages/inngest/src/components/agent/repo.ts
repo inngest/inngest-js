@@ -96,7 +96,8 @@ export interface Repo {
 // The token reaches git as configuration in the environment of the one git
 // process that talks to the remote (`auth ...`, a wrapper of `git`), so it never appears in an
 // argument, a URL, a config file or the remote, and no other git process of the
-// script (nor a hook it runs) can read it. `GIT_TOKEN` itself is dropped from the
+// script (nor a hook it runs) inherits it. A concurrent process of the same user
+// in the sandbox could still read it from /proc while the command runs. `GIT_TOKEN` itself is dropped from the
 // script's environment at once. Hooks and the file system monitor are off for
 // every git command here, because the checkout is in a sandbox that the model
 // can write to.
@@ -107,9 +108,15 @@ if [ -n "$GIT_TOKEN" ]; then
 fi
 unset GIT_TOKEN
 g() { git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+# Rewrite rules in the checkout could send a fetch or push (and the token) to
+# another host, so they are removed before the token is used.
+scrub() {
+  g -C "$DIR" config --local --name-only --get-regexp '^url\\..*\\.(push)?insteadof$' 2>/dev/null |
+    while read -r key; do g -C "$DIR" config --local --unset-all "$key"; done
+}
 auth() {
   if [ -n "$HEADER" ]; then
-    env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader "GIT_CONFIG_VALUE_0=$HEADER" git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"
+    env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader "GIT_CONFIG_VALUE_0=$HEADER" git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c http.proxy= "$@"
   else
     g "$@"
   fi
@@ -120,10 +127,7 @@ auth() {
 // and brings it to the ref. The last line it prints is `repo:<action>:<sha>`.
 const checkoutScript = `${prelude}
 if [ -e "$DIR/.git" ]; then
-  # insteadOf rules in the checkout could send the fetch (and the token) to
-  # another host, so they are removed, and the raw URL is compared.
-  g -C "$DIR" config --local --name-only --get-regexp '^url\\..*\\.(push)?insteadof$' 2>/dev/null |
-    while read -r key; do g -C "$DIR" config --local --unset-all "$key"; done
+  scrub
   have=$(g -C "$DIR" config --local --get remote.origin.url 2>/dev/null || true)
   if [ "$have" != "$URL" ]; then
     if [ "$SYNC" = keep ]; then
@@ -132,7 +136,7 @@ if [ -e "$DIR/.git" ]; then
     fi
     if [ -n "$have" ]; then g -C "$DIR" remote set-url origin "$URL"; else g -C "$DIR" remote add origin "$URL"; fi || exit 1
   fi
-  auth -C "$DIR" fetch --force --quiet --tags --prune origin || exit 1
+  auth -C "$DIR" fetch --force --quiet --no-recurse-submodules --tags --prune origin || exit 1
   if [ -z "$REF" ]; then
     auth -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
     REF=$(g -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
@@ -141,7 +145,7 @@ if [ -e "$DIR/.git" ]; then
   if [ "$SYNC" = keep ]; then
     # Commits that only a detached HEAD holds would be left behind: keep them.
     if ! g -C "$DIR" symbolic-ref -q HEAD >/dev/null && [ -n "$(g -C "$DIR" rev-list -n1 HEAD --not --branches --remotes 2>/dev/null)" ]; then
-      g -C "$DIR" branch "detached-$(g -C "$DIR" rev-parse --short HEAD)" || exit 1
+      g -C "$DIR" branch "detached-$(g -C "$DIR" rev-parse --short HEAD)" 2>/dev/null || true
     fi
     if g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
       if g -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
@@ -155,6 +159,7 @@ if [ -e "$DIR/.git" ]; then
       g -C "$DIR" checkout --quiet --detach "$REF" || exit 1
     fi
   else
+    rm -f "$DIR/.git/index.lock"
     g -C "$DIR" rebase --abort >/dev/null 2>&1
     g -C "$DIR" merge --abort >/dev/null 2>&1
     if g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
@@ -162,7 +167,7 @@ if [ -e "$DIR/.git" ]; then
     else
       g -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
     fi
-    g -C "$DIR" clean --quiet -fd || exit 1
+    g -C "$DIR" clean --quiet -ffd || exit 1
   fi
   action=synced
 else
@@ -176,7 +181,8 @@ printf 'repo:%s:%s\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 `;
 
 const pushScript = `${prelude}
-auth -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+scrub
+auth -C "$DIR" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH"
 `;
 
 /**
@@ -184,7 +190,10 @@ auth -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
  * branches from it. If `path` already holds a checkout, as in a sandbox
  * restored from a thread's snapshot, it is fetched and brought to `ref` instead
  * (see `sync`). The token stays out of the sandbox: it is only in the
- * environment of the clone, fetch and push commands.
+ * environment of the clone, fetch and push commands. Git hooks are off for
+ * these commands (the checkout is writable by the model, so a hook there could
+ * read the token): a repository that relies on a `pre-push` hook, Git LFS for
+ * one, does not get it.
  *
  * @example
  * ```ts
@@ -267,7 +276,10 @@ export const repo = async (
   const sha = done?.[2] ?? stdout.trim().split("\n").pop() ?? "";
 
   const push = async (branch: string): Promise<void> => {
-    await git("push", `git push ${branch}`, pushScript, { BRANCH: branch });
+    await git("push", `git push ${branch}`, pushScript, {
+      BRANCH: branch,
+      URL: url,
+    });
   };
 
   return {
