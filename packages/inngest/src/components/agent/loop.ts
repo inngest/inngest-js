@@ -738,8 +738,8 @@ const loop = async <TTools extends SandboxTools>(
     )) as AgentModelResponse;
     steered = 0;
 
-    // What the call cost, when the loop has a price; priced from tokens, so a
-    // reply that reported none costs nothing.
+    // What the call cost, when the loop has a price; a reply that reported no
+    // tokens costs nothing.
     const callUsage = reply.usage ?? { input: 0, output: 0 };
     const cost = options.price
       ? priceOf(options.price, callUsage, reply.model)

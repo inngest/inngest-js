@@ -41,25 +41,28 @@ export type AgentPriceTable = Record<
  */
 export type AgentPrice = AgentPriceFunction | AgentPriceTable;
 
+const checked = (cost: number): number => {
+  if (!Number.isFinite(cost) || cost < 0) {
+    throw new Error(
+      `price must give a number of dollars from 0 up, and gave ${cost}`,
+    );
+  }
+
+  return cost;
+};
+
 /**
- * The cost in USD of one model call, or `undefined` when the table has no rate
- * for the model.
+ * The cost in USD of one model call. A table with no rate for the model (and
+ * no `"*"`) throws, since a call that costs nothing would let a dollar budget
+ * go on forever.
  */
 export const priceOf = (
   price: AgentPrice,
   usage: AgentUsage,
   model: string | undefined,
-): number | undefined => {
+): number => {
   if (typeof price === "function") {
-    const cost = price(usage, model);
-
-    if (!Number.isFinite(cost) || cost < 0) {
-      throw new Error(
-        `price() must return a number of dollars from 0 up, and returned ${cost}`,
-      );
-    }
-
-    return cost;
+    return checked(price(usage, model));
   }
 
   const rate =
@@ -67,7 +70,13 @@ export const priceOf = (
       ? price[model]
       : undefined) ?? price["*"];
 
-  return rate
-    ? (usage.input * rate.input + usage.output * rate.output) / 1_000_000
-    : undefined;
+  if (!rate) {
+    throw new Error(
+      `price has no rate for the model ${model === undefined ? "(the reply named none)" : `"${model}"`}: add it, or a "*" rate for any other`,
+    );
+  }
+
+  return checked(
+    (usage.input * rate.input + usage.output * rate.output) / 1_000_000,
+  );
 };

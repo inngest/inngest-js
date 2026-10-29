@@ -37,28 +37,48 @@ describe("priceOf", () => {
     expect(priceOf(table, { input: 1_000_000, output: 0 }, undefined)).toBe(1);
   });
 
-  test("a table with no rate for the model prices nothing", () => {
-    expect(
+  test("a table with no rate for the model throws, so a budget can't silently stop counting", () => {
+    expect(() =>
       priceOf(
         { "claude-x": { input: 3, output: 15 } },
         { input: 5, output: 5 },
         "y",
       ),
-    ).toBeUndefined();
-    expect(
+    ).toThrow('no rate for the model "y"');
+    expect(() =>
+      priceOf(
+        { "claude-x": { input: 3, output: 15 } },
+        { input: 5, output: 5 },
+        undefined,
+      ),
+    ).toThrow("the reply named none");
+    expect(() =>
       priceOf(
         { constructor: { input: 3, output: 15 } },
         { input: 5, output: 5 },
         "toString",
       ),
-    ).toBeUndefined();
+    ).toThrow("no rate for the model");
+  });
+
+  test("a rate that gives something other than dollars throws", () => {
+    expect(() =>
+      priceOf({ "*": { input: -2, output: 1 } }, { input: 5, output: 5 }, "m"),
+    ).toThrow(/must give a number of dollars/);
+    expect(() =>
+      priceOf(
+        { "*": { input: 3 } as unknown as { input: number; output: number } },
+        { input: 5, output: 5 },
+        "m",
+      ),
+    ).toThrow(/must give a number of dollars/);
   });
 
   test("a function that returns something that isn't dollars throws", () => {
     for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
       expect(() =>
         priceOf(() => bad, { input: 1, output: 1 }, undefined),
-      ).toThrow(/must return a number of dollars/);
+      ).toThrow(/must give a number of dollars/);
     }
   });
 });
