@@ -16,6 +16,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "inbox-listener-view-agent";
@@ -37,8 +38,8 @@ export const inboxListenerView = scenario({
 
       for await (const message of inbox) {
         if (message.name === event("deploy")) {
-          await record(`main:${(message.data as { n: number }).n}`);
-        } else if (message.content === "wait") {
+          await record(`main:${(message.data as unknown as { n: number }).n}`);
+        } else if (textOf(message) === "wait") {
           await record("message:wait");
 
           const deploys = await inbox.listen(event("deploy"), {

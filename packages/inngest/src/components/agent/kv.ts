@@ -1171,7 +1171,7 @@ function currentIds(): KvScopeIds | undefined {
   const thread =
     agent?.thread ??
     sessions.agent_thread ??
-    (ctx.event?.name === "agent/message"
+    (ctx.event?.name?.startsWith("agent/")
       ? (ctx.event.data as { thread?: string })?.thread
       : undefined);
 

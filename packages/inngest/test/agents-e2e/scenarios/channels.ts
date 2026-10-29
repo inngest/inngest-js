@@ -19,6 +19,7 @@ import {
   slack,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 export const channels = scenario({
@@ -63,7 +64,7 @@ export const channels = scenario({
 
         const result = await agent.loop({
           model: script([{ say: "all done" }]),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
         });
 
@@ -93,7 +94,7 @@ export const channels = scenario({
           const message = await inbox.next();
 
           await kv.thread.update(kvKey<string[]>("texts"), (texts) => {
-            return [...(texts ?? []), message?.content ?? ""];
+            return [...(texts ?? []), textOf(message) ?? ""];
           });
         }
 

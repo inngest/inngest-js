@@ -33,7 +33,7 @@ import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
 
 /**
- * The name of the event every thread message is sent as.
+ * The name of the event `thread.send()` sends.
  */
 export const agentMessageEvent = agentMessage.name;
 
@@ -422,10 +422,9 @@ export function getThread<TRequest = unknown, TReply = unknown>(
 
       await sendEvent(
         `thread:${key}:stop`,
-        agentStop.create(
-          { agent, thread: key, when } satisfies AgentStopData,
-          { meta },
-        ),
+        agentStop.create({ agent, thread: key, when } satisfies AgentStopData, {
+          meta,
+        }),
       );
 
       return { stopped: true };

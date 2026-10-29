@@ -190,8 +190,7 @@ describe("function context in the body", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          kind: "user",
-          content: "hi",
+          text: "hi",
         },
       },
     });
@@ -239,8 +238,7 @@ describe("function context in the body", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          kind: "user",
-          content: "hi",
+          text: "hi",
         },
       },
     });

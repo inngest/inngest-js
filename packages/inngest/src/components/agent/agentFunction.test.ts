@@ -18,7 +18,7 @@ import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentMessage, type AgentModelResponse, agent } from "./loop.ts";
 import { skills } from "./skills.ts";
-import { run } from "./test-helpers.ts";
+import { run, textOf } from "./test-helpers.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -34,10 +34,39 @@ const message = (
   thread = "t1",
   extra: Record<string, unknown> = {},
 ) => {
-  return {
-    name: "agent/message",
-    data: { agent: `${testClientId}/bot`, thread, kind, content, ...extra },
+  const routing = { agent: `${testClientId}/bot`, thread };
+  const { id, ts, ...data } = extra;
+  const carried = {
+    ...(id !== undefined && { id }),
+    ...(ts !== undefined && { ts }),
   };
+
+  switch (kind) {
+    case "steer":
+      return {
+        name: "agent/steer",
+        ...carried,
+        data: { ...routing, text: content, ...data },
+      };
+    case "stop":
+      return {
+        name: "agent/stop",
+        ...carried,
+        data: { ...routing, when: "nextTurn", ...data },
+      };
+    case "request":
+      return {
+        name: "agent/request",
+        ...carried,
+        data: { ...routing, ...data },
+      };
+    default:
+      return {
+        name: "agent/message",
+        ...carried,
+        data: { ...routing, text: content, ...data },
+      };
+  }
 };
 
 const trigger = (content: string) => {
@@ -71,9 +100,13 @@ describe("agent function", () => {
       key: "event.data.thread",
       mode: "skip",
     });
-    expect(config.triggers[0]?.event).toBe("agent/message");
+    // A stop never starts a run.
+    expect(config.triggers.map((t) => t.event)).toEqual([
+      "agent/message",
+      "agent/steer",
+      "agent/request",
+    ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
-    expect(config.triggers[0]?.if).toContain('kind != "stop"');
   });
 
   test("the trigger is message 0, later messages are turns, and the conversation carries across turns", async () => {
@@ -93,7 +126,7 @@ describe("agent function", () => {
 
               return say(`ok ${m.seq}`);
             }),
-            prompt: m.content ?? "",
+            prompt: m,
             tools: {},
             history,
             ...control,
@@ -136,13 +169,13 @@ describe("agent function", () => {
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
             };
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });
         const next = await inbox.next();
 
-        return [result.stopped, result.turns, next?.content];
+        return [result.stopped, result.turns, textOf(next)];
       },
     );
 
@@ -159,7 +192,7 @@ describe("agent function", () => {
     expect(output).toEqual(["stopped", 1, "next"]);
   });
 
-  test("an inbox message is the event flat, with the thread message fields beside it", async () => {
+  test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -171,9 +204,14 @@ describe("agent function", () => {
           return {
             name: m?.name,
             seq: m?.seq,
-            kind: m?.kind,
-            content: m?.content,
-            hasEvent: m ? "event" in m : null,
+            text: textOf(m),
+            extra: m
+              ? Object.keys(m).filter((key) => {
+                  return !["data", "id", "name", "seq", "ts", "user"].includes(
+                    key,
+                  );
+                })
+              : null,
             isMessage: m?.is("agent/message"),
           };
         });
@@ -189,57 +227,17 @@ describe("agent function", () => {
       {
         name: "agent/message",
         seq: 0,
-        kind: "user",
-        content: "go",
-        hasEvent: false,
+        text: "go",
+        extra: [],
         isMessage: true,
       },
       {
-        name: "agent/message",
+        name: "agent/steer",
         seq: 1,
-        kind: "steer",
-        content: "left",
-        hasEvent: false,
-        isMessage: true,
+        text: "left",
+        extra: [],
+        isMessage: false,
       },
-    ]);
-  });
-
-  test("the event's fields win over a thread message field of the same name", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        await inbox.next();
-        const second = await inbox.next();
-
-        return [
-          second?.id,
-          second?.name,
-          second?.data,
-          second?.ts,
-          second?.seq,
-        ];
-      },
-    );
-    const colliding = message("steer", "left", "t1", {
-      id: "from-thread",
-      name: "from-thread",
-      ts: -1,
-      seq: -1,
-    });
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [{ ...colliding, id: "evt-real", ts: 1234 }],
-    });
-
-    expect(output).toEqual([
-      "evt-real",
-      "agent/message",
-      colliding.data,
-      1234,
-      1,
     ]);
   });
 
@@ -251,20 +249,20 @@ describe("agent function", () => {
         await inbox.next();
         const again = await inbox.next();
 
-        return [again?.name, again?.id, again?.data, again?.content];
+        return [again?.name, again?.id, again?.data];
       },
     );
 
     const { output } = await run(fn, {
       event: trigger("go"),
       saved: [
-        message("user", "retry", "t1", {
+        message("user", undefined, "t1", {
           event: { id: "evt9", name: "slack/message", data: { text: "hi" } },
         }),
       ],
     });
 
-    expect(output).toEqual(["slack/message", "evt9", { text: "hi" }, "retry"]);
+    expect(output).toEqual(["slack/message", "evt9", { text: "hi" }]);
   });
 
   test("a stop message that arrives while waiting is skipped", async () => {
@@ -275,7 +273,7 @@ describe("agent function", () => {
         const first = await inbox.next();
         const second = await inbox.next();
 
-        return [first?.content, second?.content];
+        return [textOf(first), textOf(second)];
       },
     );
 
@@ -311,12 +309,12 @@ describe("inbox arrival", () => {
         // No `...control`: the loop finds the inbox itself.
         const result = await agent.loop({
           model: loopOnce(seen),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
         });
         const next = await inbox.next();
 
-        return [result.stopped, result.turns, next?.content];
+        return [result.stopped, result.turns, textOf(next)];
       },
     );
 
@@ -356,7 +354,7 @@ describe("inbox arrival", () => {
                   toolCalls: [{ id: "c1", name: "missing", input: {} }],
                 };
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
         });
 
@@ -385,7 +383,7 @@ describe("inbox arrival", () => {
 
         return [
           drained.map((m) => {
-            return m.kind;
+            return m.name;
           }),
           after,
         ];
@@ -398,7 +396,10 @@ describe("inbox arrival", () => {
       timeouts: 1,
     });
 
-    expect(output).toEqual([["user", "stop", "steer"], undefined]);
+    expect(output).toEqual([
+      ["agent/message", "agent/stop", "agent/steer"],
+      undefined,
+    ]);
   });
 
   describe("onArrival", () => {
@@ -409,8 +410,8 @@ describe("inbox arrival", () => {
         {
           id: "bot",
           kv,
-          onArrival: async ({ message: arrived, thread }) => {
-            calls.push(`${thread}:${arrived.content}`);
+          onArrival: async ({ event: arrived, thread }) => {
+            calls.push(`${thread}:${(arrived.data as { text?: string }).text}`);
           },
         },
         async () => {},
@@ -499,7 +500,7 @@ describe("inbox arrival", () => {
 
 describe("inbox sources", () => {
   const ci = (state: string) => {
-    return { name: "ci/status", data: { t: "t1", state }, stream: 1 };
+    return { name: "ci/status", data: { t: "t1", state }, stream: 4 };
   };
 
   test("a configured source maps to the thread and its events are user messages for the model", async () => {
@@ -518,9 +519,6 @@ describe("inbox sources", () => {
           {
             event: "deploy/done",
             thread: "event.data.t",
-            message: (e) => {
-              return `deployed ${(e.data as { v: string }).v}`;
-            },
           },
         ],
       },
@@ -529,7 +527,7 @@ describe("inbox sources", () => {
         const red = await inbox.next();
         const deployed = await inbox.next();
 
-        return [red?.content, red?.kind, red?.name, deployed?.content];
+        return [red?.name, red?.data, deployed?.name, deployed?.data];
       },
     );
 
@@ -537,7 +535,7 @@ describe("inbox sources", () => {
       event: trigger("go"),
       incoming: [
         ci("red"),
-        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 2 },
+        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 5 },
       ],
       onOp: (op) => {
         const opts = op.opts as { event?: string; if?: string } | undefined;
@@ -549,10 +547,10 @@ describe("inbox sources", () => {
     });
 
     expect(output).toEqual([
-      JSON.stringify({ event: "ci/status", data: { t: "t1", state: "red" } }),
-      "user",
       "ci/status",
-      "deployed 1.2",
+      { t: "t1", state: "red" },
+      "deploy/done",
+      { t: "t1", v: "1.2" },
     ]);
     // The filter is over `async` and ties the source to the run's thread.
     expect(filters).toContainEqual([
@@ -560,45 +558,6 @@ describe("inbox sources", () => {
       '(async.data.state != "ok") && (async.data.t) == "t1"',
     ]);
     expect(filters).toContainEqual(["deploy/done", '(async.data.t) == "t1"']);
-  });
-
-  test("each source words its own messages, even for the same event", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
-        inbox: [
-          {
-            event: "ci/status",
-            thread: "event.data.t",
-            message: () => "from the first",
-          },
-          {
-            event: "ci/status",
-            if: 'event.data.t == "t1"',
-            message: () => "from the second",
-          },
-        ],
-      },
-      async ({ inbox }) => {
-        await inbox.next();
-        const a = await inbox.next();
-        const b = await inbox.next();
-
-        return [a?.content, b?.content];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      incoming: [
-        { ...ci("red"), stream: 1 },
-        { ...ci("red"), stream: 2 },
-      ],
-    });
-
-    expect(output).toEqual(["from the first", "from the second"]);
   });
 
   test("a source's events are checked against its event type, and ones that break it are dropped", async () => {
@@ -616,7 +575,7 @@ describe("inbox sources", () => {
         await inbox.next();
         const kept = await inbox.next();
 
-        return JSON.parse(kept?.content ?? "null");
+        return kept ? { event: kept.name, data: kept.data } : null;
       },
     );
 
@@ -627,13 +586,13 @@ describe("inbox sources", () => {
           id: "typed-bad",
           name: "ci/typed",
           data: { t: "t1", state: 7 },
-          stream: 1,
+          stream: 4,
         },
         {
           id: "typed-ok",
           name: "ci/typed",
           data: { t: "t1", state: "green" },
-          stream: 1,
+          stream: 4,
         },
       ],
     });
@@ -679,7 +638,7 @@ describe("inbox sources", () => {
       ops.map((op) => {
         return [op.mode, op.stream ?? 0];
       }),
-    ).toContainEqual(["stop", 1]);
+    ).toContainEqual(["stop", 4]);
   });
 
   test("listen() returns the view of its event: it reads with its own cursor while the main inbox gets the events too", async () => {
@@ -735,11 +694,11 @@ describe("inbox sources", () => {
         const second = await inbox.next();
 
         return [
-          first?.content,
+          textOf(first),
           all.map((m) => {
-            return m.kind;
+            return m.name;
           }),
-          second?.content,
+          textOf(second),
         ];
       },
     );
@@ -749,7 +708,11 @@ describe("inbox sources", () => {
       saved: [message("user", "b"), message("stop"), message("user", "c")],
     });
 
-    expect(output).toEqual(["go", ["user", "stop", "user"], "b"]);
+    expect(output).toEqual([
+      "go",
+      ["agent/message", "agent/stop", "agent/message"],
+      "b",
+    ]);
   });
 });
 
@@ -763,7 +726,7 @@ describe("inbox timeouts", () => {
         const expired = await inbox.next({ timeout: "1s" });
         const second = await inbox.next();
 
-        return [first?.content, expired, second?.content];
+        return [textOf(first), expired, textOf(second)];
       },
     );
 
@@ -805,7 +768,7 @@ describe("inbox timeouts", () => {
         await inbox.next();
         const second = await inbox.next({ timeout: "30s" });
 
-        return second?.content;
+        return textOf(second);
       },
     );
 
@@ -857,7 +820,11 @@ describe("agent cleanup", () => {
 
     const { ops } = await run(fn, { event: trigger("hi") });
 
-    expect(ops[0]).toEqual({ id: "inbox:0:open", mode: "open" });
+    expect(ops[0]).toMatchObject({
+      id: "inbox:open:all",
+      mode: "open",
+      streams: 4,
+    });
   });
 });
 
@@ -875,13 +842,13 @@ describe("steering", () => {
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
             };
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });
         const next = await inbox.next();
 
-        return [result.stopped, next?.content];
+        return [result.stopped, textOf(next)];
       },
     );
 
@@ -987,11 +954,11 @@ describe("thread state", () => {
             id: `turn${m.seq}`,
             model: agent.model(async () => {
               return {
-                ...say(`reply to ${m.content}`),
+                ...say(`reply to ${textOf(m)}`),
                 usage: { input: 10, output: 5 },
               };
             }),
-            prompt: m.content ?? "",
+            prompt: m,
             tools: {},
             ...control,
           });
@@ -1013,7 +980,7 @@ describe("thread state", () => {
         summary: "reply to one",
         usage: { input: 10, output: 5 },
         runId: "run",
-        inflight: { content: "one" },
+        inflight: { text: "one" },
         restarts: 0,
       },
       {
@@ -1022,7 +989,7 @@ describe("thread state", () => {
         summary: "reply to two",
         usage: { input: 20, output: 10 },
         runId: "run",
-        inflight: { content: "two" },
+        inflight: { text: "two" },
         restarts: 0,
       },
     ]);
@@ -1074,9 +1041,10 @@ describe("thread state", () => {
       makeClient(),
       { id: "bot", kv },
       async ({ inbox }) => {
+        await inbox.next();
         const before = ((await record(kv)) as { status?: string } | undefined)
           ?.status;
-        // The trigger is a stop, which the inbox skips.
+        // The next message is a stop, which the inbox skips.
         const expired = await inbox.next({ timeout: "1s" });
 
         seen.push(
@@ -1087,7 +1055,11 @@ describe("thread state", () => {
       },
     );
 
-    await run(fn, { event: message("stop"), timeouts: 1 });
+    await run(fn, {
+      event: trigger("go"),
+      saved: [message("stop")],
+      timeouts: 1,
+    });
 
     // The body ran again for each request; the last run is the final one.
     expect(seen.length).toBeGreaterThanOrEqual(3);
@@ -1383,8 +1355,8 @@ describe("request and reply", () => {
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         for await (const m of inbox) {
-          if (m.kind === "request") {
-            await m.reply({ answer: (m.payload as { n: number }).n * 2 });
+          if (m.name === "agent/request") {
+            await m.reply({ answer: (m.data.payload as { n: number }).n * 2 });
 
             break;
           }
@@ -1423,13 +1395,13 @@ describe("request and reply", () => {
 
           for (let i = 0; i < 2; i++) {
             const m = await inbox.next();
-            if (m?.kind === "request") {
-              seen.push(m.payload);
+            if (m?.name === "agent/request") {
+              seen.push(m.data.payload);
               await m.reply({
-                answer: (m.payload as { n: number }).n * 2,
+                answer: (m.data.payload as { n: number }).n * 2,
               });
             } else if (m) {
-              seen.push(m.content);
+              seen.push(textOf(m));
             }
           }
 
@@ -1488,7 +1460,7 @@ describe("request and reply", () => {
       // One warning per dropped request: the starting one, one with the wrong
       // shape and one with no payload at all.
       const dropped = warn.mock.calls.filter(([text]) => {
-        return String(text).includes("Dropped agent/message");
+        return String(text).includes("Dropped agent/request");
       });
 
       expect(dropped).toHaveLength(3);
@@ -1518,13 +1490,13 @@ describe("request and reply", () => {
           },
           async ({ inbox }) => {
             const m = await inbox.next();
-            if (m?.kind !== "request") {
+            if (m?.name !== "agent/request") {
               return "not a request";
             }
 
             await m.reply({ answer: "no payload" });
 
-            return m.payload ?? "undefined payload";
+            return m.data.payload ?? "undefined payload";
           },
         ).fn,
         { event: message("request", undefined, "t1", { replyTo: "sig-1" }) },
@@ -1575,8 +1547,8 @@ describe("request and reply", () => {
           },
           async ({ inbox }) => {
             const m = await inbox.next();
-            if (m?.kind === "request") {
-              await m.reply({ answer: (m.payload as { n: number }).n });
+            if (m?.name === "agent/request") {
+              await m.reply({ answer: (m.data.payload as { n: number }).n });
             }
           },
         ).fn,
@@ -1614,7 +1586,9 @@ describe("request and reply", () => {
         const m = await inbox.next();
 
         try {
-          await m?.reply({ answer: "forty-two" } as never);
+          if (m?.name === "agent/request") {
+            await m.reply({ answer: "forty-two" } as never);
+          }
         } catch (error) {
           return (error as Error).message;
         }
@@ -1632,28 +1606,6 @@ describe("request and reply", () => {
 
     expect(output).toContain("message.reply() data");
     expect(signals).toEqual([]);
-  });
-
-  test("replying to a message that is not a request throws", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const m = await inbox.next();
-
-        try {
-          await m?.reply({});
-        } catch (error) {
-          return (error as Error).message;
-        }
-
-        return "replied";
-      },
-    );
-
-    const { output } = await run(fn, { event: trigger("hi") });
-
-    expect(output).toContain("not a request");
   });
 });
 
@@ -1703,7 +1655,7 @@ describe("agent limits", () => {
 
             return spend(8, 4);
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });
@@ -1793,7 +1745,7 @@ describe("agent limits", () => {
 
             return spend(1, 1);
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });

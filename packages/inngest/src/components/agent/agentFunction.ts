@@ -142,8 +142,8 @@ import {
   compileTriggers,
   dataProblem,
   schemaProblem,
-  startOf,
   singletonKey,
+  startOf,
   type ThreadKeyConfig,
   type ThreadTriggerEvent,
   type ThreadTriggers,
@@ -498,9 +498,7 @@ export interface AgentFunctionConfig<
    * the body returned but before the run is cleaned up may be. A `step` is
    * given: use it for the posts.
    */
-  onArrival?: (
-    context: AgentArrivalContext,
-  ) => Promise<void> | void;
+  onArrival?: (context: AgentArrivalContext) => Promise<void> | void;
 
   /**
    * Event sources that reach a live run of the thread they map to and never
@@ -836,7 +834,11 @@ type TriggerMessage<TEvent> = TEvent extends {
   name: infer TName extends string;
   data: infer TData;
 }
-  ? InboxMessage<TData, TName>
+  ? // An agent whose `on` is not typed has events of any name; they stay out
+    // of the union, so `name` still narrows the agent's own events.
+    string extends TName
+    ? never
+    : InboxMessage<TData, TName>
   : never;
 
 /**
@@ -1027,7 +1029,7 @@ export type AgentFunctionInput<TTypes extends AgentTypes = AgentTypes> = Omit<
  * plain function (`step` with `step.sandbox` when the client has the sandbox
  * middleware, `group`, `defer`, `runId`, `logger`, `attempt` and the rest)
  * with the agent's own fields beside it. `event` is the agent's, not the
- * function's: its `data` is the thread message, and `data.event` is the
+ * function's: its `data` has the agent and thread, and `data.event` is the
  * trigger event. There is no `events`, because an agent never runs on a
  * batch.
  */
