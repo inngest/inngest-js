@@ -65,7 +65,109 @@ export interface GitPush {
    * The text of those commits' changes, for scanning.
    */
   patch: () => Promise<string>;
+
+  /**
+   * The same paths as `paths`, with each file's content before and after the
+   * push, read only when asked. Use it for checks that need the whole file,
+   * such as the `scripts` of a `package.json` or the size of a binary.
+   */
+  files: GitPushFile[];
 }
+
+/**
+ * One file as it is at a point of the push.
+ */
+export interface GitPushBlob {
+  /**
+   * Size in bytes.
+   */
+  size: number;
+
+  /**
+   * Whether git treats it as binary: a NUL byte in its first 8000 bytes.
+   */
+  binary: boolean;
+
+  /**
+   * The content.
+   */
+  bytes: Uint8Array;
+
+  /**
+   * The content as UTF-8 text, or `undefined` for a binary file.
+   */
+  text: string | undefined;
+}
+
+/**
+ * A path a push touches, with its content before and after. The "before" is
+ * the file in the parent of the push's oldest new commit; the "after" is the
+ * file in the pushed commit. A file the push adds has no "before", and one it
+ * deletes has no "after". Each is read from the host's copy of the bundle on
+ * first use and kept, so a policy may call them freely.
+ */
+export interface GitPushFile {
+  /**
+   * The path, relative to the repository root.
+   */
+  path: string;
+
+  /**
+   * The file before the push, or `undefined` when it did not exist.
+   */
+  before: () => Promise<GitPushBlob | undefined>;
+
+  /**
+   * The file after the push, or `undefined` when the push deletes it.
+   */
+  after: () => Promise<GitPushBlob | undefined>;
+}
+
+/**
+ * Reads the file at `rev:path` in the repository at `repo`.
+ * @param repo The repository directory.
+ * @param rev A commit, or `undefined` when there is none.
+ * @param path The path in that commit.
+ */
+const readBlob = async (
+  repo: string,
+  rev: string | undefined,
+  path: string,
+): Promise<GitPushBlob | undefined> => {
+  if (rev === undefined) {
+    return undefined;
+  }
+
+  const read = await hostGit(["cat-file", "blob", `${rev}:${path}`], {
+    cwd: repo,
+  });
+  if (read.exitCode !== 0) {
+    return undefined;
+  }
+
+  const bytes = read.stdoutBytes;
+  const binary = bytes.subarray(0, 8000).includes(0);
+
+  return {
+    size: bytes.length,
+    binary,
+    bytes: new Uint8Array(bytes),
+    text: binary ? undefined : bytes.toString("utf8"),
+  };
+};
+
+/**
+ * Runs `load` once, on the first call.
+ */
+const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+  let loaded: Promise<T> | undefined;
+
+  return () => {
+    loaded ??= load();
+
+    return loaded;
+  };
+};
 
 /**
  * What a policy decides: nothing allows the push, `{ refuse }` stops it with a
@@ -96,7 +198,16 @@ export type GitPolicy = (
   push: GitPush,
 ) => GitPolicyResult | Promise<GitPolicyResult>;
 
-export type GitRun = { exitCode: number; stdout: string; stderr: string };
+export type GitRun = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+
+  /**
+   * Standard output as bytes, for content that is not text.
+   */
+  stdoutBytes: Buffer;
+};
 
 /**
  * The authorization for the remote: a header for the host's git, and the
@@ -259,9 +370,12 @@ export const hostGit = async (
     child.stderr.on("data", take(err));
     child.on("error", reject);
     child.on("close", (code) => {
+      const stdoutBytes = Buffer.concat(out);
+
       resolve({
         exitCode: code ?? 1,
-        stdout: Buffer.concat(out).toString("utf8"),
+        stdoutBytes,
+        stdout: stdoutBytes.toString("utf8"),
         stderr: Buffer.concat(err).toString("utf8"),
       });
     });
@@ -495,6 +609,31 @@ export const pushBundle = async (
       let ref = target.dst;
 
       if (policy) {
+        // The file before the push: the parent of its oldest new commit.
+        const oldest = commits[commits.length - 1]?.sha;
+        const base = once(async () => {
+          if (oldest === undefined) {
+            return undefined;
+          }
+
+          const parent = await hostGit(
+            ["rev-parse", "--verify", "--quiet", `${oldest}^`],
+            { cwd: repo },
+          );
+
+          return parent.exitCode === 0 ? parent.stdout.trim() : undefined;
+        });
+        const files: GitPushFile[] = [...paths].sort().map((path) => {
+          return {
+            path,
+            before: once(async () => {
+              return readBlob(repo, await base(), path);
+            }),
+            after: once(async () => {
+              return readBlob(repo, sha, path);
+            }),
+          };
+        });
         const decision = await policy({
           remote,
           ref,
@@ -506,6 +645,7 @@ export const pushBundle = async (
           fastForward,
           commits,
           paths: [...paths].sort(),
+          files,
           patch: async () => {
             const printed = await hostGit(
               [

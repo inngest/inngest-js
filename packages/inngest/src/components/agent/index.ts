@@ -11,6 +11,8 @@ export type {
   GitPolicy,
   GitPolicyResult,
   GitPush,
+  GitPushBlob,
+  GitPushFile,
 } from "../sandbox/gitPush.ts";
 export type { SandboxHandle } from "../sandbox/types.ts";
 export type {
