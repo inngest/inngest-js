@@ -70,7 +70,7 @@ export interface InboxToolMessage {
 }
 
 /**
- * What the tools need of an inbox: `inbox.listen`, `next` and `current`.
+ * What the tools need of an inbox: `inbox.listen`, `next`, `unread` and `current`.
  */
 export interface InboxToolInbox {
   listen: (
@@ -84,6 +84,7 @@ export interface InboxToolInbox {
   next: (options: {
     timeout: number | string;
   }) => Promise<InboxToolMessage | null | undefined>;
+  unread: () => Promise<InboxToolMessage[]>;
   current: () => Promise<InboxToolMessage[]>;
 }
 
@@ -161,8 +162,9 @@ const render = (message: InboxToolMessage) => {
  * - `inbox_wait({ timeout })` waits for the next message and returns it, or
  *   says that nothing came. In `run_code` it suspends the script like any
  *   waiting tool, so the wait can be long.
- * - `inbox_read()` returns the latest messages that have arrived, without
- *   waiting and without moving the inbox's read position (`inbox.current()`).
+ * - `inbox_read({ all? })` returns what has arrived since the last read,
+ *   without waiting (`inbox.unread()`). With `all` it returns the latest 20 of
+ *   everything so far, without moving the read position (`inbox.current()`).
  * - `inbox_stop({ as })` stops a listener.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
@@ -280,15 +282,21 @@ export const createInboxTools = (
 
     inbox_read: tool.group({
       description:
-        "Return the latest 20 messages that have arrived on the conversation and your listeners, with how many there are in all, without waiting. Each is tagged with its source.",
-      input: z.object({}),
-      run: async () => {
-        const all = await inbox.current();
+        "Return the messages that have arrived on the conversation and your listeners since you last read, without waiting. Each is tagged with its source. With all: true, return the latest 20 of everything so far instead, and how many there are in all.",
+      input: z.object({ all: z.boolean().optional() }),
+      run: async ({ all }) => {
+        if (all) {
+          const everything = await inbox.current();
 
-        return {
-          total: all.length,
-          messages: all.slice(-maxReadMessages).map(render),
-        };
+          return {
+            total: everything.length,
+            messages: everything.slice(-maxReadMessages).map(render),
+          };
+        }
+
+        const fresh = await inbox.unread();
+
+        return { messages: fresh.map(render) };
       },
     }),
 

@@ -35,6 +35,11 @@ const fakeInbox = () => {
 
       return queue.shift() ?? null;
     },
+    unread: async () => {
+      calls.push(["unread"]);
+
+      return queue.splice(0);
+    },
     current: async () => {
       calls.push(["current"]);
 
@@ -205,23 +210,41 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     expect(setup().tools.inbox_read.waits).toBeUndefined();
   });
 
-  test("read returns the latest messages and how many there are, long ones clipped", async () => {
-    const { call, queue } = setup();
+  test("read returns what is unread, long messages clipped", async () => {
+    const { call, queue, calls } = setup();
 
     queue.push(
       { name: "ci/status", data: { n: 1 } },
       { name: "ci/status", data: { text: "y".repeat(5000) } },
     );
 
-    const { messages, total } = (await call("inbox_read")) as {
-      total: number;
+    const { messages } = (await call("inbox_read")) as {
       messages: { source: string; content: string }[];
     };
 
+    expect(calls).toEqual([["unread"]]);
     expect(messages).toHaveLength(2);
-    expect(total).toBe(2);
     expect(messages[1]?.content).toContain("more characters");
     expect(messages[1]?.content.length).toBeLessThan(4_300);
+    await expect(call("inbox_read")).resolves.toEqual({ messages: [] });
+  });
+
+  test("read with all returns the latest 20 of everything and how many there are", async () => {
+    const { call, queue, calls } = setup();
+
+    for (let n = 0; n < 25; n += 1) {
+      queue.push({ name: "ci/status", data: { n } });
+    }
+
+    const { messages, total } = (await call("inbox_read", { all: true })) as {
+      total: number;
+      messages: { content: string }[];
+    };
+
+    expect(calls).toEqual([["current"]]);
+    expect(total).toBe(25);
+    expect(messages).toHaveLength(20);
+    expect(messages[0]?.content).toContain('{"n":5}');
   });
 
   test("stop stops the listener and frees its name and its slot", async () => {
