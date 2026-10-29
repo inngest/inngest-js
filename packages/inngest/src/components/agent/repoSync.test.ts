@@ -366,6 +366,45 @@ describe("repo checkout and sync", () => {
       sha: tip,
     });
     expect((await checkout({ ref: "HEAD", sync: "keep" })).sha).toBe(tip);
+    // The default branch, not a branch named HEAD.
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
+    expect(git(work, "branch", "--list", "HEAD")).toBe("");
+  });
+
+  test("keep resumes a branch of the agent's own that the remote lacks, reset refuses it", async () => {
+    await checkout();
+    git(work, "checkout", "--quiet", "-b", "mine");
+    writeFileSync(join(work, "mine.txt"), "mine\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "mine");
+    const mine = git(work, "rev-parse", "HEAD");
+    git(work, "checkout", "--quiet", "main");
+
+    expect((await checkout({ ref: "mine", sync: "keep" })).sha).toBe(mine);
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("mine");
+    await expect(checkout({ ref: "mine" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+  });
+
+  test("a clone refuses a ref the sync would refuse", async () => {
+    await expect(checkout({ ref: "origin/main" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+  });
+
+  test("keep does not overwrite a tag the agent made", async () => {
+    await checkout();
+    git(work, "tag", "mine-tag");
+    const local = git(work, "rev-parse", "mine-tag");
+    git(seed, "tag", "mine-tag");
+    upstream("b.txt", "two\n");
+    git(seed, "tag", "-f", "mine-tag");
+    git(seed, "push", "--quiet", "origin", "refs/tags/mine-tag");
+
+    await checkout({ sync: "keep" });
+
+    expect(git(work, "rev-parse", "mine-tag")).toBe(local);
   });
 
   test("a branch deleted on the remote is gone after a sync", async () => {

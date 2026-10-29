@@ -18,7 +18,9 @@ import type { DurableSandbox } from "../sandbox/types.ts";
  */
 export interface RepoOptions {
   /**
-   * A GitHub `owner/name`, or any git URL or path.
+   * A GitHub `owner/name`, or any git URL or path. Give a path in the same
+   * (absolute) form every time: `keep` compares it with the remote the
+   * checkout stored.
    */
   repo: string;
 
@@ -124,6 +126,14 @@ auth() {
     g "$@"
   fi
 }
+# A branch the remote has, a tag, or a commit. A branch the remote deleted can
+# still exist locally, and must not stand in for it (a deleted tag does stay,
+# since pruning tags would delete the agent's own).
+known() {
+  g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$1" ||
+    g -C "$DIR" show-ref --verify --quiet "refs/tags/$1" ||
+    printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{7,64}$'
+}
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT
 g init --quiet --bare "$T" || exit 1
@@ -146,17 +156,18 @@ if [ -e "$DIR/.git" ]; then
   g --git-dir="$T" fetch --quiet --no-recurse-submodules "$DIR" '+refs/remotes/origin/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
   auth --git-dir="$T" fetch --force --prune --quiet --no-recurse-submodules --tags -- "$URL" '+refs/heads/*:refs/remotes/origin/*' || exit 1
   g -C "$DIR" fetch --force --quiet --no-recurse-submodules --prune "$T" '+refs/remotes/origin/*:refs/remotes/origin/*' || exit 1
-  g -C "$DIR" fetch --force --quiet --no-recurse-submodules "$T" '+refs/tags/*:refs/tags/*' || exit 1
+  if [ "$SYNC" = keep ]; then
+    # A tag the agent made, or moved, is kept, so these are not forced.
+    g -C "$DIR" fetch --quiet --no-recurse-submodules "$T" 'refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
+  else
+    g -C "$DIR" fetch --force --quiet --no-recurse-submodules "$T" '+refs/tags/*:refs/tags/*' || exit 1
+  fi
   if [ -z "$REF" ]; then
     REF=$(auth --git-dir="$T" ls-remote --symref -- "$URL" HEAD | sed -n 's|^ref: refs/heads/\\(.*\\)[[:space:]][[:space:]]*HEAD$|\\1|p')
     [ -n "$REF" ] || { printf '%s\\n' "cannot find the default branch of $URL" >&2; exit 1; }
   fi
-  # A branch the remote has, a tag, or a commit. A branch the remote deleted can
-  # still exist locally, and must not stand in for it (a deleted tag does stay,
-  # since pruning tags would delete the agent's own).
-  if ! g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF" &&
-     ! g -C "$DIR" show-ref --verify --quiet "refs/tags/$REF" &&
-     ! printf '%s' "$REF" | grep -Eq '^[0-9a-fA-F]{7,64}$'; then
+  # Keep also resumes a branch of the agent's own that the remote lacks.
+  if ! known "$REF" && { [ "$SYNC" != keep ] || ! g -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; }; then
     printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
     exit 1
   fi
@@ -173,6 +184,8 @@ if [ -e "$DIR/.git" ]; then
       fi
       g -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
         printf '%s\\n' "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
+    elif g -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+      g -C "$DIR" checkout --quiet "$REF" || exit 1
     else
       g -C "$DIR" checkout --quiet --detach "$REF" || exit 1
     fi
@@ -192,6 +205,10 @@ else
   # No checkout in the clone, which holds the token: filters and attributes
   # run in the tokenless checkout after it.
   auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" || exit 1
+  if [ -n "$REF" ] && ! known "$REF"; then
+    printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
+    exit 1
+  fi
   # A name that is both a branch and a tag is the branch, as it is on sync.
   if [ -n "$REF" ] && g -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
     g -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
