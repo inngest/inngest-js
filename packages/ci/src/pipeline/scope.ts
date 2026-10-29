@@ -8,6 +8,7 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
+import type { DeferFn, DeferHandle } from "inngest/types";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -294,6 +295,14 @@ export interface CiRunScope {
    * runs find it.
    */
   createdSnapshots: Set<string>;
+  /**
+   * The defers that delete the snapshots in `createdSnapshots` if the run ends
+   * before it deletes them itself, by snapshot ID. A build run has none: its
+   * snapshots go to the run that invoked it.
+   */
+  snapshotCleanups: Map<string, DeferHandle>;
+  /** The SDK's `defer`, which starts a function when the run ends. */
+  defer: DeferFn;
   /**
    * The IDs of the machines this run created, which it destroys when it ends.
    * It only ever destroys what it holds the ID of.

@@ -8,10 +8,15 @@
 import type { Inngest } from "inngest";
 import { NonRetriableError } from "inngest";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
-import { resolveTakenName, snapshotState } from "../cache/cache.ts";
+import {
+  resolveTakenName,
+  retireSupersededSnapshots,
+  snapshotState,
+} from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
+import { releaseSnapshot } from "../pipeline/snapshotCleanup.ts";
 import type {
   BuildInfo,
   CiJobScope,
@@ -795,7 +800,21 @@ const createNamedSnapshot = async (
   let refusal: unknown;
 
   try {
-    return await attempt(stepId);
+    const saved = await attempt(stepId);
+
+    // A cache entry replaces the ones before it in its slot. A run's own
+    // snapshot is named by its pipeline run and shares its prefix with its
+    // siblings, so it replaces nothing.
+    if (!ephemeral) {
+      await retireSupersededSnapshots(
+        run,
+        `${stepId}${scopeSeparator}superseded`,
+        name,
+        saved.snapshotId,
+      );
+    }
+
+    return saved;
   } catch (error) {
     if (!hasCode(error, nameTakenCode)) {
       if (!isNameRefused(error)) {
@@ -914,8 +933,8 @@ export const destroyRunMachines = async (
  * A build run deletes none: other builds in the pipeline share its snapshots,
  * so it hands them to the run that invoked it, and the root run deletes them.
  *
- * Best effort, in one step: a snapshot that can't be deleted is logged and
- * left to expire, and never fails the run.
+ * Best effort, in one step: a snapshot that can't be deleted is logged, and its
+ * defer tries again when the run ends. It never fails the run.
  */
 export const deleteRunSnapshots = async (
   run: CiRunScope,
@@ -927,7 +946,7 @@ export const deleteRunSnapshots = async (
 
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
-  await ciRun(run, steps.cleanUpSnapshots(attempt), () => {
+  const { failed } = await ciRun(run, steps.cleanUpSnapshots(attempt), () => {
     return deleteSnapshots(run.ci.client, run.createdSnapshots, (id, error) => {
       run.ci.logger?.warn(
         { snapshotId: id, error },
@@ -935,4 +954,12 @@ export const deleteRunSnapshots = async (
       );
     });
   });
+
+  // The ones that are gone need no defer. One that couldn't be deleted keeps
+  // its, which tries again when the run ends.
+  for (const id of [...run.createdSnapshots]) {
+    if (!failed.includes(id)) {
+      releaseSnapshot(run, id);
+    }
+  }
 };

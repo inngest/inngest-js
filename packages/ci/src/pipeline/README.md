@@ -13,5 +13,6 @@ The client and the run engine.
 - `names.ts`: what each step and span CI writes is called in the trace, and the origin that marks CI's own work.
 - `spans.ts`: the one place CI touches the SDK's experimental trace-span API.
 - `buildLock.ts`: how concurrent runs that miss the same cached job build it once. A run listens for `ci/build.done`, looks the snapshot up, and on a miss sends `ci/build.requested`. The `ci/build` function that takes it claims a machine named for the entry (`ci-build-<hash>`); only one succeeds, builds, snapshots, and when its run ends destroys the machine and sends `ci/build.done` with what the build gave back. A build whose run ends sends a failed `ci/build.done` from its own cleanup. Jobs with a `from` are invoked instead.
+- `snapshotCleanup.ts`: how a run's snapshots are deleted however it ends. A run registers a defer for each snapshot it owns, and `ci-snapshot-cleanup` deletes it by ID when the run ends, including on cancel. A run that deletes its snapshots itself aborts the defers, and a build run that succeeds aborts its own once the run that invoked it has taken them over.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.

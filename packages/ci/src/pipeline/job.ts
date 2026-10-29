@@ -66,6 +66,7 @@ import {
 } from "../util.ts";
 import { chainOf } from "./appJob.ts";
 import { requestBuild, takesBuildLock } from "./buildLock.ts";
+import { ownSnapshot } from "./snapshotCleanup.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { decodeFailure, failedReport } from "./cacheBuild.ts";
 import { ciRun } from "./metadata.ts";
@@ -670,11 +671,11 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   }
 
   for (const id of built.createdSnapshots) {
-    run.createdSnapshots.add(id);
+    ownSnapshot(run, id);
   }
 
   if (built.snapshotId && !built.cached) {
-    run.createdSnapshots.add(built.snapshotId);
+    ownSnapshot(run, built.snapshotId);
   }
 };
 
@@ -1220,6 +1221,12 @@ const snapshotBuilt = async (
     ...(scope.request?.unnamed ? { unnamed: true } : {}),
     ...(scope.config.cache ? {} : { ephemeral: true }),
   });
+
+  // A snapshot only this run or the one that asked for the build needs is
+  // deleted when this run ends in failure, and handed over when it succeeds.
+  if (taken && !(scope.config.cache && taken.named)) {
+    ownSnapshot(run, taken.snapshotId);
+  }
 
   setOutcome(scope, {
     ...(taken ? { snapshotId: taken.snapshotId } : {}),

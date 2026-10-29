@@ -53,6 +53,7 @@ import {
 } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
 import { getRunScope } from "./scope.ts";
+import { snapshotCleanupFunction } from "./snapshotCleanup.ts";
 
 export interface CiOptions {
   /**
@@ -414,6 +415,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         ...generated,
         // Any job can be started from, so one function builds them all.
         internals.cacheBuild(),
+        snapshotCleanupFunction(client),
         cleanupFunction({ client, config: { id: cacheBuildFunctionId } }),
         ...cacheRefreshFunctions({
           client,

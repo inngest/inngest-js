@@ -249,6 +249,8 @@ const newRunScope = ({
     inlineJobs: new Map(),
     jobCalls: new Map(),
     createdSnapshots: new Set(),
+    snapshotCleanups: new Map(),
+    defer: ctx.defer,
     createdMachines: new Set(),
     summaries: [],
     openChecks: new Map(),

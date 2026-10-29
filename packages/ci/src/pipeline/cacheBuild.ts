@@ -39,6 +39,7 @@ import { runCombosKey } from "./matrix.ts";
 import { pipelineFunctionOptions, runPipeline } from "./pipeline.ts";
 import type { CiInternals, CiRunScope, JobSummary } from "./scope.ts";
 import { getRunScope, requestOf } from "./scope.ts";
+import { handOffSnapshots } from "./snapshotCleanup.ts";
 
 /** The event every invoked function runs from. */
 const invokedEvent = "inngest/function.invoked";
@@ -245,7 +246,14 @@ export const cacheBuildFunction = ({
         },
         build: data,
         handler: async (): Promise<CacheBuildResult> => {
-          return buildSnapshot({ data, jobs, matrices });
+          const built = await buildSnapshot({ data, jobs, matrices });
+          const run = getRunScope();
+
+          if (run) {
+            handOffSnapshots(run);
+          }
+
+          return built;
         },
         ctx,
       });

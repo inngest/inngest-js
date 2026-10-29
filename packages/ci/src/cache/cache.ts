@@ -24,6 +24,7 @@ import type { StepSpec } from "../pipeline/names.ts";
 import { steps } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, joinId, localRepo, rootRunIdOf } from "../pipeline/scope.ts";
+import { releaseSnapshot } from "../pipeline/snapshotCleanup.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -853,13 +854,99 @@ export const deleteSnapshot = async (
     // Outside the step, which a replay doesn't run: the set is rebuilt on
     // every replay, so a snapshot gone now must leave it on each of them.
     if (result.gone) {
-      run.createdSnapshots.delete(snapshotId);
+      releaseSnapshot(run, snapshotId);
     }
 
     return result.gone;
   } catch {
     // Best effort only.
     return false;
+  }
+};
+
+/** How many pages of snapshots a superseded-snapshot search reads at most. */
+const supersededPageLimit = 20;
+
+/**
+ * Delete the cache entries a new snapshot replaces: the ones in its slot (the
+ * same scope, job, repository, app and input, whatever the key) that are older
+ * than it, once it is ready. A key that changes with every push would
+ * otherwise leave one snapshot behind per push.
+ *
+ * Only the build holding the key's lock calls this, so two builds of one key
+ * never compete. Two builds of different keys in a slot each keep the newer of
+ * the pair, since neither deletes one that is newer than itself.
+ *
+ * Best effort and memoized: a snapshot that can't be deleted stays until it
+ * expires, and nothing here fails the build.
+ */
+export const retireSupersededSnapshots = async (
+  run: CiRunScope,
+  stepId: string,
+  /** The name of the snapshot that was just saved. */
+  name: string,
+  snapshotId: string,
+): Promise<void> => {
+  // Everything in the name but its key, which is its last part.
+  const slot = name.slice(0, name.lastIndexOf("/") + 1);
+
+  try {
+    await ciRun(run, steps.retireSupersededSnapshots(stepId), async () => {
+      const current = await waitUntilReady(run, snapshotId);
+
+      if (current?.status !== "READY") {
+        return { deleted: 0 };
+      }
+
+      let deleted = 0;
+      let cursor: string | undefined;
+
+      for (let page = 0; page < supersededPageLimit; page++) {
+        const listed = (await snapshotsClient(run).list({
+          limit: 100,
+          ...(cursor ? { cursor } : {}),
+        })) as {
+          items: SnapshotResource[];
+          page?: { hasMore?: boolean; cursor?: string };
+        };
+
+        for (const old of listed.items) {
+          if (
+            old.id === snapshotId ||
+            old.status !== "READY" ||
+            !old.name?.startsWith(slot) ||
+            old.createdAt > current.createdAt
+          ) {
+            continue;
+          }
+
+          try {
+            const snapshot = await snapshotsClient(run).get(old.id);
+
+            await snapshot?.delete();
+
+            deleted++;
+          } catch (error) {
+            if (!isSnapshotNotFound(error)) {
+              run.ci.logger?.warn(
+                { snapshotId: old.id, error },
+                "Couldn't delete a snapshot a new one replaced; it will expire on its own",
+              );
+            }
+          }
+        }
+
+        cursor = listed.page?.cursor;
+
+        if (!listed.page?.hasMore || !cursor) {
+          break;
+        }
+      }
+
+      return { deleted };
+    });
+  } catch {
+    // Best effort only.
   }
 };
 

@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { InngestFunction } from "inngest";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files } from "../cache/cache.ts";
@@ -31,6 +32,7 @@ import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import type { FakeSnapshot } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { invokedRunCount, runFunction } from "../testing/runFunction.ts";
+import { snapshotCleanupFunctionId } from "./snapshotCleanup.ts";
 import { fakeSchema } from "../testing/schema.ts";
 import { temporalDuration } from "../testing/temporal.ts";
 import type { Job } from "../types.ts";
@@ -2347,8 +2349,72 @@ describe("cache", () => {
     }
 
     expect(ran(api, "pnpm install")).toBe(2);
-    // The first key's entry is not deleted: it expires on its own.
-    expect(namedSnapshots(api)).toHaveLength(2);
+    // The second key's entry replaces the first's, which shared its slot.
+    expect(namedSnapshots(api)).toHaveLength(1);
+  });
+
+  test("a new key replaces the entry before it only for its own job", async () => {
+    const api = createFakeSandboxApi();
+
+    for (const key of ["v1", "v2"]) {
+      const { ci } = setup({ api });
+
+      const jobs = ["setup", "lint"].map((id) => {
+        return ci.job(
+          { id, cache: { key: id === "lint" ? "v1" : key } },
+          async () => {
+            await $`pnpm install`;
+          },
+        );
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await Promise.all(
+            jobs.map((job) => {
+              return job();
+            }),
+          );
+        }),
+        { event: prEvent },
+      );
+    }
+
+    const names = namedSnapshots(api).map((name) => {
+      return name.split("/")[2];
+    });
+
+    // `setup` changed key and kept one entry; `lint` didn't change.
+    expect(names.sort()).toEqual(["lint", "setup"]);
+  });
+
+  test("a run's own snapshots are not replaced by each other", async () => {
+    const { api, ci } = setup();
+    let seen = 0;
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const left = ci.job({ id: "left", from: base }, async () => {
+      await $`pnpm build`;
+    });
+
+    const right = ci.job({ id: "right", from: base }, async () => {
+      await $`pnpm test`;
+
+      seen = api.snapshots.size;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all([left(), right()]);
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(seen).toBeGreaterThan(0);
   });
 
   test("the same branch, job and key in another repository misses", async () => {
@@ -6529,6 +6595,109 @@ describe("run snapshot cleanup", () => {
     expect(sizeBeforeRetry).toBe(1);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  /** Start every defer a run left, as the platform does once the run ends. */
+  const runDefers = async (
+    ci: ReturnType<typeof setup>["ci"],
+    defers: Array<{ data: unknown }>,
+  ) => {
+    const cleanup = ci.functions().find((fn) => {
+      return (
+        (fn as unknown as { opts: { id?: string } }).opts.id ===
+        snapshotCleanupFunctionId
+      );
+    });
+
+    expect(cleanup).toBeDefined();
+
+    for (const defer of defers) {
+      await runFunction(cleanup as InngestFunction.Any, {
+        event: {
+          name: "inngest/deferred.schedule",
+          data: {
+            ...(defer.data as object),
+            _inngest: { parent_fn_slug: "ci-pr", parent_run_id: "01TESTRUN" },
+          },
+        },
+      });
+    }
+  };
+
+  const fromChain = (ci: ReturnType<typeof setup>["ci"]) => {
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job({ id: "child", from: base }, async () => {
+      await $`pnpm build`;
+    });
+
+    const grandchild = ci.job({ id: "grandchild", from: child }, async () => {
+      await $`pnpm test`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await grandchild();
+    });
+  };
+
+  test("a run that passes leaves no defer to start", async () => {
+    const { api, ci } = setup();
+
+    const result = await runFunction(fromChain(ci), { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.snapshots.size).toBe(0);
+    expect(result.defers).toEqual([]);
+  });
+
+  test("a run that is cancelled at any point has its registered snapshots deleted by their defers", async () => {
+    let cleaned = 0;
+
+    for (let cancelAfter = 1; cancelAfter <= 40; cancelAfter++) {
+      const { api, ci } = setup();
+
+      const result = await runFunction(fromChain(ci), {
+        event: prEvent,
+        cancelAfterRequests: cancelAfter,
+      });
+
+      if (result.type !== "function-cancelled") {
+        continue;
+      }
+
+      const registered = result.defers.map((defer) => {
+        return (defer.data as { snapshotId: string }).snapshotId;
+      });
+
+      const before = api.snapshots.size;
+
+      await runDefers(ci, result.defers);
+
+      for (const snapshotId of registered) {
+        expect(
+          [...api.snapshots.values()].some((snapshot) => {
+            return snapshot.id === snapshotId;
+          }),
+        ).toBe(false);
+      }
+
+      if (registered.length > 0 && before > 0 && api.snapshots.size === 0) {
+        cleaned++;
+      }
+    }
+
+    // Cancelled while a build's snapshot existed and had its defer.
+    expect(cleaned).toBeGreaterThan(0);
+  });
+
+  test("a snapshot that is already gone is fine for its defer", async () => {
+    const { api, ci } = setup();
+
+    await runDefers(ci, [{ data: { snapshotId: "does-not-exist" } }]);
+
+    expect(api.snapshots.size).toBe(0);
   });
 });
 
