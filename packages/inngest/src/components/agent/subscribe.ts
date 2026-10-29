@@ -22,6 +22,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { timeStr } from "../../helpers/strings.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
@@ -71,6 +72,24 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
 }
 
 /**
+ * How long a `next()` waits: a number of milliseconds, a time string such as
+ * `"30s"`, a date, or a duration, as for `step.waitForEvent()`.
+ */
+export type NextTimeout = Parameters<typeof timeStr>[0];
+
+/**
+ * Options of `next()`.
+ */
+export interface NextOptions {
+  /**
+   * Stop waiting after this long: `next()` then returns `undefined`. A message
+   * that arrives later is not lost; the next read gets it. Durations under a
+   * second round up to one second, as for `step.waitForEvent()`.
+   */
+  timeout?: NextTimeout;
+}
+
+/**
  * One event a subscription listens for.
  */
 export interface SubscribeEvent {
@@ -101,11 +120,21 @@ export type SubscribeOptions =
  * for a generic parameter is not checked for extra fields, so a typo such as
  * `iff` would be dropped silently; this turns it into an error.
  */
-export type ExactOptions<TOpts> = Exclude<
-  keyof TOpts,
-  "event" | "if" | "events"
-> extends never
+export type ExactOptions<TOpts> = [
+  Exclude<keyof TOpts, "event" | "if" | "events"> | ExtraEventKeys<TOpts>,
+] extends [never]
   ? unknown
+  : never;
+
+/**
+ * The fields of the entries of `events` that a subscription event does not have.
+ */
+type ExtraEventKeys<TOpts> = TOpts extends {
+  events: readonly (infer TEvent)[];
+}
+  ? TEvent extends unknown
+    ? Exclude<keyof TEvent, "event" | "if">
+    : never
   : never;
 
 /**
@@ -241,6 +270,7 @@ export interface Subscription<
    * can with `waitForEvent`). `close()` ends a wait that is still open.
    */
   next(): Promise<TMessage | null>;
+  next(options: NextOptions): Promise<TMessage | null | undefined>;
 
   /**
    * Reads the next message if it has already arrived, without waiting. Use it
@@ -288,6 +318,7 @@ export type SubscribeOp = (
   mode: "open" | "park" | "poll" | "close",
   seq: number | undefined,
   stream: number,
+  park?: { timeout?: NextTimeout; attempt?: number },
 ) => Promise<unknown>;
 
 /**
@@ -310,6 +341,7 @@ export async function openSubscription<
   opts: SubscribeOptions,
   read: () => unknown[],
   skip: (id: string) => Promise<void>,
+  answerOf: (id: string) => { found: boolean; data?: unknown },
 ): Promise<Subscription<TData, TMessage>> {
   const streams = streamsOf(opts);
 
@@ -364,11 +396,19 @@ export async function openSubscription<
     return result;
   }
 
-  function next(): Promise<InboxMessage<TData> | null> {
-    return inOrder(readNext);
+  function next(options?: NextOptions) {
+    return inOrder(() => {
+      return readNext(options);
+    }) as Promise<InboxMessage<TData> | null | undefined>;
   }
 
-  async function readNext(): Promise<InboxMessage<TData> | null> {
+  // How many parks for each message timed out. Every park is its own step, so
+  // one that timed out is not answered again.
+  const timedOut = new Map<number, number>();
+
+  async function readNext(
+    options?: NextOptions,
+  ): Promise<InboxMessage<TData> | null | undefined> {
     const waiting = held.shift();
     if (waiting) {
       return waiting;
@@ -386,13 +426,37 @@ export async function openSubscription<
     // the park when the message exists; the function then runs again and finds
     // the message here. The state does not change during a request, so it is read once.
     const messages = read();
+    const attempt = timedOut.get(seq) ?? 0;
+    const parkId = attempt ? `${key}:${seq}:${attempt}` : `${key}:${seq}`;
+
+    // A park that timed out was recorded as such: a message that arrived since
+    // does not change that answer on a replay.
+    if (options?.timeout !== undefined) {
+      const recorded = answerOf(parkId);
+
+      if (recorded.found && recorded.data === null) {
+        timedOut.set(seq, attempt + 1);
+        await op(parkId, "park", seq, 0, { timeout: options.timeout, attempt });
+
+        return undefined;
+      }
+    }
 
     let answered: unknown;
 
     if (messages.length < seq) {
-      answered = await op(`${key}:${seq}`, "park", seq, 0);
+      answered = await op(parkId, "park", seq, 0, {
+        timeout: options?.timeout,
+        attempt,
+      });
+
+      if (answered === null) {
+        timedOut.set(seq, attempt + 1);
+
+        return undefined;
+      }
     } else {
-      await skip(`${key}:${seq}`);
+      await skip(parkId);
     }
 
     const message = messages[seq - 1];
@@ -483,7 +547,7 @@ export async function openSubscription<
   // The messages are built with a name and the data of the event; the caller's
   // `TMessage` is only a narrower view of the same objects.
   const subscription: Subscription<TData> = {
-    next,
+    next: next as Subscription<TData>["next"],
     poll,
     putBack(messages) {
       held.unshift(...messages);

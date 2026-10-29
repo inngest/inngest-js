@@ -194,6 +194,56 @@ describe("step.subscribe", () => {
     );
   });
 
+  test("next({ timeout }) returns undefined when nothing arrives, and a later read parks again as a new step", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next({ timeout: "1s" });
+        const second = await inbox.next({ timeout: "1s" });
+        const third = await inbox.next();
+
+        return [first, second, third?.data];
+      },
+    );
+
+    const { ops, output } = await run(fn, {
+      incoming: ["late"],
+      timeouts: 2,
+    });
+
+    expect(output).toEqual([undefined, undefined, "late"]);
+    // Three parks for message 1, each its own step.
+    expect(
+      new Set(
+        ops
+          .filter((op) => {
+            return op.mode === "park";
+          })
+          .map((op) => {
+            return op.id;
+          }),
+      ).size,
+    ).toBe(3);
+  });
+
+  test("a timeout that was recorded stays a timeout on replay, even though the message has arrived since", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next({ timeout: "1s" });
+        const second = await inbox.next();
+
+        return [first, second?.data];
+      },
+    );
+
+    const { output } = await run(fn, { incoming: ["late"], timeouts: 1 });
+
+    expect(output).toEqual([undefined, "late"]);
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

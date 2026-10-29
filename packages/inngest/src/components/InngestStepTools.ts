@@ -591,7 +591,7 @@ export const createStepTools = <
       const streams = streamsOf(opts);
 
       return openSubscription(
-        function op(stepId, mode, seq, stream) {
+        function op(stepId, mode, seq, stream, park) {
           const target = streams[stream];
 
           if (!target) {
@@ -606,6 +606,15 @@ export const createStepTools = <
               mode,
               ...(seq ? { seq } : {}),
               ...(stream ? { stream } : {}),
+              ...(park?.timeout === undefined
+                ? {}
+                : {
+                    timeout: timeStr(
+                      park.timeout,
+                      client[internalLoggerSymbol],
+                    ),
+                  }),
+              ...(park?.attempt ? { attempt: park.attempt } : {}),
             },
           });
         },
@@ -616,6 +625,13 @@ export const createStepTools = <
         },
         async function skip(stepId) {
           await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
+        },
+        function answerOf(stepId) {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(stepId) ?? {
+              found: false,
+            }
+          );
         },
       );
     }) as SubscribeTool<StepOptionsOrId>,
@@ -634,6 +650,8 @@ export const createStepTools = <
             mode: string;
             seq?: number;
             stream?: number;
+            timeout?: string;
+            attempt?: number;
           };
         },
       ) => Promise<unknown>

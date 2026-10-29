@@ -220,6 +220,14 @@ describe("step.subscribe", () => {
     // @ts-expect-error a mistyped option would be dropped, so it is an error
     await step.subscribe("typo", { event: order, iff: "async.data.id == 1" });
 
+    // @ts-expect-error a mistyped field of an event in the list
+    await step.subscribe("typo-in-list", {
+      events: [
+        { event: order },
+        { event: refund, iff: "async.data.amount > 1" },
+      ],
+    });
+
     // @ts-expect-error events and event are alternatives
     await step.subscribe("both", { event: order, events: [{ event: refund }] });
 
