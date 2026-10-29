@@ -234,8 +234,19 @@ export const recordEnd = (
    * The run that ended.
    */
   end: {
+    /**
+     * The run that ended.
+     */
     runId: string;
+
+    /**
+     * When it ended, in milliseconds since the epoch.
+     */
     at: number;
+
+    /**
+     * How it ended.
+     */
     finished: Finished;
 
     /**

@@ -336,9 +336,12 @@ export interface AgentFunctionConfig<
    * `true` or an object posts the failure to the agent's channels (`report`)
    * and resends the turn that was in flight, so a fresh run takes it up; a
    * turn that fails twice with the same error is not resent, and the failure
-   * is reported as stuck. Cancelled runs and completed runs are never
-   * resumed. How every run ended is kept either way: see `previousRun` and
-   * `thread.state().lastRun`.
+   * is reported as stuck. Only the message `inbox.next()` delivered last is
+   * resent: messages that arrived during the failed turn and were not read
+   * stay with the failed run. A cancelled run (a stop now, a `cancelOn` event
+   * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
+   * reported nor resumed, and a completed run is neither. How every run ended
+   * is kept either way: see `previousRun` and `thread.state().lastRun`.
    */
   recovery?: boolean | AgentRecovery;
 }
@@ -948,12 +951,12 @@ export function createAgentFunction(
         resuming: mine?.recovery === "resumed",
         repeated: mine?.recovery === "stuck" && recovery.resume !== false,
       };
-      const text = (recovery.message ?? failureText)(failure);
+      // A post that fails for good, or a `message` that throws, must not keep
+      // the turn from being taken up again.
+      try {
+        const text = (recovery.message ?? failureText)(failure);
 
-      // A post that fails for good must not keep the turn from being taken
-      // up again.
-      if (text !== false) {
-        try {
+        if (text !== false) {
           const context = {
             event: start as unknown as AgentConfigContext["event"],
           };
@@ -972,12 +975,12 @@ export function createAgentFunction(
           );
 
           await report(text);
-        } catch (error) {
-          logger.warn(
-            { runId, error: String(error).slice(0, 160) },
-            "The failure of a run could not be reported",
-          );
         }
+      } catch (error) {
+        logger.warn(
+          { runId, error: String(error).slice(0, 160) },
+          "The failure of a run could not be reported",
+        );
       }
 
       if (!failure.resuming) {

@@ -268,7 +268,14 @@ export const turnInFlight = (
  * What a run's `inngest/function.finished` event says about how it ended.
  */
 export interface Finished {
+  /**
+   * How the run ended.
+   */
   status: RunOutcome;
+
+  /**
+   * For a failed run: the error's name and message.
+   */
   error?: { name?: string; message: string };
 }
 
@@ -310,7 +317,16 @@ export interface Decision {
    * The new record for the thread's `lastRun`.
    */
   last: LastRun;
+
+  /**
+   * The same error had already failed this turn (or three different ones
+   * had).
+   */
   repeated: boolean;
+
+  /**
+   * The turn is resent to a fresh run.
+   */
   resuming: boolean;
 }
 

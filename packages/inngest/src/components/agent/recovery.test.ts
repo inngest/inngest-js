@@ -348,6 +348,22 @@ describe("the finished function", () => {
     expect(sent).toEqual([]);
   });
 
+  test("a message that throws does not keep the turn from being resent", async () => {
+    const { agent, sent } = setup({
+      recovery: {
+        message: () => {
+          throw new Error("bad template");
+        },
+      },
+    });
+
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
+    });
+
+    expect(sent).toHaveLength(1);
+  });
+
   test("a message that returns false posts nothing but still resumes", async () => {
     const { agent, sent, posts } = setup({
       recovery: {

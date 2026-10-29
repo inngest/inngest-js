@@ -243,10 +243,13 @@ export interface ThreadRecord {
   inflight?: { content?: string };
 
   /**
-   * The process (boot) that wrote the record last, and how many times the
-   * run has continued in another process since it began.
+   * The process (boot) that wrote the record last.
    */
   host?: string;
+
+  /**
+   * How many times the run has continued in another process since it began.
+   */
   restarts?: number;
 }
 
