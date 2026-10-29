@@ -293,7 +293,7 @@ export const github = {
       post: async (message) => {
         // GitHub rejects an empty comment, and a message of blocks alone (a
         // `report.finish({ blocks })`) has nothing here to show.
-        if (message.text === "") {
+        if (message.text.trim() === "") {
           return;
         }
 

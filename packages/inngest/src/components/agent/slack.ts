@@ -10,6 +10,7 @@
  * Text the agent writes is escaped, never parsed: a `<!channel>`, `<@U123>` or
  * `<https://x|label>` in model output reaches Slack as plain text.
  */
+import { NonRetriableError } from "../NonRetriableError.ts";
 import {
   apiError,
   assertAllowed,
@@ -188,9 +189,10 @@ const render = (message: ChannelMessage): string => {
 };
 
 /**
- * Slack allows 25 elements in an actions block, 100 options in a select, 3000
+ * Slack allows 50 blocks in a message, 25 elements in an actions block, 100 options in a select, 3000
  * characters in a section and 150 in an option value.
  */
+const maxBlocks = 50;
 const maxButtons = 25;
 const maxSelectOptions = 100;
 const maxSelectValue = 150;
@@ -528,6 +530,12 @@ export const slack = {
 
     return defineChannel({
       post: async (message) => {
+        if (message.blocks && message.blocks.length > maxBlocks) {
+          throw new NonRetriableError(
+            `slack.channel: a message holds at most ${maxBlocks} blocks; this one has ${message.blocks.length}.`,
+          );
+        }
+
         await call(options, "chat.postMessage", {
           channel: target.channel,
           thread_ts: target.threadTs,

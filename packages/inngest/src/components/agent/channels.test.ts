@@ -397,6 +397,18 @@ describe("adapters", () => {
     expect(calls[1]?.body).not.toHaveProperty("blocks");
   });
 
+  test("slack.channel rejects more than 50 blocks before calling Slack", async () => {
+    const blocks = Array.from({ length: 51 }, () => {
+      return { type: "divider" };
+    });
+
+    await expect(slackChannel().post({ text: "x", blocks })).rejects.toThrow(
+      NonRetriableError,
+    );
+
+    expect(calls).toHaveLength(0);
+  });
+
   test("Slack text is escaped and errors are marked", async () => {
     await slackChannel().post({ text: "<!channel> <@U1> <https://x|y> & z" });
 
@@ -493,6 +505,7 @@ describe("adapters", () => {
     const channel = github.channel(githubEvent, { repos: ["acme/app"] });
 
     await channel.post({ text: "", blocks: [{ type: "actions" }] });
+    await channel.post({ text: "  \n", blocks: [{ type: "actions" }] });
     await channel.post({ text: "hi", blocks: [{ type: "actions" }] });
 
     expect(calls).toHaveLength(1);
