@@ -96,6 +96,16 @@ export interface GitPushBlob {
   bytes: Uint8Array;
 
   /**
+   * The git file mode where it is known: with the host's git for both sides of
+   * a change, and on the API transport for the file after the push (the file
+   * before has none there). One of `100644`, `100755`
+   * (executable) or `120000` (a symlink, whose content is the link's target).
+   * With the host's git, a change of mode alone shows in `before.mode` and
+   * `after.mode`; on the API transport only `after.mode` is known.
+   */
+  mode?: string;
+
+  /**
    * The content as UTF-8 text, or `undefined` for a binary file or one that
    * is not valid UTF-8. A leading byte order mark is kept.
    */
@@ -138,6 +148,19 @@ let reading = 0;
 const waiting: (() => void)[] = [];
 
 /**
+ * Runs `load` once, on the first call.
+ */
+export const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+  let loaded: Promise<T> | undefined;
+
+  return () => {
+    loaded ??= load();
+
+    return loaded;
+  };
+};
+
+/**
  * Runs `fn` with at most four reads in flight, so a policy that reads every
  * file at once does not start a git process for each.
  */
@@ -157,6 +180,26 @@ const limited = async <T>(fn: () => Promise<T>): Promise<T> => {
     waiting.shift()?.();
   }
 };
+
+/**
+ * A file's content as a policy reads it.
+ */
+export const blobOf = (bytes: Uint8Array): GitPushBlob => {
+  const binary = bytes.subarray(0, 8000).includes(0);
+  let text: string | undefined;
+  if (!binary) {
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {}
+  }
+
+  return { size: bytes.length, binary, bytes, text };
+};
+
+/**
+ * The largest file a policy may read, as the error says.
+ */
+export const maxPolicyFileBytes = maxFileBytes;
 
 /**
  * Reads the file at `rev:path` in the repository at `repo`: `undefined` when
@@ -190,7 +233,7 @@ const readBlob = (
     const tab = entry.indexOf("\t");
     const meta = entry.slice(0, tab);
     const name = entry.slice(tab + 1);
-    const [, type = "", sha = ""] = meta.split(" ");
+    const [mode = "", type = "", sha = ""] = meta.split(" ");
     if (name !== path || type === "tree") {
       return undefined;
     }
@@ -220,40 +263,25 @@ const readBlob = (
     ok(read, `reading ${path}`);
 
     const raw = read.stdoutBytes;
-    const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.length);
-    const binary = bytes.subarray(0, 8000).includes(0);
-    let text: string | undefined;
-    if (!binary) {
-      try {
-        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {}
-    }
 
-    return { size: bytes.length, binary, bytes, text };
+    return {
+      ...blobOf(new Uint8Array(raw.buffer, raw.byteOffset, raw.length)),
+      mode,
+    };
   });
-};
-
-/**
- * Runs `load` once, on the first call.
- */
-const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
-  let loaded: Promise<T> | undefined;
-
-  return () => {
-    loaded ??= load();
-
-    return loaded;
-  };
 };
 
 /**
  * What a policy decides: nothing allows the push, `{ refuse }` stops it with a
  * message for whoever asked for the push, and `{ ref }` pushes to another ref
- * instead.
+ * instead. A policy that allows the push, or moves it, may add `notes`: lines
+ * that come back with the result (`PushedRef.notes`) for an audit trail,
+ * since anything the policy did as a side effect is lost when the push step
+ * replays.
  */
 export type GitPolicyResult =
   | { refuse: string }
-  | { ref: string }
+  | { ref?: string; notes?: string[] }
   | undefined
   // biome-ignore lint/suspicious/noConfusingVoidType: a policy that returns nothing has the type void
   | void;
@@ -512,7 +540,52 @@ export interface PushedRef {
    * Whether `ref` is the one that was asked for.
    */
   asked: boolean;
+
+  /**
+   * The notes the policy returned, if any.
+   */
+  notes?: string[];
 }
+
+const maxNotes = 20;
+const maxNoteChars = 500;
+
+/**
+ * Reads what a policy returned: a refusal, or the ref to push to and the
+ * notes to keep. An invalid ref or malformed notes throw, which fails the push.
+ */
+export const readVerdict = (
+  decision: GitPolicyResult,
+  asked: string,
+): { refuse: string } | { ref: string; notes: string[] } => {
+  const verdict = decision as Exclude<GitPolicyResult, void>;
+
+  if (verdict && "refuse" in verdict) {
+    return { refuse: verdict.refuse };
+  }
+
+  const ref = verdict?.ref ?? asked;
+
+  if (!isPushableRef(ref)) {
+    throw new Error(`The policy named an invalid ref: ${ref}`);
+  }
+
+  const notes = verdict?.notes ?? [];
+
+  if (
+    !Array.isArray(notes) ||
+    notes.length > maxNotes ||
+    notes.some((note) => {
+      return typeof note !== "string" || note.length > maxNoteChars;
+    })
+  ) {
+    throw new Error(
+      `The policy's notes must be at most ${maxNotes} strings of at most ${maxNoteChars} characters`,
+    );
+  }
+
+  return { ref, notes };
+};
 
 export type PushOutcome =
   | { pushed: PushedRef[] }
@@ -689,6 +762,7 @@ export const pushBundle = async (
           })
         ).exitCode === 0;
       let ref = target.dst;
+      let notes: string[] = [];
 
       if (policy) {
         // The file before the push is the file where this push forks from the
@@ -760,19 +834,14 @@ export const pushBundle = async (
             return printed.stdout;
           },
         });
-        const verdict = decision as Exclude<GitPolicyResult, void>;
+        const verdict = readVerdict(decision, ref);
 
-        if (verdict && "refuse" in verdict) {
+        if ("refuse" in verdict) {
           return { refused: verdict.refuse };
         }
 
-        if (verdict && "ref" in verdict) {
-          if (!isPushableRef(verdict.ref)) {
-            throw new Error(`The policy named an invalid ref: ${verdict.ref}`);
-          }
-
-          ref = verdict.ref;
-        }
+        ref = verdict.ref;
+        notes = verdict.notes;
       }
 
       const asked = ref === target.dst;
@@ -785,6 +854,7 @@ export const pushBundle = async (
           ...(oldSha !== undefined && { oldSha }),
           status: "non-fast-forward",
           asked,
+          ...(notes.length > 0 && { notes }),
         });
         continue;
       }
@@ -806,6 +876,7 @@ export const pushBundle = async (
         ...(oldSha !== undefined && { oldSha }),
         status: "pushed",
         asked,
+        ...(notes.length > 0 && { notes }),
       });
     }
 
