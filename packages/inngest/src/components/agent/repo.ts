@@ -24,7 +24,7 @@ export interface RepoOptions {
 
   /**
    * Branch, tag or commit to check out. Default is the repository's default
-   * branch.
+   * branch; `"HEAD"` means the same.
    */
   ref?: string;
 
