@@ -1,7 +1,8 @@
 /**
  * @module
  * EXPERIMENTAL: `repo()`, which checks a git repository out into a sandbox
- * and pushes branches from it. The token is only in the environment of the one
+ * (or brings the checkout a restored sandbox already holds up to date) and
+ * pushes branches from it. The token is only in the environment of the one
  * command that clones or pushes (redacted from traces), and never written to
  * git config or a file, so the model's own commands can't read it.
  */
@@ -37,6 +38,22 @@ export interface RepoOptions {
    * can be cloned.
    */
   token?: string | (() => string | Promise<string>);
+
+  /**
+   * What to do when `path` already holds a checkout, as in a sandbox restored
+   * from a thread's snapshot or recycled mid-run. The repository is fetched
+   * either way.
+   *
+   * - `"reset"` (default): the working copy becomes exactly `ref`. Local
+   *   commits on that branch, uncommitted changes and untracked files are
+   *   discarded, as if it were freshly cloned.
+   * - `"keep"`: nothing the agent did is discarded. `ref` is checked out (a
+   *   branch is fast-forwarded to the remote when it can be), uncommitted
+   *   changes come along, and a branch that has local commits or diverged
+   *   from the remote stays as it is. A checkout that would overwrite local
+   *   changes fails.
+   */
+  sync?: "reset" | "keep";
 }
 
 /**
@@ -49,7 +66,13 @@ export interface Repo {
   path: string;
 
   /**
-   * The commit that was checked out.
+   * Whether the repository was cloned into an empty `path` or the checkout
+   * already there was fetched and brought to `ref`.
+   */
+  action: "cloned" | "synced";
+
+  /**
+   * The commit that is checked out.
    */
   sha: string;
 
@@ -76,9 +99,36 @@ if [ -n "$GIT_TOKEN" ]; then
 fi
 `;
 
-const cloneScript = `${authenticate}
-git clone --quiet "$URL" "$DIR" &&
-git -C "$DIR" checkout --quiet "\${REF:-HEAD}" &&
+// Clones into an empty path, or fetches into a checkout that is already there.
+// Prints `cloned` or `synced`, then the commit.
+const checkoutScript = `${authenticate}
+if [ -d "$DIR/.git" ]; then
+  git -C "$DIR" remote set-url origin "$URL" &&
+  git -C "$DIR" fetch --quiet --tags --prune origin || exit 1
+  if [ -z "$REF" ]; then
+    git -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
+    REF=$(git -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
+  fi
+  if git -C "$DIR" show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+    if [ "$SYNC" = keep ]; then
+      git -C "$DIR" checkout --quiet "$REF" 2>/dev/null ||
+        git -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
+      git -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1
+    else
+      git -C "$DIR" checkout --quiet -f -B "$REF" "origin/$REF" || exit 1
+    fi
+  elif [ "$SYNC" = keep ]; then
+    git -C "$DIR" checkout --quiet --detach "$REF" || exit 1
+  else
+    git -C "$DIR" checkout --quiet -f --detach "$REF" || exit 1
+  fi
+  if [ "$SYNC" != keep ]; then git -C "$DIR" clean --quiet -fd; fi
+  echo synced
+else
+  git clone --quiet "$URL" "$DIR" &&
+  git -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
+  echo cloned
+fi
 git -C "$DIR" config user.name "Coding agent" &&
 git -C "$DIR" config user.email "agent@users.noreply.github.com" &&
 git -C "$DIR" rev-parse HEAD
@@ -90,8 +140,10 @@ git -C "$DIR" push --quiet origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
 
 /**
  * EXPERIMENTAL: Clones a repository into `sandbox` and returns a handle to push
- * branches from it. The token stays out of the sandbox: it is only in the
- * environment of the clone and push commands.
+ * branches from it. If `path` already holds a checkout, as in a sandbox
+ * restored from a thread's snapshot, it is fetched and brought to `ref` instead
+ * (see `sync`). The token stays out of the sandbox: it is only in the
+ * environment of the clone, fetch and push commands.
  *
  * @example
  * ```ts
@@ -111,7 +163,7 @@ export const repo = async (
   sandbox: Pick<DurableSandbox, "commands" | "tools">,
   options: RepoOptions,
 ): Promise<Repo> => {
-  const { ref, path = "/work" } = options;
+  const { ref, path = "/work", sync = "reset" } = options;
   const url = /^[\w.-]+\/[\w.-]+$/.test(options.repo)
     ? `https://github.com/${options.repo}.git`
     : options.repo;
@@ -139,10 +191,14 @@ export const repo = async (
     return result.stdout;
   };
 
-  const stdout = await git("clone", `git clone ${options.repo}`, cloneScript, {
-    URL: url,
-    REF: ref ?? "",
-  });
+  const stdout = await git(
+    "clone",
+    `git clone or fetch ${options.repo}`,
+    checkoutScript,
+    { URL: url, REF: ref ?? "", SYNC: sync },
+  );
+  const lines = stdout.trim().split("\n");
+  const action = lines.at(-2) === "synced" ? "synced" : "cloned";
 
   const push = async (branch: string): Promise<void> => {
     await git("push", `git push ${branch}`, pushScript, { BRANCH: branch });
@@ -150,7 +206,8 @@ export const repo = async (
 
   return {
     path,
-    sha: stdout.trim().split("\n").pop() ?? "",
+    action,
+    sha: lines.at(-1) ?? "",
     push,
     tools: {
       ...sandbox.tools.code({ cwd: path }),
