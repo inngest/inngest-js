@@ -258,6 +258,12 @@ export interface AgentTurn {
    * Tokens this call used.
    */
   usage: AgentUsage;
+
+  /**
+   * What `recordTurn` returned, if the loop has one: it ran inside the model
+   * call's step, so it cost no step of its own.
+   */
+  recorded?: unknown;
 }
 
 /**
@@ -445,6 +451,14 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * `turn`) to post to Slack or a database once. An error fails the run.
    */
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
+
+  /**
+   * Called inside the model call's step, once the call has answered, to record
+   * the turn without a step of its own. It runs again if the step is retried,
+   * so it must be safe to repeat. What it returns is stored with the reply and
+   * handed to `onTurn` as `turn.recorded`, also on a replay.
+   */
+  recordTurn?: (turn: AgentTurn) => Promise<unknown>;
 
   /**
    * What a model call costs: a function of that call's tokens and model that
@@ -889,7 +903,7 @@ const loop = async <TTools extends SandboxTools>(
           answer = { ...answer, usage: addUsage(answer.usage, summaryUsage) };
         }
 
-        const priced = options.price
+        const priced: AgentModelResponse & { usd?: number } = options.price
           ? {
               ...answer,
               usd: priceOf(
@@ -900,11 +914,31 @@ const loop = async <TTools extends SandboxTools>(
             }
           : answer;
 
+        const recorded = await options.recordTurn?.({
+          turn,
+          stepId: modelStep,
+          text: priced.text ?? "",
+          toolCalls: priced.toolCalls,
+          usage: {
+            ...(priced.usage ?? { input: 0, output: 0 }),
+            ...(priced.usd !== undefined && { usd: priced.usd }),
+          },
+        });
+
         // A compaction made here rides in the step's output, so a replay,
-        // which does not run this function, still restores it.
-        return made ? { ...priced, compaction: made } : priced;
+        // which does not run this function, still restores it. So does what
+        // the turn recorded.
+        return {
+          ...priced,
+          ...(made && { compaction: made }),
+          ...(recorded !== undefined && { recorded }),
+        };
       },
-    )) as AgentModelResponse & { usd?: number; compaction?: AgentCompaction };
+    )) as AgentModelResponse & {
+      usd?: number;
+      compaction?: AgentCompaction;
+      recorded?: unknown;
+    };
     steered = 0;
 
     if (reply.compaction) {
@@ -943,6 +977,7 @@ const loop = async <TTools extends SandboxTools>(
       text,
       toolCalls: reply.toolCalls,
       usage: { ...callUsage, ...(cost !== undefined && { usd: cost }) },
+      ...(reply.recorded !== undefined && { recorded: reply.recorded }),
     });
 
     if (reply.toolCalls.length === 0) {

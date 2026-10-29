@@ -247,6 +247,12 @@ export interface ThreadRecord {
   inflight?: { content?: string };
 
   /**
+   * The model call (run and step) whose turn the record last took in, so a
+   * retried step does not count its usage twice.
+   */
+  turnStep?: string;
+
+  /**
    * The process (boot) that wrote the record last.
    */
   host?: string;

@@ -144,11 +144,15 @@ describe("thread key from a trigger", () => {
         const opts = op.opts as {
           event?: string;
           if?: string;
-          subscribe?: { mode?: string };
+          subscribe?: {
+            mode?: string;
+            streams?: { event: string; if?: string }[];
+          };
         };
 
         if (opts.subscribe?.mode === "open") {
           seen.push({ event: opts.event, if: opts.if });
+          seen.push(...(opts.subscribe.streams ?? []));
         }
       },
     });
