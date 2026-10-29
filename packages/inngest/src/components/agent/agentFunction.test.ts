@@ -2,14 +2,20 @@
  * @module
  * Tests for the agent function body against a fake executor.
  */
+import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
+import { staticSchema } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { type AgentModelResponse, agent } from "./loop.ts";
+import {
+  type AgentLoopResult,
+  type AgentModelResponse,
+  agent,
+} from "./loop.ts";
 import { skills } from "./skills.ts";
 import { run } from "./test-helpers.ts";
 
@@ -79,7 +85,7 @@ describe("agent function", () => {
         let last = "";
 
         for await (const m of inbox) {
-          const result = await agent.loop({
+          const result: AgentLoopResult = await agent.loop({
             id: `turn${m.seq}`,
             model: agent.model(async (request) => {
               prompts.push(userTexts(request.messages));
@@ -503,6 +509,48 @@ describe("request and reply", () => {
     });
 
     expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
+  });
+
+  test("a reply that does not fit the requests schema throws and sends nothing", async () => {
+    const client = makeClient();
+    const signals: unknown[] = [];
+    client.sendSignal = (async (signal: unknown) => {
+      signals.push(signal);
+
+      return { runId: "r" };
+    }) as typeof client.sendSignal;
+    const { fn } = createAgentFunction(
+      client,
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        requests: {
+          request: staticSchema<{ n: number }>(),
+          reply: z.object({ answer: z.number() }),
+        },
+      },
+      async ({ inbox }) => {
+        const m = await inbox.next();
+
+        try {
+          await m?.reply({ answer: "forty-two" } as never);
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "replied";
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: message("request", undefined, "t1", {
+        payload: { n: 21 },
+        replyTo: "sig-1",
+      }),
+    });
+
+    expect(output).toContain("message.reply() data");
+    expect(signals).toEqual([]);
   });
 
   test("replying to a message that is not a request throws", async () => {

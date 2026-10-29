@@ -75,6 +75,36 @@ describe("typed events", () => {
     );
   });
 
+  test("a list of bare event types types the inbox and the invoke input", () => {
+    const worker = agents.agent(
+      { id: "a-bare", on: [order, refund, asked], thread: "event.data.id" },
+      async ({ inbox }) => {
+        const message = await inbox.next();
+        const trigger = message?.data.event;
+
+        if (trigger?.name === "shop/order.created") {
+          expectTypeOf(trigger.data.total).toBeNumber();
+        }
+
+        if (trigger?.name === "shop/refund.created") {
+          expectTypeOf(trigger.data.amount).toBeNumber();
+        }
+
+        return undefined;
+      },
+    );
+
+    // Never called: the test is the types.
+    const types = async () => {
+      await agent.invoke(worker, { question: "why" });
+
+      // @ts-expect-error the invoke trigger's input has a question
+      await agent.invoke(worker, { nope: 1 });
+    };
+
+    expect(types).toBeTypeOf("function");
+  });
+
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },

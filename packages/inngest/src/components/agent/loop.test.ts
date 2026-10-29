@@ -2,6 +2,7 @@
  * @module
  * Tests for `agent.loop()`, with a scripted function standing in for the model.
  */
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
@@ -9,12 +10,13 @@ import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import { tool } from "../sandbox/tools.ts";
+import { type AgentTool, type SandboxTool, tool } from "../sandbox/tools.ts";
 import {
   type AgentLoopOptions,
   type AgentLoopResult,
   type AgentModelRequest,
   type AgentModelResponse,
+  type AgentToolRun,
   agent,
 } from "./loop.ts";
 
@@ -612,6 +614,7 @@ describe("agent.loop", () => {
     expect(result?.toolCalls).toEqual([
       {
         turn: 1,
+        name: "add",
         call: { id: "id-add", name: "add", input: { a: 1, b: 2 } },
         output: 3,
         isError: false,
@@ -723,5 +726,135 @@ describe("agent.loop", () => {
         return (m as { content: unknown }).content;
       }),
     ).toEqual(["go", [{ type: "text", text: "first" }], "again"]);
+  });
+});
+
+describe("tool types", () => {
+  const lookup = tool({
+    id: "lookup",
+    input: z.object({ id: z.string() }),
+    output: z.object({ name: z.string() }),
+    run: ({ id }) => {
+      return { name: id };
+    },
+  });
+  const ping = tool.step({
+    run: () => {
+      return "pong";
+    },
+  });
+  const sum = tool.group({
+    input: z.object({ values: z.array(z.number()) }),
+    run: ({ values }) => {
+      return values.length;
+    },
+  });
+
+  test("tool() and tool.step() carry the schemas' types", () => {
+    expectTypeOf(lookup).toEqualTypeOf<
+      AgentTool<{ id: string }, { name: string }>
+    >();
+    expectTypeOf(sum).toEqualTypeOf<
+      SandboxTool<{ values: number[] }, unknown>
+    >();
+    expectTypeOf(ping).toEqualTypeOf<SandboxTool<unknown, unknown>>();
+  });
+
+  test("a run that didn't fail narrows its input and output by the tool's name", () => {
+    type Run = AgentToolRun<{ lookup: typeof lookup; sum: typeof sum }>;
+
+    const check = (run: Run) => {
+      if (run.isError) {
+        expectTypeOf(run.name).toEqualTypeOf<string>();
+        expectTypeOf(run.call.input).toEqualTypeOf<unknown>();
+        expectTypeOf(run.output).toEqualTypeOf<unknown>();
+      } else if (run.name === "lookup") {
+        expectTypeOf(run.call.input).toEqualTypeOf<{ id: string }>();
+        expectTypeOf(run.output).toEqualTypeOf<{ name: string }>();
+      } else {
+        expectTypeOf(run.name).toEqualTypeOf<"sum">();
+        expectTypeOf(run.call.input).toEqualTypeOf<{ values: number[] }>();
+      }
+    };
+
+    expect(check).toBeTypeOf("function");
+  });
+
+  test("untyped tools leave input and output unknown", () => {
+    expectTypeOf<AgentToolRun["call"]["input"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<AgentToolRun["output"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<AgentToolRun["name"]>().toEqualTypeOf<string>();
+  });
+
+  // These call agent.loop, which needs a function execution, so they are only
+  // compiled: the assertions are the types.
+  test("agent.loop infers the tools from the call and types onToolResult", () => {
+    const typecheck = async () => {
+      const result = await agent.loop({
+        model: agent.model(async () => {
+          return say("done");
+        }),
+        prompt: "go",
+        tools: { lookup },
+        onToolResult: (run) => {
+          if (!run.isError) {
+            expectTypeOf(run.name).toEqualTypeOf<"lookup">();
+            expectTypeOf(run.output).toEqualTypeOf<{ name: string }>();
+          }
+        },
+      });
+
+      expectTypeOf(result.toolCalls).toEqualTypeOf<
+        AgentToolRun<{ lookup: typeof lookup }>[]
+      >();
+    };
+
+    expect(typecheck).toBeTypeOf("function");
+  });
+
+  test("a typed result still fits a plain AgentLoopResult and AgentLoopOptions", () => {
+    const typecheck = async () => {
+      const result = await agent.loop({
+        model: agent.model(async () => {
+          return say("done");
+        }),
+        prompt: "go",
+        tools: { lookup, sum, ping },
+      });
+      const plain: AgentLoopResult = result;
+      const all: AgentLoopResult[] = [plain, result];
+      const options: AgentLoopOptions = {
+        model: agent.model(async () => {
+          return say("done");
+        }),
+        prompt: "go",
+        tools: { lookup },
+      };
+
+      return [all, options];
+    };
+
+    expect(typecheck).toBeTypeOf("function");
+  });
+
+  test("no tools still gives a result with failed runs", () => {
+    const typecheck = async () => {
+      const result = await agent.loop({
+        model: agent.model(async () => {
+          return say("done");
+        }),
+        prompt: "go",
+        tools: {},
+      });
+
+      expectTypeOf<(typeof result.toolCalls)[number]>().toEqualTypeOf<
+        AgentToolRun<{}>
+      >();
+      expectTypeOf<
+        (typeof result.toolCalls)[number]["isError"]
+      >().toEqualTypeOf<true>();
+    };
+
+    expect(typecheck).toBeTypeOf("function");
   });
 });

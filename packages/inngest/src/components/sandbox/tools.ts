@@ -82,9 +82,27 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * A tool declared with `tool.step()` or `tool.group()`.
+ * What a model passes to a tool: its input schema's output, or `unknown`
+ * when it has none.
  */
-export interface SandboxTool {
+export type ToolCallInput<TInput extends ToolInput | undefined> =
+  TInput extends ToolInput ? ToolInputOf<TInput> : unknown;
+
+/**
+ * What a tool hands back after its output schema checked it, or `unknown`
+ * when it has none.
+ */
+export type ToolCallResult<TOutput extends StandardSchemaV1 | undefined> =
+  TOutput extends StandardSchemaV1
+    ? StandardSchemaV1.InferOutput<TOutput>
+    : unknown;
+
+/**
+ * A tool declared with `tool.step()` or `tool.group()`. `TInput` and
+ * `TOutput` are what the model passes and what the tool gives back, which
+ * `agent.loop()` uses to type its tool runs.
+ */
+export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
@@ -96,6 +114,11 @@ export interface SandboxTool {
    * Set by `tool.group({ waits: true })`.
    */
   readonly waits?: boolean;
+
+  /**
+   * Carries `TInput` and `TOutput` for the compiler. It is never set.
+   */
+  readonly "~types"?: { input: TInput; output: TOutput };
 }
 
 /**
@@ -111,6 +134,28 @@ export type SandboxToolEntry =
   | InngestFunctionReference.Any;
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
+
+/**
+ * What a model passes to the tool `TEntry`; `unknown` for an entry that
+ * isn't a typed tool (a plain function or an Inngest function).
+ */
+export type ToolInputType<TEntry> = TEntry extends SandboxTool<
+  infer TInput,
+  unknown
+>
+  ? TInput
+  : unknown;
+
+/**
+ * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
+ * typed tool.
+ */
+export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
+  unknown,
+  infer TOutput
+>
+  ? TOutput
+  : unknown;
 
 export interface SandboxToolOptions {
   /**
@@ -237,8 +282,8 @@ const toolMethods = {
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
     definition: ToolDefinition<TInput, TOutput>,
-  ): SandboxTool => {
-    return definition as SandboxTool;
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    return definition;
   },
 
   /**
@@ -269,8 +314,8 @@ const toolMethods = {
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
     definition: WaitingToolDefinition<TInput, TOutput>,
-  ): SandboxTool => {
-    return { ...definition, group: true } as SandboxTool;
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    return { ...definition, group: true };
   },
 };
 
@@ -278,7 +323,8 @@ const toolMethods = {
  * A tool defined with `tool()`: a tool for an agent, which runs in your
  * function as one durable step per call.
  */
-export interface AgentTool extends SandboxTool {
+export interface AgentTool<TInput = unknown, TOutput = unknown>
+  extends SandboxTool<TInput, TOutput> {
   readonly kind: "inngest/tool";
 
   /**
@@ -322,8 +368,8 @@ const defineTool = <
   TOutput extends StandardSchemaV1 | undefined = undefined,
 >(
   definition: AgentToolDefinition<TInput, TOutput>,
-): AgentTool => {
-  validateTools({ [definition.id]: definition as unknown as SandboxTool });
+): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+  validateTools({ [definition.id]: definition });
 
   if (definition.waits && !definition.group) {
     throw new SandboxValidationError(
@@ -340,10 +386,7 @@ const defineTool = <
     );
   }
 
-  return Object.freeze({
-    ...definition,
-    kind: "inngest/tool",
-  }) as unknown as AgentTool;
+  return Object.freeze({ ...definition, kind: "inngest/tool" as const });
 };
 
 /**
