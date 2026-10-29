@@ -276,6 +276,40 @@ export const parseWith = <T>(
 };
 
 /**
+ * Like `parseWith()`, for a schema that may validate asynchronously.
+ */
+export const parseWithAsync = async <T>(
+  /**
+   * The schema.
+   */
+  schema: StandardSchemaV1<unknown, T>,
+
+  /**
+   * The value to check.
+   */
+  value: unknown,
+
+  /**
+   * Names the value in the error.
+   */
+  what: string,
+): Promise<T> => {
+  const result = await schema["~standard"].validate(value);
+
+  if (result.issues) {
+    throw new NonRetriableError(
+      `${what}: ${result.issues
+        .map((issue) => {
+          return issue.message;
+        })
+        .join("; ")}`,
+    );
+  }
+
+  return result.value;
+};
+
+/**
  * What a field of `objectSchema` must be.
  *
  * - `"string"` and `"number"`: required.

@@ -2,6 +2,7 @@
  * @module
  * Tests for the agent function body against a fake executor.
  */
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
@@ -505,6 +506,138 @@ describe("request and reply", () => {
     });
 
     expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
+  });
+
+  describe("with requests schemas", () => {
+    const requests = {
+      request: z.object({ n: z.number() }),
+      reply: z.object({ answer: z.number() }),
+    };
+    const answering = (signals: unknown[]) => {
+      const client = makeClient();
+      client.sendSignal = (async (signal: unknown) => {
+        signals.push(signal);
+
+        return { runId: "r" };
+      }) as typeof client.sendSignal;
+
+      return createAgentFunction(
+        client,
+        { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), requests },
+        async ({ inbox }) => {
+          const seen: unknown[] = [];
+
+          for (let i = 0; i < 2; i++) {
+            const m = await inbox.next();
+            if (m?.data.kind === "request") {
+              seen.push(m.data.payload);
+              await m.reply({
+                answer: (m.data.payload as { n: number }).n * 2,
+              });
+            } else if (m) {
+              seen.push(m.data.content);
+            }
+          }
+
+          return seen;
+        },
+      );
+    };
+
+    test("a request that fits the schema is delivered and answered", async () => {
+      const signals: unknown[] = [];
+
+      const { output } = await run(answering(signals).fn, {
+        event: message("request", undefined, "t1", {
+          payload: { n: 21 },
+          replyTo: "sig-1",
+        }),
+        saved: [message("user", "next")],
+      });
+
+      expect(output).toEqual([{ n: 21 }, "next"]);
+      expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
+    });
+
+    test("a request that breaks the schema is dropped, whether it started the run or came later", async () => {
+      const signals: unknown[] = [];
+
+      const { output } = await run(answering(signals).fn, {
+        event: message("request", undefined, "t1", {
+          payload: { n: "x" },
+          replyTo: "sig-1",
+        }),
+        saved: [
+          message("request", undefined, "t1", {
+            payload: {},
+            replyTo: "sig-2",
+          }),
+          message("user", "ok"),
+          message("request", undefined, "t1", {
+            payload: { n: 5 },
+            replyTo: "sig-3",
+          }),
+        ],
+      });
+
+      expect(output).toEqual(["ok", { n: 5 }]);
+      expect(signals).toEqual([{ signal: "sig-3", data: { answer: 10 } }]);
+    });
+
+    test("an async schema works", async () => {
+      const asyncRequests = {
+        request: {
+          "~standard": {
+            version: 1,
+            vendor: "test",
+            validate: async (value: unknown) => {
+              return { value: value as { n: number } };
+            },
+          },
+        } as StandardSchemaV1<{ n: number }, { n: number }>,
+        reply: {
+          "~standard": {
+            version: 1,
+            vendor: "test",
+            validate: async (value: unknown) => {
+              return { value: value as { answer: number } };
+            },
+          },
+        } as StandardSchemaV1<{ answer: number }, { answer: number }>,
+      };
+      const signals: unknown[] = [];
+      const client = makeClient();
+      client.sendSignal = (async (signal: unknown) => {
+        signals.push(signal);
+
+        return { runId: "r" };
+      }) as typeof client.sendSignal;
+
+      await run(
+        createAgentFunction(
+          client,
+          {
+            id: "bot",
+            kv: createKv({ adapter: memoryKvAdapter() }),
+            requests: asyncRequests,
+          },
+          async ({ inbox }) => {
+            const m = await inbox.next();
+            if (m?.data.kind === "request") {
+              await m.reply({ answer: (m.data.payload as { n: number }).n });
+            }
+          },
+        ).fn,
+        {
+          event: message("request", undefined, "t1", {
+            payload: { n: 3 },
+            replyTo: "sig-1",
+          }),
+        },
+      );
+
+      expect(signals).toEqual([{ signal: "sig-1", data: { answer: 3 } }]);
+    });
   });
 
   test("a reply that does not fit the requests schema throws and sends nothing", async () => {
