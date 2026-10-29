@@ -556,7 +556,9 @@ export const parseToolEvent = (line: string): ToolEvent | undefined => {
   }
 };
 
-const issuesMessage = (issues: readonly StandardSchemaV1.Issue[]): string => {
+export const issuesMessage = (
+  issues: readonly StandardSchemaV1.Issue[],
+): string => {
   return issues
     .slice(0, 5)
     .map((issue) => {
@@ -674,7 +676,7 @@ type JsonSchemaProvider = {
   };
 };
 
-const toJsonSchema = (
+export const toJsonSchema = (
   name: string,
   schema: StandardSchemaV1,
 ): ToolJsonDefinition["input_schema"] => {

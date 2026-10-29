@@ -10,8 +10,14 @@
  * It depends on no package: pass your `@anthropic-ai/sdk` client, or leave it
  * out and the adapter imports the SDK the first time it is called.
  */
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
+import {
+  issuesMessage,
+  type ToolJsonDefinition,
+  toJsonSchema,
+} from "../sandbox/tools.ts";
 import type { AgentPriceTable } from "./cost.ts";
 import type {
   AgentMessage,
@@ -177,6 +183,117 @@ export interface AnthropicOptions {
    * `stop_sequences`. They are applied last.
    */
   params?: Record<string, unknown>;
+}
+
+/**
+ * What can differ from one call to the next: everything in `AnthropicOptions`
+ * but the client and how it is made. Changing `model`, `effort`, `thinking` or
+ * `cache` for a call changes the request's cached prefix (the cache is kept
+ * per model, and thinking and the cache lifetime are part of the prefix), so a
+ * call that overrides them does not read what the loop's other calls wrote.
+ */
+export type AnthropicOverrides = Partial<
+  Pick<
+    AnthropicOptions,
+    | "model"
+    | "maxTokens"
+    | "effort"
+    | "thinking"
+    | "cache"
+    | "volatile"
+    | "stream"
+    | "timeout"
+    | "maxRetries"
+    | "params"
+  >
+>;
+
+/**
+ * What a direct call of the adapter takes: an `AgentModelRequest` where the
+ * loop-only fields are optional, with `prompt` as a short way to write one user
+ * message and `output` to ask for a structured reply.
+ */
+export interface AnthropicCall {
+  /**
+   * The system prompt. Keep it stable between calls: changing it changes the
+   * start of the cached prefix. Put what changes in `volatile`.
+   */
+  system?: string;
+
+  /**
+   * The conversation. Default: one user message with `prompt`.
+   */
+  messages?: AgentMessage[];
+
+  /**
+   * One user message, when you have no `messages`.
+   */
+  prompt?: string;
+
+  /**
+   * Tools the model may call, in the shape of `toolDefinitions()`. Default none.
+   */
+  tools?: ToolJsonDefinition[];
+
+  /**
+   * `"none"` keeps `tools` in the request but forbids calling one. `{ name }`
+   * asks for a call of that tool: the request stays on `auto` (the newest
+   * models refuse a forced `tool_choice`) and the text after the cached prefix
+   * says to reply only by calling it.
+   */
+  toolChoice?: "none" | { name: string };
+
+  /**
+   * A schema (Zod 4, or any library with Standard JSON Schema) for a
+   * structured reply. The model is given one tool, `respond`, and told to reply
+   * only by calling it; the call's input is validated and returned as `output`,
+   * typed by the schema, and `toolCalls` is empty. A reply that is not a valid
+   * call fails the step, which Inngest retries. The schema describes an object.
+   */
+  output?: StandardSchemaV1;
+
+  /**
+   * The call's number, given to a `volatile` function. Default 1.
+   */
+  turn?: number;
+
+  /**
+   * The loop's last turn, given to a `volatile` function. Default 1.
+   */
+  maxTurns?: number;
+}
+
+/**
+ * The reply of a direct call with an `output` schema: the usual response and
+ * the validated structured reply.
+ */
+export type AnthropicOutputResponse<TOutput extends StandardSchemaV1> =
+  AgentModelResponse & { output: StandardSchemaV1.InferOutput<TOutput> };
+
+/**
+ * The model `anthropic()` returns. Hand it to `agent.loop({ model })` as it is,
+ * or call it inside a `step.run` for a single reply.
+ */
+export interface AnthropicModel {
+  /**
+   * One reply with a structured `output`.
+   */
+  <TOutput extends StandardSchemaV1>(
+    call: AnthropicCall & { output: TOutput },
+  ): Promise<AnthropicOutputResponse<TOutput>>;
+
+  /**
+   * One reply.
+   */
+  (call: AnthropicCall): Promise<AgentModelResponse>;
+
+  /**
+   * The same model with some options changed, sharing the client, such as
+   * `claude.with({ effort: "low", maxTokens: 50 })`. An override replaces the
+   * option (`params` merges into it), and `undefined` clears one.
+   * @param overrides The options to change.
+   */
+  with(overrides: AnthropicOverrides): AnthropicModel;
 }
 
 type Block = { type: string } & Record<string, unknown>;
@@ -388,30 +505,101 @@ const withTail = (
     : out;
 };
 
+const outputToolName = "respond";
+
+/**
+ * The tool that carries a structured reply, from the schema of `output`.
+ */
+const outputTool = (schema: StandardSchemaV1): ToolJsonDefinition => {
+  return {
+    name: outputToolName,
+    description:
+      "Give your reply by calling this tool once. Its input is the reply.",
+    input_schema: toJsonSchema(outputToolName, schema),
+  };
+};
+
 /**
  * The Messages API request for one call.
  */
 const buildBody = (
   options: AnthropicOptions,
-  request: AgentModelRequest,
+  call: AnthropicCall,
 ): Record<string, unknown> => {
   const ttl =
     options.cache === false ? undefined : (options.cache?.ttl ?? "5m");
   const control = ttl
     ? { type: "ephemeral", ...(ttl === "1h" && { ttl }) }
     : undefined;
+  if (call.messages === undefined && call.prompt === undefined) {
+    throw new NonRetriableError("anthropic() needs `messages` or `prompt`");
+  }
+
+  if (call.output && call.toolChoice === "none") {
+    throw new NonRetriableError(
+      'anthropic() can not ask for an `output` with `toolChoice: "none"`: the reply is a tool call',
+    );
+  }
+
+  if (
+    call.output &&
+    call.tools?.some((tool) => {
+      return tool.name === outputToolName;
+    })
+  ) {
+    throw new NonRetriableError(
+      `anthropic() uses a tool named  for \`output\`: rename yours`,
+    );
+  }
+
+  if (
+    typeof call.toolChoice === "object" &&
+    !call.tools?.some((tool) => {
+      return tool.name === (call.toolChoice as { name: string }).name;
+    })
+  ) {
+    throw new NonRetriableError(
+      `anthropic() was asked for the tool , which is not in \`tools\``,
+    );
+  }
+
+  const messages: AgentMessage[] = call.messages ?? [
+    { role: "user", content: call.prompt as string },
+  ];
+  const request: AgentModelRequest = {
+    system: call.system,
+    messages,
+    tools: call.tools ?? [],
+    turn: call.turn ?? 1,
+    maxTurns: call.maxTurns ?? 1,
+    ...(call.toolChoice === "none" && { toolChoice: "none" as const }),
+  };
+  const named =
+    call.output !== undefined
+      ? outputToolName
+      : typeof call.toolChoice === "object"
+        ? call.toolChoice.name
+        : undefined;
+  // After the breakpoint, so asking for a tool never changes the cached prefix.
   const volatile =
-    typeof options.volatile === "function"
-      ? options.volatile(request)
-      : options.volatile;
+    [
+      typeof options.volatile === "function"
+        ? options.volatile(request)
+        : options.volatile,
+      named &&
+        `Reply only by calling the \`${named}\` tool, once. Write no text.`,
+    ]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
+  const listed = call.output
+    ? [...request.tools, outputTool(call.output)]
+    : request.tools;
   const tools =
-    request.tools.length > 0
-      ? request.tools.map((tool, index) => {
+    listed.length > 0
+      ? listed.map((tool, index) => {
           // With no system prompt to carry it, the last tool carries the
           // breakpoint that caches the tools.
-          return control &&
-            !request.system &&
-            index === request.tools.length - 1
+          return control && !request.system && index === listed.length - 1
             ? withCacheControl(tool, control)
             : tool;
         })
@@ -609,10 +797,20 @@ const importClient = async (
  * out: pass `client`. A conversation with tool calls in its history needs
  * `tools` in each request, so a tool-less loop can't continue one.
  *
+ * Keep the loop's `system` string stable: it starts the cached prefix, so a
+ * system prompt that changes between calls misses the cache on every one. Put
+ * what changes (the time, a list of refs) in `volatile`, which goes after the
+ * breakpoint.
+ *
+ * `claude.with({ model, effort, maxTokens, ... })` is the same model with other
+ * options, for one loop or one call, and calling `claude({ prompt, output })`
+ * inside a `step.run` makes a single reply, with `output` (a schema) for a
+ * structured one. See `AnthropicOverrides` for what an override does to the
+ * cache.
+ *
  * Not covered: forcing one tool (`tool_choice` `any` or `tool`, which the
- * newest models refuse anyway), a model or effort that changes per call
- * (make one adapter for each), and server tools, which you can still add
- * through `params`.
+ * newest models refuse anyway; `toolChoice: { name }` on a direct call asks in
+ * words instead) and server tools, which you can still add through `params`.
  *
  * @example
  * ```ts
@@ -631,50 +829,104 @@ const importClient = async (
  *   tools: sandbox.tools.code(),
  *   price: anthropicPrices,
  * });
+ *
+ * // One structured reply, outside any loop.
+ * const { output } = await step.run("triage", async () => {
+ *   return claude.with({ maxTokens: 2000 })({
+ *     system: "Triage the ticket.",
+ *     prompt: ticket,
+ *     output: z.object({ investigate: z.boolean(), reason: z.string() }),
+ *   });
+ * });
  * ```
  */
-export const anthropic = (options: AnthropicOptions): AgentModel => {
-  let client: AnthropicClient | undefined = options.client;
-  const requestOptions = {
-    ...(options.timeout !== undefined && { timeout: options.timeout }),
-    ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
-  };
-  const streaming =
-    options.stream ?? (options.maxTokens ?? defaultMaxTokens) > streamAbove;
+export const anthropic = (options: AnthropicOptions): AnthropicModel => {
+  // Shared by every `with()` of this adapter, so the SDK is imported once.
+  const shared: { client?: AnthropicClient } = { client: options.client };
 
-  return async (request): Promise<AgentModelResponse> => {
-    let reply: AnthropicReply;
-
-    try {
-      client ??= await importClient(options);
-
-      const body = buildBody(options, request);
-
-      if (streaming) {
-        if (!client.messages.stream) {
-          throw new NonRetriableError(
-            "anthropic() needs a client with messages.stream for this maxTokens",
-          );
-        }
-
-        reply = await client.messages
-          .stream(body, requestOptions)
-          .finalMessage();
-      } else {
-        reply = await client.messages.create(body, requestOptions);
-      }
-    } catch (error) {
-      throw sortError(error);
-    }
-
-    const { blocks, toolCalls, text } = parse(options, reply);
-
-    return {
-      message: { role: "assistant", content: blocks },
-      text,
-      toolCalls,
-      usage: usageOf(reply),
-      model: options.model,
+  const make = (current: AnthropicOptions): AnthropicModel => {
+    const requestOptions = {
+      ...(current.timeout !== undefined && { timeout: current.timeout }),
+      ...(current.maxRetries !== undefined && {
+        maxRetries: current.maxRetries,
+      }),
     };
+    const streaming =
+      current.stream ?? (current.maxTokens ?? defaultMaxTokens) > streamAbove;
+
+    const call = async (given: AnthropicCall): Promise<AgentModelResponse> => {
+      let reply: AnthropicReply;
+
+      try {
+        shared.client ??= await importClient(options);
+
+        const body = buildBody(current, given);
+
+        if (streaming) {
+          if (!shared.client.messages.stream) {
+            throw new NonRetriableError(
+              "anthropic() needs a client with messages.stream for this maxTokens",
+            );
+          }
+
+          reply = await shared.client.messages
+            .stream(body, requestOptions)
+            .finalMessage();
+        } else {
+          reply = await shared.client.messages.create(body, requestOptions);
+        }
+      } catch (error) {
+        throw sortError(error);
+      }
+
+      const { blocks, toolCalls, text } = parse(current, reply);
+      const response: AgentModelResponse = {
+        message: { role: "assistant", content: blocks },
+        text,
+        toolCalls,
+        usage: usageOf(reply),
+        model: current.model,
+      };
+
+      if (!given.output) {
+        return response;
+      }
+
+      const used = toolCalls.find((toolCall) => {
+        return toolCall.name === outputToolName;
+      });
+
+      if (!used) {
+        throw new Error(
+          `${current.model} did not reply by calling the ${outputToolName} tool`,
+        );
+      }
+
+      const checked = await given.output["~standard"].validate(used.input);
+
+      if (checked.issues) {
+        throw new Error(
+          `${current.model}'s reply does not match the output schema: ${issuesMessage(checked.issues)}`,
+        );
+      }
+
+      return { ...response, toolCalls: [], output: checked.value } as never;
+    };
+
+    return Object.assign(call, {
+      with: (overrides: AnthropicOverrides) => {
+        return make({
+          ...current,
+          ...overrides,
+          model: overrides.model ?? current.model,
+          params:
+            "params" in overrides && overrides.params === undefined
+              ? undefined
+              : { ...current.params, ...overrides.params },
+        });
+      },
+    }) as AnthropicModel;
   };
+
+  return make(options);
 };

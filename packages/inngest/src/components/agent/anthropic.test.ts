@@ -5,6 +5,7 @@
  * stands in for the SDK.
  */
 import { describe, expect, test } from "vitest";
+import { z } from "zod/v4";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
@@ -604,5 +605,228 @@ describe("anthropic errors", () => {
     });
 
     await expect(claude(request())).rejects.toBeInstanceOf(NonRetriableError);
+  });
+});
+
+const toolUse = (input: unknown, name = "respond") => {
+  return reply({
+    content: [{ type: "tool_use", id: "tu_1", name, input } as never],
+    stop_reason: "tool_use",
+  });
+};
+
+describe("anthropic direct calls (Earl's one-off patterns)", () => {
+  test("a prompt with no tools is one user message, with the system prompt cached", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({
+      model: "claude-sonnet-5-5",
+      client: fake.client,
+    });
+    const answer = await claude({ system: "Be brief.", prompt: "title this" });
+    const body = sent(fake, 0);
+
+    expect(answer.text).toBe("hi");
+    expect(body.tools).toBeUndefined();
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].content[0].text).toBe("title this");
+    expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  test("with() overrides model, maxTokens and effort for one call, and leaves the base alone", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({
+      model: "claude-sonnet-5-5",
+      client: fake.client,
+      maxTokens: 4096,
+    });
+
+    await claude.with({ model: "claude-haiku-5-5", maxTokens: 50 })({
+      prompt: "a",
+    });
+    await claude.with({
+      effort: "low",
+      thinking: { type: "adaptive" },
+    })({ prompt: "b" });
+    await claude({ prompt: "c" });
+
+    expect(sent(fake, 0).model).toBe("claude-haiku-5-5");
+    expect(sent(fake, 0).max_tokens).toBe(50);
+    expect(sent(fake, 1).model).toBe("claude-sonnet-5-5");
+    expect(sent(fake, 1).output_config).toEqual({ effort: "low" });
+    expect(sent(fake, 1).thinking).toEqual({ type: "adaptive" });
+    expect(sent(fake, 2).output_config).toBeUndefined();
+    expect(sent(fake, 2).max_tokens).toBe(4096);
+  });
+
+  test("with() merges params and undefined clears an option", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({
+      model: "m",
+      client: fake.client,
+      effort: "high",
+      params: { stop_sequences: ["x"] },
+    });
+
+    await claude.with({
+      effort: undefined,
+      params: { metadata: { user_id: "u" } },
+    })({
+      prompt: "a",
+    });
+
+    const body = sent(fake, 0);
+
+    expect(body.output_config).toBeUndefined();
+    expect(body.stop_sequences).toEqual(["x"]);
+    expect(body.metadata).toEqual({ user_id: "u" });
+  });
+
+  test("toolChoice none keeps the tools and forbids calling one", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({ model: "m", client: fake.client });
+
+    await claude({
+      prompt: "go",
+      tools: [{ name: "t", input_schema: { type: "object" } }],
+      toolChoice: "none",
+    });
+
+    expect(sent(fake, 0).tools).toHaveLength(1);
+    expect(sent(fake, 0).tool_choice).toEqual({ type: "none" });
+  });
+
+  test("toolChoice { name } stays on auto and asks in the text after the cached prefix", async () => {
+    const fake = fakeClient([toolUse({ a: 1 }, "plan")]);
+    const claude = anthropic({ model: "m", client: fake.client });
+    const answer = await claude({
+      system: "S",
+      prompt: "go",
+      tools: [{ name: "plan", input_schema: { type: "object" } }],
+      toolChoice: { name: "plan" },
+    });
+    const body = sent(fake, 0);
+
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.system[0].text).toBe("S");
+    expect(body.messages[0].content.at(-1).text).toContain("`plan` tool");
+    expect(answer.toolCalls[0]?.input).toEqual({ a: 1 });
+  });
+
+  test("a volatile function sees the call and goes after the breakpoint", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({
+      model: "m",
+      client: fake.client,
+      volatile: (request) => {
+        return `turn ${request.turn}`;
+      },
+    });
+
+    await claude({ prompt: "go" });
+
+    const content = sent(fake, 0).messages[0].content;
+
+    expect(content[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(content[1].text).toBe("turn 1");
+  });
+
+  test("an agent.loop-style request works unchanged", async () => {
+    const fake = fakeClient();
+    const claude = anthropic({ model: "m", client: fake.client });
+
+    await claude(request());
+
+    expect(fake.bodies).toHaveLength(1);
+  });
+});
+
+describe("anthropic structured output", () => {
+  const schema = z.object({ investigate: z.boolean(), reason: z.string() });
+
+  test("asks for one tool, validates the call and returns it typed", async () => {
+    const fake = fakeClient([toolUse({ investigate: true, reason: "r" })]);
+    const claude = anthropic({ model: "m", client: fake.client });
+    const answer = await claude({
+      system: "Triage.",
+      prompt: "ticket",
+      output: schema,
+    });
+    const body = sent(fake, 0);
+
+    expect(answer.output).toEqual({ investigate: true, reason: "r" });
+    expect(answer.toolCalls).toEqual([]);
+    expect(body.tools).toHaveLength(1);
+    expect(body.tools[0].name).toBe("respond");
+    expect(body.tools[0].input_schema.properties.investigate).toBeDefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.system[0].text).toBe("Triage.");
+    expect(body.messages[0].content.at(-1).text).toContain("`respond` tool");
+  });
+
+  test("a reply that breaks the schema fails the step so it is retried", async () => {
+    const fake = fakeClient([toolUse({ investigate: "yes" })]);
+    const claude = anthropic({ model: "m", client: fake.client });
+    const failure = await claude({ prompt: "t", output: schema }).catch(
+      (error) => {
+        return error;
+      },
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(NonRetriableError);
+    expect(failure.message).toContain("output schema");
+  });
+
+  test("a reply that does not call the tool fails the step", async () => {
+    const fake = fakeClient([reply()]);
+    const claude = anthropic({ model: "m", client: fake.client });
+
+    await expect(claude({ prompt: "t", output: schema })).rejects.toThrow(
+      "respond",
+    );
+  });
+});
+
+describe("anthropic call checks", () => {
+  const fake = fakeClient();
+  const claude = anthropic({ model: "m", client: fake.client });
+  const tool = { name: "t", input_schema: { type: "object" as const } };
+
+  test("with({ params: undefined }) clears the params", async () => {
+    const own = fakeClient();
+    const base = anthropic({
+      model: "m",
+      client: own.client,
+      params: { stop_sequences: ["x"] },
+    });
+
+    await base.with({ params: undefined })({ prompt: "a" });
+
+    expect(sent(own, 0).stop_sequences).toBeUndefined();
+  });
+
+  test.each([
+    ["neither messages nor prompt", {}],
+    [
+      "output with toolChoice none",
+      { prompt: "a", toolChoice: "none", output: z.object({}) },
+    ],
+    [
+      "a user tool named respond beside output",
+      {
+        prompt: "a",
+        output: z.object({}),
+        tools: [{ ...tool, name: "respond" }],
+      },
+    ],
+    [
+      "a toolChoice name that is not in tools",
+      { prompt: "a", tools: [tool], toolChoice: { name: "nope" } },
+    ],
+  ])("%s fails for good before any request", async (_name, given) => {
+    await expect(claude(given as never)).rejects.toBeInstanceOf(
+      NonRetriableError,
+    );
+    expect(fake.bodies).toHaveLength(0);
   });
 });

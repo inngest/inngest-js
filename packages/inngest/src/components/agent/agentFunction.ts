@@ -620,14 +620,25 @@ export type InboxListenOptions =
   | { if: string; thread?: string };
 
 /**
- * A source added to the inbox mid-run.
+ * A source added to the inbox mid-run. It is the view of the source's event,
+ * the same as `inbox.of(event)`: it reads the event's messages with a cursor of
+ * its own (`next()`, `current()`, `unread()`, `for await`), typed by the event
+ * type, and takes nothing from the main inbox, which receives the events too.
  */
-export interface ThreadListener extends AsyncDisposable {
+export interface ThreadListener<
+  TType extends InboxSource["event"] = InboxSource["event"],
+> extends View<EventMessage<TType>>,
+    AsyncDisposable {
   /**
    * Stops listening. Messages already saved stay in the inbox.
    */
   stop(): Promise<void>;
 }
+
+/**
+ * The part of a listener that is not a view: what stops the source.
+ */
+type SourceListener = Pick<ThreadListener, "stop" | typeof asyncDispose>;
 
 /**
  * What `onArrival` is given.
@@ -943,11 +954,13 @@ export interface ThreadInbox<
    * step. A source needs a `thread` or an `if` that ties it to this thread.
    * @param source The event and how it maps to the thread.
    */
-  listen(source: InboxSource): Promise<ThreadListener>;
-  listen(
-    source: InboxSource["event"],
+  listen<TSource extends InboxSource>(
+    source: TSource,
+  ): Promise<ThreadListener<TSource["event"]>>;
+  listen<TType extends InboxSource["event"]>(
+    source: TType,
     options: InboxListenOptions,
-  ): Promise<ThreadListener>;
+  ): Promise<ThreadListener<TType>>;
 
   /**
    * Puts messages back, in order, so the next reads return them before
@@ -1149,7 +1162,7 @@ function threadInbox(
   listenTo: (
     source: InboxSource["event"] | InboxSource,
     options?: InboxListenOptions,
-  ) => Promise<ThreadListener>,
+  ) => Promise<SourceListener>,
   replySchema?: ThreadRequests["reply"],
 ): {
   inbox: ThreadInbox;
@@ -1297,6 +1310,57 @@ function threadInbox(
     }
   }
 
+  // A reader of one event with a cursor of its own, that skips what the inbox
+  // skips. `inbox.of()` and the views of listeners are made by it.
+  function viewOf<TType extends InboxSource["event"]>(type: TType) {
+    const view = inbox.of(type);
+    const clean = async <T extends InboxMessage>(messages: T[]) => {
+      const kept: T[] = [];
+
+      for (const raw of messages) {
+        if (!(await skipped(raw))) {
+          kept.push(raw);
+        }
+      }
+
+      return kept;
+    };
+    const mine: View<EventMessage<typeof type>> = {
+      next: (async (options?: NextOptions) => {
+        for (;;) {
+          const raw = options ? await view.next(options) : await view.next();
+
+          if (!raw) {
+            return raw;
+          }
+
+          if (!(await skipped(raw))) {
+            return raw;
+          }
+        }
+      }) as View<EventMessage<typeof type>>["next"],
+      async unread() {
+        return clean(await view.unread()) as never;
+      },
+      async current() {
+        return clean(await view.current()) as never;
+      },
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            const message = await mine.next();
+
+            return message
+              ? { done: false, value: message }
+              : { done: true, value: undefined };
+          },
+        };
+      },
+    };
+
+    return mine;
+  }
+
   return {
     inbox: {
       next,
@@ -1322,57 +1386,25 @@ function threadInbox(
 
         return taken;
       },
-      of(type) {
-        const view = inbox.of(type);
-        const clean = async <T extends InboxMessage>(messages: T[]) => {
-          const kept: T[] = [];
+      of: viewOf,
+      async listen(
+        source: InboxSource["event"] | InboxSource,
+        options?: InboxListenOptions,
+      ) {
+        const listener = await listenTo(source, options);
+        const view = viewOf(isInboxSource(source) ? source.event : source);
 
-          for (const raw of messages) {
-            if (!(await skipped(raw))) {
-              kept.push(raw);
-            }
-          }
-
-          return kept;
-        };
-        const mine: View<EventMessage<typeof type>> = {
-          next: (async (options?: NextOptions) => {
-            for (;;) {
-              const raw = options
-                ? await view.next(options)
-                : await view.next();
-
-              if (!raw) {
-                return raw;
-              }
-
-              if (!(await skipped(raw))) {
-                return raw;
-              }
-            }
-          }) as View<EventMessage<typeof type>>["next"],
-          async unread() {
-            return clean(await view.unread()) as never;
+        // The view's methods close over it, not `this`, so spreading is safe.
+        return {
+          ...view,
+          stop: () => {
+            return listener.stop();
           },
-          async current() {
-            return clean(await view.current()) as never;
-          },
-          [Symbol.asyncIterator]() {
-            return {
-              async next() {
-                const message = await mine.next();
-
-                return message
-                  ? { done: false, value: message }
-                  : { done: true, value: undefined };
-              },
-            };
+          [asyncDispose]: () => {
+            return listener[asyncDispose]();
           },
         };
-
-        return mine;
       },
-      listen: listenTo as ThreadInbox["listen"],
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
       },
@@ -1913,7 +1945,7 @@ export function createAgentFunction(
         async function listenTo(
           source: InboxSource["event"] | InboxSource,
           options?: InboxListenOptions,
-        ): Promise<ThreadListener> {
+        ): Promise<SourceListener> {
           const given: InboxSource = isInboxSource(source)
             ? source
             : ({ event: source, ...options } as InboxSource);

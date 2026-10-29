@@ -406,8 +406,11 @@ export type {
   AgentTypeDefaults,
   AgentTypes,
   AgentTypesOf,
+  InboxListenOptions,
+  InboxSource,
   ThreadInbox,
   ThreadInboxMessage,
+  ThreadListener,
 } from "./agentFunction.ts";
 export type {
   Channel,
@@ -489,12 +492,14 @@ export type {
 } from "./slack.ts";
 export { slack, slackMessageEvent } from "./slack.ts";
 export type {
+  EventMessage,
   InboxMessage,
   NextOptions,
   SubscribeData,
   SubscribeEvent,
   SubscribeOptions,
   Subscription,
+  View,
 } from "./subscribe.ts";
 export type {
   RequestOptions,
@@ -508,6 +513,7 @@ export type {
   ThreadSteerMessage,
   ThreadStopMessage,
   ThreadUserMessage,
+  TriggerEvent,
 } from "./thread.ts";
 export { agentMessageEvent, getThread } from "./thread.ts";
 export type {

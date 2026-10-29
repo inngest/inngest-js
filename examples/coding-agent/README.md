@@ -3,7 +3,7 @@
 Send an `agent/task` event with a repository and a task; a branch and a pull request come out. The agent works in a Cloud sandbox: it reads and edits the code, runs commands, and when it is happy it pushes a branch and opens a pull request. Every model call and every tool call is a step, so a crash never repeats work and the trace shows each turn.
 
 - [`agent.ts`](agent.ts) is the whole function. It uses `repo()` to check the code out and give the model its tools (read, write, edit, search, run and push), `agent.loop()` for the loop, and its own `openPullRequest` tool.
-- [`model.ts`](model.ts) plugs Claude into the loop with `agent.anthropic()`, which calls `@anthropic-ai/sdk` with prompt caching and reports tokens, cache hits and cost. `agent.loop()` has no other provider built in: `model` is just a function, so another provider plugs in by implementing the same `AgentModel` shape.
+- [`model.ts`](model.ts) plugs Claude into the loop with `agent.anthropic()`, which calls `@anthropic-ai/sdk` with prompt caching and reports tokens, cache hits and cost. `agent.loop()` has no other provider built in: `model` is just a function, so another provider plugs in by implementing the same `AgentModel` shape. Keep the loop's `system` string stable, since it starts the cached prefix; put what changes between calls in the adapter's `volatile` option.
 
 The GitHub token never enters the sandbox. `repo()` passes it only in the environment of the clone and push commands (the model gets a `push` tool, not the token), and `openPullRequest` runs in your app.
 

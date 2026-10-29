@@ -682,6 +682,49 @@ describe("inbox sources", () => {
     ).toContainEqual(["stop", 1]);
   });
 
+  test("listen() returns the view of its event: it reads with its own cursor while the main inbox gets the events too", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+
+        const listener = await inbox.listen("ci/status", {
+          thread: "event.data.t",
+        });
+        const viewed = await listener.next({ timeout: "1m" });
+        const all = await listener.current();
+        const unread = await listener.unread();
+        const main = await inbox.next();
+
+        return [
+          viewed?.name,
+          all.length,
+          unread.length,
+          main?.name,
+          typeof listener.stop,
+          Symbol.asyncIterator in listener,
+          Symbol.asyncDispose in listener,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [ci("red")],
+    });
+
+    expect(output).toEqual([
+      "ci/status",
+      1,
+      0,
+      "ci/status",
+      "function",
+      true,
+      true,
+    ]);
+  });
+
   test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
     const { fn } = createAgentFunction(
       makeClient(),

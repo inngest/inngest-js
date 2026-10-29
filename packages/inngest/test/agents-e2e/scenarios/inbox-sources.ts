@@ -61,6 +61,9 @@ export const inboxSources = scenario({
             });
           } else if (content === "unlisten") {
             await record("message:unlisten");
+            await record(
+              `listener-view:${(await listener?.current())?.length ?? 0}`,
+            );
             await listener?.stop();
           } else if (content === "second") {
             await record("message:second");
@@ -165,6 +168,12 @@ export const inboxSources = scenario({
     ctx.check(
       "listen() hears from then on and stop() ends it",
       count(afterLate, "late") === 1,
+      afterLate,
+    );
+
+    ctx.check(
+      "the listener is a view of its event, with the same message",
+      count(afterLate, "listener-view:1") === 1,
       afterLate,
     );
 
