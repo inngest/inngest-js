@@ -63,7 +63,7 @@ export const subscribeRace = scenario({
             if: `async.data.t == '${t}'`,
           });
           const value = (m: { data: unknown } | null) => {
-            return (m?.data as { data?: { n?: number } } | undefined)?.data?.n;
+            return (m?.data as { n?: number } | undefined)?.n;
           };
 
           const winner = await Promise.race([

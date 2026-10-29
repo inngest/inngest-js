@@ -141,8 +141,7 @@ export const matrixScenario = (config: {
             const reads: Read[] = [];
             const valueOf = (m: { data: unknown } | null, offset = 0) => {
               return (
-                ((m?.data as { data?: { n?: number } } | undefined)?.data?.n ??
-                  -1) + offset
+                ((m?.data as { n?: number } | undefined)?.n ?? -1) + offset
               );
             };
             const record = (

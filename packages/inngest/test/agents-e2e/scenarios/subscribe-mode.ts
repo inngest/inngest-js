@@ -76,7 +76,7 @@ export const subscribeMode = scenario({
             if: `async.data.t == '${t}'`,
           });
           const value = (m: { data: unknown } | null) => {
-            return (m?.data as { data?: { n?: number } } | undefined)?.data?.n;
+            return (m?.data as { n?: number } | undefined)?.n;
           };
 
           const [first] = await Promise.all([inbox.next(), timed("p", 2000)]);

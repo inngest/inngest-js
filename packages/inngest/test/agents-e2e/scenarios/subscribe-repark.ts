@@ -56,9 +56,7 @@ export const subscribeRepark = scenario({
           while (reads.length < total) {
             const m = await inbox.next();
 
-            reads.push(
-              (m?.data as { data?: { n?: number } } | undefined)?.data?.n,
-            );
+            reads.push((m?.data as { n?: number } | undefined)?.n);
           }
 
           await inbox.close();

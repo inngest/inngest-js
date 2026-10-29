@@ -30,6 +30,12 @@ export const run = async (
     key?: string;
     saved?: unknown[];
     incoming?: unknown[];
+
+    /**
+     * What a park is answered with instead of the usual wake, whatever the
+     * state holds: `{ closed: true }` is how close() ends a park.
+     */
+    parkAnswer?: unknown;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
     /**
      * Called with each `step.run` step as it ran, metadata included.
@@ -45,9 +51,27 @@ export const run = async (
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
 
-  // The executor saves a message as a step named after the event.
-  const save = (data: unknown) => {
+  // The executor saves a message as a step named after the event, holding the
+  // whole event. A value that is not an event is the data of one.
+  const save = (value: unknown) => {
     const id = `${prefix}${saved.length + 1}`;
+    // An event, or a memo from before messages were flat ({ seq, data: event }),
+    // is saved as it is.
+    const isEvent =
+      typeof value === "object" &&
+      value !== null &&
+      "data" in value &&
+      ("name" in value || "seq" in value);
+    const data = isEvent
+      ? value
+      : {
+          id: `evt-${saved.length + 1}`,
+          name: "msg",
+          data: value,
+          ts: 0,
+          user: {},
+        };
+
     saved.push(data);
     stack.push(id);
     state = { ...state, [id]: { id, data } };
@@ -142,6 +166,11 @@ export const run = async (
       } else if (sub.mode === "poll") {
         answer(op.id, saved[(sub.seq as number) - 1] ?? null);
       } else {
+        if (options.parkAnswer !== undefined) {
+          answer(op.id, options.parkAnswer);
+          continue;
+        }
+
         // next: the function is blocked until the message exists.
         while (saved.length < (sub.seq as number)) {
           if (incoming.length === 0) {
