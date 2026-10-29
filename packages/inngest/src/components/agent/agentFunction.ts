@@ -449,6 +449,15 @@ export interface AgentBodyFields<
   event: { name: string; data: ThreadMessage<TEvent, TRequest> };
 
   /**
+   * The event of `on` that started this run, as it came (`id`, `name`,
+   * `data`), typed from `on`: narrow it by `name`. It is `undefined` when a
+   * plain thread message started the run (`thread.send()`, a reply in a
+   * thread), because there is no trigger event then. For a cron it is the tick
+   * (`{ cron }`), for `invoke()` the invoke event.
+   */
+  trigger: TEvent | undefined;
+
+  /**
    * The handle of the thread this run belongs to.
    */
   thread: ThreadHandle<TRequest, TReply>;
@@ -725,6 +734,22 @@ export interface AgentFunction<
  * again.
  */
 const warned = new Set<string>();
+
+/**
+ * The trigger event as the body sees it. An invoke event carries what the SDK
+ * tells the invoked agent in `data._agent`; that is not the caller's input.
+ */
+const triggerOf = (event: TriggerEvent | undefined) => {
+  const data = event?.data as Record<string, unknown> | undefined;
+
+  if (!event || !data || !("_agent" in data)) {
+    return event;
+  }
+
+  const { _agent: _told, ...input } = data;
+
+  return { ...event, data: input };
+};
 
 /**
  * The thread's view of its subscription: messages are the `data` of the
@@ -1519,6 +1544,7 @@ export function createAgentFunction(
             ...functionContext,
             logger,
             event: { ...event, data } as AgentBodyContext["event"],
+            trigger: triggerOf(data.event),
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
