@@ -86,6 +86,11 @@ const gitDate = (iso: string): string => {
  * A GitHub API in memory: the endpoints a push uses, and a record of the
  * requests it saw.
  */
+/**
+ * The size above which the contents API stops inlining a file's content.
+ */
+const inlineLimit = 1024 * 1024;
+
 export const fakeGitHub = () => {
   const blobs = new Map<string, Uint8Array>();
   const trees = new Map<string, Map<string, Entry>>();
@@ -154,13 +159,44 @@ export const fakeGitHub = () => {
 
     if (method === "GET" && path.startsWith("/contents/")) {
       const file = decodeURIComponent(path.slice("/contents/".length));
-      const entry = trees
-        .get(commits.get(url.searchParams.get("ref") ?? "")?.tree ?? "")
-        ?.get(file);
+      const tree = trees.get(
+        commits.get(url.searchParams.get("ref") ?? "")?.tree ?? "",
+      );
+      const entry = tree?.get(file);
 
-      return entry
-        ? new Response(blobs.get(entry.sha) as BodyInit, {
-            headers: { "content-type": "application/vnd.github.raw" },
+      if (entry) {
+        const bytes = blobs.get(entry.sha) as Uint8Array;
+
+        // Like GitHub: JSON that names the blob, with the content inline
+        // unless the file is big.
+        return respond({
+          type: entry.mode === "120000" ? "symlink" : "file",
+          sha: entry.sha,
+          size: bytes.length,
+          encoding: "base64",
+          content:
+            bytes.length > inlineLimit
+              ? ""
+              : Buffer.from(bytes).toString("base64"),
+        });
+      }
+
+      const listing = [...(tree?.keys() ?? [])].filter((name) => {
+        return name.startsWith(`${file}/`);
+      });
+
+      return listing.length > 0
+        ? respond(listing.map((name) => ({ type: "file", path: name })))
+        : respond({ message: "Not Found" }, 404);
+    }
+
+    if (method === "GET" && path.startsWith("/git/blobs/")) {
+      const bytes = blobs.get(path.slice("/git/blobs/".length));
+
+      return bytes
+        ? respond({
+            encoding: "base64",
+            content: Buffer.from(bytes).toString("base64"),
           })
         : respond({ message: "Not Found" }, 404);
     }
@@ -251,6 +287,7 @@ export const fakeGitHub = () => {
       const bytes = execFileSync("git", ["cat-file", "blob", sha], {
         cwd: repo,
         env,
+        maxBuffer: 64 * 1024 * 1024,
       });
 
       blobs.set(sha, new Uint8Array(bytes));

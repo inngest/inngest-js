@@ -17,6 +17,7 @@
  * history on top of the remote's branch: a merge commit, a submodule change or
  * a path git prints in quotes is refused.
  */
+import { NonRetriableError } from "../NonRetriableError.ts";
 import {
   blobOf,
   type GitPolicy,
@@ -46,9 +47,10 @@ git cat-file -e "$base^{commit}" 2>/dev/null || exit 4
 : > "$out"; : > "$out.seen"
 for c in $(git rev-list --reverse --topo-order -n ${maxPushCommits + 1} "$tip" "^$base"); do
   {
-    echo "COMMIT $c $(git rev-list --parents -n 1 "$c" | cut -d' ' -f2-)"
-    printf 'AUTHOR %s %s %s\\n' "$(printf %s "$(git log -1 --format=%an "$c")" | base64 | tr -d '\\n')" "$(printf %s "$(git log -1 --format=%ae "$c")" | base64 | tr -d '\\n')" "$(git log -1 --format=%aI "$c")"
-    printf 'COMMITTER %s %s %s\\n' "$(printf %s "$(git log -1 --format=%cn "$c")" | base64 | tr -d '\\n')" "$(printf %s "$(git log -1 --format=%ce "$c")" | base64 | tr -d '\\n')" "$(git log -1 --format=%cI "$c")"
+    echo "COMMIT $c $(git rev-list --parents -n 1 "$c" | cut -s -d' ' -f2-)"
+    git cat-file commit "$c" | sed '/^$/q' | grep -qE '^(gpgsig|gpgsig-sha256|encoding|mergetag) ' && echo "UNSUPPORTED"
+    printf 'AUTHOR %s %s %s\\n' "$(printf %s "$(git -c log.showSignature=false log -1 --format=%an "$c")" | base64 | tr -d '\\n')" "$(printf %s "$(git -c log.showSignature=false log -1 --format=%ae "$c")" | base64 | tr -d '\\n')" "$(git -c log.showSignature=false log -1 --format=%aI "$c")"
+    printf 'COMMITTER %s %s %s\\n' "$(printf %s "$(git -c log.showSignature=false log -1 --format=%cn "$c")" | base64 | tr -d '\\n')" "$(printf %s "$(git -c log.showSignature=false log -1 --format=%ce "$c")" | base64 | tr -d '\\n')" "$(git -c log.showSignature=false log -1 --format=%cI "$c")"
     printf 'MESSAGE %s\\n' "$(git cat-file commit "$c" | sed '1,/^$/d' | base64 | tr -d '\\n')"
     git -c core.quotePath=false diff-tree -r --no-renames --no-commit-id --root --raw "$c" | while IFS= read -r line; do
       meta=\${line%%\t*}; path=\${line#*\t}
@@ -67,6 +69,12 @@ interface ManifestCommit {
   author: { name: string; email: string; date: string };
   committer: { name: string; email: string; date: string };
   message: string;
+
+  /**
+   * The commit is signed, or has an encoding or a merge tag, which rebuilding
+   * it through the API would change.
+   */
+  unsupported?: boolean;
   changes: {
     status: string;
     oldMode: string;
@@ -127,7 +135,8 @@ export const parseManifest = (text: string): Manifest => {
     const [kind = "", ...rest] = line.split(" ");
 
     if (kind === "COMMIT") {
-      const [sha = "", ...parents] = rest;
+      // A root commit has a trailing space and no parents.
+      const [sha = "", ...parents] = rest.filter(Boolean);
 
       current = {
         sha,
@@ -160,6 +169,8 @@ export const parseManifest = (text: string): Manifest => {
         email: decodeText(email),
         date,
       };
+    } else if (kind === "UNSUPPORTED") {
+      current.unsupported = true;
     } else if (kind === "MESSAGE") {
       current.message = decodeText(rest[0] ?? "");
     } else if (kind === "CHANGE") {
@@ -190,7 +201,8 @@ export const parseManifest = (text: string): Manifest => {
 
 /**
  * One file's change as a unified diff, enough for a policy to scan for what
- * was added. Files over 3000 lines are shown as a replacement of the whole.
+ * was added. Two files whose lines multiply to over 4 million are shown as a
+ * replacement of the whole.
  */
 const unifiedDiff = (
   path: string,
@@ -213,7 +225,7 @@ const unifiedDiff = (
   const to = after ? `b/${path}` : "/dev/null";
   const body: string[] = [];
 
-  if (a.length > 3000 || b.length > 3000) {
+  if (a.length * b.length > 4_000_000) {
     body.push(...a.map((line) => `-${line}`), ...b.map((line) => `+${line}`));
   } else {
     // Longest common subsequence of lines, then the edit script from it.
@@ -442,8 +454,6 @@ const clientFor = (options: {
       const response = await request(
         "GET",
         `/contents/${encodePath(path)}?ref=${ref}`,
-        undefined,
-        "application/vnd.github.raw+json",
       );
 
       if (response.status === 404) {
@@ -460,20 +470,46 @@ const clientFor = (options: {
         );
       }
 
-      // A directory answers with a JSON listing, which is no file.
-      if (response.headers.get("content-type")?.includes("json")) {
+      const body = (await response.json()) as
+        | unknown[]
+        | {
+            type: string;
+            sha: string;
+            size: number;
+            encoding?: string;
+            content?: string;
+          };
+
+      // A directory answers with a listing, which is no file.
+      if (Array.isArray(body)) {
         return undefined;
       }
 
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (body.type === "submodule") {
+        throw new Error(`${path} is a submodule, which a policy can't read`);
+      }
 
-      if (bytes.length > maxPolicyFileBytes) {
+      if (body.size > maxPolicyFileBytes) {
         throw new Error(
-          `${path} is ${bytes.length} bytes, more than the ${maxPolicyFileBytes} a policy can read`,
+          `${path} is ${body.size} bytes, more than the ${maxPolicyFileBytes} a policy can read`,
         );
       }
 
-      return bytes;
+      if (body.size === 0) {
+        return new Uint8Array();
+      }
+
+      if (body.encoding === "base64" && body.content) {
+        return decodeBase64(body.content);
+      }
+
+      // A file the contents API doesn't inline, and a symlink, come as a blob.
+      const blob = await json<{ content: string }>(
+        "GET",
+        `/git/blobs/${body.sha}`,
+      );
+
+      return decodeBase64(blob.content);
     },
   };
 };
@@ -492,11 +528,55 @@ export const remoteState = async (options: {
   signal?: AbortSignal;
 }): Promise<{ oldSha?: string; base: string }> => {
   const client = clientFor(options);
-  const oldSha = await client.refSha(options.ref.replace(/^refs\//, ""));
 
-  return oldSha !== undefined
-    ? { oldSha, base: oldSha }
-    : { base: await client.defaultTip() };
+  try {
+    const oldSha = await client.refSha(options.ref.replace(/^refs\//, ""));
+
+    return oldSha !== undefined
+      ? { oldSha, base: oldSha }
+      : { base: await client.defaultTip() };
+  } catch (error) {
+    // A request that can't succeed on a retry (no access, an empty
+    // repository, a missing one) ends the step instead of repeating it.
+    if (
+      error instanceof ApiError &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.status !== 408 &&
+      error.status !== 429
+    ) {
+      throw new NonRetriableError(
+        error.status === 409
+          ? "the repository is empty, so there is no branch to build on"
+          : error.message,
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
+};
+
+/**
+ * Whether `path` is one git could hold and a policy would read the way git
+ * does: no empty, `.`, `..` or `.git` part, no leading slash, no backslash
+ * and no control character.
+ */
+export const isPlainPath = (path: string): boolean => {
+  return (
+    path.length > 0 &&
+    path.length <= 4096 &&
+    !path.startsWith("/") &&
+    !/[\\\u0000-\u001f]/.test(path) &&
+    path.split("/").every((part) => {
+      return (
+        part !== "" &&
+        part !== "." &&
+        part !== ".." &&
+        part.toLowerCase() !== ".git"
+      );
+    })
+  );
 };
 
 export interface PushManifestOptions {
@@ -571,6 +651,12 @@ const pushParsed = async (
   }
 
   for (const commit of commits) {
+    if (commit.unsupported) {
+      return {
+        refused: `commit ${commit.sha} is signed or has an encoding or a merge tag, which a push without git can't reproduce`,
+      };
+    }
+
     if (commit.parents.length !== 1) {
       return {
         refused:
@@ -579,7 +665,7 @@ const pushParsed = async (
     }
 
     for (const change of commit.changes) {
-      if (change.path.startsWith('"')) {
+      if (change.path.startsWith('"') || !isPlainPath(change.path)) {
         return {
           refused: "a path in this push has characters git_push can't check",
         };
@@ -587,7 +673,9 @@ const pushParsed = async (
 
       if (
         (change.mode !== "000000" && !modeIsFile(change.mode)) ||
-        (change.oldMode !== "000000" && !modeIsFile(change.oldMode))
+        (change.oldMode !== "000000" &&
+          change.oldMode !== "" &&
+          !modeIsFile(change.oldMode))
       ) {
         return {
           refused: `${change.path} is a submodule or another kind of entry that a push without git can't carry`,
@@ -620,7 +708,23 @@ const pushParsed = async (
   const afterBlob = (change: ManifestCommit["changes"][number]) => {
     return noSha.test(change.sha)
       ? undefined
-      : blobOf(blobs.get(change.sha) as Uint8Array);
+      : { ...blobOf(blobs.get(change.sha) as Uint8Array), mode: change.mode };
+  };
+  // The mode the push's first change to a path says the path had before.
+  const modeBefore = (path: string): string | undefined => {
+    for (const commit of commits) {
+      const change = commit.changes.find((entry) => {
+        return entry.path === path;
+      });
+
+      if (change) {
+        return /^\d{6}$/.test(change.oldMode) && change.oldMode !== "000000"
+          ? change.oldMode
+          : undefined;
+      }
+    }
+
+    return undefined;
   };
   const baseFile = once(async () => {
     return new Map<string, GitPushBlob | undefined>();
@@ -631,7 +735,12 @@ const pushParsed = async (
     if (!cache.has(path)) {
       const bytes = await client.file(path, state.base);
 
-      cache.set(path, bytes === undefined ? undefined : blobOf(bytes));
+      cache.set(
+        path,
+        bytes === undefined
+          ? undefined
+          : { ...blobOf(bytes), mode: modeBefore(path) },
+      );
     }
 
     return cache.get(path);
@@ -723,19 +832,25 @@ const pushParsed = async (
   }
 
   const asked = ref === target.dst;
-  const pushedRef = (status: PushedRef["status"], sha: string): PushedRef => {
+  const pushedRef = (
+    status: PushedRef["status"],
+    sha: string,
+    previous = asked ? state.oldSha : undefined,
+  ): PushedRef => {
     return {
       src: target.src,
       ref,
       sha,
-      ...(state.oldSha !== undefined && { oldSha: state.oldSha }),
+      ...(previous !== undefined && { oldSha: previous }),
       status,
       asked,
       ...(notes.length > 0 && { notes }),
     };
   };
 
-  if (!fastForward && asked) {
+  // History that doesn't continue from the commit the manifest was built on
+  // can't be rebuilt there, whatever ref it is meant for.
+  if (!linear || (!fastForward && asked)) {
     return { pushed: [pushedRef("non-fast-forward", tip)] };
   }
 
@@ -819,7 +934,16 @@ const pushParsed = async (
     const current = await client.refSha(name);
 
     if (current === undefined) {
-      await client.json("POST", "/git/refs", { ref, sha: parent });
+      try {
+        await client.json("POST", "/git/refs", { ref, sha: parent });
+      } catch (error) {
+        // The branch was made after the check above.
+        if (error instanceof ApiError && error.status === 422) {
+          return { pushed: [pushedRef("non-fast-forward", parent)] };
+        }
+
+        throw error;
+      }
     } else if (current !== parent) {
       try {
         await client.json("PATCH", `/git/refs/${name}`, {
@@ -828,14 +952,16 @@ const pushParsed = async (
         });
       } catch (error) {
         if (error instanceof ApiError && error.status === 422) {
-          return { pushed: [pushedRef("non-fast-forward", parent)] };
+          return {
+            pushed: [pushedRef("non-fast-forward", parent, current)],
+          };
         }
 
         throw error;
       }
     }
 
-    return { pushed: [pushedRef("pushed", parent)] };
+    return { pushed: [pushedRef("pushed", parent, current)] };
   } catch (error) {
     if (error instanceof ApiError) {
       return { failed: error.message };
@@ -864,8 +990,17 @@ export interface CommitFilesOptions {
 
   /**
    * The files by path: text or bytes to write, or `null` to delete the path.
+   * A file is written with mode 100644; give `{ content, executable: true }`
+   * for 100755. A file that is executable now and is written as plain content
+   * loses the bit.
    */
-  files: Record<string, string | Uint8Array | null>;
+  files: Record<
+    string,
+    | string
+    | Uint8Array
+    | null
+    | { content: string | Uint8Array; executable?: boolean }
+  >;
   author?: { name: string; email: string };
 
   /**
@@ -925,6 +1060,14 @@ export const commitFiles = async (
     return { refused: "there are no files to commit" };
   }
 
+  const bad = paths.find((path) => {
+    return !isPlainPath(path);
+  });
+
+  if (bad !== undefined) {
+    return { refused: `${bad} is not a path a commit can carry` };
+  }
+
   if (!isPushableRef(options.ref)) {
     throw new Error(`${options.ref} is not a ref a commit may be pushed to`);
   }
@@ -939,7 +1082,7 @@ export const commitFiles = async (
     if (content === null || content === undefined) {
       changes.push({
         status: "D",
-        oldMode: "100644",
+        oldMode: "",
         mode: "000000",
         oldSha: "",
         sha: "0".repeat(40),
@@ -949,15 +1092,21 @@ export const commitFiles = async (
       continue;
     }
 
+    const written =
+      content instanceof Uint8Array || typeof content === "string"
+        ? { content }
+        : content;
     const bytes =
-      typeof content === "string" ? new TextEncoder().encode(content) : content;
+      typeof written.content === "string"
+        ? new TextEncoder().encode(written.content)
+        : written.content;
     const sha = await gitBlobSha(bytes);
 
     blobs.set(sha, bytes);
     changes.push({
       status: "M",
-      oldMode: "100644",
-      mode: "100644",
+      oldMode: "",
+      mode: "executable" in written && written.executable ? "100755" : "100644",
       oldSha: "",
       sha,
       path,

@@ -177,7 +177,7 @@ export const gitPushApi = scenario({
               tools: sandboxTools(sandboxes),
             });
             const direct = await pushBranch(
-              sandboxes.work as LazySandbox,
+              await (sandboxes.work as LazySandbox).get(),
               pushOptions,
               "agent/direct",
               { idempotencyKey: "direct" },

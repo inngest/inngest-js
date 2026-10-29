@@ -96,6 +96,13 @@ export interface GitPushBlob {
   bytes: Uint8Array;
 
   /**
+   * The git file mode where the file is known to have one: `100644`, `100755`
+   * (executable) or `120000` (a symlink, whose content is the link's target).
+   * A change of mode alone shows in `before.mode` and `after.mode`.
+   */
+  mode?: string;
+
+  /**
    * The content as UTF-8 text, or `undefined` for a binary file or one that
    * is not valid UTF-8. A leading byte order mark is kept.
    */
@@ -223,7 +230,7 @@ const readBlob = (
     const tab = entry.indexOf("\t");
     const meta = entry.slice(0, tab);
     const name = entry.slice(tab + 1);
-    const [, type = "", sha = ""] = meta.split(" ");
+    const [mode = "", type = "", sha = ""] = meta.split(" ");
     if (name !== path || type === "tree") {
       return undefined;
     }
@@ -254,7 +261,10 @@ const readBlob = (
 
     const raw = read.stdoutBytes;
 
-    return blobOf(new Uint8Array(raw.buffer, raw.byteOffset, raw.length));
+    return {
+      ...blobOf(new Uint8Array(raw.buffer, raw.byteOffset, raw.length)),
+      mode,
+    };
   });
 };
 

@@ -11,15 +11,18 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { fakeGitHub } from "./git-fixtures/githubFake.ts";
 import {
   commitFiles,
   isGitHubRemote,
+  isPlainPath,
   manifestScript,
   parseManifest,
   pushManifest,
@@ -142,7 +145,7 @@ describe("the git-free push", { timeout: 60_000 }, () => {
       const [mode = "", , sha = ""] = meta.split(" ");
 
       out[path] =
-        `${mode} ${execFileSync("git", ["cat-file", "blob", sha], { cwd: work, env }).toString("base64")}`;
+        `${mode} ${execFileSync("git", ["cat-file", "blob", sha], { cwd: work, env, maxBuffer: 64 * 1024 * 1024 }).toString("base64")}`;
     }
 
     return out;
@@ -443,6 +446,188 @@ describe("the git-free push", { timeout: 60_000 }, () => {
     );
   });
 
+  test("shows the policy modes: an executable bit flip, a symlink, and a file read from a big base", async () => {
+    writeFileSync(join(work, "big.txt"), "b".repeat(1_300_000));
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "big base");
+    base = git(work, "rev-parse", "HEAD");
+    hub = fakeGitHub();
+    hub.seed(work, base, "refs/heads/main");
+    chmodSync(join(work, "keep.txt"), 0o755);
+    symlinkSync("../outside", join(work, "link"));
+    writeFileSync(join(work, "big.txt"), `${"b".repeat(1_300_000)}x`);
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "modes");
+    git(work, "branch", "-f", "agent/modes", "HEAD");
+
+    const seen: Record<string, unknown> = {};
+
+    await push("agent/modes", async (pushed) => {
+      for (const file of pushed.files) {
+        const before = await file.before();
+        const after = await file.after();
+
+        seen[file.path] = {
+          before: before && { mode: before.mode, size: before.size },
+          after: after && { mode: after.mode, text: after.text?.slice(0, 20) },
+        };
+      }
+    });
+
+    expect(seen["keep.txt"]).toEqual({
+      before: { mode: "100644", size: 5 },
+      after: { mode: "100755", text: "keep\n" },
+    });
+    expect(seen.link).toEqual({
+      before: undefined,
+      after: { mode: "120000", text: "../outside" },
+    });
+    expect(seen["big.txt"]).toMatchObject({
+      before: { mode: "100644", size: 1_300_000 },
+    });
+  });
+
+  test("refuses paths git can't hold, so a policy never matches a different path than the push writes", async () => {
+    const sha = "a".repeat(40);
+    const blob = "b".repeat(40);
+    const b64 = (text: string) => Buffer.from(text).toString("base64");
+
+    for (const path of [
+      "./.github/x.yml",
+      "a/../.github/x.yml",
+      ".git/config",
+      "a/.GIT/hooks",
+      "/etc/passwd",
+      "a//b",
+      "a\\b",
+    ]) {
+      const outcome = await pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${[
+          `COMMIT ${sha} ${base}`,
+          `AUTHOR ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `COMMITTER ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+          `MESSAGE ${b64("m")}`,
+          `CHANGE A 000000 100644 ${"0".repeat(40)} ${blob} ${b64(path)}`,
+          `BLOB ${blob} ${b64("x")}`,
+        ].join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      });
+
+      expect(outcome, path).toMatchObject({
+        refused: expect.stringContaining("characters git_push can't check"),
+      });
+    }
+
+    await expect(
+      commitFiles({
+        remote,
+        token,
+        fetch: hub.handle,
+        ref: "refs/heads/x",
+        message: "m",
+        files: { "../x": "x" },
+      }),
+    ).resolves.toMatchObject({
+      refused: expect.stringContaining("not a path"),
+    });
+  });
+
+  test("a root commit and a signed commit are refused, a rebased branch is not a fast-forward even to another ref", async () => {
+    git(work, "checkout", "--quiet", "--orphan", "agent/root");
+    git(work, "rm", "-rf", "--quiet", ".");
+    writeFileSync(join(work, "r.txt"), "root\n");
+    git(work, "add", "-A");
+    git(work, "commit", "--quiet", "-m", "root");
+
+    const refusal = await pushManifest({
+      remote,
+      token,
+      fetch: hub.handle,
+      manifest: manifestOf(git(work, "rev-parse", "HEAD")),
+      target: { src: "refs/heads/agent/root", dst: "refs/heads/agent/root" },
+      tip: git(work, "rev-parse", "HEAD"),
+      state: { base },
+    });
+
+    expect(refusal).toMatchObject({
+      refused: expect.stringContaining("root commit"),
+    });
+    expect(
+      parseManifest(manifestOf(git(work, "rev-parse", "HEAD"))).commits[0]
+        ?.parents,
+    ).toEqual([]);
+
+    const sha = "a".repeat(40);
+    const b64 = (text: string) => Buffer.from(text).toString("base64");
+    const header = [
+      `COMMIT ${sha} ${base}`,
+      "UNSUPPORTED",
+      `AUTHOR ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+      `COMMITTER ${b64("A")} ${b64("a@x")} 2026-10-28T00:00:00Z`,
+      `MESSAGE ${b64("m")}`,
+    ];
+
+    await expect(
+      pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${header.join("\n")}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+      }),
+    ).resolves.toMatchObject({ refused: expect.stringContaining("signed") });
+
+    // A commit that doesn't sit on the base, sent to a ref the policy picked.
+    await expect(
+      pushManifest({
+        remote,
+        token,
+        fetch: hub.handle,
+        manifest: `${header
+          .filter((line) => line !== "UNSUPPORTED")
+          .join("\n")
+          .replace(base, "c".repeat(40))}\n`,
+        target: { src: "refs/heads/x", dst: "refs/heads/x" },
+        tip: sha,
+        state: { base },
+        policy: () => {
+          return { ref: "refs/heads/elsewhere" };
+        },
+      }),
+    ).resolves.toMatchObject({
+      pushed: [{ status: "non-fast-forward", asked: false }],
+    });
+    expect(hub.refs.has("refs/heads/elsewhere")).toBe(false);
+  });
+
+  test("a branch that appears between the check and the push is not forced", async () => {
+    branch("agent/appears", () => {
+      writeFileSync(join(work, "p.txt"), "p\n");
+    });
+    hub.fail.match = /POST \/git\/refs/;
+    hub.fail.status = 422;
+
+    await expect(push("agent/appears")).resolves.toMatchObject({
+      pushed: [{ status: "non-fast-forward" }],
+    });
+  });
+
+  test("an empty repository ends the step instead of retrying it", async () => {
+    hub.fail.match = /GET \/git\/ref\//;
+    hub.fail.status = 409;
+
+    await expect(
+      remoteState({ remote, ref: "refs/heads/x", token, fetch: hub.handle }),
+    ).rejects.toBeInstanceOf(NonRetriableError);
+  });
+
   test("the sandbox that lacks the remote's commit makes the script exit 4", () => {
     const ran = spawnSync(
       "sh",
@@ -697,6 +882,23 @@ describe("notes and committing files", { timeout: 60_000 }, () => {
 });
 
 describe("remotes", () => {
+  test.each([
+    ["src/a.ts", true],
+    ["a b/c d.txt", true],
+    ["日本/x", true],
+    ["", false],
+    ["/x", false],
+    ["a//b", false],
+    ["./a", false],
+    ["a/..", false],
+    [".git/config", false],
+    ["a/.Git/x", false],
+    ["a\\b", false],
+    ["a\nb", false],
+  ])("isPlainPath(%j)", (path, expected) => {
+    expect(isPlainPath(path)).toBe(expected);
+  });
+
   test.each([
     ["https://github.com/acme/app", true],
     ["https://github.com/acme/app.git", true],

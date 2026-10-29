@@ -248,7 +248,11 @@ export const pushBranch = async (
     return fail(`${branch} is not a branch name git_push can push`);
   }
 
-  const transport = await chooseTransport(options);
+  // Decided once in a step, so a replay on another runtime keeps the first
+  // run's choice.
+  const transport = await step.run("git-push:transport", () => {
+    return chooseTransport(options);
+  });
   const path = `/tmp/inngest-git-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}.${transport === "api" ? "manifest" : "bundle"}`;
   const remoteInfo =
     transport === "api"
