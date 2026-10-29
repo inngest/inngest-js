@@ -541,19 +541,24 @@ describe("step.subscribe", () => {
           return String(await reviews.next({ timeout: "1s" }));
         },
       );
+      const timeouts: unknown[] = [];
 
-      // A mention wakes the park; the view looks again and waits with a timeout.
-      const { output, ops } = await run(fn, {
+      // A mention wakes the first park; the view looks again and waits again.
+      const { waiting } = await run(fn, {
         incoming: [mention(1)],
-        timeouts: 1,
+        onOp: (op) => {
+          const park = (
+            op.opts as { subscribe?: { mode?: string; timeout?: string } }
+          ).subscribe;
+
+          if (park?.mode === "park") {
+            timeouts.push(park.timeout);
+          }
+        },
       });
 
-      expect(output).toBe("undefined");
-      expect(
-        ops.filter((op) => {
-          return op.mode === "park";
-        }),
-      ).toHaveLength(2);
+      expect(waiting).toBe(true);
+      expect(timeouts).toEqual(["1s", "1s"]);
     });
 
     test("a timeout of a view stays a timeout on replay, though a match has arrived since", async () => {
