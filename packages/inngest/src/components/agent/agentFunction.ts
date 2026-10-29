@@ -62,7 +62,7 @@ import {
   stepSandboxes,
 } from "./defs.ts";
 import { agentMessage } from "./events.ts";
-import { kv as defaultKv, type Kv } from "./kv.ts";
+import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
   budgetReason,
@@ -314,9 +314,12 @@ export interface AgentFunctionConfig<
   id: string;
 
   /**
-   * KV store for thread state. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
+   * KV store for thread state, or a function that returns one, called at each
+   * use (so a Worker can build it from the bindings of the current request).
+   * Default: the store given to `createAgents`, else Redis at
+   * `INNGEST_EXPERIMENTAL_KV_URL`.
    */
-  kv?: Kv;
+  kv?: KvSource;
 
   /**
    * The types of the requests other threads send this agent with
@@ -1217,7 +1220,7 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  const store = config.kv ?? defaultKv;
+  const store = kvFrom(config.kv);
   const scoring = config.scores ?? true;
 
   const cleanup = createDefer(
@@ -1500,7 +1503,7 @@ export function createAgentFunction(
 
       const thread = getThread(client, ref, data.thread, {
         session,
-        kv: config.kv,
+        kv: store,
         requests: config.requests,
       });
 
@@ -1916,7 +1919,7 @@ export function createAgentFunction(
     thread(key, session) {
       return getThread(client, ref, key, {
         session,
-        kv: config.kv,
+        kv: store,
         requests: config.requests,
       });
     },
@@ -1925,7 +1928,7 @@ export function createAgentFunction(
         return listThreads(client, ref, options, (key, session) => {
           return getThread(client, ref, key, {
             session,
-            kv: config.kv,
+            kv: store,
             requests: config.requests,
           });
         });

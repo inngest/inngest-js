@@ -18,7 +18,7 @@ import { step } from "../InngestStepTools.ts";
 import { parseWithAsync } from "./channels.ts";
 import { agentMessage } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
-import { kv as defaultKv, type Kv, type KvScopeInstance } from "./kv.ts";
+import { type KvScopeInstance, type KvSource, kvFrom } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
 
@@ -150,10 +150,11 @@ export interface ThreadOptions<TRequest = unknown, TReply = unknown> {
   session?: string;
 
   /**
-   * KV store holding the thread state. Default: Redis at
+   * KV store holding the thread state, or a function that returns one, called
+   * at each use. Default: the store given to `createAgents`, else Redis at
    * `INNGEST_EXPERIMENTAL_KV_URL`.
    */
-  kv?: Kv;
+  kv?: KvSource;
 
   /**
    * The agent's request and reply schemas: `request()` checks its payload
@@ -348,14 +349,15 @@ export function threadSessions(
  * The thread KV scope of a client, readable outside a function.
  * @param client Inngest client.
  * @param key Thread key.
- * @param kv KV store. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
+ * @param kv KV store, or a function that returns one. Default: the store given
+ * to `createAgents`, else Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
 export function threadKv(
   client: Inngest.Any,
   key: string,
-  kv: Kv = defaultKv,
+  kv?: KvSource,
 ): KvScopeInstance {
-  return kv.with(client).scope("thread", key);
+  return kvFrom(kv).with(client).scope("thread", key);
 }
 
 /**
