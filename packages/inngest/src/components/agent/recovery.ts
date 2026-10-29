@@ -288,7 +288,16 @@ export interface Finished {
   /**
    * For a failed run: the error's name and message.
    */
-  error?: { name?: string; message: string; nonRetriable: boolean };
+  error?: {
+    name?: string;
+    message: string;
+
+    /**
+     * The function declared the failure final (a `NonRetriableError`, by name,
+     * or `noRetry` on the error). A plain error that ran out of retries is not.
+     */
+    nonRetriable: boolean;
+  };
 }
 
 /**
