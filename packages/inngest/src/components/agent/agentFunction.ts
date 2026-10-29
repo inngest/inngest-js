@@ -19,6 +19,11 @@
 
 import { internalEvents } from "../../helpers/consts.ts";
 import type { Logger } from "../../middleware/logger.ts";
+import type {
+  ApplyAllMiddlewareCtxExtensions,
+  ApplyAllMiddlewareGroupExtensions,
+  ApplyAllMiddlewareStepExtensions,
+} from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import {
   type AgentBridge,
@@ -32,6 +37,7 @@ import {
 } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 import type { SandboxTools } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { toAsync } from "./cel.ts";
@@ -124,7 +130,11 @@ import {
  * thread), and rejects `debounce`, `batchEvents` and `checkpointing`,
  * which would break what a thread's run is.
  */
-export interface AgentFunctionOptions {
+export interface AgentFunctionOptions<
+  TMiddleware extends Middleware.Class[] | undefined =
+    | Middleware.Class[]
+    | undefined,
+> {
   /**
    * The name the function shows in the Inngest UI. Default: its `id`.
    */
@@ -193,9 +203,10 @@ export interface AgentFunctionOptions {
   priority?: InngestFunction.Options["priority"];
 
   /**
-   * Middleware for this function's runs.
+   * Middleware for this function's runs. What it adds to `step`, `group` and
+   * the rest of the context is typed in the body, with the client's.
    */
-  middleware?: InngestFunction.Options["middleware"];
+  middleware?: TMiddleware;
 
   /**
    * Not allowed. A debounce keeps only the last of a burst of events, so the
@@ -288,8 +299,11 @@ export interface AgentFunctionConfig<
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
+  TMiddleware extends Middleware.Class[] | undefined =
+    | Middleware.Class[]
+    | undefined,
 > extends ThreadKeyConfig<TOn>,
-    AgentFunctionOptions {
+    AgentFunctionOptions<TMiddleware> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -701,8 +715,16 @@ export interface ThreadInbox<
  * `attempt` and the rest, without `event` and `events`, which the agent
  * replaces.
  */
-export type AgentFunctionInput<TClient extends Inngest.Any = Inngest.Any> =
-  Omit<GetFunctionInput<TClient>, "event" | "events">;
+export type AgentFunctionInput<
+  TClient extends Inngest.Any = Inngest.Any,
+  TMiddleware extends Middleware.Class[] | undefined = undefined,
+> = Omit<GetFunctionInput<TClient>, "event" | "events" | "step" | "group"> &
+  ApplyAllMiddlewareCtxExtensions<TMiddleware> & {
+    step: GetFunctionInput<TClient>["step"] &
+      ApplyAllMiddlewareStepExtensions<TMiddleware>;
+    group: GetFunctionInput<TClient>["group"] &
+      ApplyAllMiddlewareGroupExtensions<TMiddleware>;
+  };
 
 /**
  * What the body gets: the function context the client's middleware gives a
@@ -719,7 +741,8 @@ export type AgentBodyContext<
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
   TClient extends Inngest.Any = Inngest.Any,
-> = AgentFunctionInput<TClient> &
+  TMiddleware extends Middleware.Class[] | undefined = undefined,
+> = AgentFunctionInput<TClient, TMiddleware> &
   AgentBodyFields<TEvent, TRequest, TReply, TSandboxes>;
 
 /**
@@ -733,8 +756,16 @@ export type AgentBody<
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
   TClient extends Inngest.Any = Inngest.Any,
+  TMiddleware extends Middleware.Class[] | undefined = undefined,
 > = (
-  context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes, TClient>,
+  context: AgentBodyContext<
+    TEvent,
+    TRequest,
+    TReply,
+    TSandboxes,
+    TClient,
+    TMiddleware
+  >,
 ) => Promise<TOutput>;
 
 /**

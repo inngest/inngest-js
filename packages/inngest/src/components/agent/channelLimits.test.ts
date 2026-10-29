@@ -1203,3 +1203,98 @@ describe("begin, finish, continued and step IDs", () => {
     });
   });
 });
+
+describe("structured data in a report", () => {
+  test("the channel gets the data with the text, and the step result carries it", async () => {
+    const got: unknown[] = [];
+    const channel = defineChannel({
+      post: async (message) => {
+        got.push(message.data);
+      },
+    });
+    const { runStep, results } = stepper();
+    const report = createReporter({ main: channel }, undefined, runStep);
+
+    await report({ text: "Built", data: { rows: [1, 2], ok: true } });
+    await report("plain");
+
+    expect(got).toEqual([{ rows: [1, 2], ok: true }, undefined]);
+    expect(results["report:1:0:main"]).toEqual({
+      data: { rows: [1, 2], ok: true },
+    });
+    expect(results["report:2:0:main"]).toBeUndefined();
+  });
+
+  test("with scores on, the result keeps the time beside the data, and a later post is still scored from it", async () => {
+    const channel = defineChannel({ post: async () => {} });
+    const { runStep, results } = stepper();
+    const report = createReporter({ main: channel }, undefined, runStep, {
+      since: Date.now() - 5,
+    });
+
+    await report({ text: "a", data: { n: 1 } });
+    await report("b");
+
+    expect(results["report:1:0:main"]).toMatchObject({
+      at: expect.any(Number),
+      data: { n: 1 },
+    });
+    expect(typeof results["report:2:0:main"]).toBe("number");
+  });
+
+  test("a replay of a post that had data posts nothing again", async () => {
+    const posts: string[] = [];
+    const channel = defineChannel({
+      post: async (m) => {
+        posts.push(m.text);
+      },
+    });
+    const first = stepper();
+
+    await createReporter(
+      { main: channel },
+      undefined,
+      first.runStep,
+    )({
+      text: "once",
+      data: { a: 1 },
+    });
+
+    const again = stepper(first.results);
+
+    await createReporter(
+      { main: channel },
+      undefined,
+      again.runStep,
+    )({
+      text: "once",
+      data: { a: 1 },
+    });
+
+    expect(posts).toEqual(["once"]);
+  });
+
+  test("data must be a plain JSON object of at most 32 KB", async () => {
+    const report = createReporter(
+      { main: defineChannel({ post: async () => {} }) },
+      undefined,
+      stepper().runStep,
+    );
+    const cyclic: Record<string, unknown> = {};
+
+    cyclic.self = cyclic;
+
+    for (const data of [
+      cyclic,
+      [1, 2] as never,
+      "text" as never,
+      { big: "x".repeat(40_000) },
+      { wide: "é".repeat(20_000) },
+      new Date() as never,
+    ]) {
+      await expect(report({ text: "t", data })).rejects.toThrow(
+        "plain JSON object",
+      );
+    }
+  });
+});
