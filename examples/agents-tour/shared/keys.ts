@@ -22,8 +22,24 @@ export type ActionId =
   | "search"
   | "output"
   | "trace"
+  | "slack"
+  | "github"
+  | "events"
   | "message"
   | "everything"
+  | "file"
+  | "slackCompose"
+  | "slackNew"
+  | "slackChannel"
+  | "slackReact"
+  | "approve"
+  | "deny"
+  | "githubIssue"
+  | "githubPull"
+  | "sendEvent"
+  | "rowDown"
+  | "rowUp"
+  | "rowOpen"
   | "editor"
   | "undo"
   | "theme";
@@ -31,12 +47,14 @@ export type ActionId =
 export interface KeyDef {
   id: ActionId;
   label: string;
-  group: "Code" | "Pages" | "Panels" | "Focus";
+  group: "Code" | "Pages" | "Panels" | "Slack" | "GitHub" | "Trace" | "Focus";
   // Bindings that work while the editor or another text field has focus.
   inField: string[];
   // Bindings that work when focus is not in a text field.
   outside: string[];
   note?: string;
+  // Handled by the panel that owns it, not by the window.
+  local?: boolean;
 }
 
 export const keys: KeyDef[] = [
@@ -118,11 +136,126 @@ export const keys: KeyDef[] = [
     outside: ["2", "g t"],
   },
   {
+    id: "slack",
+    label: "Slack panel",
+    group: "Panels",
+    inField: ["Alt+Shift+S"],
+    outside: ["3", "g s"],
+  },
+  {
+    id: "github",
+    label: "GitHub panel",
+    group: "Panels",
+    inField: ["Alt+Shift+G"],
+    outside: ["4", "g h"],
+  },
+  {
+    id: "events",
+    label: "Event sender",
+    group: "Panels",
+    inField: ["Alt+Shift+V"],
+    outside: ["5", "g e"],
+  },
+  {
     id: "message",
-    label: "Message panel",
+    label: "Message box",
     group: "Panels",
     inField: ["Alt+Shift+M"],
-    outside: ["3", "g m"],
+    outside: ["m", "g m"],
+  },
+  {
+    id: "file",
+    label: "Switch between the code files",
+    group: "Code",
+    inField: ["Alt+Shift+L"],
+    outside: ["l"],
+  },
+  {
+    id: "slackCompose",
+    label: "Write in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+Q"],
+    outside: ["i"],
+  },
+  {
+    id: "slackChannel",
+    label: "Switch Slack channel",
+    group: "Slack",
+    inField: ["Alt+Shift+X"],
+    outside: ["c"],
+  },
+  {
+    id: "slackNew",
+    label: "Start a new Slack thread",
+    group: "Slack",
+    inField: ["Alt+Shift+W"],
+    outside: ["w"],
+  },
+  {
+    id: "slackReact",
+    label: "React with eyes to the last message",
+    group: "Slack",
+    inField: ["Alt+Shift+Z"],
+    outside: ["z"],
+  },
+  {
+    id: "approve",
+    label: "Click Approve in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+Y"],
+    outside: ["y"],
+  },
+  {
+    id: "deny",
+    label: "Click Deny in Slack",
+    group: "Slack",
+    inField: ["Alt+Shift+N"],
+    outside: ["n"],
+  },
+  {
+    id: "githubPull",
+    label: "Open a pull request",
+    group: "GitHub",
+    inField: ["Alt+Shift+B"],
+    outside: ["p"],
+  },
+  {
+    id: "githubIssue",
+    label: "Open an issue",
+    group: "GitHub",
+    inField: ["Alt+Shift+J"],
+    outside: ["o"],
+  },
+  {
+    id: "rowDown",
+    label: "Next trace row",
+    group: "Trace",
+    inField: [],
+    outside: ["ArrowDown"],
+    local: true,
+  },
+  {
+    id: "rowUp",
+    label: "Previous trace row",
+    group: "Trace",
+    inField: [],
+    outside: ["ArrowUp"],
+    local: true,
+  },
+  {
+    id: "rowOpen",
+    label: "Open a trace row or its hidden steps",
+    group: "Trace",
+    inField: [],
+    outside: ["Enter"],
+    local: true,
+  },
+  {
+    id: "sendEvent",
+    label: "Send the event",
+    group: "Panels",
+    inField: ["Alt+Shift+Enter"],
+    outside: ["s"],
   },
   {
     id: "everything",

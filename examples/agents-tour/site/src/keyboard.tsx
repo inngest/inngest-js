@@ -98,6 +98,7 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
 
       for (const def of keys) {
         if (
+          !def.local &&
           def.inField.some((combo) => {
             return matches(event, combo, isMac);
           })
@@ -121,8 +122,20 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
       }
 
       for (const def of keys) {
+        if (def.local) {
+          continue;
+        }
+
         for (const binding of def.outside) {
           if (binding.includes(" ")) {
+            continue;
+          }
+
+          // Arrow keys move between the tabs of a tab list.
+          if (
+            binding.startsWith("Arrow") &&
+            (target as HTMLElement).closest?.('[role="tablist"]')
+          ) {
             continue;
           }
 

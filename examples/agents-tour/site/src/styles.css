@@ -350,39 +350,110 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   background: var(--surface-2);
 }
 
-.run .status {
+.run .status,
+.run-total {
   color: var(--muted);
   font-size: 12px;
-  text-transform: lowercase;
 }
 
-.run ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.run-total {
+  margin-left: auto;
+  font-family: var(--mono);
 }
 
-.step {
+.trace-keys {
+  font-size: 12px;
+}
+
+.wf-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) 1fr 64px;
+  align-items: center;
+  column-gap: 10px;
   width: 100%;
   border: none;
   border-radius: 0;
   border-top: 1px solid var(--border);
   background: transparent;
-  justify-content: flex-start;
-  font: 13px var(--mono);
-}
-
-.step-name {
-  flex: 1;
+  padding: 3px 12px;
+  font: 12.5px var(--mono);
   text-align: left;
+  position: relative;
 }
 
-.step-meta {
+.wf-row > .dot {
+  position: absolute;
+  left: 2px;
+}
+
+.wf-row .wf-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-row.group .wf-name {
+  font-weight: 650;
+}
+
+.wf-row em {
   color: var(--muted);
+  font-style: normal;
+}
+
+.wf-track {
+  position: relative;
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 5px;
+}
+
+.wf-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 5px;
+  background: var(--muted);
+  min-width: 3px;
+}
+
+.wf-bar.completed {
+  background: var(--ok);
+}
+
+.wf-bar.running,
+.wf-bar.queued {
+  background: var(--accent);
+}
+
+.wf-bar.waiting {
+  background: var(--warn);
+  opacity: 0.7;
+}
+
+.wf-bar.failed,
+.wf-bar.cancelled {
+  background: var(--bad);
+}
+
+.wf-time {
+  color: var(--muted);
+  text-align: right;
+}
+
+.hidden-row {
+  grid-template-columns: 1fr auto;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.wait-row {
+  color: var(--muted);
+  cursor: default;
 }
 
 .step-detail {
@@ -392,14 +463,6 @@ code {
   font: 12px / 1.5 var(--mono);
   overflow: auto;
   max-height: 160px;
-}
-
-.hidden-note {
-  margin: 0;
-  padding: 6px 12px;
-  color: var(--muted);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
 }
 
 .dot {

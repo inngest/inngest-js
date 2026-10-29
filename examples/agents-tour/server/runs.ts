@@ -8,7 +8,7 @@ import type { DevServer } from "./devserver.ts";
 
 const spanFields = `
   spanID name status stepOp stepID attempts duration startedAt endedAt
-  outputID isUserland
+  outputID isUserland stepType groupKind
 `;
 
 const runsQuery = `
@@ -48,6 +48,8 @@ interface Span {
   endedAt: string | null;
   outputID: string | null;
   isUserland: boolean;
+  stepType: string | null;
+  groupKind: string | null;
   childrenSpans?: Span[];
 }
 
@@ -74,6 +76,8 @@ const stepOf = (span: Span): TraceStep => {
     endedAt: span.endedAt,
     outputID: span.outputID,
     userland: span.isUserland,
+    type: span.stepType,
+    group: span.groupKind,
     children: (span.childrenSpans ?? []).map(stepOf),
   };
 };

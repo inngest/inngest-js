@@ -16,8 +16,9 @@ import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { MessagePanel, OutputPanel, TracePanel } from "./panels.tsx";
+import { MessagePanel, OutputPanel } from "./panels.tsx";
 import { hash, store } from "./platform.ts";
+import { TracePanel } from "./trace.tsx";
 
 type Overlay = "contents" | "search" | "cheat" | null;
 type Tab = "output" | "trace" | "message";
@@ -558,7 +559,6 @@ export const App = () => {
                     runs={runs}
                     everything={everything}
                     onToggle={handlers.everything}
-                    hint={<Kbd action="everything" />}
                   />
                 ) : null}
                 {tab === "message" && target ? (
