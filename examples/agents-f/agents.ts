@@ -73,7 +73,7 @@ export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
     const result = await agent.loop({
       id: `turn${message.seq}`,
       model: scriptedModel(),
-      prompt: message.data.content ?? "",
+      prompt: message.content ?? "",
       history: history ?? [],
       tools: { think },
       ...control,
@@ -82,7 +82,7 @@ export const chat = agents.agent({ id: "chat" }, async ({ inbox, control }) => {
     await kv.thread.set("history", result.history);
     await kv.thread.set("last", { seq: message.seq, text: result.text });
     await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-      return [...(turns ?? []), message.data.content ?? ""];
+      return [...(turns ?? []), message.content ?? ""];
     });
   }
 });
@@ -91,17 +91,17 @@ export const quick = agents.agent({ id: "quick" }, async ({ inbox }) => {
   const message = await inbox.next();
   await sleep(3000);
   await kv.thread.update(kvKey<string[]>("seen"), function (seen) {
-    return [...(seen ?? []), message?.data.content ?? ""];
+    return [...(seen ?? []), message?.content ?? ""];
   });
 
-  return message?.data.content;
+  return message?.content;
 });
 
 export const boom = agents.agent({ id: "boom" }, async ({ inbox }) => {
   const message = await inbox.next();
   await sleep(2500);
   await kv.thread.update(kvKey<string[]>("seen"), function (seen) {
-    return [...(seen ?? []), message?.data.content ?? ""];
+    return [...(seen ?? []), message?.content ?? ""];
   });
 
   throw new NonRetriableError("boom");

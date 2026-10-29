@@ -485,7 +485,7 @@ describe("inbox validation", () => {
         const first = await inbox.next();
         const second = await inbox.next();
 
-        return [first?.data.content, second?.data.content];
+        return [first?.content, second?.content];
       },
     );
   };
@@ -531,7 +531,7 @@ describe("inbox validation", () => {
         async ({ inbox }) => {
           await inbox.next();
 
-          return (await inbox.next())?.data.event?.data;
+          return (await inbox.next())?.data;
         },
       ).fn,
       {
@@ -581,7 +581,7 @@ describe("inbox validation", () => {
           const unread = await inbox.close();
 
           return unread.map((message) => {
-            return message.data.event?.data;
+            return message.data;
           });
         },
       ).fn,
@@ -606,7 +606,7 @@ describe("inbox validation", () => {
         async ({ inbox }) => {
           await inbox.next();
 
-          return (await inbox.next())?.data.event?.data;
+          return (await inbox.next())?.data;
         },
       ).fn,
       {

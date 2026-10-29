@@ -90,7 +90,7 @@ describe("agent function", () => {
 
               return say(`ok ${m.seq}`);
             }),
-            prompt: m.data.content ?? "",
+            prompt: m.content ?? "",
             tools: {},
             history,
             ...control,
@@ -133,13 +133,13 @@ describe("agent function", () => {
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
             };
           }),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
           ...control,
         });
         const next = await inbox.next();
 
-        return [result.stopped, result.turns, next?.data.content];
+        return [result.stopped, result.turns, next?.content];
       },
     );
 
@@ -156,6 +156,76 @@ describe("agent function", () => {
     expect(output).toEqual(["stopped", 1, "next"]);
   });
 
+  test("an inbox message is the event flat, with the thread message fields beside it", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const second = await inbox.next();
+
+        return [first, second].map((m) => {
+          return {
+            name: m?.name,
+            seq: m?.seq,
+            kind: m?.kind,
+            content: m?.content,
+            hasEvent: m ? "event" in m : null,
+            isMessage: m?.is("agent/message"),
+          };
+        });
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("steer", "left")],
+    });
+
+    expect(output).toEqual([
+      {
+        name: "agent/message",
+        seq: 0,
+        kind: "user",
+        content: "go",
+        hasEvent: false,
+        isMessage: true,
+      },
+      {
+        name: "agent/message",
+        seq: 1,
+        kind: "steer",
+        content: "left",
+        hasEvent: false,
+        isMessage: true,
+      },
+    ]);
+  });
+
+  test("a thread message made from a trigger event (sent again by recovery) is that event", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const again = await inbox.next();
+
+        return [again?.name, again?.id, again?.data, again?.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [
+        message("user", "retry", "t1", {
+          event: { id: "evt9", name: "slack/message", data: { text: "hi" } },
+        }),
+      ],
+    });
+
+    expect(output).toEqual(["slack/message", "evt9", { text: "hi" }, "retry"]);
+  });
+
   test("a stop message that arrives while waiting is skipped", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
@@ -164,7 +234,7 @@ describe("agent function", () => {
         const first = await inbox.next();
         const second = await inbox.next();
 
-        return [first?.data.content, second?.data.content];
+        return [first?.content, second?.content];
       },
     );
 
@@ -200,12 +270,12 @@ describe("inbox arrival", () => {
         // No `...control`: the loop finds the inbox itself.
         const result = await agent.loop({
           model: loopOnce(seen),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
         });
         const next = await inbox.next();
 
-        return [result.stopped, result.turns, next?.data.content];
+        return [result.stopped, result.turns, next?.content];
       },
     );
 
@@ -245,7 +315,7 @@ describe("inbox arrival", () => {
                   toolCalls: [{ id: "c1", name: "missing", input: {} }],
                 };
           }),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
         });
 
@@ -274,7 +344,7 @@ describe("inbox arrival", () => {
 
         return [
           drained.map((m) => {
-            return m.data.kind;
+            return m.kind;
           }),
           after,
         ];
@@ -418,12 +488,7 @@ describe("inbox sources", () => {
         const red = await inbox.next();
         const deployed = await inbox.next();
 
-        return [
-          red?.data.content,
-          red?.data.kind,
-          red?.data.event?.name,
-          deployed?.data.content,
-        ];
+        return [red?.content, red?.kind, red?.name, deployed?.content];
       },
     );
 
@@ -480,7 +545,7 @@ describe("inbox sources", () => {
         const a = await inbox.next();
         const b = await inbox.next();
 
-        return [a?.data.content, b?.data.content];
+        return [a?.content, b?.content];
       },
     );
 
@@ -510,7 +575,7 @@ describe("inbox sources", () => {
         await inbox.next();
         const kept = await inbox.next();
 
-        return JSON.parse(kept?.data.content ?? "null");
+        return JSON.parse(kept?.content ?? "null");
       },
     );
 
@@ -556,7 +621,7 @@ describe("inbox sources", () => {
           (error: Error) => error.message,
         );
 
-        return [heard?.data.event?.name, bare];
+        return [heard?.name, bare];
       },
     );
 
@@ -586,11 +651,11 @@ describe("inbox sources", () => {
         const second = await inbox.next();
 
         return [
-          first?.data.content,
+          first?.content,
           all.map((m) => {
-            return m.data.kind;
+            return m.kind;
           }),
-          second?.data.content,
+          second?.content,
         ];
       },
     );
@@ -614,7 +679,7 @@ describe("inbox timeouts", () => {
         const expired = await inbox.next({ timeout: "1s" });
         const second = await inbox.next();
 
-        return [first?.data.content, expired, second?.data.content];
+        return [first?.content, expired, second?.content];
       },
     );
 
@@ -656,7 +721,7 @@ describe("inbox timeouts", () => {
         await inbox.next();
         const second = await inbox.next({ timeout: "30s" });
 
-        return second?.data.content;
+        return second?.content;
       },
     );
 
@@ -726,13 +791,13 @@ describe("steering", () => {
               toolCalls: [{ id: "c1", name: "missing", input: {} }],
             };
           }),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
           ...control,
         });
         const next = await inbox.next();
 
-        return [result.stopped, next?.data.content];
+        return [result.stopped, next?.content];
       },
     );
 
@@ -838,11 +903,11 @@ describe("thread state", () => {
             id: `turn${m.seq}`,
             model: agent.model(async () => {
               return {
-                ...say(`reply to ${m.data.content}`),
+                ...say(`reply to ${m.content}`),
                 usage: { input: 10, output: 5 },
               };
             }),
-            prompt: m.data.content ?? "",
+            prompt: m.content ?? "",
             tools: {},
             ...control,
           });
@@ -1175,8 +1240,8 @@ describe("request and reply", () => {
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         for await (const m of inbox) {
-          if (m.data.kind === "request") {
-            await m.reply({ answer: (m.data.payload as { n: number }).n * 2 });
+          if (m.kind === "request") {
+            await m.reply({ answer: (m.payload as { n: number }).n * 2 });
 
             break;
           }
@@ -1215,13 +1280,13 @@ describe("request and reply", () => {
 
           for (let i = 0; i < 2; i++) {
             const m = await inbox.next();
-            if (m?.data.kind === "request") {
-              seen.push(m.data.payload);
+            if (m?.kind === "request") {
+              seen.push(m.payload);
               await m.reply({
-                answer: (m.data.payload as { n: number }).n * 2,
+                answer: (m.payload as { n: number }).n * 2,
               });
             } else if (m) {
-              seen.push(m.data.content);
+              seen.push(m.content);
             }
           }
 
@@ -1310,13 +1375,13 @@ describe("request and reply", () => {
           },
           async ({ inbox }) => {
             const m = await inbox.next();
-            if (m?.data.kind !== "request") {
+            if (m?.kind !== "request") {
               return "not a request";
             }
 
             await m.reply({ answer: "no payload" });
 
-            return m.data.payload ?? "undefined payload";
+            return m.payload ?? "undefined payload";
           },
         ).fn,
         { event: message("request", undefined, "t1", { replyTo: "sig-1" }) },
@@ -1367,8 +1432,8 @@ describe("request and reply", () => {
           },
           async ({ inbox }) => {
             const m = await inbox.next();
-            if (m?.data.kind === "request") {
-              await m.reply({ answer: (m.data.payload as { n: number }).n });
+            if (m?.kind === "request") {
+              await m.reply({ answer: (m.payload as { n: number }).n });
             }
           },
         ).fn,
@@ -1475,7 +1540,7 @@ describe("agent limits", () => {
 
             return spend(8, 4);
           }),
-          prompt: first?.data.content ?? "",
+          prompt: first?.content ?? "",
           tools: {},
           ...control,
         });

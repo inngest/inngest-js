@@ -39,7 +39,7 @@ import {
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { Middleware } from "../middleware/middleware.ts";
-import type { SandboxTools } from "../sandbox/tools.ts";
+import type { SandboxTool, SandboxTools } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { toAsync } from "./cel.ts";
 import {
@@ -62,6 +62,12 @@ import {
   stepSandboxes,
 } from "./defs.ts";
 import { agentMessage } from "./events.ts";
+import {
+  createInboxTools,
+  type InboxToolInbox,
+  type InboxToolName,
+  type InboxToolsConfig,
+} from "./inboxTools.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
@@ -355,6 +361,17 @@ export interface AgentFunctionConfig<
   inbox?: readonly InboxSource[];
 
   /**
+   * Lets the model listen for events while it works: the body gets
+   * `inboxTools` (`inbox_listen`, `inbox_wait`, `inbox_read`, `inbox_stop`) to
+   * pass to `agent.loop()`, and to `sandbox.tools.code({ tools })` so `run_code`
+   * scripts use the same inbox. Off unless set. The model can only listen to the
+   * sources listed here, each tied to this thread by its own `thread`; its
+   * `if` can only narrow. A message that arrives while the model works is
+   * folded into its next turn by `control.steer()` when `foldMessages` allows.
+   */
+  inboxTools?: InboxToolsConfig;
+
+  /**
    * Which messages that arrive during a turn `control.steer()` (and so
    * `agent.loop()` inside this agent) folds into the turn at the next model
    * call. `"steer"` (default): only messages of kind `"steer"`; the rest wait
@@ -550,6 +567,12 @@ export interface AgentBodyFields<
   sandboxTools: SandboxToolsOf<TSandboxes>;
 
   /**
+   * The model's inbox tools, as the config's `inboxTools` allows: `inbox_listen`,
+   * `inbox_wait`, `inbox_read` and `inbox_stop`. Empty without `inboxTools`.
+   */
+  inboxTools: Partial<Record<InboxToolName, SandboxTool>>;
+
+  /**
    * The agent's channels, by name, as the config resolved them for this run.
    */
   channels: Record<string, Channel>;
@@ -607,25 +630,61 @@ export interface AgentBodyFields<
 }
 
 /**
- * A message of the thread's inbox. A `"request"` message from another
- * thread's `handle.request()` is answered with `reply()`.
+ * Omit over a union, keeping its members apart.
  */
-export interface ThreadInboxMessage<
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+/**
+ * What a thread message adds to the event it was made from: its kind and what
+ * goes with the kind (`content` for the model, a request's `payload` and
+ * `replyTo`).
+ */
+export type ThreadMessageFields<TRequest = unknown> = DistributiveOmit<
+  ThreadMessage<never, TRequest>,
+  "event"
+>;
+
+/**
+ * The event a message is, flat like the `trigger` of the body: `name`, `data`
+ * and the rest of the event, typed from `on` when the event is one of its
+ * triggers.
+ */
+type ThreadMessageEvent<TEvent, TRequest> =
+  | (TEvent extends { name: infer TName extends string; data: infer TData }
+      ? InboxMessage<TData, TName>
+      : never)
+  | InboxMessage<ThreadMessage<TEvent, TRequest>, "agent/message">;
+
+/**
+ * A message of the thread's inbox. It is the event it was made from, flat like
+ * `trigger` (`id`, `name`, `data`, `ts` and its place `seq`), with the fields
+ * of a thread message beside it (`kind`, `content`, ...). The event is the
+ * trigger event for a message made from a trigger (narrow it by `name`), and
+ * `agent/message` for a plain thread message (`thread.send()`, a reply, a
+ * request), whose `data` is the message itself. A message from an inbox source
+ * is its event too, under the event's own `name`; it is not in the type of
+ * `on`, so read it typed through `inbox.of(type)`. A `"request"` message from another thread's
+ * `handle.request()` is answered with `reply()`.
+ */
+export type ThreadInboxMessage<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
-> extends InboxMessage<ThreadMessage<TEvent, TRequest>> {
-  /**
-   * Answers a request: sends `data` to the thread that asked. It is a step,
-   * and it throws for a message that is not a `"request"`.
-   */
-  reply(
+> = ThreadMessageEvent<TEvent, TRequest> &
+  ThreadMessageFields<TRequest> & {
     /**
-     * The reply.
+     * Answers a request: sends `data` to the thread that asked. It is a step,
+     * and it throws for a message that is not a `"request"`.
      */
-    data: TReply,
-  ): Promise<void>;
-}
+    reply(
+      /**
+       * The reply.
+       */
+      data: TReply,
+    ): Promise<void>;
+  };
 
 /**
  * The thread's inbox: a subscription whose messages can reply.
@@ -641,6 +700,7 @@ export interface ThreadInbox<
       | "unread"
       | "of"
       | "listen"
+      | "putBack"
       | "close"
       | typeof Symbol.asyncIterator
     >,
@@ -721,12 +781,36 @@ export interface ThreadInbox<
   ): Promise<ThreadListener>;
 
   /**
+   * Puts messages back, in order, so the next reads return them before
+   * anything newer. Use it for messages you took with `unread()` that are not
+   * yours to handle yet.
+   * @param messages Messages that came from this inbox.
+   */
+  putBack(messages: ThreadInboxMessage<TEvent, TRequest, TReply>[]): void;
+
+  /**
    * Ends the subscription. See `Subscription.close()`: it only ends the
    * subscription, and a message that arrives afterwards is dropped.
    * @returns The messages that were saved but not read.
    */
   close(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
 }
+
+/**
+ * What the inbox tools need of the thread's inbox. They read through views of
+ * the events they listen to, which have cursors of their own, so a stop, a
+ * user message or a request is never taken from the loop.
+ */
+const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
+  return {
+    listen: (event, options) => {
+      return inbox.listen(event, options);
+    },
+    of: (event) => {
+      return inbox.of(event);
+    },
+  };
+};
 
 /**
  * The function context an agent's body shares with a plain function, typed
@@ -877,8 +961,9 @@ const triggerOf = (event: TriggerEvent | undefined) => {
 };
 
 /**
- * The thread's view of its subscription: messages are the `data` of the
- * events, and stop messages are skipped, because while the agent waits for its
+ * The thread's view of its subscription: a message is the event it was made
+ * from, flat, with the thread message's fields beside it, and stop messages are
+ * skipped, because while the agent waits for its
  * next message there is nothing to stop.
  */
 function threadInbox(
@@ -920,10 +1005,20 @@ function threadInbox(
     }
 
     const data = toMessage(message);
-    const unwrapped: ThreadInboxMessage = withIs({
+
+    // The event stays as it came; the thread message adds its fields beside it.
+    // A thread message that was made from a trigger event (one that recovery
+    // sends again) is that event: it keeps its name, id and data.
+    const { event: made, ...fields } = data as ThreadMessage & {
+      event?: { id?: string; name: string; data: unknown };
+    };
+    const unwrapped = withIs({
       ...message,
-      data,
-      async reply(answer) {
+      ...(made
+        ? { id: made.id ?? message.id, name: made.name, data: made.data }
+        : {}),
+      ...fields,
+      async reply(answer: unknown) {
         if (data.kind !== "request" || !data.replyTo) {
           throw new Error(
             "This message is not a request: only a request has a reply.",
@@ -944,11 +1039,11 @@ function threadInbox(
     });
     raws.set(unwrapped, message);
 
-    return unwrapped;
+    return unwrapped as unknown as ThreadInboxMessage;
   }
 
-  function rawOf(message: InboxMessage<ThreadMessage>): InboxMessage {
-    return raws.get(message) ?? message;
+  function rawOf(message: ThreadInboxMessage): InboxMessage {
+    return raws.get(message) ?? (message as unknown as InboxMessage);
   }
 
   let delivered = 0;
@@ -992,7 +1087,9 @@ function threadInbox(
   function next(
     options: NextOptions,
   ): Promise<ThreadInboxMessage | null | undefined>;
-  async function next(options?: NextOptions) {
+  async function next(
+    options?: NextOptions,
+  ): Promise<ThreadInboxMessage | null | undefined> {
     if (delivered > 0) {
       await recorder.waiting();
     }
@@ -1021,13 +1118,11 @@ function threadInbox(
       delivered += 1;
 
       // While the agent waits for its next message there is nothing to stop.
-      if (message.data.kind !== "stop") {
+      if (message.kind !== "stop") {
         if (delivered > 1) {
           await recorder.running(
             undefined,
-            message.data.kind === "user"
-              ? { content: message.data.content }
-              : undefined,
+            message.kind === "user" ? { content: message.content } : undefined,
           );
         }
 
@@ -1781,18 +1876,18 @@ export function createAgentFunction(
         const control = {
           async steer() {
             const lines: string[] = [];
-            const waiting: InboxMessage<ThreadMessage>[] = [];
+            const waiting: ThreadInboxMessage[] = [];
 
             // Read everything that has arrived: steering messages and stops
             // apply to the turn that is running; messages for the next turn
             // keep their place in the inbox.
             for (const message of await inbox.unread()) {
-              const kind = message.data.kind;
+              const kind = message.kind;
               if (
                 kind === "steer" ||
                 (kind === "user" && config.foldMessages === "all")
               ) {
-                lines.push(message.data.content ?? "");
+                lines.push(message.content ?? "");
               } else if (kind === "stop") {
                 stopRequested = true;
               } else {
@@ -1852,6 +1947,9 @@ export function createAgentFunction(
             thread,
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
+            inboxTools: config.inboxTools
+              ? createInboxTools(toolInbox(inbox), config.inboxTools)
+              : {},
             channels,
             report,
             scores: agentScores,

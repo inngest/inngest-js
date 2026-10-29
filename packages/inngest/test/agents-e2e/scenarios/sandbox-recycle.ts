@@ -34,7 +34,7 @@ export const sandboxRecycle = scenario({
       { id: agentId, sandboxes: { work: box } },
       async ({ inbox, sandboxes }) => {
         const first = await inbox.next();
-        const command = first?.data.content ?? "";
+        const command = first?.content ?? "";
         const read = async () => {
           const work = await sandboxes.work?.get();
           const bytes = await work?.files.read("notes", "/work/notes.txt");

@@ -83,7 +83,7 @@ export const agentRecovery = scenario({
         );
 
         for await (const message of inbox) {
-          const text = message.data.content ?? "";
+          const text = message.content ?? "";
 
           if (text.startsWith("explode")) {
             throw new Error(`exploded on ${text} at ${Date.now()}`);

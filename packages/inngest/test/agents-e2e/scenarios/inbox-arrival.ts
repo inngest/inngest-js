@@ -72,7 +72,7 @@ export const inboxArrival = scenario({
       async ({ inbox }) => {
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), message.data.content ?? ""];
+            return [...(turns ?? []), message.content ?? ""];
           });
 
           // No `...control`: the loop steers through the inbox on its own.
@@ -82,7 +82,7 @@ export const inboxArrival = scenario({
               { call: { name: "think", input: {} } },
               { say: "echo: {{last}}" },
             ]),
-            prompt: message.data.content ?? "",
+            prompt: message.content ?? "",
             tools: { think },
           });
 

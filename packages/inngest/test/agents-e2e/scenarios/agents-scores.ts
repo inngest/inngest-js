@@ -57,7 +57,7 @@ export const agentsScores = scenario({
               { call: { name: "note", input: {} } },
               { say: "all done" },
             ]),
-            prompt: first?.data.content ?? "",
+            prompt: first?.content ?? "",
             tools: { note },
             ...control,
           });
