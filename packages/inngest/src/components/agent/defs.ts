@@ -861,9 +861,9 @@ const lazySandbox = (
           );
         }
 
-        await owner.release(name);
-
-        // The next `get()` starts over, from the snapshot just taken.
+        // The next `get()` starts over, from the snapshot just taken. This
+        // comes first so that nothing after the destroy can leave a destroyed
+        // sandbox as the current one.
         raw = undefined;
         created = undefined;
         ready = undefined;
@@ -874,6 +874,11 @@ const lazySandbox = (
         if (!saved) {
           epoch++;
         }
+
+        // If forgetting the ready mark fails for good, the mark stays and the
+        // new sandbox looks ready while its setup runs. A run cancelled in
+        // that window would save it half set up.
+        await owner.release(name);
       });
 
       recycling = next.catch(() => {});

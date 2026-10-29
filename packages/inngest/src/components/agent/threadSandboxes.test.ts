@@ -1359,6 +1359,35 @@ describe("recycling a lazy sandbox", () => {
     expect(w.rows).toHaveLength(2);
   });
 
+  test("a release that throws after the destroy never leaves the destroyed sandbox as the current one", async () => {
+    const w = world();
+    const s = setup(w, "01A");
+    const created: string[] = [];
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          created.push(`sb-${created.length + 1}`);
+
+          return w.durable(created[created.length - 1] as string);
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      {
+        ...s.owner(),
+        release: async () => {
+          throw new Error("release failed");
+        },
+      },
+    );
+
+    await opened.work?.get();
+    await expect(opened.work?.recycle()).rejects.toThrow(/release failed/);
+
+    // The destroyed sandbox is not handed out again.
+    expect((await opened.work?.get())?.id).toBe("sb-2");
+  });
+
   test("a sandbox that belongs to no thread cannot be recycled", async () => {
     const w = world();
     const opened = openSandboxes({ work: box }, {
