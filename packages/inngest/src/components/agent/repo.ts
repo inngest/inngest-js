@@ -49,7 +49,8 @@ export interface RepoOptions {
    * - not set (default): a checkout with nothing to lose is brought to `ref`.
    *   One with local work (uncommitted changes, untracked files, or commits
    *   the remote lacks) is never wiped silently: `repo()` throws and names
-   *   `"keep"` and `"reset"`.
+   *   `"keep"` and `"reset"`. Local-only tags, ignored files and files marked
+   *   assume-unchanged do not count as work.
    * - `"reset"`: the working copy becomes `ref` as the remote has it.
    *   Local commits on that branch, uncommitted changes and untracked files
    *   are discarded, as in a fresh clone; ignored files and submodules are
@@ -80,8 +81,9 @@ export interface Repo {
    * What `repo()` did: `"cloned"` into an empty `path`; `"synced"`, the
    * checkout already there was fetched and brought to `ref`; or
    * `"diverged"` (`sync: "keep"` only), the remote was fetched but the branch
-   * could not be fast-forwarded because it has local commits or has diverged,
-   * so `sha` is the local commit.
+   * could not be fast-forwarded because it has local commits, has diverged, or
+   * has uncommitted changes the update would touch, so `sha` is the local
+   * commit.
    */
   action: "cloned" | "synced" | "diverged";
 
@@ -145,13 +147,22 @@ known() {
     printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{7,64}$'
 }
 # Work in the checkout that a reset would lose: changes, untracked files, or
-# commits no remote-tracking branch has.
+# commits no remote-tracking branch has. A git error counts as work, so a
+# checkout that cannot be read is never wiped.
 dirty() {
-  [ -n "$(g -C "$DIR" status --porcelain --untracked-files=all 2>/dev/null)" ] ||
-    [ -n "$(g -C "$DIR" rev-list -n1 HEAD --branches --not --remotes 2>/dev/null)" ]
+  s=$(g -C "$DIR" status --porcelain --untracked-files=all 2>&1) || return 0
+  [ -n "$s" ] && return 0
+  if g -C "$DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    u=$(g -C "$DIR" rev-list -n1 HEAD --not --remotes 2>&1) || return 0
+    [ -n "$u" ] && return 0
+  fi
+  u=$(g -C "$DIR" rev-list -n1 --branches --not --remotes 2>&1) || return 0
+  [ -n "$u" ]
 }
 T=$(mktemp -d) || exit 1
-trap 'rm -rf "$T"' EXIT
+# A clone that fails part way leaves a checkout that looks like work: remove it.
+CLONING=
+trap 'rc=$?; rm -rf "$T"; if [ "$rc" -ne 0 ] && [ -n "$CLONING" ]; then rm -rf "$DIR"; fi' EXIT
 g init --quiet --bare "$T" || exit 1
 `;
 
@@ -226,10 +237,10 @@ if [ -e "$DIR/.git" ]; then
 else
   # No checkout in the clone, which holds the token: filters and attributes
   # run in the tokenless checkout after it.
+  CLONING=1
   auth clone --quiet --no-checkout --no-recurse-submodules -- "$URL" "$DIR" || exit 1
   if [ -n "$REF" ] && ! known "$REF"; then
     printf '%s\\n' "$REF is not a branch, tag or commit of $URL" >&2
-    rm -rf "$DIR"
     exit 1
   fi
   # A name that is both a branch and a tag is the branch, as it is on sync.
@@ -242,6 +253,7 @@ else
 fi
 g -C "$DIR" config user.name "Coding agent" &&
 g -C "$DIR" config user.email "agent@users.noreply.github.com" &&
+CLONING=
 printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 `;
 
@@ -249,7 +261,10 @@ printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 // reads none of the checkout's configuration.
 const pushScript = `${prelude}
 g -C "$DIR" push --quiet "$T" "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
-auth --git-dir="$T" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH"
+auth --git-dir="$T" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
+# The push went to the URL, not a remote, so the checkout would not know the
+# remote has these commits (a later sync would call them local work).
+g -C "$DIR" update-ref "refs/remotes/origin/$BRANCH" "refs/heads/$BRANCH"
 `;
 
 /**

@@ -451,6 +451,32 @@ describe("repo checkout and sync", () => {
     expect(result).toMatchObject({ action: "diverged", sha: local });
   });
 
+  test("a commit pushed through the tool does not count as local work", async () => {
+    const checkoutOf = await checkout();
+    git(work, "checkout", "--quiet", "-b", "agent/pushed");
+    writeFileSync(join(work, "p.txt"), "p\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "pushed");
+    await checkoutOf.push("agent/pushed");
+    git(work, "checkout", "--quiet", "main");
+
+    expect(await checkout()).toMatchObject({ action: "synced" });
+  });
+
+  test("a clone that fails after the clone leaves nothing behind", async () => {
+    await expect(checkout({ ref: "deadbeef" })).rejects.toThrow();
+    expect(existsSync(work)).toBe(false);
+
+    expect(await checkout()).toMatchObject({ action: "cloned" });
+  });
+
+  test("a checkout git cannot read counts as work, so the default refuses it", async () => {
+    await checkout();
+    writeFileSync(join(work, ".git", "index"), "garbage");
+
+    await expect(checkout()).rejects.toThrow(/has work a sync would lose/);
+  });
+
   test("a retry after a refused first run clones cleanly", async () => {
     await expect(checkout({ ref: "nope" })).rejects.toThrow(
       /is not a branch, tag or commit of/,
