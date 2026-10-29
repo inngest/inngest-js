@@ -194,6 +194,59 @@ describe("inbox_listen", () => {
     },
   );
 
+  test("refuses a quoted identifier that hides parentheses from the check", async () => {
+    const { call } = setup();
+
+    await expect(
+      call("inbox_listen", {
+        source: "ci/status",
+        if: "event.data.`(` ) || true || (event.data.`)`",
+        as: "ci",
+      }),
+    ).rejects.toThrow(/"if" must be a single-line CEL expression/);
+  });
+
+  test("a failed listen doesn't remove a newer listener of the same name", async () => {
+    const fake = fakeInbox();
+    let calls = 0;
+    const tools = createInboxTools(
+      {
+        ...fake.inbox,
+        listen: async (event, options) => {
+          calls += 1;
+
+          if (calls === 1) {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 20);
+            });
+
+            throw new Error("backend down");
+          }
+
+          return fake.inbox.listen(event, options);
+        },
+      },
+      { listen: [{ event: "ci/status", thread: "t" }], maxListeners: 3 },
+    );
+    const run = (name: keyof typeof tools, input: unknown) => {
+      return (tools[name].run as unknown as Call)(input);
+    };
+    const first = run("inbox_listen", { source: "ci/status", as: "a" });
+    const firstSettled = first.catch(() => "failed");
+
+    // Stopped and taken again while the first is still pending.
+    const stopped = run("inbox_stop", { as: "a" }).catch(() => "stop-failed");
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 1);
+    });
+    await run("inbox_listen", { source: "ci/status", as: "a" });
+    await Promise.all([firstSettled, stopped]);
+    await expect(run("inbox_read", { as: "a" })).resolves.toEqual({
+      messages: [],
+    });
+  });
+
   test("caps the listeners at once, and per source in a run", async () => {
     const { call } = setup();
 
@@ -498,6 +551,7 @@ describe("isWrappable", () => {
     ['event.data.k == "a\\"r"', true],
     ['"""a""" == b', false],
     ["rb'x'", false],
+    ["event.data.`a`", false],
   ])("%s", (expression, ok) => {
     expect(isWrappable(expression)).toBe(ok);
   });

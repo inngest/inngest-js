@@ -114,7 +114,7 @@ const eventName = (source: InboxToolSource): string => {
  * Whether the parentheses and quotes of a CEL expression balance, so that
  * wrapping it as `(<expression>)` cannot be closed early by the expression.
  * An expression with a line break or other control character, a comment (`//`
- * or `#` outside a string), a raw string or a triple-quoted string is refused,
+ * or `#` outside a string), a quoted identifier, a raw string or a triple-quoted string is refused,
  * since this check would read it differently from the evaluator.
  */
 export const isWrappable = (expression: string): boolean => {
@@ -145,7 +145,11 @@ export const isWrappable = (expression: string): boolean => {
       }
 
       quote = char;
-    } else if (char === "#" || (char === "/" && expression[at + 1] === "/")) {
+    } else if (
+      char === "#" ||
+      char === "`" ||
+      (char === "/" && expression[at + 1] === "/")
+    ) {
       return false;
     } else if (char === "(") {
       depth += 1;
@@ -312,7 +316,7 @@ export const createInboxTools = (
           (narrow.length > maxIfChars || !isWrappable(narrow))
         ) {
           throw new Error(
-            `"if" must be a single-line CEL expression of at most ${maxIfChars} characters with balanced parentheses and quotes, and no comments or raw strings.`,
+            `"if" must be a single-line CEL expression of at most ${maxIfChars} characters with balanced parentheses and quotes, and no control characters, comments, quoted identifiers, raw strings or triple quotes.`,
           );
         }
 
@@ -351,7 +355,10 @@ export const createInboxTools = (
         try {
           await reserved;
         } catch (error) {
-          listeners.delete(as);
+          // Only its own entry: the name may have been stopped and taken again.
+          if (listeners.get(as)?.ready === reserved) {
+            listeners.delete(as);
+          }
           started.set(name, (started.get(name) ?? 1) - 1);
 
           throw error;
