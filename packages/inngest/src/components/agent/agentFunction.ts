@@ -71,6 +71,7 @@ import {
   type InboxToolsConfig,
   type InboxToolsOf,
 } from "./inboxTools.ts";
+import { agentInvokeCancelOn } from "./invoke.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
@@ -1469,6 +1470,28 @@ export function createAgentFunction(
   const ref = `${client.id}/${config.id}`;
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
+
+  // `agentInvokeCancelOn` reads `data._agent`, which only `agent.invoke()`
+  // sets; on any other event the server cancels the run when another run is
+  // cancelled.
+  const cancelsWithCaller = [config.cancelOn ?? []].flat().some((entry) => {
+    return (
+      typeof entry === "object" &&
+      entry.event === agentInvokeCancelOn.event &&
+      entry.if === agentInvokeCancelOn.if
+    );
+  });
+
+  if (
+    cancelsWithCaller &&
+    triggers.some((trigger) => {
+      return trigger.event !== internalEvents.FunctionInvoked;
+    })
+  ) {
+    throw new Error(
+      `Agent "${config.id}" has \`agentInvokeCancelOn\` in \`cancelOn\` but its \`on\` has triggers other than \`invoke()\`: a run those start has no \`data._agent\`, and the entry would cancel it whenever another run is cancelled. Use it only on an agent that \`agent.invoke()\` starts, and do not message its thread from elsewhere (a message to an idle thread starts a run the same way).`,
+    );
+  }
 
   const store = kvFrom(config.kv);
   const scoring = config.scores ?? true;

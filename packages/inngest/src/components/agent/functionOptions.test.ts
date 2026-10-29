@@ -3,10 +3,13 @@
  * Tests for the function options an agent passes on, the ones it refuses, and
  * the function context its body receives.
  */
+import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { invoke } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
+import { agentInvokeCancelOn } from "./invoke.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { run } from "./test-helpers.ts";
 
@@ -112,6 +115,61 @@ describe("function options", () => {
     };
 
     expect(typeOnly).toBeTypeOf("function");
+  });
+});
+
+describe("agentInvokeCancelOn", () => {
+  const body = async () => {
+    return "done";
+  };
+
+  test("is refused on an agent whose `on` has a trigger other than invoke()", () => {
+    for (const on of [
+      { cron: "0 * * * *" },
+      { event: "app/go", thread: "event.data.id" },
+      [invoke(z.object({})), { cron: "0 * * * *" }],
+    ]) {
+      expect(() => {
+        agents.agent(
+          {
+            id: "cancel-bad",
+            on: on as never,
+            cancelOn: [agentInvokeCancelOn],
+          },
+          body,
+        );
+      }).toThrow(/agentInvokeCancelOn.*other than/);
+    }
+  });
+
+  test("is allowed with no `on` or with only invoke() in `on`", () => {
+    expect(() => {
+      agents.agent(
+        { id: "cancel-ok-1", cancelOn: [agentInvokeCancelOn] },
+        body,
+      );
+      agents.agent(
+        {
+          id: "cancel-ok-2",
+          on: invoke(z.object({})),
+          cancelOn: [agentInvokeCancelOn],
+        },
+        body,
+      );
+    }).not.toThrow();
+  });
+
+  test("other cancelOn entries are not affected", () => {
+    expect(() => {
+      agents.agent(
+        {
+          id: "cancel-ok-3",
+          on: { cron: "0 * * * *" },
+          cancelOn: [{ event: "app/stop", match: "data.id" }],
+        },
+        body,
+      );
+    }).not.toThrow();
   });
 });
 

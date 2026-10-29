@@ -227,7 +227,7 @@ export interface ChannelStream {
      * What the stream ends with.
      */
     final?: ChannelStreamFinal,
-    // biome-ignore lint/suspicious/noConfusingVoidType: an adapter that has no reference to give keeps returning nothing.
+    // biome-ignore lint/suspicious/noConfusingVoidType: adapters written before the reference existed return `Promise<void>`, which only a `void` union accepts.
   ): Promise<void | string>;
 
   /**
@@ -334,7 +334,7 @@ export interface Channel {
      * What to post.
      */
     message: ChannelMessage,
-    // biome-ignore lint/suspicious/noConfusingVoidType: an adapter that has no reference to give keeps returning nothing.
+    // biome-ignore lint/suspicious/noConfusingVoidType: adapters written before the reference existed return `Promise<void>`, which only a `void` union accepts.
   ): Promise<void | string>;
 
   /**
@@ -723,6 +723,8 @@ const checkCard = (card: ChannelCard): void => {
   }
 };
 
+// A saved step result is a stream state, a `FinishedRef` (from a `finish` step)
+// or null; the guard tells the last by its `ref` string.
 const isFinishedRef = (value: unknown): value is FinishedRef => {
   return (
     typeof value === "object" &&
@@ -1066,6 +1068,8 @@ export const createReporter = (
         }
 
         if (kind === "card" || kind === "begin" || kind === "finish") {
+          // Not a `FinishedRef` here, so a stream state or null; the runner
+          // is typed for the post steps, which save a time.
           cardStreams.set(
             channel,
             isFinishedRef(state) ? null : ((state as CardStreamState) ?? null),

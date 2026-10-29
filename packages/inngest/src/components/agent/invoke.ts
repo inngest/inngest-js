@@ -70,10 +70,13 @@ export interface AgentInvokeOptions {
  * which carries its own run ID, and `agent.invoke()` hands that ID to the
  * callee as `data._agent.parent`. A callee of the callee follows in turn.
  *
- * Do not use it on a function that other events also start (a message, a
- * cron tick, a `step.invoke` that is not `agent.invoke()`): the expression
- * reads `_agent`, which those events lack, and the server then cancels the
- * run when any other run is cancelled.
+ * `agents.agent()` throws if an agent lists it while `on` has a trigger other
+ * than `invoke()`: the expression reads `_agent`, which other events lack, and
+ * the server then cancels the run when any other run is cancelled. Do not use
+ * it on a plain function that other events also start for the same reason.
+ * The check covers `on` only: a message sent to the agent's thread while it is
+ * idle also starts a run without `_agent`, so only `agent.invoke()` should
+ * start an agent that has this entry.
  */
 export const agentInvokeCancelOn = {
   event: "inngest/function.cancelled",
