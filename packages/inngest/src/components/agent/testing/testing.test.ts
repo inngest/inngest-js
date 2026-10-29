@@ -28,6 +28,12 @@ import {
 } from "../../../experimental/agents/testing.ts";
 import { backendPath } from "./gitRemote.ts";
 
+// A sandbox that runs commands for real on this machine, for the tests of
+// that. Its commands are scripted by the test itself.
+const localSandbox = (options: Parameters<typeof fakeSandbox>[0] = {}) => {
+  return fakeSandbox({ execute: "local", ...options });
+};
+
 const request = (turn: number, last = "hello") => {
   return {
     messages: [{ role: "user" as const, content: last }],
@@ -233,7 +239,7 @@ describe("fakeSandbox", () => {
     const dir = mkdtempSync(join(tmpdir(), "agents-testing-local-"));
 
     try {
-      await using sandbox = fakeSandbox({
+      await using sandbox = localSandbox({
         commands: { hello: { stdout: "canned\n" }, "": {} },
         localDirs: [dir],
       });
@@ -292,7 +298,7 @@ describe("fakeSandbox", () => {
   });
 
   test("close kills the processes the agent started", async () => {
-    const sandbox = fakeSandbox();
+    const sandbox = localSandbox();
     const id = await create(sandbox);
     const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
       command: ["sleep", "60"],
@@ -495,7 +501,7 @@ describe("fakeSandbox /work, processes and disk paths", () => {
   };
 
   test("every sandbox has a /work of its own that commands run against for real", async () => {
-    await using sandbox = fakeSandbox();
+    await using sandbox = localSandbox();
     const first = await create(sandbox);
     const second = await create(sandbox);
 
@@ -512,7 +518,7 @@ describe("fakeSandbox /work, processes and disk paths", () => {
   });
 
   test("a cwd or an environment value under /work runs for real, with SANDBOX_WORK set", async () => {
-    await using sandbox = fakeSandbox();
+    await using sandbox = localSandbox();
     const id = await create(sandbox);
 
     await upload(sandbox, id, "/work/n.txt", "42\n");
@@ -548,7 +554,7 @@ describe("fakeSandbox /work, processes and disk paths", () => {
   });
 
   test("a snapshot keeps /work and a sandbox made from it starts with it", async () => {
-    await using sandbox = fakeSandbox();
+    await using sandbox = localSandbox();
     const id = await create(sandbox);
 
     await upload(sandbox, id, "/work/kept.txt", "kept\n");
@@ -580,7 +586,7 @@ describe("fakeSandbox /work, processes and disk paths", () => {
   });
 
   test("diskPaths are files of the sandbox's own that commands see", async () => {
-    await using sandbox = fakeSandbox({ diskPaths: ["/tmp/ws.tgz"] });
+    await using sandbox = localSandbox({ diskPaths: ["/tmp/ws.tgz"] });
     const first = await create(sandbox);
     const second = await create(sandbox);
 
@@ -596,7 +602,7 @@ describe("fakeSandbox /work, processes and disk paths", () => {
   });
 
   test("processes keep their output and can be waited for; canned commands answer them too", async () => {
-    await using sandbox = fakeSandbox({
+    await using sandbox = localSandbox({
       commands: { build: { stdout: "built\n", exitCode: 0 } },
     });
     const id = await create(sandbox);
@@ -753,7 +759,7 @@ describe("fakeSandbox paths and processes in detail", () => {
   };
 
   test("only /work itself is a host path: /workspace is not", async () => {
-    await using sandbox = fakeSandbox();
+    await using sandbox = localSandbox();
     const id = await create(sandbox);
 
     const other = await exec(sandbox, id, { command: ["cat", "/workspace/x"] });
@@ -763,7 +769,7 @@ describe("fakeSandbox paths and processes in detail", () => {
   });
 
   test("a disk path is rewritten once and only as a whole path", async () => {
-    await using sandbox = fakeSandbox({
+    await using sandbox = localSandbox({
       diskPaths: ["/data/"],
       commands: { "": {} },
     });
@@ -784,7 +790,7 @@ describe("fakeSandbox paths and processes in detail", () => {
   });
 
   test("a process started from a script under /work runs, and close kills its children", async () => {
-    const sandbox = fakeSandbox();
+    const sandbox = localSandbox();
     const id = await create(sandbox);
 
     await sandbox.fetch(
@@ -822,7 +828,7 @@ describe.skipIf(!backendPath())("startGitRemote seeds", () => {
 
 describe("fakeSandbox host files and directories", () => {
   test("a file a command changed is read back as changed, not as uploaded", async () => {
-    await using sandbox = fakeSandbox();
+    await using sandbox = localSandbox();
     const id = await create(sandbox);
     const file = `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/x.txt`;
 
@@ -835,7 +841,7 @@ describe("fakeSandbox host files and directories", () => {
   });
 
   test("a disk directory works as a cwd before anything is uploaded, whether it is written with a slash or not", async () => {
-    await using sandbox = fakeSandbox({ diskPaths: ["/data/"] });
+    await using sandbox = localSandbox({ diskPaths: ["/data/"] });
     const id = await create(sandbox);
     const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, {
       command: ["sh", "-c", "echo hi > out.txt && cat out.txt"],
@@ -851,7 +857,7 @@ describe("fakeSandbox host files and directories", () => {
 
   test("diskPaths under /work are refused", () => {
     expect(() => {
-      return fakeSandbox({ diskPaths: ["/work/sub"] });
+      return localSandbox({ diskPaths: ["/work/sub"] });
     }).toThrow(/under \/work/);
   });
 
@@ -860,7 +866,7 @@ describe("fakeSandbox host files and directories", () => {
     const sibling = `${dir}-sibling`;
 
     try {
-      await using sandbox = fakeSandbox({ localDirs: [dir] });
+      await using sandbox = localSandbox({ localDirs: [dir] });
       const id = await create(sandbox);
       const response = (cwd: string) => {
         return post(sandbox, `/v2/sandboxes/${id}/exec`, {
@@ -920,7 +926,7 @@ describe("fakeSandbox cleanup", () => {
         name.startsWith("fake-sandbox-") || name.startsWith("fake-snapshot-")
       );
     });
-    const sandbox = fakeSandbox();
+    const sandbox = localSandbox();
     const id = await create(sandbox);
 
     await sandbox.fetch(
@@ -962,7 +968,7 @@ describe("fakeSandbox cleanup", () => {
   });
 
   test("a runner file written to /tmp is removed on close", async () => {
-    const sandbox = fakeSandbox();
+    const sandbox = localSandbox();
     const id = await create(sandbox);
     const path = `/tmp/inngest-run-code-test-${Date.now()}.json`;
 
@@ -996,5 +1002,202 @@ describe.skipIf(!backendPath())("startGitRemote auth for a push", () => {
     expect(push.status).toBe(401);
     expect(bad.status).toBe(400);
     expect(remote.pushAuth).toHaveLength(1);
+  });
+});
+
+describe("fakeSandbox real execution is opt-in and guarded", () => {
+  const run = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; stderr: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      stderr: Buffer.from(data.stderr, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("by default nothing runs on the host, and the message says how to opt in", async () => {
+    await using sandbox = fakeSandbox();
+    const id = await create(sandbox);
+
+    const touch = await run(sandbox, id, {
+      command: ["sh", "-c", "echo x > /work/created"],
+    });
+    const tool = await run(sandbox, id, { command: ["/inngest/tools/run.sh"] });
+
+    expect(touch.exitCode).toBe(127);
+    expect(touch.stderr).toContain('execute: "local"');
+    expect(tool.exitCode).toBe(127);
+  });
+
+  test("with the catch-all key and no execute, a command that mentions /work is answered, not run", async () => {
+    await using sandbox = fakeSandbox({ commands: { "": {} } });
+    const id = await create(sandbox);
+    const ran = await run(sandbox, id, {
+      command: ["sh", "-c", "echo ran > /work/marker"],
+    });
+
+    expect(ran).toMatchObject({ stdout: "", exitCode: 0 });
+
+    const read = await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=/work/marker`,
+    );
+
+    expect(read.status).toBe(404);
+  });
+
+  test("rm -rf ~ stays inside the sandbox: HOME is its directory", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agents-testing-home-"));
+    const original = process.env.HOME;
+
+    writeFileSync(join(home, "precious"), "keep\n");
+    process.env.HOME = home;
+
+    try {
+      await using sandbox = localSandbox();
+      const id = await create(sandbox);
+
+      await run(sandbox, id, {
+        command: ["sh", "-c", "cd /work && rm -rf ~"],
+      });
+
+      expect(existsSync(join(home, "precious"))).toBe(true);
+    } finally {
+      process.env.HOME = original;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("a .. path segment is refused in a command, a cwd and an environment value", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+
+    for (const body of [
+      { command: ["cat", "/work/../../etc/hostname"] },
+      { command: ["pwd"], cwd: "/work/../.." },
+      {
+        command: ["sh", "-c", "echo $X"],
+        cwd: "/work",
+        environment: { X: "/work/.." },
+      },
+    ]) {
+      const refused = await run(sandbox, id, body);
+
+      expect(refused.exitCode).toBe(126);
+      expect(refused.stderr).toContain("refused to run on the host");
+    }
+  });
+
+  test("an absolute path outside the sandbox is refused, one inside is not", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+
+    for (const command of [
+      ["cat", "/etc/hostname"],
+      ["sh", "-c", "rm -rf /tmp/anything"],
+      ["rm", "-rf", "/"],
+    ]) {
+      const refused = await run(sandbox, id, { command, cwd: "/work" });
+
+      expect(refused.exitCode).toBe(126);
+      expect(refused.stderr).toContain("outside the sandbox's directories");
+    }
+
+    expect(
+      (await run(sandbox, id, { command: ["ls", "/work"], cwd: "/work" }))
+        .exitCode,
+    ).toBe(0);
+  });
+
+  test("the host environment is not passed, except PATH and what passEnv names", async () => {
+    process.env.FAKE_SANDBOX_SECRET = "s3cret";
+
+    try {
+      await using plain = localSandbox();
+      await using passing = localSandbox({ passEnv: ["FAKE_SANDBOX_SECRET"] });
+      const plainId = await create(plain);
+      const passingId = await create(passing);
+      const body = {
+        command: ["sh", "-c", 'echo "[$FAKE_SANDBOX_SECRET]"'],
+        cwd: "/work",
+      };
+
+      expect((await run(plain, plainId, body)).stdout).toBe("[]\n");
+      expect((await run(passing, passingId, body)).stdout).toBe("[s3cret]\n");
+    } finally {
+      delete process.env.FAKE_SANDBOX_SECRET;
+    }
+  });
+
+  test("uploads and reads cannot leave the sandbox's directories", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const evil = join(tmpdir(), `fake-sandbox-evil-${Date.now()}`);
+    const put = await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent(`/work/../..${evil}`)}`,
+      { method: "PUT", body: "x" },
+    );
+    const read = await sandbox.fetch(
+      `http://sandboxes.test/v2/sandboxes/${id}/files?path=${encodeURIComponent("/work/../../../../etc/hostname")}`,
+    );
+
+    expect(put.status).toBe(400);
+    expect(existsSync(evil)).toBe(false);
+    expect(read.status).toBe(404);
+  });
+
+  test("~/work and /work.bak are not rewritten as /work", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const dir = (
+      await run(sandbox, id, {
+        command: ["sh", "-c", "echo $SANDBOX_WORK"],
+        cwd: "/work",
+      })
+    ).stdout.trim();
+    const home = await run(sandbox, id, {
+      command: ["sh", "-c", "echo ~/work"],
+      cwd: "/work",
+    });
+    const backup = await run(sandbox, id, {
+      command: ["sh", "-c", "echo /work.bak"],
+      cwd: "/work",
+    });
+
+    // The shell expands ~ to the sandbox directory (HOME): the text `~/work`
+    // was left alone, not turned into `~<dir>`.
+    expect(home.stdout.trim()).toBe(`${dir}/work`);
+    // /work.bak is not /work, so it is not moved: it is a path outside.
+    expect(backup.exitCode).toBe(126);
+  });
+
+  test("a process that would break out is refused too", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const started = await post(sandbox, `/v2/sandboxes/${id}/processes`, {
+      command: ["cat", "/etc/hostname"],
+      cwd: "/work",
+    });
+    const { id: processId } = (
+      (await started.json()) as {
+        data: { id: string };
+      }
+    ).data;
+    const waited = await post(
+      sandbox,
+      `/v2/sandboxes/${id}/processes/${processId}/wait`,
+      {},
+    );
+
+    expect(
+      ((await waited.json()) as { data: { exitCode: number } }).data.exitCode,
+    ).toBe(126);
   });
 });
