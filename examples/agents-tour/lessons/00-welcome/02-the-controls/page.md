@@ -1,6 +1,6 @@
 # The controls
 
-**Run** formats your code, then starts it. **Run sends** shows the event Run will send, so nothing is hidden. **Reset** puts the page's code back and restarts the Dev Server, so the runs list is empty again.
+**Run** formats your code, then starts it. Under each lesson, the event Run sends is shown, so nothing is hidden. **Reset** puts the page's code back and restarts the Dev Server, so the runs list is empty again.
 
 **Format** tidies the code. **Next** and **Previous** change page.
 
