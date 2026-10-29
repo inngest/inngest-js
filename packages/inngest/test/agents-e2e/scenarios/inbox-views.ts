@@ -48,10 +48,8 @@ export const inboxViews = scenario({
         await record(`view:${(got?.data as { n?: number } | undefined)?.n}`);
 
         for await (const message of inbox) {
-          const source = message.data.event;
-
-          if (source?.name === event("ci")) {
-            await record(`main:ci:${(source.data as { n: number }).n}`);
+          if (message.name === event("ci")) {
+            await record(`main:ci:${(message.data as { n: number }).n}`);
           } else if (message.content === "unread") {
             const rest = await ci.unread();
 
