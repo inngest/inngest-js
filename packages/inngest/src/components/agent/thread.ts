@@ -33,7 +33,7 @@ import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
 
 /**
- * The name of the event every thread message is sent as.
+ * The name of the event `thread.send()` sends.
  */
 export const agentMessageEvent = agentMessage.name;
 

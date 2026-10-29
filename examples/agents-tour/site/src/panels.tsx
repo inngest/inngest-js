@@ -1,88 +1,85 @@
 /**
  * @module
- * The message box of the play pane. Typing a message sends an event, and the
- * box shows each message as the event it became.
+ * The Messages tab of the play pane. A button sends a random message as an
+ * event, and the tab shows
+ * each message as the event it became.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { eventOfMessage } from "../../shared/events.ts";
 import { api } from "./api.ts";
-import type { Start } from "../../shared/types.ts";
-import { Kbd, shortcutsOf } from "./keyboard.tsx";
+import { Kbd } from "./keyboard.tsx";
 import { useAction } from "./live.ts";
-
-export const eventOfMessage = (
-  agent: string,
-  thread: string,
-  content: string,
-) => {
-  return {
-    name: "agent/message",
-    data: { agent: `tour/${agent}`, thread, kind: "user", content },
-  };
-};
+import { messages, pick } from "./random.ts";
 
 export const MessagePanel = ({
   target,
   disabled,
 }: {
-  target: { agent: string; thread: string };
+  target: { agent: string; thread: string; threads?: string[] };
   disabled: boolean;
 }) => {
-  const [text, setText] = useState("Hello");
   const [sent, setSent] = useState<string[]>([]);
-  const box = useRef<HTMLTextAreaElement>(null);
+  const threads = target.threads ?? [];
 
-  useAction("message", () => {
-    box.current?.focus();
-  });
-
-  const send = async () => {
-    if (!text.trim() || disabled) {
+  const send = async (thread: string) => {
+    if (disabled) {
       return;
     }
 
-    const event = eventOfMessage(target.agent, target.thread, text);
+    const event = eventOfMessage(target.agent, thread, pick(messages));
 
-    await api.send(target.agent, target.thread, text);
+    await api.send(target.agent, thread, event.data.text);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
   };
 
+  useAction("sendEvent", () => {
+    void send(threads[0] ?? target.thread);
+  });
+  useAction("sendOther", () => {
+    if (threads[1]) {
+      void send(threads[1]);
+    }
+  });
+
   return (
-    <form
-      className="message"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
+    <div className="message">
       <p>
-        Say something to <code>{target.agent}</code>. A message is an event: it
-        reaches the agent's inbox on thread <code>{target.thread}</code>.
+        A message is an event: it reaches the inbox of{" "}
+        <code>{target.agent}</code> on a thread.
       </p>
-      <label>
-        Message <Kbd action="message" />
-        <textarea
-          ref={box}
-          value={text}
-          rows={2}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.ctrlKey &&
-              !event.metaKey
-            ) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-      </label>
-      <button type="submit" className="primary" disabled={disabled}>
-        Send <kbd>Enter</kbd>
-      </button>
+      <div className="message-buttons">
+        {threads.length > 1 ? (
+          threads.map((thread, at) => {
+            return (
+              <button
+                type="button"
+                className="primary"
+                key={thread}
+                disabled={disabled}
+                onClick={() => {
+                  void send(thread);
+                }}
+              >
+                Send to {thread}{" "}
+                <Kbd action={at === 0 ? "sendEvent" : "sendOther"} />
+              </button>
+            );
+          })
+        ) : (
+          <button
+            type="button"
+            className="primary"
+            disabled={disabled}
+            onClick={() => {
+              void send(target.thread);
+            }}
+          >
+            Send a message <Kbd action="sendEvent" />
+          </button>
+        )}
+      </div>
       {sent.map((json, at) => {
         return (
           <pre className="sent" key={`${at}-${json}`}>
@@ -90,58 +87,6 @@ export const MessagePanel = ({
           </pre>
         );
       })}
-    </form>
-  );
-};
-
-const eventOfStart = (start: Start) => {
-  if ("event" in start) {
-    return start.event;
-  }
-
-  if ("slack" in start) {
-    return { name: "slack/message", data: start.slack };
-  }
-
-  return eventOfMessage(start.agent, start.thread, start.message);
-};
-
-/**
- * The exact events Run sends, read only, so nothing about a run is magic.
- */
-export const RunEvent = ({
-  starts,
-  open,
-  onToggle,
-}: {
-  starts: Start[];
-  open: boolean;
-  onToggle: () => void;
-}) => {
-  if (starts.length === 0) {
-    return null;
-  }
-
-  return (
-    <span className="run-event">
-      <button
-        type="button"
-        className="chip"
-        aria-expanded={open}
-        aria-keyshortcuts={shortcutsOf("runEvent")}
-        onClick={onToggle}
-      >
-        Run sends <Kbd action="runEvent" />
-      </button>
-      {open ? (
-        <pre className="run-event-json" role="note">
-          {starts
-            .map((start) => {
-              return JSON.stringify(eventOfStart(start), null, 2);
-            })
-            .join("\n")}
-        </pre>
-      ) : null}
-    </span>
+    </div>
   );
 };

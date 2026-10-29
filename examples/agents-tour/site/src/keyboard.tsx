@@ -96,33 +96,6 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
         return;
       }
 
-      for (const def of keys) {
-        if (def.local) {
-          continue;
-        }
-
-        for (const binding of def.outside) {
-          if (binding.includes(" ")) {
-            continue;
-          }
-
-          // Arrow keys belong to a tab list or a divider that has focus.
-          if (
-            binding.startsWith("Arrow") &&
-            (target as HTMLElement).closest?.('[role="tablist"], [role="separator"]')
-          ) {
-            continue;
-          }
-
-          if (matches(event, binding, isMac)) {
-            fire(def.id);
-            pending = "";
-
-            return;
-          }
-        }
-      }
-
       if (pending === "g") {
         const second = event.key.toLowerCase();
 
@@ -138,6 +111,35 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
         }
 
         return;
+      }
+
+      for (const def of keys) {
+        if (def.local) {
+          continue;
+        }
+
+        for (const binding of def.outside) {
+          if (binding.includes(" ")) {
+            continue;
+          }
+
+          // Arrow keys belong to a tab list or a divider that has focus.
+          if (
+            binding.startsWith("Arrow") &&
+            (target as HTMLElement).closest?.(
+              '[role="tablist"], [role="separator"]',
+            )
+          ) {
+            continue;
+          }
+
+          if (matches(event, binding, isMac)) {
+            fire(def.id);
+            pending = "";
+
+            return;
+          }
+        }
       }
 
       if (

@@ -2,9 +2,8 @@
  * @module
  * The Trace panel: a waterfall of the real spans the Dev Server returns, one
  * row per span, a bar on a shared timeline, indentation from group spans.
- * Housekeeping spans (inbox opens, KV reads, the executor's own span) are
- * collapsed by rule into one muted "n hidden" row; "Show everything" lists
- * the raw tree. Up and down move between rows, Enter opens one.
+ * Housekeeping spans (inbox opens, KV reads, thread records) have no row;
+ * "Show everything" lists the raw tree. Up and down move between rows, Enter opens one.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
@@ -12,19 +11,31 @@ import { api } from "./api.ts";
 import { Kbd } from "./keyboard.tsx";
 
 const housekeepingName =
-  /^(kv\.|inbox:\d+:(open|close|stop)$|executor\.|metadata)/;
+  /^(kv\.|thread:|inbox:\d+:(open|close|stop)$|executor\.(?!nonstep)|metadata)/;
+
+// The SDK's `thread:start` step is displayed as "Thread state", so the id,
+// the name and the display name are all checked.
+const housekeepingLabel = /^Thread state$/;
 
 const isHousekeeping = (step: TraceStep) => {
-  return housekeepingName.test(step.name);
+  return (
+    housekeepingName.test(step.name) ||
+    housekeepingName.test(step.id) ||
+    housekeepingLabel.test(step.name)
+  );
+};
+
+const isFinalization = (step: TraceStep) => {
+  return step.name === "executor.nonstep";
 };
 
 // A gap this long between two steps of a run is the run parked, waiting for
-// a message: the executor stores no span for a park.
+// a message: the executor stores no span for a park, so the gap is the
+// `inbox.next()` row, whatever (even housekeeping) step ends it.
 const waitGapMs = 600;
 
 type Row =
   | { kind: "step"; key: string; step: TraceStep; depth: number }
-  | { kind: "hidden"; key: string; steps: TraceStep[]; depth: number }
   | {
       kind: "wait";
       key: string;
@@ -48,12 +59,83 @@ const endOf = (step: TraceStep, now: number): number | null => {
   return time(step.endedAt) ?? (step.status === "RUNNING" ? now : start);
 };
 
+type IconKind = "inbox" | "event" | "step" | "kv" | "wait" | "agent" | "code";
+
+const kindOf = (step: TraceStep): IconKind => {
+  if (/^inbox/.test(step.name)) {
+    return "inbox";
+  }
+
+  if (/^kv\./.test(step.name)) {
+    return "kv";
+  }
+
+  if (/sleep|wait/i.test(step.name) || step.type === "step.sleep") {
+    return "wait";
+  }
+
+  if (isFinalization(step)) {
+    return "code";
+  }
+
+  if (step.group || step.children.length > 0) {
+    return "agent";
+  }
+
+  return "step";
+};
+
+const paths: Record<IconKind, string> = {
+  inbox: "M2 4h12v8H2zM2 4l6 5 6-5",
+  event: "M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z",
+  step: "M4 3l8 5-8 5z",
+  kv: "M10.5 2a3.5 3.5 0 1 0 .6 6.9L14 12v2h-2v-1.5H10.5V11H9L7.2 9.2A3.5 3.5 0 0 0 10.5 2z",
+  wait: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 5v3.5L10.5 10",
+  agent: "M2 4h12M2 8h9M2 12h6",
+  code: "M6 4 2 8l4 4M10 4l4 4-4 4",
+};
+
+const Icon = ({ kind }: { kind: IconKind }) => {
+  return (
+    <svg
+      className="wf-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={paths[kind]} />
+    </svg>
+  );
+};
+
 const label = (step: TraceStep) => {
-  if (step.name === "executor.nonstep") {
-    return "Function code";
+  if (isFinalization(step)) {
+    return "Finalization";
   }
 
   return step.name;
+};
+
+// The run ends where its Finalization span ends, or at the run's own finish
+// time when no such span was recorded. Null while the run is still going.
+const finishOf = (run: TraceRun): number | null => {
+  let finalEnd: number | null = null;
+
+  for (const step of run.steps) {
+    const end = isFinalization(step) ? time(step.endedAt) : null;
+
+    if (end !== null && (finalEnd === null || end > finalEnd)) {
+      finalEnd = end;
+    }
+  }
+
+  return finalEnd ?? time(run.endedAt);
 };
 
 const rounded = (ms: number) => {
@@ -71,45 +153,23 @@ const rounded = (ms: number) => {
 const rowsOf = (
   steps: TraceStep[],
   everything: boolean,
-  opened: Set<string>,
   now: number,
   live: boolean,
   depth = 0,
   prefix = "",
 ) => {
   const rows: Row[] = [];
-  let pending: TraceStep[] = [];
   let lastEnd: number | null = null;
-
-  const flush = () => {
-    if (pending.length === 0) {
-      return;
-    }
-
-    const key = `${prefix}h:${pending[0]?.id}`;
-
-    if (opened.has(key)) {
-      for (const step of pending) {
-        rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
-      }
-    } else {
-      rows.push({ kind: "hidden", key, steps: pending, depth });
-    }
-
-    pending = [];
-  };
 
   for (const step of steps) {
     const start = time(step.startedAt);
 
     if (
       depth === 0 &&
-      !isHousekeeping(step) &&
       lastEnd !== null &&
       start !== null &&
       start - lastEnd > waitGapMs
     ) {
-      flush();
       rows.push({
         kind: "wait",
         key: `${prefix}w:${step.id}`,
@@ -120,16 +180,12 @@ const rowsOf = (
       });
     }
 
-    if (!everything && isHousekeeping(step)) {
-      pending.push(step);
-    } else {
-      flush();
+    if (everything || !isHousekeeping(step)) {
       rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
       rows.push(
         ...rowsOf(
           step.children,
           everything,
-          opened,
           now,
           live,
           depth + 1,
@@ -145,15 +201,13 @@ const rowsOf = (
     }
   }
 
-  flush();
-
-  if (depth === 0 && live && lastEnd !== null && now - lastEnd > waitGapMs) {
+  if (depth === 0 && lastEnd !== null && now - lastEnd > waitGapMs) {
     rows.push({
       kind: "wait",
       key: `${prefix}w:live`,
       from: lastEnd,
       to: now,
-      live: true,
+      live,
       depth,
     });
   }
@@ -183,7 +237,8 @@ const token =
  * Pretty JSON with the keys, strings, numbers and booleans in colour.
  */
 export const Json = ({ value }: { value: unknown }) => {
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 2);
   let offset = 0;
 
   return (
@@ -269,12 +324,6 @@ const Detail = ({ outputID }: { outputID: string | null }) => {
   );
 };
 
-const firstContent = (data: Record<string, unknown>) => {
-  const content = data.content;
-
-  return typeof content === "string" ? content : JSON.stringify(data);
-};
-
 const Result = ({ run }: { run: TraceRun }) => {
   const [text, setText] = useState<{ error: boolean; value: string }>();
 
@@ -329,17 +378,12 @@ const Trigger = ({ run }: { run: TraceRun }) => {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span className="dot completed" aria-hidden="true" />
         <span className="wf-name">
-          {message ? "inbox.next()" : run.trigger.name}{" "}
-          <em>
-            {message
-              ? "returned message 1, the event that triggered the run"
-              : "triggered the run"}
-          </em>
+          <Icon kind={message ? "inbox" : "event"} />
+          {message ? "inbox.next()" : run.trigger.name}
         </span>
-        <span className="wf-track trigger-content">
-          {message ? firstContent(run.trigger.data) : ""}
+        <span className="wf-track">
+          <i className="wf-bar completed" style={{ left: 0 }} />
         </span>
         <span className="wf-time" />
       </button>
@@ -383,45 +427,36 @@ const Run = ({
       return next;
     });
   };
+  // The run's end is the end of its Finalization span: it grows with the
+  // clock while the run goes and locks once Finalization has ended.
+  const finish = finishOf(run);
+  const clock = finish ?? now;
   const rows = useMemo(() => {
-    return rowsOf(run.steps, everything, open, now, live);
-  }, [run.steps, everything, open, now, live]);
+    return rowsOf(run.steps, everything, clock, live && finish === null);
+  }, [run.steps, everything, clock, live, finish]);
 
   const starts = [time(run.queuedAt), time(run.startedAt)].filter(
     (value): value is number => {
       return value !== null;
     },
   );
-  const walk = (steps: TraceStep[], out: number[]) => {
-    for (const step of steps) {
+  const firstStart = (steps: TraceStep[]): number[] => {
+    return steps.flatMap((step) => {
       const start = time(step.startedAt);
-      const end = endOf(step, now);
 
-      if (start !== null) {
-        out.push(start);
-      }
-
-      if (end !== null) {
-        out.push(end);
-      }
-
-      walk(step.children, out);
-    }
-
-    return out;
+      return [...(start === null ? [] : [start]), ...firstStart(step.children)];
+    });
   };
-  const all = walk(run.steps, [...starts]);
-  const t0 = Math.min(...all, now);
-  const t1 = Math.max(
-    ...all,
-    live ? now : (time(run.endedAt) ?? t0),
-    t0 + 500,
-  );
+  const t0 = Math.min(...starts, ...firstStart(run.steps), clock);
+  const t1 = Math.max(clock, t0 + 1);
   const span = t1 - t0;
   const bar = (from: number, to: number) => {
+    const left = Math.min(Math.max(from, t0), t1);
+    const right = Math.min(Math.max(to, left), t1);
+
     return {
-      left: `${((from - t0) / span) * 100}%`,
-      width: `${Math.max(0.8, ((to - from) / span) * 100)}%`,
+      left: `min(${((left - t0) / span) * 100}%, calc(100% - 12px))`,
+      width: `${Math.max(0.8, ((right - left) / span) * 100)}%`,
     };
   };
 
@@ -440,51 +475,34 @@ const Run = ({
         />
         <strong>{run.fn}</strong>
         <span className="status">{run.status.toLowerCase()}</span>
-        <Result run={run} />
+        {showResult ? null : <Result run={run} />}
         <span className="run-total">{rounded(t1 - t0)}</span>
       </button>
       {showResult ? <Detail outputID={run.output} /> : null}
       <div className="wf" role="list">
         <Trigger run={run} />
         {rows.map((row) => {
-          const pad = { paddingLeft: 12 + row.depth * 16 };
-
-          if (row.kind === "hidden") {
-            return (
-              <div role="listitem" key={row.key}>
-                <button
-                  type="button"
-                  className="wf-row hidden-row"
-                  data-row
-                  style={pad}
-                  onClick={() => toggle(row.key)}
-                >
-                  <span className="wf-name">
-                    {row.steps.length} hidden{" "}
-                    {row.steps.length === 1 ? "step" : "steps"}
-                  </span>
-                  <Kbd action="rowOpen" />
-                </button>
-              </div>
-            );
-          }
+          const pad = { paddingLeft: 20 + row.depth * 16 };
 
           if (row.kind === "wait") {
             return (
               <div role="listitem" key={row.key}>
                 <div
                   className={`wf-row wait-row ${row.live ? "live" : ""}`}
+                  title="The bar is the time the run spent waiting for a message"
                   data-row
                   tabIndex={-1}
                   style={pad}
                 >
-                  <span className="dot waiting" aria-hidden="true" />
                   <span className="wf-name">
-                    inbox.next{" "}
-                    <em>{row.live ? "waiting for a message" : "waited"}</em>
+                    <Icon kind="inbox" />
+                    inbox.next()
                   </span>
                   <span className="wf-track">
-                    <i className="wf-bar waiting" style={bar(row.from, row.to)} />
+                    <i
+                      className={`wf-bar ${row.live ? "waiting" : "completed"}`}
+                      style={bar(row.from, row.to)}
+                    />
                   </span>
                   <span className="wf-time">{rounded(row.to - row.from)}</span>
                 </div>
@@ -494,7 +512,7 @@ const Run = ({
 
           const { step } = row;
           const start = time(step.startedAt);
-          const end = endOf(step, now);
+          const end = endOf(step, clock);
           const expanded = open.has(row.key);
           const attempts = step.attempts && step.attempts > 1;
 
@@ -508,11 +526,8 @@ const Run = ({
                 aria-expanded={expanded}
                 onClick={() => toggle(row.key)}
               >
-                <span
-                  className={`dot ${step.status.toLowerCase()}`}
-                  aria-hidden="true"
-                />
                 <span className="wf-name">
+                  <Icon kind={kindOf(step)} />
                   {label(step)}
                   {attempts ? (
                     <em className="tries"> attempt {step.attempts}</em>
@@ -527,7 +542,7 @@ const Run = ({
                   ) : null}
                 </span>
                 <span className="wf-time">
-                  {step.duration === null ? "" : rounded(step.duration)}
+                  {start !== null && end !== null ? rounded(end - start) : ""}
                 </span>
               </button>
               {expanded ? <Detail outputID={step.outputID} /> : null}
@@ -601,12 +616,28 @@ export const TracePanel = ({
       return;
     }
 
-    const timer = window.setInterval(() => {
+    // Frames keep a running duration and the bars moving smoothly; people who
+    // ask for less motion get four updates a second.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const timer = window.setInterval(() => {
+        setNow(Date.now());
+      }, 250);
+
+      return () => {
+        window.clearInterval(timer);
+      };
+    }
+
+    let frame = 0;
+    const tick = () => {
       setNow(Date.now());
-    }, 250);
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    frame = window.requestAnimationFrame(tick);
 
     return () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(frame);
     };
   }, [live]);
 
@@ -670,7 +701,9 @@ export const TracePanel = ({
           );
         })}
       {runs.length === 0 ? (
-        <p className="empty">Waiting for a run. Press Run, or send a message.</p>
+        <p className="empty">
+          Waiting for a run. Press Run, or send a message.
+        </p>
       ) : null}
       {[...runs].reverse().map((run) => {
         return <Run run={run} everything={everything} now={now} key={run.id} />;

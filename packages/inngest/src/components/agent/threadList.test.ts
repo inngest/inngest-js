@@ -12,7 +12,9 @@ describe("listing threads", () => {
     const all = threadListSql("app/bot");
     const one = threadListSql("app/bot", { session: "it's", limit: 5 });
 
-    expect(all).toContain("name = 'agent/message'");
+    expect(all).toContain(
+      "name IN ('agent/message', 'agent/steer', 'agent/stop', 'agent/request')",
+    );
     expect(all).toContain("JSONExtractString(data, 'agent') = 'app/bot'");
     expect(all).not.toContain("agent_session') =");
     expect(all).toContain("LIMIT 100");

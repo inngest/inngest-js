@@ -13,7 +13,12 @@ export interface StartEvent {
   event: { name: string; data: Record<string, unknown> };
 }
 
-export type Start = StartMessage | StartEvent;
+// A message typed in the fake Slack, as the person would.
+export interface StartSlack {
+  slack: { channel: string; text: string };
+}
+
+export type Start = StartMessage | StartEvent | StartSlack;
 
 export interface Manifest {
   // Pages without code (the welcome pages) hide the right side.
@@ -22,7 +27,8 @@ export interface Manifest {
   panels?: string[];
   start?: Start[];
   // The message box sends to this agent and thread.
-  message?: { agent: string; thread: string };
+  // `threads` adds one button per thread; the first is the default.
+  message?: { agent: string; thread: string; threads?: string[] };
 }
 
 export interface PageFile {
@@ -67,6 +73,9 @@ export interface TraceStep {
   endedAt: string | null;
   outputID: string | null;
   userland: boolean;
+  // The span's step type and, for a group span, its kind.
+  type: string | null;
+  group: string | null;
   children: TraceStep[];
 }
 
@@ -96,4 +105,5 @@ export type TourEvent =
       state: "idle" | "starting" | "live" | "failed";
       text: string;
     }
-  | { type: "runs"; runs: TraceRun[] };
+  | { type: "runs"; runs: TraceRun[] }
+  | { type: "fakes"; topic: "slack" | "github" };

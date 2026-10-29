@@ -116,9 +116,7 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
         return Boolean(editor.current?.hasTextFocus());
       },
       format: async () => {
-        await editor.current
-          ?.getAction("editor.action.formatDocument")
-          ?.run();
+        await editor.current?.getAction("editor.action.formatDocument")?.run();
       },
       values: () => {
         const out: Record<string, string> = {};
