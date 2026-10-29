@@ -3,7 +3,7 @@
  * Tests for `repo()` against real git: a first checkout, and bringing an
  * existing checkout (a restored or recycled sandbox) to a ref.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -14,6 +14,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+  backendPath,
+  startGitRemote,
+} from "../sandbox/git-fixtures/test-helpers.ts";
 import type { DurableSandbox } from "../sandbox/types.ts";
 import { repo } from "./repo.ts";
 
@@ -239,11 +243,13 @@ describe("repo checkout and sync", () => {
     ).rejects.toThrow(/can't start with/);
   });
 
-  test("hooks planted in the checkout do not run and insteadOf rules are removed on sync", async () => {
+  test("hooks and config planted in the checkout neither run nor redirect the fetch", async () => {
     const { chmodSync } = await import("node:fs");
     await checkout();
     const stolen = join(root, "stolen.txt");
+    const evil = join(root, "evil.git");
 
+    git(root, "init", "--quiet", "--bare", "-b", "main", evil);
     for (const hook of [
       "post-checkout",
       "post-merge",
@@ -254,8 +260,16 @@ describe("repo checkout and sync", () => {
       writeFileSync(path, `#!/bin/sh\nenv >> "${stolen}"\n`);
       chmodSync(path, 0o755);
     }
-    git(work, "config", `url.http://127.0.0.1:1/.insteadOf`, origin);
-    upstream("b.txt", "two\n");
+    // A rewrite rule, a first URL that is not the real one, and an include.
+    git(work, "config", `url.${evil}.insteadOf`, origin);
+    git(work, "config", "--replace-all", "remote.origin.url", evil);
+    git(work, "config", "--add", "remote.origin.url", origin);
+    writeFileSync(
+      join(root, "extra.config"),
+      `[url "${evil}"]\n\tinsteadOf = ${origin}\n`,
+    );
+    git(work, "config", "include.path", join(root, "extra.config"));
+    const tip = upstream("b.txt", "two\n");
 
     const result = await repo(sandbox, {
       repo: origin,
@@ -263,11 +277,8 @@ describe("repo checkout and sync", () => {
       token: "ghs_secret_token_value",
     });
 
-    expect(result.action).toBe("synced");
+    expect(result).toMatchObject({ action: "synced", sha: tip });
     expect(existsSync(stolen)).toBe(false);
-    expect(readFileSync(join(work, ".git", "config"), "utf8")).not.toContain(
-      "insteadOf",
-    );
     expect(readFileSync(join(work, ".git", "config"), "utf8")).not.toContain(
       "ghs_secret_token_value",
     );
@@ -312,7 +323,10 @@ describe("repo checkout and sync", () => {
     git(seed, "commit", "--quiet", "-am", "other");
     git(seed, "push", "--quiet", "origin", "other");
 
-    await expect(checkout({ ref: "other", sync: "keep" })).rejects.toThrow();
+    await expect(checkout({ ref: "other", sync: "keep" })).rejects.toThrow(
+      /overwritten|checkout/,
+    );
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
     expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("local edit\n");
   });
 
@@ -333,4 +347,81 @@ describe("repo checkout and sync", () => {
     // The ignore rule was in a commit the reset discarded, so cache is untracked.
     expect(existsSync(join(work, "cache", "x"))).toBe(false);
   });
+});
+
+describe.skipIf(!backendPath)("repo with a token over HTTP", () => {
+  test("clones, syncs and pushes with the header, which no file keeps", async () => {
+    const token = "ghs_http_token_value";
+    const remote = await startGitRemote(token);
+    const root = mkdtempSync(join(tmpdir(), "repo-http-"));
+    const work = join(root, "work");
+    const sandbox = {
+      commands: {
+        // Async, since the remote is served from this same process.
+        run: async (
+          _id: unknown,
+          argv: string[],
+          options: { environment?: Record<string, string> },
+        ) => {
+          return new Promise<{
+            exitCode: number;
+            stdout: string;
+            stderr: string;
+          }>((resolve) => {
+            execFile(
+              argv[0] as string,
+              argv.slice(1),
+              { encoding: "utf8", env: { ...env, ...options.environment } },
+              (error, stdout, stderr) => {
+                resolve({
+                  exitCode: error
+                    ? typeof error.code === "number"
+                      ? error.code
+                      : 1
+                    : 0,
+                  stdout,
+                  stderr,
+                });
+              },
+            );
+          });
+        },
+      },
+      tools: { code: () => ({}) },
+    } as unknown as Pick<DurableSandbox, "commands" | "tools">;
+
+    try {
+      const cloned = await repo(sandbox, {
+        repo: remote.url,
+        path: work,
+        token,
+      });
+      expect(cloned.action).toBe("cloned");
+
+      git(work, "checkout", "--quiet", "-b", "agent/http");
+      writeFileSync(join(work, "new.txt"), "new\n");
+      git(work, "add", ".");
+      git(work, "commit", "--quiet", "-m", "new");
+      await cloned.push("agent/http");
+
+      expect(
+        git(remote.dir, "rev-parse", "refs/heads/agent/http"),
+      ).toHaveLength(40);
+
+      const synced = await repo(sandbox, {
+        repo: remote.url,
+        path: work,
+        token,
+        sync: "keep",
+      });
+      expect(synced.action).toBe("synced");
+      expect(readFileSync(join(work, ".git", "config"), "utf8")).not.toContain(
+        token,
+      );
+      expect(remote.seen.some((header) => header !== "")).toBe(true);
+    } finally {
+      await remote.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

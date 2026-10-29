@@ -51,7 +51,7 @@ export interface RepoOptions {
    * - `"keep"`: nothing the agent did is discarded. `ref` is checked out (a
    *   branch is fast-forwarded to the remote when it can be), uncommitted
    *   changes come along, and a branch that has local commits or diverged
-   *   from the remote stays where it is, with a note on stderr. Commits that
+   *   from the remote stays where it is. Commits that
    *   only a detached HEAD held move to a `detached-<sha>` branch. A checkout
    *   that would overwrite local changes, or one of another repository,
    *   fails.
@@ -94,53 +94,59 @@ export interface Repo {
 }
 
 // The token reaches git as configuration in the environment of the one git
-// process that talks to the remote (`auth ...`, a wrapper of `git`), so it never appears in an
-// argument, a URL, a config file or the remote, and no other git process of the
-// script (nor a hook it runs) inherits it. A concurrent process of the same user
-// in the sandbox could still read it from /proc while the command runs. `GIT_TOKEN` itself is dropped from the
-// script's environment at once. Hooks and the file system monitor are off for
-// every git command here, because the checkout is in a sandbox that the model
-// can write to.
+// process that talks to the remote (`auth ...`, a wrapper of `git`), so it never
+// appears in an argument, a URL, a config file or the remote, and no other git
+// process of the script (nor a hook it runs) inherits it. `GIT_TOKEN` itself is
+// dropped from the script's environment at once; a concurrent process of the
+// same user in the sandbox could still read the header from /proc while the
+// command runs.
+//
+// The checkout is in a sandbox that the model can write to, so nothing that
+// holds the token reads its configuration: the process that talks to the remote
+// runs in a throwaway bare repository (`T`), and objects move between it and
+// the checkout with local commands that carry no token. A rewrite rule, a
+// second URL, a proxy, a credential helper or an include in the checkout's
+// config therefore cannot redirect or intercept the token. The user's own
+// global git config is ignored for the process that holds it. Hooks and the file
+// system monitor are off for every git command here.
 const prelude = `
 HEADER=
 if [ -n "$GIT_TOKEN" ]; then
-  HEADER="Authorization: basic $(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 | tr -d '\\n')"
+  HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 | tr -d '\\n')"
 fi
 unset GIT_TOKEN
 g() { git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
-# Rewrite rules in the checkout could send a fetch or push (and the token) to
-# another host, so they are removed before the token is used.
-scrub() {
-  g -C "$DIR" config --local --name-only --get-regexp '^url\\..*\\.(push)?insteadof$' 2>/dev/null |
-    while read -r key; do g -C "$DIR" config --local --unset-all "$key"; done
-}
 auth() {
   if [ -n "$HEADER" ]; then
-    env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader "GIT_CONFIG_VALUE_0=$HEADER" git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c http.proxy= "$@"
+    ( export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader GIT_CONFIG_VALUE_0="$HEADER"
+      exec git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@" )
   else
     g "$@"
   fi
 }
+T=$(mktemp -d) || exit 1
+trap 'rm -rf "$T"' EXIT
+g init --quiet --bare "$T" || exit 1
 `;
 
 // Clones into an empty path, or fetches into a checkout that is already there
 // and brings it to the ref. The last line it prints is `repo:<action>:<sha>`.
 const checkoutScript = `${prelude}
 if [ -e "$DIR/.git" ]; then
-  scrub
   have=$(g -C "$DIR" config --local --get remote.origin.url 2>/dev/null || true)
   if [ "$have" != "$URL" ]; then
     if [ "$SYNC" = keep ]; then
-      printf '%s\n' "the checkout at $DIR is of \${have:-no remote}, not $URL, and keep does not repoint it" >&2
+      printf '%s\\n' "the checkout at $DIR is of \${have:-no remote}, not $URL, and keep does not repoint it" >&2
       exit 1
     fi
     if [ -n "$have" ]; then g -C "$DIR" remote set-url origin "$URL"; else g -C "$DIR" remote add origin "$URL"; fi || exit 1
   fi
-  auth -C "$DIR" fetch --force --quiet --no-recurse-submodules --tags --prune origin || exit 1
+  auth --git-dir="$T" fetch --force --quiet --no-recurse-submodules --tags -- "$URL" '+refs/heads/*:refs/remotes/origin/*' || exit 1
+  g -C "$DIR" fetch --force --quiet --no-recurse-submodules --prune "$T" '+refs/remotes/origin/*:refs/remotes/origin/*' || exit 1
+  g -C "$DIR" fetch --force --quiet --no-recurse-submodules "$T" '+refs/tags/*:refs/tags/*' || exit 1
   if [ -z "$REF" ]; then
-    auth -C "$DIR" remote set-head origin --auto >/dev/null 2>&1
-    REF=$(g -C "$DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')
-    [ -n "$REF" ] || { printf '%s\n' "cannot find the default branch of origin" >&2; exit 1; }
+    REF=$(auth --git-dir="$T" ls-remote --symref -- "$URL" HEAD | sed -n 's|^ref: refs/heads/\\(.*\\)[[:space:]][[:space:]]*HEAD$|\\1|p')
+    [ -n "$REF" ] || { printf '%s\\n' "cannot find the default branch of $URL" >&2; exit 1; }
   fi
   if [ "$SYNC" = keep ]; then
     # Commits that only a detached HEAD holds would be left behind: keep them.
@@ -154,7 +160,7 @@ if [ -e "$DIR/.git" ]; then
         g -C "$DIR" checkout --quiet -b "$REF" "origin/$REF" || exit 1
       fi
       g -C "$DIR" merge --quiet --ff-only "origin/$REF" >/dev/null 2>&1 ||
-        printf '%s\n' "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
+        printf '%s\\n' "$REF was not fast-forwarded: it has local commits or changes in the way" >&2
     else
       g -C "$DIR" checkout --quiet --detach "$REF" || exit 1
     fi
@@ -171,18 +177,20 @@ if [ -e "$DIR/.git" ]; then
   fi
   action=synced
 else
-  auth clone --quiet -- "$URL" "$DIR" &&
+  auth clone --quiet --no-recurse-submodules -- "$URL" "$DIR" &&
   g -C "$DIR" checkout --quiet "\${REF:-HEAD}" || exit 1
   action=cloned
 fi
 g -C "$DIR" config user.name "Coding agent" &&
 g -C "$DIR" config user.email "agent@users.noreply.github.com" &&
-printf 'repo:%s:%s\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
+printf 'repo:%s:%s\\n' "$action" "$(g -C "$DIR" rev-parse HEAD)"
 `;
 
+// Pushes through the throwaway repository, so the process that holds the token
+// reads none of the checkout's configuration.
 const pushScript = `${prelude}
-scrub
-auth -C "$DIR" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH"
+g -C "$DIR" push --quiet "$T" "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
+auth --git-dir="$T" push --quiet -- "$URL" "refs/heads/$BRANCH:refs/heads/$BRANCH"
 `;
 
 /**
