@@ -81,9 +81,10 @@ export interface Repo {
    * What `repo()` did: `"cloned"` into an empty `path`; `"synced"`, the
    * checkout already there was fetched and brought to `ref`; or
    * `"diverged"` (`sync: "keep"` only), the remote was fetched but the branch
-   * could not be fast-forwarded because it has local commits, has diverged, or
-   * has uncommitted changes the update would touch, so `sha` is the local
-   * commit.
+   * could not be fast-forwarded because it has diverged from the remote or has
+   * uncommitted changes the update would touch, so `sha` is the local commit.
+   * A branch that is only ahead of the remote has nothing to fast-forward and is
+   * `"synced"`.
    */
   action: "cloned" | "synced" | "diverged";
 
@@ -165,9 +166,10 @@ CLONING=
 # Only a directory this script is the one to fill: absent (removed whole) or empty
 # (emptied), never one that already held files.
 trap 'rc=$?; rm -rf "$T"; if [ "$rc" -ne 0 ]; then
-  if [ "$CLONING" = new ]; then rm -rf "$DIR";
-  elif [ "$CLONING" = empty ]; then find "$DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi
+  if [ "$CLONING" = new ]; then rm -rf -- "$DIR";
+  elif [ "$CLONING" = empty ]; then find "$DIR/." -mindepth 1 -maxdepth 1 -exec rm -rf -- {} \\; ; fi
 fi' EXIT
+trap 'exit 1' HUP INT TERM
 g init --quiet --bare "$T" || exit 1
 `;
 
