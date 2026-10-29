@@ -1139,3 +1139,19 @@ main.single .text {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.event-block {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+  font: 13px / 1.5 var(--mono);
+}
+
+.event-block code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}
