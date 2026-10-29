@@ -254,6 +254,39 @@ describe("agent.loop", () => {
     },
   );
 
+  test("names a run by the tools record's key, not by the tool's own id", async () => {
+    const renamed = tool({
+      id: "original",
+      input: z.object({ a: z.number() }),
+      run: ({ a }) => {
+        return a;
+      },
+    });
+    const { requests, result } = await run(
+      [call("renamed", { a: 1 }), say("ok")],
+      { tools: { renamed } },
+    );
+
+    expect(requests[0]?.tools.map((definition) => definition.name)).toEqual([
+      "renamed",
+    ]);
+    expect(result?.toolCalls[0]).toMatchObject({
+      name: "renamed",
+      isError: false,
+      output: 1,
+    });
+
+    type Run = AgentToolRun<{ renamed: typeof renamed }>;
+    const check = (item: Run) => {
+      if (!item.isError) {
+        expectTypeOf(item.name).toEqualTypeOf<"renamed">();
+        expectTypeOf(item.output).toEqualTypeOf<unknown>();
+      }
+    };
+
+    expect(check).toBeTypeOf("function");
+  });
+
   test("keeps the model's message exactly as returned", async () => {
     const thinking = {
       type: "thinking",
