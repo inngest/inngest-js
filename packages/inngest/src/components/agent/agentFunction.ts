@@ -18,11 +18,13 @@
  */
 
 import { internalEvents } from "../../helpers/consts.ts";
-import type { Logger } from "../../middleware/logger.ts";
-import type { Context } from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
-import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
+import {
+  type GetFunctionInput,
+  type Inngest,
+  internalLoggerSymbol,
+} from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { SandboxTools } from "../sandbox/tools.ts";
@@ -321,23 +323,15 @@ export interface AgentConfigContext<TEvent = TriggerEvent> {
 }
 
 /**
- * What the body gets: the usual function context (`step`, `group`, `defer`,
- * `runId`, `logger`, `attempt` and the rest) with the agent's own fields
- * beside it. `event` is the agent's, not the function's: its `data` is the
- * thread message, and `data.event` is the trigger event. There is no
- * `events`, because an agent never runs on a batch.
+ * The fields the agent adds to the function context in its body. See
+ * `AgentBodyContext`.
  */
-export interface AgentBodyContext<
+export interface AgentBodyFields<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
-> extends Omit<Context.Any, "event" | "events"> {
-  /**
-   * The function's logger.
-   */
-  logger: Logger;
-
+> {
   /**
    * The event that started the run. Its `data` is the thread message, and
    * `data.event` is the trigger event, typed from `on`.
@@ -454,6 +448,24 @@ export interface ThreadInbox<
 }
 
 /**
+ * What the body gets: the function context the client's middleware gives a
+ * plain function (`step` with `step.sandbox` when the client has the sandbox
+ * middleware, `group`, `defer`, `runId`, `logger`, `attempt` and the rest)
+ * with the agent's own fields beside it. `event` is the agent's, not the
+ * function's: its `data` is the thread message, and `data.event` is the
+ * trigger event. There is no `events`, because an agent never runs on a
+ * batch.
+ */
+export type AgentBodyContext<
+  TEvent = TriggerEvent,
+  TRequest = unknown,
+  TReply = unknown,
+  TSandboxes extends SandboxToolNames = SandboxToolNames,
+  TClient extends Inngest.Any = Inngest.Any,
+> = Omit<GetFunctionInput<TClient>, "event" | "events"> &
+  AgentBodyFields<TEvent, TRequest, TReply, TSandboxes>;
+
+/**
  * The body of an agent. `TEvent` is the events of its `on` triggers and
  * `TOutput` what it returns.
  */
@@ -463,8 +475,9 @@ export type AgentBody<
   TRequest = unknown,
   TReply = unknown,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
+  TClient extends Inngest.Any = Inngest.Any,
 > = (
-  context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes>,
+  context: AgentBodyContext<TEvent, TRequest, TReply, TSandboxes, TClient>,
 ) => Promise<TOutput>;
 
 /**

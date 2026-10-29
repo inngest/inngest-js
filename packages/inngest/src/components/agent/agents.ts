@@ -41,7 +41,7 @@ import type {
  */
 type NoSandboxes = Record<never, never>;
 
-export interface Agents {
+export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   /**
    * Defines an agent: a function whose body owns its loop and reads a
    * durable inbox.
@@ -67,7 +67,8 @@ export interface Agents {
       TOutput,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TClient
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TType>>,
@@ -80,14 +81,23 @@ export interface Agents {
     TOutput = unknown,
     TRequest = unknown,
     TReply = unknown,
+    TSandboxes extends SandboxToolNames = NoSandboxes,
   >(
     config: AgentFunctionConfig<
       TTypes,
       ThreadTriggerListEvent<TTypes>,
       TRequest,
-      TReply
+      TReply,
+      TSandboxes
     >,
-    body: AgentBody<ThreadTriggerListEvent<TTypes>, TOutput, TRequest, TReply>,
+    body: AgentBody<
+      ThreadTriggerListEvent<TTypes>,
+      TOutput,
+      TRequest,
+      TReply,
+      TSandboxes,
+      TClient
+    >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TTypes>>,
     TOutput,
@@ -113,7 +123,8 @@ export interface Agents {
       TOutput,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TClient
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TOne>>,
@@ -134,7 +145,14 @@ export interface Agents {
       TReply,
       TSandboxes
     >,
-    body: AgentBody<ThreadCronEvent, TOutput, TRequest, TReply, TSandboxes>,
+    body: AgentBody<
+      ThreadCronEvent,
+      TOutput,
+      TRequest,
+      TReply,
+      TSandboxes,
+      TClient
+    >,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
   agent<
     const TMany extends readonly unknown[],
@@ -155,7 +173,8 @@ export interface Agents {
       TOutput,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TClient
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TMany>>,
@@ -249,15 +268,17 @@ const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
  *
  * @param client Inngest client.
  */
-export const createAgents = (client: Inngest.Any): Agents => {
+export const createAgents = <TClient extends Inngest.Any>(
+  client: TClient,
+): Agents<TClient> => {
   const made: AgentFunction[] = [];
   const allowance = bakeAllowanceOf(client);
   let bakes = false;
 
   return {
-    agent: (
+    agent: ((
       config: AgentFunctionConfig<unknown, any>,
-      body: AgentBody<any>,
+      body: AgentBody<any, any, any, any, any, any>,
     ) => {
       const created = createAgentFunction(
         client,
@@ -284,7 +305,7 @@ export const createAgents = (client: Inngest.Any): Agents => {
       allowBakes(allowance, created.ref, config.sandboxes);
 
       return created;
-    },
+    }) as unknown as Agents<TClient>["agent"],
     functions: () => {
       const functions = made.flatMap((created) => {
         return [created.fn, created.cleanup];
