@@ -9,7 +9,7 @@ import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
-import { fakeD1 } from "./fake-d1.ts";
+import { fakeD1, hasNodeSqlite } from "./fake-d1.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
   createKv,
@@ -363,17 +363,19 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
     };
   });
 
-  contract("d1 adapter on SQLite", async () => {
-    let clock = 1_700_000_000_000;
+  if (hasNodeSqlite) {
+    contract("d1 adapter on SQLite", async () => {
+      let clock = 1_700_000_000_000;
 
-    return {
-      adapter: d1KvAdapter(await fakeD1(() => clock), { createTables: true }),
-      advance: (ms) => {
-        clock += ms;
-      },
-      done: async () => {},
-    };
-  });
+      return {
+        adapter: d1KvAdapter(await fakeD1(() => clock), { createTables: true }),
+        advance: (ms) => {
+          clock += ms;
+        },
+        done: async () => {},
+      };
+    });
+  }
 
   test("the redis registry stays small and in one slot", async () => {
     const server = await startFakeRedis();
