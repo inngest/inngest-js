@@ -14,23 +14,42 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { asyncDispose } from "./dispose.ts";
+import type { Call, CallFilter, Fakes } from "./fakes.ts";
 
 /**
  * Options of `fakeSandbox()`.
  */
 export interface FakeSandboxOptions {
   /**
-   * The URL of the fakes server (`startFakes().url`) the operations are
-   * reported to.
+   * The fakes server (`startFakes()`) of this process that the operations are
+   * recorded on, next to its Slack and GitHub calls. Every operation is also
+   * on the `calls` of the sandbox itself.
    */
-  recordUrl: string;
+  fakes?: Fakes;
 
   /**
-   * Commands by the text they contain; the first match answers, any other
-   * command prints nothing and exits 0.
+   * The URL of a fakes server in another process (`startFakes().url`), for an
+   * app that runs apart from the test. Each operation is posted there and
+   * awaited before the sandbox answers, so a test that sees the agent's result
+   * also sees the call.
+   */
+  recordUrl?: string;
+
+  /**
+   * Commands by the text they contain; the first match answers. A command that
+   * matches none fails with exit code 127 and says so on stderr, so a typo in
+   * a test never passes by silence. The key `""` matches any command: put it
+   * last to let the rest succeed with no output.
    */
   commands?: Record<
     string,
@@ -92,11 +111,16 @@ const runLocal = (
 };
 
 /**
- * Builds the fake Sandboxes API.
- * @returns `fetch`: pass it as the `fetch` option of the Inngest client.
+ * Builds the fake Sandboxes API. Close it when the test ends: that kills the
+ * processes the agent started and removes the directory the tools were
+ * written to.
+ * @returns `fetch`, to pass as the `fetch` option of the Inngest client;
+ * `calls` and `posts()`, the operations so far; `close()`.
  */
-export const fakeSandbox = (options: FakeSandboxOptions) => {
+export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   const realFetch = globalThis.fetch;
+  const calls: Call[] = [];
+  const children = new Set<ReturnType<typeof spawn>>();
   // Files by sandbox, and the copy a snapshot keeps, so a sandbox created from
   // a snapshot starts with the files its source had.
   const files = new Map<string, Map<string, Uint8Array>>();
@@ -127,12 +151,19 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     Record<string, unknown> & { name?: string }
   >();
 
-  const record = (method: string, body: Record<string, unknown>) => {
-    void realFetch(`${options.recordUrl}/record`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method, ...body }),
-    }).catch(() => {});
+  // In this process first, so `calls` is complete the moment the sandbox
+  // answers; a fakes server in another process is posted to and awaited.
+  const record = async (method: string, body: Record<string, unknown>) => {
+    calls.push({ channel: "sandbox", method, body: { method, ...body } });
+    options.fakes?.record(method, body);
+
+    if (options.recordUrl) {
+      await realFetch(`${options.recordUrl}/record`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method, ...body }),
+      }).catch(() => {});
+    }
   };
 
   const resource = (id: string, name = "fake") => {
@@ -182,7 +213,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
 
       if (snapshotId && method === "DELETE" && found) {
         snapshots.delete(snapshotId);
-        record("snapshot.delete", { id: snapshotId, name: found.name });
+        await record("snapshot.delete", { id: snapshotId, name: found.name });
 
         return new Response(null, { status: 204 });
       }
@@ -203,7 +234,24 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     const match = url.pathname.match(/^\/v2\/sandboxes(?:\/([^/]+)(\/.*)?)?$/);
 
     if (!match) {
-      return realFetch(input, init);
+      // The same fetch carries the client's other traffic (events, sync), which
+      // goes where it was going. Anything else under /v2 is the Sandboxes API,
+      // and the fake does not serve it: that is an error, never the network.
+      if (!url.pathname.startsWith("/v2/")) {
+        return realFetch(input, init);
+      }
+
+      return Response.json(
+        {
+          errors: [
+            {
+              code: "unsupported",
+              message: `FakeSandbox serves no ${method} ${url.pathname}`,
+            },
+          ],
+        },
+        { status: 404 },
+      );
     }
 
     const [, id, rest = ""] = match;
@@ -249,7 +297,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
 
       snapshots.set(created.id, created);
       snapshotFiles.set(created.id, new Map(filesOf(id)));
-      record("snapshot.create", {
+      await record("snapshot.create", {
         id: created.id,
         name: request.name,
         sandboxId: id,
@@ -272,7 +320,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         );
       }
 
-      record("sandbox.create", {
+      await record("sandbox.create", {
         id: created.id,
         ...(request.snapshotId && { snapshotId: request.snapshotId }),
       });
@@ -285,7 +333,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     }
 
     if (id && !rest && method === "DELETE") {
-      record("sandbox.destroy", { id });
+      await record("sandbox.destroy", { id });
 
       return new Response(null, { status: 204 });
     }
@@ -300,7 +348,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         return text.includes(key);
       })?.[1];
 
-      record("sandbox.exec", {
+      await record("sandbox.exec", {
         id,
         command: request.command,
         cwd: request.cwd,
@@ -338,12 +386,25 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         });
       }
 
+      if (!canned) {
+        return Response.json({
+          data: {
+            stdout: encode(""),
+            stderr: encode(
+              `FakeSandbox: no entry of \`commands\` matches "${text}". Add one, or the key "" to match any command.\n`,
+            ),
+            encoding: "base64",
+            exitCode: 127,
+          },
+        });
+      }
+
       return Response.json({
         data: {
-          stdout: encode(canned?.stdout ?? ""),
-          stderr: encode(canned?.stderr ?? ""),
+          stdout: encode(canned.stdout ?? ""),
+          stderr: encode(canned.stderr ?? ""),
           encoding: "base64",
-          exitCode: canned?.exitCode ?? 0,
+          exitCode: canned.exitCode ?? 0,
         },
       });
     }
@@ -371,8 +432,12 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
         },
       );
 
+      children.add(child);
       child.on("error", () => {});
-      record("sandbox.process", { id, command: request.command });
+      child.on("close", () => {
+        children.delete(child);
+      });
+      await record("sandbox.process", { id, command: request.command });
 
       return Response.json(
         {
@@ -401,7 +466,7 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
           writeFileSync(local(path), body);
         }
         filesOf(id).set(path, body);
-        record("sandbox.upload", {
+        await record("sandbox.upload", {
           id,
           path,
           text: new TextDecoder().decode(body),
@@ -439,5 +504,27 @@ export const fakeSandbox = (options: FakeSandboxOptions) => {
     );
   };
 
-  return { fetch: fakeFetch };
+  const close = async () => {
+    for (const child of children) {
+      child.kill("SIGKILL");
+    }
+
+    children.clear();
+    rmSync(toolsDir, { recursive: true, force: true });
+  };
+
+  return {
+    fetch: fakeFetch,
+    calls,
+    posts: (filter: CallFilter = {}) => {
+      return calls.filter((call) => {
+        return (
+          (!filter.method || call.method === filter.method) &&
+          (!filter.thread || call.thread === filter.thread)
+        );
+      });
+    },
+    close,
+    [asyncDispose]: close,
+  };
 };

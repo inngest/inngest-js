@@ -7,9 +7,13 @@ import type { ThreadHandle } from "../thread.ts";
 /**
  * The handle, with `state()` returning only the keys the agent set, for
  * tests that assert on those.
- * @param thread The thread handle.
  */
-export const withKeys = (thread: ThreadHandle) => {
+export const withKeys = (
+  /**
+   * The thread handle.
+   */
+  thread: ThreadHandle,
+) => {
   return {
     ...thread,
     state: async (): Promise<Record<string, unknown>> => {

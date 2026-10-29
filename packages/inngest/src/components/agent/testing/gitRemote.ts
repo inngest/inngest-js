@@ -5,34 +5,41 @@
  * It needs `git` with `git-http-backend` installed.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { asyncDispose } from "./dispose.ts";
+
+let found: { path: string | undefined } | undefined;
 
 /**
  * The path of `git-http-backend`, or `undefined` when git does not have it.
+ * Looked up on first use, not when the module loads.
  */
-export const backendPath = ((): string | undefined => {
-  try {
-    const path = join(
-      execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim(),
-      "git-http-backend",
-    );
-    execFileSync(path, ["--help"], { stdio: "ignore" });
-
-    return path;
-  } catch {
-    return undefined;
+export const backendPath = (): string | undefined => {
+  if (!found) {
+    try {
+      const path = join(
+        execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim(),
+        "git-http-backend",
+      );
+      execFileSync(path, ["--help"], { stdio: "ignore" });
+      found = { path };
+    } catch {
+      found = { path: undefined };
+    }
   }
-})();
+
+  return found.path;
+};
 
 /**
  * Runs `git` in `cwd` with a fixed author and no user config, and returns
  * its trimmed output.
  */
-export const git = (cwd: string, ...args: string[]): string => {
+const git = (cwd: string, ...args: string[]): string => {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",
@@ -67,7 +74,16 @@ export interface GitRemote {
    * Basic-auth headers the server has seen, to show what reached it.
    */
   seen: string[];
+
+  /**
+   * Stops the server and removes the repository from disk.
+   */
   close: () => Promise<void>;
+
+  /**
+   * Same as `close()`, for `await using remote = await startGitRemote(...)`.
+   */
+  [Symbol.asyncDispose]: () => Promise<void>;
 }
 
 /**
@@ -75,11 +91,12 @@ export interface GitRemote {
  * `x-access-token:<token>` only.
  */
 export const startGitRemote = async (token: string): Promise<GitRemote> => {
-  if (!backendPath) {
+  const backend = backendPath();
+
+  if (!backend) {
     throw new Error("git http-backend is not available");
   }
 
-  const backend = backendPath;
   const root = mkdtempSync(join(tmpdir(), "git-remote-"));
   const dir = join(root, "repo.git");
   const seed = join(root, "seed");
@@ -96,8 +113,10 @@ export const startGitRemote = async (token: string): Promise<GitRemote> => {
 
   const expected = `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
   const seen: string[] = [];
+  const running = new Set<ReturnType<typeof spawn>>();
   const server = createServer((req, res) => {
     seen.push(req.headers.authorization ?? "");
+
     if (req.headers.authorization !== expected) {
       res.writeHead(401, { "WWW-Authenticate": 'Basic realm="git"' });
       res.end();
@@ -127,11 +146,30 @@ export const startGitRemote = async (token: string): Promise<GitRemote> => {
     });
     const chunks: Buffer[] = [];
 
+    running.add(child);
+    // The backend can exit before it has read the request, and it can fail to
+    // start: neither may crash the test or leave the request unanswered.
+    child.stdin.on("error", () => {});
+    child.on("error", () => {
+      running.delete(child);
+
+      if (!res.headersSent) {
+        res.writeHead(500);
+      }
+
+      res.end();
+    });
     req.pipe(child.stdin);
     child.stdout.on("data", (chunk: Buffer) => {
       chunks.push(chunk);
     });
     child.on("close", () => {
+      running.delete(child);
+
+      if (res.writableEnded) {
+        return;
+      }
+
       const out = Buffer.concat(chunks);
       const split = out.indexOf("\r\n\r\n");
       const head = out.subarray(0, split).toString().split("\r\n");
@@ -157,18 +195,25 @@ export const startGitRemote = async (token: string): Promise<GitRemote> => {
   });
 
   const { port } = server.address() as AddressInfo;
+  const close = async () => {
+    for (const child of running) {
+      child.kill("SIGKILL");
+    }
+
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+      server.closeAllConnections();
+    });
+    rmSync(root, { recursive: true, force: true });
+  };
 
   return {
     url: `http://127.0.0.1:${port}/repo.git`,
     dir,
     seen,
-    close: () => {
-      return new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-        server.closeAllConnections();
-      });
-    },
+    close,
+    [asyncDispose]: close,
   };
 };
