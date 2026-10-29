@@ -5,7 +5,9 @@
  * key, a fake Sandboxes API, fake Slack and GitHub servers that keep every
  * call, a git remote that wants a token, and a thread handle that returns the
  * keys the agent set. These run in Node and are for tests, never for
- * production code.
+ * production code. `fakeSandbox` runs nothing on the host unless you set
+ * `execute: "local"`; do that only with a scripted model (`script()`), because
+ * a real model's commands would run on your machine.
  *
  * ```ts
  * import { fakeSandbox, script, startFakes } from "inngest/experimental/agents/testing";

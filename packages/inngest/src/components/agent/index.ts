@@ -65,6 +65,7 @@ export type {
   InboxToolName,
   InboxToolSource,
   InboxToolsConfig,
+  InboxToolsOf,
 } from "./inboxTools.ts";
 export { createInboxTools } from "./inboxTools.ts";
 export type { AgentInvokeOptions } from "./invoke.ts";

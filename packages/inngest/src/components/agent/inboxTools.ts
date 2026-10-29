@@ -5,7 +5,8 @@
  * something arrives (the loop steers it at the next safe point) or waits for
  * it. Nothing is on unless you configure `inboxTools`, and the model can only
  * use what you list: each source fixes the `thread` it listens on, and the
- * model's own `if` can only narrow it.
+ * model's own `match` can only narrow it. The model never writes CEL: it gives a
+ * map of event fields to values and the SDK builds the expression.
  */
 import { z } from "zod/v4";
 import { durationToMs } from "../../helpers/duration.ts";
@@ -30,7 +31,7 @@ export interface InboxToolSource {
   thread: string;
 
   /**
-   * CEL over `event` that every message must pass. The model's own `if` is
+   * CEL over `event` that every message must pass. The model's `match` is
    * ANDed with it.
    */
   if?: string;
@@ -42,6 +43,10 @@ export interface InboxToolSource {
   maxPerRun?: number;
 }
 
+/**
+ * What the model may do with its inbox tools: which sources it may listen to
+ * and how much.
+ */
 export interface InboxToolsConfig {
   /**
    * The sources the model may listen to. Anything else is a tool error that
@@ -71,7 +76,14 @@ export interface InboxToolsConfig {
  * A message as the tools read it.
  */
 export interface InboxToolMessage {
+  /**
+   * The name of the event the message came from.
+   */
   name: string;
+
+  /**
+   * The event's `data`. Shown to the model as untrusted text.
+   */
   data?: unknown;
 }
 
@@ -81,10 +93,22 @@ export interface InboxToolMessage {
  * or the loop's steering.
  */
 export interface InboxToolView {
+  /**
+   * The next message after the view's read position, waiting up to `timeout`
+   * for one. Nothing when none came in time.
+   */
   next: (options: {
     timeout: number | string;
   }) => Promise<InboxToolMessage | null | undefined>;
+
+  /**
+   * Every message after the read position, moving the position to the end.
+   */
   unread: () => Promise<InboxToolMessage[]>;
+
+  /**
+   * Every message so far, without moving the read position.
+   */
   current: () => Promise<InboxToolMessage[]>;
 }
 
@@ -93,23 +117,48 @@ export interface InboxToolView {
  * `inbox.of()`.
  */
 export interface InboxToolInbox {
+  /**
+   * Starts saving the events that pass `thread` (and `if`) to the thread's
+   * inbox. `stop()` ends it.
+   */
   listen: (
     event: string | EventTypeWithAnySchema<string>,
     options: { thread: string; if?: string },
   ) => Promise<{ stop: () => Promise<void> }>;
+
+  /**
+   * A reader of one event's messages with a read position of its own.
+   */
   of: (event: string | EventTypeWithAnySchema<string>) => InboxToolView;
 }
 
+/**
+ * The names of the four tools: the keys of `inboxTools` in an agent's body.
+ */
 export type InboxToolName =
   | "inbox_listen"
   | "inbox_wait"
   | "inbox_read"
   | "inbox_stop";
 
+/**
+ * The `inboxTools` an agent's body gets for its config's `inboxTools` type
+ * `T`: all four tools when it is configured, none when it is not, and each
+ * optional when that is not known.
+ */
+export type InboxToolsOf<T extends InboxToolsConfig | undefined> = [T] extends [
+  undefined,
+]
+  ? Record<never, never>
+  : undefined extends T
+    ? Partial<Record<InboxToolName, SandboxTool>>
+    : Record<InboxToolName, SandboxTool>;
+
 const defaultMaxListeners = 5;
 const defaultMaxWait = "30m";
 const maxMessageChars = 4_000;
-const maxIfChars = 500;
+const maxMatchFields = 8;
+const maxMatchValueChars = 200;
 const defaultMaxPerRun = 3;
 const defaultMaxTotalWait = "2h";
 const maxReadMessages = 20;
@@ -118,73 +167,98 @@ const eventName = (source: InboxToolSource): string => {
   return typeof source.event === "string" ? source.event : source.event.name;
 };
 
+const fieldPath = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+const reservedWords = new Set([
+  "as",
+  "break",
+  "const",
+  "continue",
+  "else",
+  "false",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "let",
+  "loop",
+  "namespace",
+  "null",
+  "package",
+  "return",
+  "true",
+  "var",
+  "void",
+  "while",
+]);
+const loneSurrogate =
+  /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
 /**
- * Whether the parentheses and quotes of a CEL expression balance, so that
- * wrapping it as `(<expression>)` cannot be closed early by the expression.
- * An expression with a line break or other control character, a comment (`//`
- * or `#` outside a string), a quoted identifier, a raw string or a triple-quoted string is refused,
- * since this check would read it differently from the evaluator.
+ * A CEL literal for a value: a double-quoted string with every control and
+ * line-break character escaped, or a finite number, or a boolean.
  */
-export const isWrappable = (expression: string): boolean => {
-  for (let at = 0; at < expression.length; at += 1) {
-    const code = expression.charCodeAt(at);
-
-    // Control characters, and the line breaks beyond ASCII (NEL, LS, PS).
-    if (code < 32 || code === 0x85 || code === 0x2028 || code === 0x2029) {
-      return false;
+const literal = (value: string | number | boolean): string => {
+  if (typeof value === "string") {
+    if (value.length > maxMatchValueChars) {
+      throw new Error(
+        `A "match" value may be at most ${maxMatchValueChars} characters.`,
+      );
     }
+
+    if (loneSurrogate.test(value)) {
+      throw new Error('A "match" value must be valid text.');
+    }
+
+    return JSON.stringify(value).replace(
+      /[\u007f-\u009f\u2028\u2029]/g,
+      (char) => {
+        return `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`;
+      },
+    );
   }
 
-  let depth = 0;
-  let quote: string | undefined;
-  // What is outside the strings, to look for `event[`: the SDK rewrites
-  // `event.x` for the filter and would not rewrite `event["x"]`.
-  let outside = "";
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new Error('A "match" number must be finite.');
+  }
 
-  for (let at = 0; at < expression.length; at += 1) {
-    const char = expression[at] as string;
+  return String(value);
+};
 
-    if (quote) {
-      if (char === "\\") {
-        at += 1;
-      } else if (char === quote) {
-        quote = undefined;
-      }
-    } else if (char === '"' || char === "'") {
-      outside += " ";
+/**
+ * The CEL for a `match` map: each key is a path in the event (`data.user`)
+ * that must equal its value, all of them ANDed. The SDK writes every part, so
+ * nothing the model gives can become syntax.
+ */
+export const matchToCel = (
+  match: Record<string, string | number | boolean>,
+): string | undefined => {
+  const entries = Object.entries(match);
 
-      const before = expression.slice(0, at);
+  if (entries.length > maxMatchFields) {
+    throw new Error(`"match" may name at most ${maxMatchFields} fields.`);
+  }
 
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return entries
+    .map(([path, value]) => {
       if (
-        expression.startsWith(char.repeat(3), at) ||
-        /(?:^|[^A-Za-z0-9_])(?:r[b]?|b?r)$/i.test(before)
+        !fieldPath.test(path) ||
+        path.split(".").some((part) => {
+          return reservedWords.has(part);
+        })
       ) {
-        return false;
+        throw new Error(
+          `"match" key ${JSON.stringify(path)} must be a field path of the event such as data.user.`,
+        );
       }
 
-      quote = char;
-    } else if (
-      char === "#" ||
-      char === "`" ||
-      (char === "/" && expression[at + 1] === "/")
-    ) {
-      return false;
-    } else if (char === "(") {
-      outside += char;
-      depth += 1;
-    } else if (char === ")") {
-      outside += char;
-      depth -= 1;
-
-      if (depth < 0) {
-        return false;
-      }
-    } else {
-      outside += char;
-    }
-  }
-
-  return depth === 0 && quote === undefined && !/\bevent\s*\[/.test(outside);
+      return `event.${path} == ${literal(value)}`;
+    })
+    .join(" && ");
 };
 
 const render = (message: InboxToolMessage) => {
@@ -207,8 +281,10 @@ const render = (message: InboxToolMessage) => {
  * as `tools: { ...inboxTools }`, and to `sandbox.tools.code({ tools })` to give
  * `run_code` scripts the same inbox under the same allowlist.
  *
- * - `inbox_listen({ source, if?, as })` starts listening in the background to
- *   an allowed source. `as` names the listener.
+ * - `inbox_listen({ source, match?, as })` starts listening in the background
+ *   to an allowed source. `as` names the listener, and `match` maps event
+ *   fields (`"data.user"`) to the values they must equal; the SDK builds the
+ *   CEL, so the model's input is never parsed as an expression.
  * - `inbox_wait({ timeout, as? })` waits for the next message of a listener's
  *   event and returns it, or says that nothing came. In `run_code` it
  *   suspends the script like any waiting tool, so the wait can be long.
@@ -222,7 +298,7 @@ const render = (message: InboxToolMessage) => {
  * listener listens to through a view of their own, so they never take a stop,
  * a user message or a request from the loop, and a message the loop's steering
  * already handed to the model can still be read. `as` picks the listener's
- * event; the model's own `if` narrows what is saved from the moment it listens,
+ * event; the model's `match` narrows what is saved from the moment it listens,
  * and the messages of the event already in the thread are read as they are.
  * Two listeners on one event share its messages.
  *
@@ -306,13 +382,15 @@ export const createInboxTools = (
 
   return {
     inbox_listen: tool.group({
-      description: `Start listening in the background for events from a source, and carry on with your work. What arrives is handed to you at your next turn, or read it with inbox_wait or inbox_read. Sources: ${allowed}. Give "if" (CEL over event, such as event.data.pr == 12) to narrow what you hear, and "as" to name the listener.`,
+      description: `Start listening in the background for events from a source, and carry on with your work. What arrives is handed to you at your next turn, or read it with inbox_wait or inbox_read. Sources: ${allowed}. Give "match" (fields of the event and the values they must equal, such as { "data.pr": 12 }) to narrow what you hear, and "as" to name the listener.`,
       input: z.object({
         source: z.string(),
-        if: z.string().optional(),
+        match: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .optional(),
         as: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/),
       }),
-      run: async ({ source: name, if: narrow, as }) => {
+      run: async ({ source: name, match, as }) => {
         const source = sources.get(name);
 
         if (!source) {
@@ -341,17 +419,9 @@ export const createInboxTools = (
           );
         }
 
-        if (
-          narrow !== undefined &&
-          (narrow.length > maxIfChars || !isWrappable(narrow))
-        ) {
-          throw new Error(
-            `"if" must be a single-line CEL expression of at most ${maxIfChars} characters with balanced parentheses and quotes, and no control characters, comments, quoted identifiers, raw strings or triple quotes.`,
-          );
-        }
-
-        // The configured filter and the model's, both of which must hold. The
-        // model's was checked so that it can't close the parenthesis around it.
+        // Built before anything is reserved, so a bad match changes nothing.
+        const narrow = match === undefined ? undefined : matchToCel(match);
+        // The configured filter and the model's, both of which must hold.
         const filters = [source.if, narrow].filter((filter) => {
           return filter !== undefined && filter !== "";
         });

@@ -45,7 +45,7 @@ const start = (
   command: string,
   args: string[],
   env: Record<string, string>,
-) => {
+): Started => {
   const child = spawn(command, args, {
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"],
@@ -69,6 +69,8 @@ const start = (
     entry.exited = `exited with ${signal ?? code}`;
   });
   started.push(entry);
+
+  return entry;
 };
 
 const describeFailures = () => {
@@ -161,14 +163,16 @@ export const startStack = async (options: StartOptions): Promise<Stack> => {
     return (await redisCommand(redisUrl, ["PING"])) === "PONG";
   });
 
-  start("app", "sh", ["-c", `exec ${options.appCommand}`], {
-    ...options.appEnv,
-    PORT: String(appPort),
-    INNGEST_DEV: "1",
-    INNGEST_BASE_URL: devUrl,
-    INNGEST_EXPERIMENTAL_KV_URL: redisUrl,
-  });
-
+  const startApp = () => {
+    return start("app", "sh", ["-c", `exec ${options.appCommand}`], {
+      ...options.appEnv,
+      PORT: String(appPort),
+      INNGEST_DEV: "1",
+      INNGEST_BASE_URL: devUrl,
+      INNGEST_EXPERIMENTAL_KV_URL: redisUrl,
+    });
+  };
+  let app = startApp();
   const appUrl = `http://127.0.0.1:${appPort}/api/inngest`;
 
   // The app syncs itself to the Dev Server when it is sent a PUT.
@@ -183,14 +187,27 @@ export const startStack = async (options: StartOptions): Promise<Stack> => {
     return (dev.functions?.length ?? 0) > 0;
   });
 
-  return { name: options.name, devUrl, redisUrl };
+  return {
+    name: options.name,
+    devUrl,
+    redisUrl,
+    restartApp: async () => {
+      await stop([app]);
+      started.splice(started.indexOf(app), 1);
+      app = startApp();
+
+      await waitFor("the app after a restart", async () => {
+        return (await get(appUrl, { method: "PUT" })).ok;
+      });
+    },
+  };
 };
 
 /**
  * Stops every child with SIGTERM to its process group, then SIGKILL for any
  * that is still there after 3s.
  */
-export const stopStack = async () => {
+const stop = async (entries: Started[]) => {
   const signal = (entry: Started, sig: NodeJS.Signals) => {
     try {
       if (entry.child.pid) {
@@ -199,21 +216,28 @@ export const stopStack = async () => {
     } catch {}
   };
 
-  for (const entry of started) {
+  for (const entry of entries) {
     signal(entry, "SIGTERM");
   }
 
   const end = Date.now() + 3_000;
 
-  while (Date.now() < end && started.some((e) => !e.exited)) {
+  while (Date.now() < end && entries.some((e) => !e.exited)) {
     await sleep(100);
   }
 
-  for (const entry of started) {
+  for (const entry of entries) {
     if (!entry.exited) {
       signal(entry, "SIGKILL");
     }
   }
+};
 
+/**
+ * Stops every child with SIGTERM to its process group, then SIGKILL for any
+ * that is still there after 3s.
+ */
+export const stopStack = async () => {
+  await stop(started);
   started.length = 0;
 };

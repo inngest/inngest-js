@@ -3,6 +3,7 @@
  * Tests for pricing a model call.
  */
 import { describe, expect, test } from "vitest";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { priceOf } from "./cost.ts";
 
 describe("priceOf", () => {
@@ -59,6 +60,23 @@ describe("priceOf", () => {
         "toString",
       ),
     ).toThrow("no rate for the model");
+  });
+
+  test("a missing rate and a bad price are not retried", () => {
+    const attempts = [
+      () => priceOf({}, { input: 1, output: 1 }, "y"),
+      () => priceOf(() => Number.NaN, { input: 1, output: 1 }, "y"),
+      () =>
+        priceOf(
+          { "*": { input: -2, output: 1 } },
+          { input: 1, output: 1 },
+          "y",
+        ),
+    ];
+
+    for (const attempt of attempts) {
+      expect(attempt).toThrow(NonRetriableError);
+    }
   });
 
   test("a rate that gives something other than dollars throws", () => {

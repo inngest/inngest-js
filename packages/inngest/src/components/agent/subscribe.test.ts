@@ -4,6 +4,7 @@
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
+import { withStepIdPrefix } from "../InngestStepTools.ts";
 import { run } from "./test-helpers.ts";
 
 const client = () => {
@@ -65,6 +66,27 @@ describe("step.subscribe", () => {
         return op.mode;
       }),
     ).toEqual(["open", "park"]);
+  });
+
+  test("a read made inside a step id prefix (a tool group) keeps the step ids the executor expects", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+
+        return withStepIdPrefix("tool:", () => {
+          return inbox.next();
+        });
+      },
+    );
+
+    const waiting = await run(fn);
+
+    expect(
+      waiting.ops.map((op) => {
+        return op.id;
+      }),
+    ).toEqual(["inbox:0:open", "inbox:1"]);
   });
 
   test("reads of one subscription run in call order, so one park is outstanding at a time", async () => {

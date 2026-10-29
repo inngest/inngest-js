@@ -9,7 +9,7 @@ import {
   type InboxToolInbox,
   type InboxToolMessage,
   type InboxToolsConfig,
-  isWrappable,
+  matchToCel,
 } from "./inboxTools.ts";
 
 /**
@@ -125,13 +125,13 @@ const setup = (overrides: Partial<InboxToolsConfig> = {}) => {
 };
 
 describe("inbox_listen", () => {
-  test("listens to an allowed source with the configured thread and if, adding the model's if", async () => {
+  test("listens to an allowed source with the configured thread and if, adding the model's match", async () => {
     const { call, calls } = setup();
 
     await expect(
       call("inbox_listen", {
         source: "github/check_run",
-        if: "event.data.pr == 12",
+        match: { "data.pr": 12, "data.user": "U123" },
         as: "checks",
       }),
     ).resolves.toEqual({ listening: "checks", source: "github/check_run" });
@@ -140,7 +140,7 @@ describe("inbox_listen", () => {
       "github/check_run",
       {
         thread: '"slack:" + event.data.slackThread',
-        if: '(event.data.repo == "app") && (event.data.pr == 12)',
+        if: '(event.data.repo == "app") && (event.data.pr == 12 && event.data.user == "U123")',
       },
     ]);
   });
@@ -175,38 +175,32 @@ describe("inbox_listen", () => {
   });
 
   test.each([
-    "true) || (event.data.x == 1",
-    "event.data.a == (1",
-    "event.data.a == 'x",
-    "x".repeat(501),
-    "false // (\n) || (true // )\n",
-    "false // ( ) || (true // )",
-    'event.data.a == r"\\") || (true"',
-    "true # )",
-    "a\nb",
+    { "data.x == 1 || true": 1 },
+    { "data..x": 1 },
+    { "data.": 1 },
+    { "": 1 },
+    { "data.if": 1 },
+    { "data.x[0]": 1 },
+    { "data.x\n": 1 },
+    { "data.x": "x".repeat(201) },
+    { "data.x": Number.POSITIVE_INFINITY },
+    { "data.x": "\ud800" },
+    Object.fromEntries(
+      Array.from({ length: 9 }, (_, n) => {
+        return [`data.f${n}`, 1];
+      }),
+    ),
   ])(
-    "refuses an if that could escape the configured one: %j",
-    async (narrow) => {
+    "refuses a match that is not plain fields and values: %j",
+    async (match) => {
       const { call, calls } = setup();
 
       await expect(
-        call("inbox_listen", { source: "ci/status", if: narrow, as: "ci" }),
-      ).rejects.toThrow(/"if" must be a single-line CEL expression/);
+        call("inbox_listen", { source: "ci/status", match, as: "ci" }),
+      ).rejects.toThrow(/match/);
       expect(calls).toEqual([]);
     },
   );
-
-  test("refuses a quoted identifier that hides parentheses from the check", async () => {
-    const { call } = setup();
-
-    await expect(
-      call("inbox_listen", {
-        source: "ci/status",
-        if: "event.data.`(` ) || true || (event.data.`)`",
-        as: "ci",
-      }),
-    ).rejects.toThrow(/"if" must be a single-line CEL expression/);
-  });
 
   test("a failed listen doesn't remove a newer listener of the same name", async () => {
     const fake = fakeInbox();
@@ -461,43 +455,36 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     ]);
   });
 
-  test("the model's if is wrapped, so an || in it stays inside its own parentheses", async () => {
+  test("a value can't become syntax: it is written as an escaped string literal", async () => {
     const { call, calls } = setup();
 
     await call("inbox_listen", {
-      source: "github/check_run",
-      if: "event.data.a == 1 || event.data.b == 2",
+      source: "ci/status",
+      match: { "data.title": '") || (true' },
       as: "x",
+    });
+    await call("inbox_listen", {
+      source: "github/check_run",
+      match: { "data.title": "a\nb\u2028c\\" },
+      as: "y",
     });
 
     expect(calls[0]?.[2]).toEqual({
+      thread: "event.data.deployId",
+      if: '(event.data.title == "\\") || (true")',
+    });
+    expect(calls[1]?.[2]).toEqual({
       thread: '"slack:" + event.data.slackThread',
-      if: '(event.data.repo == "app") && (event.data.a == 1 || event.data.b == 2)',
+      if: '(event.data.repo == "app") && (event.data.title == "a\\nb\\u2028c\\\\")',
     });
   });
 
-  test("refuses event[...] and the line separators beyond ASCII", async () => {
+  test("an empty match adds nothing", async () => {
     const { call, calls } = setup();
 
-    for (const narrow of [
-      'event["data"].x == 1',
-      'event ["data"].x == 1',
-      "event.data.a == 1\u2028|| true",
-      "event.data.a == 1\u2029|| true",
-      "event.data.a == 1\u0085|| true",
-    ]) {
-      await expect(
-        call("inbox_listen", { source: "ci/status", if: narrow, as: "x" }),
-      ).rejects.toThrow(/"if" must be a single-line CEL expression/);
-    }
+    await call("inbox_listen", { source: "ci/status", match: {}, as: "x" });
 
-    expect(calls).toEqual([]);
-    // Indexing a list inside the event is fine, and so is the word in a string.
-    await call("inbox_listen", {
-      source: "ci/status",
-      if: 'event.data.labels[0] == "event["',
-      as: "ok",
-    });
+    expect(calls[0]?.[2]).toEqual({ thread: "event.data.deployId" });
   });
 
   test("a new execution that replays the calls rebuilds the listeners, so wait, read and stop still work", async () => {
@@ -625,27 +612,18 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
   });
 });
 
-describe("isWrappable", () => {
+describe("matchToCel", () => {
   test.each([
-    ["event.data.a == 1", true],
-    ["(a) && (b)", true],
-    ['event.data.s == ")"', true],
-    ["a) || (b", false],
-    ["(a", false],
-    ["'x", false],
-    ["a // (", false],
-    ["a # b", false],
-    ['r"x"', false],
-    ["a\nb", false],
-    ["event.data.driver == 1", true],
-    ['event.data.url.startsWith("https://x")', true],
-    ['event.data.title.contains("#12")', true],
-    ["event.data.k == 'r'", true],
-    ['event.data.k == "a\\"r"', true],
-    ['"""a""" == b', false],
-    ["rb'x'", false],
-    ["event.data.`a`", false],
-  ])("%s", (expression, ok) => {
-    expect(isWrappable(expression)).toBe(ok);
+    [{ "data.a": 1 }, "event.data.a == 1"],
+    [
+      { "data.a": "x", "data.b": true },
+      'event.data.a == "x" && event.data.b == true',
+    ],
+    [{ "data.a": -2.5 }, "event.data.a == -2.5"],
+    [{ "data.a": "\u0085\u007f" }, 'event.data.a == "\\u0085\\u007f"'],
+    [{ "data.a": "ünï" }, 'event.data.a == "ünï"'],
+    [{}, undefined],
+  ])("%j", (match, cel) => {
+    expect(matchToCel(match)).toBe(cel);
   });
 });

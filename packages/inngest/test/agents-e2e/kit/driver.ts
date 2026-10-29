@@ -70,6 +70,13 @@ export interface RunScores {
 
 export interface Ctx {
   id: string;
+
+  /**
+   * Kills the app process and starts it again (the Dev Server and Redis
+   * stay), then returns once it has synced. In-flight requests are lost, as in
+   * a worker deploy or crash.
+   */
+  restartApp: () => Promise<void>;
   devUrl: string;
   redisUrl: string;
   fakes: Fakes;
@@ -293,6 +300,7 @@ export const createCtx = (
   redisUrl: string,
   fakes: Fakes,
   onFail: () => void,
+  restartApp: () => Promise<void>,
 ): Ctx => {
   const client = new Inngest({
     id: "agents-e2e-driver",
@@ -475,6 +483,7 @@ export const createCtx = (
 
   return {
     id,
+    restartApp,
     devUrl,
     redisUrl,
     fakes: scoped,

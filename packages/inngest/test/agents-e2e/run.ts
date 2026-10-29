@@ -364,9 +364,16 @@ if (!inner) {
     for (const s of scenarios) {
       const begin = Date.now();
       let scenarioFailed = false;
-      const ctx = createCtx(s.id, stack.devUrl, stack.redisUrl, fakes, () => {
-        scenarioFailed = true;
-      });
+      const ctx = createCtx(
+        s.id,
+        stack.devUrl,
+        stack.redisUrl,
+        fakes,
+        () => {
+          scenarioFailed = true;
+        },
+        stack.restartApp,
+      );
       const cap = s.capMs ?? scenarioCapMs;
       let timer: NodeJS.Timeout | undefined;
       const watch = watchStack(stack.devUrl);

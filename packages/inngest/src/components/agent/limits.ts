@@ -33,9 +33,9 @@ export interface AgentBudget {
   output?: number;
 
   /**
-   * Cost in US dollars, summed from the prices of `limits.price`. Every agent
-   * that spends against a `usd` budget needs a `price`: without one its calls
-   * count nothing toward it.
+   * Cost in US dollars, summed from the prices of `limits.price`. An agent
+   * that sets this needs a `limits.price`; `createAgentFunction()` throws
+   * without one, since its calls would count nothing toward the budget.
    */
   usd?: number;
 }

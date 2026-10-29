@@ -47,3 +47,36 @@ describe("inboxTools types", () => {
     expect(run).toBeTypeOf("function");
   });
 });
+
+describe("inboxTools body type", () => {
+  test("a configured agent gets all four tools, and one without gets none", () => {
+    const run = () => {
+      agents.agent(
+        {
+          id: "with-tools",
+          on: { cron: "0 * * * *" },
+          inboxTools: { listen: [{ event: "ci/status", thread: "t" }] },
+        },
+        async ({ inboxTools }) => {
+          expectTypeOf(inboxTools.inbox_listen).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_wait).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_read).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_stop).not.toBeUndefined();
+
+          return null;
+        },
+      );
+      agents.agent(
+        { id: "without-tools", on: { cron: "0 * * * *" } },
+        async ({ inboxTools }) => {
+          // @ts-expect-error there is no inbox_listen without inboxTools
+          void inboxTools.inbox_listen;
+
+          return null;
+        },
+      );
+    };
+
+    expect(run).toBeTypeOf("function");
+  });
+});

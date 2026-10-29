@@ -307,7 +307,7 @@ describe("agent.loop", () => {
       },
     );
 
-    // The function runs again for each step, so the price runs again too.
+    // The price runs in the model step (the harness may run a step twice).
     const distinct = (items: unknown[]) => {
       return [...new Set(items.map((item) => JSON.stringify(item)))];
     };
@@ -320,6 +320,89 @@ describe("agent.loop", () => {
       JSON.stringify({ input: 10, output: 5, usd: 0.25 }),
     ]);
     expect(result?.usage).toEqual({ input: 20, output: 10, usd: 0.5 });
+  });
+
+  test("the cost is stored on the model step, and a replay uses it without pricing again", async () => {
+    let calls = 0;
+    const price = () => {
+      calls += 1;
+
+      return calls;
+    };
+    const { steps, result } = await run([say("done")], { price });
+    const model = steps.find((done) => {
+      return done.userland?.id === "agent:model:1";
+    });
+
+    expect(model?.data).toMatchObject({ usd: 1 });
+    expect(result?.usage.usd).toBe(1);
+    expect(calls).toBe(1);
+
+    // The step is memoized with its cost, and the price gives something else now.
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        result2 = await agent.loop({
+          model: agent.model(async () => {
+            throw new Error("the model must not be called on a replay");
+          }),
+          prompt: "go",
+          tools: {},
+          price,
+        });
+      },
+    );
+    let result2: AgentLoopResult | undefined;
+    const state = Object.fromEntries(
+      steps.map((done) => {
+        return [done.id, { id: done.id, data: done.data }];
+      }),
+    );
+    const replayed = await runFnWithStack(fn, state);
+
+    expect(replayed.type).toBe("function-resolved");
+    expect(result2?.usage.usd).toBe(1);
+    expect(calls).toBe(1);
+  });
+
+  test("a model step memoized before costs were stored is priced when it replays", async () => {
+    const { steps } = await run([say("done")], { price: () => 7 });
+    const client = new Inngest({ id: testClientId });
+    let replayed: AgentLoopResult | undefined;
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        replayed = await agent.loop({
+          model: agent.model(async () => {
+            throw new Error("the model must not be called on a replay");
+          }),
+          prompt: "go",
+          tools: {},
+          price: () => 0.5,
+        });
+      },
+    );
+    const state = Object.fromEntries(
+      steps.map((done) => {
+        const { usd: _usd, ...old } = done.data as Record<string, unknown>;
+
+        return [done.id, { id: done.id, data: old }];
+      }),
+    );
+    const outcome = await runFnWithStack(fn, state);
+
+    expect(outcome.type).toBe("function-resolved");
+    expect(replayed?.usage.usd).toBe(0.5);
+  });
+
+  test("a price that gives no dollars ends the run without a retry", async () => {
+    const { steps } = await run([say("done")], { price: () => Number.NaN });
+
+    expect(steps[0]).toMatchObject({
+      op: "StepFailed",
+      userland: { id: "agent:model:1" },
+    });
   });
 
   test("prices from a table of rates per million tokens", async () => {

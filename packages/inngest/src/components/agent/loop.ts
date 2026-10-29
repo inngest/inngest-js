@@ -407,7 +407,8 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * returns US dollars, or rates per million tokens by model name (`"*"` for
    * any other). The loop adds the cost of each call to `usage.usd` and to the
    * turn's `usage.usd`, which is what `limits.budget.usd` counts. The SDK has no
-   * prices of its own. A function must be pure, since it runs again on replay.
+   * prices of its own. The cost is worked out once, inside the model call's step,
+   * and a replay reuses it.
    * Spread `...control` to take the agent's `limits.price`.
    */
   price?: AgentPrice;
@@ -733,16 +734,27 @@ const loop = async <TTools extends SandboxTools>(
           }
         }
 
-        return answer;
+        // Priced here and stored with the reply, so a replay uses the number
+        // the call was priced at. A reply that reported no tokens costs nothing.
+        return options.price
+          ? {
+              ...answer,
+              usd: priceOf(
+                options.price,
+                answer.usage ?? { input: 0, output: 0 },
+                answer.model,
+              ),
+            }
+          : answer;
       },
-    )) as AgentModelResponse;
+    )) as AgentModelResponse & { usd?: number };
     steered = 0;
 
-    // What the call cost, when the loop has a price; a reply that reported no
-    // tokens costs nothing.
     const callUsage = reply.usage ?? { input: 0, output: 0 };
+    // A step memoized before the cost was stored with it has no `usd`: price
+    // it now.
     const cost = options.price
-      ? priceOf(options.price, callUsage, reply.model)
+      ? (reply.usd ?? priceOf(options.price, callUsage, reply.model))
       : undefined;
 
     usage.input += callUsage.input;

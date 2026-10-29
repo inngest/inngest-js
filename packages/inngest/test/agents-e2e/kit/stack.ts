@@ -86,6 +86,13 @@ export interface Stack {
   name: string;
   devUrl: string;
   redisUrl: string;
+
+  /**
+   * Kills the app process and starts it again with the same environment,
+   * keeping the Dev Server and Redis, and returns once it serves and has
+   * synced again.
+   */
+  restartApp: () => Promise<void>;
 }
 
 export interface StartOptions {
@@ -166,7 +173,41 @@ export const startStack = async (options: StartOptions): Promise<Stack> => {
     }),
   ]);
 
-  return { name, devUrl, redisUrl };
+  return {
+    name,
+    devUrl,
+    redisUrl,
+    restartApp: async () => {
+      await devstack(["restart", `${name}/app`]);
+
+      const appUrl = await urlOf(name, "app");
+      const end = Date.now() + 60_000;
+
+      // The app syncs itself to the Dev Server when it is sent a PUT.
+      while (Date.now() < end) {
+        const synced = await fetch(appUrl, {
+          method: "PUT",
+          signal: AbortSignal.timeout(5_000),
+        })
+          .then((response) => {
+            return response.ok;
+          })
+          .catch(() => {
+            return false;
+          });
+
+        if (synced) {
+          return;
+        }
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 300);
+        });
+      }
+
+      throw new Error("the app did not come back after a restart");
+    },
+  };
 };
 
 export const stopStack = async (name: string) => {
