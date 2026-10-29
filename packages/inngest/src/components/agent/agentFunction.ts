@@ -301,24 +301,149 @@ const functionOptions = (
 };
 
 /**
+ * The types an agent carries, as one object type. Every field is optional:
+ * what a bag leaves out takes the default of `AgentTypeDefaults`. Name only
+ * what you need, such as `AgentBody<{ output: null; middleware: TMiddleware }>`.
+ *
+ * - `event`: the events of the agent's `on` triggers (`TriggerEvent`).
+ * - `output`: what the body returns. Only `AgentBody` reads it; `agents.agent`
+ *   infers the output from the body's return type, so a config or context
+ *   bag does not need it.
+ * - `request` and `reply`: what other threads ask the agent and what it
+ *   answers.
+ * - `sandboxes`: for each sandbox name, the names of the tools it brings.
+ * - `client`: the Inngest client, whose middleware types the body's context.
+ * - `middleware`: the function-level middleware, which adds to the context.
+ * - `inboxTools`: the config of the model's inbox tools, if any.
+ */
+export interface AgentTypes {
+  /**
+   * The events of the agent's `on` triggers.
+   */
+  event?: unknown;
+
+  /**
+   * What the body returns.
+   */
+  output?: unknown;
+
+  /**
+   * What other threads ask the agent.
+   */
+  request?: unknown;
+
+  /**
+   * What the agent answers to a request.
+   */
+  reply?: unknown;
+
+  /**
+   * For each sandbox name, the names of the tools it brings.
+   */
+  sandboxes?: SandboxToolNames;
+
+  /**
+   * The Inngest client of the agent.
+   */
+  client?: Inngest.Any;
+
+  /**
+   * The function-level middleware of the agent.
+   */
+  middleware?: Middleware.Class[] | undefined;
+
+  /**
+   * The config of the model's inbox tools, or `undefined` for none.
+   */
+  inboxTools?: InboxToolsConfig | undefined;
+}
+
+/**
+ * What each field of `AgentTypes` is when the bag does not name it.
+ */
+export interface AgentTypeDefaults {
+  /**
+   * Any trigger event.
+   */
+  event: TriggerEvent;
+
+  /**
+   * Unknown.
+   */
+  output: unknown;
+
+  /**
+   * Unknown.
+   */
+  request: unknown;
+
+  /**
+   * Unknown.
+   */
+  reply: unknown;
+
+  /**
+   * Any sandbox names.
+   */
+  sandboxes: SandboxToolNames;
+
+  /**
+   * Any client.
+   */
+  client: Inngest.Any;
+
+  /**
+   * No function-level middleware.
+   */
+  middleware: undefined;
+
+  /**
+   * Inbox tools that may or may not be configured.
+   */
+  inboxTools: InboxToolsConfig | undefined;
+}
+
+/**
+ * An `AgentTypes` bag with its gaps filled from `AgentTypeDefaults`: every
+ * field is there, and the ones the bag names are the bag's own.
+ */
+export type AgentTypesOf<TTypes extends AgentTypes> = {
+  event: TTypes extends { event: infer V } ? V : AgentTypeDefaults["event"];
+  output: TTypes extends { output: infer V } ? V : AgentTypeDefaults["output"];
+  request: TTypes extends { request: infer V }
+    ? V
+    : AgentTypeDefaults["request"];
+  reply: TTypes extends { reply: infer V } ? V : AgentTypeDefaults["reply"];
+  sandboxes: TTypes extends { sandboxes: infer V extends SandboxToolNames }
+    ? V
+    : AgentTypeDefaults["sandboxes"];
+  client: TTypes extends { client: infer V extends Inngest.Any }
+    ? V
+    : AgentTypeDefaults["client"];
+  middleware: TTypes extends {
+    middleware: infer V extends Middleware.Class[] | undefined;
+  }
+    ? V
+    : AgentTypeDefaults["middleware"];
+  inboxTools: TTypes extends {
+    inboxTools: infer V extends InboxToolsConfig | undefined;
+  }
+    ? V
+    : AgentTypeDefaults["inboxTools"];
+};
+
+/**
  * The config of an agent: its ID, what starts it, and what it may use.
- * `TOn` is the type of `on`, `TEvent` the events of its triggers, and
- * `TRequest` and `TReply` what other threads ask it and what it answers.
+ * `TOn` is the type of `on`; `TTypes` is the `AgentTypes` bag (the events of
+ * its triggers, what other threads ask it and what it answers, and so on).
+ * Without one, the middleware is `Middleware.Class[] | undefined`, so any
+ * config fits.
  */
 export interface AgentFunctionConfig<
   TOn = ThreadTriggers,
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-  TReply = unknown,
-  TSandboxes extends SandboxToolNames = SandboxToolNames,
-  TMiddleware extends Middleware.Class[] | undefined =
-    | Middleware.Class[]
-    | undefined,
-  TInboxTools extends InboxToolsConfig | undefined =
-    | InboxToolsConfig
-    | undefined,
+  TTypes extends AgentTypes = { middleware: Middleware.Class[] | undefined },
 > extends ThreadKeyConfig<TOn>,
-    AgentFunctionOptions<TMiddleware> {
+    AgentFunctionOptions<AgentTypesOf<TTypes>["middleware"]> {
   /**
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
@@ -339,7 +464,10 @@ export interface AgentFunctionConfig<
    * `request()` on the handle from `agent.thread()`, which also checks its
    * payload against `request`. `reply()` checks its data against `reply`.
    */
-  requests?: ThreadRequests<TRequest, TReply>;
+  requests?: ThreadRequests<
+    AgentTypesOf<TTypes>["request"],
+    AgentTypesOf<TTypes>["reply"]
+  >;
 
   /**
    * Runs once for every message that reaches this thread while a run of it is
@@ -355,7 +483,9 @@ export interface AgentFunctionConfig<
    * the body returned but before the run is cleaned up may be. A `step` is
    * given: use it for the posts.
    */
-  onArrival?: (context: AgentArrivalContext<TEvent>) => Promise<void> | void;
+  onArrival?: (
+    context: AgentArrivalContext<AgentTypesOf<TTypes>["event"]>,
+  ) => Promise<void> | void;
 
   /**
    * Event sources that reach a live run of the thread they map to and never
@@ -374,7 +504,7 @@ export interface AgentFunctionConfig<
    * `if` can only narrow. A message that arrives while the model works is
    * folded into its next turn by `control.steer()` when `foldMessages` allows.
    */
-  inboxTools?: TInboxTools;
+  inboxTools?: AgentTypesOf<TTypes>["inboxTools"];
 
   /**
    * Which messages that arrive during a turn `control.steer()` (and so
@@ -396,7 +526,10 @@ export interface AgentFunctionConfig<
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
    */
-  sandboxes?: SandboxesConfig<AgentConfigContext<TEvent>, TSandboxes>;
+  sandboxes?: SandboxesConfig<
+    AgentConfigContext<AgentTypesOf<TTypes>["event"]>,
+    AgentTypesOf<TTypes>["sandboxes"]
+  >;
 
   /**
    * The destinations of progress and asks, by name: channels made with
@@ -531,20 +664,18 @@ export interface AgentArrivalContext<TEvent = TriggerEvent> {
  * The fields the agent adds to the function context in its body. See
  * `AgentBodyContext`.
  */
-export interface AgentBodyFields<
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-  TReply = unknown,
-  TSandboxes extends SandboxToolNames = SandboxToolNames,
-  TInboxTools extends InboxToolsConfig | undefined =
-    | InboxToolsConfig
-    | undefined,
-> {
+export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   /**
    * The event that started the run. Its `data` is the thread message, and
    * `data.event` is the trigger event, typed from `on`.
    */
-  event: { name: string; data: ThreadMessage<TEvent, TRequest> };
+  event: {
+    name: string;
+    data: ThreadMessage<
+      AgentTypesOf<TTypes>["event"],
+      AgentTypesOf<TTypes>["request"]
+    >;
+  };
 
   /**
    * The event of `on` that started this run, as it came (`id`, `name`,
@@ -555,31 +686,36 @@ export interface AgentBodyFields<
    * the tick (`{ cron }`), for `invoke()` the invoke event with the caller's
    * input as `data`, without what the SDK adds for the invoked agent.
    */
-  trigger: TEvent | undefined;
+  trigger: AgentTypesOf<TTypes>["event"] | undefined;
 
   /**
    * The handle of the thread this run belongs to.
    */
-  thread: ThreadHandle<TRequest, TReply>;
+  thread: ThreadHandle<
+    AgentTypesOf<TTypes>["request"],
+    AgentTypesOf<TTypes>["reply"]
+  >;
 
   /**
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
    * except `start: "eager"` ones, which are already being created.
    */
-  sandboxes: { [K in keyof TSandboxes & string]: LazySandbox };
+  sandboxes: {
+    [K in keyof AgentTypesOf<TTypes>["sandboxes"] & string]: LazySandbox;
+  };
 
   /**
    * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
    * the `tools` of `agent.loop()`.
    */
-  sandboxTools: SandboxToolsOf<TSandboxes>;
+  sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
    * The model's inbox tools: `inbox_listen`, `inbox_wait`, `inbox_read` and
    * `inbox_stop`, all of them when the config has `inboxTools` and none
    * without it.
    */
-  inboxTools: InboxToolsOf<TInboxTools>;
+  inboxTools: InboxToolsOf<AgentTypesOf<TTypes>["inboxTools"]>;
 
   /**
    * The agent's channels, by name, as the config resolved them for this run.
@@ -601,7 +737,11 @@ export interface AgentBodyFields<
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
-  inbox: ThreadInbox<TEvent, TRequest, TReply>;
+  inbox: ThreadInbox<
+    AgentTypesOf<TTypes>["event"],
+    AgentTypesOf<TTypes>["request"],
+    AgentTypesOf<TTypes>["reply"]
+  >;
 
   /**
    * How the last run of this thread that ended, ended: `completed`,
@@ -833,15 +973,15 @@ const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
  * `attempt` and the rest, without `event` and `events`, which the agent
  * replaces.
  */
-export type AgentFunctionInput<
-  TClient extends Inngest.Any = Inngest.Any,
-  TMiddleware extends Middleware.Class[] | undefined = undefined,
-> = Omit<GetFunctionInput<TClient>, "event" | "events" | "step" | "group"> &
-  ApplyAllMiddlewareCtxExtensions<TMiddleware> & {
-    step: GetFunctionInput<TClient>["step"] &
-      ApplyAllMiddlewareStepExtensions<TMiddleware>;
-    group: GetFunctionInput<TClient>["group"] &
-      ApplyAllMiddlewareGroupExtensions<TMiddleware>;
+export type AgentFunctionInput<TTypes extends AgentTypes = AgentTypes> = Omit<
+  GetFunctionInput<AgentTypesOf<TTypes>["client"]>,
+  "event" | "events" | "step" | "group"
+> &
+  ApplyAllMiddlewareCtxExtensions<AgentTypesOf<TTypes>["middleware"]> & {
+    step: GetFunctionInput<AgentTypesOf<TTypes>["client"]>["step"] &
+      ApplyAllMiddlewareStepExtensions<AgentTypesOf<TTypes>["middleware"]>;
+    group: GetFunctionInput<AgentTypesOf<TTypes>["client"]>["group"] &
+      ApplyAllMiddlewareGroupExtensions<AgentTypesOf<TTypes>["middleware"]>;
   };
 
 /**
@@ -853,45 +993,27 @@ export type AgentFunctionInput<
  * trigger event. There is no `events`, because an agent never runs on a
  * batch.
  */
-export type AgentBodyContext<
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-  TReply = unknown,
-  TSandboxes extends SandboxToolNames = SandboxToolNames,
-  TClient extends Inngest.Any = Inngest.Any,
-  TMiddleware extends Middleware.Class[] | undefined = undefined,
-  TInboxTools extends InboxToolsConfig | undefined =
-    | InboxToolsConfig
-    | undefined,
-> = AgentFunctionInput<TClient, TMiddleware> &
-  AgentBodyFields<TEvent, TRequest, TReply, TSandboxes, TInboxTools>;
+export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
+  AgentFunctionInput<TTypes> & AgentBodyFields<TTypes>;
 
 /**
- * The body of an agent. `TEvent` is the events of its `on` triggers and
- * `TOutput` what it returns.
+ * The body of an agent. `TTypes` is the `AgentTypes` bag: the events of its
+ * `on` triggers, what it returns, and so on. Name only what you need.
+ *
+ * @example
+ * ```ts
+ * const body: AgentBody<{ event: ThreadCronEvent; output: null }> = async ({
+ *   trigger,
+ * }) => {
+ *   console.log(trigger?.data.cron);
+ *
+ *   return null;
+ * };
+ * ```
  */
-export type AgentBody<
-  TEvent = TriggerEvent,
-  TOutput = unknown,
-  TRequest = unknown,
-  TReply = unknown,
-  TSandboxes extends SandboxToolNames = SandboxToolNames,
-  TClient extends Inngest.Any = Inngest.Any,
-  TMiddleware extends Middleware.Class[] | undefined = undefined,
-  TInboxTools extends InboxToolsConfig | undefined =
-    | InboxToolsConfig
-    | undefined,
-> = (
-  context: AgentBodyContext<
-    TEvent,
-    TRequest,
-    TReply,
-    TSandboxes,
-    TClient,
-    TMiddleware,
-    TInboxTools
-  >,
-) => Promise<TOutput>;
+export type AgentBody<TTypes extends AgentTypes = AgentTypes> = (
+  context: AgentBodyContext<TTypes>,
+) => Promise<AgentTypesOf<TTypes>["output"]>;
 
 /**
  * An agent made by `createAgents().agent()`: the functions to serve, its

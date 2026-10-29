@@ -11,7 +11,12 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { sandboxMiddleware } from "../sandbox/middleware.ts";
-import type { AgentBody } from "./agentFunction.ts";
+import type {
+  AgentBody,
+  AgentBodyContext,
+  AgentTypeDefaults,
+  AgentTypesOf,
+} from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import type { ThreadCronEvent } from "./threadTrigger.ts";
 
@@ -39,15 +44,13 @@ const widened = (middleware: Middleware.Class[]) => {
  */
 const generic = <const TMiddleware extends Middleware.Class[]>(
   middleware: TMiddleware,
-  body: AgentBody<
-    ThreadCronEvent,
-    null,
-    unknown,
-    unknown,
-    Record<never, never>,
-    typeof client,
-    TMiddleware
-  >,
+  body: AgentBody<{
+    event: ThreadCronEvent;
+    output: null;
+    sandboxes: Record<never, never>;
+    client: typeof client;
+    middleware: TMiddleware;
+  }>,
 ) => {
   return agents.agent(
     { id: "generic", on: { cron: "0 * * * *" }, middleware },
@@ -75,6 +78,46 @@ const own = <const TMiddleware extends Middleware.Class[]>(
     },
   );
 };
+
+describe("the AgentTypes bag", () => {
+  test("a bag names only what it needs, and the rest takes its default", () => {
+    expectTypeOf<AgentTypesOf<Record<never, never>>>().toEqualTypeOf<{
+      event: AgentTypeDefaults["event"];
+      output: unknown;
+      request: unknown;
+      reply: unknown;
+      sandboxes: AgentTypeDefaults["sandboxes"];
+      client: AgentTypeDefaults["client"];
+      middleware: undefined;
+      inboxTools: AgentTypeDefaults["inboxTools"];
+    }>();
+    expectTypeOf<AgentTypesOf<{ output: number }>["output"]>().toBeNumber();
+    expectTypeOf<AgentTypesOf<{ output: number }>["request"]>().toBeUnknown();
+    expectTypeOf<AgentBody>().toEqualTypeOf<AgentBody<Record<never, never>>>();
+  });
+
+  test("a body type with a bag types its context like the call site does", () => {
+    const check = () => {
+      const body: AgentBody<{
+        event: ThreadCronEvent;
+        output: string;
+      }> = async ({ event, trigger }) => {
+        expectTypeOf(trigger).toEqualTypeOf<ThreadCronEvent | undefined>();
+        expectTypeOf(event.data.thread).toBeString();
+
+        return "done";
+      };
+
+      expectTypeOf<Parameters<typeof body>[0]>().toEqualTypeOf<
+        AgentBodyContext<{ event: ThreadCronEvent }>
+      >();
+
+      agents.agent({ id: "bag", on: { cron: "0 * * * *" } }, body);
+    };
+
+    expect(check).toBeTypeOf("function");
+  });
+});
 
 describe("forwarded middleware", () => {
   test("a widened list loses the body's extensions, a generic factory keeps them", () => {
