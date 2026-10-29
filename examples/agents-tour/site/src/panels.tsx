@@ -1,205 +1,23 @@
 /**
  * @module
- * The panels under the editor: Output, Trace and the message box.
+ * The message box of the play pane. Typing a message sends an event, and the
+ * box shows each message as the event it became.
  */
-import { useEffect, useRef, useState } from "react";
-import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
+import { useRef, useState } from "react";
 import { api } from "./api.ts";
+import type { Start } from "../../shared/types.ts";
+import { Kbd, shortcutsOf } from "./keyboard.tsx";
+import { useAction } from "./live.ts";
 
-type Line = Extract<TourEvent, { type: "log" }>;
-
-export const OutputPanel = ({ lines }: { lines: Line[] }) => {
-  const end = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [lines]);
-
-  return (
-    <div className="output" role="log" aria-label="Output" tabIndex={0}>
-      {lines.length === 0 ? (
-        <p className="empty">Press Run to see output here.</p>
-      ) : null}
-      {lines.map((line, index) => {
-        return (
-          <div className={`line ${line.kind}`} key={`${index}-${line.text}`}>
-            {line.text}
-          </div>
-        );
-      })}
-      <div ref={end} />
-    </div>
-  );
-};
-
-const housekeeping = (step: TraceStep) => {
-  return /^(kv\.|inbox:\d+:close|executor\.)/.test(step.name);
-};
-
-const label = (step: TraceStep) => {
-  if (step.name === "executor.nonstep") {
-    return "Function code";
-  }
-
-  if (/^inbox:\d+:open$/.test(step.name)) {
-    return "Open the inbox";
-  }
-
-  return step.name;
-};
-
-const rounded = (ms: number | null) => {
-  if (ms === null) {
-    return "";
-  }
-
-  if (ms < 1000) {
-    return `${Math.max(100, Math.round(ms / 100) * 100)} ms`.replace(
-      "100 ms",
-      "<100 ms",
-    );
-  }
-
-  return `${(ms / 1000).toFixed(1)} s`;
-};
-
-const Step = ({ step }: { step: TraceStep }) => {
-  const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<string>("");
-
-  const toggle = async () => {
-    const next = !open;
-
-    setOpen(next);
-
-    if (next && step.outputID && !detail) {
-      const out = await api.output(step.outputID).catch(() => {
-        return null;
-      });
-
-      setDetail(
-        out
-          ? JSON.stringify(
-              { input: out.input, output: out.data, error: out.error?.message },
-              null,
-              2,
-            )
-          : "No data",
-      );
-    }
+export const eventOfMessage = (
+  agent: string,
+  thread: string,
+  content: string,
+) => {
+  return {
+    name: "agent/message",
+    data: { agent: `tour/${agent}`, thread, kind: "user", content },
   };
-
-  return (
-    <li>
-      <button
-        type="button"
-        className="step"
-        onClick={toggle}
-        aria-expanded={open}
-      >
-        <span
-          className={`dot ${step.status.toLowerCase()}`}
-          aria-hidden="true"
-        />
-        <span className="step-name">{label(step)}</span>
-        <span className="step-meta">{rounded(step.duration)}</span>
-      </button>
-      {open ? <pre className="step-detail">{detail || "No data"}</pre> : null}
-    </li>
-  );
-};
-
-const RunOutput = ({ id }: { id: string | null }) => {
-  const [text, setText] = useState("");
-
-  useEffect(() => {
-    if (id) {
-      void api.output(id).then((out) => {
-        setText(out.error ? out.error.message : (out.data ?? ""));
-      });
-    }
-  }, [id]);
-
-  return text && text !== "null" ? (
-    <code className="run-output">{text}</code>
-  ) : null;
-};
-
-const RunView = ({
-  run,
-  everything,
-}: {
-  run: TraceRun;
-  everything: boolean;
-}) => {
-  const shown = run.steps.filter((step) => {
-    return everything || !housekeeping(step);
-  });
-  const hidden = run.steps.length - shown.length;
-
-  return (
-    <section className="run" aria-label={`Run of ${run.fn}`}>
-      <header>
-        <span
-          className={`dot ${run.status.toLowerCase()}`}
-          aria-hidden="true"
-        />
-        <strong>{run.fn}</strong>
-        <span className="status">{run.status.toLowerCase()}</span>
-        <RunOutput id={run.output} />
-      </header>
-      {shown.length > 0 ? (
-        <ul>
-          {shown.map((step) => {
-            return <Step step={step} key={step.id} />;
-          })}
-        </ul>
-      ) : (
-        <p className="empty">No steps of your own yet.</p>
-      )}
-      {hidden > 0 ? (
-        <p className="hidden-note">
-          {hidden} housekeeping steps hidden (press H to show them)
-        </p>
-      ) : null}
-    </section>
-  );
-};
-
-export const TracePanel = ({
-  runs,
-  everything,
-  onToggle,
-  hint,
-}: {
-  runs: TraceRun[];
-  everything: boolean;
-  onToggle: () => void;
-  hint: React.ReactNode;
-}) => {
-  return (
-    <div className="trace" tabIndex={0} aria-label="Trace">
-      <div className="trace-bar">
-        <span>
-          {runs.length} {runs.length === 1 ? "run" : "runs"}
-        </span>
-        <button
-          type="button"
-          className="ghost"
-          onClick={onToggle}
-          aria-pressed={everything}
-        >
-          Show everything {hint}
-        </button>
-      </div>
-      {runs.length === 0 ? (
-        <p className="empty">Press Run to see the trace here.</p>
-      ) : null}
-      {[...runs].reverse().map((run) => {
-        return <RunView run={run} everything={everything} key={run.id} />;
-      })}
-    </div>
-  );
 };
 
 export const MessagePanel = ({
@@ -209,17 +27,25 @@ export const MessagePanel = ({
   target: { agent: string; thread: string };
   disabled: boolean;
 }) => {
-  const [thread, setThread] = useState(target.thread);
   const [text, setText] = useState("Hello");
+  const [sent, setSent] = useState<string[]>([]);
+  const box = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    setThread(target.thread);
-  }, [target.thread]);
+  useAction("message", () => {
+    box.current?.focus();
+  });
 
   const send = async () => {
-    if (text.trim() && !disabled) {
-      await api.send(target.agent, thread, text);
+    if (!text.trim() || disabled) {
+      return;
     }
+
+    const event = eventOfMessage(target.agent, target.thread, text);
+
+    await api.send(target.agent, target.thread, text);
+    setSent((previous) => {
+      return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
+    });
   };
 
   return (
@@ -231,19 +57,13 @@ export const MessagePanel = ({
       }}
     >
       <p>
-        Say something to <code>{target.agent}</code>. Messages with the same
-        thread reach the same agent.
+        Say something to <code>{target.agent}</code>. A message is an event: it
+        reaches the agent's inbox on thread <code>{target.thread}</code>.
       </p>
       <label>
-        Thread
-        <input
-          value={thread}
-          onChange={(event) => setThread(event.target.value)}
-        />
-      </label>
-      <label>
-        Message
+        Message <Kbd action="message" />
         <textarea
+          ref={box}
           value={text}
           rows={2}
           onChange={(event) => setText(event.target.value)}
@@ -263,6 +83,65 @@ export const MessagePanel = ({
       <button type="submit" className="primary" disabled={disabled}>
         Send <kbd>Enter</kbd>
       </button>
+      {sent.map((json, at) => {
+        return (
+          <pre className="sent" key={`${at}-${json}`}>
+            Sent {json}
+          </pre>
+        );
+      })}
     </form>
+  );
+};
+
+const eventOfStart = (start: Start) => {
+  if ("event" in start) {
+    return start.event;
+  }
+
+  if ("slack" in start) {
+    return { name: "slack/message", data: start.slack };
+  }
+
+  return eventOfMessage(start.agent, start.thread, start.message);
+};
+
+/**
+ * The exact events Run sends, read only, so nothing about a run is magic.
+ */
+export const RunEvent = ({
+  starts,
+  open,
+  onToggle,
+}: {
+  starts: Start[];
+  open: boolean;
+  onToggle: () => void;
+}) => {
+  if (starts.length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="run-event">
+      <button
+        type="button"
+        className="chip"
+        aria-expanded={open}
+        aria-keyshortcuts={shortcutsOf("runEvent")}
+        onClick={onToggle}
+      >
+        Run sends <Kbd action="runEvent" />
+      </button>
+      {open ? (
+        <pre className="run-event-json" role="note">
+          {starts
+            .map((start) => {
+              return JSON.stringify(eventOfStart(start), null, 2);
+            })
+            .join("\n")}
+        </pre>
+      ) : null}
+    </span>
   );
 };

@@ -21,7 +21,7 @@ self.MonacoEnvironment = {
 export interface EditorApi {
   focus(): void;
   hasFocus(): boolean;
-  format(): void;
+  format(): Promise<void>;
   values(): Record<string, string>;
   setValue(name: string, content: string): void;
 }
@@ -97,7 +97,7 @@ const defineThemes = () => {
 };
 
 const uriOf = (name: string) => {
-  return monaco.Uri.parse(`file:///${name}`);
+  return monaco.Uri.parse(`file:///lesson/${name}`);
 };
 
 export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
@@ -115,8 +115,10 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       hasFocus: () => {
         return Boolean(editor.current?.hasTextFocus());
       },
-      format: () => {
-        void editor.current?.getAction("editor.action.formatDocument")?.run();
+      format: async () => {
+        await editor.current
+          ?.getAction("editor.action.formatDocument")
+          ?.run();
       },
       values: () => {
         const out: Record<string, string> = {};

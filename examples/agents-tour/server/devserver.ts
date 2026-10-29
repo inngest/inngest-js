@@ -149,7 +149,13 @@ export class DevServer {
     };
 
     if (body.errors?.length) {
-      throw new Error(body.errors.map((e) => e.message).join("; "));
+      throw new Error(
+        body.errors
+          .map((e) => {
+            return e.message;
+          })
+          .join("; "),
+      );
     }
 
     return body.data as T;

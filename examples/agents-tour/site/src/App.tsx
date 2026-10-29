@@ -16,11 +16,13 @@ import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { MessagePanel, OutputPanel, TracePanel } from "./panels.tsx";
+import { sendAction, useAction } from "./live.ts";
+import { MessagePanel, RunEvent } from "./panels.tsx";
+import { Divider } from "./panes.tsx";
 import { hash, store } from "./platform.ts";
+import { TracePanel } from "./trace.tsx";
 
 type Overlay = "contents" | "search" | "cheat" | null;
-type Tab = "output" | "trace" | "message";
 type Theme = "system" | "light" | "dark";
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
@@ -52,7 +54,8 @@ export const App = () => {
   const [page, setPage] = useState<Page>();
   const [files, setFiles] = useState<Page["files"]>([]);
   const [active, setActive] = useState("agent.ts");
-  const [tab, setTab] = useState<Tab>("trace");
+  const [ready, setReady] = useState(false);
+  const [devServerUrl, setDevServerUrl] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [runs, setRuns] = useState<TraceRun[]>([]);
@@ -62,12 +65,15 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
+  const [showEvent, setShowEvent] = useState(false);
   const [theme, setTheme] = useState<Theme>(
     (store.get("tour:theme") as Theme | null) ?? "system",
   );
   const [systemDark, setSystemDark] = useState(prefersDark());
-  const [panelHeight, setPanelHeight] = useState(
-    Number(store.get("tour:panel")) || 260,
+  const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
+  const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
+  const [rightRow, setRightRow] = useState(
+    Number(store.get("tour:right")) || 56,
   );
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
@@ -95,11 +101,21 @@ export const App = () => {
 
   useEffect(() => {
     void api.index().then(setIndex);
-    void api.types().then(addTypes);
+    void api.info().then((info) => {
+      setDevServerUrl(info.devServerUrl);
+    });
+    // The SDK's declarations go in before any page opens, so the editor's
+    // first check of a page already knows them.
+    void api.types().then((files) => {
+      addTypes(files);
+      setReady(true);
+    });
 
     return api.stream((event) => {
       if (event.type === "log") {
-        setLines((previous) => [...previous, event]);
+        setLines((previous) => {
+          return [...previous, event];
+        });
       } else if (event.type === "clear") {
         setLines([]);
       } else if (event.type === "status") {
@@ -133,7 +149,6 @@ export const App = () => {
       setActive("agent.ts");
       setLines([]);
       setUndo(null);
-      setTab((next.manifest.open as Tab | undefined) ?? "output");
       store.set("tour:last", id);
 
       if (push) {
@@ -151,7 +166,7 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (flat.length === 0) {
+    if (flat.length === 0 || !ready) {
       return;
     }
 
@@ -175,7 +190,7 @@ export const App = () => {
     return () => {
       window.removeEventListener("popstate", onPop);
     };
-  }, [flat, open]);
+  }, [flat, open, ready]);
 
   const position = flat.findIndex((candidate) => {
     return candidate.id === page?.id;
@@ -198,10 +213,12 @@ export const App = () => {
     );
   });
 
-  const run = () => {
+  const run = async () => {
     if (!page || !hasCode) {
       return;
     }
+
+    await editor.current?.format();
 
     const values = editor.current?.values() ?? {};
     const edited = values["agent.ts"];
@@ -264,11 +281,21 @@ export const App = () => {
     store.set("tour:theme", next);
   };
 
-  const panels = (page?.manifest.panels ?? ["output", "trace"]) as Tab[];
-  const showTab = (next: Tab) => {
-    if (panels.includes(next)) {
-      setTab(next);
+  const nextFile = () => {
+    const at = files.findIndex((file) => {
+      return file.name === active;
+    });
+    const next = files[(at + 1) % Math.max(1, files.length)];
+
+    if (next) {
+      setActive(next.name);
     }
+  };
+
+  const focusIn = (selector: string) => {
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(selector)?.focus();
+    }, 0);
   };
 
   const handlers: Handlers = {
@@ -278,7 +305,7 @@ export const App = () => {
     },
     reset,
     format: () => {
-      editor.current?.format();
+      void editor.current?.format();
     },
     next: () => {
       go(1);
@@ -295,17 +322,31 @@ export const App = () => {
     search: () => {
       setOverlay("search");
     },
-    output: () => {
-      showTab("output");
+    text: () => {
+      textPane.current?.focus();
     },
     trace: () => {
-      showTab("trace");
+      focusIn(".trace [data-row], .trace");
     },
     message: () => {
-      showTab("message");
+      sendAction("message");
     },
+    file: nextFile,
+    devserver: () => {
+      if (devServerUrl) {
+        window.open(devServerUrl, "_blank", "noopener");
+      }
+    },
+    runEvent: () => {
+      setShowEvent((value) => !value);
+    },
+    rowDown: () => {},
+    rowUp: () => {},
+    rowOpen: () => {},
     everything: () => {
-      setEverything((value) => !value);
+      setEverything((value) => {
+        return !value;
+      });
     },
     editor: toggleEditor,
     undo: undoReset,
@@ -341,21 +382,37 @@ export const App = () => {
     open(summary.id);
   };
 
-  const dragPanel = (event: React.PointerEvent) => {
-    const start = event.clientY;
-    const from = panelHeight;
-    const move = (next: PointerEvent) => {
-      setPanelHeight(
-        Math.max(120, Math.min(600, from + (start - next.clientY))),
-      );
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
+  const saveSplit = (
+    key: string,
+    set: (value: number) => void,
+    value: number,
+  ) => {
+    set(value);
+    store.set(key, String(Math.round(value)));
+  };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+  const tabKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabs = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    ];
+    const at = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | undefined;
+
+    if (event.key === "ArrowRight") {
+      next = (at + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft") {
+      next = (at - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = tabs.length - 1;
+    }
+
+    if (next !== undefined) {
+      event.preventDefault();
+      tabs[next]?.focus();
+      tabs[next]?.click();
+    }
   };
 
   if (!index || !page) {
@@ -373,7 +430,9 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("contents")}
+            onClick={() => {
+              setOverlay("contents");
+            }}
             aria-keyshortcuts={shortcutsOf("contents")}
           >
             Contents <Kbd action="contents" />
@@ -381,7 +440,9 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("search")}
+            onClick={() => {
+              setOverlay("search");
+            }}
             aria-keyshortcuts={shortcutsOf("search")}
           >
             Search <Kbd action="search" />
@@ -389,10 +450,20 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={() => setOverlay("cheat")}
+            onClick={() => {
+              setOverlay("cheat");
+            }}
             aria-keyshortcuts={shortcutsOf("cheat")}
           >
             Keys <Kbd action="cheat" />
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={handlers.devserver}
+            aria-keyshortcuts={shortcutsOf("devserver")}
+          >
+            Dev Server <Kbd action="devserver" />
           </button>
           <button
             type="button"
@@ -405,178 +476,203 @@ export const App = () => {
         </nav>
       </header>
 
-      <main className={hasCode ? "split" : "single"}>
-        <section
-          className="text"
-          ref={textPane}
-          tabIndex={-1}
-          aria-label="Lesson"
+      <main
+        className={hasCode ? "grid" : "single"}
+        style={
+          hasCode
+            ? { gridTemplateColumns: `${cols}fr 6px ${100 - cols}fr` }
+            : undefined
+        }
+      >
+        <div
+          className="col"
+          style={
+            hasCode && target
+              ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
+              : undefined
+          }
         >
-          <p className="crumb">{page.lessonTitle}</p>
-          <h2>{page.title}</h2>
-          <div
-            className="prose"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(page.markdown) }}
-          />
-        </section>
-
-        {hasCode ? (
-          <section className="work" aria-label="Code and results">
-            <div className="tabs files" role="tablist">
-              {files.map((file) => {
-                return (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active === file.name}
-                    key={file.name}
-                    onClick={() => setActive(file.name)}
-                  >
-                    {file.name}
-                    {file.editable ? "" : " (read-only)"}
-                  </button>
-                );
-              })}
-            </div>
-            <Editor
-              ref={editor}
-              files={files}
-              active={active}
-              dark={dark}
-              markers={markers}
-              handlers={() => {
-                return latest.current;
-              }}
-              onChange={(name, content) => {
-                if (name === "agent.ts") {
-                  store.set(editKey(page), content);
-                }
-              }}
-            />
-            <div className="controls">
-              <button
-                type="button"
-                className="primary"
-                ref={runButton}
-                onClick={run}
-                aria-keyshortcuts={shortcutsOf("run")}
-              >
-                Run <Kbd action="run" />
-              </button>
-              {live ? (
-                <button
-                  type="button"
-                  onClick={handlers.kill}
-                  aria-keyshortcuts={shortcutsOf("kill")}
-                >
-                  Kill <Kbd action="kill" />
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={handlers.format}
-                aria-keyshortcuts={shortcutsOf("format")}
-              >
-                Format <Kbd action="format" />
-              </button>
-              <button
-                type="button"
-                onClick={reset}
-                aria-keyshortcuts={shortcutsOf("reset")}
-              >
-                Reset <Kbd action="reset" />
-              </button>
-              {undo ? (
-                <button
-                  type="button"
-                  className="toast"
-                  onClick={undoReset}
-                  aria-keyshortcuts={shortcutsOf("undo")}
-                >
-                  Undo reset <Kbd action="undo" />
-                </button>
-              ) : null}
-              <span className={`status-line ${status.state}`} role="status">
-                {status.text}
-              </span>
-            </div>
+          <section
+            className="text"
+            ref={textPane}
+            tabIndex={-1}
+            aria-label="Lesson"
+          >
+            <p className="crumb">{page.lessonTitle}</p>
+            <h2>{page.title}</h2>
             <div
-              className="divider"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize the panels"
-              tabIndex={0}
-              onPointerDown={dragPanel}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowUp") {
-                  setPanelHeight((value) => Math.min(600, value + 24));
-                } else if (event.key === "ArrowDown") {
-                  setPanelHeight((value) => Math.max(120, value - 24));
-                }
+              className="prose"
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(page.markdown),
               }}
             />
-            <div className="lower" style={{ height: panelHeight }}>
-              <div className="tabs" role="tablist">
-                {panels.includes("output") ? (
+          </section>
+          {hasCode && target ? (
+            <>
+              <Divider
+                axis="horizontal"
+                value={leftRow}
+                label="Resize the lesson text and the message box"
+                onChange={(value) => saveSplit("tour:left", setLeftRow, value)}
+              />
+              <section className="play" aria-label="Play">
+                <div className="tabs" role="tablist" onKeyDown={tabKeys}>
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={tab === "output"}
-                    onClick={() => setTab("output")}
-                    aria-keyshortcuts={shortcutsOf("output")}
-                  >
-                    Output <Kbd action="output" />
-                  </button>
-                ) : null}
-                {panels.includes("trace") ? (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === "trace"}
-                    onClick={() => setTab("trace")}
-                    aria-keyshortcuts={shortcutsOf("trace")}
-                  >
-                    Trace <Kbd action="trace" />
-                  </button>
-                ) : null}
-                {panels.includes("message") ? (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === "message"}
-                    onClick={() => setTab("message")}
+                    aria-selected="true"
+                    tabIndex={0}
                     aria-keyshortcuts={shortcutsOf("message")}
                   >
-                    Message <Kbd action="message" />
+                    Messages <Kbd action="message" />
                   </button>
-                ) : null}
-              </div>
-              <div className="panel" role="tabpanel">
-                {tab === "output" ? <OutputPanel lines={lines} /> : null}
-                {tab === "trace" ? (
-                  <TracePanel
-                    runs={runs}
-                    everything={everything}
-                    onToggle={handlers.everything}
-                    hint={<Kbd action="everything" />}
-                  />
-                ) : null}
-                {tab === "message" && target ? (
+                </div>
+                <div className="panel" role="tabpanel">
                   <MessagePanel
                     target={target}
                     disabled={status.state !== "live"}
                   />
-                ) : null}
-              </div>
+                </div>
+              </section>
+            </>
+          ) : null}
+        </div>
+
+        {hasCode ? (
+          <>
+            <Divider
+              axis="vertical"
+              value={cols}
+              label="Resize the lesson and the code"
+              low={25}
+              high={70}
+              onChange={(value) => saveSplit("tour:cols", setCols, value)}
+            />
+            <div
+              className="col right"
+              style={{
+                gridTemplateRows: `${rightRow}fr 6px ${100 - rightRow}fr`,
+              }}
+            >
+              <section className="work" aria-label="Code">
+                <div className="tabs files" role="tablist" onKeyDown={tabKeys}>
+                  {files.map((file) => {
+                    return (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={active === file.name}
+                        tabIndex={active === file.name ? 0 : -1}
+                        key={file.name}
+                        onClick={() => setActive(file.name)}
+                      >
+                        {file.name}
+                        {file.editable ? "" : " (read-only)"}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="ghost files-key"
+                    onClick={nextFile}
+                    aria-keyshortcuts={shortcutsOf("file")}
+                  >
+                    Next file <Kbd action="file" />
+                  </button>
+                </div>
+                <Editor
+                  ref={editor}
+                  files={files}
+                  active={active}
+                  dark={dark}
+                  markers={markers}
+                  handlers={() => {
+                    return latest.current;
+                  }}
+                  onChange={(name, content) => {
+                    if (name === "agent.ts") {
+                      store.set(editKey(page), content);
+                    }
+                  }}
+                />
+                <div className="controls">
+                  <button
+                    type="button"
+                    className="primary"
+                    ref={runButton}
+                    onClick={run}
+                    aria-keyshortcuts={shortcutsOf("run")}
+                  >
+                    Run <Kbd action="run" />
+                  </button>
+                  <RunEvent
+                    starts={page.manifest.start ?? []}
+                    open={showEvent}
+                    onToggle={() => setShowEvent((value) => !value)}
+                  />
+                  {live ? (
+                    <button
+                      type="button"
+                      onClick={handlers.kill}
+                      aria-keyshortcuts={shortcutsOf("kill")}
+                    >
+                      Kill <Kbd action="kill" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handlers.format}
+                    aria-keyshortcuts={shortcutsOf("format")}
+                  >
+                    Format <Kbd action="format" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    aria-keyshortcuts={shortcutsOf("reset")}
+                  >
+                    Reset <Kbd action="reset" />
+                  </button>
+                  {undo ? (
+                    <button
+                      type="button"
+                      className="toast"
+                      onClick={undoReset}
+                      aria-keyshortcuts={shortcutsOf("undo")}
+                    >
+                      Undo reset <Kbd action="undo" />
+                    </button>
+                  ) : null}
+                  <span className={`status-line ${status.state}`} role="status">
+                    {status.text}
+                  </span>
+                </div>
+              </section>
+              <Divider
+                axis="horizontal"
+                value={rightRow}
+                label="Resize the code and the trace"
+                onChange={(value) => saveSplit("tour:right", setRightRow, value)}
+              />
+              <section className="tracepane" aria-label="Trace">
+                <TracePanel
+                  runs={runs}
+                  lines={lines}
+                  everything={everything}
+                  onToggle={handlers.everything}
+                />
+              </section>
             </div>
-          </section>
+          </>
         ) : null}
       </main>
 
       <footer className="pager">
         <button
           type="button"
-          onClick={() => go(-1)}
+          onClick={() => {
+            go(-1);
+          }}
           disabled={position <= 0}
           aria-keyshortcuts={shortcutsOf("prev")}
         >
@@ -588,7 +684,9 @@ export const App = () => {
         <button
           type="button"
           className="primary"
-          onClick={() => go(1)}
+          onClick={() => {
+            go(1);
+          }}
           aria-keyshortcuts={shortcutsOf("next")}
         >
           {position >= flat.length - 1 ? "Contents" : "Next"}{" "}
@@ -601,13 +699,27 @@ export const App = () => {
           index={index}
           current={page.id}
           onPick={pick}
-          onClose={() => setOverlay(null)}
+          onClose={() => {
+            setOverlay(null);
+          }}
         />
       ) : null}
       {overlay === "search" ? (
-        <Search index={index} onPick={pick} onClose={() => setOverlay(null)} />
+        <Search
+          index={index}
+          onPick={pick}
+          onClose={() => {
+            setOverlay(null);
+          }}
+        />
       ) : null}
-      {overlay === "cheat" ? <Cheat onClose={() => setOverlay(null)} /> : null}
+      {overlay === "cheat" ? (
+        <Cheat
+          onClose={() => {
+            setOverlay(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 };

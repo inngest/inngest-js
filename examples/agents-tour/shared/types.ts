@@ -18,8 +18,8 @@ export type Start = StartMessage | StartEvent;
 export interface Manifest {
   // Pages without code (the welcome pages) hide the right side.
   code?: boolean;
+  // The tabs of the play pane: `message`, and later `slack`, `github`, `events`.
   panels?: string[];
-  open?: string;
   start?: Start[];
   // The message box sends to this agent and thread.
   message?: { agent: string; thread: string };
@@ -79,13 +79,15 @@ export interface TraceRun {
   endedAt: string | null;
   // The ID of the run's output, read with /api/output.
   output: string | null;
+  // The event that started the run: the inbox's first message.
+  trigger: { name: string; data: Record<string, unknown> } | null;
   steps: TraceStep[];
 }
 
 export type TourEvent =
   | {
       type: "log";
-      kind: "info" | "out" | "err" | "result" | "pass" | "fail";
+      kind: "info" | "out" | "err";
       text: string;
     }
   | { type: "clear" }
