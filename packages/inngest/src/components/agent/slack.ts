@@ -24,6 +24,7 @@ import {
   objectSchema,
   parseWith,
   postJson,
+  resolveToken,
   retryableStatus,
   truncate,
 } from "./channels.ts";
@@ -91,9 +92,11 @@ export interface SlackChannelOptions {
   in: string[];
 
   /**
-   * Bot token. Default: `SLACK_BOT_TOKEN`, read when a message is posted.
+   * Bot token, or a function that returns one (it may be async), called each
+   * time a message is posted, so a Worker can read it from its per-request
+   * bindings. Default: `SLACK_BOT_TOKEN`, read when a message is posted.
    */
-  token?: string;
+  token?: string | (() => string | Promise<string>);
 
   /**
    * Slack Web API base URL. Default: `https://slack.com/api`. It receives the
@@ -203,6 +206,12 @@ const maxCardText = 250;
  */
 const streamLimits = { maxCards: 50, rollAt: 40, maxAgeMs: 9 * 60_000 };
 
+const sessionStatus = {
+  working: "processing",
+  idle: "active",
+  waiting: "suspended",
+} as const;
+
 const slackCardStatus = {
   pending: "pending",
   running: "in_progress",
@@ -252,9 +261,7 @@ const call = async (
    */
   strict = false,
 ): Promise<Record<string, unknown>> => {
-  const token =
-    options.token ??
-    (typeof process === "undefined" ? undefined : process.env.SLACK_BOT_TOKEN);
+  const token = await resolveToken(options.token, "SLACK_BOT_TOKEN", "Slack");
 
   const res = await postJson(
     `${options.apiUrl ?? "https://slack.com/api"}/${method}`,
@@ -306,14 +313,14 @@ const call = async (
  * Card text as Slack shows it: escaped, then cut to Slack's limit without
  * leaving half an entity at the end.
  */
-const cardText = (text: string): string => {
+const cardText = (text: string, max = maxCardText): string => {
   const escaped = escapeSlack(text);
 
-  if (escaped.length <= maxCardText) {
+  if (escaped.length <= max) {
     return escaped;
   }
 
-  return `${escaped.slice(0, maxCardText - 1).replace(/&[a-z]*;?$/, "")}…`;
+  return `${escaped.slice(0, max - 1).replace(/&[a-z]*;?$/, "")}…`;
 };
 
 const slackCard = (card: ChannelCard) => {
@@ -323,6 +330,18 @@ const slackCard = (card: ChannelCard) => {
     title: cardText(card.title),
     status: slackCardStatus[card.status ?? "running"],
     ...(card.details === undefined ? {} : { details: cardText(card.details) }),
+    ...(card.output === undefined ? {} : { output: cardText(card.output) }),
+    ...(card.sources === undefined || card.sources.length === 0
+      ? {}
+      : {
+          sources: card.sources.map((source) => {
+            return {
+              type: "url",
+              url: source.url,
+              text: cardText(source.text, maxLabel),
+            };
+          }),
+        }),
   };
 };
 
@@ -523,10 +542,40 @@ export const slack = {
           blocks: askBlocks(ask),
         });
       },
+      status: async (status) => {
+        // Slack's agent status line. The agents API is tried first and the
+        // assistant thread status after it; a thread that supports neither
+        // just shows no status.
+        try {
+          await call(options, "agents.sessions.setStatus", {
+            channel_id: target.channel,
+            thread_ts: target.threadTs,
+            status: sessionStatus[status],
+          });
+        } catch {
+          try {
+            await call(options, "assistant.threads.setStatus", {
+              channel_id: target.channel,
+              thread_ts: target.threadTs,
+              status: status === "working" ? "is working..." : "",
+            });
+          } catch {
+            // Not an assistant thread, or the status API is not enabled.
+          }
+        }
+      },
       stream: {
         limits: streamLimits,
-        start: async () => {
-          const user = options.user ?? eventUser;
+        continued: (restarts) => {
+          return {
+            id: `continued-${restarts}`,
+            title: "Continued in a new process",
+            status: "done",
+          };
+        },
+        start: async (startOptions) => {
+          const user =
+            startOptions.recipient?.user ?? options.user ?? eventUser;
 
           if (!user) {
             throw apiError(
@@ -536,6 +585,7 @@ export const slack = {
           }
 
           const team =
+            startOptions.recipient?.team ??
             options.team ??
             String((await call(options, "auth.test", {})).team_id ?? "");
           const started = await call(
@@ -550,11 +600,13 @@ export const slack = {
               chunks: [
                 {
                   type: "plan_update",
-                  title: truncate(
-                    escapeSlack(options.streamTitle ?? "Progress"),
-                    maxCardText,
+                  title: cardText(
+                    startOptions.title ?? options.streamTitle ?? "Progress",
                   ),
                 },
+                ...(startOptions.cards ?? []).map((card) => {
+                  return slackCard(card);
+                }),
               ],
             },
             true,
@@ -580,10 +632,12 @@ export const slack = {
             true,
           );
         },
-        stop: async (stream) => {
+        stop: async (stream, final) => {
           await call(options, "chat.stopStream", {
             channel: target.channel,
             ts: stream,
+            ...(final?.text === undefined ? {} : { markdown_text: final.text }),
+            ...(final?.blocks === undefined ? {} : { blocks: final.blocks }),
           });
         },
       },

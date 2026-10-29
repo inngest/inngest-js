@@ -18,7 +18,7 @@
  * fingerprint, not a count: a turn that fails with the same error twice is
  * not resent, and the failure is reported as stuck.
  */
-import { createHash } from "node:crypto";
+import hashjs from "hash.js";
 
 /**
  * How a run ended.
@@ -185,7 +185,8 @@ export const fingerprint = (
     .replace(/\b[a-z0-9_-]*[0-9][a-z0-9_-]{5,}\b/g, "#")
     .replace(/[0-9]+/g, "#");
 
-  return createHash("sha1")
+  return hashjs
+    .sha1()
     .update(`${name ?? ""}|${shape}`)
     .digest("hex")
     .slice(0, 12);
@@ -201,7 +202,8 @@ export const turnOf = (
    */
   content: string | undefined,
 ): string => {
-  return createHash("sha1")
+  return hashjs
+    .sha1()
     .update(content ?? "")
     .digest("hex")
     .slice(0, 12);

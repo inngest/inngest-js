@@ -7,7 +7,7 @@ import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
-import { staticSchema } from "../triggers/triggers.ts";
+import { eventType, invoke, staticSchema } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
@@ -263,13 +263,13 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.drain() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.unread() takes the pending messages, stops included, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const drained = await inbox.drain();
+        const drained = await inbox.unread();
         const after = await inbox.next({ timeout: "1s" });
 
         return [
@@ -386,6 +386,224 @@ describe("inbox arrival", () => {
   });
 });
 
+describe("inbox sources", () => {
+  const ci = (state: string) => {
+    return { name: "ci/status", data: { t: "t1", state }, stream: 1 };
+  };
+
+  test("a configured source maps to the thread and its events are user messages for the model", async () => {
+    const filters: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [
+          {
+            event: "ci/status",
+            thread: "event.data.t",
+            if: 'event.data.state != "ok"',
+          },
+          {
+            event: "deploy/done",
+            thread: "event.data.t",
+            message: (e) => {
+              return `deployed ${(e.data as { v: string }).v}`;
+            },
+          },
+        ],
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const red = await inbox.next();
+        const deployed = await inbox.next();
+
+        return [
+          red?.data.content,
+          red?.data.kind,
+          red?.data.event?.name,
+          deployed?.data.content,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        ci("red"),
+        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 2 },
+      ],
+      onOp: (op) => {
+        const opts = op.opts as { event?: string; if?: string } | undefined;
+
+        if (opts?.event === "ci/status" || opts?.event === "deploy/done") {
+          filters.push([opts.event, opts.if]);
+        }
+      },
+    });
+
+    expect(output).toEqual([
+      JSON.stringify({ event: "ci/status", data: { t: "t1", state: "red" } }),
+      "user",
+      "ci/status",
+      "deployed 1.2",
+    ]);
+    // The filter is over `async` and ties the source to the run's thread.
+    expect(filters).toContainEqual([
+      "ci/status",
+      '(async.data.state != "ok") && (async.data.t) == "t1"',
+    ]);
+    expect(filters).toContainEqual(["deploy/done", '(async.data.t) == "t1"']);
+  });
+
+  test("each source words its own messages, even for the same event", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [
+          {
+            event: "ci/status",
+            thread: "event.data.t",
+            message: () => "from the first",
+          },
+          {
+            event: "ci/status",
+            if: 'event.data.t == "t1"',
+            message: () => "from the second",
+          },
+        ],
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const a = await inbox.next();
+        const b = await inbox.next();
+
+        return [a?.data.content, b?.data.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        { ...ci("red"), stream: 1 },
+        { ...ci("red"), stream: 2 },
+      ],
+    });
+
+    expect(output).toEqual(["from the first", "from the second"]);
+  });
+
+  test("a source's events are checked against its event type, and ones that break it are dropped", async () => {
+    const status = eventType("ci/typed", {
+      schema: z.object({ state: z.string() }),
+    });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [{ event: status, thread: "event.data.t" }],
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const kept = await inbox.next();
+
+        return JSON.parse(kept?.data.content ?? "null");
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        {
+          id: "typed-bad",
+          name: "ci/typed",
+          data: { t: "t1", state: 7 },
+          stream: 1,
+        },
+        {
+          id: "typed-ok",
+          name: "ci/typed",
+          data: { t: "t1", state: "green" },
+          stream: 1,
+        },
+      ],
+    });
+
+    expect(output).toEqual({
+      event: "ci/typed",
+      data: { t: "t1", state: "green" },
+    });
+  });
+
+  test("listen() adds a source mid-run, stop() removes it, and a source needs a thread or an if", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const listener = await inbox.listen("ci/status", {
+          thread: "event.data.t",
+        });
+        const heard = await inbox.next();
+
+        await listener.stop();
+
+        const bare = await inbox.listen("ci/status", {} as never).then(
+          () => "added",
+          (error: Error) => error.message,
+        );
+
+        return [heard?.data.event?.name, bare];
+      },
+    );
+
+    const { output, ops } = await run(fn, {
+      event: trigger("go"),
+      incoming: [ci("red")],
+    });
+
+    expect(output).toEqual([
+      "ci/status",
+      "An inbox source needs a `thread` or an `if`.",
+    ]);
+    expect(
+      ops.map((op) => {
+        return [op.mode, op.stream ?? 0];
+      }),
+    ).toContainEqual(["stop", 1]);
+  });
+
+  test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const all = await inbox.current();
+        const second = await inbox.next();
+
+        return [
+          first?.data.content,
+          all.map((m) => {
+            return m.data.kind;
+          }),
+          second?.data.content,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "b"), message("stop"), message("user", "c")],
+    });
+
+    expect(output).toEqual(["go", ["user", "stop", "user"], "b"]);
+  });
+});
+
 describe("inbox timeouts", () => {
   test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(
@@ -490,7 +708,7 @@ describe("agent cleanup", () => {
 
     const { ops } = await run(fn, { event: trigger("hi") });
 
-    expect(ops[0]).toEqual({ id: "inbox:open", mode: "open" });
+    expect(ops[0]).toEqual({ id: "inbox:0:open", mode: "open" });
   });
 });
 
@@ -874,6 +1092,72 @@ describe("thread state", () => {
       status: "running",
       runId: "r2",
     });
+  });
+});
+
+describe("trigger", () => {
+  const make = (on: unknown) => {
+    return createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        on,
+      } as never,
+      async ({ trigger }) => {
+        return trigger ?? "none";
+      },
+    );
+  };
+
+  test("an event of on starts the run with the event itself on the body context", async () => {
+    const { fn } = make({ event: "shop/order", thread: "event.data.id" });
+
+    const { output } = await run(fn, {
+      event: { name: "shop/order", data: { id: "o1", total: 5 } },
+    });
+
+    expect(output).toMatchObject({
+      name: "shop/order",
+      data: { id: "o1", total: 5 },
+    });
+  });
+
+  test("a cron tick is the trigger of a cron run", async () => {
+    const { fn } = make({ cron: "0 * * * *" });
+
+    const { output } = await run(fn, {
+      event: { name: "inngest/scheduled.timer", data: { cron: "0 * * * *" } },
+    });
+
+    expect(output).toMatchObject({
+      name: "inngest/scheduled.timer",
+      data: { cron: "0 * * * *" },
+    });
+  });
+
+  test("an invoke trigger shows the caller's input without what the SDK told the agent", async () => {
+    const { fn } = make(invoke(z.object({ question: z.string() })));
+
+    const { output } = await run(fn, {
+      event: {
+        name: "inngest/function.invoked",
+        data: { question: "why", _agent: { thread: "t" } },
+      },
+    });
+
+    expect(output).toEqual({
+      name: "inngest/function.invoked",
+      data: { question: "why" },
+    });
+  });
+
+  test("a plain thread message has no trigger event", async () => {
+    const { fn } = make({ event: "shop/order", thread: "event.data.id" });
+
+    const { output } = await run(fn, { event: message("user", "hi") });
+
+    expect(output).toBe("none");
   });
 });
 

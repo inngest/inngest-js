@@ -10,6 +10,7 @@
 
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import {
   type AgentBody,
@@ -18,6 +19,7 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import { definitionOf, type SandboxToolNames } from "./defs.ts";
+import { type KvStore, setAppKvStore } from "./kv.ts";
 import {
   allowBake,
   allowDynamicBake,
@@ -54,13 +56,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
       ThreadTriggerEventOf<TType>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerEventOf<TType>,
@@ -68,7 +72,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TType>>,
@@ -82,13 +87,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
       ThreadTriggerListEvent<TTypes>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerListEvent<TTypes>,
@@ -96,7 +103,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TTypes>>,
@@ -110,13 +118,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
       ThreadTriggerEventOf<TOne>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerEventOf<TOne>,
@@ -124,7 +134,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TOne>>,
@@ -137,13 +148,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
       ThreadCronEvent,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadCronEvent,
@@ -151,7 +164,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
   agent<
@@ -160,13 +174,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TRequest = unknown,
     TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
+    const TMiddleware extends Middleware.Class[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
       ThreadTriggerListEvent<TMany>,
       TRequest,
       TReply,
-      TSandboxes
+      TSandboxes,
+      TMiddleware
     >,
     body: AgentBody<
       ThreadTriggerListEvent<TMany>,
@@ -174,7 +190,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TRequest,
       TReply,
       TSandboxes,
-      TClient
+      TClient,
+      TMiddleware
     >,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TMany>>,
@@ -256,6 +273,20 @@ const allowBakes = (
 const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * Options of `createAgents`.
+ */
+export interface CreateAgentsOptions {
+  /**
+   * Where the KV, thread state and indexes live: `redisKvAdapter(url)`,
+   * `d1KvAdapter(env.DB)` or `memoryKvAdapter()`. Default: Redis at
+   * `INNGEST_EXPERIMENTAL_KV_URL`. The guarantees of a store are on
+   * `KvStore`. One store per app ID: a second `createAgents` for the same
+   * client ID replaces the first's.
+   */
+  store?: KvStore;
+}
+
+/**
  * EXPERIMENTAL: Makes the agents of one Inngest client.
  *
  * ```ts
@@ -267,10 +298,16 @@ const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
  * ```
  *
  * @param client Inngest client.
+ * @param options Where the agents keep their state.
  */
 export const createAgents = <TClient extends Inngest.Any>(
   client: TClient,
+  options: CreateAgentsOptions = {},
 ): Agents<TClient> => {
+  if (options.store) {
+    setAppKvStore(client.id, options.store);
+  }
+
   const made: AgentFunction[] = [];
   const allowance = bakeAllowanceOf(client);
   let bakes = false;
@@ -342,12 +379,16 @@ export type {
   ChannelAsk,
   ChannelCard,
   ChannelMessage,
+  ChannelStatus,
   ChannelStream,
+  ChannelStreamFinal,
   ChannelStreamLimits,
+  ChannelStreamStart,
   ChannelTrigger,
   ReportConfig,
   ReportConfigValue,
   Reporter,
+  ReportStreamOptions,
   ReportTarget,
 } from "./channels.ts";
 export {
@@ -381,6 +422,8 @@ export type {
   KvScope,
   KvScopeInstance,
   KvSetOptions,
+  KvSource,
+  KvStore,
   KvValue,
   KvValueMustBeJson,
   KvWrite,
@@ -392,6 +435,8 @@ export {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "./kvD1.ts";
+export { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 export type {
   AgentRecovery,
   LastRun,

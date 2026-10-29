@@ -56,4 +56,31 @@ describe("body context from the client's middleware", () => {
       },
     );
   });
+
+  test("the agent's own middleware option types the body like the client's", () => {
+    plain.agent(
+      {
+        id: "ctx-4",
+        on: { cron: "0 * * * *" },
+        middleware: [sandboxMiddleware()],
+      },
+      async ({ step, group }) => {
+        expectTypeOf(step.sandbox).toHaveProperty("create");
+        expectTypeOf(group.sandbox).toBeFunction();
+        expectTypeOf(step.run).toBeFunction();
+
+        return null;
+      },
+    );
+
+    plain.agent(
+      { id: "ctx-5", on: { cron: "0 * * * *" } },
+      async ({ step }) => {
+        // @ts-expect-error this agent has no middleware that adds step.sandbox
+        step.sandbox;
+
+        return null;
+      },
+    );
+  });
 });

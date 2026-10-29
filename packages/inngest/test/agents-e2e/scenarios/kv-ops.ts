@@ -3,7 +3,12 @@
  * Scoped KV operations a Redis-backed app relies on: keys with a time to live,
  * set-if-absent claims and a sorted index, all step-backed inside a function.
  */
-import { kv } from "inngest/experimental/agents";
+import {
+  createKv,
+  kv,
+  kvKey,
+  redisKvAdapter,
+} from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
 
 export const kvOps = scenario({
@@ -67,6 +72,26 @@ export const kvOps = scenario({
         { member: "new", score: 3 },
       ],
     });
+
+    // Updates from many callers at once, on the real Redis, lose none.
+    const counter = createKv({ adapter: redisKvAdapter(ctx.redisUrl) }).with({
+      id: "agents-e2e",
+      env: null,
+    }).env;
+    const total = kvKey<number>(`${tag}:total`);
+
+    await Promise.all(
+      Array.from({ length: 15 }, () => {
+        return counter.update(total, (n) => {
+          return (n ?? 0) + 1;
+        });
+      }),
+    );
+    ctx.check(
+      "15 concurrent updates all counted",
+      (await counter.get(total)) === 15,
+      await counter.get(total),
+    );
 
     // After the ttl the keys are gone and the claim can be taken again.
     await ctx.eventually(

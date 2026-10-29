@@ -144,6 +144,35 @@ export async function startFakeRedis() {
 
         return `:${count}\r\n`;
       }
+      case "EVAL": {
+        // Only the KV's compare-and-set script: run natively, as one command.
+        const [script, , mainKey, timedKey, field, flag, expected, next] =
+          a as string[];
+        if (!script?.includes("inngest-kv-cas")) {
+          return "-ERR the fake runs only the KV compare-and-set script\r\n";
+        }
+
+        const hash = live(mainKey as string);
+        const held =
+          hash?.type === "hash" ? hash.value.get(field as string) : undefined;
+        const timed = live(timedKey as string);
+        const current =
+          held ?? (timed?.type === "string" ? timed.value : undefined);
+
+        if (flag === "0" ? current !== undefined : current !== expected) {
+          return ":0\r\n";
+        }
+
+        data.delete(timedKey as string);
+        let target = live(mainKey as string);
+        if (!target || target.type !== "hash") {
+          target = { type: "hash", value: new Map() };
+          data.set(mainKey as string, target);
+        }
+        target.value.set(field as string, next as string);
+
+        return ":1\r\n";
+      }
       case "TIME": {
         return array([
           String(Math.floor(state.now / 1000)),
