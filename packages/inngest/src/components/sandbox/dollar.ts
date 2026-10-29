@@ -14,6 +14,7 @@ import {
   formatTimeout,
 } from "./commandError.ts";
 import { getSandboxError } from "./protocol.ts";
+import type { SandboxToolsOptions } from "./tools.ts";
 import {
   type DurableSandbox,
   type SandboxCommand,
@@ -67,6 +68,17 @@ export interface DollarOptions {
    * them all.
    */
   exitCodes?: SandboxExitCodes;
+  /**
+   * EXPERIMENTAL: Programs the command runs that call your app, made with
+   * `tool.shim()`. A command with shims can run for as long as `timeout`
+   * allows.
+   */
+  shims?: SandboxToolsOptions["shims"];
+  /**
+   * EXPERIMENTAL: Limits for the calls shims make to your app, such as how
+   * long a handler may take (`toolTimeout`, 30s unless set).
+   */
+  toolOptions?: SandboxToolsOptions["toolOptions"];
 }
 
 export type DollarTag = (
@@ -365,6 +377,8 @@ export const createDollar = (
       cwd,
       timeout = maxSandboxProcessTimeoutMs,
       exitCodes = [0],
+      shims,
+      toolOptions,
     } = defaults;
 
     // Planned now, not when awaited, so `Promise.all` of several commands
@@ -374,6 +388,8 @@ export const createDollar = (
       ...(cwd !== undefined && { cwd }),
       timeout,
       exitCodes,
+      ...(shims && { shims }),
+      ...(toolOptions && { toolOptions }),
     }).catch((error: unknown) => {
       throw asCommandTimeout(error, text, timeout);
     });

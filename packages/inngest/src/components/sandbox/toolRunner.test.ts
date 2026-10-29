@@ -12,15 +12,34 @@ import { step, withSpan } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { eventType } from "../triggers/triggers.ts";
 import { createDurableSandboxFacade } from "./durable.ts";
+import { internalTool } from "./internalTool.ts";
 import {
   parseSandboxOperationForAction,
   type SandboxRawTool,
 } from "./protocol.ts";
+
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
-import type { Sandbox } from "./types.ts";
+import { type Sandbox, SandboxValidationError } from "./types.ts";
+
+vi.mock("./toolBinary.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./toolBinary.ts")>();
+
+  return {
+    ...actual,
+    bundledToolBinary: async () => {
+      return {
+        path: "/inngest/tools/bin/inngest-tool-test",
+        sha256: "test",
+        load: async () => {
+          return new Uint8Array();
+        },
+      };
+    },
+  };
+});
 
 const sandboxRef = {
   kind: "inngest/sandbox" as const,
@@ -696,6 +715,34 @@ describe("commands.run with tools", () => {
     expect(fake.replies).toHaveLength(1);
   });
 
+  test("memo none answers in the wait step: no step of its own and nothing stored", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "secret");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const memo = new Map<string, string>();
+    const { host, executed } = createHost(sandbox, memo);
+    const secret = vi.fn(async () => {
+      return "s3cret";
+    });
+
+    await run(host, {
+      secret: internalTool({
+        memo: "none",
+        run: secret,
+      }) as SandboxTools[string],
+    });
+
+    expect(executed).toEqual(["exec", "exec:wait:1"]);
+    expect(replies(fake)).toEqual([{ id: 1, result: "s3cret" }]);
+    expect([...memo.values()].join("")).not.toContain("s3cret");
+    expect(secret).toHaveBeenCalledTimes(1);
+  });
+
   test("replay serves memoized steps without touching the sandbox or tools", async () => {
     const script: Fake["react"] = (f, replied) => {
       if (replied === undefined) {
@@ -1308,7 +1355,11 @@ describe("durable commands.run routing", () => {
     {
       name: "with tools, and a 5m default timeout",
       options: { tools: { a: async () => 1 } },
-      tools: { tools: { a: expect.any(Function) }, toolOptions: undefined },
+      tools: expect.objectContaining({
+        tools: { a: expect.any(Function) },
+        toolOptions: undefined,
+        timeoutMs: 300_000,
+      }),
     },
   ])("$name it is one raw tool call", async ({ options, tools }) => {
     const rawTool: SandboxRawTool = vi.fn(async () => {
@@ -1329,6 +1380,206 @@ describe("durable commands.run routing", () => {
       }),
       ...(tools ? [undefined, tools] : []),
     );
+  });
+});
+
+describe("shims and long commands on commands.run", () => {
+  const execResult = (exitCode: number) => {
+    return {
+      protocolVersion: 1,
+      action: "exec",
+      result: {
+        stdout: "",
+        stderr: "",
+        encoding: "base64",
+        exitCode,
+        output: { truncated: false },
+      },
+    } as const;
+  };
+  const facade = (exitCode = 0) => {
+    const rawTool: SandboxRawTool = vi.fn(async () => {
+      return execResult(exitCode);
+    });
+
+    return {
+      rawTool,
+      sandbox: createDurableSandboxFacade(sandboxRef, () => {
+        return rawTool;
+      }),
+    };
+  };
+
+  test("shims accept only tool.shim() values", async () => {
+    const { sandbox } = facade();
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        shims: [{ name: "fly", handle: () => undefined }] as never,
+      }),
+    ).rejects.toThrow("only values made with tool.shim()");
+  });
+
+  test("a shim adds the shim tool and wraps the command", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "fly deploy", {
+      shims: [tool.shim("fly", ({ reply }) => reply(0))],
+    });
+
+    const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(Object.keys(request?.tools ?? {})).toEqual(["inngestShim"]);
+    // The trace shows the user's command; the process runs it in the shims.
+    expect(operation).toMatchObject({
+      input: [{ command: ["/bin/sh", "-c", "fly deploy"] }],
+    });
+    expect(request?.command).toEqual([
+      "/bin/sh",
+      "-c",
+      expect.any(String),
+      "sh",
+      "/bin/sh",
+      "-c",
+      "fly deploy",
+    ]);
+  });
+
+  test("$ passes toolOptions to a command with shims", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.$({
+      shims: [tool.shim("fly", ({ reply }) => reply(0))],
+      toolOptions: { toolTimeout: "2m" },
+    }).sh`fly status`;
+
+    const [, , , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(request?.toolOptions).toEqual({ toolTimeout: "2m" });
+  });
+
+  test("an empty shims object is no shims", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "true", { shims: [] });
+
+    expect(rawTool).toHaveBeenCalledExactlyOnceWith(
+      "x",
+      expect.anything(),
+      ...[],
+    );
+  });
+
+  test("a user tool can't take the name of a built-in one", async () => {
+    const { sandbox } = facade();
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        tools: { config: async () => 1 },
+        shims: [tool.shim.config(["HOME"])],
+      }),
+    ).rejects.toThrow('"config" is used by shims');
+  });
+
+  test("a tool receives the sandbox of its command", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "mine");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const { host } = createHost(sandbox);
+    let seen: unknown;
+
+    await run(host, {
+      mine: {
+        run: async (ctx: { sandbox?: unknown }) => {
+          seen = ctx.sandbox;
+
+          return "ok";
+        },
+      } as never,
+    });
+
+    expect(seen).toBe(sandbox);
+    expect(replies(fake)).toEqual([{ id: 1, result: "ok" }]);
+  });
+
+  test("a user tool can't turn on memo none", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        f.log += request(1, "mine");
+      }
+      if (replied === 1) {
+        exitWith(f);
+      }
+    });
+    const memo = new Map<string, string>();
+    const { host, executed } = createHost(sandbox, memo);
+
+    await run(host, {
+      mine: { memo: "none", run: async () => "stored" } as never,
+    });
+
+    expect(executed).toContain("exec:tool:mine:1");
+    expect(replies(fake)).toEqual([{ id: 1, result: "stored" }]);
+  });
+
+  test("a timeout past five minutes reaches the tool loop whole", async () => {
+    const { rawTool, sandbox } = facade();
+
+    await sandbox.commands.run("x", "true", {
+      tools: { a: async () => 1 },
+      timeout: "2h",
+    });
+
+    const [, operation, , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(request?.timeoutMs).toBe(2 * 60 * 60 * 1000);
+    expect(operation).toMatchObject({ input: [{ timeoutMs: 300_000 }] });
+  });
+
+  test("a command with tools that outlives its timeout fails as an exec timeout", async () => {
+    const { fake, sandbox } = createFakeSandbox(() => undefined);
+    const { host } = createHost(sandbox);
+
+    await expect(
+      runCommandWithTools(host, "exec", operation(), {
+        tools: { a: async () => 1 },
+        timeoutMs: 1,
+        toolOptions: { waitWindow: 10 },
+      }),
+    ).rejects.toMatchObject({ code: "sandbox_exec_timed_out" });
+
+    expect(fake.killed).toBe(true);
+  });
+
+  test("exitCodes apply to a command with tools", async () => {
+    const { sandbox } = facade(3);
+
+    await expect(
+      sandbox.commands.run("x", "true", {
+        tools: { a: async () => 1 },
+        exitCodes: [0],
+      }),
+    ).rejects.toThrow("exit code 3");
+  });
+});
+
+describe("the wait window of a long command", () => {
+  test("is a minute unless set, and the process is not capped at five minutes", async () => {
+    const { fake, sandbox } = createFakeSandbox((f, replied) => {
+      if (replied === undefined) {
+        exitWith(f);
+      }
+    });
+    const { host } = createHost(sandbox);
+
+    await runCommandWithTools(host, "exec", operation(), {
+      tools: { a: async () => 1 },
+      timeoutMs: 3_600_000,
+    });
+
+    expect(fake.waits[0]).toEqual({ lines: 0, seconds: 60 });
   });
 });
 

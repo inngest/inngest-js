@@ -1,0 +1,9 @@
+{
+  "start": [
+    {
+      "agent": "blank",
+      "thread": "main",
+      "message": "Hi"
+    }
+  ]
+}
