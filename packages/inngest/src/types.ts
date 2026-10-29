@@ -288,6 +288,14 @@ export enum StepOpCode {
 
   DeferAdd = "DeferAdd",
   DeferAbort = "DeferAbort",
+
+  /**
+   * A thread of the function that is waiting on something outside the run and
+   * has nothing to report. The executor does nothing for it. A `step.subscribe()`
+   * read with no message to read ends its request this way, and the next message
+   * runs the function again.
+   */
+  None = "None",
 }
 
 /**

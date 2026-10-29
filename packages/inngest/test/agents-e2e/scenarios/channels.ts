@@ -24,7 +24,7 @@ import { withKeys } from "../kit/threads.ts";
 export const channels = scenario({
   id: "channels",
   owner: "agents-channels",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event, fakes }) => {
     const agents = createAgents(client);
 

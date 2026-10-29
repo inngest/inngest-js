@@ -604,8 +604,8 @@ export const createStepTools = <
   ): Promise<Subscription> => {
     const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
-    // The event of a park, which has no source of its own.
-    const parkEvent = streamsOf(opts, allowEmpty)[0]?.event;
+    // The event of an op that has no source of its own.
+    const defaultEvent = streamsOf(opts, allowEmpty)[0]?.event;
 
     return openSubscription(
       function op(stepId, mode, seq, stream, extra) {
@@ -613,7 +613,6 @@ export const createStepTools = <
 
         if (
           !target &&
-          mode !== "park" &&
           mode !== "poll" &&
           mode !== "current" &&
           mode !== "close"
@@ -627,7 +626,7 @@ export const createStepTools = <
         return withoutStepIdPrefix(() => {
           return tools["~subscribeOp"](stepId, {
             event: eventNameOf(
-              target?.event ?? parkEvent ?? "inngest/subscription",
+              target?.event ?? defaultEvent ?? "inngest/subscription",
             ),
             if: target?.if,
             subscribe: {
@@ -635,16 +634,6 @@ export const createStepTools = <
               mode,
               ...(seq ? { seq } : {}),
               ...(stream ? { stream } : {}),
-              ...(extra?.timeout === undefined
-                ? {}
-                : {
-                    timeout: timeStr(
-                      extra.timeout,
-                      client[internalLoggerSymbol],
-                    ),
-                  }),
-              ...(extra?.attempt ? { attempt: extra.attempt } : {}),
-              ...(extra?.reader ? { reader: extra.reader } : {}),
             },
           });
         });
@@ -663,6 +652,38 @@ export const createStepTools = <
             found: false,
           }
         );
+      },
+      {
+        // A read with nothing to read ends its request: with a timeout the
+        // timer is a sleep, which fires and runs the function again; without
+        // one it reports a waiting thread, and a message runs the function.
+        wait(stepId, timeout) {
+          return withoutStepIdPrefix(() => {
+            return timeout === undefined
+              ? tools["~subscribeWait"](stepId)
+              : tools.sleep(
+                  stepId,
+                  timeStr(timeout, client[internalLoggerSymbol]),
+                );
+          });
+        },
+        closed() {
+          return (
+            getAsyncCtxSync()?.execution?.subscriptionClosed?.(id) ?? false
+          );
+        },
+        timerWon(seq, stepId) {
+          return (
+            getAsyncCtxSync()?.execution?.subscriptionTimerWon?.(
+              id,
+              seq,
+              stepId,
+            ) ?? false
+          );
+        },
+        hold(on) {
+          getAsyncCtxSync()?.execution?.holdImmediateExecution?.(on);
+        },
       },
       allowEmpty,
     );
@@ -693,6 +714,23 @@ export const createStepTools = <
     ): Promise<Subscription> => {
       return openInbox(idOrOptions, { events: options?.sources ?? [] }, true);
     },
+
+    /**
+     * A subscription read that has nothing to read: the function waits for the
+     * next message, which runs it again.
+     */
+    "~subscribeWait": createTool<
+      (idOrOptions: StepOptionsOrId) => Promise<void>
+    >(({ id, name }) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.None,
+        name: "inngest/subscription.wait",
+        displayName: name ?? id,
+        userland: { id },
+      };
+    }),
 
     /**
      * One op of a subscription. Used by `subscribe`.

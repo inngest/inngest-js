@@ -48,7 +48,7 @@ const lines = (file: string) => {
 export const agentRecovery = scenario({
   id: "agent-recovery",
   owner: "agents-recovery",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, redisUrl }) => {
     const postsFile = fileFor(redisUrl, "posts");
     const attemptsFile = fileFor(redisUrl, "attempts");

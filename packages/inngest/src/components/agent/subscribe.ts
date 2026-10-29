@@ -12,11 +12,13 @@
  * The order of the messages is their order in the run's stack, which the
  * function receives with every request: the k-th `next()` returns the k-th
  * message. A message that is already there is read without a step. When there is
- * none, the function parks: the executor records a marker and wakes the run
- * when a message arrives. Only a parked run is woken; a busy run reads
- * everything on its next request. A subscription costs one open and one close
- * step for each event, a park (and a wake) whenever the function had to wait,
- * and a step for every `poll()`. Several events are several pauses sharing one
+ * none, the request ends with the read still waiting, like a pending
+ * `step.waitForEvent()`, and every message the executor saves runs the function
+ * again: the executor does not know whether the function is waiting, only that
+ * it should get the chance to see the message. Messages that arrive while the
+ * function runs are read on its next request. A subscription costs one open and
+ * one close step for each event and a step for every `poll()`; a read that
+ * waits costs no step. Several events are several pauses sharing one
  * subscription, so their messages are one sequence in the order the executor
  * saved them.
  */
@@ -453,7 +455,7 @@ export interface Subscription<
  */
 export type SubscribeOp = (
   stepId: string,
-  mode: "open" | "park" | "poll" | "close" | "stop" | "current",
+  mode: "open" | "poll" | "close" | "stop" | "current",
   seq: number | undefined,
   stream: number,
   extra?: {
@@ -461,15 +463,37 @@ export type SubscribeOp = (
      * The event source of an open, close or stop.
      */
     target?: SubscribeEvent;
-    timeout?: NextTimeout;
-    attempt?: number;
-
-    /**
-     * The view that waits, for a park of a view.
-     */
-    reader?: string;
   },
 ) => Promise<unknown>;
+
+/**
+ * What a subscription needs of the engine it runs in.
+ */
+export interface SubscribeEngine {
+  /**
+   * Ends the request with a read still waiting. With a timeout the wait is a
+   * timer that runs the function again when it fires; without one it never
+   * settles in this request.
+   */
+  wait: (stepId: string, timeout?: NextTimeout) => Promise<unknown>;
+
+  /**
+   * Whether the subscription has been closed.
+   */
+  closed: () => boolean;
+
+  /**
+   * Whether the timer `stepId` of a read waiting for message `seq` fired
+   * before that message arrived.
+   */
+  timerWon: (seq: number, stepId: string) => boolean;
+
+  /**
+   * Plans steps instead of running a lone one in the request that found it,
+   * for as long as the subscription is open.
+   */
+  hold: (on: boolean) => void;
+}
 
 /**
  * Gives a message its `is()` check, which is not a field: it is not copied,
@@ -497,6 +521,7 @@ export function withIs<TMessage extends object>(message: TMessage): TMessage {
  * order.
  * @param skip Tells the engine a wait was not asked for because its message
  * was already there.
+ * @param engine What the subscription needs of the engine it runs in.
  */
 export async function openSubscription<
   TData = unknown,
@@ -509,6 +534,7 @@ export async function openSubscription<
   read: () => unknown[],
   skip: (id: string) => Promise<void>,
   answerOf: (id: string) => { found: boolean; data?: unknown },
+  engine: SubscribeEngine,
   allowEmpty = false,
 ): Promise<Subscription<TData, TMessage>> {
   // The event sources, by stream. A stopped source stays in its place, so the
@@ -532,6 +558,9 @@ export async function openSubscription<
       target: streams[stream]?.source,
     });
   }
+
+  // From here a message can run the function while a step of it is running.
+  engine.hold(true);
 
   // How many messages have been read, how many polls were made, and how many
   // messages there were once closed.
@@ -577,8 +606,8 @@ export async function openSubscription<
     return total !== undefined && readCount >= total;
   };
 
-  // The executor keeps one parked marker per subscription, so reads of one
-  // subscription run one after another, in the order they were called.
+  // Reads of one subscription run one after another, in the order they were
+  // called: each one waits for the message after the last one it read.
   let reads: Promise<unknown> = Promise.resolve();
 
   function inOrder<T>(read: () => Promise<T>): Promise<T> {
@@ -596,8 +625,8 @@ export async function openSubscription<
     }) as Promise<InboxMessage<TData> | null | undefined>;
   }
 
-  // How many parks for each message timed out. Every park is its own step, so
-  // one that timed out is not answered again.
+  // How many timers for each message fired. Every timer is its own step, so
+  // one that fired is not waited for again.
   const timedOut = new Map<number, number>();
 
   async function readNext(
@@ -619,59 +648,41 @@ export async function openSubscription<
 
     const seq = readCount + 1;
 
-    // A message that is already in the state is read without a step. When it
-    // is not, the run parks: the executor records a marker (the park carries
-    // `seq`, the number of messages this read has seen, plus one) and answers
-    // the park when the message exists; the function then runs again and finds
-    // the message here. The state does not change during a request, so it is read once.
+    // A message that is already in the state is read without a step. When it is
+    // not, the request ends with this read waiting (nothing is reported for an
+    // untimed read, a timer for a timed one), and the message runs the function
+    // again, which finds it here. The state does not change during a request,
+    // so it is read once.
     const messages = read();
     const attempt = timedOut.get(seq) ?? 0;
-    const parkId = attempt ? `${key}:${seq}:${attempt}` : `${key}:${seq}`;
+    const waitId = attempt ? `${key}:${seq}:${attempt}` : `${key}:${seq}`;
 
-    // A park that timed out was recorded as such: a message that arrived since
-    // does not change that answer on a replay.
-    if (options?.timeout !== undefined) {
-      const recorded = answerOf(parkId);
+    // A timer that fired before the message arrived ended this wait for good: a
+    // message saved since does not change that answer on a replay.
+    if (options?.timeout !== undefined && engine.timerWon(seq, waitId)) {
+      timedOut.set(seq, attempt + 1);
+      await skip(waitId);
 
-      if (recorded.found && recorded.data === null) {
-        timedOut.set(seq, attempt + 1);
-        await op(parkId, "park", seq, 0, { timeout: options.timeout, attempt });
-
-        return undefined;
-      }
+      return undefined;
     }
-
-    let answered: unknown;
 
     if (messages.length < seq) {
-      answered = await op(parkId, "park", seq, 0, {
-        timeout: options?.timeout,
-        attempt,
-      });
-
-      if (answered === null) {
-        timedOut.set(seq, attempt + 1);
-
-        return undefined;
-      }
-    } else {
-      await skip(parkId);
-    }
-
-    const message = messages[seq - 1];
-    if (message === undefined) {
-      // A park that close() ended is answered as closed: the end of the
-      // subscription. Any other park is only answered once its message exists.
-      if ((answered as { closed?: boolean } | null | undefined)?.closed) {
+      if (engine.closed()) {
         return null;
       }
 
-      throw new Error(`Subscription "${key}": message ${seq} is missing.`);
+      await engine.wait(waitId, options?.timeout);
+      timedOut.set(seq, attempt + 1);
+
+      return undefined;
     }
+
+    // The timer of a read that got its message is not waited for.
+    await skip(waitId);
 
     readCount = seq;
 
-    return messageOf(message, seq);
+    return messageOf(messages[seq - 1], seq);
   }
 
   // Views: a cursor of its own over the same sequence. A view's read is the
@@ -788,41 +799,31 @@ export async function openSubscription<
         // look again.
         const seq = seen + 1;
         const attempt = timedOutAt.get(seq) ?? 0;
-        const answered = await op(
-          attempt
-            ? `${key}:${reader}:${seq}:${attempt}`
-            : `${key}:${reader}:${seq}`,
-          "park",
-          seq,
-          0,
-          { reader, timeout: options?.timeout, attempt },
-        );
+        const waitId = attempt
+          ? `${key}:${reader}:${seq}:${attempt}`
+          : `${key}:${reader}:${seq}`;
 
-        if (answered === null) {
+        if (options?.timeout !== undefined && engine.timerWon(seq, waitId)) {
           timedOutAt.set(seq, attempt + 1);
+          await skip(waitId);
 
           return undefined;
         }
 
-        if ((answered as { closed?: boolean } | undefined)?.closed) {
-          // The close may have won the race with the delivery of a message that
-          // is already saved: look once more before ending.
-          const [late] = scan(cursor, Number.POSITIVE_INFINITY, true);
+        // Messages saved after the bound was taken are read now.
+        if (read().length > seen) {
+          bound = Number.POSITIVE_INFINITY;
+          continue;
+        }
 
-          if (late) {
-            cursor = late.seq;
-            await skipParks(startedAt, late.seq);
-
-            return late;
-          }
-
+        if (engine.closed()) {
           return null;
         }
 
-        // Woken: the message at `seq` exists. Scan on from the cursor over the
-        // whole state, which now holds it. The timeout, if any, starts again for
-        // the next wait.
-        bound = Number.POSITIVE_INFINITY;
+        await engine.wait(waitId, options?.timeout);
+        timedOutAt.set(seq, attempt + 1);
+
+        return undefined;
       }
     };
 
@@ -972,6 +973,7 @@ export async function openSubscription<
       }
 
       total = count;
+      engine.hold(false);
 
       const unread: InboxMessage<TData>[] = [];
       const messages = read();

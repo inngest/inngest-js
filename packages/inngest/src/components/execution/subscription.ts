@@ -47,6 +47,48 @@ export const subscriptionMessages = (
 };
 
 /**
+ * Whether the run holds the step that closes a subscription.
+ * @param key The subscription ID.
+ * @param stack The run's stack: step IDs in the order they were saved.
+ */
+export const subscriptionClosed = (
+  key: string,
+  stack: readonly string[],
+): boolean => {
+  return stack.includes(
+    `${subscriptionMessagePrefix}closed:${sha1().update(key).digest("hex")}`,
+  );
+};
+
+/**
+ * Whether a read's timer fired before the message it waited for arrived. The
+ * stack is the order things happened in, so the answer is the same on every
+ * replay, however late the message was saved.
+ * @param key The subscription ID.
+ * @param seq The message the read waited for, starting at 1.
+ * @param timerId The hashed ID of the timer step.
+ * @param stack The run's stack: step IDs in the order they were saved.
+ */
+export const timerWon = (
+  key: string,
+  seq: number,
+  timerId: string,
+  stack: readonly string[],
+): boolean => {
+  const timerAt = stack.indexOf(timerId);
+  if (timerAt < 0) {
+    return false;
+  }
+
+  const prefix = subscriptionMessageIdPrefix(key);
+  const messageId = stack.filter((id) => {
+    return id.startsWith(prefix);
+  })[seq - 1];
+
+  return messageId === undefined || timerAt < stack.indexOf(messageId);
+};
+
+/**
  * The steps of a run that are waited for when its state is replayed: every
  * step but the messages of a subscription, which are read from the state and
  * never requested. Only the ID counts, never what a step returned.

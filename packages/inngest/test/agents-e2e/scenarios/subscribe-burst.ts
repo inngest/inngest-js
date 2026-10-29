@@ -24,7 +24,7 @@ const messages = 40;
 export const subscribeBurst = scenario({
   id: "subscribe-burst",
   owner: "agents-thread-key",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

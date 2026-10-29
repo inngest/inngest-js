@@ -44,7 +44,7 @@ const modes = ["expires", "arrives"] as const;
 export const subscribeTimeout = scenario({
   id: "subscribe-timeout",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `timeout-${tagOf(config)}`;

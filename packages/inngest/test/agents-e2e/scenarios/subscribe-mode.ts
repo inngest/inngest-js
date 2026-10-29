@@ -4,7 +4,7 @@
  * is a parallel batch (`next()` beside a step), after which the run's mode
  * flips back to inline steps. A message arrives while the batch is in flight,
  * another at the moment the batch ends or while the first inline step runs,
- * and the third while the run is parked again. Every message must be read
+ * and the third while the run is waiting again. Every message must be read
  * once, in order, and no step body may run twice, with checkpointing and
  * `optimizeParallelism` on and off.
  */
@@ -46,7 +46,7 @@ const when = ["batch-end", "inline-step"] as const;
 export const subscribeMode = scenario({
   id: "subscribe-mode",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `mode-${tagOf(config)}`;

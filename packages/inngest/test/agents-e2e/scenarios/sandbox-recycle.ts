@@ -25,7 +25,7 @@ const box = sandbox({ id: "recycle-box" });
 export const sandboxRecycle = scenario({
   id: "sandbox-recycle",
   owner: "agents-sandbox-recycle",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   sandbox: "fake",
   functions: ({ client }) => {
     const agents = createAgents(client);

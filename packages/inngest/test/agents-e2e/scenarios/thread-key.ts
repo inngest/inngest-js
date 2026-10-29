@@ -38,7 +38,7 @@ const sleep = (ms: number) => {
 export const threadKey = scenario({
   id: "thread-key",
   owner: "agents-thread-key",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
     const bot = agents.agent(

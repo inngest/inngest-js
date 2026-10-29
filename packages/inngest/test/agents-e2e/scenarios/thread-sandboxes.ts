@@ -26,7 +26,7 @@ const box = sandbox({ id: "notes-box" });
 export const threadSandboxes = scenario({
   id: "thread-sandboxes",
   owner: "agents-thread-sandboxes",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   sandbox: "fake",
   functions: ({ client }) => {
     const agents = createAgents(client);

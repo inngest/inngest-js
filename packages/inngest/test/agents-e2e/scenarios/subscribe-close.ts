@@ -1,13 +1,13 @@
 /**
  * @module
  * A race that the step wins, with no message ever sent, followed by `close()`
- * and the end of the run. The `next()` that lost is still parked; the close must
- * end that park so it blocks neither discovery nor completion. The race is a
+ * and the end of the run. The `next()` that lost is still waiting; the close must
+ * end that wait so it blocks neither discovery nor completion. The race is a
  * plain `Promise.race` and a `group.parallel({ mode: "race" })`, with
  * checkpointing and `optimizeParallelism` on and off.
  *
  * A plain `Promise.race` with `optimizeParallelism` on is not run: the step's
- * completion sees the parked `next()` as a pending step, as it does a pending
+ * completion sees the waiting `next()` as a pending step, as it does a pending
  * `waitForEvent`, so nothing continues the function and the close is never
  * reached. Use `group.parallel({ mode: "race" })`, which continues on the first
  * finisher.
@@ -50,7 +50,7 @@ const tagOf = (c: (typeof configs)[number]) => {
 export const subscribeClose = scenario({
   id: "subscribe-close",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return configs.flatMap((config) => {
       return races.map((race) => {
@@ -82,7 +82,7 @@ export const subscribeClose = scenario({
             };
             if (race === "awaited") {
               // The read is still waiting when the subscription closes: close ends
-              // the park as the end of the subscription, so the read returns null
+              // the wait as the end of the subscription, so the read returns null
               // rather than throwing for a missing message.
               const pending = inbox.next();
 

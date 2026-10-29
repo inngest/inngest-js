@@ -1,6 +1,6 @@
 /**
  * @module
- * A read after `Promise.race([next(), step])` where the step wins. The parked
+ * A read after `Promise.race([next(), step])` where the step wins. The waiting
  * read of the lost race must not eat a message or wedge the next `next()`: the
  * next read gets the first message, and the run ends. With checkpointing and
  * `optimizeParallelism` on and off.
@@ -41,7 +41,7 @@ const tagOf = (c: (typeof configs)[number]) => {
 export const subscribeRace = scenario({
   id: "subscribe-race",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `race-${tagOf(config)}`;

@@ -1,21 +1,22 @@
 /**
  * @module
- * `step.subscribe` as a parked marker. Messages only accumulate in the run's
- * state; `next()` reads the next one from there, and only when there is none
- * does the run park. A delivery wakes a parked run and nothing else.
+ * `step.subscribe` waiting for a message. Messages only accumulate in the run's
+ * state; `next()` reads the next one from there, and when there is none the
+ * request ends with the read waiting. Every delivery gives the run a discovery
+ * to see the message; a function with nothing to do with it waits again.
  *
  * Every shape runs with checkpointing on and off and with `optimizeParallelism`
  * on (coalesced discovery) and off:
- * - `seq`: two messages arrive while the run is parked, so there is one wake;
+ * - `seq`: two messages arrive while the run waits, so there is one wake;
  *   the body then runs two long steps and still reads the second message.
  * - `all`: `next()` and a step in one `Promise.all`.
  * - `group`: the same inside `group.parallel`.
  * - `wfe`: `waitForEvent` and a step in one `Promise.all`, for comparison.
  * - `window`: the message arrives while the body is running, after the SDK
- *   read its state and before it parks, so the executor must see it when it
- *   records the park and wake at once.
+ *   read its state and before it waits, so the delivery must still give it
+ *   a discovery that sees the message.
  * - `pre`: the message arrives during a step, before any `next()`, so
- *   `next()` reads it from the state and the run never parks.
+ *   `next()` reads it from the state and the run never waits.
  * The parallel shapes get the message before the step finishes (early) and
  * after it (late). Each step body writes a line when it starts, so a step that
  * runs twice shows.
@@ -66,7 +67,7 @@ type Out = { got: unknown[] };
 export const subscribePark = scenario({
   id: "subscribe-park",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return shapes.flatMap((shape) => {
       return configs.map((config) => {

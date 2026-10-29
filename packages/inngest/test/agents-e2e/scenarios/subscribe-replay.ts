@@ -47,7 +47,7 @@ const list = (state: Record<string, unknown>) => {
 export const subscribeReplay = scenario({
   id: "subscribe-replay",
   owner: "agents-thread-key",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

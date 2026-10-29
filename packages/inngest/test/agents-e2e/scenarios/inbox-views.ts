@@ -23,7 +23,7 @@ const ref = `agents-e2e/${agentId}`;
 export const inboxViews = scenario({
   id: "inbox-views",
   owner: "agents-inbox",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

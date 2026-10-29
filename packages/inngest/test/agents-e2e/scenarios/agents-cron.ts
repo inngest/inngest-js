@@ -30,7 +30,7 @@ const sleep = (ms: number) => {
 export const agentsCron = scenario({
   id: "agents-cron",
   owner: "agents-event-types",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
 
   // Ticks are minute-aligned: up to a minute to the first, a wait for the
   // next to pass, and up to a minute to the one after a stop now.

@@ -115,7 +115,12 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
+import {
+  stepsToBeSeen,
+  subscriptionClosed,
+  subscriptionMessages,
+  timerWon,
+} from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -225,6 +230,12 @@ class InngestExecutionEngine
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
   private rootSpanId?: string;
+
+  /**
+   * Set while a `step.subscribe()` subscription is open: a lone step is
+   * planned, never run in the request that found it.
+   */
+  private holdImmediateExecution = false;
 
   /**
    * If we're checkpointing and have been given a maximum runtime, this will be
@@ -343,6 +354,27 @@ class InngestExecutionEngine
                 if (this.state.allStateUsed()) {
                   await this.middlewareManager.onMemoizationEnd();
                 }
+              },
+              subscriptionClosed: (key: string) => {
+                return subscriptionClosed(
+                  key,
+                  this.options.stepCompletionOrder,
+                );
+              },
+              subscriptionTimerWon: (
+                key: string,
+                seq: number,
+                timerId: string,
+              ) => {
+                return timerWon(
+                  key,
+                  seq,
+                  hashId(timerId),
+                  this.options.stepCompletionOrder,
+                );
+              },
+              holdImmediateExecution: (hold: boolean) => {
+                this.holdImmediateExecution = hold;
               },
               stepAnswer: (id: string) => {
                 const answer = this.options.stepState[hashId(id)];
@@ -1716,6 +1748,9 @@ class InngestExecutionEngine
      * immediately execute unless explicitly requested.
      */
     if (this.options.disableImmediateExecution) return;
+
+    // An open subscription can run the function again while a step runs.
+    if (this.holdImmediateExecution) return;
 
     const unfulfilledSteps = steps.filter((step) => !step.fulfilled);
     if (unfulfilledSteps.length !== 1) return;

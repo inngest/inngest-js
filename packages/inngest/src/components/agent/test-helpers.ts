@@ -13,15 +13,17 @@ import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "park" | "poll" | "close" | "stop" | "current";
+  mode: "open" | "poll" | "close" | "stop" | "current";
   seq?: number;
   stream?: number;
 }
 
 /**
  * Runs `fn`. `incoming` are the events that arrive, in order, one for each
- * time the function blocks waiting for a message; once they run out, a wait
- * ends the run as `waiting`. `saved` are events that were already saved as
+ * time the function blocks waiting for a message (a request that reports only
+ * waiting reads, which the next message runs again); once they run out, a wait
+ * ends the run as `waiting`. The ops it records are the subscription ops the
+ * executor answers, and `wait` for a read that ended its request waiting. `saved` are events that were already saved as
  * messages before the run read.
  */
 export const run = async (
@@ -33,10 +35,10 @@ export const run = async (
     incoming?: unknown[];
 
     /**
-     * What a park is answered with instead of the usual wake, whatever the
-     * state holds: `{ closed: true }` is how close() ends a park.
+     * The subscription is closed (by a limit, or by a branch of the function)
+     * when the function first blocks, instead of a message arriving.
      */
-    parkAnswer?: unknown;
+    closeWhenBlocked?: boolean;
 
     /**
      * Steps the run already holds, by the ID the function gave them: the memos
@@ -45,7 +47,7 @@ export const run = async (
     memos?: Record<string, unknown>;
 
     /**
-     * How many parks that carry a timeout end unanswered before a message is
+     * How many timed waits end by their timer firing before a message is
      * allowed to arrive.
      */
     timeouts?: number;
@@ -60,8 +62,16 @@ export const run = async (
   const prefix = subscriptionMessageIdPrefix(key);
   const incoming = [...(options.incoming ?? [])];
   let timeoutsLeft = options.timeouts ?? 0;
-  const ops: { id: string; mode: string; seq?: number; stream?: number }[] = [];
+  const ops: {
+    id: string;
+    mode: string;
+    seq?: number;
+    stream?: number;
+    timeout?: string;
+  }[] = [];
   const saved: unknown[] = [];
+  // The steps the function asked to be planned instead of running them.
+  const planned: string[] = [];
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
 
@@ -104,7 +114,12 @@ export const run = async (
     save(data);
   }
 
+  const closedId = `inngest-sub:closed:${prefix.slice("inngest-sub:".length, -1)}`;
+
   for (let request = 0; request < 80; request++) {
+    let blocked = false;
+    let progressed = false;
+
     // A fresh copy per request: defer functions strip metadata from the event.
     const event = structuredClone(
       options.event ?? { name: "sub/run", data: {} },
@@ -122,21 +137,47 @@ export const run = async (
           : [];
 
     if (result.type === "function-resolved") {
-      return { ops, saved, output: result.data, waiting: false };
+      return { ops, saved, planned, output: result.data, waiting: false };
     }
 
     if (result.type === "function-rejected") {
-      return { ops, saved, output: result.error, waiting: false };
+      return { ops, saved, planned, output: result.error, waiting: false };
     }
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
-        return { ops, saved, output: op.data, waiting: false };
+        return { ops, saved, planned, output: op.data, waiting: false };
       }
 
       const sub = (op.opts as { subscribe?: SubscribeOpts } | undefined)
         ?.subscribe;
+      const waitId = op.userland?.id ?? op.id;
+
+      // A read with nothing to read ends its request waiting.
+      if (op.op === StepOpCode.None) {
+        ops.push({ id: waitId, mode: "wait" });
+        options.onOp?.(op, saved);
+        blocked = true;
+        continue;
+      }
+
+      // The timer of a timed wait.
+      if (op.op === StepOpCode.Sleep && waitId.startsWith(`${key}:`)) {
+        ops.push({ id: waitId, mode: "wait", timeout: op.name });
+        options.onOp?.(op, saved);
+
+        if (timeoutsLeft > 0) {
+          timeoutsLeft -= 1;
+          answer(op.id, null);
+          progressed = true;
+        } else {
+          blocked = true;
+        }
+        continue;
+      }
+
       if (op.op === StepOpCode.StepPlanned) {
+        planned.push(op.userland?.id ?? op.id);
         // A planned step runs in a request of its own, as the executor does.
         const ran = await runFnWithStack(fn, state, {
           event: structuredClone(event),
@@ -144,18 +185,29 @@ export const run = async (
           stackOrder: [...stack],
           runStep: op.id,
         });
+        // Lazy ops (a defer) ride along, so the run step can come back with
+        // them as steps found.
+        const step =
+          ran.type === "step-ran"
+            ? ran.step
+            : ran.type === "steps-found"
+              ? ran.steps.find((found) => {
+                  return found.id === op.id && found.op === StepOpCode.StepRun;
+                })
+              : undefined;
 
-        if (ran.type === "step-ran") {
-          options.onStep?.(ran.step);
+        if (step) {
+          options.onStep?.(step);
           state = {
             ...state,
             [op.id]: {
               id: op.id,
-              data: ran.step.data,
-              error: ran.step.error,
+              data: step.data,
+              error: step.error,
             },
           };
           stack.push(op.id);
+          progressed = true;
         }
 
         continue;
@@ -171,6 +223,11 @@ export const run = async (
           [op.id]: { id: op.id, data: op.data, error: op.error },
         };
         stack.push(op.id);
+
+        // A defer rides along with every request: it is no progress.
+        if (op.op !== StepOpCode.DeferAdd && op.op !== StepOpCode.DeferAbort) {
+          progressed = true;
+        }
         continue;
       }
 
@@ -182,9 +239,12 @@ export const run = async (
       });
       options.onOp?.(op, saved);
 
+      progressed = true;
+
       if (sub.mode === "open") {
         answer(op.id, { opened: true });
       } else if (sub.mode === "close") {
+        answer(closedId, true);
         answer(op.id, { count: saved.length });
       } else if (sub.mode === "stop") {
         answer(op.id, { stopped: true });
@@ -192,37 +252,21 @@ export const run = async (
         answer(op.id, { count: saved.length });
       } else if (sub.mode === "poll") {
         answer(op.id, saved[(sub.seq as number) - 1] ?? null);
-      } else {
-        if (options.parkAnswer !== undefined) {
-          answer(op.id, options.parkAnswer);
-          continue;
-        }
-
-        // A park with a timeout ends unanswered while timeouts are left.
-        if (
-          (sub as { timeout?: string }).timeout !== undefined &&
-          timeoutsLeft > 0 &&
-          saved.length < (sub.seq as number)
-        ) {
-          timeoutsLeft -= 1;
-          answer(op.id, null);
-          continue;
-        }
-
-        // next: the function is blocked until the message exists.
-        while (saved.length < (sub.seq as number)) {
-          if (incoming.length === 0) {
-            return { ops, saved, output: undefined, waiting: true };
-          }
-
-          save(incoming.shift());
-        }
-
-        // The executor answers the wait with the ID of the message it waited for.
-        if (saved.length >= (sub.seq as number)) {
-          answer(op.id, `${prefix}${sub.seq}`);
-        }
       }
+    }
+
+    // Every thread is waiting: the next message runs the function again.
+    if (blocked && !progressed) {
+      if (options.closeWhenBlocked && !stack.includes(closedId)) {
+        answer(closedId, true);
+        continue;
+      }
+
+      if (incoming.length === 0) {
+        return { ops, saved, planned, output: undefined, waiting: true };
+      }
+
+      save(incoming.shift());
     }
   }
 

@@ -20,7 +20,7 @@ const silent = "agents-scores-off";
 export const agentsScores = scenario({
   id: "agents-scores",
   owner: "agents-scores",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
     const posts = defineChannel({

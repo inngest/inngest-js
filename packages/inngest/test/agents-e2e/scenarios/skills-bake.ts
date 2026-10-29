@@ -27,7 +27,7 @@ const sha2 = "2".repeat(40);
 export const skillsBake = scenario({
   id: "skills-bake",
   owner: "piece-skills-bake",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   sandbox: "fake",
   functions: ({ client, fakes }) => {
     const agents = createAgents(client);

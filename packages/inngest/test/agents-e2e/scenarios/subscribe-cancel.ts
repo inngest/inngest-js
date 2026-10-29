@@ -29,7 +29,7 @@ const sleep = (ms: number) => {
 export const subscribeCancel = scenario({
   id: "subscribe-cancel",
   owner: "agents-thread-key",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
 

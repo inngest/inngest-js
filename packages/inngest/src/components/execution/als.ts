@@ -138,6 +138,30 @@ export interface AsyncContext {
      * been answered.
      */
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };
+
+    /**
+     * Whether the run holds the step that closed a subscription. Only
+     * subscriptions use it.
+     */
+    subscriptionClosed?: (key: string) => boolean;
+
+    /**
+     * Whether the timer of a read that waits for message `seq` fired before
+     * that message arrived, by the order of the run's stack. Only
+     * subscriptions use it.
+     */
+    subscriptionTimerWon?: (
+      key: string,
+      seq: number,
+      timerId: string,
+    ) => boolean;
+
+    /**
+     * Turns immediate execution of a lone step off or on. A subscription turns
+     * it off while it is open: a message can run the function again while a step
+     * is still running, and a step found then must be planned, not run twice.
+     */
+    holdImmediateExecution?: (hold: boolean) => void;
   };
 }
 

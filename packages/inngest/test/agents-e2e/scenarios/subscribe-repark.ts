@@ -1,11 +1,10 @@
 /**
  * @module
- * A reader that parks again at once after a wake. Messages arrive in pairs
- * while it is parked, so a wake for message 1 is followed by reads of messages
- * 1 and 2 from the state and a park for message 3, whose marker must not be
- * mistaken for the one just woken or be deleted by its cleanup. Every message
- * is read once and the run ends, with checkpointing and `optimizeParallelism`
- * on and off.
+ * A reader that waits again at once after a wake. Messages arrive in pairs
+ * while it waits, so a wake for message 1 is followed by reads of messages
+ * 1 and 2 from the state and a wait for message 3, which the next pair must
+ * wake. Every message is read once and the run ends, with checkpointing and
+ * `optimizeParallelism` on and off.
  */
 import { Inngest } from "inngest";
 import { scenario } from "../kit/driver.ts";
@@ -33,7 +32,7 @@ const total = rounds * 2;
 export const subscribeRepark = scenario({
   id: "subscribe-repark",
   owner: "subscribe-park",
-  needs: { oss: "jack/step-subscribe-clean" },
+  needs: { oss: "jack/step-subscribe-wake" },
   functions: ({ client, event }) => {
     return configs.map((config) => {
       const id = `repark-${tagOf(config)}`;
