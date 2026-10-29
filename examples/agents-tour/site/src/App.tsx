@@ -14,6 +14,7 @@ import type {
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
+import { EventBlock } from "./EventBlock.tsx";
 import { Events } from "./Events.tsx";
 import { Github } from "./Github.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
@@ -295,16 +296,6 @@ export const App = () => {
     store.set("tour:theme", next);
   };
 
-  const showRun = () => {
-    if (
-      files.some((file) => {
-        return file.name === "run.ts";
-      })
-    ) {
-      setActive("run.ts");
-    }
-  };
-
   const nextFile = () => {
     const at = files.findIndex((file) => {
       return file.name === active;
@@ -426,9 +417,6 @@ export const App = () => {
       if (devServerUrl) {
         window.open(devServerUrl, "_blank", "noopener");
       }
-    },
-    runEvent: () => {
-      showRun();
     },
     rowDown: () => {},
     rowUp: () => {},
@@ -597,6 +585,9 @@ export const App = () => {
                 __html: renderMarkdown(page.markdown),
               }}
             />
+            {hasCode && page.manifest.start?.length ? (
+              <EventBlock starts={page.manifest.start} dark={dark} />
+            ) : null}
           </section>
           {hasCode && panels.length > 0 ? (
             <>
@@ -677,12 +668,6 @@ export const App = () => {
                       >
                         {file.name}
                         {file.editable ? "" : " (read-only)"}
-                        {file.name === "run.ts" ? (
-                          <>
-                            {" "}
-                            <Kbd action="runEvent" />
-                          </>
-                        ) : null}
                       </button>
                     );
                   })}

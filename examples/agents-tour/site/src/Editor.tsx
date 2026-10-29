@@ -43,6 +43,19 @@ interface Props {
 
 let typesAdded = false;
 
+const compilerOptions = (): monaco.languages.typescript.CompilerOptions => {
+  return {
+    target: monaco.languages.typescript.ScriptTarget.ES2020,
+    module: monaco.languages.typescript.ModuleKind.ESNext,
+    moduleResolution: 100 as monaco.languages.typescript.ModuleResolutionKind,
+    lib: ["es2023", "dom"],
+    strict: true,
+    noEmit: true,
+    allowNonTsExtensions: true,
+    skipLibCheck: true,
+  };
+};
+
 export const addTypes = (files: Record<string, string>) => {
   if (typesAdded) {
     return;
@@ -53,16 +66,7 @@ export const addTypes = (files: Record<string, string>) => {
   const ts = monaco.languages.typescript.typescriptDefaults;
 
   ts.setEagerModelSync(true);
-  ts.setCompilerOptions({
-    target: monaco.languages.typescript.ScriptTarget.ES2020,
-    module: monaco.languages.typescript.ModuleKind.ESNext,
-    moduleResolution: 100 as monaco.languages.typescript.ModuleResolutionKind,
-    lib: ["es2023", "dom"],
-    strict: true,
-    noEmit: true,
-    allowNonTsExtensions: true,
-    skipLibCheck: true,
-  });
+  ts.setCompilerOptions(compilerOptions());
 
   for (const [path, content] of Object.entries(files)) {
     ts.addExtraLib(content, path);
@@ -180,6 +184,13 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
 
       return model;
     });
+
+    // Each model is validated the moment it is created, before its siblings
+    // exist, so `./setup` would be reported missing until the next edit.
+    // Re-applying the options revalidates every model now that all exist.
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
+      compilerOptions(),
+    );
 
     return () => {
       for (const model of models) {
