@@ -461,6 +461,11 @@ export type SubscribeOp = (
      * The event source of an open, close or stop.
      */
     target?: SubscribeEvent;
+
+    /**
+     * Further event sources of an open, opened by the same step as `target`.
+     */
+    more?: { stream: number; target: SubscribeEvent }[];
     timeout?: NextTimeout;
     attempt?: number;
 
@@ -527,7 +532,28 @@ export async function openSubscription<
       : `${key}:${stream}:${name}`;
   };
 
-  for (let stream = 0; stream < streams.length; stream++) {
+  // An inbox with several sources opens them in one step. A run that began
+  // with a step for each source (`<key>:open` or `<key>:0:open`) keeps
+  // opening them that way, so it replays as it ran. An executor that predates
+  // the many-source open answers without the count of streams it opened, and
+  // the rest are opened one by one.
+  let opened = 0;
+  const openedOneByOne =
+    answerOf(`${key}:open`).found || answerOf(`${key}:0:open`).found;
+
+  if (streams.length > 1 && !openedOneByOne) {
+    const answer = await op(`${key}:open:all`, "open", undefined, 0, {
+      target: streams[0]?.source,
+      more: streams.slice(1).map(({ source }, index) => {
+        return { stream: index + 1, target: source };
+      }),
+    });
+    const count = (answer as { streams?: unknown } | undefined)?.streams;
+
+    opened = typeof count === "number" ? count : 1;
+  }
+
+  for (let stream = opened; stream < streams.length; stream++) {
     await op(stepId(stream, "open"), "open", undefined, stream, {
       target: streams[stream]?.source,
     });
