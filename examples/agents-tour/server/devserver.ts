@@ -149,6 +149,7 @@ export class DevServer {
     };
 
     if (body.errors?.length) {
+<<<<<<< HEAD
       throw new Error(
         body.errors
           .map((e) => {
@@ -156,6 +157,9 @@ export class DevServer {
           })
           .join("; "),
       );
+=======
+      throw new Error(body.errors.map((e) => e.message).join("; "));
+>>>>>>> origin/jack/agent-primitives
     }
 
     return body.data as T;

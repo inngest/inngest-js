@@ -61,12 +61,17 @@ const seen = new Map<string, string>();
 
 for (const def of keys) {
   for (const binding of [
+<<<<<<< HEAD
     ...def.inField.map((b) => {
       return `in:${b}`;
     }),
     ...def.outside.map((b) => {
       return `out:${b}`;
     }),
+=======
+    ...def.inField.map((b) => `in:${b}`),
+    ...def.outside.map((b) => `out:${b}`),
+>>>>>>> origin/jack/agent-primitives
   ]) {
     const owner = seen.get(binding);
 
