@@ -6,12 +6,13 @@
  * remote asks for its token and leaves nothing behind.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as entry from "../../../experimental/agents/testing.ts";
 import {
+  fakeGitDataApi,
   fakeSandbox,
   script,
   startFakes,
@@ -69,6 +70,7 @@ const exec = async (
 describe("the entry", () => {
   test("exports exactly the documented names", () => {
     expect(Object.keys(entry).sort()).toEqual([
+      "fakeGitDataApi",
       "fakeSandbox",
       "script",
       "startFakes",
@@ -640,5 +642,85 @@ describe("fakeSandbox /work, processes and disk paths", () => {
 
     expect(await wait(typo)).toBe(127);
     expect((await output(typo))[1]).toContain("no entry of `commands`");
+  });
+});
+
+describe("fakeGitDataApi", () => {
+  test("is seeded from a real repository, takes a commit through the API and shows the ref", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-api-"));
+    const gitIn = (...args: string[]) => {
+      return execFileSync("git", args, {
+        cwd: dir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+        },
+      }).trim();
+    };
+
+    try {
+      gitIn("init", "--quiet", "-b", "main");
+      writeFileSync(join(dir, "a.txt"), "a\n");
+      gitIn("add", ".");
+      gitIn("commit", "--quiet", "-m", "base");
+
+      const base = gitIn("rev-parse", "HEAD");
+      const api = fakeGitDataApi({ repo: "acme/site" });
+
+      api.seed(dir, base, "refs/heads/main");
+
+      expect(api.ref("refs/heads/main")).toBe(base);
+      expect(api.ref("refs/heads/agent")).toBeUndefined();
+
+      const call = async (method: string, path: string, body?: unknown) => {
+        const response = await api.fetch(
+          `http://github.test/repos/acme/site${path}`,
+          {
+            method,
+            headers: { authorization: "Bearer t" },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          },
+        );
+
+        return (await response.json()) as Record<string, any>;
+      };
+      const blob = await call("POST", "/git/blobs", {
+        content: Buffer.from("b\n").toString("base64"),
+        encoding: "base64",
+      });
+      const baseCommit = await call("GET", `/git/commits/${base}`);
+      const tree = await call("POST", "/git/trees", {
+        base_tree: baseCommit.tree.sha,
+        tree: [{ path: "b.txt", mode: "100644", type: "blob", sha: blob.sha }],
+      });
+      const who = {
+        name: "t",
+        email: "t@example.com",
+        date: "2026-01-01T00:00:00Z",
+      };
+      const commit = await call("POST", "/git/commits", {
+        message: "add b",
+        tree: tree.sha,
+        parents: [base],
+        author: who,
+        committer: who,
+      });
+
+      await call("POST", "/git/refs", {
+        ref: "refs/heads/agent",
+        sha: commit.sha,
+      });
+
+      expect(api.ref("refs/heads/agent")).toBe(commit.sha);
+      expect(api.requests.map((r) => r.method)).toContain("POST");
+      expect(api.requests[0]?.authorization).toBe("Bearer t");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

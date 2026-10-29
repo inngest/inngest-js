@@ -18,6 +18,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import { internalEvents } from "../../helpers/consts.ts";
 import type { Logger } from "../../middleware/logger.ts";
 import type {
@@ -1127,8 +1128,8 @@ function threadInbox(
 
         return kept;
       },
-      async [Symbol.asyncDispose]() {
-        await inbox[Symbol.asyncDispose]();
+      async [asyncDispose]() {
+        await inbox[asyncDispose]();
       },
       [Symbol.asyncIterator]() {
         return {

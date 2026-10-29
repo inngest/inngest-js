@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { asyncDispose } from "./dispose.ts";
+import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 
 let found: { path: string | undefined } | undefined;
 

@@ -22,6 +22,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { timeStr } from "../../helpers/strings.ts";
 import type {
   EventType,
@@ -1021,7 +1022,7 @@ export async function openSubscription<
             target,
           });
         },
-        async [Symbol.asyncDispose]() {
+        async [asyncDispose]() {
           await listener.stop();
         },
       };
@@ -1032,7 +1033,7 @@ export async function openSubscription<
       held.unshift(...messages);
     },
     close,
-    async [Symbol.asyncDispose]() {
+    async [asyncDispose]() {
       await close();
     },
     [Symbol.asyncIterator]() {
@@ -1051,8 +1052,3 @@ export async function openSubscription<
 
   return subscription as unknown as Subscription<TData, TMessage>;
 }
-
-// Node before 20.5 lacks the symbol that `await using` looks up.
-(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
-  "Symbol.asyncDispose",
-);

@@ -1,3 +1,4 @@
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
@@ -1024,11 +1025,6 @@ export const readParsedFile = <T>(
   return fileParserOf(sandbox)(idOrOptions, path, parse) as Promise<T>;
 };
 
-// Node before 20.5 lacks the symbol that `await using` looks up.
-(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
-  "Symbol.asyncDispose",
-);
-
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
   registerCleanup?: SandboxCleanupRegistrar,
@@ -1051,21 +1047,17 @@ export const createSandboxTools = (
       // that read is what marks the sandbox as scoped. A plain create never
       // reads it and is left running when the run ends.
       let cleanup: DeferHandle | undefined;
-      const disposable = Object.defineProperty(
-        { ...sandbox },
-        Symbol.asyncDispose,
-        {
-          get: () => {
-            cleanup ??= registerCleanup?.(id, {
-              sandboxId: result.sandbox.id,
-            });
+      const disposable = Object.defineProperty({ ...sandbox }, asyncDispose, {
+        get: () => {
+          cleanup ??= registerCleanup?.(id, {
+            sandboxId: result.sandbox.id,
+          });
 
-            return async () => {
-              await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
-            };
-          },
+          return async () => {
+            await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
+          };
         },
-      ) as DurableSandbox & AsyncDisposable;
+      }) as DurableSandbox & AsyncDisposable;
       Object.freeze(disposable);
       fileParsers.set(disposable, fileParserOf(sandbox));
 

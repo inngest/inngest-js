@@ -25,6 +25,8 @@ export type {
   Fakes,
 } from "../../components/agent/testing/fakes.ts";
 export { startFakes } from "../../components/agent/testing/fakes.ts";
+export type { FakeGitDataApi } from "../../components/agent/testing/gitDataApi.ts";
+export { fakeGitDataApi } from "../../components/agent/testing/gitDataApi.ts";
 export type {
   GitFiles,
   GitRemote,

@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { asyncDispose } from "./dispose.ts";
+import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 import type { Call, CallFilter, Fakes } from "./fakes.ts";
 
 /**

@@ -8,7 +8,7 @@
  * reviews).
  */
 import { createServer, type IncomingMessage } from "node:http";
-import { asyncDispose } from "./dispose.ts";
+import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 
 /**
  * One call the fakes server received.
