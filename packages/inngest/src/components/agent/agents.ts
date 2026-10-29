@@ -14,6 +14,7 @@ import type { Middleware } from "../middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import {
   type AgentBody,
+  type AgentBodyContext,
   type AgentFunction,
   type AgentFunctionConfig,
   createAgentFunction,
@@ -62,23 +63,26 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   >(
     config: AgentFunctionConfig<
       TType,
-      ThreadTriggerEventOf<TType>,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TMiddleware,
-      TInboxTools
+      {
+        event: ThreadTriggerEventOf<TType>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }
     >,
-    body: AgentBody<
-      ThreadTriggerEventOf<TType>,
-      TOutput,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TClient,
-      TMiddleware,
-      TInboxTools
-    >,
+    body: (
+      context: AgentBodyContext<{
+        event: ThreadTriggerEventOf<TType>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        client: TClient;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }>,
+    ) => Promise<TOutput>,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TType>>,
     TOutput,
@@ -96,23 +100,26 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   >(
     config: AgentFunctionConfig<
       TTypes,
-      ThreadTriggerListEvent<TTypes>,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TMiddleware,
-      TInboxTools
+      {
+        event: ThreadTriggerListEvent<TTypes>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }
     >,
-    body: AgentBody<
-      ThreadTriggerListEvent<TTypes>,
-      TOutput,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TClient,
-      TMiddleware,
-      TInboxTools
-    >,
+    body: (
+      context: AgentBodyContext<{
+        event: ThreadTriggerListEvent<TTypes>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        client: TClient;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }>,
+    ) => Promise<TOutput>,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TTypes>>,
     TOutput,
@@ -130,23 +137,26 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
-      ThreadTriggerEventOf<TOne>,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TMiddleware,
-      TInboxTools
+      {
+        event: ThreadTriggerEventOf<TOne>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }
     >,
-    body: AgentBody<
-      ThreadTriggerEventOf<TOne>,
-      TOutput,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TClient,
-      TMiddleware,
-      TInboxTools
-    >,
+    body: (
+      context: AgentBodyContext<{
+        event: ThreadTriggerEventOf<TOne>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        client: TClient;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }>,
+    ) => Promise<TOutput>,
   ): AgentFunction<
     InvokeInput<ThreadTriggerEventOf<TOne>>,
     TOutput,
@@ -163,23 +173,26 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
-      ThreadCronEvent,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TMiddleware,
-      TInboxTools
+      {
+        event: ThreadCronEvent;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }
     >,
-    body: AgentBody<
-      ThreadCronEvent,
-      TOutput,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TClient,
-      TMiddleware,
-      TInboxTools
-    >,
+    body: (
+      context: AgentBodyContext<{
+        event: ThreadCronEvent;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        client: TClient;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }>,
+    ) => Promise<TOutput>,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
   agent<
     const TMany extends readonly unknown[],
@@ -192,23 +205,26 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
-      ThreadTriggerListEvent<TMany>,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TMiddleware,
-      TInboxTools
+      {
+        event: ThreadTriggerListEvent<TMany>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }
     >,
-    body: AgentBody<
-      ThreadTriggerListEvent<TMany>,
-      TOutput,
-      TRequest,
-      TReply,
-      TSandboxes,
-      TClient,
-      TMiddleware,
-      TInboxTools
-    >,
+    body: (
+      context: AgentBodyContext<{
+        event: ThreadTriggerListEvent<TMany>;
+        request: TRequest;
+        reply: TReply;
+        sandboxes: TSandboxes;
+        client: TClient;
+        middleware: TMiddleware;
+        inboxTools: TInboxTools;
+      }>,
+    ) => Promise<TOutput>,
   ): AgentFunction<
     InvokeInput<ThreadTriggerListEvent<TMany>>,
     TOutput,
@@ -335,7 +351,7 @@ export const createAgents = <TClient extends Inngest.Any>(
     // overload is checked at the call site, not here.
     agent: ((
       config: AgentFunctionConfig<unknown, any>,
-      body: AgentBody<any, any, any, any, any, any>,
+      body: AgentBody<any>,
     ) => {
       const created = createAgentFunction(
         client,
@@ -387,6 +403,9 @@ export type {
   AgentFunction,
   AgentFunctionConfig,
   AgentFunctionInput,
+  AgentTypeDefaults,
+  AgentTypes,
+  AgentTypesOf,
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
