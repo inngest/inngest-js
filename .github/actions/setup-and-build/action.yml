@@ -30,6 +30,13 @@ runs:
 
     - uses: oven-sh/setup-bun@v2
 
+    # The sandbox-tool binary that shims put into sandboxes is built with the
+    # package.
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "1.22"
+        cache: false
+
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install --frozen-lockfile

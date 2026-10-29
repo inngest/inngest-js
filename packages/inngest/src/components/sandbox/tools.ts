@@ -21,7 +21,14 @@ import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
-import { type SandboxDuration, SandboxValidationError } from "./types.ts";
+import { isInternalTool } from "./internalTool.ts";
+import { type SandboxShim, shim } from "./shims.ts";
+import type { ToolBinary } from "./toolBinary.ts";
+import {
+  type Sandbox,
+  type SandboxDuration,
+  SandboxValidationError,
+} from "./types.ts";
 
 /**
  * The most a request line from the sandbox may weigh.
@@ -54,6 +61,19 @@ export interface SandboxToolContext {
    * writes, so a retry doesn't send the same Slack message twice.
    */
   idempotencyKey: string;
+
+  /**
+   * The ID of the run that is calling.
+   */
+  runId?: string;
+
+  /**
+   * The sandbox the command runs in, for reading and writing its files and
+   * running commands while the command waits for this call. Not set for
+   * tools made with `tool.group()`. Calls on it aren't steps of their own:
+   * they belong to the step that answers the call, so a retry repeats them.
+   */
+  sandbox?: Sandbox;
 }
 
 /**
@@ -146,6 +166,11 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
+  /**
+   * @internal Only for tools made by the SDK (`internalTool`): `"none"`
+   * answers inline, storing nothing.
+   */
+  readonly memo?: "none";
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -201,12 +226,13 @@ export interface SandboxToolOptions {
   /**
    * The longest one wait step blocks before a fresh one continues. It is a
    * ceiling, not a delay: a wait ends soon after the process exits or a tool
-   * is called. Default 20s.
+   * is called. Default 20s, or 60s for a command that may run past five minutes. At most 240s.
    */
   waitWindow?: SandboxDuration;
 
   /**
-   * How long one `tool.step()` may run before its step fails. Default 30s.
+   * How long one tool call, or one shim handler, may run before its step
+   * fails. Default 30s.
    */
   toolTimeout?: SandboxDuration;
 
@@ -231,10 +257,35 @@ export interface SandboxToolsOptions {
    */
   tools?: SandboxTools;
   toolOptions?: SandboxToolOptions;
+
+  /**
+   * EXPERIMENTAL: Programs on `PATH` that call a handler in your app, made
+   * with `tool.shim()`, and nothing else. See `shims.ts`. Count as tools for
+   * the command's limits.
+   */
+  shims?: readonly SandboxShim[];
 }
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
   tools: SandboxTools;
+
+  /**
+   * The binary handler shims need, put into the sandbox before the command.
+   */
+  binary?: ToolBinary;
+
+  /**
+   * What the process runs in place of the operation's command: the command
+   * wrapped in its shims. The operation keeps the user's command, which is
+   * what the trace shows.
+   */
+  command?: string[];
+
+  /**
+   * The command's own timeout, which may pass the five minutes one exec can
+   * wait: the command is a process and steps follow it in windows.
+   */
+  timeoutMs?: number;
 };
 
 export interface ToolDefinition<
@@ -329,6 +380,31 @@ const toolMethods = {
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
     return definition;
   },
+
+  /**
+   * EXPERIMENTAL: Declares a program that stands in for the real one inside a
+   * sandbox command. Pass it in `shims` on `commands.run()` or `$`. When
+   * code runs the program, the handler runs here, in your app, and decides
+   * what happens: `run()` the real program (as called, or with another
+   * `argv`, extra `env` or `stdin`), `reply()` with an exit code and
+   * output, or `refuse()`. The handler gets the `sandbox`, so it can do work
+   * that needs a credential in your app and reply with the result. See
+   * `shims.ts`.
+   *
+   * `tool.shim.config()` exposes plain settings to the sandbox.
+   *
+   * @example
+   * ```ts
+   * const terraform = tool.shim("terraform", ({ argv, run, refuse }) => {
+   *   return argv[0] === "apply"
+   *     ? refuse("apply goes through a pull request")
+   *     : run();
+   * });
+   *
+   * await sandbox.$({ shims: [terraform] }).sh`terraform plan`;
+   * ```
+   */
+  shim,
 
   /**
    * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
@@ -531,6 +607,8 @@ const eventSchema = z.discriminatedUnion("op", [
     code: z.number().int(),
     stdout: z.string(),
     stderr: z.string(),
+    stdoutBytes: z.number().int().nonnegative().optional(),
+    stderrBytes: z.number().int().nonnegative().optional(),
   }),
 ]);
 
@@ -634,6 +712,8 @@ export const resolveToolCall = async (
       typeof displayName === "function"
         ? (displayName as (input: unknown) => string)(values[0])
         : displayName,
+    memo:
+      isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
     invoke: async (ctx: SandboxToolContext) => {
       // A plain function takes positional values and no context.
       const value = await run(
