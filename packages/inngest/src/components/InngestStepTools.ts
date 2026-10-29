@@ -670,14 +670,24 @@ export const createStepTools = <
         // A read with nothing to read ends its request: with a timeout the
         // timer is a sleep, which fires and runs the function again; without
         // one it reports a waiting thread, and a message runs the function.
-        wait(stepId, timeout) {
+        wait(stepId, seen, timeout) {
           return withoutStepIdPrefix(() => {
-            return timeout === undefined
-              ? tools["~subscribeWait"](stepId)
-              : tools.sleep(
-                  stepId,
-                  timeStr(timeout, client[internalLoggerSymbol]),
-                );
+            // The waiting thread tells the executor which subscription the run
+            // waits on and how many messages this request saw.
+            const subscribe = { key: id, seq: seen + 1 };
+
+            if (timeout === undefined) {
+              return tools["~subscribeWait"](stepId, { subscribe });
+            }
+
+            // A timed read has its timer as well; the waiting thread never
+            // settles, the timer does.
+            void tools["~subscribeWait"](`${stepId}:waiting`, { subscribe });
+
+            return tools.sleep(
+              stepId,
+              timeStr(timeout, client[internalLoggerSymbol]),
+            );
           });
         },
         closed() {
@@ -693,9 +703,6 @@ export const createStepTools = <
               stepId,
             ) ?? false
           );
-        },
-        hold(on) {
-          getAsyncCtxSync()?.execution?.holdImmediateExecution?.(on);
         },
       },
       allowEmpty,
@@ -733,14 +740,18 @@ export const createStepTools = <
      * next message, which runs it again.
      */
     "~subscribeWait": createTool<
-      (idOrOptions: StepOptionsOrId) => Promise<void>
-    >(({ id, name }) => {
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { subscribe: { key: string; seq: number } },
+      ) => Promise<void>
+    >(({ id, name }, opts) => {
       return {
         id,
         mode: StepMode.Async,
         op: StepOpCode.None,
         name: "inngest/subscription.wait",
         displayName: name ?? id,
+        opts,
         userland: { id },
       };
     }),

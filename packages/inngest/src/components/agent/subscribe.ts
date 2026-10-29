@@ -476,11 +476,16 @@ export type SubscribeOp = (
  */
 export interface SubscribeEngine {
   /**
-   * Ends the request with a read still waiting. With a timeout the wait is a
-   * timer that runs the function again when it fires; without one it never
-   * settles in this request.
+   * Ends the request with a read still waiting, after `seen` messages. The
+   * executor wakes the run when it holds more. With a timeout there is also a
+   * timer that runs the function again when it fires; the wait never settles in
+   * this request.
    */
-  wait: (stepId: string, timeout?: NextTimeout) => Promise<unknown>;
+  wait: (
+    stepId: string,
+    seen: number,
+    timeout?: NextTimeout,
+  ) => Promise<unknown>;
 
   /**
    * Whether the subscription has been closed.
@@ -492,12 +497,6 @@ export interface SubscribeEngine {
    * before that message arrived.
    */
   timerWon: (seq: number, stepId: string) => boolean;
-
-  /**
-   * Plans steps instead of running a lone one in the request that found it,
-   * for the rest of the run once a subscription has been opened.
-   */
-  hold: (on: boolean) => void;
 }
 
 /**
@@ -584,11 +583,6 @@ export async function openSubscription<
       target: streams[stream]?.source,
     });
   }
-
-  // From here a message can run the function while a step of it is running,
-  // and a wake queued before the close can still arrive after it: steps are
-  // planned for the rest of the run, never run in the request that found them.
-  engine.hold(true);
 
   // How many messages have been read, how many polls were made, and how many
   // messages there were once closed.
@@ -699,7 +693,7 @@ export async function openSubscription<
         return null;
       }
 
-      await engine.wait(waitId, options?.timeout);
+      await engine.wait(waitId, messages.length, options?.timeout);
       timedOut.set(seq, attempt + 1);
 
       return undefined;
@@ -848,7 +842,7 @@ export async function openSubscription<
           return null;
         }
 
-        await engine.wait(waitId, options?.timeout);
+        await engine.wait(waitId, seen, options?.timeout);
         timedOutAt.set(seq, attempt + 1);
 
         return undefined;

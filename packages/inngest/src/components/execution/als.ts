@@ -155,13 +155,6 @@ export interface AsyncContext {
       seq: number,
       timerId: string,
     ) => boolean;
-
-    /**
-     * Turns immediate execution of a lone step off or on. A subscription turns
-     * it off while it is open: a message can run the function again while a step
-     * is still running, and a step found then must be planned, not run twice.
-     */
-    holdImmediateExecution?: (hold: boolean) => void;
   };
 }
 

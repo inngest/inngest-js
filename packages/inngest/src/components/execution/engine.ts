@@ -232,12 +232,6 @@ class InngestExecutionEngine
   private rootSpanId?: string;
 
   /**
-   * Set once a `step.subscribe()` subscription has been opened: a lone step is
-   * planned, never run in the request that found it.
-   */
-  private holdImmediateExecution = false;
-
-  /**
    * If we're checkpointing and have been given a maximum runtime, this will be
    * a `Promise` that resolves after that duration has elapsed, allowing us to
    * ensure that we end the execution in good time, especially in serverless
@@ -372,9 +366,6 @@ class InngestExecutionEngine
                   hashId(timerId),
                   this.options.stepCompletionOrder,
                 );
-              },
-              holdImmediateExecution: (hold: boolean) => {
-                this.holdImmediateExecution = hold;
               },
               stepAnswer: (id: string) => {
                 const answer = this.options.stepState[hashId(id)];
@@ -1752,9 +1743,6 @@ class InngestExecutionEngine
      * immediately execute unless explicitly requested.
      */
     if (this.options.disableImmediateExecution) return;
-
-    // An open subscription can run the function again while a step runs.
-    if (this.holdImmediateExecution) return;
 
     const unfulfilledSteps = steps.filter((step) => !step.fulfilled);
     if (unfulfilledSteps.length !== 1) return;
