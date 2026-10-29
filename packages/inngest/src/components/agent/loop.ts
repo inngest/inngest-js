@@ -20,8 +20,10 @@ import {
   toolDefinitions,
   toolErrorOf,
 } from "../sandbox/tools.ts";
+import { anthropic } from "./anthropic.ts";
 import { clipContext } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
+import { nextCount } from "./executionCounter.ts";
 import { invoke } from "./invoke.ts";
 import { classifyModelError, untrusted } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
@@ -104,11 +106,12 @@ export interface AgentToolCall<
 }
 
 /**
- * Tokens used by model calls.
+ * Tokens used by model calls. `input` counts every input token, cached or
+ * not, so `input + output` is what a token budget counts.
  */
 export interface AgentUsage {
   /**
-   * Input tokens.
+   * Input tokens, including the cached ones.
    */
   input: number;
 
@@ -121,6 +124,23 @@ export interface AgentUsage {
    * Cost in US dollars, when the loop was given a `price`.
    */
   usd?: number;
+
+  /**
+   * Of `input`, the tokens read from the provider's prompt cache. Set by
+   * `anthropic()`; a model function that reports none leaves it out.
+   */
+  cacheRead?: number;
+
+  /**
+   * Of `input`, the tokens written to the provider's prompt cache.
+   */
+  cacheWrite?: number;
+
+  /**
+   * Of `cacheWrite`, the tokens written with the one-hour lifetime, which
+   * Anthropic bills at a higher rate than the five-minute one.
+   */
+  cacheWrite1h?: number;
 }
 
 /**
@@ -304,7 +324,9 @@ interface AgentToolRunOf<
  */
 export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   /**
-   * Prefix of the step IDs. Default `"agent"`.
+   * Prefix of the step IDs. Default `"agent"`. A second loop with the same
+   * prefix in one run gets `-2` after it, a third `-3`, so loops can repeat
+   * in one function without choosing IDs. The first keeps the plain prefix.
    */
   id?: string;
 
@@ -326,9 +348,9 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   /**
    * Tools the model can call, declared like sandbox tools. A tool that
    * throws, or returns `agent.toolError(body)`, gives the model an error
-   * result to react to.
+   * result to react to. Default: none.
    */
-  tools: TTools;
+  tools?: TTools;
 
   /**
    * The most characters of one tool result the model sees; longer ones keep
@@ -421,7 +443,9 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * and a replay never writes it again.
    *
    * A model step gets `agent.model_ms` (how long the model function took),
-   * `agent.input_tokens` and `agent.output_tokens` when it reported usage,
+   * `agent.input_tokens` and `agent.output_tokens` when it reported usage
+   * (plus `agent.cache_read_tokens` and `agent.cache_write_tokens` when it
+   * reported those),
    * `agent.tool_calls` (how many tools the model asked for) and
    * `agent.steers` (how many steering messages were folded in before the
    * call). A tool step gets `agent.tool_ms` and `agent.tool_error` (1 when
@@ -504,6 +528,7 @@ const toolError = toolErrorOf;
 
 const runTool = async <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools> & {
+    tools: TTools;
     maxToolOutput: number;
     scores: boolean;
   },
@@ -626,6 +651,19 @@ const stopOf = (options: { stop?: (turn: number) => Promise<boolean> }) => {
   return options.stop ?? bridgedControl()?.stop;
 };
 
+/**
+ * The step ID prefix of this loop: `id` for the first loop of that name in an
+ * execution of the function, then `id-2`, `id-3`. The count starts again on
+ * every replay and the loops run in the same order, so a loop gets the same
+ * prefix each time.
+ */
+const uniqueLoopId = (id: string): string => {
+  const execution = getAsyncCtxSync()?.execution;
+  const n = execution ? nextCount(execution.instance, `loop:${id}`) : 0;
+
+  return n === 0 ? id : `${id}-${n + 1}`;
+};
+
 // The cost stored on a model step, when it is a usable number of dollars.
 const storedCost = (usd: unknown): number | undefined => {
   return typeof usd === "number" && Number.isFinite(usd) && usd >= 0
@@ -656,16 +694,16 @@ const loop = async <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools>,
 ): Promise<AgentLoopResult<TTools>> => {
   const {
-    id = "agent",
     model,
     system,
-    tools,
+    tools = {} as TTools,
     maxTurns = 40,
     maxToolOutput = 8_000,
     parallelTools = true,
     context = { maxChars: 200_000 },
     scores = true,
   } = options;
+  const id = uniqueLoopId(options.id ?? "agent");
   const definitions = toolDefinitions(tools);
   const messages: AgentMessage[] = [
     ...(options.history ?? []),
@@ -732,6 +770,17 @@ const loop = async <TTools extends SandboxTools>(
           if (answer.usage) {
             scoreThisStep("agent.input_tokens", answer.usage.input);
             scoreThisStep("agent.output_tokens", answer.usage.output);
+
+            if (answer.usage.cacheRead !== undefined) {
+              scoreThisStep("agent.cache_read_tokens", answer.usage.cacheRead);
+            }
+
+            if (answer.usage.cacheWrite !== undefined) {
+              scoreThisStep(
+                "agent.cache_write_tokens",
+                answer.usage.cacheWrite,
+              );
+            }
           }
         }
 
@@ -762,6 +811,14 @@ const loop = async <TTools extends SandboxTools>(
     usage.input += callUsage.input;
     usage.output += callUsage.output;
 
+    for (const key of ["cacheRead", "cacheWrite", "cacheWrite1h"] as const) {
+      const used = callUsage[key];
+
+      if (used !== undefined) {
+        usage[key] = (usage[key] ?? 0) + used;
+      }
+    }
+
     if (cost !== undefined) {
       usage.usd = (usage.usd ?? 0) + cost;
     }
@@ -790,7 +847,7 @@ const loop = async <TTools extends SandboxTools>(
 
     const run = (call: AgentToolCall, index: number) => {
       return runTool<TTools>(
-        { ...options, maxToolOutput, scores },
+        { ...options, tools, maxToolOutput, scores },
         turn,
         `${id}:${turn}.${index}:${call.name}`,
         call,
@@ -913,7 +970,8 @@ const model = (fn: AgentModel): AgentModel => {
  * loop, `agent.model()` makes a model function, `agent.toolError()` returns an
  * error result from a tool, `agent.invoke()` starts another agent,
  * `agent.classifyModelError()` marks model errors no retry can fix and
- * `agent.untrusted()` marks text from outside.
+ * `agent.untrusted()` marks text from outside and `agent.anthropic()` is a
+ * model for the Anthropic API.
  *
  * @example
  * ```ts
@@ -929,4 +987,5 @@ export const agent = {
   invoke,
   classifyModelError,
   untrusted,
+  anthropic,
 };

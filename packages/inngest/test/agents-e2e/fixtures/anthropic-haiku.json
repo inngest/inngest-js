@@ -1,0 +1,79 @@
+{
+  "model": "claude-haiku-5-5",
+  "replies": [
+    {
+      "model": "claude-haiku-5-5",
+      "id": "msg_011CgWt5XL8q7TNQ33ooWPiL",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_014jD4jFBFV9ofSZ6J6AruVR",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ],
+      "container": null,
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 3787,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3787,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 66,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      },
+      "diagnostics": null
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "id": "msg_011CgWt5cxyZx5AaqYxHdnzJ",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "container": null,
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 74,
+        "cache_read_input_tokens": 3787,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 74,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 3,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      },
+      "diagnostics": null
+    }
+  ]
+}

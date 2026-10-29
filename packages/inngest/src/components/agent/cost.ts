@@ -38,6 +38,24 @@ export type AgentPriceTable = Record<
      * USD per million output tokens.
      */
     output: number;
+
+    /**
+     * USD per million input tokens read from the prompt cache. Default: the
+     * `input` rate.
+     */
+    cacheRead?: number;
+
+    /**
+     * USD per million input tokens written to the five-minute prompt cache.
+     * Default: the `input` rate.
+     */
+    cacheWrite?: number;
+
+    /**
+     * USD per million input tokens written to the one-hour prompt cache.
+     * Default: `cacheWrite`, then the `input` rate.
+     */
+    cacheWrite1h?: number;
   }
 >;
 
@@ -82,7 +100,19 @@ export const priceOf = (
     );
   }
 
+  // `input` counts the cached tokens too: price each kind at its own rate and
+  // the rest at the plain one.
+  const read = usage.cacheRead ?? 0;
+  const written = usage.cacheWrite ?? 0;
+  const written1h = Math.min(usage.cacheWrite1h ?? 0, written);
+  const plain = Math.max(0, usage.input - read - written);
+
   return checked(
-    (usage.input * rate.input + usage.output * rate.output) / 1_000_000,
+    (plain * rate.input +
+      read * (rate.cacheRead ?? rate.input) +
+      (written - written1h) * (rate.cacheWrite ?? rate.input) +
+      written1h * (rate.cacheWrite1h ?? rate.cacheWrite ?? rate.input) +
+      usage.output * rate.output) /
+      1_000_000,
   );
 };

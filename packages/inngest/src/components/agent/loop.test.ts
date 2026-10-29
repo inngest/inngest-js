@@ -1229,4 +1229,98 @@ describe("agent.loop scores", () => {
       expect(scoresOf(op)).toEqual({});
     }
   });
+
+  test("tools are optional: a loop with none just answers", async () => {
+    const { type, ran, requests } = await run([say("hi")], {
+      tools: undefined,
+    });
+
+    expect(type).toBe("function-resolved");
+    expect(ran).toEqual(["agent:model:1"]);
+    expect(requests[0]?.tools).toEqual([]);
+  });
+
+  test("a second loop with the same prefix in one run gets its own step IDs", async () => {
+    const client = new Inngest({ id: testClientId });
+    const answers = [say("one"), say("two"), say("three"), say("four")];
+    let used = 0;
+    const model = agent.model(async () => {
+      return answers[used++] as AgentModelResponse;
+    });
+    const texts: string[] = [];
+
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        for (const options of [{}, {}, { id: "named" }, { id: "named" }]) {
+          const { text } = await agent.loop({
+            model,
+            prompt: "go",
+            ...options,
+          });
+
+          texts.push(text);
+        }
+      },
+    );
+    const { type, ran } = await drive(fn, false);
+
+    expect(type).toBe("function-resolved");
+    expect(ran).toEqual([
+      "agent:model:1",
+      "agent-2:model:1",
+      "named:model:1",
+      "named-2:model:1",
+    ]);
+    expect(texts.slice(-4)).toEqual(["one", "two", "three", "four"]);
+  });
+
+  test("loops running side by side get distinct prefixes too", async () => {
+    const client = new Inngest({ id: testClientId });
+    const model = agent.model(async () => {
+      return say("ok");
+    });
+
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        await Promise.all([
+          agent.loop({ model, prompt: "a" }),
+          agent.loop({ model, prompt: "b" }),
+        ]);
+      },
+    );
+    const { type, ran } = await drive(fn, false);
+
+    expect(type).toBe("function-resolved");
+    expect([...ran].sort()).toEqual(["agent-2:model:1", "agent:model:1"]);
+  });
+
+  test("adds up cache tokens when a model reports them", async () => {
+    const withCache = (read: number, write: number) => {
+      return {
+        ...say("x"),
+        usage: {
+          input: 100,
+          output: 5,
+          cacheRead: read,
+          cacheWrite: write,
+        },
+      };
+    };
+    const { steps, result } = await run([
+      { ...call("add", { a: 1, b: 2 }), usage: withCache(0, 90).usage },
+      withCache(90, 10),
+    ]);
+
+    expect(result?.usage).toMatchObject({
+      input: 200,
+      cacheRead: 90,
+      cacheWrite: 100,
+    });
+    expect(scoresOf(stepNamed(steps, "agent:model:2"))).toMatchObject({
+      "agent.cache_read_tokens": 90,
+      "agent.cache_write_tokens": 10,
+    });
+  });
 });

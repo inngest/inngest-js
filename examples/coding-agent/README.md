@@ -3,7 +3,7 @@
 Send an `agent/task` event with a repository and a task; a branch and a pull request come out. The agent works in a Cloud sandbox: it reads and edits the code, runs commands, and when it is happy it pushes a branch and opens a pull request. Every model call and every tool call is a step, so a crash never repeats work and the trace shows each turn.
 
 - [`agent.ts`](agent.ts) is the whole function. It uses `repo()` to check the code out and give the model its tools (read, write, edit, search, run and push), `agent.loop()` for the loop, and its own `openPullRequest` tool.
-- [`model.ts`](model.ts) plugs Claude into the loop with `@anthropic-ai/sdk`. `agent.loop()` has no provider built in: `model` is a function you write that calls whichever SDK you use, so any provider plugs in the same way.
+- [`model.ts`](model.ts) plugs Claude into the loop with `agent.anthropic()`, which calls `@anthropic-ai/sdk` with prompt caching and reports tokens, cache hits and cost. `agent.loop()` has no other provider built in: `model` is just a function, so another provider plugs in by implementing the same `AgentModel` shape.
 
 The GitHub token never enters the sandbox. `repo()` passes it only in the environment of the clone and push commands (the model gets a `push` tool, not the token), and `openPullRequest` runs in your app.
 
@@ -50,7 +50,7 @@ for (let round = 0; ; round += 1) {
 
 ## Choosing tools for a model
 
-`checkout.tools` is a plain object, so swap any tool for one tuned to your model. Model-specific tuning (tool shapes, prompts, message mapping) lives next to the model callback in `model.ts`.
+`checkout.tools` is a plain object, so swap any tool for one tuned to your model. Model-specific tuning (tool shapes, prompts) lives next to the model in `model.ts`.
 
 ```ts
 const { edit, ...tools } = checkout.tools;
