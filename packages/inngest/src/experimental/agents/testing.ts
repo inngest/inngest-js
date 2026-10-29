@@ -25,7 +25,13 @@ export type {
   Fakes,
 } from "../../components/agent/testing/fakes.ts";
 export { startFakes } from "../../components/agent/testing/fakes.ts";
-export type { GitRemote } from "../../components/agent/testing/gitRemote.ts";
+export type {
+  GitFiles,
+  GitRemote,
+  GitRemoteOptions,
+  GitRepo,
+  GitSeed,
+} from "../../components/agent/testing/gitRemote.ts";
 export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
 export type { ScriptStep } from "../../components/agent/testing/model.ts";
 export { script } from "../../components/agent/testing/model.ts";

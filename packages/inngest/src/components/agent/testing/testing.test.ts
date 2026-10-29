@@ -353,3 +353,104 @@ describe.skipIf(!backendPath())("startGitRemote", () => {
     expect(existsSync(remoteDir)).toBe(false);
   });
 });
+
+describe.skipIf(!backendPath())("startGitRemote with repos", () => {
+  const run = (cwd: string, ...args: string[]) => {
+    return promisify(execFile)("git", args, {
+      cwd,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+  };
+
+  test("serves several seeded repositories, with branches, to anonymous readers; a push needs the token", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-repos-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "secret",
+        anonymousReads: true,
+        repos: {
+          website: { "index.md": "site\n" },
+          source: {
+            main: { "a.ts": "export const a = 1;\n" },
+            pr: { "a.ts": "export const a = 2;\n", "b.ts": "new\n" },
+          },
+        },
+      });
+
+      expect(Object.keys(remote.repos)).toEqual(["website", "source"]);
+      expect(remote.url).toBe(remote.repos.website?.url);
+      expect(Object.keys(remote.repos.source?.heads ?? {})).toEqual([
+        "main",
+        "pr",
+      ]);
+
+      // Anonymous clone of a branch, and of a commit by its hash.
+      await run(dir, "clone", "--quiet", remote.repos.source?.url ?? "", "src");
+      await run(`${dir}/src`, "checkout", "--quiet", "origin/pr");
+      expect((await run(`${dir}/src`, "rev-parse", "HEAD")).stdout.trim()).toBe(
+        remote.repos.source?.heads.pr,
+      );
+      // Any commit can be fetched by its hash.
+      await run(dir, "init", "--quiet", "by-hash");
+      await run(
+        `${dir}/by-hash`,
+        "fetch",
+        "--quiet",
+        remote.repos.source?.url ?? "",
+        remote.repos.source?.heads.pr ?? "",
+      );
+
+      // A push without the token is refused, and the header is on record.
+      await run(`${dir}/src`, "commit", "--allow-empty", "-m", "x", "-q");
+      await expect(
+        run(`${dir}/src`, "push", "--quiet", "origin", "HEAD:refs/heads/mine"),
+      ).rejects.toThrow();
+      expect(remote.pushAuth.length).toBeGreaterThan(0);
+
+      // With the token it goes through.
+      await run(
+        `${dir}/src`,
+        "push",
+        "--quiet",
+        remote.repos.source?.url.replace(
+          "http://",
+          "http://x-access-token:secret@",
+        ) ?? "",
+        "HEAD:refs/heads/mine",
+      );
+      expect(
+        (
+          await run(remote.repos.source?.dir ?? "", "rev-parse", "mine")
+        ).stdout.trim(),
+      ).not.toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("without anonymousReads a clone needs the token too", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agents-testing-repos-"));
+
+    try {
+      await using remote = await startGitRemote({
+        token: "secret",
+        repos: { only: { "a.txt": "a\n" } },
+      });
+
+      await expect(
+        run(dir, "clone", "--quiet", remote.url, "c"),
+      ).rejects.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
