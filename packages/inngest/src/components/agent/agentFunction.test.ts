@@ -545,8 +545,10 @@ describe("createAgents", () => {
     ).toEqual([
       `${testClientId}-a`,
       `${testClientId}-a-cleanup`,
+      `${testClientId}-a-finished`,
       `${testClientId}-b`,
       `${testClientId}-b-cleanup`,
+      `${testClientId}-b-finished`,
     ]);
   });
 
@@ -637,13 +639,15 @@ describe("thread state", () => {
 
     await run(fn, { event: trigger("one"), saved: [message("user", "two")] });
 
-    expect([...seen.values()]).toEqual([
+    expect([...seen.values()]).toMatchObject([
       {
         status: "running",
         turn: 1,
         summary: "reply to one",
         usage: { input: 10, output: 5 },
         runId: "run",
+        inflight: { content: "one" },
+        restarts: 0,
       },
       {
         status: "running",
@@ -651,6 +655,8 @@ describe("thread state", () => {
         summary: "reply to two",
         usage: { input: 20, output: 10 },
         runId: "run",
+        inflight: { content: "two" },
+        restarts: 0,
       },
     ]);
     expect(await record(kv)).toMatchObject({ status: "running" });

@@ -315,6 +315,7 @@ export const createAgents = <TClient extends Inngest.Any>(
         return [
           created.fn,
           created.cleanup,
+          created.finished,
           ...(created.arrival ? [created.arrival] : []),
         ];
       });
@@ -339,14 +340,21 @@ export type {
 export type {
   Channel,
   ChannelAsk,
+  ChannelCard,
   ChannelMessage,
+  ChannelStream,
+  ChannelStreamLimits,
   ChannelTrigger,
   ReportConfig,
   ReportConfigValue,
   Reporter,
   ReportTarget,
 } from "./channels.ts";
-export { askThrough, defineChannel } from "./channels.ts";
+export {
+  askThrough,
+  ChannelStreamEnded,
+  defineChannel,
+} from "./channels.ts";
 export { agentMessage } from "./events.ts";
 export type {
   GithubChannelOptions,
@@ -384,6 +392,12 @@ export {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+export type {
+  AgentRecovery,
+  LastRun,
+  RunFailure,
+  RunOutcome,
+} from "./recovery.ts";
 export type { AgentScoreName, AgentScores } from "./scores.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";

