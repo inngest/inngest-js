@@ -1,7 +1,7 @@
 /**
  * @module
  * A D1-shaped database over Node's built-in SQLite, for tests. The database's
- * clock (`strftime('%s', 'now')` in the store's SQL) is a number the test
+ * clock (`julianday('now')` in the store's SQL) is a number the test
  * moves, so expiry is tested without waiting.
  */
 import type { D1KvDatabase, D1KvStatement } from "./kvD1.ts";
@@ -15,9 +15,10 @@ export async function fakeD1(clockMs: () => number): Promise<D1KvDatabase> {
   const sqlite = new DatabaseSync(":memory:");
 
   function statement(sql: string, values: unknown[] = []): D1KvStatement {
+    // The store's clock expression becomes the test's clock, in Julian days.
     const text = sql.replaceAll(
-      "strftime('%s', 'now')",
-      String(Math.floor(clockMs() / 1000)),
+      "julianday('now')",
+      String(clockMs() / 86400000 + 2440587.5),
     );
 
     return {

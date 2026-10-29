@@ -264,7 +264,8 @@ export interface CreateAgentsOptions {
    * Where the KV, thread state and indexes live: `redisKvAdapter(url)`,
    * `d1KvAdapter(env.DB)` or `memoryKvAdapter()`. Default: Redis at
    * `INNGEST_EXPERIMENTAL_KV_URL`. The guarantees of a store are on
-   * `KvStore`.
+   * `KvStore`. One store per app ID: a second `createAgents` for the same
+   * client ID replaces the first's.
    */
   store?: KvStore;
 }

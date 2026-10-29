@@ -62,8 +62,10 @@ export const d1KvSchema = [
     ON inngest_kv_index (scope, idx, score, member)`,
 ] as const;
 
-// The database's clock, in milliseconds.
-const now = "(CAST(strftime('%s', 'now') AS INTEGER) * 1000)";
+// The database's clock, in milliseconds. Not `strftime('%s')`, which counts
+// whole seconds and would end a key up to a second early.
+const clockSql = "(julianday('now') - 2440587.5) * 86400000";
+const now = `CAST(${clockSql} AS INTEGER)`;
 
 const live = `(expires_at IS NULL OR expires_at > ${now})`;
 
@@ -170,37 +172,48 @@ export function d1KvAdapter(
 
     async setIfAbsent(hash, field, value, ttl) {
       const current = await ready();
-      // One statement: inserts a new key, or takes over one that expired, and
-      // leaves a live key alone. `changes` tells which.
-      const result = await current
-        .prepare(
-          `INSERT INTO inngest_kv (scope, field, value, expires_at)
+
+      const claim = async (retried: boolean): Promise<boolean> => {
+        // One statement: inserts a new key, or takes over one that expired, and
+        // leaves a live key alone. `changes` tells which.
+        const result = await current
+          .prepare(
+            `INSERT INTO inngest_kv (scope, field, value, expires_at)
            VALUES (?, ?, ?, ${ttl === undefined ? "NULL" : `${now} + ? * 1000`})
            ON CONFLICT (scope, field) DO UPDATE SET
              value = excluded.value, expires_at = excluded.expires_at
            WHERE inngest_kv.expires_at IS NOT NULL AND inngest_kv.expires_at <= ${now}`,
-        )
-        .bind(
-          ...(ttl === undefined
-            ? [hash, field, value]
-            : [hash, field, value, ttl]),
-        )
-        .run();
+          )
+          .bind(
+            ...(ttl === undefined
+              ? [hash, field, value]
+              : [hash, field, value, ttl]),
+          )
+          .run();
 
-      if ((result.meta.changes ?? 0) > 0) {
-        return true;
-      }
+        if ((result.meta.changes ?? 0) > 0) {
+          return true;
+        }
 
-      // The key is held. It is this call's when it holds exactly this value
-      // (the same call retried after its own write).
-      const row = await current
-        .prepare(
-          `SELECT value FROM inngest_kv WHERE scope = ? AND field = ? AND ${live}`,
-        )
-        .bind(hash, field)
-        .first<{ value: string }>();
+        // The key is held. It is this call's when it holds exactly this value
+        // (the same call retried after its own write).
+        const row = await current
+          .prepare(
+            `SELECT value FROM inngest_kv WHERE scope = ? AND field = ? AND ${live}`,
+          )
+          .bind(hash, field)
+          .first<{ value: string }>();
 
-      return row?.value === value;
+        // The holder expired or was deleted between the two statements: the key
+        // is free, so claim it once more.
+        if (!row && !retried) {
+          return claim(true);
+        }
+
+        return row?.value === value;
+      };
+
+      return claim(false);
     },
 
     async delete(hash, field) {
@@ -253,18 +266,21 @@ export function d1KvAdapter(
       range: KvIndexRange,
     ): Promise<KvIndexEntry[]> {
       const desc = range.order === "desc";
+      // A bound that is not finite is no bound.
+      const min = Number.isFinite(range.min) ? range.min : undefined;
+      const max = Number.isFinite(range.max) ? range.max : undefined;
       const { results } = await (await ready())
         .prepare(
           `SELECT member, score FROM inngest_kv_index
-           WHERE scope = ? AND idx = ? AND score >= ? AND score <= ?
+           WHERE scope = ? AND idx = ?${min === undefined ? "" : " AND score >= ?"}${max === undefined ? "" : " AND score <= ?"}
            ORDER BY score ${desc ? "DESC" : "ASC"}, member ${desc ? "DESC" : "ASC"}
            LIMIT ?`,
         )
         .bind(
           hash,
           index,
-          range.min ?? -1e308,
-          range.max ?? 1e308,
+          ...(min === undefined ? [] : [min]),
+          ...(max === undefined ? [] : [max]),
           range.limit ?? -1,
         )
         .all<{ member: string; score: number }>();

@@ -10,7 +10,7 @@ import { createKv, kv, memoryKvAdapter } from "./kv.ts";
 import { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 
 describe("the d1 store", () => {
-  test("racing setIfAbsent calls are arbitrated: exactly one wins", async () => {
+  test("setIfAbsent calls issued together give exactly one winner", async () => {
     const adapter = d1KvAdapter(await fakeD1(() => 1_700_000_000_000), {
       createTables: true,
     });
@@ -57,6 +57,34 @@ describe("the d1 store", () => {
     const left = await database.prepare("SELECT field FROM inngest_kv").all();
 
     expect(left.results).toEqual([{ field: "new" }]);
+  });
+
+  test("a ttl lasts its full length, to the millisecond", async () => {
+    let clock = 1_700_000_000_900;
+    const adapter = d1KvAdapter(await fakeD1(() => clock), {
+      createTables: true,
+    });
+
+    await adapter.set("h", "k", "1", 1);
+    clock += 999;
+
+    expect(await adapter.get("h", "k")).toBe("1");
+
+    clock += 2;
+
+    expect(await adapter.get("h", "k")).toBeNull();
+  });
+
+  test("a range with infinite bounds is unbounded", async () => {
+    const adapter = d1KvAdapter(await fakeD1(() => 1_700_000_000_000), {
+      createTables: true,
+    });
+
+    await adapter.indexAdd("h", "i", "a", 1);
+
+    expect(
+      await adapter.indexRange("h", "i", { min: -Infinity, max: Infinity }),
+    ).toEqual([{ member: "a", score: 1 }]);
   });
 
   test("the schema can be created by a migration instead", async () => {

@@ -93,13 +93,13 @@ export interface KvAdapter {
 }
 
 /**
- * One member of a sorted index and its score.
- */
-/**
  * The store interface the KV, thread state and indexes sit on.
  */
 export type KvStore = KvAdapter;
 
+/**
+ * One member of a sorted index and its score.
+ */
 export interface KvIndexEntry {
   /**
    * The member, for example an id.
@@ -1237,6 +1237,7 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
 }
 
 const appStores = new Map<string, KvAdapter>();
+const envStores = new Map<string, KvAdapter>();
 
 /**
  * Sets the store the KV of an app uses, unless a KV was built with its own.
@@ -1256,8 +1257,6 @@ export function setAppKvStore(app: string, store: KvAdapter): void {
 export function createKv(
   options: { adapter?: KvAdapter; bound?: { env: string; app: string } } = {},
 ): Kv {
-  let fromEnv: KvAdapter | undefined;
-
   // The store of an app: the one this KV was built with, else the one the app
   // gave `createAgents`, else Redis at the environment's URL.
   function store(app?: string): KvAdapter {
@@ -1266,21 +1265,26 @@ export function createKv(
       return given;
     }
 
-    if (!fromEnv) {
-      // A Worker may have no `process`; it gives a store instead.
-      const url =
-        typeof process === "undefined"
-          ? undefined
-          : process.env.INNGEST_EXPERIMENTAL_KV_URL;
-      if (!url) {
-        throw new Error(
-          "kv needs a store: give createAgents(client, { store }) one, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL (redis:// or rediss://).",
-        );
-      }
-      fromEnv = redisKvAdapter(url);
+    // A Worker may have no `process`; it gives a store instead.
+    const url =
+      typeof process === "undefined"
+        ? undefined
+        : process.env.INNGEST_EXPERIMENTAL_KV_URL;
+    if (!url) {
+      throw new Error(
+        "kv needs a store: give createAgents(client, { store }) one, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL (redis:// or rediss://).",
+      );
     }
 
-    return fromEnv;
+    // One connection per URL, however many KVs are built (`kv.with(client)`
+    // builds one per call).
+    let found = envStores.get(url);
+    if (!found) {
+      found = redisKvAdapter(url);
+      envStores.set(url, found);
+    }
+
+    return found;
   }
 
   function instance(scope: KvScope, explicitId?: string): KvScopeInstance {
