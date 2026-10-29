@@ -66,12 +66,16 @@ export interface FakeSandboxOptions {
    * It is for tests with a scripted model (`script()`), never for a real one:
    * this is not a sandbox, and the commands run with your user's rights. What
    * it does is a best-effort guard against mistakes, not a boundary. The
-   * environment is cut down to `PATH`, `HOME` (the sandbox's directory),
-   * `SANDBOX_WORK`, git's identity and what `passEnv` lists; a command works
-   * from the sandbox's directory; one with a `..` path segment, `~user`, or an
-   * absolute path-like word outside the sandbox's directories and the
-   * system's binary directories is refused with exit code 126 (and recorded
-   * as `sandbox.refused`); uploads and reads stay inside those directories.
+   * environment is the command's own `environment` over `PATH`, `HOME` (the
+   * sandbox's directory), `SANDBOX_WORK`, git's identity and what `passEnv`
+   * lists, with nothing else of the host's; a command works from the
+   * sandbox's directory (`localDirs` cwds excepted); one with a `..` path
+   * segment, `~user`, or an absolute path outside the sandbox's directories and
+   * the system's binary directories is refused with exit code 126 (and
+   * recorded as `sandbox.refused`). The words of a command are checked as
+   * paths, and the script of `sh -c` is searched for paths; the code another
+   * program is given (`node -e`, `python3 -c`) is not searched. Uploads and
+   * reads stay inside the sandbox's directories.
    * A shell can still build a path out of pieces or expansions, follow a
    * symlink, or `cd /` and use relative names, and the system's binary
    * directories are not read-only: do not run it as root or with a real
@@ -524,7 +528,10 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     const cwdOf = (cwd: string | undefined) => {
       const dir = workOf(id ?? "");
 
-      return cwd === undefined ? dir : resolve(dir, local(cwd));
+      // `/tmp` is the sandbox's own directory too: the host's `/tmp` is shared.
+      return cwd === undefined || cwd === "/tmp"
+        ? dir
+        : resolve(dir, local(cwd));
     };
     const ensureCwd = (cwd: string | undefined) => {
       const target = cwdOf(cwd);
@@ -570,7 +577,9 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     // The reason a command may not run on this machine, or `undefined`. A
     // guard against the plain mistakes, not a boundary: no `..` path segment,
     // and no absolute path outside the sandbox's directories, the system's
-    // binaries and the places the SDK's runners use.
+    // binaries and the places the SDK's runners use. The system's binary
+    // directories and every PATH entry are allowed as targets, so they can be
+    // written to as well as run from.
     const refusalOf = (request: {
       command: string[];
       cwd?: string;
@@ -631,15 +640,26 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
       };
       // The runners work from `/tmp`; running there is fine, naming it as an
       // argument (`rm -rf /tmp`) is not.
+      const shell = /(^|\/)(sh|bash|zsh|dash|ksh)$/.test(
+        request.command[0] ?? "",
+      );
+      // The words of the command, and which of them is a script a shell reads.
       const texts = [
-        ...request.command,
+        ...request.command.map((text, index) => {
+          return {
+            text,
+            script: shell && request.command[index - 1] === "-c",
+          };
+        }),
         ...(request.cwd === undefined || request.cwd === "/tmp"
           ? []
-          : [request.cwd]),
-        ...Object.values(request.environment ?? {}),
+          : [{ text: request.cwd, script: false }]),
+        ...Object.values(request.environment ?? {}).map((text) => {
+          return { text, script: false };
+        }),
       ];
 
-      for (const text of texts) {
+      for (const { text, script } of texts) {
         // `..` as the shell will read it: with quotes and escapes taken out,
         // so `.\\.` and `."."` are caught too.
         for (const plain of [text, text.replace(/[\\\\'"]/g, "")]) {
@@ -649,7 +669,11 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
         }
 
         // `~user` is that user's home, not the sandbox's.
-        if (/(^|[\s"'=:;&|(<>{},])~[A-Za-z_]/.test(text)) {
+        if (
+          (script ? /(^|[\s"'=:;&|(<>{},])~[A-Za-z_]/ : /^~[A-Za-z_]/).test(
+            text,
+          )
+        ) {
           return `"${text}" names another user's home`;
         }
 
@@ -667,6 +691,23 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           return `"${text}" is outside the sandbox's directories`;
         }
 
+        // Only a script a shell reads is searched for paths inside the text:
+        // the other words (code a runner is given, a commit message) are
+        // data, and a slash in them is not a path.
+        if (!script) {
+          continue;
+        }
+
+        // The root directory, or everything in it, as the target of a command
+        // that takes paths.
+        if (
+          /\b(cd|find|ls|rm|ln|cp|mv|du|chmod|chown|tar|rsync|cat)\s+(-\S+\s+)*\/+(?=[\s;&|)*?[{]|$)/.test(
+            moved,
+          )
+        ) {
+          return "the root directory is outside the sandbox's directories";
+        }
+
         for (const found of moved.matchAll(
           /(?<![\w.-])(\/[\w.~*?[{-][^\s"'`;&|()<>$\\]*)/g,
         )) {
@@ -678,7 +719,8 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
           // directory of the system.
           if (
             segments.length < 2 &&
-            !topLevel.includes(`/${segments[0] ?? ""}`)
+            !topLevel.includes(`/${segments[0] ?? ""}`) &&
+            !/^\/[*?[{]/.test(path)
           ) {
             continue;
           }

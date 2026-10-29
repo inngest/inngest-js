@@ -1101,8 +1101,8 @@ describe("fakeSandbox real execution is opt-in and guarded", () => {
 
     for (const command of [
       ["cat", "/etc/hostname"],
-      ["sh", "-c", "rm -rf /tmp/anything"],
-      ["rm", "-rf", "/"],
+      ["sh", "-c", "ls /tmp/anything"],
+      ["ls", "/"],
     ]) {
       const refused = await run(sandbox, id, { command, cwd: "/work" });
 
@@ -1338,5 +1338,91 @@ describe("fakeSandbox guard against shell tricks", () => {
         exitCode: 126,
       });
     }
+  });
+});
+
+describe("fakeSandbox guard: the root, /tmp and data words", () => {
+  // The commands here only read, so a guard that failed would show it without
+  // damage; the refusal of the destructive forms is the same code path.
+  const exec = async (
+    sandbox: ReturnType<typeof fakeSandbox>,
+    id: string,
+    body: Record<string, unknown>,
+  ) => {
+    const response = await post(sandbox, `/v2/sandboxes/${id}/exec`, body);
+    const { data } = (await response.json()) as {
+      data: { stdout: string; exitCode: number };
+    };
+
+    return {
+      stdout: Buffer.from(data.stdout, "base64").toString(),
+      exitCode: data.exitCode,
+    };
+  };
+
+  test("the root directory, or everything in it, is refused as a target", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+
+    for (const script of [
+      "ls -d /*",
+      "cat /*.conf",
+      "find / -maxdepth 0",
+      "du -s /",
+      "cd / && cat etc/hostname",
+    ]) {
+      const refused = await exec(sandbox, id, {
+        command: ["sh", "-c", `${script} # /work`],
+      });
+
+      expect({ script, exitCode: refused.exitCode }).toEqual({
+        script,
+        exitCode: 126,
+      });
+    }
+  });
+
+  test("a command run with cwd /tmp works in the sandbox's directory, not the host's /tmp", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const home = (
+      await exec(sandbox, id, {
+        command: ["sh", "-c", "echo $SANDBOX_WORK"],
+        cwd: "/work",
+      })
+    ).stdout.trim();
+    const there = await exec(sandbox, id, {
+      command: ["sh", "-c", "pwd # /work"],
+      cwd: "/tmp",
+    });
+
+    expect(there.stdout.trim()).toBe(home);
+  });
+
+  test("the words that are data are not searched for paths, but a whole word that is a path is checked", async () => {
+    await using sandbox = localSandbox();
+    const id = await create(sandbox);
+    const data = await exec(sandbox, id, {
+      command: [
+        "sh",
+        "-c",
+        'printf "%s" "$1" # /work',
+        "sh",
+        "fix /api/users/list and (~flag)",
+      ],
+    });
+
+    expect(data).toMatchObject({
+      stdout: "fix /api/users/list and (~flag)",
+      exitCode: 0,
+    });
+    expect(
+      (
+        await exec(sandbox, id, {
+          command: ["cat", "/api/users/list"],
+          cwd: "/work",
+        })
+      ).exitCode,
+    ).toBe(126);
   });
 });
