@@ -9,6 +9,7 @@ import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { runToEnd } from "../sandbox/test-helpers.ts";
+import { fakeD1 } from "./fake-d1.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
   createKv,
@@ -18,6 +19,7 @@ import {
   memoryKvAdapter,
   redisKvAdapter,
 } from "./kv.ts";
+import { d1KvAdapter } from "./kvD1.ts";
 import { connectRedis } from "./redis.ts";
 import { run } from "./test-helpers.ts";
 
@@ -307,6 +309,18 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
       adapter: redisKvAdapter(server.url),
       advance: server.advance,
       done: server.close,
+    };
+  });
+
+  contract("d1 adapter on SQLite", async () => {
+    let clock = 1_700_000_000_000;
+
+    return {
+      adapter: d1KvAdapter(await fakeD1(() => clock), { createTables: true }),
+      advance: (ms) => {
+        clock += ms;
+      },
+      done: async () => {},
     };
   });
 

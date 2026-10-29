@@ -1,0 +1,100 @@
+/**
+ * @module
+ * Tests for the D1 store beyond the shared contract, and for choosing a store
+ * with `createAgents`.
+ */
+import { Inngest } from "../Inngest.ts";
+import { createAgents } from "./agents.ts";
+import { fakeD1 } from "./fake-d1.ts";
+import { createKv, kv, memoryKvAdapter } from "./kv.ts";
+import { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
+
+describe("the d1 store", () => {
+  test("racing setIfAbsent calls are arbitrated: exactly one wins", async () => {
+    const adapter = d1KvAdapter(await fakeD1(() => 1_700_000_000_000), {
+      createTables: true,
+    });
+    const results = await Promise.all(
+      ["a", "b", "c", "d"].map((value) => {
+        return adapter.setIfAbsent("h", "claim", value, 60);
+      }),
+    );
+
+    expect(
+      results.filter((won) => {
+        return won;
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("takes the database from a function, for bindings that arrive per request", async () => {
+    const database = await fakeD1(() => 1_700_000_000_000);
+    let calls = 0;
+    const adapter = d1KvAdapter(
+      () => {
+        calls++;
+
+        return database;
+      },
+      { createTables: true },
+    );
+
+    await adapter.set("h", "k", '"v"');
+
+    expect(await adapter.get("h", "k")).toBe('"v"');
+    expect(calls).toBeGreaterThan(1);
+  });
+
+  test("expired rows of a scope are deleted when it is written with a ttl", async () => {
+    let clock = 1_700_000_000_000;
+    const database = await fakeD1(() => clock);
+    const adapter = d1KvAdapter(database, { createTables: true });
+
+    await adapter.set("h", "old", '"x"', 5);
+    clock += 10_000;
+    await adapter.set("h", "new", '"y"', 5);
+
+    const left = await database.prepare("SELECT field FROM inngest_kv").all();
+
+    expect(left.results).toEqual([{ field: "new" }]);
+  });
+
+  test("the schema can be created by a migration instead", async () => {
+    const database = await fakeD1(() => 1_700_000_000_000);
+
+    await database.batch(
+      d1KvSchema.map((statement) => {
+        return database.prepare(statement);
+      }),
+    );
+    const adapter = d1KvAdapter(database);
+
+    await adapter.set("h", "k", "1");
+
+    expect(await adapter.get("h", "k")).toBe("1");
+  });
+});
+
+describe("the store an app gives createAgents", () => {
+  test("the default kv uses it for that app", async () => {
+    const mine = memoryKvAdapter();
+    const client = new Inngest({ id: "stores-app-a" });
+    createAgents(client, { store: mine });
+
+    await kv.with(client).env.set("k", 1);
+
+    expect(await mine.all("inngest:kv:env:default")).toEqual({ k: "1" });
+  });
+
+  test("a store given to createKv wins over the app's", async () => {
+    const mine = memoryKvAdapter();
+    const own = memoryKvAdapter();
+    const client = new Inngest({ id: "stores-app-b" });
+    createAgents(client, { store: mine });
+
+    await createKv({ adapter: own }).with(client).env.set("k", 1);
+
+    expect(await own.all("inngest:kv:env:default")).toEqual({ k: "1" });
+    expect(await mine.all("inngest:kv:env:default")).toEqual({});
+  });
+});

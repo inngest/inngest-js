@@ -34,6 +34,22 @@ export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
 /**
  * Where values are stored. Each scope instance is one hash, so removing a
  * whole scope (a finished run) is one call.
+ *
+ * Three stores ship: Redis (`redisKvAdapter`, the default), Cloudflare D1
+ * (`d1KvAdapter`) and memory (`memoryKvAdapter`, for tests). Give an app its
+ * store with `createAgents(client, { store })`.
+ *
+ * What a store must guarantee:
+ *
+ * - `setIfAbsent` is atomic across callers: of two racing calls exactly one
+ *   writes. Redis does it with `SET NX`, D1 with one upsert statement, memory
+ *   by running on one thread.
+ * - A field past its `ttl` reads as absent, and `setIfAbsent` may take it over.
+ * - A single write (`set`, `delete`, `indexAdd`, `indexRemove`) takes effect
+ *   whole or not at all.
+ * - Nothing spans two calls. A read followed by a write is not atomic, so the
+ *   KV's `update` can lose an update when two runs update one key at once, on
+ *   every store.
  */
 export interface KvAdapter {
   get(hash: string, field: string): Promise<string | null>;
@@ -79,6 +95,11 @@ export interface KvAdapter {
 /**
  * One member of a sorted index and its score.
  */
+/**
+ * The store interface the KV, thread state and indexes sit on.
+ */
+export type KvStore = KvAdapter;
+
 export interface KvIndexEntry {
   /**
    * The member, for example an id.
@@ -1215,6 +1236,18 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
   return ttl;
 }
 
+const appStores = new Map<string, KvAdapter>();
+
+/**
+ * Sets the store the KV of an app uses, unless a KV was built with its own.
+ * `createAgents(client, { store })` calls it.
+ * @param app The app ID of the client.
+ * @param store The store.
+ */
+export function setAppKvStore(app: string, store: KvAdapter): void {
+  appStores.set(app, store);
+}
+
 /**
  * Builds a store.
  * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
@@ -1223,20 +1256,31 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
 export function createKv(
   options: { adapter?: KvAdapter; bound?: { env: string; app: string } } = {},
 ): Kv {
-  let adapter = options.adapter;
+  let fromEnv: KvAdapter | undefined;
 
-  function store(): KvAdapter {
-    if (!adapter) {
-      const url = process.env.INNGEST_EXPERIMENTAL_KV_URL;
-      if (!url) {
-        throw new Error(
-          "kv needs a Redis URL: set INNGEST_EXPERIMENTAL_KV_URL (redis:// or rediss://).",
-        );
-      }
-      adapter = redisKvAdapter(url);
+  // The store of an app: the one this KV was built with, else the one the app
+  // gave `createAgents`, else Redis at the environment's URL.
+  function store(app?: string): KvAdapter {
+    const given = options.adapter ?? (app ? appStores.get(app) : undefined);
+    if (given) {
+      return given;
     }
 
-    return adapter;
+    if (!fromEnv) {
+      // A Worker may have no `process`; it gives a store instead.
+      const url =
+        typeof process === "undefined"
+          ? undefined
+          : process.env.INNGEST_EXPERIMENTAL_KV_URL;
+      if (!url) {
+        throw new Error(
+          "kv needs a store: give createAgents(client, { store }) one, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL (redis:// or rediss://).",
+        );
+      }
+      fromEnv = redisKvAdapter(url);
+    }
+
+    return fromEnv;
   }
 
   function instance(scope: KvScope, explicitId?: string): KvScopeInstance {
@@ -1257,7 +1301,7 @@ export function createKv(
       }
 
       return {
-        handle: handleFor(store(), scope, scoped),
+        handle: handleFor(store(scoped.app), scope, scoped),
         inFunction: Boolean(current),
       };
     }
@@ -1430,7 +1474,7 @@ export function createKv(
     },
     with(client) {
       return createKv({
-        adapter: store(),
+        adapter: options.adapter,
         bound: { env: client.env ?? "default", app: client.id },
       });
     },
@@ -1438,6 +1482,7 @@ export function createKv(
 }
 
 /**
- * The default store, backed by Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
+ * The default KV. Its store is the one the app gave `createAgents`, else Redis
+ * at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
 export const kv: Kv = createKv();
