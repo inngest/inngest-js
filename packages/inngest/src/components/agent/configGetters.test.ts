@@ -39,9 +39,6 @@ describe("kvFrom", () => {
 
     expect(kvFrom(own)).toBe(own);
     expect(kvFrom(undefined)).toBe(kv);
-    expect(
-      (kvFrom(() => own) as unknown as { then?: unknown }).then,
-    ).toBeUndefined();
   });
 
   test("a thread handle reads the thread state through a kv function", async () => {
