@@ -1269,7 +1269,12 @@ export function createKv(
       fn: (handle: RawKv) => Promise<T>,
     ) {
       const { handle, inFunction } = resolve();
-      if (!inFunction) {
+
+      // Outside a function the call is direct. Inside a step's own callback
+      // it rides on that step instead of being a nested step, so it runs
+      // again when that step is retried: `update`, `take` and
+      // `setIfAbsent` there must be safe to repeat.
+      if (!inFunction || getAsyncCtxSync()?.execution?.executingStep) {
         return fn(handle);
       }
 

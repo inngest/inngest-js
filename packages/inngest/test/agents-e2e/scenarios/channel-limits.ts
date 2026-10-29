@@ -70,12 +70,14 @@ export const channelLimits = scenario({
     const calls = ctx.fakes.posts({ channel: "slack" });
     const starts = calls.filter((c) => c.method === "chat.startStream");
     const appends = calls.filter((c) => c.method === "chat.appendStream");
-    const accepted = appends.filter((c) => c.body.accepted === true);
+    const accepted = [...starts, ...appends].filter((c) => {
+      return c.body.accepted === true;
+    });
     const held = Math.max(...accepted.map((c) => Number(c.body.held)));
     const ids = new Set(
       accepted.flatMap((c) => {
-        return (c.body.chunks as { id: string }[]).map((chunk) => {
-          return chunk.id;
+        return (c.body.chunks as { id?: string }[]).flatMap((chunk) => {
+          return chunk.id ? [chunk.id] : [];
         });
       }),
     );
@@ -95,7 +97,9 @@ export const channelLimits = scenario({
     ctx.check(
       "a new stream begins with a summary and the card at hand, not the history",
       accepted.some((c) => {
-        const chunks = c.body.chunks as { id: string }[];
+        const chunks = (c.body.chunks as { id?: string }[]).filter((chunk) => {
+          return chunk.id;
+        });
 
         return chunks.length === 2 && chunks[0]?.id === "summary";
       }),

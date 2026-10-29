@@ -1541,6 +1541,22 @@ export function createAgentFunction(
             return step.run(id, run);
           },
           scoring ? { since: event.ts } : undefined,
+          {
+            restarts: () => {
+              return recorder.restarts;
+            },
+            inStep: () => {
+              return Boolean(getAsyncCtxSync()?.execution?.executingStep);
+            },
+            state: {
+              get: async (key) => {
+                return store.thread.get(key as never) as never;
+              },
+              set: async (key, value) => {
+                await store.thread.set(key as never, value as never);
+              },
+            },
+          },
         );
         const agentScores = createAgentScores(client);
 

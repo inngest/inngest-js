@@ -565,8 +565,16 @@ export const slack = {
       },
       stream: {
         limits: streamLimits,
-        start: async () => {
-          const user = options.user ?? eventUser;
+        continued: (restarts) => {
+          return {
+            id: `continued-${restarts}`,
+            title: "Continued in a new process",
+            status: "done",
+          };
+        },
+        start: async (startOptions) => {
+          const user =
+            startOptions.recipient?.user ?? options.user ?? eventUser;
 
           if (!user) {
             throw apiError(
@@ -576,6 +584,7 @@ export const slack = {
           }
 
           const team =
+            startOptions.recipient?.team ??
             options.team ??
             String((await call(options, "auth.test", {})).team_id ?? "");
           const started = await call(
@@ -590,11 +599,13 @@ export const slack = {
               chunks: [
                 {
                   type: "plan_update",
-                  title: truncate(
-                    escapeSlack(options.streamTitle ?? "Progress"),
-                    maxCardText,
+                  title: cardText(
+                    startOptions.title ?? options.streamTitle ?? "Progress",
                   ),
                 },
+                ...(startOptions.cards ?? []).map((card) => {
+                  return slackCard(card);
+                }),
               ],
             },
             true,
@@ -620,10 +631,12 @@ export const slack = {
             true,
           );
         },
-        stop: async (stream) => {
+        stop: async (stream, final) => {
           await call(options, "chat.stopStream", {
             channel: target.channel,
             ts: stream,
+            ...(final?.text === undefined ? {} : { markdown_text: final.text }),
+            ...(final?.blocks === undefined ? {} : { blocks: final.blocks }),
           });
         },
       },

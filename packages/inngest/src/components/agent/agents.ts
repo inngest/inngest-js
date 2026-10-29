@@ -344,11 +344,14 @@ export type {
   ChannelMessage,
   ChannelStatus,
   ChannelStream,
+  ChannelStreamFinal,
   ChannelStreamLimits,
+  ChannelStreamStart,
   ChannelTrigger,
   ReportConfig,
   ReportConfigValue,
   Reporter,
+  ReportStreamOptions,
   ReportTarget,
 } from "./channels.ts";
 export {
