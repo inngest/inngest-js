@@ -20,6 +20,7 @@ import {
   turnOf,
 } from "./recovery.ts";
 import { run } from "./test-helpers.ts";
+import { markThreadIdle } from "./threadState.ts";
 
 const refusal = (id: string) => {
   return `400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice is not supported for this model."},"request_id":"${id}"}`;
@@ -129,12 +130,22 @@ describe("decide", () => {
       fingerprint: "f",
     };
 
-    expect(failureText({ ...base, resuming: true, repeated: false })).toContain(
-      "Resuming",
-    );
-    expect(failureText({ ...base, resuming: false, repeated: true })).toContain(
-      "again the same way",
-    );
+    expect(
+      failureText({
+        ...base,
+        resuming: true,
+        repeated: false,
+        superseded: false,
+      }),
+    ).toContain("Resuming");
+    expect(
+      failureText({
+        ...base,
+        resuming: false,
+        repeated: true,
+        superseded: false,
+      }),
+    ).toContain("again the same way");
   });
 });
 
@@ -221,9 +232,10 @@ describe("the finished function", () => {
       async () => {},
     );
     const lastRun = async () => {
-      return (await store.with(client).scope("thread", "t1").get("__state")) as
-        | { lastRun?: LastRun }
-        | undefined;
+      return (await store
+        .with(client)
+        .scope("thread", "t1")
+        .get("__lastRun")) as LastRun | undefined;
     };
 
     const seed = async (record: Record<string, unknown>) => {
@@ -238,7 +250,7 @@ describe("the finished function", () => {
         });
     };
 
-    return { agent, sent, posts, lastRun, seed };
+    return { agent, sent, posts, lastRun, seed, store, client };
   };
 
   test("is one function of the agent, listening for how its runs end", () => {
@@ -252,7 +264,7 @@ describe("the finished function", () => {
 
     await run(agent.finished, { event: finishedEvent("r1", "Completed") });
 
-    expect((await lastRun())?.lastRun).toMatchObject({
+    expect(await lastRun()).toMatchObject({
       runId: "r1",
       status: "completed",
     });
@@ -265,7 +277,7 @@ describe("the finished function", () => {
 
     await run(agent.finished, { event: finishedEvent("r1", "Cancelled") });
 
-    expect((await lastRun())?.lastRun).toMatchObject({
+    expect(await lastRun()).toMatchObject({
       runId: "r1",
       status: "cancelled",
     });
@@ -280,11 +292,11 @@ describe("the finished function", () => {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect((await lastRun())?.lastRun).toMatchObject({
+    expect(await lastRun()).toMatchObject({
       status: "failed",
       error: "boom",
     });
-    expect((await lastRun())?.lastRun?.recovery).toBeUndefined();
+    expect((await lastRun())?.recovery).toBeUndefined();
     expect(sent).toEqual([]);
     expect(posts).toEqual([]);
   });
@@ -297,7 +309,7 @@ describe("the finished function", () => {
     });
 
     expect(posts).toEqual(["Hit an error: boom. Resuming in a fresh run."]);
-    expect((await lastRun())?.lastRun).toMatchObject({
+    expect(await lastRun()).toMatchObject({
       status: "failed",
       recovery: "resumed",
     });
@@ -323,7 +335,7 @@ describe("the finished function", () => {
     });
 
     expect(posts[1]).toContain("again the same way");
-    expect((await lastRun())?.lastRun).toMatchObject({
+    expect(await lastRun()).toMatchObject({
       runId: "r2",
       recovery: "stuck",
     });
@@ -391,7 +403,7 @@ describe("the finished function", () => {
 
     expect(posts).toEqual(["Hit an error: boom."]);
     expect(sent).toEqual([]);
-    expect((await lastRun())?.lastRun?.recovery).toBeUndefined();
+    expect((await lastRun())?.recovery).toBeUndefined();
   });
 
   test("the turn in flight is the one resent, not the message that started the run", async () => {
@@ -476,6 +488,49 @@ describe("the finished function", () => {
     ]);
   });
 
+  test("the cleanup marking the thread idle does not touch lastRun", async () => {
+    const { agent, lastRun, seed, store, client } = setup();
+
+    await seed({ status: "waiting", runId: "r1" });
+    await run(agent.finished, { event: finishedEvent("r1", "Completed") });
+    await run(
+      client.createFunction(
+        { id: "idle", triggers: [{ event: "x" }] },
+        async () => {
+          await markThreadIdle(store, "t1", "r1");
+        },
+      ),
+      { event: { name: "x", data: {} } },
+    );
+
+    expect(await lastRun()).toMatchObject({ runId: "r1", status: "completed" });
+  });
+
+  test("a failure after a honored stop resends nothing", async () => {
+    const { agent, sent, seed } = setup({ recovery: true });
+
+    await seed({ status: "stopped", runId: "r1" });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
+    });
+
+    expect(sent).toEqual([]);
+  });
+
+  test("a newer run on the thread is named in what is said", async () => {
+    const { agent, posts, seed } = setup({ recovery: true });
+
+    await seed({ status: "running", runId: "01K00000000000000000000009" });
+    await run(agent.finished, {
+      event: finishedEvent("01J00000000000000000000001", "Failed", {
+        name: "Error",
+        message: "boom",
+      }),
+    });
+
+    expect(posts[0]).toContain("A newer run has the thread");
+  });
+
   test("a run that ended before a newer one's record does not overwrite it", async () => {
     const { agent, lastRun } = setup();
     const newer = "01K00000000000000000000009";
@@ -486,7 +541,7 @@ describe("the finished function", () => {
       event: finishedEvent(older, "Failed", { name: "Error", message: "late" }),
     });
 
-    expect((await lastRun())?.lastRun?.runId).toBe(newer);
+    expect((await lastRun())?.runId).toBe(newer);
   });
 });
 
@@ -503,9 +558,14 @@ describe("what the body is told", () => {
   const seeded = async (
     record: Record<string, unknown>,
     body: Parameters<typeof createAgentFunction>[2],
+    lastRun?: LastRun,
   ) => {
     const client = new Inngest({ id: testClientId });
     const store = createKv({ adapter: memoryKvAdapter() });
+
+    if (lastRun) {
+      await store.with(client).scope("thread", "t1").set("__lastRun", lastRun);
+    }
 
     await store
       .with(client)
@@ -535,9 +595,13 @@ describe("what the body is told", () => {
   };
 
   test("previousRun is how the run before this one ended", async () => {
-    const { agent } = await seeded({ lastRun: previous }, async (ctx) => {
-      return ctx.previousRun;
-    });
+    const { agent } = await seeded(
+      {},
+      async (ctx) => {
+        return ctx.previousRun;
+      },
+      previous,
+    );
 
     const { output } = await run(agent.fn, { event: trigger });
 
