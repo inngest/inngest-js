@@ -5,7 +5,8 @@
  * start a Dev Server and a Redis in the job instead of using devstack. Some
  * scenarios need a backend newer than the published Dev Server, so
  * `agentsBase` builds the one that `kit/oss-pins.json` pins, with Redis, into
- * a cached image. The scenarios then run in parallel shards.
+ * a cached image. The docs submodule of that checkout is private and not
+ * fetched, so the build writes a stub docs page for the Go embed. The scenarios then run in parallel shards.
  *
  * @module
  */
@@ -55,6 +56,8 @@ export const agentsBase = ci.job(
       cd /tmp/oss
       git fetch -q --depth 1 https://github.com/inngest/inngest "$pin"
       git checkout -q FETCH_HEAD
+      mkdir -p internal/embeddocs/website/pages/docs
+      echo "# Inngest docs" > internal/embeddocs/website/pages/docs/index.md
       goversion=$(awk '/^go /{print $2}' go.mod)
       arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
       curl -fsSL "https://go.dev/dl/go$goversion.linux-$arch.tar.gz" | tar -C /usr/local -xz
