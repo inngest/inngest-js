@@ -25,6 +25,7 @@ export type {
   AnthropicReply,
 } from "./anthropic.ts";
 export { anthropic, anthropicPrices } from "./anthropic.ts";
+export type { AgentCompaction, AgentCompactionOptions } from "./context.ts";
 export type {
   AgentPrice,
   AgentPriceFunction,

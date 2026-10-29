@@ -74,7 +74,6 @@ export const anthropicModel = scenario({
             system: "Be terse.",
             prompt: "What is 2 + 3?",
             tools: { add },
-            context: false,
             price: anthropicPrices,
           });
           const second = await agent.loop({

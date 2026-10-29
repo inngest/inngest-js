@@ -136,10 +136,9 @@ export interface AnthropicOptions {
    * where people answer after more than five minutes. `false` sends no
    * breakpoints. Default `{ ttl: "5m" }`.
    *
-   * The loop's default `context` shortens old tool results once a
-   * conversation passes 200,000 characters, which changes the cached prefix
-   * on every call after that. Pass `context: false` to `agent.loop()` to keep
-   * the cache working in long conversations.
+   * The loop sends the whole conversation unchanged by default, so each call
+   * reads the cached prefix of the one before. Set `compaction` on
+   * `agent.loop()` to summarise only near the context limit.
    */
   cache?: false | { ttl?: "5m" | "1h" };
 
@@ -630,7 +629,6 @@ const importClient = async (
  *   model: claude,
  *   prompt: "Fix the failing test",
  *   tools: sandbox.tools.code(),
- *   context: false,
  *   price: anthropicPrices,
  * });
  * ```

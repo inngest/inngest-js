@@ -11,10 +11,10 @@ const claude = agent.anthropic({
   cache: { ttl: "1h" },
 });
 
-await agent.loop({ model: claude, prompt, tools, context: false, price: anthropicPrices });
+await agent.loop({ model: claude, prompt, tools, price: anthropicPrices });
 ```
 
-- **Prompt caching:** breakpoints go on the system prompt (which caches the tools with it), the end of the conversation and where the previous call's conversation ended, so each call reads what the one before wrote. `cache.ttl` is `"5m"` or `"1h"`, and `false` turns it off. Pass `context: false` to `agent.loop()` so its old-result shortening does not change the cached prefix.
+- **Prompt caching:** breakpoints go on the system prompt (which caches the tools with it), the end of the conversation and where the previous call's conversation ended, so each call reads what the one before wrote. `cache.ttl` is `"5m"` or `"1h"`, and `false` turns it off. The loop sends the whole conversation unchanged, so the cached prefix holds across calls.
 - **Usage and cost:** `AgentUsage` gains `cacheRead`, `cacheWrite` and `cacheWrite1h` (`input` includes them), model steps write `agent.cache_read_tokens` and `agent.cache_write_tokens` scores, and a `price` table can set `cacheRead`, `cacheWrite` and `cacheWrite1h` rates. `anthropicPrices` is a default table for the current Claude models; spread it to override.
 - **Errors:** a 400, 401, 403 or 404, a refusal, and a reply cut off by `maxTokens` fail the step for good; 429, 529 and 5xx are retried, after the `retry-after` the API sent.
 

@@ -8,6 +8,7 @@
  * calls your SDK of choice and answers in the small shape below.
  */
 
+import hashjs from "hash.js";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
 import {
@@ -20,8 +21,13 @@ import {
   toolDefinitions,
   toolErrorOf,
 } from "../sandbox/tools.ts";
+import type { DurableSandbox } from "../sandbox/types.ts";
 import { anthropic } from "./anthropic.ts";
-import { clipContext } from "./context.ts";
+import {
+  type AgentCompaction,
+  type AgentCompactionOptions,
+  withCompaction,
+} from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
 import { nextCount } from "./executionCounter.ts";
 import { invoke } from "./invoke.ts";
@@ -353,10 +359,20 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   tools?: TTools;
 
   /**
-   * The most characters of one tool result the model sees; longer ones keep
-   * their start and end. Default 8000.
+   * The most characters of one tool result the model sees; a longer one keeps
+   * its start and end and says how much is missing. Set it high: a result cut
+   * short is information the model never gets back, unless `spill` saves the
+   * whole of it. Default 100000.
    */
   maxToolOutput?: number;
+
+  /**
+   * Where the whole of a result goes when it is longer than `maxToolOutput`:
+   * a file in a sandbox, whose path the model is told, so it can read the
+   * part it needs with a tool. `dir` is where the files go and must exist.
+   * Default: nothing is saved. Example: `spill: { sandbox }`.
+   */
+  spill?: { sandbox: Pick<DurableSandbox, "files">; dir?: string };
 
   /**
    * Run the tool calls of one reply at the same time, and give the model
@@ -404,13 +420,17 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   wrapUp?: string;
 
   /**
-   * How much conversation to send the model on each call: old tool results are
-   * shortened, oldest first, once the messages pass `maxChars` characters,
-   * and the last few messages are always whole. Nothing is removed from the
-   * `history` you get back. Default `{ maxChars: 200_000 }` (about 50,000
-   * tokens, well inside any current model's window); `false` sends it all.
+   * Summarises the start of the conversation once it nears the model's
+   * context window. Until then every call sends the whole conversation, so a
+   * provider's prompt cache keeps hitting the same prefix and no old message
+   * or tool result is ever edited. Past `maxTokens`, everything but the last
+   * `keep` messages becomes one summary message. The summary is made once,
+   * kept in that model step's saved output (so a replay restores it) and
+   * reused until the conversation passes the budget again. The `history` you
+   * get back is never summarised. Default: off, the conversation is always
+   * sent whole. Example: `compaction: { maxTokens: 700_000 }`.
    */
-  context?: { maxChars: number } | false;
+  compaction?: AgentCompactionOptions;
 
   /**
    * Called when a tool call finishes, to record or show each call. It runs in
@@ -507,6 +527,61 @@ const clip = (text: string, max: number): string => {
   const half = max / 2;
 
   return `${text.slice(0, half)}\n... clipped ${text.length - max} characters ...\n${text.slice(-half)}`;
+};
+
+const addUsage = (
+  base: AgentUsage | undefined,
+  extra: AgentUsage,
+): AgentUsage => {
+  const total: AgentUsage = {
+    input: (base?.input ?? 0) + extra.input,
+    output: (base?.output ?? 0) + extra.output,
+  };
+
+  for (const key of ["cacheRead", "cacheWrite", "cacheWrite1h"] as const) {
+    if (base?.[key] !== undefined || extra[key] !== undefined) {
+      total[key] = (base?.[key] ?? 0) + (extra[key] ?? 0);
+    }
+  }
+
+  return total;
+};
+
+/**
+ * The text of a result the model sees: whole, or clipped with the whole saved
+ * to a sandbox file when `spill` is set.
+ */
+const shown = async (
+  options: { maxToolOutput: number; spill?: AgentLoopOptions["spill"] },
+  stepId: string,
+  name: string,
+  content: string,
+): Promise<string> => {
+  if (content.length <= options.maxToolOutput) {
+    return content;
+  }
+
+  const clipped = clip(content, options.maxToolOutput);
+
+  if (!options.spill) {
+    return clipped;
+  }
+
+  // Named by the content, so runs sharing a sandbox never overwrite a file a
+  // conversation was told about.
+  const hash = hashjs.sha256().update(content).digest("hex").slice(0, 16);
+  const path = `${options.spill.dir ?? "/tmp"}/tool-output-${hash}.txt`;
+
+  try {
+    await options.spill.sandbox.files.write(
+      { id: `${stepId}:spill`, name: `Save the full output of ${name}` },
+      { path, data: content },
+    );
+  } catch (error) {
+    return `${clipped}\nThe full output could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  return `${clipped}\nThe full output is saved in the sandbox at ${path}`;
 };
 
 /**
@@ -618,7 +693,7 @@ const runTool = async <TTools extends SandboxTools>(
       toolCallId: call.id,
       name: call.name,
       input: call.input,
-      content: clip(content ?? "", options.maxToolOutput),
+      content: await shown(options, stepId, call.name, content ?? ""),
       ...(isError && { isError }),
     },
   };
@@ -698,9 +773,8 @@ const loop = async <TTools extends SandboxTools>(
     system,
     tools = {} as TTools,
     maxTurns = 40,
-    maxToolOutput = 8_000,
+    maxToolOutput = 100_000,
     parallelTools = true,
-    context = { maxChars: 200_000 },
     scores = true,
   } = options;
   const id = uniqueLoopId(options.id ?? "agent");
@@ -714,6 +788,8 @@ const loop = async <TTools extends SandboxTools>(
   let text = "";
   // Steering messages folded in since the last model call.
   let steered = 0;
+  // The summary of the conversation's start, once there is one.
+  let compaction: AgentCompaction | undefined;
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
     const spent = await options.budget?.(turn);
@@ -739,15 +815,38 @@ const loop = async <TTools extends SandboxTools>(
       },
       async () => {
         const last = turn === maxTurns && options.wrapUp !== undefined;
-        const sent = context
-          ? clipContext(messages, context.maxChars)
-          : messages;
         const started = Date.now();
         let answer: AgentModelResponse;
+        let made: AgentCompaction | undefined;
+        let summaryUsage: AgentUsage | undefined;
+        let sent = messages;
 
         // A 4xx no retry can fix (a rejected request, a bad key) ends the run
         // instead of retrying it.
         try {
+          if (options.compaction) {
+            const compacted = await withCompaction({
+              messages,
+              held: compaction,
+              options: options.compaction,
+              summarise: async (summaryPrompt, text) => {
+                const summary = await model({
+                  system: summaryPrompt,
+                  messages: [{ role: "user", content: text }],
+                  tools: [],
+                  turn,
+                  maxTurns,
+                });
+
+                return { text: summary.text ?? "", usage: summary.usage };
+              },
+            });
+
+            sent = compacted.messages;
+            made = compacted.made;
+            summaryUsage = compacted.usage;
+          }
+
           answer = await model({
             system,
             messages: last
@@ -786,7 +885,11 @@ const loop = async <TTools extends SandboxTools>(
 
         // Priced here and stored with the reply, so a replay uses the number
         // the call was priced at. A reply that reported no tokens costs nothing.
-        return options.price
+        if (summaryUsage) {
+          answer = { ...answer, usage: addUsage(answer.usage, summaryUsage) };
+        }
+
+        const priced = options.price
           ? {
               ...answer,
               usd: priceOf(
@@ -796,9 +899,17 @@ const loop = async <TTools extends SandboxTools>(
               ),
             }
           : answer;
+
+        // A compaction made here rides in the step's output, so a replay,
+        // which does not run this function, still restores it.
+        return made ? { ...priced, compaction: made } : priced;
       },
-    )) as AgentModelResponse & { usd?: number };
+    )) as AgentModelResponse & { usd?: number; compaction?: AgentCompaction };
     steered = 0;
+
+    if (reply.compaction) {
+      compaction = reply.compaction;
+    }
 
     const callUsage = reply.usage ?? { input: 0, output: 0 };
     // A step memoized before the cost was stored with it has no `usd`: price

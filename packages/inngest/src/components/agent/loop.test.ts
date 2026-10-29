@@ -11,6 +11,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { type AgentTool, type SandboxTool, tool } from "../sandbox/tools.ts";
+import { anthropic } from "./anthropic.ts";
 import {
   type AgentLoopOptions,
   type AgentLoopResult,
@@ -904,50 +905,208 @@ describe("agent.loop", () => {
         return "x".repeat(5_000);
       },
     });
+    const bigLengths = (messages: AgentMessage[] | undefined) => {
+      return messages?.flatMap((message) => {
+        return message.role === "tool"
+          ? message.results.map((r) => r.content.length)
+          : [];
+      });
+    };
     const script = [
       call("big", {}),
       call("big", {}),
       call("big", {}),
+      say("SUMMARY"),
       call("big", {}),
       say("ok"),
     ];
 
-    test("shortens old tool results by default and keeps the history whole", async () => {
-      const { requests, result } = await run(script, {
-        tools: { big },
-        context: { maxChars: 8_000 },
-      });
-      const lengths = (index: number) => {
-        return requests[index]?.messages.flatMap((message) => {
-          return message.role === "tool"
-            ? message.results.map((r) => r.content.length)
-            : [];
-        });
-      };
+    test("sends the whole conversation by default", async () => {
+      const { requests, result } = await run(
+        [call("big", {}), call("big", {}), call("big", {}), say("ok")],
+        { tools: { big } },
+      );
 
-      expect(lengths(4)?.[0]).toBeLessThan(300);
-      expect(lengths(4)?.at(-1)).toBe(5_000);
-      expect(
-        result?.history.flatMap((message) => {
-          return message.role === "tool"
-            ? message.results.map((r) => r.content.length)
-            : [];
-        }),
-      ).toEqual([5_000, 5_000, 5_000, 5_000]);
+      expect(bigLengths(requests[3]?.messages)).toEqual([5_000, 5_000, 5_000]);
+      expect(result?.stopped).toBe("done");
     });
 
-    test("sends everything when it is off or under the budget", async () => {
-      for (const context of [false as const, { maxChars: 1_000_000 }]) {
-        const { requests } = await run(script, { tools: { big }, context });
+    test("each call sends the previous call's messages unchanged first", async () => {
+      const { requests } = await run(
+        [call("big", {}), call("big", {}), call("big", {}), say("ok")],
+        { tools: { big } },
+      );
 
-        expect(
-          requests[4]?.messages.flatMap((message) => {
-            return message.role === "tool"
-              ? message.results.map((r) => r.content.length)
-              : [];
-          }),
-        ).toEqual([5_000, 5_000, 5_000, 5_000]);
+      for (let index = 1; index < requests.length; index += 1) {
+        const before = requests[index - 1]?.messages ?? [];
+
+        expect(requests[index]?.messages.slice(0, before.length)).toEqual(
+          before,
+        );
       }
+    });
+
+    test("summarises the start once near the budget and keeps the history whole", async () => {
+      const { requests, result } = await run(script, {
+        tools: { big },
+        compaction: { maxTokens: 4_000, keep: 2 },
+      });
+      const summarising = requests[3];
+
+      expect(summarising?.tools).toEqual([]);
+      expect(summarising?.messages).toHaveLength(1);
+      expect(requests[4]?.messages).toHaveLength(3);
+      expect(requests[4]?.messages[0]).toMatchObject({
+        role: "user",
+        content: expect.stringContaining("SUMMARY"),
+      });
+      expect(bigLengths(requests[4]?.messages)).toEqual([5_000]);
+      expect(result?.history).toHaveLength(10);
+      expect(bigLengths(result?.history)).toEqual([5_000, 5_000, 5_000, 5_000]);
+    });
+
+    test("a replay restores the summary and does not make another", async () => {
+      const { requests } = await run(script, {
+        tools: { big },
+        compaction: { maxTokens: 4_000, keep: 2 },
+      });
+
+      // The function re-runs after every step; only the first run of the
+      // model step called the model, and the later turns still start from
+      // the stored summary.
+      expect(requests).toHaveLength(6);
+      expect(requests[5]?.messages[0]).toMatchObject({
+        content: expect.stringContaining("SUMMARY"),
+      });
+      expect(requests[5]?.messages).toHaveLength(5);
+    });
+
+    test("counts the summary call's tokens in the turn", async () => {
+      const { result } = await run(script, {
+        tools: { big },
+        compaction: { maxTokens: 4_000, keep: 2 },
+      });
+
+      // 6 model calls of 10 input and 5 output tokens each.
+      expect(result?.usage).toMatchObject({ input: 60, output: 30 });
+    });
+
+    test("uses your own summariser", async () => {
+      const { requests } = await run(
+        [
+          call("big", {}),
+          call("big", {}),
+          call("big", {}),
+          call("big", {}),
+          say("ok"),
+        ],
+        {
+          tools: { big },
+          compaction: {
+            maxTokens: 4_000,
+            keep: 2,
+            summarise: async ({ messages }) => {
+              return `mine of ${messages.length}`;
+            },
+          },
+        },
+      );
+
+      expect(requests).toHaveLength(5);
+      expect(requests[3]?.messages[0]).toMatchObject({
+        content: expect.stringContaining("mine of 5"),
+      });
+    });
+
+    test("keeps the conversation whole when the summary comes back empty", async () => {
+      const { requests } = await run(
+        [call("big", {}), call("big", {}), call("big", {}), say(""), say("ok")],
+        { tools: { big }, compaction: { maxTokens: 4_000, keep: 2 } },
+      );
+
+      expect(requests[4]?.messages).toHaveLength(7);
+    });
+
+    test("never cuts between a reply and its tool results", async () => {
+      const { requests } = await run(
+        [
+          call("big", {}),
+          call("big", {}),
+          call("big", {}),
+          say("S"),
+          say("ok"),
+        ],
+        { tools: { big }, compaction: { maxTokens: 4_000, keep: 1 } },
+      );
+      const summarised = requests[4]?.messages ?? [];
+
+      expect(summarised[1]?.role).not.toBe("tool");
+    });
+  });
+
+  describe("long tool output", () => {
+    const long = tool.step({
+      input: z.object({}),
+      run: () => {
+        return "y".repeat(200_000);
+      },
+    });
+
+    test("keeps up to 100000 characters by default, then says what is missing", async () => {
+      const { requests } = await run([call("long", {}), say("ok")], {
+        tools: { long },
+      });
+      const result = (
+        requests[1]?.messages.at(-1) as { results: { content: string }[] }
+      ).results[0]?.content;
+
+      expect(result).toContain("clipped 100000 characters");
+    });
+
+    test("falls back to the clipped text when saving fails", async () => {
+      const { requests } = await run([call("long", {}), say("ok")], {
+        tools: { long },
+        spill: {
+          sandbox: {
+            files: {
+              write: async () => {
+                throw new Error("no such dir");
+              },
+              read: async () => new Uint8Array(),
+            },
+          },
+        },
+      });
+
+      expect(JSON.stringify(requests[1]?.messages.at(-1))).toContain(
+        "could not be saved: no such dir",
+      );
+    });
+
+    test("saves the whole output to a sandbox file with spill", async () => {
+      const writes: { path: string; data: string | Uint8Array }[] = [];
+      const { requests } = await run([call("long", {}), say("ok")], {
+        tools: { long },
+        spill: {
+          sandbox: {
+            files: {
+              write: async (id, file) => {
+                await step.run(id as string, () => {
+                  writes.push(file);
+                });
+              },
+              read: async () => new Uint8Array(),
+            },
+          },
+        },
+      });
+      const result = (
+        requests[1]?.messages.at(-1) as { results: { content: string }[] }
+      ).results[0]?.content;
+
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.data).toHaveLength(200_000);
+      expect(result).toContain(`saved in the sandbox at ${writes[0]?.path}`);
     });
   });
 
@@ -1322,5 +1481,63 @@ describe("agent.loop scores", () => {
       "agent.cache_read_tokens": 90,
       "agent.cache_write_tokens": 10,
     });
+  });
+});
+
+describe("prompt cache prefix with anthropic()", () => {
+  const stripCache = (value: unknown): unknown => {
+    return JSON.parse(
+      JSON.stringify(value, (key, inner) => {
+        return key === "cache_control" ? undefined : inner;
+      }),
+    );
+  };
+
+  test("every request starts with the messages of the one before, unedited", async () => {
+    const bodies: { messages: unknown[] }[] = [];
+    const replies = [1, 2, 3].map((n) => {
+      return {
+        content: [{ type: "tool_use", id: `t${n}`, name: "big", input: {} }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      };
+    });
+    const client = {
+      messages: {
+        create: async (body: { messages: unknown[] }) => {
+          bodies.push(structuredClone(body));
+
+          return (replies[bodies.length - 1] ?? {
+            content: [{ type: "text", text: "ok", citations: null }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 5 },
+          }) as never;
+        },
+      },
+    };
+    const big = tool.step({
+      input: z.object({}),
+      run: () => {
+        return "z".repeat(150_000);
+      },
+    });
+
+    await run([], {
+      model: anthropic({ model: "claude-sonnet-5-5", client }),
+      tools: { big },
+    });
+
+    expect(bodies).toHaveLength(4);
+
+    for (let index = 1; index < bodies.length; index += 1) {
+      const before = stripCache(bodies[index - 1]?.messages) as unknown[];
+
+      expect(
+        (stripCache(bodies[index]?.messages) as unknown[]).slice(
+          0,
+          before.length,
+        ),
+      ).toEqual(before);
+    }
   });
 });
