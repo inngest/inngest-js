@@ -322,8 +322,8 @@ export interface AgentFunctionConfig<
   /**
    * KV store for thread state, or a function that returns one, called at each
    * use (so a Worker can build it from the bindings of the current request).
-   * Default: the store given to `createAgents`, else Redis at
-   * `INNGEST_EXPERIMENTAL_KV_URL`.
+   * Default: the `store` option of
+   * `createAgents(client, { store })`, else Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: KvSource;
 
@@ -1404,7 +1404,7 @@ export function createAgentFunction(
           (message.content !== undefined || message.event !== undefined),
         resume:
           ended.status === "failed" && recovery
-            ? recovery.resume !== false
+            ? recovery.resume !== false && !ended.error?.nonRetriable
             : undefined,
       });
       if (!recovery || ended.status !== "failed") {
