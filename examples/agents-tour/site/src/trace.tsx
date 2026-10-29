@@ -13,8 +13,20 @@ import { Kbd } from "./keyboard.tsx";
 const housekeepingName =
   /^(kv\.|thread:|inbox:\d+:(open|close|stop)$|executor\.(?!nonstep)|metadata)/;
 
+// The SDK's `thread:start` step is displayed as "Thread state", so the id,
+// the name and the display name are all checked.
+const housekeepingLabel = /^Thread state$/;
+
 const isHousekeeping = (step: TraceStep) => {
-  return housekeepingName.test(step.name);
+  return (
+    housekeepingName.test(step.name) ||
+    housekeepingName.test(step.id) ||
+    housekeepingLabel.test(step.name)
+  );
+};
+
+const isFinalization = (step: TraceStep) => {
+  return step.name === "executor.nonstep";
 };
 
 // A gap this long between two steps of a run is the run parked, waiting for
@@ -62,7 +74,7 @@ const kindOf = (step: TraceStep): IconKind => {
     return "wait";
   }
 
-  if (step.name === "executor.nonstep") {
+  if (isFinalization(step)) {
     return "code";
   }
 
@@ -103,11 +115,27 @@ const Icon = ({ kind }: { kind: IconKind }) => {
 };
 
 const label = (step: TraceStep) => {
-  if (step.name === "executor.nonstep") {
+  if (isFinalization(step)) {
     return "Finalization";
   }
 
   return step.name;
+};
+
+// The run ends where its Finalization span ends, or at the run's own finish
+// time when no such span was recorded. Null while the run is still going.
+const finishOf = (run: TraceRun): number | null => {
+  let finalEnd: number | null = null;
+
+  for (const step of run.steps) {
+    const end = isFinalization(step) ? time(step.endedAt) : null;
+
+    if (end !== null && (finalEnd === null || end > finalEnd)) {
+      finalEnd = end;
+    }
+  }
+
+  return finalEnd ?? time(run.endedAt);
 };
 
 const rounded = (ms: number) => {
@@ -399,43 +427,36 @@ const Run = ({
       return next;
     });
   };
-  // A finished run stops the clock at its end, so no bar stays open.
-  const clock = live ? now : (time(run.endedAt) ?? now);
+  // The run's end is the end of its Finalization span: it grows with the
+  // clock while the run goes and locks once Finalization has ended.
+  const finish = finishOf(run);
+  const clock = finish ?? now;
   const rows = useMemo(() => {
-    return rowsOf(run.steps, everything, clock, live);
-  }, [run.steps, everything, clock, live]);
+    return rowsOf(run.steps, everything, clock, live && finish === null);
+  }, [run.steps, everything, clock, live, finish]);
 
   const starts = [time(run.queuedAt), time(run.startedAt)].filter(
     (value): value is number => {
       return value !== null;
     },
   );
-  const walk = (steps: TraceStep[], out: number[]) => {
-    for (const step of steps) {
+  const firstStart = (steps: TraceStep[]): number[] => {
+    return steps.flatMap((step) => {
       const start = time(step.startedAt);
-      const end = endOf(step, clock);
 
-      if (start !== null) {
-        out.push(start);
-      }
-
-      if (end !== null) {
-        out.push(end);
-      }
-
-      walk(step.children, out);
-    }
-
-    return out;
+      return [...(start === null ? [] : [start]), ...firstStart(step.children)];
+    });
   };
-  const all = walk(run.steps, [...starts]);
-  const t0 = Math.min(...all, clock);
-  const t1 = Math.max(...all, clock, t0 + 500);
+  const t0 = Math.min(...starts, ...firstStart(run.steps), clock);
+  const t1 = Math.max(clock, t0 + 1);
   const span = t1 - t0;
   const bar = (from: number, to: number) => {
+    const left = Math.min(Math.max(from, t0), t1);
+    const right = Math.min(Math.max(to, left), t1);
+
     return {
-      left: `min(${((from - t0) / span) * 100}%, calc(100% - 12px))`,
-      width: `${Math.max(0.8, ((to - from) / span) * 100)}%`,
+      left: `min(${((left - t0) / span) * 100}%, calc(100% - 12px))`,
+      width: `${Math.max(0.8, ((right - left) / span) * 100)}%`,
     };
   };
 
