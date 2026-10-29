@@ -5,7 +5,7 @@
  */
 import { Inngest } from "../Inngest.ts";
 import { github } from "./github.ts";
-import { createKv, kvFrom, memoryKvAdapter } from "./kv.ts";
+import { createKv, kv, kvFrom, memoryKvAdapter } from "./kv.ts";
 import { slack } from "./slack.ts";
 import { getThread } from "./thread.ts";
 
@@ -30,14 +30,17 @@ describe("kvFrom", () => {
 
     expect(await first.with(client).env.get("k")).toBe(1);
     expect(await second.with(client).env.get("k")).toBe(2);
-    expect(calls).toBeGreaterThan(1);
+    expect(calls).toBe(2);
   });
 
   test("a value is returned as it is, and nothing is the default kv", () => {
     const own = createKv({ adapter: memoryKvAdapter() });
 
     expect(kvFrom(own)).toBe(own);
-    expect(kvFrom(undefined)).toBeDefined();
+    expect(kvFrom(undefined)).toBe(kv);
+    expect(
+      (kvFrom(() => own) as unknown as { then?: unknown }).then,
+    ).toBeUndefined();
   });
 
   test("a thread handle reads the thread state through a kv function", async () => {
