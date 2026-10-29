@@ -112,7 +112,7 @@ export function stripInngestMetadata(event: {
       : undefined,
     error: parseParentError(parent_error),
     endedAt:
-      typeof parent_ended_at === "number"
+      typeof parent_ended_at === "number" && Number.isFinite(parent_ended_at)
         ? new Date(parent_ended_at)
         : undefined,
   };

@@ -111,6 +111,18 @@ Session propagation is gated by the public `sessionPropagation` client option
 
 A defer function is one Inngest function in the backend. Multiple parent functions can hold a reference to it and each call to `defer(...)` triggers an independent run.
 
+## Parent outcome
+
+The `inngest/deferred.schedule` event carries how the parent run ended in its `_inngest` metadata (`parent_status`, `parent_error`, `parent_ended_at`). The SDK strips that metadata from `event.data` and exposes it on `ctx.parents[i]`, aligned with `events[i]`, as `status` (`"Completed" | "Failed" | "Cancelled"`), `error` (`{ name, message, stack?, truncated? }`, only when the parent failed with an error) and `endedAt` (a `Date`). Against a server that predates parent outcomes these are `undefined`.
+
+```ts
+createDefer(inngest, { id: "report" }, async ({ parents }) => {
+  if (parents[0].status === "Failed") {
+    console.log(parents[0].error?.message);
+  }
+});
+```
+
 ## Implementation
 
 `defer` emits a `DeferAdd` opcode. Because it's fire-and-forget, the op has no natural moment to ship; the SDK buffers it (a "lazy op") and ships it on the next outbound message: a checkpoint, a step result, or `RunComplete`. See `ARCHITECTURE.md` for the buffering rationale and drain sites.
