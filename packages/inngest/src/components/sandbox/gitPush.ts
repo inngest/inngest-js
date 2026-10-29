@@ -75,7 +75,8 @@ export interface GitPush {
 }
 
 /**
- * One file as it is at a point of the push.
+ * One file as it is at a point of the push. A file is read whole, up to 8 MiB;
+ * a bigger one, or a submodule, makes the read throw, which fails the push.
  */
 export interface GitPushBlob {
   /**
@@ -84,7 +85,8 @@ export interface GitPushBlob {
   size: number;
 
   /**
-   * Whether git treats it as binary: a NUL byte in its first 8000 bytes.
+   * Whether it looks binary: a NUL byte in its first 8000 bytes, as git
+   * decides when it has no attributes. `.gitattributes` are not consulted.
    */
   binary: boolean;
 
@@ -94,16 +96,19 @@ export interface GitPushBlob {
   bytes: Uint8Array;
 
   /**
-   * The content as UTF-8 text, or `undefined` for a binary file.
+   * The content as UTF-8 text, or `undefined` for a binary file or one that
+   * is not valid UTF-8. A leading byte order mark is kept.
    */
   text: string | undefined;
 }
 
 /**
  * A path a push touches, with its content before and after. The "before" is
- * the file in the parent of the push's oldest new commit; the "after" is the
- * file in the pushed commit. A file the push adds has no "before", and one it
- * deletes has no "after". Each is read from the host's copy of the bundle on
+ * the file where the push forks from what the remote has (the common ancestor
+ * with the remote's tip, so for a push that is not a fast-forward it is the
+ * fork point, not the tip); the "after" is the file in the pushed commit. A
+ * path that is no file there, such as one the push adds or deletes, resolves
+ * to `undefined`. Each is read from the host's copy of the bundle on
  * first use and kept, so a policy may call them freely.
  */
 export interface GitPushFile {
@@ -124,36 +129,103 @@ export interface GitPushFile {
 }
 
 /**
- * Reads the file at `rev:path` in the repository at `repo`.
+ * The largest file a policy may read. A bundle is small, but git compresses
+ * well, so a file may be far bigger than the bundle that carries it.
+ */
+const maxFileBytes = 8 * 1024 * 1024;
+
+let reading = 0;
+const waiting: (() => void)[] = [];
+
+/**
+ * Runs `fn` with at most four reads in flight, so a policy that reads every
+ * file at once does not start a git process for each.
+ */
+const limited = async <T>(fn: () => Promise<T>): Promise<T> => {
+  while (reading >= 4) {
+    await new Promise<void>((resolve) => {
+      waiting.push(resolve);
+    });
+  }
+
+  reading++;
+
+  try {
+    return await fn();
+  } finally {
+    reading--;
+    waiting.shift()?.();
+  }
+};
+
+/**
+ * Reads the file at `rev:path` in the repository at `repo`: `undefined` when
+ * the path is not a file in that commit, and an error when git cannot say
+ * (a corrupt or missing object, a submodule, a file too big to read).
  * @param repo The repository directory.
  * @param rev A commit, or `undefined` when there is none.
  * @param path The path in that commit.
  */
-const readBlob = async (
+const readBlob = (
   repo: string,
   rev: string | undefined,
   path: string,
 ): Promise<GitPushBlob | undefined> => {
-  if (rev === undefined) {
-    return undefined;
-  }
+  return limited(async () => {
+    if (rev === undefined) {
+      return undefined;
+    }
 
-  const read = await hostGit(["cat-file", "blob", `${rev}:${path}`], {
-    cwd: repo,
+    const entry = ok(
+      await hostGit(["ls-tree", "-z", rev, "--", path], { cwd: repo }),
+      `looking up ${path}`,
+    ).split("\0")[0];
+    if (!entry) {
+      return undefined;
+    }
+
+    const [meta = "", name = ""] = entry.split("\t");
+    const [, type = "", sha = ""] = meta.split(" ");
+    if (name !== path || type === "tree") {
+      return undefined;
+    }
+
+    if (type !== "blob") {
+      throw new Error(
+        `${path} is a ${type === "commit" ? "submodule" : type}, which a policy can't read`,
+      );
+    }
+
+    const size = Number(
+      ok(
+        await hostGit(["cat-file", "-s", sha], { cwd: repo }),
+        "sizing a file",
+      ),
+    );
+    if (!(size <= maxFileBytes)) {
+      throw new Error(
+        `${path} is ${size} bytes, more than the ${maxFileBytes} a policy can read`,
+      );
+    }
+
+    const read = await hostGit(["cat-file", "blob", sha], {
+      cwd: repo,
+      bytesOnly: true,
+    });
+    ok(read, `reading ${path}`);
+
+    const raw = read.stdoutBytes;
+    const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.length);
+    const binary = bytes.subarray(0, 8000).includes(0);
+    let text: string | undefined;
+    if (!binary) {
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {}
+    }
+
+    return { size: bytes.length, binary, bytes, text };
   });
-  if (read.exitCode !== 0) {
-    return undefined;
-  }
-
-  const bytes = read.stdoutBytes;
-  const binary = bytes.subarray(0, 8000).includes(0);
-
-  return {
-    size: bytes.length,
-    binary,
-    bytes: new Uint8Array(bytes),
-    text: binary ? undefined : bytes.toString("utf8"),
-  };
 };
 
 /**
@@ -330,6 +402,11 @@ export const hostGit = async (
     header?: string;
     input?: string;
     signal?: AbortSignal;
+
+    /**
+     * Skip building the text of stdout, for content read as bytes.
+     */
+    bytesOnly?: boolean;
   } = {},
 ): Promise<GitRun> => {
   const { spawn } = await import("node:child_process");
@@ -375,7 +452,7 @@ export const hostGit = async (
       resolve({
         exitCode: code ?? 1,
         stdoutBytes,
-        stdout: stdoutBytes.toString("utf8"),
+        stdout: options.bytesOnly ? "" : stdoutBytes.toString("utf8"),
         stderr: Buffer.concat(err).toString("utf8"),
       });
     });
@@ -609,19 +686,27 @@ export const pushBundle = async (
       let ref = target.dst;
 
       if (policy) {
-        // The file before the push: the parent of its oldest new commit.
-        const oldest = commits[commits.length - 1]?.sha;
+        // The file before the push is the file where this push forks from the
+        // history the remote has: the common ancestor with the remote's tip,
+        // or for a new ref with the commits the remote is known to hold.
         const base = once(async () => {
-          if (oldest === undefined) {
+          const others =
+            oldSha !== undefined && present.has(oldSha)
+              ? [oldSha]
+              : [...present];
+          if (others.length === 0) {
             return undefined;
           }
 
-          const parent = await hostGit(
-            ["rev-parse", "--verify", "--quiet", `${oldest}^`],
-            { cwd: repo },
-          );
+          const found = await hostGit(["merge-base", sha, ...others], {
+            cwd: repo,
+          });
+          // Exit 1 is "no common ancestor": everything the push touches is new.
+          if (found.exitCode === 1) {
+            return undefined;
+          }
 
-          return parent.exitCode === 0 ? parent.stdout.trim() : undefined;
+          return ok(found, "finding where the push forks").split("\n")[0];
         });
         const files: GitPushFile[] = [...paths].sort().map((path) => {
           return {
