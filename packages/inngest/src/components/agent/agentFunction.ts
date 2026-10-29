@@ -968,11 +968,16 @@ function threadInbox(
     const data = toMessage(message);
 
     // The event stays as it came; the thread message adds its fields beside it.
-    const { event: _made, ...fields } = data as ThreadMessage & {
-      event?: unknown;
+    // A thread message that was made from a trigger event (one that recovery
+    // sends again) is that event: it keeps its name, id and data.
+    const { event: made, ...fields } = data as ThreadMessage & {
+      event?: { id?: string; name: string; data: unknown };
     };
     const unwrapped = withIs({
       ...message,
+      ...(made
+        ? { id: made.id ?? message.id, name: made.name, data: made.data }
+        : {}),
       ...fields,
       async reply(answer: unknown) {
         if (data.kind !== "request" || !data.replyTo) {

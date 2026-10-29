@@ -202,6 +202,30 @@ describe("agent function", () => {
     ]);
   });
 
+  test("a thread message made from a trigger event (sent again by recovery) is that event", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const again = await inbox.next();
+
+        return [again?.name, again?.id, again?.data, again?.content];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [
+        message("user", "retry", "t1", {
+          event: { id: "evt9", name: "slack/message", data: { text: "hi" } },
+        }),
+      ],
+    });
+
+    expect(output).toEqual(["slack/message", "evt9", { text: "hi" }, "retry"]);
+  });
+
   test("a stop message that arrives while waiting is skipped", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
