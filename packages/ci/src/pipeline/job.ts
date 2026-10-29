@@ -670,15 +670,19 @@ export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
     run.cacheSaved.set(id, ms);
   }
 
-  for (const id of built.createdSnapshots) {
-    ownSnapshot(run, id);
-  }
-
   // A build run that only reused another build's snapshot gets no defer for
   // it: its failure must not delete what the rest of the pipeline starts from.
   // The run that invoked the build still owns it.
+  const borrowed = run.build && built.reused ? built.snapshotId : undefined;
+
+  for (const id of built.createdSnapshots) {
+    ownSnapshot(run, id, { defer: id !== borrowed });
+  }
+
   if (built.snapshotId && !built.cached) {
-    ownSnapshot(run, built.snapshotId, { defer: !(run.build && built.reused) });
+    ownSnapshot(run, built.snapshotId, {
+      defer: built.snapshotId !== borrowed,
+    });
   }
 };
 
