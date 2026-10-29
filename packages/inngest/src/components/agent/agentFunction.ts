@@ -53,6 +53,7 @@ import {
   registerLimits,
 } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import type { InboxMessage, Subscription } from "./subscribe.ts";
 import {
@@ -149,6 +150,16 @@ export interface AgentFunctionConfig<
    * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
    */
   limits?: AgentLimits;
+
+  /**
+   * Whether the agent scores itself. Default: `true`. The loop scores each
+   * model and tool step (see `agent.loop()`), `report()` scores how long
+   * the first post and each gap between posts took, and a stop request sets
+   * `agent.stopped` on the step that records it. Every score rides on a
+   * step that already runs, so none adds a step. `false` turns those off;
+   * `agent.score()` still works.
+   */
+  scores?: boolean;
 }
 
 /**
@@ -201,6 +212,12 @@ export interface AgentBodyContext<
   report: Reporter;
 
   /**
+   * Your own scores, next to the ones the framework writes. See
+   * `AgentScores`.
+   */
+  agent: AgentScores;
+
+  /**
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run (`seq` 0).
    */
@@ -219,6 +236,7 @@ export interface AgentBodyContext<
     stop: () => Promise<boolean>;
     onTurn: (turn: AgentTurn) => Promise<void>;
     budget: () => string | undefined;
+    scores: boolean;
   };
 }
 
@@ -358,7 +376,7 @@ function threadInbox(
   /**
    * The subscription to the thread's events.
    */
-  inbox: Subscription<RawEvent>,
+  inbox: Subscription<unknown>,
   toMessage: (raw: RawEvent) => ThreadMessage,
   problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
 
@@ -378,19 +396,16 @@ function threadInbox(
   inbox: ThreadInbox;
 } {
   // The event each message was made from, to put it back as it came.
-  const raws = new WeakMap<object, InboxMessage<RawEvent>>();
+  const raws = new WeakMap<object, InboxMessage>();
 
-  function unwrap(
-    message: InboxMessage<RawEvent> | null,
-  ): ThreadInboxMessage | null {
+  function unwrap(message: InboxMessage | null): ThreadInboxMessage | null {
     if (!message) {
       return null;
     }
 
-    const data = toMessage(message.data);
+    const data = toMessage(message);
     const unwrapped: ThreadInboxMessage = {
-      seq: message.seq,
-      name: message.name,
+      ...message,
       data,
       async reply(answer) {
         if (data.kind !== "request" || !data.replyTo) {
@@ -416,14 +431,8 @@ function threadInbox(
     return unwrapped;
   }
 
-  function rawOf(message: InboxMessage<ThreadMessage>) {
-    return (
-      raws.get(message) ?? {
-        seq: message.seq,
-        name: message.name,
-        data: { name: message.name, data: message.data },
-      }
-    );
+  function rawOf(message: InboxMessage<ThreadMessage>): InboxMessage {
+    return raws.get(message) ?? message;
   }
 
   let delivered = 0;
@@ -432,8 +441,8 @@ function threadInbox(
   // it does not reach a live one either: it is dropped. The event that started
   // the run was checked by core, except for the payload of a request, which
   // core does not see.
-  async function skipped(raw: InboxMessage<RawEvent>) {
-    const problem = await problemOf(raw.data, raw.seq < 1);
+  async function skipped(raw: InboxMessage) {
+    const problem = await problemOf(raw, raw.seq < 1);
     if (!problem) {
       return false;
     }
@@ -446,8 +455,8 @@ function threadInbox(
   // The drop is decided again when the run replays, and the handler's logger
   // is quiet while a run replays, so the warning goes to the client's own
   // logger once per message and process.
-  function warnOnce(raw: InboxMessage<RawEvent>, problem: string) {
-    const id = `${runId}:${raw.data.id ?? raw.seq}`;
+  function warnOnce(raw: InboxMessage, problem: string) {
+    const id = `${runId}:${raw.id || raw.seq}`;
     if (warned.has(id)) {
       return;
     }
@@ -459,7 +468,7 @@ function threadInbox(
 
     warned.add(id);
     log.warn(
-      `Dropped ${raw.data.name} from the inbox: it breaks its schema (${problem}).`,
+      `Dropped ${raw.name} from the inbox: it breaks its schema (${problem}).`,
     );
   }
 
@@ -579,6 +588,7 @@ export function createAgentFunction(
   const threadExpression = singletonKey(triggers);
 
   const store = config.kv ?? defaultKv;
+  const scoring = config.scores ?? true;
 
   const cleanup = createDefer(
     client,
@@ -663,7 +673,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId);
+        const recorder = threadRecorder(store, runId, scoring);
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -696,7 +706,7 @@ export function createAgentFunction(
         // milliseconds between the run starting and this op.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the subscription.
-        await using subscription = await step.subscribe<RawEvent>("inbox", {
+        await using subscription = await step.subscribe("inbox", {
           events: [
             {
               event: agentMessageEvent,
@@ -719,8 +729,11 @@ export function createAgentFunction(
         subscription.putBack([
           {
             seq: 0,
+            id: event.id ?? "",
             name: event.name,
-            data: { id: event.id, name: event.name, data: event.data },
+            data: event.data,
+            ts: event.ts ?? 0,
+            user: {},
           },
         ]);
 
@@ -780,7 +793,9 @@ export function createAgentFunction(
           (id, run) => {
             return step.run(id, run);
           },
+          scoring ? { since: event.ts } : undefined,
         );
+        const agentScores = createAgentScores(client);
 
         let stopRequested = false;
         const { inbox } = threadInbox(
@@ -864,6 +879,7 @@ export function createAgentFunction(
           budget() {
             return budgetReason(limits);
           },
+          scores: scoring,
           async onTurn(turn: AgentTurn) {
             const next = await recorder.turn(turn);
 
@@ -894,6 +910,7 @@ export function createAgentFunction(
             sandboxTools: sandboxTools(opened),
             channels,
             report,
+            agent: agentScores,
             inbox,
             control,
           });

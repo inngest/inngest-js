@@ -40,8 +40,7 @@ const demo = client.createFunction(
 
     for (;;) {
       const message = await inbox.next();
-      const text = (message?.data as { data?: { text?: string } } | undefined)
-        ?.data?.text;
+      const text = (message?.data as { text?: string } | undefined)?.text;
 
       say(t, `next() returned message ${message?.seq}: ${text}`);
 

@@ -117,6 +117,83 @@ describe("step.subscribe", () => {
     expect(output).toEqual(["shop/order.created", "shop/refund.created"]);
   });
 
+  test("a message is the event flat with its seq: id, name, data, ts, user and seq", async () => {
+    const event = {
+      id: "evt-1",
+      name: "shop/order.created",
+      data: { total: 5 },
+      ts: 7,
+      user: { id: "u" },
+      v: "2",
+    };
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+
+        return inbox.next();
+      },
+    );
+
+    const { output } = await run(fn, { saved: [event] });
+
+    expect(output).toEqual({ ...event, seq: 1 });
+  });
+
+  test("a memo from before messages were flat ({ seq, data: event }) still replays", async () => {
+    const event = {
+      id: "evt-1",
+      name: "shop/order.created",
+      data: { total: 5 },
+      ts: 7,
+      user: {},
+    };
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const polled = await inbox.poll();
+        const unread = await inbox.close();
+
+        return [first, polled, unread];
+      },
+    );
+
+    const { output } = await run(fn, {
+      saved: [
+        { seq: 1, data: event },
+        event,
+        { seq: 3, data: { ...event, id: "evt-3" } },
+      ],
+    });
+
+    expect(output).toEqual([
+      { ...event, seq: 1 },
+      { ...event, seq: 2 },
+      [{ ...event, id: "evt-3", seq: 3 }],
+    ]);
+  });
+
+  test("a park that close() ended is the end of the subscription; any other park without a message is an error", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+
+        return inbox.next();
+      },
+    );
+
+    const closed = await run(fn, { parkAnswer: { closed: true } });
+    expect(closed.output).toBeNull();
+
+    const missing = await run(fn, { parkAnswer: { seq: 1 } });
+    expect((missing.output as { message?: string }).message).toContain(
+      "message 1 is missing",
+    );
+  });
+
   test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

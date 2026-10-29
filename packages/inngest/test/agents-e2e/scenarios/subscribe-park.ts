@@ -114,10 +114,7 @@ export const subscribePark = scenario({
             });
 
             const n = (message: { data: unknown } | null) => {
-              return (
-                (message?.data as { data?: { n?: number } } | undefined)?.data
-                  ?.n ?? null
-              );
+              return (message?.data as { n?: number } | undefined)?.n ?? null;
             };
 
             if (shape === "window") {
