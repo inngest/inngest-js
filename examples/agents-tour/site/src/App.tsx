@@ -4,7 +4,13 @@
  * panels on the right; a bar to move between pages.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Page, PageSummary, TourEvent, TourIndex, TraceRun } from "../../shared/types.ts";
+import type {
+  Page,
+  PageSummary,
+  TourEvent,
+  TourIndex,
+  TraceRun,
+} from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
@@ -50,11 +56,19 @@ export const App = () => {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [runs, setRuns] = useState<TraceRun[]>([]);
-  const [status, setStatus] = useState<Status>({ type: "status", state: "idle", text: "Connecting..." });
+  const [status, setStatus] = useState<Status>({
+    type: "status",
+    state: "idle",
+    text: "Connecting...",
+  });
   const [everything, setEverything] = useState(false);
-  const [theme, setTheme] = useState<Theme>((store.get("tour:theme") as Theme | null) ?? "system");
+  const [theme, setTheme] = useState<Theme>(
+    (store.get("tour:theme") as Theme | null) ?? "system",
+  );
   const [systemDark, setSystemDark] = useState(prefersDark());
-  const [panelHeight, setPanelHeight] = useState(Number(store.get("tour:panel")) || 260);
+  const [panelHeight, setPanelHeight] = useState(
+    Number(store.get("tour:panel")) || 260,
+  );
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
@@ -104,37 +118,37 @@ export const App = () => {
     );
   }, [index]);
 
-  const open = useCallback(
-    (id: string, push = true) => {
-      void api.page(id).then((next) => {
-        const saved = store.get(editKey(next));
-        const loaded = next.files.map((file) => {
-          return file.editable && saved !== null ? { ...file, content: saved } : file;
-        });
-
-        setPage(next);
-        setFiles(loaded);
-        setActive("agent.ts");
-        setLines([]);
-        setUndo(null);
-        setTab((next.manifest.open as Tab | undefined) ?? "output");
-        store.set("tour:last", id);
-
-        if (push) {
-          window.history.pushState(null, "", pathOf(id));
-        }
-
-        window.setTimeout(() => {
-          if (next.manifest.code === false) {
-            textPane.current?.focus();
-          } else {
-            editor.current?.focus();
-          }
-        }, 50);
+  const open = useCallback((id: string, push = true) => {
+    void api.page(id).then((next) => {
+      const saved = store.get(editKey(next));
+      const loaded = next.files.map((file) => {
+        return file.editable && saved !== null
+          ? { ...file, content: saved }
+          : file;
       });
-    },
-    [],
-  );
+
+      void api.open(next.id);
+      setPage(next);
+      setFiles(loaded);
+      setActive("agent.ts");
+      setLines([]);
+      setUndo(null);
+      setTab((next.manifest.open as Tab | undefined) ?? "output");
+      store.set("tour:last", id);
+
+      if (push) {
+        window.history.pushState(null, "", pathOf(id));
+      }
+
+      window.setTimeout(() => {
+        if (next.manifest.code === false) {
+          textPane.current?.focus();
+        } else {
+          editor.current?.focus();
+        }
+      }, 50);
+    });
+  }, []);
 
   useEffect(() => {
     if (flat.length === 0) {
@@ -179,7 +193,9 @@ export const App = () => {
 
   const hasCode = page?.manifest.code !== false;
   const live = runs.some((run) => {
-    return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(run.status);
+    return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
+      run.status,
+    );
   });
 
   const run = () => {
@@ -242,7 +258,8 @@ export const App = () => {
   };
 
   const cycleTheme = () => {
-    const next: Theme = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+    const next: Theme =
+      theme === "system" ? "light" : theme === "light" ? "dark" : "system";
 
     setTheme(next);
     store.set("tour:theme", next);
@@ -309,7 +326,11 @@ export const App = () => {
       const match = /agent\.ts:(\d+)/.exec(line.text);
 
       if (line.kind === "err" && match) {
-        out.push({ file: "agent.ts", line: Number(match[1]), message: line.text });
+        out.push({
+          file: "agent.ts",
+          line: Number(match[1]),
+          message: line.text,
+        });
       }
     }
 
@@ -325,7 +346,9 @@ export const App = () => {
     const start = event.clientY;
     const from = panelHeight;
     const move = (next: PointerEvent) => {
-      setPanelHeight(Math.max(120, Math.min(600, from + (start - next.clientY))));
+      setPanelHeight(
+        Math.max(120, Math.min(600, from + (start - next.clientY))),
+      );
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -348,27 +371,54 @@ export const App = () => {
         <span className="logo" aria-hidden="true" />
         <h1>Agents Tour</h1>
         <nav>
-          <button type="button" className="ghost" onClick={() => setOverlay("contents")} aria-keyshortcuts={shortcutsOf("contents")}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setOverlay("contents")}
+            aria-keyshortcuts={shortcutsOf("contents")}
+          >
             Contents <Kbd action="contents" />
           </button>
-          <button type="button" className="ghost" onClick={() => setOverlay("search")} aria-keyshortcuts={shortcutsOf("search")}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setOverlay("search")}
+            aria-keyshortcuts={shortcutsOf("search")}
+          >
             Search <Kbd action="search" />
           </button>
-          <button type="button" className="ghost" onClick={() => setOverlay("cheat")} aria-keyshortcuts={shortcutsOf("cheat")}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setOverlay("cheat")}
+            aria-keyshortcuts={shortcutsOf("cheat")}
+          >
             Keys <Kbd action="cheat" />
           </button>
-          <button type="button" className="ghost" onClick={cycleTheme} aria-keyshortcuts={shortcutsOf("theme")}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={cycleTheme}
+            aria-keyshortcuts={shortcutsOf("theme")}
+          >
             Theme: {theme} <Kbd action="theme" />
           </button>
         </nav>
       </header>
 
       <main className={hasCode ? "split" : "single"}>
-        <section className="text" ref={textPane} tabIndex={-1} aria-label="Lesson">
+        <section
+          className="text"
+          ref={textPane}
+          tabIndex={-1}
+          aria-label="Lesson"
+        >
           <p className="crumb">{page.lessonTitle}</p>
           <h2>{page.title}</h2>
-          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: lesson text is written in this repo and escaped by renderMarkdown */}
-          <div className="prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(page.markdown) }} />
+          <div
+            className="prose"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(page.markdown) }}
+          />
         </section>
 
         {hasCode ? (
@@ -405,22 +455,45 @@ export const App = () => {
               }}
             />
             <div className="controls">
-              <button type="button" className="primary" ref={runButton} onClick={run} aria-keyshortcuts={shortcutsOf("run")}>
+              <button
+                type="button"
+                className="primary"
+                ref={runButton}
+                onClick={run}
+                aria-keyshortcuts={shortcutsOf("run")}
+              >
                 Run <Kbd action="run" />
               </button>
               {live ? (
-                <button type="button" onClick={handlers.kill} aria-keyshortcuts={shortcutsOf("kill")}>
+                <button
+                  type="button"
+                  onClick={handlers.kill}
+                  aria-keyshortcuts={shortcutsOf("kill")}
+                >
                   Kill <Kbd action="kill" />
                 </button>
               ) : null}
-              <button type="button" onClick={handlers.format} aria-keyshortcuts={shortcutsOf("format")}>
+              <button
+                type="button"
+                onClick={handlers.format}
+                aria-keyshortcuts={shortcutsOf("format")}
+              >
                 Format <Kbd action="format" />
               </button>
-              <button type="button" onClick={reset} aria-keyshortcuts={shortcutsOf("reset")}>
+              <button
+                type="button"
+                onClick={reset}
+                aria-keyshortcuts={shortcutsOf("reset")}
+              >
                 Reset <Kbd action="reset" />
               </button>
               {undo ? (
-                <button type="button" className="toast" onClick={undoReset} aria-keyshortcuts={shortcutsOf("undo")}>
+                <button
+                  type="button"
+                  className="toast"
+                  onClick={undoReset}
+                  aria-keyshortcuts={shortcutsOf("undo")}
+                >
                   Undo reset <Kbd action="undo" />
                 </button>
               ) : null}
@@ -446,17 +519,35 @@ export const App = () => {
             <div className="lower" style={{ height: panelHeight }}>
               <div className="tabs" role="tablist">
                 {panels.includes("output") ? (
-                  <button type="button" role="tab" aria-selected={tab === "output"} onClick={() => setTab("output")} aria-keyshortcuts={shortcutsOf("output")}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === "output"}
+                    onClick={() => setTab("output")}
+                    aria-keyshortcuts={shortcutsOf("output")}
+                  >
                     Output <Kbd action="output" />
                   </button>
                 ) : null}
                 {panels.includes("trace") ? (
-                  <button type="button" role="tab" aria-selected={tab === "trace"} onClick={() => setTab("trace")} aria-keyshortcuts={shortcutsOf("trace")}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === "trace"}
+                    onClick={() => setTab("trace")}
+                    aria-keyshortcuts={shortcutsOf("trace")}
+                  >
                     Trace <Kbd action="trace" />
                   </button>
                 ) : null}
                 {panels.includes("message") ? (
-                  <button type="button" role="tab" aria-selected={tab === "message"} onClick={() => setTab("message")} aria-keyshortcuts={shortcutsOf("message")}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === "message"}
+                    onClick={() => setTab("message")}
+                    aria-keyshortcuts={shortcutsOf("message")}
+                  >
                     Message <Kbd action="message" />
                   </button>
                 ) : null}
@@ -464,10 +555,18 @@ export const App = () => {
               <div className="panel" role="tabpanel">
                 {tab === "output" ? <OutputPanel lines={lines} /> : null}
                 {tab === "trace" ? (
-                  <TracePanel runs={runs} everything={everything} onToggle={handlers.everything} hint={<Kbd action="everything" />} />
+                  <TracePanel
+                    runs={runs}
+                    everything={everything}
+                    onToggle={handlers.everything}
+                    hint={<Kbd action="everything" />}
+                  />
                 ) : null}
                 {tab === "message" && target ? (
-                  <MessagePanel target={target} disabled={status.state !== "live"} />
+                  <MessagePanel
+                    target={target}
+                    disabled={status.state !== "live"}
+                  />
                 ) : null}
               </div>
             </div>
@@ -476,19 +575,39 @@ export const App = () => {
       </main>
 
       <footer className="pager">
-        <button type="button" onClick={() => go(-1)} disabled={position <= 0} aria-keyshortcuts={shortcutsOf("prev")}>
+        <button
+          type="button"
+          onClick={() => go(-1)}
+          disabled={position <= 0}
+          aria-keyshortcuts={shortcutsOf("prev")}
+        >
           Previous <Kbd action="prev" />
         </button>
         <span className="counter">
           {page.number} / {flat.length}
         </span>
-        <button type="button" className="primary" onClick={() => go(1)} aria-keyshortcuts={shortcutsOf("next")}>
-          {position >= flat.length - 1 ? "Contents" : "Next"} <Kbd action="next" />
+        <button
+          type="button"
+          className="primary"
+          onClick={() => go(1)}
+          aria-keyshortcuts={shortcutsOf("next")}
+        >
+          {position >= flat.length - 1 ? "Contents" : "Next"}{" "}
+          <Kbd action="next" />
         </button>
       </footer>
 
-      {overlay === "contents" ? <Contents index={index} current={page.id} onPick={pick} onClose={() => setOverlay(null)} /> : null}
-      {overlay === "search" ? <Search index={index} onPick={pick} onClose={() => setOverlay(null)} /> : null}
+      {overlay === "contents" ? (
+        <Contents
+          index={index}
+          current={page.id}
+          onPick={pick}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
+      {overlay === "search" ? (
+        <Search index={index} onPick={pick} onClose={() => setOverlay(null)} />
+      ) : null}
       {overlay === "cheat" ? <Cheat onClose={() => setOverlay(null)} /> : null}
     </div>
   );

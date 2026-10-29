@@ -83,7 +83,15 @@ export interface TraceRun {
 }
 
 export type TourEvent =
-  | { type: "log"; kind: "info" | "out" | "err" | "result" | "pass" | "fail"; text: string }
+  | {
+      type: "log";
+      kind: "info" | "out" | "err" | "result" | "pass" | "fail";
+      text: string;
+    }
   | { type: "clear" }
-  | { type: "status"; state: "idle" | "starting" | "live" | "failed"; text: string }
+  | {
+      type: "status";
+      state: "idle" | "starting" | "live" | "failed";
+      text: string;
+    }
   | { type: "runs"; runs: TraceRun[] };

@@ -38,7 +38,13 @@ if (!doctor({ needGo: true })) {
   process.exit(1);
 }
 
-const step = (what: string, cmd: string, args: string[], cwd: string, env = {}) => {
+const step = (
+  what: string,
+  cmd: string,
+  args: string[],
+  cwd: string,
+  env = {},
+) => {
   console.log(`\n[tour:devserver] ${what}`);
 
   const result = spawnSync(cmd, args, {
@@ -58,10 +64,25 @@ const src = join(cacheRoot, "src", sha.slice(0, 12));
 rmSync(src, { recursive: true, force: true });
 mkdirSync(src, { recursive: true });
 
-step("fetching inngest/inngest at the pinned commit", "git", ["init", "-q"], src);
+step(
+  "fetching inngest/inngest at the pinned commit",
+  "git",
+  ["init", "-q"],
+  src,
+);
 step("adding the remote", "git", ["remote", "add", "origin", ossRemote], src);
-step("fetching the commit (shallow)", "git", ["fetch", "--depth", "1", "origin", sha], src);
-step("checking it out", "git", ["checkout", "-q", "--detach", "FETCH_HEAD"], src);
+step(
+  "fetching the commit (shallow)",
+  "git",
+  ["fetch", "--depth", "1", "origin", sha],
+  src,
+);
+step(
+  "checking it out",
+  "git",
+  ["checkout", "-q", "--detach", "FETCH_HEAD"],
+  src,
+);
 
 // The Go build embeds a UI directory and the docs; neither is needed here.
 const stubs: [string, string][] = [

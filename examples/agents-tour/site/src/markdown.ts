@@ -4,7 +4,7 @@
  * own line), `code`, **bold**, *italic*, and literal `<kbd>` tags. Everything
  * else is escaped.
  */
-const escape = (text: string) => {
+const escapeHtml = (text: string) => {
   return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -16,21 +16,21 @@ const inline = (line: string) => {
   const hold = (html: string) => {
     kept.push(html);
 
-    return `\u0000${kept.length - 1}\u0000`;
+    return `@@${kept.length - 1}@@`;
   };
 
   let text = line.replace(/<kbd>(.*?)<\/kbd>/g, (_all, key: string) => {
-    return hold(`<kbd>${escape(key)}</kbd>`);
+    return hold(`<kbd>${escapeHtml(key)}</kbd>`);
   });
 
   text = text.replace(/`([^`]+)`/g, (_all, code: string) => {
-    return hold(`<code>${escape(code)}</code>`);
+    return hold(`<code>${escapeHtml(code)}</code>`);
   });
-  text = escape(text)
+  text = escapeHtml(text)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
-  return text.replace(/\u0000(\d+)\u0000/g, (_all, index: string) => {
+  return text.replace(/@@(\d+)@@/g, (_all, index: string) => {
     return kept[Number(index)] ?? "";
   });
 };

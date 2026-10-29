@@ -7,7 +7,13 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Lesson, Manifest, Page, PageFile, TourIndex } from "../shared/types.ts";
+import type {
+  Lesson,
+  Manifest,
+  Page,
+  PageFile,
+  TourIndex,
+} from "../shared/types.ts";
 
 const dirs = (path: string) => {
   return readdirSync(path, { withFileTypes: true })

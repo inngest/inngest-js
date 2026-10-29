@@ -70,7 +70,9 @@ export const addTypes = (files: Record<string, string>) => {
 };
 
 const css = (name: string) => {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
 };
 
 const defineThemes = () => {
@@ -120,7 +122,9 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
         const out: Record<string, string> = {};
 
         for (const file of latest.current.files) {
-          out[file.name] = monaco.editor.getModel(uriOf(file.name))?.getValue() ?? file.content;
+          out[file.name] =
+            monaco.editor.getModel(uriOf(file.name))?.getValue() ??
+            file.content;
         }
 
         return out;

@@ -40,21 +40,111 @@ export interface KeyDef {
 }
 
 export const keys: KeyDef[] = [
-  { id: "run", label: "Run", group: "Code", inField: ["Mod+Enter"], outside: ["r", "Mod+Enter"] },
-  { id: "kill", label: "Kill live runs", group: "Code", inField: ["Alt+Shift+K"], outside: ["x"] },
-  { id: "reset", label: "Reset the page's code", group: "Code", inField: ["Alt+Shift+R"], outside: ["R"] },
-  { id: "format", label: "Format", group: "Code", inField: ["Alt+Shift+F"], outside: ["f"] },
-  { id: "next", label: "Next page", group: "Pages", inField: ["Alt+]", "Alt+PageDown"], outside: ["ArrowRight", "j"] },
-  { id: "prev", label: "Previous page", group: "Pages", inField: ["Alt+[", "Alt+PageUp"], outside: ["ArrowLeft", "k"] },
-  { id: "contents", label: "Contents", group: "Pages", inField: ["Alt+Shift+C"], outside: ["g c"] },
-  { id: "search", label: "Search pages", group: "Pages", inField: ["Alt+Shift+P"], outside: ["/"] },
-  { id: "cheat", label: "This cheat sheet", group: "Pages", inField: ["Alt+/"], outside: ["?"] },
-  { id: "output", label: "Output panel", group: "Panels", inField: ["Alt+Shift+O"], outside: ["1", "g o"] },
-  { id: "trace", label: "Trace panel", group: "Panels", inField: ["Alt+Shift+T"], outside: ["2", "g t"] },
-  { id: "message", label: "Message panel", group: "Panels", inField: ["Alt+Shift+M"], outside: ["3", "g m"] },
-  { id: "everything", label: "Show every trace step", group: "Panels", inField: ["Alt+Shift+H"], outside: ["h"] },
-  { id: "undo", label: "Undo reset", group: "Code", inField: ["Alt+Shift+U"], outside: ["u"] },
-  { id: "theme", label: "Switch light, dark and system theme", group: "Focus", inField: ["Alt+Shift+D"], outside: ["d"] },
+  {
+    id: "run",
+    label: "Run",
+    group: "Code",
+    inField: ["Mod+Enter"],
+    outside: ["r", "Mod+Enter"],
+  },
+  {
+    id: "kill",
+    label: "Kill live runs",
+    group: "Code",
+    inField: ["Alt+Shift+K"],
+    outside: ["x"],
+  },
+  {
+    id: "reset",
+    label: "Reset the page's code",
+    group: "Code",
+    inField: ["Alt+Shift+R"],
+    outside: ["R"],
+  },
+  {
+    id: "format",
+    label: "Format",
+    group: "Code",
+    inField: ["Alt+Shift+F"],
+    outside: ["f"],
+  },
+  {
+    id: "next",
+    label: "Next page",
+    group: "Pages",
+    inField: ["Alt+]", "Alt+PageDown"],
+    outside: ["ArrowRight", "j"],
+  },
+  {
+    id: "prev",
+    label: "Previous page",
+    group: "Pages",
+    inField: ["Alt+[", "Alt+PageUp"],
+    outside: ["ArrowLeft", "k"],
+  },
+  {
+    id: "contents",
+    label: "Contents",
+    group: "Pages",
+    inField: ["Alt+Shift+C"],
+    outside: ["g c"],
+  },
+  {
+    id: "search",
+    label: "Search pages",
+    group: "Pages",
+    inField: ["Alt+Shift+P"],
+    outside: ["/"],
+  },
+  {
+    id: "cheat",
+    label: "This cheat sheet",
+    group: "Pages",
+    inField: ["Alt+/"],
+    outside: ["?"],
+  },
+  {
+    id: "output",
+    label: "Output panel",
+    group: "Panels",
+    inField: ["Alt+Shift+O"],
+    outside: ["1", "g o"],
+  },
+  {
+    id: "trace",
+    label: "Trace panel",
+    group: "Panels",
+    inField: ["Alt+Shift+T"],
+    outside: ["2", "g t"],
+  },
+  {
+    id: "message",
+    label: "Message panel",
+    group: "Panels",
+    inField: ["Alt+Shift+M"],
+    outside: ["3", "g m"],
+  },
+  {
+    id: "everything",
+    label: "Show every trace step",
+    group: "Panels",
+    inField: ["Alt+Shift+H"],
+    outside: ["h"],
+  },
+  {
+    id: "undo",
+    label: "Undo reset",
+    group: "Code",
+    inField: ["Alt+Shift+U"],
+    outside: ["u"],
+  },
+  {
+    id: "theme",
+    label: "Switch light, dark and system theme",
+    group: "Focus",
+    inField: ["Alt+Shift+D"],
+    outside: ["d"],
+  },
   {
     id: "editor",
     label: "Leave or return to the editor",
@@ -66,7 +156,10 @@ export const keys: KeyDef[] = [
 ];
 
 export const monacoOnly = [
-  { label: "Make Tab move focus instead of indenting", combo: "Ctrl+M (Ctrl+Shift+M on macOS)" },
+  {
+    label: "Make Tab move focus instead of indenting",
+    combo: "Ctrl+M (Ctrl+Shift+M on macOS)",
+  },
 ];
 
 export interface Combo {
@@ -165,10 +258,18 @@ export const hintOf = (spec: string, isMac: boolean) => {
     return spec;
   }
 
+  if (/^[A-Z]$/.test(spec)) {
+    return isMac ? `\u21e7${spec}` : `Shift+${spec}`;
+  }
+
   const parts = spec.split("+").map((part) => {
     const glyph = glyphs[part];
 
-    return glyph ? glyph[isMac ? 1 : 0] : part.length === 1 ? part.toUpperCase() : part;
+    return glyph
+      ? glyph[isMac ? 1 : 0]
+      : part.length === 1
+        ? part.toUpperCase()
+        : part;
   });
 
   return parts.join(isMac ? "" : "+");

@@ -5,7 +5,7 @@
  * everything on Ctrl-C.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, statSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createTour } from "../server/app.ts";
 import { doctor, freePort, resolveBinary, root } from "./lib.ts";
@@ -33,7 +33,10 @@ const newest = (dir: string): number => {
       continue;
     }
 
-    time = Math.max(time, entry.isDirectory() ? newest(path) : statSync(path).mtimeMs);
+    time = Math.max(
+      time,
+      entry.isDirectory() ? newest(path) : statSync(path).mtimeMs,
+    );
   }
 
   return time;
@@ -41,7 +44,10 @@ const newest = (dir: string): number => {
 
 const siteIndex = join(root, "site/dist/index.html");
 
-if (!existsSync(siteIndex) || statSync(siteIndex).mtimeMs < newest(join(root, "site"))) {
+if (
+  !existsSync(siteIndex) ||
+  statSync(siteIndex).mtimeMs < newest(join(root, "site"))
+) {
   console.log("Building the site...");
 
   const { build } = await import("vite");
@@ -77,7 +83,9 @@ if (!process.env.TOUR_NO_OPEN) {
         ? ["cmd", "/c", "start"]
         : ["xdg-open"];
 
-  spawnSync(opener[0] as string, [...opener.slice(1), tour.url], { stdio: "ignore" });
+  spawnSync(opener[0] as string, [...opener.slice(1), tour.url], {
+    stdio: "ignore",
+  });
 }
 
 let stopping = false;

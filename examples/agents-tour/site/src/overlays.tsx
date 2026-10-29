@@ -21,7 +21,9 @@ const Modal = ({
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    const focusable = box.current?.querySelector<HTMLElement>("input, button, [tabindex]");
+    const focusable = box.current?.querySelector<HTMLElement>(
+      "input, button, [tabindex]",
+    );
 
     (focusable ?? box.current)?.focus();
 
@@ -86,7 +88,9 @@ export const Contents = ({
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    list.current?.querySelector<HTMLElement>("[aria-current=true]")?.scrollIntoView({ block: "nearest" });
+    list.current
+      ?.querySelector<HTMLElement>("[aria-current=true]")
+      ?.scrollIntoView({ block: "nearest" });
   }, [cursor]);
 
   return (
@@ -143,7 +147,8 @@ export const Contents = ({
         })}
       </div>
       <p className="modal-hint">
-        <kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> opens, <kbd>Esc</kbd> closes
+        <kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> opens, <kbd>Esc</kbd>{" "}
+        closes
       </p>
     </Modal>
   );
@@ -168,7 +173,8 @@ export const Search = ({
         return lesson.pages;
       })
       .filter((page) => {
-        const text = `${page.number} ${page.title} ${page.lessonTitle}`.toLowerCase();
+        const text =
+          `${page.number} ${page.title} ${page.lessonTitle}`.toLowerCase();
 
         return words.every((word) => {
           return text.includes(word);
@@ -188,10 +194,16 @@ export const Search = ({
           setCursor(0);
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || (event.ctrlKey && event.key === "n")) {
+          if (
+            event.key === "ArrowDown" ||
+            (event.ctrlKey && event.key === "n")
+          ) {
             event.preventDefault();
             setCursor((value) => Math.min(results.length - 1, value + 1));
-          } else if (event.key === "ArrowUp" || (event.ctrlKey && event.key === "p")) {
+          } else if (
+            event.key === "ArrowUp" ||
+            (event.ctrlKey && event.key === "p")
+          ) {
             event.preventDefault();
             setCursor((value) => Math.max(0, value - 1));
           } else if (event.key === "Enter") {
@@ -221,7 +233,9 @@ export const Search = ({
             </button>
           );
         })}
-        {results.length === 0 ? <p className="empty">No page matches.</p> : null}
+        {results.length === 0 ? (
+          <p className="empty">No page matches.</p>
+        ) : null}
       </div>
     </Modal>
   );
@@ -233,7 +247,8 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
   return (
     <Modal title="Keys" onClose={onClose}>
       <p className="modal-hint">
-        The first column works while the editor or a text box has focus. The second works anywhere else.
+        The first column works while the editor or a text box has focus. The
+        second works anywhere else.
       </p>
       <div className="cheat">
         {groups.map((group) => {
@@ -252,12 +267,16 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
                           <td>{def.label}</td>
                           <td>
                             {def.inField.map((spec) => {
-                              return <kbd key={spec}>{hintOf(spec, isMac)}</kbd>;
+                              return (
+                                <kbd key={spec}>{hintOf(spec, isMac)}</kbd>
+                              );
                             })}
                           </td>
                           <td>
                             {def.outside.map((spec) => {
-                              return <kbd key={spec}>{hintOf(spec, isMac)}</kbd>;
+                              return (
+                                <kbd key={spec}>{hintOf(spec, isMac)}</kbd>
+                              );
                             })}
                           </td>
                         </tr>

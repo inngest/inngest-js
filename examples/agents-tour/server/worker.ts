@@ -84,7 +84,10 @@ export class Worker {
     if (!ready) {
       child.kill("SIGKILL");
 
-      return { ok: false, error: errors.join("").trim() || "The app did not start" };
+      return {
+        ok: false,
+        error: errors.join("").trim() || "The app did not start",
+      };
     }
 
     const previous = this.current;
@@ -142,7 +145,9 @@ export class Worker {
     const res = await fetch(`${publicUrl}/api/inngest`, { method: "PUT" });
 
     if (!res.ok) {
-      throw new Error(`Registering the app failed: ${res.status} ${await res.text()}`);
+      throw new Error(
+        `Registering the app failed: ${res.status} ${await res.text()}`,
+      );
     }
   }
 

@@ -33,12 +33,16 @@ export const OutputPanel = ({ lines }: { lines: Line[] }) => {
 };
 
 const housekeeping = (step: TraceStep) => {
-  return /^(kv\.|inbox:|executor\.)/.test(step.name);
+  return /^(kv\.|inbox:\d+:close|executor\.)/.test(step.name);
 };
 
 const label = (step: TraceStep) => {
   if (step.name === "executor.nonstep") {
     return "Function code";
+  }
+
+  if (/^inbox:\d+:open$/.test(step.name)) {
+    return "Open the inbox";
   }
 
   return step.name;
@@ -50,7 +54,10 @@ const rounded = (ms: number | null) => {
   }
 
   if (ms < 1000) {
-    return `${Math.max(100, Math.round(ms / 100) * 100)} ms`.replace("100 ms", "<100 ms");
+    return `${Math.max(100, Math.round(ms / 100) * 100)} ms`.replace(
+      "100 ms",
+      "<100 ms",
+    );
   }
 
   return `${(ms / 1000).toFixed(1)} s`;
@@ -72,7 +79,11 @@ const Step = ({ step }: { step: TraceStep }) => {
 
       setDetail(
         out
-          ? JSON.stringify({ input: out.input, output: out.data, error: out.error?.message }, null, 2)
+          ? JSON.stringify(
+              { input: out.input, output: out.data, error: out.error?.message },
+              null,
+              2,
+            )
           : "No data",
       );
     }
@@ -80,8 +91,16 @@ const Step = ({ step }: { step: TraceStep }) => {
 
   return (
     <li>
-      <button type="button" className="step" onClick={toggle} aria-expanded={open}>
-        <span className={`dot ${step.status.toLowerCase()}`} aria-hidden="true" />
+      <button
+        type="button"
+        className="step"
+        onClick={toggle}
+        aria-expanded={open}
+      >
+        <span
+          className={`dot ${step.status.toLowerCase()}`}
+          aria-hidden="true"
+        />
         <span className="step-name">{label(step)}</span>
         <span className="step-meta">{rounded(step.duration)}</span>
       </button>
@@ -90,7 +109,13 @@ const Step = ({ step }: { step: TraceStep }) => {
   );
 };
 
-const RunView = ({ run, everything }: { run: TraceRun; everything: boolean }) => {
+const RunView = ({
+  run,
+  everything,
+}: {
+  run: TraceRun;
+  everything: boolean;
+}) => {
   const shown = run.steps.filter((step) => {
     return everything || !housekeeping(step);
   });
@@ -99,7 +124,10 @@ const RunView = ({ run, everything }: { run: TraceRun; everything: boolean }) =>
   return (
     <section className="run" aria-label={`Run of ${run.fn}`}>
       <header>
-        <span className={`dot ${run.status.toLowerCase()}`} aria-hidden="true" />
+        <span
+          className={`dot ${run.status.toLowerCase()}`}
+          aria-hidden="true"
+        />
         <strong>{run.fn}</strong>
         <span className="status">{run.status.toLowerCase()}</span>
       </header>
@@ -136,12 +164,19 @@ export const TracePanel = ({
         <span>
           {runs.length} {runs.length === 1 ? "run" : "runs"}
         </span>
-        <button type="button" className="ghost" onClick={onToggle} aria-pressed={everything}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={onToggle}
+          aria-pressed={everything}
+        >
           Show everything {hint}
         </button>
       </div>
-      {runs.length === 0 ? <p className="empty">Press Run to see the trace here.</p> : null}
-      {runs.map((run) => {
+      {runs.length === 0 ? (
+        <p className="empty">Press Run to see the trace here.</p>
+      ) : null}
+      {[...runs].reverse().map((run) => {
         return <RunView run={run} everything={everything} key={run.id} />;
       })}
     </div>
@@ -177,11 +212,15 @@ export const MessagePanel = ({
       }}
     >
       <p>
-        Say something to <code>{target.agent}</code>. Messages with the same thread reach the same agent.
+        Say something to <code>{target.agent}</code>. Messages with the same
+        thread reach the same agent.
       </p>
       <label>
         Thread
-        <input value={thread} onChange={(event) => setThread(event.target.value)} />
+        <input
+          value={thread}
+          onChange={(event) => setThread(event.target.value)}
+        />
       </label>
       <label>
         Message
@@ -190,7 +229,12 @@ export const MessagePanel = ({
           rows={2}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey
+            ) {
               event.preventDefault();
               void send();
             }

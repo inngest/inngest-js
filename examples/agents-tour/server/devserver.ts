@@ -102,7 +102,9 @@ export class DevServer {
       await sleep(100);
     }
 
-    throw new Error(`The Dev Server did not start in 30s; see ${this.options.logFile}`);
+    throw new Error(
+      `The Dev Server did not start in 30s; see ${this.options.logFile}`,
+    );
   }
 
   async stop() {
@@ -164,7 +166,9 @@ export class DevServer {
     });
 
     if (!res.ok) {
-      throw new Error(`Sending ${name} failed: ${res.status} ${await res.text()}`);
+      throw new Error(
+        `Sending ${name} failed: ${res.status} ${await res.text()}`,
+      );
     }
   }
 }

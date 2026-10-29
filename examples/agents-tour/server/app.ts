@@ -70,7 +70,11 @@ export const createTour = async (options: TourOptions) => {
   );
   const clients = new Set<ServerResponse>();
   const log: TourEvent[] = [];
-  let status: TourEvent = { type: "status", state: "idle", text: "Starting the Dev Server..." };
+  let status: TourEvent = {
+    type: "status",
+    state: "idle",
+    text: "Starting the Dev Server...",
+  };
   let runs: TraceRun[] = [];
   let from = new Date().toISOString();
   let generation = 0;
@@ -101,7 +105,10 @@ export const createTour = async (options: TourOptions) => {
     emit({ type: "log", kind: "info", text });
   };
 
-  const setStatus = (state: "idle" | "starting" | "live" | "failed", text: string) => {
+  const setStatus = (
+    state: "idle" | "starting" | "live" | "failed",
+    text: string,
+  ) => {
     emit({ type: "status", state, text });
   };
 
@@ -148,7 +155,11 @@ export const createTour = async (options: TourOptions) => {
   };
 
   const poll = async () => {
-    if (status.type !== "status" || status.state === "idle" || clients.size === 0) {
+    if (
+      status.type !== "status" ||
+      status.state === "idle" ||
+      clients.size === 0
+    ) {
       return;
     }
 
@@ -183,13 +194,18 @@ export const createTour = async (options: TourOptions) => {
 
     for (const file of page.files) {
       // Read-only files always come from disk, never from the browser.
-      const content = file.editable ? (files[file.name] ?? file.content) : file.content;
+      const content = file.editable
+        ? (files[file.name] ?? file.content)
+        : file.content;
 
       writeFileSync(join(dir, file.name), content);
     }
 
     if (generation > 3) {
-      rmSync(join(dataDir, "run", `gen-${generation - 3}`), { recursive: true, force: true });
+      rmSync(join(dataDir, "run", `gen-${generation - 3}`), {
+        recursive: true,
+        force: true,
+      });
     }
 
     return dir;
@@ -238,7 +254,11 @@ export const createTour = async (options: TourOptions) => {
       const result = await worker.reload(dir);
 
       if (!result.ok) {
-        emit({ type: "log", kind: "err", text: result.error ?? "The app did not start" });
+        emit({
+          type: "log",
+          kind: "err",
+          text: result.error ?? "The app did not start",
+        });
         setStatus("failed", "Your code did not start");
 
         return;
@@ -272,7 +292,11 @@ export const createTour = async (options: TourOptions) => {
     return task;
   };
 
-  const handleApi = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+  const handleApi = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+  ) => {
     const path = url.pathname;
 
     if (path === "/api/index") {
@@ -326,7 +350,24 @@ export const createTour = async (options: TourOptions) => {
       return sendJson(res, 404, { error: "Not found" });
     }
 
-    const body = JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
+    const body = JSON.parse((await readBody(req)) || "{}") as Record<
+      string,
+      unknown
+    >;
+
+    if (path === "/api/open") {
+      await running;
+      current = byId.get(String(body.id));
+      await cancelLive();
+      emit({ type: "clear" });
+      reported.clear();
+      runs = [];
+      from = new Date().toISOString();
+      broadcast({ type: "runs", runs });
+      setStatus("idle", "Ready");
+
+      return sendJson(res, 200, { ok: true });
+    }
 
     if (path === "/api/run") {
       await run(String(body.id), (body.files ?? {}) as Record<string, string>);
@@ -356,7 +397,11 @@ export const createTour = async (options: TourOptions) => {
 
     if (path === "/api/send") {
       try {
-        await worker.send(String(body.agent), String(body.thread), String(body.message));
+        await worker.send(
+          String(body.agent),
+          String(body.thread),
+          String(body.message),
+        );
         info(`sent "${String(body.message)}" to ${String(body.agent)}`);
 
         return sendJson(res, 200, { ok: true });
@@ -375,7 +420,9 @@ export const createTour = async (options: TourOptions) => {
   const serveStatic = (res: ServerResponse, pathname: string) => {
     const requested = normalize(join(siteDir, pathname));
     const file =
-      requested.startsWith(siteDir) && existsSync(requested) && statSync(requested).isFile()
+      requested.startsWith(siteDir) &&
+      existsSync(requested) &&
+      statSync(requested).isFile()
         ? requested
         : join(siteDir, "index.html");
 

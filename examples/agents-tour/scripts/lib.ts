@@ -88,7 +88,9 @@ export const doctor = (options: { needGo: boolean }) => {
   checks.push({
     name: "Dependencies installed",
     ok: sdk,
-    detail: sdk ? "node_modules/inngest is linked" : "node_modules/inngest is missing",
+    detail: sdk
+      ? "node_modules/inngest is linked"
+      : "node_modules/inngest is missing",
     fix: "Run `pnpm install` in examples/agents-tour. If it then fails to link, build the SDK first: `pnpm install && pnpm --filter inngest build` at the repo root.",
   });
 
@@ -97,7 +99,9 @@ export const doctor = (options: { needGo: boolean }) => {
   checks.push({
     name: "SDK built",
     ok: built,
-    detail: built ? "packages/inngest/dist exists" : "packages/inngest/dist is empty",
+    detail: built
+      ? "packages/inngest/dist exists"
+      : "packages/inngest/dist is empty",
     fix: "Run `pnpm install && pnpm --filter inngest build` at the repo root.",
   });
 
@@ -126,7 +130,9 @@ export const doctor = (options: { needGo: boolean }) => {
   });
 
   for (const check of checks) {
-    console.log(`${check.ok ? "ok     " : "MISSING"}  ${check.name}: ${check.detail}`);
+    console.log(
+      `${check.ok ? "ok     " : "MISSING"}  ${check.name}: ${check.detail}`,
+    );
   }
 
   for (const check of failed) {

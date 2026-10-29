@@ -41,6 +41,9 @@ export const api = {
       error: { message: string } | null;
     }>(`/api/output?id=${encodeURIComponent(id)}`);
   },
+  open: (id: string) => {
+    return post("/api/open", { id });
+  },
   run: (id: string, files: Record<string, string>) => {
     return post("/api/run", { id, files });
   },

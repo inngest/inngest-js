@@ -78,7 +78,12 @@ const stepOf = (span: Span): TraceStep => {
   };
 };
 
-export const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
+export const terminal = new Set([
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+  "SKIPPED",
+]);
 
 export const readRuns = async (devServer: DevServer, from: string) => {
   const data = await devServer.gql<{
@@ -90,17 +95,17 @@ export const readRuns = async (devServer: DevServer, from: string) => {
       return !/-(cleanup|finished|arrival)$/.test(node.function.slug);
     })
     .map(({ node }): TraceRun => {
-    return {
-      id: node.id,
-      fn: node.function.name,
-      status: node.status,
-      queuedAt: node.queuedAt,
-      startedAt: node.startedAt,
-      endedAt: node.endedAt,
-      output: node.trace?.outputID ?? null,
-      steps: (node.trace?.childrenSpans ?? []).map(stepOf),
-    };
-  });
+      return {
+        id: node.id,
+        fn: node.function.name,
+        status: node.status,
+        queuedAt: node.queuedAt,
+        startedAt: node.startedAt,
+        endedAt: node.endedAt,
+        output: node.trace?.outputID ?? null,
+        steps: (node.trace?.childrenSpans ?? []).map(stepOf),
+      };
+    });
 };
 
 export const readOutput = async (devServer: DevServer, outputID: string) => {

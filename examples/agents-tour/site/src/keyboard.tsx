@@ -148,7 +148,12 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
         return;
       }
 
-      if (event.key === "g" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (
+        event.key === "g" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
         pending = "g";
         timer = window.setTimeout(() => {
           pending = "";

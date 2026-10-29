@@ -6,7 +6,11 @@
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const collect = (base: string, packageRoot: string, files: Record<string, string>) => {
+const collect = (
+  base: string,
+  packageRoot: string,
+  files: Record<string, string>,
+) => {
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry);
@@ -21,7 +25,10 @@ const collect = (base: string, packageRoot: string, files: Record<string, string
         entry === "package.json" ||
         (entry.endsWith(".d.ts") && !entry.endsWith(".d.cts"))
       ) {
-        files[`${base}/${relative(packageRoot, path)}`] = readFileSync(path, "utf8");
+        files[`${base}/${relative(packageRoot, path)}`] = readFileSync(
+          path,
+          "utf8",
+        );
       }
     }
   };
