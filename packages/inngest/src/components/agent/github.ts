@@ -42,10 +42,9 @@ export interface GithubCommentData {
   repo: string;
 
   /**
-   * The issue or pull request number, as a string: a thread key is built
-   * from strings only.
+   * The issue or pull request number, as GitHub sends it: a whole number.
    */
-  number: string;
+  number: number;
 
   /**
    * The comment's text.
@@ -64,7 +63,6 @@ export interface GithubCommentData {
 export const githubCommentEvent = "github/issue_comment";
 
 const name = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
-const issueNumber = /^[1-9]\d{0,9}$/;
 
 // A login is a name, or an app's `name[bot]`.
 const login = /^[A-Za-z0-9_.-]+(\[bot\])?$/;
@@ -75,7 +73,7 @@ const repository =
 const githubCommentSchema = objectSchema<GithubCommentData>({
   owner: { pattern: name },
   repo: { pattern: name },
-  number: { pattern: issueNumber },
+  number: { integer: { min: 1, max: 9_999_999_999 } },
   body: "string",
   author: "string?",
 });
@@ -243,7 +241,7 @@ export const github = {
       event: githubCommentEvent,
       if: `(${repos.join(" || ")})${ignored.join("")}`,
       thread:
-        '"github:" + event.data.owner + "/" + event.data.repo + "#" + event.data.number',
+        '"github:" + event.data.owner + "/" + event.data.repo + "#" + string(int(event.data.number))',
       message: (event) => {
         return (event.data as unknown as GithubCommentData).body;
       },
@@ -271,16 +269,14 @@ export const github = {
     const target: GithubTarget = (() => {
       const data = parseWith(
         githubCommentSchema,
-        "number" in source
-          ? { ...source, number: String(source.number), body: "" }
-          : source.data,
+        "number" in source ? { ...source, body: "" } : source.data,
         "github.channel: the event or target is not valid",
       );
 
       return {
         owner: data.owner,
         repo: data.repo,
-        number: Number(data.number),
+        number: data.number,
       };
     })();
 

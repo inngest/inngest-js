@@ -7,6 +7,7 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createAgentFunction } from "./agentFunction.ts";
+import { compileKey } from "./cel.ts";
 import {
   askThrough,
   type ChannelMessage,
@@ -157,7 +158,7 @@ const slackEvent = {
 };
 
 const githubEvent = {
-  data: { owner: "acme", repo: "app", number: "7", body: "b" },
+  data: { owner: "acme", repo: "app", number: 7, body: "b" },
 };
 
 describe("trigger helpers", () => {
@@ -188,7 +189,15 @@ describe("trigger helpers", () => {
       '((event.data.owner == "acme" && event.data.repo == "app"))',
     );
 
-    expect(trigger.thread).toContain('#" + event.data.number');
+    expect(trigger.thread).toContain("string(int(event.data.number))");
+
+    // The key a real event, with a numeric number, evaluates to.
+    expect(
+      compileKey(trigger.thread).key({
+        name: githubCommentEvent,
+        data: githubEvent.data,
+      }),
+    ).toBe("github:acme/app#7");
   });
 
   test("the allow list is required, not empty and well formed", () => {
@@ -277,9 +286,10 @@ describe("event validation", () => {
 
   test("GitHub fields are checked strictly", () => {
     const bad = [
-      { owner: "..", repo: "app", number: "7", body: "b" },
-      { owner: "acme", repo: "r#5", number: "7", body: "b" },
+      { owner: "..", repo: "app", number: 7, body: "b" },
+      { owner: "acme", repo: "r#5", number: 7, body: "b" },
       { owner: "acme", repo: "app", number: "5#7", body: "b" },
+      { owner: "acme", repo: "app", number: "7", body: "b" },
     ];
 
     for (const data of bad) {
@@ -288,13 +298,23 @@ describe("event validation", () => {
       }).toThrow(NonRetriableError);
     }
 
-    for (const number of ["", " ", "1e1", "0x10", "-5", "0", "abc"]) {
+    for (const number of [0, -5, 1.5, Number.NaN, 1e10]) {
       expect(() => {
         return github.channel(
           { data: { ...githubEvent.data, number } },
           { repos: ["acme/app"] },
         );
       }).toThrow("not a valid value");
+    }
+
+    // GitHub sends the number as a number, so a string is not an event of it.
+    for (const number of ["7", "abc"]) {
+      expect(() => {
+        return github.channel(
+          { data: { ...githubEvent.data, number } },
+          { repos: ["acme/app"] },
+        );
+      }).toThrow("must be a number");
     }
 
     for (const number of [0, -1, 1.5, Number.NaN]) {

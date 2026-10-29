@@ -593,6 +593,21 @@ export const remoteState = async (options: {
 };
 
 /**
+ * Whether `text` has a backslash or a control character.
+ */
+const hasBackslashOrControl = (text: string): boolean => {
+  for (let at = 0; at < text.length; at += 1) {
+    const code = text.charCodeAt(at);
+
+    if (code < 32 || code === 92) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * Whether `path` is one git could hold and a policy would read the way git
  * does: no empty, `.`, `..` or `.git` part, no leading slash, no backslash
  * and no control character.
@@ -602,7 +617,7 @@ export const isPlainPath = (path: string): boolean => {
     path.length > 0 &&
     path.length <= 4096 &&
     !path.startsWith("/") &&
-    !/[\\\u0000-\u001f]/.test(path) &&
+    !hasBackslashOrControl(path) &&
     path.split("/").every((part) => {
       // The names the file systems of other platforms would read as .git.
       const folded = part

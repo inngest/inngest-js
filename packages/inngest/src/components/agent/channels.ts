@@ -1160,6 +1160,7 @@ export const parseWithAsync = async <T>(
  * What a field of `objectSchema` must be.
  *
  * - `"string"` and `"number"`: required.
+ * - `{ integer }`: a whole number from `min` to `max`.
  * - `"string?"`: a string, or missing.
  * - `"nullable"`: a string, missing or null.
  * - `{ pattern }`: a string the pattern matches; with `optional`, or missing.
@@ -1169,6 +1170,7 @@ export type FieldSpec =
   | "string?"
   | "nullable"
   | "number"
+  | { integer: { min: number; max: number } }
   | { pattern: RegExp; optional?: boolean };
 
 /**
@@ -1195,7 +1197,9 @@ export const objectSchema = <T>(
           const optional =
             spec === "string?" ||
             spec === "nullable" ||
-            (typeof spec === "object" && spec.optional === true);
+            (typeof spec === "object" &&
+              "optional" in spec &&
+              spec.optional === true);
 
           if (found === undefined && optional) {
             continue;
@@ -1205,7 +1209,10 @@ export const objectSchema = <T>(
             continue;
           }
 
-          const wanted = spec === "number" ? "number" : "string";
+          const wanted =
+            spec === "number" || (typeof spec === "object" && "integer" in spec)
+              ? "number"
+              : "string";
 
           if (typeof found !== wanted) {
             issues.push({
@@ -1216,7 +1223,28 @@ export const objectSchema = <T>(
             continue;
           }
 
-          if (typeof spec === "object" && !spec.pattern.test(found as string)) {
+          if (
+            typeof spec === "object" &&
+            "integer" in spec &&
+            !(
+              Number.isSafeInteger(found) &&
+              (found as number) >= spec.integer.min &&
+              (found as number) <= spec.integer.max
+            )
+          ) {
+            issues.push({
+              message: `\`${field}\` is not a valid value`,
+              path: [field],
+            });
+
+            continue;
+          }
+
+          if (
+            typeof spec === "object" &&
+            "pattern" in spec &&
+            !spec.pattern.test(found as string)
+          ) {
             issues.push({
               message: `\`${field}\` is not a valid value`,
               path: [field],
