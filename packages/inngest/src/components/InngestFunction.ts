@@ -530,6 +530,16 @@ export namespace InngestFunction {
       key?: string;
 
       /**
+       * An optional scope for the throttle limit. By default, throttle limits
+       * are scoped to this function.
+       *
+       * Use "env" or "account" to share throttle capacity across functions in
+       * an environment or account, for example when multiple functions call the
+       * same external service with a shared quota.
+       */
+      scope?: "fn" | "env" | "account";
+
+      /**
        * The total number of runs allowed to start within the given `period`.  The limit is
        * applied evenly over the period.
        */
