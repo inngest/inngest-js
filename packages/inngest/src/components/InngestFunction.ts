@@ -44,6 +44,7 @@ export class InngestFunction<
 {
   static stepId = "step";
   static failureSuffix = "-failure";
+  static cancelSuffix = "-cancel";
 
   get [Symbol.toStringTag](): typeof InngestFunction.Tag {
     return InngestFunction.Tag;
@@ -53,6 +54,7 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
+  private readonly onCancelFn?: Handler.Any;
   protected readonly client: TClient;
 
   /**
@@ -75,6 +77,7 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
+    this.onCancelFn = this.opts.onCancel;
 
     if (this.opts.optimizeParallelism === false) {
       warnOnce(
@@ -253,6 +256,36 @@ export class InngestFunction<
       });
     }
 
+    if (this.onCancelFn) {
+      const id = `${fn.id}${InngestFunction.cancelSuffix}`;
+      const name = `${fn.name ?? fn.id} (cancel)`;
+
+      const cancelStepUrl = new URL(stepUrl.href);
+      cancelStepUrl.searchParams.set(queryKeys.FnId, id);
+
+      config.push({
+        id,
+        name,
+        triggers: [
+          {
+            event: internalEvents.FunctionCancelled,
+            expression: `event.data.function_id == '${fnId}'`,
+          },
+        ],
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: isConnect ? "ws" : "http",
+              url: cancelStepUrl.href,
+            },
+            retries: { attempts: 1 },
+          },
+        },
+      });
+    }
+
     return config;
   }
 
@@ -413,6 +446,7 @@ export namespace InngestFunction {
     TTriggers extends
       InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
     TFailureHandler extends Handler.Any = Handler.Any,
+    TCancelHandler extends Handler.Any = Handler.Any,
   > {
     triggers?: TTriggers;
 
@@ -705,6 +739,16 @@ export namespace InngestFunction {
      * regular handler.
      */
     onFailure?: TFailureHandler;
+
+    /**
+     * Provide a function to be called if your function is cancelled, for
+     * example by a `cancelOn` event, a timeout, or the REST API.
+     *
+     * This is useful for cleaning up after a cancelled run and supports all
+     * the same functionality as a regular handler. The event that triggered
+     * the cancelled run is available at `event.data.event`.
+     */
+    onCancel?: TCancelHandler;
 
     /**
      * Define a set of middleware that can be registered to hook into

@@ -82,11 +82,11 @@ import { sdkFeatureObservations } from "./sdkFeatureObservations.ts";
 
 /**
  * An entry in the function registry, tracking which config ID maps to which
- * function and what kind of handler it is (main, failure, or defer).
+ * function and what kind of handler it is (main, failure, cancel, or defer).
  */
 interface FnRegistryEntry {
   fn: InngestFunction.Any;
-  handlerKind: "main" | "failure" | "defer";
+  handlerKind: "main" | "failure" | "cancel" | "defer";
 }
 
 // A response object for when an internal server error occurs. When that
@@ -529,14 +529,15 @@ export class InngestCommHandler<
     }
 
     // Build the id -> entry registry. Each main fn contributes either a
-    // single `main` entry or, when it has `onFailure`, a `main` + `failure`
-    // pair; each `DeferredFunction` (created via `createDefer`) contributes
+    // single `main` entry plus a `failure` entry when it has `onFailure` and a
+    // `cancel` entry when it has `onCancel`; each `DeferredFunction` (created via `createDefer`) contributes
     // a single `defer` entry.
     const entries: Record<string, FnRegistryEntry> = {};
     for (const fn of this.rawFns) {
       const isDefer = isDeferredFunction(fn);
       const mainId = fn.id(this.client.id);
       const failureId = `${mainId}${InngestFunction.failureSuffix}`;
+      const cancelId = `${mainId}${InngestFunction.cancelSuffix}`;
 
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
@@ -555,6 +556,8 @@ export class InngestCommHandler<
           handlerKind = "defer";
         } else if (id === failureId) {
           handlerKind = "failure";
+        } else if (id === cancelId) {
+          handlerKind = "cancel";
         } else {
           handlerKind = "main";
         }

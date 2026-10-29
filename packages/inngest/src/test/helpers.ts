@@ -141,6 +141,7 @@ export const runFnWithStack = async (
   opts?: {
     runStep?: string;
     onFailure?: boolean;
+    onCancel?: boolean;
     event?: EventPayload;
     events?: EventPayload[];
     priorDefers?: InngestExecutionOptions["priorDefers"];
@@ -164,7 +165,11 @@ export const runFnWithStack = async (
       stepState,
       priorDefers: opts?.priorDefers,
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
-      handlerKind: opts?.onFailure ? "failure" : "main",
+      handlerKind: opts?.onFailure
+        ? "failure"
+        : opts?.onCancel
+          ? "cancel"
+          : "main",
       requestedRunStep: opts?.runStep,
       timer: new ServerTiming(fn["client"][internalLoggerSymbol]),
       disableImmediateExecution: opts?.disableImmediateExecution,

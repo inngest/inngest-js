@@ -16,6 +16,7 @@ const clearConsole = () => {
 
 import { fromPartial } from "@total-typescript/shoehorn";
 import type { Mock } from "vitest";
+import { z } from "zod";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
@@ -33,6 +34,7 @@ import {
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
+  type CancelledEventPayload,
   type ClientOptions,
   type Context,
   type FailureEventPayload,
@@ -49,6 +51,7 @@ import {
 } from "./execution/InngestExecution.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
+import { eventType } from "./triggers/triggers.ts";
 
 const mockLogger = {
   info: vi.fn(globalThis.console.log),
@@ -2250,6 +2253,224 @@ describe("runFn", () => {
             expression: "event.data.function_id == 'testclient-testfn'",
           },
         ],
+      });
+    });
+  });
+
+  describe("onCancel functions", () => {
+    describe("types", () => {
+      const inngest = createClient({ id: "test" });
+
+      test("onCancel function has internal cancelled event and no error", () => {
+        inngest.createFunction(
+          {
+            id: "test",
+            triggers: [{ event: "test" }],
+            onCancel: (ctx) => {
+              assertType<`${internalEvents.FunctionCancelled}`>(ctx.event.name);
+              assertType<CancelledEventPayload>(ctx.event);
+              assertType<EventPayload>(ctx.event.data.event);
+              assertType<string>(ctx.event.data.function_id);
+              assertType<string>(ctx.event.data.run_id);
+              expectTypeOf(ctx).not.toHaveProperty("error");
+              expectTypeOf(ctx.step.run).toBeFunction();
+            },
+          },
+          () => {
+            // no-op
+          },
+        );
+      });
+    });
+
+    test("onCancel events are the cancellation event, not the main triggers", () => {
+      const inngest = createClient({ id: "test" });
+
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [
+            eventType("shop/order.created", {
+              schema: z.object({ orderId: z.string() }),
+            }),
+          ],
+          onCancel: ({ event, events }) => {
+            expectTypeOf(events).toEqualTypeOf<[CancelledEventPayload]>();
+            expectTypeOf(events[0]).toEqualTypeOf(event);
+            expectTypeOf(events[0].data).not.toHaveProperty("orderId");
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+    });
+
+    test("onCancel registers a ws runtime for Connect apps", () => {
+      const inngest = createClient({ id: "testclient" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          onCancel: () => {
+            // no-op
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+
+      const [mainConfig, cancelConfig] = fn["getConfig"]({
+        baseUrl: new URL("wss://connect"),
+        appPrefix: "testclient",
+        isConnect: true,
+      });
+
+      expect(mainConfig?.steps[InngestFunction.stepId]?.runtime).toMatchObject({
+        type: "ws",
+      });
+      expect(cancelConfig?.id).toBe("testclient-testfn-cancel");
+      expect(cancelConfig?.steps[InngestFunction.stepId]?.runtime).toEqual({
+        type: "ws",
+        url: "wss://connect/?fnId=testclient-testfn-cancel&stepId=step",
+      });
+    });
+
+    test("specifying an onCancel function registers correctly", () => {
+      const clientId = "testclient";
+      const inngest = createClient({ id: clientId });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          onCancel: () => {
+            // no-op
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: clientId,
+      });
+
+      expect(configs).toHaveLength(2);
+      expect(configs[1]).toMatchObject({
+        id: "testclient-testfn-cancel",
+        name: "testfn (cancel)",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=testclient-testfn-cancel&stepId=${InngestFunction.stepId}`,
+            },
+            retries: { attempts: 1 },
+          },
+        },
+        triggers: [
+          {
+            event: internalEvents.FunctionCancelled,
+            expression: "event.data.function_id == 'testclient-testfn'",
+          },
+        ],
+      });
+    });
+
+    test("onFailure and onCancel register alongside each other", () => {
+      const inngest = createClient({ id: "testclient" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          onFailure: () => {
+            // no-op
+          },
+          onCancel: () => {
+            // no-op
+          },
+        },
+        () => {
+          // no-op
+        },
+      );
+
+      const ids = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "testclient",
+      }).map((c) => c.id);
+
+      expect(ids).toEqual([
+        "testclient-testfn",
+        "testclient-testfn-failure",
+        "testclient-testfn-cancel",
+      ]);
+    });
+
+    test("no cancel config is registered without onCancel", () => {
+      const inngest = createClient({ id: "testclient" });
+
+      const fn = inngest.createFunction(
+        { id: "testfn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
+
+      const ids = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "testclient",
+      }).map((c) => c.id);
+
+      expect(ids).toEqual(["testclient-testfn"]);
+    });
+
+    test("runs the onCancel handler instead of the main handler", async () => {
+      const inngest = createClient({ id: "testclient" });
+      const main = vi.fn();
+      const onCancel = vi.fn(
+        ({ event }: { event: CancelledEventPayload }) =>
+          `cancelled ${event.data.run_id} from ${event.data.event.name}`,
+      );
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          onCancel,
+        },
+        main,
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        {
+          onCancel: true,
+          event: {
+            name: internalEvents.FunctionCancelled,
+            data: {
+              function_id: "testclient-testfn",
+              run_id: "01ORIGINALRUN",
+              event: { name: "foo", data: { a: 1 } },
+            },
+          },
+        },
+      );
+
+      expect(main).not.toHaveBeenCalled();
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(ret).toMatchObject({
+        type: "function-resolved",
+        data: "cancelled 01ORIGINALRUN from foo",
       });
     });
   });
