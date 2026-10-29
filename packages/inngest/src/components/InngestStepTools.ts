@@ -286,6 +286,25 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
 };
 
 /**
+ * Run a callback whose steps get no group prefix before their IDs.
+ */
+export const withoutStepIdPrefix = <T>(callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution?.stepIdPrefix) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: { ...currentCtx.execution, stepIdPrefix: undefined },
+    },
+    callback,
+  );
+};
+
+/**
  * Run a callback whose steps get `prefix` before their IDs, so concurrent
  * callers can use the same IDs.
  */
@@ -602,24 +621,32 @@ export const createStepTools = <
           throw new Error(`step.subscribe(): no source for stream ${stream}.`);
         }
 
-        return tools["~subscribeOp"](stepId, {
-          event: eventNameOf(
-            target?.event ?? parkEvent ?? "inngest/subscription",
-          ),
-          if: target?.if,
-          subscribe: {
-            key: id,
-            mode,
-            ...(seq ? { seq } : {}),
-            ...(stream ? { stream } : {}),
-            ...(extra?.timeout === undefined
-              ? {}
-              : {
-                  timeout: timeStr(extra.timeout, client[internalLoggerSymbol]),
-                }),
-            ...(extra?.attempt ? { attempt: extra.attempt } : {}),
-            ...(extra?.reader ? { reader: extra.reader } : {}),
-          },
+        // The executor names the steps of a subscription itself, so a prefix
+        // from a group the op was called in (such as a tool group) must not
+        // change their ids.
+        return withoutStepIdPrefix(() => {
+          return tools["~subscribeOp"](stepId, {
+            event: eventNameOf(
+              target?.event ?? parkEvent ?? "inngest/subscription",
+            ),
+            if: target?.if,
+            subscribe: {
+              key: id,
+              mode,
+              ...(seq ? { seq } : {}),
+              ...(stream ? { stream } : {}),
+              ...(extra?.timeout === undefined
+                ? {}
+                : {
+                    timeout: timeStr(
+                      extra.timeout,
+                      client[internalLoggerSymbol],
+                    ),
+                  }),
+              ...(extra?.attempt ? { attempt: extra.attempt } : {}),
+              ...(extra?.reader ? { reader: extra.reader } : {}),
+            },
+          });
         });
       },
       id,
