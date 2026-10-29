@@ -657,8 +657,8 @@ export async function openSubscription<
     }
 
     closing = (async () => {
-      // With no source left, what the state holds is what was saved.
       let count = read().length;
+      let closedAny = false;
 
       for (let stream = 0; stream < streams.length; stream++) {
         const entry = streams[stream];
@@ -668,6 +668,7 @@ export async function openSubscription<
         }
 
         entry.active = false;
+        closedAny = true;
 
         const closed = (await op(
           stepId(stream, "close"),
@@ -678,6 +679,16 @@ export async function openSubscription<
         )) as { count: number };
 
         // The last close sees every message saved before the last pause went.
+        count = closed.count;
+      }
+
+      // With no source left to close, one close op still marks the inbox
+      // closed and ends any park, and gives the authoritative count.
+      if (!closedAny) {
+        const closed = (await op(stepId(0, "close"), "close", undefined, 0, {
+          target: streams[0]?.source,
+        })) as { count: number };
+
         count = closed.count;
       }
 
@@ -704,6 +715,10 @@ export async function openSubscription<
     current: current as Subscription<TData>["current"],
     unread: unread as Subscription<TData>["unread"],
     async listen(source) {
+      if (closing) {
+        throw new Error(`Subscription "${key}": listen() on a closed inbox.`);
+      }
+
       const target: SubscribeEvent =
         typeof source === "object" && "event" in source
           ? source

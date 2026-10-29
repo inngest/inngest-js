@@ -596,7 +596,8 @@ export const createStepTools = <
           !target &&
           mode !== "park" &&
           mode !== "poll" &&
-          mode !== "current"
+          mode !== "current" &&
+          mode !== "close"
         ) {
           throw new Error(`step.subscribe(): no source for stream ${stream}.`);
         }

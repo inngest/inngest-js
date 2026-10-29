@@ -311,6 +311,35 @@ describe("step.subscribe", () => {
     expect(legacy.output).toBe(0);
   });
 
+  test("an inbox with no source left is still closed by one op, and listening after close throws", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.inbox("box");
+        const listener = await inbox.listen({ event: "other", if: "true" });
+
+        await listener.stop();
+        await inbox.close();
+
+        const late = await inbox.listen({ event: "other", if: "true" }).then(
+          () => "added",
+          (error: Error) => error.message,
+        );
+
+        return late;
+      },
+    );
+
+    const { ops, output } = await run(fn, { key: "box" });
+
+    expect(String(output)).toContain("listen() on a closed inbox");
+    expect(
+      ops.map((op) => {
+        return op.mode;
+      }),
+    ).toEqual(["open", "stop", "close"]);
+  });
+
   test("current() returns every message so far without moving the cursor", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
