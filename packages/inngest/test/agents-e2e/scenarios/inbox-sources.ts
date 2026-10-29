@@ -75,7 +75,9 @@ export const inboxSources = scenario({
             });
             const got = await second.next({ timeout: "30s" });
 
-            await record(`second:${got?.name === event("two") ? "two" : "none"}`);
+            await record(
+              `second:${got?.name === event("two") ? "two" : "none"}`,
+            );
             await second.close();
           } else {
             await record(`message:${content}`);
