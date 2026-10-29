@@ -16,6 +16,7 @@ const fakeInbox = () => {
   const calls: unknown[][] = [];
   const stopped: string[] = [];
   const queue: InboxToolMessage[] = [];
+  const history: InboxToolMessage[] = [];
   let listens = 0;
   const inbox: InboxToolInbox = {
     listen: async (source, options) => {
@@ -34,10 +35,10 @@ const fakeInbox = () => {
 
       return queue.shift() ?? null;
     },
-    unread: async () => {
-      calls.push(["unread"]);
+    current: async () => {
+      calls.push(["current"]);
 
-      return queue.splice(0);
+      return [...history, ...queue];
     },
   };
 
@@ -204,7 +205,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     expect(setup().tools.inbox_read.waits).toBeUndefined();
   });
 
-  test("read returns what is unread, long messages clipped", async () => {
+  test("read returns the latest messages and how many there are, long ones clipped", async () => {
     const { call, queue } = setup();
 
     queue.push(
@@ -212,11 +213,13 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
       { name: "ci/status", data: { text: "y".repeat(5000) } },
     );
 
-    const { messages } = (await call("inbox_read")) as {
+    const { messages, total } = (await call("inbox_read")) as {
+      total: number;
       messages: { source: string; content: string }[];
     };
 
     expect(messages).toHaveLength(2);
+    expect(total).toBe(2);
     expect(messages[1]?.content).toContain("more characters");
     expect(messages[1]?.content.length).toBeLessThan(4_300);
   });

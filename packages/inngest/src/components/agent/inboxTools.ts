@@ -70,7 +70,7 @@ export interface InboxToolMessage {
 }
 
 /**
- * What the tools need of an inbox: `inbox.listen`, `next` and `unread`.
+ * What the tools need of an inbox: `inbox.listen`, `next` and `current`.
  */
 export interface InboxToolInbox {
   listen: (
@@ -84,7 +84,7 @@ export interface InboxToolInbox {
   next: (options: {
     timeout: number | string;
   }) => Promise<InboxToolMessage | null | undefined>;
-  unread: () => Promise<InboxToolMessage[]>;
+  current: () => Promise<InboxToolMessage[]>;
 }
 
 export type InboxToolName =
@@ -97,6 +97,7 @@ const defaultMaxListeners = 5;
 const defaultMaxWait = "30m";
 const maxMessageChars = 4_000;
 const maxIfChars = 500;
+const maxReadMessages = 20;
 
 const eventName = (source: InboxToolSource): string => {
   return typeof source.event === "string" ? source.event : source.event.name;
@@ -160,7 +161,8 @@ const render = (message: InboxToolMessage) => {
  * - `inbox_wait({ timeout })` waits for the next message and returns it, or
  *   says that nothing came. In `run_code` it suspends the script like any
  *   waiting tool, so the wait can be long.
- * - `inbox_read()` returns what has arrived and not been read, without waiting.
+ * - `inbox_read()` returns the latest messages that have arrived, without
+ *   waiting and without moving the inbox's read position (`inbox.current()`).
  * - `inbox_stop({ as })` stops a listener.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
@@ -278,12 +280,15 @@ export const createInboxTools = (
 
     inbox_read: tool.group({
       description:
-        "Return the messages that have arrived and that you have not read, without waiting. Each is tagged with its source.",
+        "Return the latest 20 messages that have arrived on the conversation and your listeners, with how many there are in all, without waiting. Each is tagged with its source.",
       input: z.object({}),
       run: async () => {
-        const messages = await inbox.unread();
+        const all = await inbox.current();
 
-        return { messages: messages.map(render) };
+        return {
+          total: all.length,
+          messages: all.slice(-maxReadMessages).map(render),
+        };
       },
     }),
 
