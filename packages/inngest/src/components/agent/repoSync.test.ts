@@ -110,7 +110,7 @@ describe("repo checkout and sync", () => {
     git(work, "commit", "--quiet", "-m", "local commit");
     const tip = upstream("b.txt", "two\n");
 
-    const result = await checkout();
+    const result = await checkout({ sync: "reset" });
 
     expect(result).toMatchObject({ action: "synced", sha: tip });
     expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("one\n");
@@ -366,6 +366,157 @@ describe("repo checkout and sync", () => {
       sha: tip,
     });
     expect((await checkout({ ref: "HEAD", sync: "keep" })).sha).toBe(tip);
+    // The default branch, not a branch named HEAD.
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
+    expect(git(work, "branch", "--list", "HEAD")).toBe("");
+  });
+
+  test("keep resumes a branch of the agent's own that the remote lacks, reset refuses it", async () => {
+    await checkout();
+    git(work, "checkout", "--quiet", "-b", "mine");
+    writeFileSync(join(work, "mine.txt"), "mine\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "mine");
+    const mine = git(work, "rev-parse", "HEAD");
+    git(work, "checkout", "--quiet", "main");
+
+    expect((await checkout({ ref: "mine", sync: "keep" })).sha).toBe(mine);
+    expect(git(work, "rev-parse", "--abbrev-ref", "HEAD")).toBe("mine");
+    await expect(checkout({ ref: "mine", sync: "reset" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+  });
+
+  test("a clone refuses a ref the sync would refuse", async () => {
+    await expect(checkout({ ref: "origin/main" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+  });
+
+  test("keep does not overwrite a tag the agent made", async () => {
+    await checkout();
+    git(work, "tag", "mine-tag");
+    const local = git(work, "rev-parse", "mine-tag");
+    git(seed, "tag", "mine-tag");
+    upstream("b.txt", "two\n");
+    git(seed, "tag", "-f", "mine-tag");
+    git(seed, "push", "--quiet", "origin", "refs/tags/mine-tag");
+
+    await checkout({ sync: "keep" });
+
+    expect(git(work, "rev-parse", "mine-tag")).toBe(local);
+  });
+
+  test("the default sync never wipes local work silently", async () => {
+    await checkout();
+
+    // Clean: it syncs.
+    const tip = upstream("b.txt", "two\n");
+    expect(await checkout()).toMatchObject({ action: "synced", sha: tip });
+
+    const refused = /has work a sync would lose.*sync: .?keep.?.*sync: .?reset/;
+
+    writeFileSync(join(work, "a.txt"), "edited\n");
+    await expect(checkout()).rejects.toThrow(refused);
+    expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("edited\n");
+    git(work, "checkout", "--quiet", "--", "a.txt");
+
+    writeFileSync(join(work, "untracked.txt"), "x\n");
+    await expect(checkout()).rejects.toThrow(refused);
+    rmSync(join(work, "untracked.txt"));
+
+    writeFileSync(join(work, "c.txt"), "local\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "local commit");
+    await expect(checkout()).rejects.toThrow(refused);
+    expect(existsSync(join(work, "c.txt"))).toBe(true);
+
+    // Explicit choices work.
+    // Ahead of the remote only, so there is nothing to fast-forward.
+    expect((await checkout({ sync: "keep" })).action).toBe("synced");
+    expect((await checkout({ sync: "reset" })).action).toBe("synced");
+    expect(existsSync(join(work, "c.txt"))).toBe(false);
+  });
+
+  test("keep says diverged, with the local sha, when it cannot fast-forward", async () => {
+    await checkout();
+    writeFileSync(join(work, "c.txt"), "local\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "local work");
+    const local = git(work, "rev-parse", "HEAD");
+    upstream("b.txt", "two\n");
+
+    const result = await checkout({ sync: "keep" });
+
+    expect(result).toMatchObject({ action: "diverged", sha: local });
+  });
+
+  test("a commit pushed through the tool does not count as local work", async () => {
+    const checkoutOf = await checkout();
+    git(work, "checkout", "--quiet", "-b", "agent/pushed");
+    writeFileSync(join(work, "p.txt"), "p\n");
+    git(work, "add", ".");
+    git(work, "commit", "--quiet", "-m", "pushed");
+    await checkoutOf.push("agent/pushed");
+    git(work, "checkout", "--quiet", "main");
+
+    expect(await checkout()).toMatchObject({ action: "synced" });
+  });
+
+  test("a clone that fails after the clone leaves nothing behind", async () => {
+    await expect(checkout({ ref: "deadbeef" })).rejects.toThrow();
+    expect(existsSync(work)).toBe(false);
+
+    expect(await checkout()).toMatchObject({ action: "cloned" });
+  });
+
+  test("a failed clone into a directory that held files leaves them", async () => {
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "keep.txt"), "mine\n");
+
+    await expect(checkout()).rejects.toThrow();
+    expect(readFileSync(join(work, "keep.txt"), "utf8")).toBe("mine\n");
+  });
+
+  test("a failed clone into an empty directory empties it again", async () => {
+    const { mkdirSync, readdirSync } = await import("node:fs");
+    mkdirSync(work, { recursive: true });
+
+    await expect(checkout({ ref: "deadbeef" })).rejects.toThrow();
+    expect(readdirSync(work)).toEqual([]);
+    expect(await checkout()).toMatchObject({ action: "cloned" });
+  });
+
+  test("a checkout git cannot read counts as work, so the default refuses it", async () => {
+    await checkout();
+    writeFileSync(join(work, ".git", "index"), "garbage");
+
+    await expect(checkout()).rejects.toThrow(/has work a sync would lose/);
+  });
+
+  test("a missing result line is an error, not a guess", async () => {
+    const quiet = {
+      commands: {
+        run: async () => {
+          return { exitCode: 0, stdout: "garbled\n", stderr: "" };
+        },
+      },
+      tools: { code: () => ({}) },
+    } as unknown as Pick<DurableSandbox, "commands" | "tools">;
+
+    await expect(repo(quiet, { repo: origin, path: work })).rejects.toThrow(
+      /printed no result line/,
+    );
+  });
+
+  test("a retry after a refused first run clones cleanly", async () => {
+    await expect(checkout({ ref: "nope" })).rejects.toThrow(
+      /is not a branch, tag or commit of/,
+    );
+    expect(existsSync(work)).toBe(false);
+
+    expect(await checkout()).toMatchObject({ action: "cloned" });
   });
 
   test("a branch deleted on the remote is gone after a sync", async () => {
@@ -416,7 +567,7 @@ describe("repo checkout and sync", () => {
     mkdirSync(join(work, "scratch"));
     writeFileSync(join(work, "scratch", "y"), "y");
 
-    await checkout();
+    await checkout({ sync: "reset" });
 
     expect(existsSync(join(work, "scratch"))).toBe(false);
     // The ignore rule was in a commit the reset discarded, so cache is untracked.
