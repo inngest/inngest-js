@@ -223,10 +223,11 @@ export interface ThreadRecord {
   runId?: string;
 
   /**
-   * The ID of the event that started the run, so a message that reaches a
-   * thread can tell whether it is the one that started the live run.
+   * The latest status changes with the time of each (milliseconds since the
+   * epoch), so a message can be placed against what the thread was doing when
+   * it arrived, not when it is looked at.
    */
-  startedBy?: string;
+  transitions?: { status: ThreadStatus; at: number }[];
 }
 
 export const threadRecordKey = "__state";

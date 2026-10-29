@@ -284,7 +284,11 @@ export interface AgentFunctionConfig<
    * the agent by `agents.functions()`, so it does not wait for the turn and
    * does not touch the run. It does not run for the message that started the
    * run, or for a thread that is waiting for its next message (the run reads
-   * that message at once). A `step` is given: use it for the posts.
+   * that message at once). What counts is what the thread was doing when the
+   * message arrived. The edges are not exact: a message in the instant before a
+   * run records its first turn is not acknowledged, and one that arrives after
+   * the body returned but before the run is cleaned up may be. A `step` is
+   * given: use it for the posts.
    */
   onArrival?: (context: AgentArrivalContext<TEvent>) => Promise<void> | void;
 
@@ -948,9 +952,19 @@ export function createAgentFunction(
           const message = found
             ? messageOf(ref, found, event as unknown as ThreadTriggerEvent)
             : (event.data as ThreadMessage);
+          // An inbox drops a request that breaks its schema, so it is not
+          // acknowledged either.
+          if (
+            message.kind === "request" &&
+            config.requests &&
+            (await dataProblem(config.requests.request, message.payload))
+          ) {
+            return;
+          }
+
           // The KV read is a durable step of its own, so a replay sees the same
           // answer.
-          const busy = await threadBusyFor(store, message.thread, event.id);
+          const busy = await threadBusyFor(store, message.thread, event.ts);
 
           // A thread that is not working is not busy: its run, or the run this
           // message starts, reads the message at once.
@@ -1034,7 +1048,6 @@ export function createAgentFunction(
                 : data) as Record<string, unknown>
             )._agent,
           ),
-          event.id,
         );
 
         // Limits apply to what `agent.invoke()` starts and to the loop's budget.

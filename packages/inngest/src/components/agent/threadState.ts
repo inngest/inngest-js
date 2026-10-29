@@ -25,6 +25,26 @@ const emptyRecord = (): ThreadRecord => {
 /**
  * The writes of one run. Each is one KV step.
  */
+/**
+ * The record with the status change noted, if `next` changes the status.
+ * @param current The record as it was.
+ * @param next The record as it will be.
+ */
+const withTransition = (
+  current: ThreadRecord,
+  next: ThreadRecord,
+): ThreadRecord => {
+  return next.status === current.status
+    ? next
+    : {
+        ...next,
+        transitions: [
+          ...(current.transitions ?? []),
+          { status: next.status, at: Date.now() },
+        ].slice(-16),
+      };
+};
+
 export const threadRecorder = (
   /**
    * KV store of the thread state.
@@ -45,7 +65,11 @@ export const threadRecorder = (
     return store.thread.update(recordKey, (found) => {
       const current = found ?? emptyRecord();
 
-      return { ...current, ...change(current), runId };
+      return withTransition(current, {
+        ...current,
+        ...change(current),
+        runId,
+      });
     });
   };
 
@@ -60,11 +84,6 @@ export const threadRecorder = (
        * The limits the invoking agent passed down, if any.
        */
       startedWith?: EffectiveLimits,
-
-      /**
-       * The ID of the event that starts the run. Given once, at the start.
-       */
-      startedBy?: string,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
@@ -72,7 +91,6 @@ export const threadRecorder = (
         return {
           status: "running",
           ...(inherited && { inherited }),
-          ...(startedBy && { startedBy }),
         };
       });
     },
@@ -160,7 +178,7 @@ export const markThreadIdle = async (
     const current = found ?? emptyRecord();
 
     return current.runId === runId && current.status !== "stopped"
-      ? { ...current, status: "idle" as const }
+      ? withTransition(current, { ...current, status: "idle" as const })
       : current;
   });
 };
@@ -303,8 +321,11 @@ export const sandboxReadyKey = (
 };
 
 /**
- * Whether a message that reaches a thread finds its run busy: a run is live
- * with a turn in flight, and the message is not the one that started it.
+ * Whether a message that reaches a thread finds its run busy: the thread was
+ * working on a turn when the message arrived. A message that starts a run
+ * arrives before the run begins, and one that wakes a waiting run arrives while
+ * it waits, so neither counts. The status is the one at the message's time, not
+ * the one the record has by the time this is asked.
  */
 export const threadBusyFor = async (
   /**
@@ -318,11 +339,39 @@ export const threadBusyFor = async (
   thread: string,
 
   /**
-   * The ID of the arriving message's event.
+   * When the message arrived, in milliseconds since the epoch.
    */
-  eventId: string | undefined,
+  arrivedAt: number | undefined,
 ): Promise<boolean> => {
   const current = await store.scope("thread", thread).get(recordKey);
 
-  return current?.status === "running" && current.startedBy !== eventId;
+  return statusAt(current, arrivedAt) === "running";
+};
+
+/**
+ * What the thread was doing at a time: the latest recorded change at or before
+ * it, `idle` before the first.
+ * @param record The thread's record.
+ * @param at Milliseconds since the epoch; now when missing.
+ */
+export const statusAt = (
+  record: ThreadRecord | undefined,
+  at: number | undefined,
+): ThreadRecord["status"] => {
+  if (!record) {
+    return "idle";
+  }
+
+  if (at === undefined) {
+    return record.status;
+  }
+
+  const before = (record.transitions ?? []).filter((t) => {
+    return t.at <= at;
+  });
+
+  return (
+    before.at(-1)?.status ??
+    (record.transitions?.length ? "idle" : record.status)
+  );
 };

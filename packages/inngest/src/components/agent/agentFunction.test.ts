@@ -308,15 +308,22 @@ describe("inbox arrival", () => {
       return { kv, arrival: arrival as NonNullable<typeof arrival> };
     };
 
-    const arrive = { ...message("user", "hello"), id: "evt-2" };
+    // The message arrived at 200. What counts is what the thread was doing then.
+    const arrive = { ...message("user", "hello"), id: "evt-2", ts: 200 };
     const seed = async (
       kv: ReturnType<typeof createKv>,
-      record: Record<string, unknown>,
+      status: string,
+      transitions: { status: string; at: number }[],
     ) => {
       await kv
         .with({ id: testClientId, env: null })
         .scope("thread", "t1")
-        .set("__state", { turn: 0, usage: { input: 0, output: 0 }, ...record });
+        .set("__state", {
+          status,
+          turn: 0,
+          usage: { input: 0, output: 0 },
+          transitions,
+        });
     };
 
     test("is a function of its own, listed only when the config has the hook", () => {
@@ -332,28 +339,49 @@ describe("inbox arrival", () => {
       ).toBeUndefined();
     });
 
-    test("runs for a message that reaches a busy thread", async () => {
+    test("runs for a message that reaches a thread busy with a turn", async () => {
       const calls: string[] = [];
       const { kv, arrival } = arrivalFn(calls);
 
-      await seed(kv, { status: "running", startedBy: "evt-1" });
+      await seed(kv, "running", [{ status: "running", at: 100 }]);
       await run(arrival, { event: arrive });
 
       expect(calls).toEqual(["t1:hello"]);
     });
 
-    test("does not run for the message that started the run, or when the thread is not busy", async () => {
+    test("is judged by what the thread was doing when the message arrived, not when it is looked at", async () => {
       const calls: string[] = [];
       const { kv, arrival } = arrivalFn(calls);
 
-      await seed(kv, { status: "running", startedBy: "evt-2" });
+      // The message started the run (it arrived before the run did).
+      await seed(kv, "running", [{ status: "running", at: 300 }]);
       await run(arrival, { event: arrive });
-      await seed(kv, { status: "waiting", startedBy: "evt-1" });
+
+      // It woke a waiting run, which is running again by now.
+      await seed(kv, "running", [
+        { status: "running", at: 100 },
+        { status: "waiting", at: 150 },
+        { status: "running", at: 300 },
+      ]);
       await run(arrival, { event: arrive });
-      await seed(kv, { status: "idle" });
+
+      // The run had ended when it arrived, though the record is read later.
+      await seed(kv, "idle", [
+        { status: "running", at: 100 },
+        { status: "idle", at: 150 },
+      ]);
       await run(arrival, { event: arrive });
 
       expect(calls).toEqual([]);
+
+      // It arrived mid-turn, and the run has gone back to waiting since.
+      await seed(kv, "waiting", [
+        { status: "running", at: 100 },
+        { status: "waiting", at: 300 },
+      ]);
+      await run(arrival, { event: arrive });
+
+      expect(calls).toEqual(["t1:hello"]);
     });
   });
 });
@@ -563,11 +591,18 @@ describe("createAgents", () => {
 });
 
 describe("thread state", () => {
-  const record = (kv: ReturnType<typeof createKv>) => {
-    return kv
+  const record = async (kv: ReturnType<typeof createKv>) => {
+    const found = await kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1")
       .get("__state");
+
+    // The status changes with their times are not part of what state() shows.
+    const { transitions: _transitions, ...rest } = (found ?? {}) as {
+      transitions?: unknown;
+    };
+
+    return found ? rest : found;
   };
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {
