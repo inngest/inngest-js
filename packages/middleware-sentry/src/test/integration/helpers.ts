@@ -2,8 +2,9 @@ import {
   createTransport,
   ServerRuntimeClient,
   setCurrentClient,
+  type InternalBaseTransportOptions,
+  type Transport,
 } from "@sentry/core";
-import type { InternalBaseTransportOptions, Transport } from "@sentry/types";
 
 export interface CapturedItem {
   type: string;

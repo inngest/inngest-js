@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/core";
-import type { Span } from "@sentry/types";
 import { Middleware } from "inngest";
+
+type Span = ReturnType<typeof Sentry.startInactiveSpan>;
 
 /**
  * Options used to configure the Sentry middleware.
