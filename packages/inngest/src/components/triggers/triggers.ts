@@ -35,6 +35,17 @@ type EventTrigger = {
 export type Trigger = CronTrigger | EventTrigger;
 
 /**
+ * Event data must be an object. `any` values (instead of `unknown`) let
+ * interfaces through, since they have no implicit index signature. Ruling out
+ * `Symbol.iterator` keeps arrays out.
+ */
+export type EventData = {
+  // biome-ignore lint/suspicious/noExplicitAny: interfaces need `any` values
+  [key: string]: any;
+  [Symbol.iterator]?: never;
+};
+
+/**
  * Create a cron trigger for scheduled function execution.
  *
  * @param schedule - Cron expression (e.g., "0 0 * * *" for daily at midnight)
@@ -49,27 +60,26 @@ export function cron<T extends string>(schedule: T) {
 /**
  * Args for the `EventType.create` method
  */
-type EventCreateArgs<
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
-> = TSchema extends undefined
-  ? [
-      data?: Record<string, unknown>,
-      options?: {
-        id?: string;
-        ts?: number;
-        v?: string;
-        meta?: EventMeta;
-      },
-    ]
-  : [
-      data: ExtractSchemaData<TSchema>,
-      options?: {
-        id?: string;
-        ts?: number;
-        v?: string;
-        meta?: EventMeta;
-      },
-    ];
+type EventCreateArgs<TSchema extends StandardSchemaV1<EventData> | undefined> =
+  TSchema extends undefined
+    ? [
+        data?: EventData,
+        options?: {
+          id?: string;
+          ts?: number;
+          v?: string;
+          meta?: EventMeta;
+        },
+      ]
+    : [
+        data: ExtractSchemaData<TSchema>,
+        options?: {
+          id?: string;
+          ts?: number;
+          v?: string;
+          meta?: EventMeta;
+        },
+      ];
 
 /**
  * Extract the input type from a StandardSchemaV1.
@@ -118,7 +128,7 @@ export type EventTypeWithAnySchema<TName extends string> = EventType<
  */
 export class EventType<
   TName extends string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  TSchema extends StandardSchemaV1<EventData> | undefined,
 > {
   /**
    * The event name. This is the same as the `name` property, but is necessary
@@ -241,9 +251,7 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
  */
 export function eventType<
   TName extends string,
-  TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
+  TSchema extends StandardSchemaV1<EventData> | undefined = undefined,
 >(
   name: TName,
   {
@@ -268,7 +276,7 @@ export function eventType<
  * you want event type safety without pulling in a validation library like Zod.
  */
 export function staticSchema<
-  TSchema extends Record<string, unknown>,
+  TSchema extends EventData,
 >(): StandardSchemaV1<TSchema> {
   return {
     "~standard": {
@@ -289,7 +297,7 @@ export function staticSchema<
  * @param schema - StandardSchema defining the invoke payload structure
  * @returns Invoke trigger
  */
-export function invoke<TData extends Record<string, unknown>>(
+export function invoke<TData extends EventData>(
   schema: StandardSchemaV1<TData>,
 ) {
   return new EventType({
