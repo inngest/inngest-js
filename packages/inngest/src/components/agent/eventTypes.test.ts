@@ -208,11 +208,39 @@ describe("step.subscribe", () => {
       { n: number } | undefined
     >();
 
-    // An explicit any stays any.
+    // An explicit any stays any, for events named by a string.
     // biome-ignore lint/suspicious/noExplicitAny: the case under test
-    const loose = await step.subscribe<any>("loose", { event: order });
+    const loose = await step.subscribe<any>("loose", { event: "shop/x" });
 
     expectTypeOf((await loose.next())?.data).toBeAny();
+
+    // @ts-expect-error an event type already gives the message data: it is not overridden
+    await step.subscribe<{ q: 1 }>("override", { event: order });
+
+    // @ts-expect-error a mistyped option would be dropped, so it is an error
+    await step.subscribe("typo", { event: order, iff: "async.data.id == 1" });
+
+    // @ts-expect-error events and event are alternatives
+    await step.subscribe("both", { event: order, events: [{ event: refund }] });
+
+    // Several events: checking the name narrows the data.
+    const firstOfMany = await many.next();
+
+    expectTypeOf(firstOfMany?.name).toEqualTypeOf<
+      "shop/order.created" | "shop/refund.created" | undefined
+    >();
+
+    if (firstOfMany?.name === "shop/order.created") {
+      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
+        id: string;
+        total: number;
+      }>();
+    } else if (firstOfMany) {
+      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
+        order: string;
+        amount: number;
+      }>();
+    }
 
     // @ts-expect-error an event type's data has no such field
     (await one.next())?.data.amount;

@@ -10,8 +10,8 @@
  *   the order they were sent;
  * - no step body ran twice;
  * - the run ends;
- * - the replays returned the same values (every read and race winner a body
- *   logged is identical in all the bodies that logged it);
+ * - the replays returned the same values (every read a body logged, and the
+ *   winner of a non-race shape, is identical in all the bodies that logged it);
  * - nothing is left behind: a message sent after the run ended starts no work.
  *   The kit cannot list pauses; the pause layer has its own Go test.
  *
@@ -431,10 +431,15 @@ const runCell = async (
       failures.push(`step bodies ran twice: ${doubled.join(",")}`);
     }
 
+    // Who wins a plain Promise.race can differ between the first run and a
+    // replay (a read answered from the state beats a memoized step), so for the
+    // race shape only the values read are compared.
+    const replayed =
+      shape === "race" ? /^(read:\d+):(.*)$/ : /^(read:\d+|winner):(.*)$/;
     const seen = new Map<string, Set<string>>();
 
     for (const l of log) {
-      const m = /^(read:\d+|winner):(.*)$/.exec(l);
+      const m = replayed.exec(l);
 
       if (m?.[1] && m[2] !== undefined) {
         const set = seen.get(m[1]) ?? new Set<string>();

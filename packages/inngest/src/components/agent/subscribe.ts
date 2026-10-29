@@ -4,18 +4,21 @@
  *
  * Opening a subscription asks the executor to keep a pause for the run. The
  * pause is not consumed when an event matches: the executor saves the event as
- * a step of the run, named after the subscription and the event, and wakes the
- * run if it is blocked waiting for it. Messages that arrive while the function
- * is busy are already in the run's state when it asks for them, and nothing
- * sent between turns is lost.
+ * a step of the run, named after the subscription and the event. Messages only
+ * accumulate there; saving a message does nothing else. Messages that arrive
+ * while the function is busy are already in the run's state when it asks for
+ * them, and nothing sent between turns is lost.
  *
  * The order of the messages is their order in the run's stack, which the
- * function receives with every request. A message that is already there is read
- * without a step. Only a read that has to wait is a step (the executor answers
- * it once the message exists), so a subscription costs one open and one close
- * step for each event, a wait when the function was blocked, and a step for every `poll()`.
- * Several events are several pauses sharing one subscription, so their messages
- * are one sequence in the order the executor saved them.
+ * function receives with every request: the k-th `next()` returns the k-th
+ * message. A message that is already there is read without a step. When there is
+ * none, the function parks: the executor records a marker and wakes the run
+ * when a message arrives. Only a parked run is woken; a busy run reads
+ * everything on its next request. A subscription costs one open and one close
+ * step for each event, a park (and a wake) whenever the function had to wait,
+ * and a step for every `poll()`. Several events are several pauses sharing one
+ * subscription, so their messages are one sequence in the order the executor
+ * saved them.
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
@@ -27,12 +30,18 @@ import type {
 /**
  * One delivered message.
  */
-export interface InboxMessage<TData = unknown> {
+export interface InboxMessage<TData = unknown, TName extends string = string> {
   /**
    * Position in the subscription, starting at 1. A message put back by the
    * trigger event has `seq` 0.
    */
   seq: number;
+
+  /**
+   * The name of the event, so the messages of a subscription to several events
+   * can be told apart.
+   */
+  name: TName;
 
   /**
    * The event that was sent.
@@ -63,8 +72,32 @@ export interface SubscribeEvent {
  * arrived in, as far as events arrive in a defined order.
  */
 export type SubscribeOptions =
-  | SubscribeEvent
-  | { events: readonly SubscribeEvent[] };
+  | (SubscribeEvent & { events?: never })
+  | { events: readonly SubscribeEvent[]; event?: never; if?: never };
+
+/**
+ * Options that name only fields of `SubscribeOptions`. An object literal passed
+ * for a generic parameter is not checked for extra fields, so a typo such as
+ * `iff` would be dropped silently; this turns it into an error.
+ */
+export type ExactOptions<TOpts> = Exclude<
+  keyof TOpts,
+  "event" | "if" | "events"
+> extends never
+  ? unknown
+  : never;
+
+/**
+ * Options whose events are all named by a string. Only these may be given an
+ * explicit message type, because there is no event type to check it against.
+ */
+export type NamedOptions =
+  | { event: string; if?: string; events?: never }
+  | {
+      events: readonly { event: string; if?: string }[];
+      event?: never;
+      if?: never;
+    };
 
 /**
  * The data of the messages of an event source: the schema's for an
@@ -76,6 +109,33 @@ type SourceData<TSource> = TSource extends EventType<string, infer TSchema>
     : // biome-ignore lint/suspicious/noExplicitAny: an event type without a schema
       Record<string, any>
   : unknown;
+
+/**
+ * The name of an event source: the literal for an `eventType()`, any string for
+ * a name.
+ */
+type SourceName<TSource> = TSource extends EventType<infer TName, infer _>
+  ? TName
+  : string;
+
+/**
+ * The message of one event source.
+ */
+type SourceMessage<TEvent extends SubscribeEvent> = TEvent extends unknown
+  ? InboxMessage<SourceData<TEvent["event"]>, SourceName<TEvent["event"]>>
+  : never;
+
+/**
+ * The messages of a subscription as a union with one member per event, so
+ * checking `message.name` narrows `message.data`.
+ */
+export type SubscribeMessages<TOpts> = TOpts extends {
+  events: readonly (infer TEvent extends SubscribeEvent)[];
+}
+  ? SourceMessage<TEvent>
+  : TOpts extends SubscribeEvent
+    ? SourceMessage<TOpts>
+    : InboxMessage;
 
 /**
  * The data of the messages of a subscription, from the event types in its
@@ -109,11 +169,26 @@ export function eventNameOf(source: SubscribeEvent["event"]): string {
 }
 
 /**
+ * The signature of `step.subscribe()`. With event types, the message type comes
+ * from them and the options are checked for typos. An explicit message type is
+ * only taken for events named by a string, where there is nothing to check it
+ * against.
+ */
+export interface SubscribeTool<TId> {
+  <const TOpts extends SubscribeOptions>(
+    id: TId,
+    opts: TOpts & ExactOptions<TOpts>,
+  ): Promise<Subscription<SubscribeData<TOpts>, SubscribeMessages<TOpts>>>;
+
+  <TData>(id: TId, opts: NamedOptions): Promise<Subscription<TData>>;
+}
+
+/**
  * The events of the options.
  * @param opts Subscription options.
  */
 export function streamsOf(opts: SubscribeOptions): readonly SubscribeEvent[] {
-  const streams = "events" in opts ? opts.events : [opts];
+  const streams = opts.events ?? [opts];
 
   if (streams.length === 0) {
     throw new Error("`step.subscribe()` needs at least one event.");
@@ -126,28 +201,39 @@ export function streamsOf(opts: SubscribeOptions): readonly SubscribeEvent[] {
  * A subscription. Iterate it with `for await`; the loop ends once it is
  * closed and drained.
  */
-export interface Subscription<TData = unknown>
-  extends AsyncIterable<InboxMessage<TData>>,
+export interface Subscription<
+  TData = unknown,
+  // biome-ignore lint/suspicious/noExplicitAny: a view of the messages, whatever their data
+  TMessage extends InboxMessage<any, string> = InboxMessage<TData>,
+> extends AsyncIterable<TMessage>,
     AsyncDisposable {
   /**
    * Waits for the next message, or returns `null` once the subscription is
    * closed and every saved message has been read.
+   *
+   * A `next()` that is waiting still takes its message, even if you stopped
+   * awaiting it: do not race `next()` against a timer or another step in a
+   * plain `Promise.race` and then read again, because the dropped call eats a
+   * message and the next read waits for the one after it. Race a step against
+   * `poll()`, or wait with `group.parallel({ mode: "race" })` (a plain
+   * `Promise.race` with `optimizeParallelism` on can leave the run waiting, as it
+   * can with `waitForEvent`). `close()` ends a wait that is still open.
    */
-  next(): Promise<InboxMessage<TData> | null>;
+  next(): Promise<TMessage | null>;
 
   /**
    * Reads the next message if it has already arrived, without waiting. Use it
    * between model calls to fold in messages sent while working. It is a step,
    * so the answer is the same when the function replays.
    */
-  poll(): Promise<InboxMessage<TData> | null>;
+  poll(): Promise<TMessage | null>;
 
   /**
    * Puts messages back, in order, so the next reads return them before
    * anything newer. Use it for polled messages that are not yours to handle
    * yet.
    */
-  putBack(messages: InboxMessage<TData>[]): void;
+  putBack(messages: TMessage[]): void;
 
   /**
    * Ends the subscription: no new messages are saved. It only ends the
@@ -162,7 +248,7 @@ export interface Subscription<TData = unknown>
    * @returns The messages that were saved but not read, in the order they are
    * read. They are taken out of the subscription.
    */
-  close(): Promise<InboxMessage<TData>[]>;
+  close(): Promise<TMessage[]>;
 
   /**
    * Closes the subscription when its scope ends, so `await using` needs no
@@ -193,13 +279,17 @@ export type SubscribeOp = (
  * @param skip Tells the engine a wait was not asked for because its message
  * was already there.
  */
-export async function openSubscription<TData = unknown>(
+export async function openSubscription<
+  TData = unknown,
+  // biome-ignore lint/suspicious/noExplicitAny: a view of the messages, whatever their data
+  TMessage extends InboxMessage<any, string> = InboxMessage<TData>,
+>(
   op: SubscribeOp,
   key: string,
   opts: SubscribeOptions,
   read: () => unknown[],
   skip: (id: string) => Promise<void>,
-): Promise<Subscription<TData>> {
+): Promise<Subscription<TData, TMessage>> {
   const streams = streamsOf(opts);
 
   // The IDs of a single event are the subscription's own, without a stream.
@@ -216,6 +306,11 @@ export async function openSubscription<TData = unknown>(
   let readCount = 0;
   let polls = 0;
   let total: number | undefined;
+
+  // The name of the event a message is.
+  const nameOf = (data: unknown): string => {
+    return (data as { name?: string } | null | undefined)?.name ?? "";
+  };
 
   // Messages put back, oldest first.
   const held: InboxMessage<TData>[] = [];
@@ -237,41 +332,8 @@ export async function openSubscription<TData = unknown>(
     return result;
   }
 
-  // The read of the last next() call while it is unfinished. `fresh` holds
-  // until the end of the tick that started it.
-  let waiting:
-    | { result: Promise<InboxMessage<TData> | null>; fresh: boolean }
-    | undefined;
-
   function next(): Promise<InboxMessage<TData> | null> {
-    // A call made in a later tick while the previous read is still parked means
-    // the caller dropped that read (a `Promise.race` it lost). Joining it gives
-    // this caller its message, so the message is not eaten and the run is not
-    // left parked behind a read nobody awaits. Calls made in the same tick
-    // (`Promise.all([next(), next()])`) are separate reads.
-    if (waiting && !waiting.fresh) {
-      return waiting.result;
-    }
-
-    const entry = {
-      result: inOrder(readNext),
-      fresh: true,
-    };
-
-    waiting = entry;
-    queueMicrotask(() => {
-      entry.fresh = false;
-    });
-
-    const done = () => {
-      if (waiting === entry) {
-        waiting = undefined;
-      }
-    };
-
-    entry.result.then(done, done);
-
-    return entry.result;
+    return inOrder(readNext);
   }
 
   async function readNext(): Promise<InboxMessage<TData> | null> {
@@ -301,12 +363,14 @@ export async function openSubscription<TData = unknown>(
 
     const message = messages[seq - 1];
     if (message === undefined) {
-      throw new Error(`Subscription "${key}": message ${seq} is missing.`);
+      // The park ended without a message: the subscription was closed while this
+      // read was waiting.
+      return null;
     }
 
     readCount = seq;
 
-    return { seq, data: message as TData };
+    return { seq, name: nameOf(message), data: message as TData };
   }
 
   function poll(): Promise<InboxMessage<TData> | null> {
@@ -332,7 +396,7 @@ export async function openSubscription<TData = unknown>(
 
     readCount = seq;
 
-    return { seq, data: message as TData };
+    return { seq, name: nameOf(message), data: message as TData };
   }
 
   let closing: Promise<InboxMessage<TData>[]> | undefined;
@@ -368,7 +432,11 @@ export async function openSubscription<TData = unknown>(
       const messages = read();
 
       for (let seq = readCount + 1; seq <= count; seq++) {
-        unread.push({ seq, data: messages[seq - 1] as TData });
+        unread.push({
+          seq,
+          name: nameOf(messages[seq - 1]),
+          data: messages[seq - 1] as TData,
+        });
       }
       readCount = count;
 
@@ -378,7 +446,9 @@ export async function openSubscription<TData = unknown>(
     return closing;
   }
 
-  return {
+  // The messages are built with a name and the data of the event; the caller's
+  // `TMessage` is only a narrower view of the same objects.
+  const subscription: Subscription<TData> = {
     next,
     poll,
     putBack(messages) {
@@ -401,6 +471,8 @@ export async function openSubscription<TData = unknown>(
       };
     },
   };
+
+  return subscription as unknown as Subscription<TData, TMessage>;
 }
 
 // Node before 20.5 lacks the symbol that `await using` looks up.

@@ -38,8 +38,8 @@ import {
   eventNameOf,
   openSubscription,
   type SubscribeEvent,
-  type SubscribeMessageData,
   type SubscribeOptions,
+  type SubscribeTool,
   type Subscription,
   streamsOf,
 } from "./agent/subscribe.ts";
@@ -582,18 +582,15 @@ export const createStepTools = <
      * subscription for the life of the run and saves every matching event as
      * a numbered message, so nothing sent while the function is busy is lost.
      */
-    subscribe: <
-      TData = unknown,
-      const TOpts extends SubscribeOptions = SubscribeOptions,
-    >(
+    subscribe: ((
       idOrOptions: StepOptionsOrId,
-      opts: TOpts,
-    ): Promise<Subscription<SubscribeMessageData<TData, TOpts>>> => {
+      opts: SubscribeOptions,
+    ): Promise<Subscription> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
       const streams = streamsOf(opts);
 
-      return openSubscription<SubscribeMessageData<TData, TOpts>>(
+      return openSubscription(
         function op(stepId, mode, seq, stream) {
           const target = streams[stream];
 
@@ -621,7 +618,7 @@ export const createStepTools = <
           await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
         },
       );
-    },
+    }) as SubscribeTool<StepOptionsOrId>,
 
     /**
      * One op of a subscription. Used by `subscribe`.
