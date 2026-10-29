@@ -13,6 +13,7 @@
 import { type Kv, type KvScopeInstance, kvKey } from "./kv.ts";
 import { type EffectiveLimits, narrowInherited } from "./limits.ts";
 import type { AgentTurn } from "./loop.ts";
+import { scoreThisStep } from "./scores.ts";
 import { summaryLength, type ThreadRecord, threadRecordKey } from "./thread.ts";
 
 const recordKey = kvKey<ThreadRecord>(threadRecordKey);
@@ -33,6 +34,10 @@ export const threadRecorder = (
    * The live run, stamped on every write.
    */
   runId: string,
+  /**
+   * Whether the stop is scored `agent.stopped` on its own step.
+   */
+  scores = false,
 ) => {
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
@@ -78,6 +83,10 @@ export const threadRecorder = (
      */
     stopped: () => {
       return record(() => {
+        if (scores) {
+          scoreThisStep("agent.stopped", 1);
+        }
+
         return { status: "stopped" };
       });
     },
