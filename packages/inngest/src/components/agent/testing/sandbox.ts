@@ -111,13 +111,45 @@ const runLocal = (
 };
 
 /**
+ * A fake Sandboxes API and what it recorded.
+ */
+export interface FakeSandbox {
+  /**
+   * The Sandboxes API. Pass it as the `fetch` option of the Inngest client;
+   * every request that is not for the Sandboxes API goes to the real one.
+   */
+  fetch: typeof fetch;
+
+  /**
+   * Every operation so far, oldest first.
+   */
+  calls: Call[];
+
+  /**
+   * The operations that match every field of `filter`, oldest first.
+   */
+  posts: (filter?: Pick<CallFilter, "method" | "thread">) => Call[];
+
+  /**
+   * Kills the processes the agent started and removes the directory the tools
+   * were written to. Later requests answer 503.
+   */
+  close: () => Promise<void>;
+
+  /**
+   * Same as `close()`, for `await using sandbox = fakeSandbox()`.
+   */
+  [Symbol.asyncDispose]: () => Promise<void>;
+}
+
+/**
  * Builds the fake Sandboxes API. Close it when the test ends: that kills the
  * processes the agent started and removes the directory the tools were
  * written to.
  * @returns `fetch`, to pass as the `fetch` option of the Inngest client;
  * `calls` and `posts()`, the operations so far; `close()`.
  */
-export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
+export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
   const realFetch = globalThis.fetch;
   const calls: Call[] = [];
   const children = new Set<ReturnType<typeof spawn>>();

@@ -29,6 +29,10 @@ export type { GitRemote } from "../../components/agent/testing/gitRemote.ts";
 export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
 export type { ScriptStep } from "../../components/agent/testing/model.ts";
 export { script } from "../../components/agent/testing/model.ts";
-export type { FakeSandboxOptions } from "../../components/agent/testing/sandbox.ts";
+export type {
+  FakeSandbox,
+  FakeSandboxOptions,
+} from "../../components/agent/testing/sandbox.ts";
 export { fakeSandbox } from "../../components/agent/testing/sandbox.ts";
+export type { ThreadHandleWithKeys } from "../../components/agent/testing/threads.ts";
 export { withKeys } from "../../components/agent/testing/threads.ts";
