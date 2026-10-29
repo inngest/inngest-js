@@ -92,7 +92,9 @@ export const inboxTools = scenario({
                 case 4:
                   return call(4, "work", {});
                 case 5:
-                  return call(5, "inbox_stop", { as: "ci" });
+                  return call(5, "inbox_read", { as: "ci" });
+                case 6:
+                  return call(6, "inbox_stop", { as: "ci" });
                 default:
                   return {
                     message: {
@@ -201,6 +203,13 @@ export const inboxTools = scenario({
       "the event that arrived during the slow tool was folded into the model's next call",
       (await state()).steered === 1,
       await state(),
+    );
+    ctx.check(
+      "inbox_read still shows the event the loop folded in, since it reads through the listener's own view",
+      final.some((line) => {
+        return line.startsWith("inbox_read:ok") && line.includes("green");
+      }),
+      final,
     );
     ctx.check(
       "the model stopped the listener",
