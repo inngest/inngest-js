@@ -190,7 +190,7 @@ export const buildArgv = (
   return argv;
 };
 
-const shellEscape = (value: string): string => {
+export const shellEscape = (value: string): string => {
   return `'${value.split("'").join(`'\\''`)}'`;
 };
 

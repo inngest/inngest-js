@@ -1,8 +1,10 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
-import type { SandboxToolsOptions } from "./tools.ts";
+import type { SandboxShell, SandboxShellOptions } from "./shell.ts";
+import type { SandboxTool, SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -177,6 +179,11 @@ export interface SandboxCommandOptions {
   environment?: Record<string, string>;
   cwd?: string;
   timeout?: SandboxDuration;
+  /**
+   * @internal Set by `sandbox.shell()`: what the command reads as in errors,
+   * and how to take its session report off stdout before the exit is judged.
+   */
+  "~shell"?: { text: string; strip: (stdout: string) => string };
 }
 
 /**
@@ -580,12 +587,35 @@ export interface SandboxClient {
   };
 }
 
+/**
+ * Tools a model can use in a sandbox, built on the sandbox's own commands and
+ * files.
+ */
+export interface DurableSandboxToolSet {
+  /**
+   * `read`, `write`, `edit`, `search` and `run`, for `agent.loop()`.
+   */
+  code<TName extends CodeToolName = CodeToolName>(
+    options?: CodeToolsOptions<TName>,
+  ): Record<TName, SandboxTool>;
+}
+
+/**
+ * The parts of a sandbox that tools use: commands and files.
+ */
+export type SandboxHandle = Pick<DurableSandbox, "commands" | "files">;
+
 export interface DurableSandbox {
   /**
    * Run a command as one step, from a tagged template. `$.sh` runs a shell
    * script, and `$(options)` gives a `$` with options set. See `SandboxDollar`.
    */
   readonly $: SandboxDollar;
+  /**
+   * A shell session on this sandbox, whose commands share a working
+   * directory and exported environment. See `SandboxShell`.
+   */
+  shell(options?: SandboxShellOptions): SandboxShell;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;
@@ -599,6 +629,7 @@ export interface DurableSandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
+  readonly tools: DurableSandboxToolSet;
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,

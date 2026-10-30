@@ -36,11 +36,16 @@ export type GroupSandbox = <T>(
  * error the function goes on to throw is final.
  *
  * The scope's cleanup defer is aborted once the destroy has succeeded.
+ *
+ * `final: false` leaves retries as they were, for a destroy the run goes on
+ * past: a retry replays the memoized destroy, and the next use of the sandbox
+ * restores it.
  */
 export const destroyQuietly = async (
   sandbox: DurableSandbox,
   idOrOptions: StepOptionsOrId,
   cleanup?: DeferHandle,
+  options: { final?: boolean } = {},
 ): Promise<void> => {
   try {
     await sandbox.destroy(idOrOptions);
@@ -52,20 +57,33 @@ export const destroyQuietly = async (
     }
   }
 
-  getAsyncCtxSync()?.execution?.instance.failFinally();
+  if (options.final !== false) {
+    getAsyncCtxSync()?.execution?.instance.failFinally();
+  }
 };
+
+/**
+ * The size of a sandbox that names none.
+ */
+export const defaultSandboxSize = Object.freeze({ vcpu: 2, memoryMb: 2048 });
 
 /**
  * The options of a sandbox created from just an ID. Each run's sandboxes need
  * names that no other run shares.
  */
-export const sandboxDefaults = (id: string) => {
+export const sandboxCreateDefaults = (id: string) => {
   return {
-    id,
     name: `${getAsyncCtxSync()?.execution?.ctx.runId}-${id}`,
-    vcpu: 2,
-    memoryMb: 2048,
+    ...defaultSandboxSize,
   };
+};
+
+/**
+ * `sandboxCreateDefaults()` with the ID, for a group sandbox made from just an
+ * ID.
+ */
+export const sandboxDefaults = (id: string) => {
+  return { id, ...sandboxCreateDefaults(id) };
 };
 
 /**

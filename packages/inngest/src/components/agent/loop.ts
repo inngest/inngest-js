@@ -1,0 +1,1202 @@
+/**
+ * @module
+ * EXPERIMENTAL: `agent.loop()`, a model-and-tools loop where every model call
+ * is a step and every tool call is a step (or a group of steps). A run replays
+ * from its memoized turns, so a crash never repeats a model call or a tool.
+ *
+ * The loop knows nothing about providers. You pass a `model` function that
+ * calls your SDK of choice and answers in the small shape below.
+ */
+
+import hashjs from "hash.js";
+import { getAsyncCtxSync } from "../execution/als.ts";
+import { step, withSpan, withStepIdPrefix } from "../InngestStepTools.ts";
+import { expandMcpTools } from "../sandbox/mcp.ts";
+import {
+  isToolError,
+  resolveToolCall,
+  type SandboxTools,
+  type ToolInputType,
+  type ToolJsonDefinition,
+  type ToolOutputType,
+  toolDefinitions,
+  toolErrorOf,
+} from "../sandbox/tools.ts";
+import type { DurableSandbox } from "../sandbox/types.ts";
+import { anthropic } from "./anthropic.ts";
+import {
+  type AgentCompaction,
+  type AgentCompactionOptions,
+  withCompaction,
+} from "./context.ts";
+import { type AgentPrice, priceOf } from "./cost.ts";
+import { nextCount } from "./executionCounter.ts";
+import { invoke } from "./invoke.ts";
+import { classifyModelError, untrusted } from "./modelErrors.ts";
+import { scoreThisStep } from "./scores.ts";
+
+/**
+ * A content block of a user message, in the shape your model function sends
+ * to its provider (`{ type: "text", text }`, `{ type: "image", ... }`).
+ */
+export interface AgentContentBlock {
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * What a user message holds: text, or content blocks.
+ */
+export type AgentUserContent = string | AgentContentBlock[];
+
+/**
+ * An event as the loop takes it: what an inbox message is, without its place
+ * in the inbox.
+ */
+export interface AgentEvent {
+  id?: string;
+  name: string;
+  data: unknown;
+}
+
+/**
+ * What goes into the conversation as a user message: text, content blocks, or
+ * an event (an inbox message), which `format` turns into one of those.
+ */
+export type AgentInput = AgentUserContent | AgentEvent;
+
+/**
+ * The default `format`: the text of an `agent/message` or `agent/steer`, and
+ * the name and data of any other event as JSON.
+ */
+export const defaultFormat = (event: AgentEvent): string => {
+  const data = event.data as { text?: unknown } | null | undefined;
+
+  if (
+    (event.name === "agent/message" || event.name === "agent/steer") &&
+    typeof data?.text === "string"
+  ) {
+    return data.text;
+  }
+
+  return JSON.stringify({ event: event.name, data: event.data });
+};
+
+/**
+ * One message of the conversation. The loop keeps the `content` of an
+ * `assistant` message exactly as your `model` function returned it, so
+ * provider-specific parts (such as Anthropic thinking blocks and their
+ * signatures) go back to the model untouched.
+ */
+export type AgentMessage =
+  | { role: "user"; content: AgentUserContent }
+  | { role: "assistant"; content: unknown }
+  | { role: "tool"; results: AgentToolResult[] };
+
+/**
+ * What one tool call gave back. `content` is the result as text, and
+ * `isError` is set when the tool failed. `name` and `input` are the call
+ * it answers.
+ */
+export interface AgentToolResult {
+  /**
+   * The ID of the call this answers.
+   */
+  toolCallId: string;
+
+  /**
+   * The tool's name.
+   */
+  name: string;
+
+  /**
+   * The arguments of the call, as the model sent them.
+   */
+  input: unknown;
+
+  /**
+   * The result as text.
+   */
+  content: string;
+
+  /**
+   * Set when the tool failed.
+   */
+  isError?: boolean;
+}
+
+// The default for the tools a loop's runs and result were given. `any` is
+// what lets a result typed for its own tools be assigned to a plain
+// `AgentLoopResult` or `AgentToolRun`: `keyof TTools` makes the compiler treat
+// the parameter as invariant, and `any` is the one argument that goes both
+// ways. Its runs have `unknown` input and output, as untyped tools should.
+// `AgentLoopOptions` keeps `SandboxTools` as its default so that plain options
+// still check their `tools`; a typed one is not assignable to it.
+// biome-ignore lint/suspicious/noExplicitAny: see above
+type AnyTools = any;
+
+/**
+ * A tool call the model asked for.
+ */
+export interface AgentToolCall<
+  TName extends string = string,
+  TInput = unknown,
+> {
+  /**
+   * The provider's ID of the call; the result answers it.
+   */
+  id: string;
+
+  /**
+   * The tool's name in the model's list.
+   */
+  name: TName;
+
+  /**
+   * The arguments the model sent. Untrusted JSON until the tool's schema has
+   * checked it, so it is `unknown` unless the run did not fail.
+   */
+  input: TInput;
+}
+
+/**
+ * Tokens used by model calls. `input` counts every input token, cached or
+ * not, so `input + output` is what a token budget counts.
+ */
+export interface AgentUsage {
+  /**
+   * Input tokens, including the cached ones.
+   */
+  input: number;
+
+  /**
+   * Output tokens.
+   */
+  output: number;
+
+  /**
+   * Cost in US dollars, when the loop was given a `price`.
+   */
+  usd?: number;
+
+  /**
+   * Of `input`, the tokens read from the provider's prompt cache. Set by
+   * `anthropic()`; a model function that reports none leaves it out.
+   */
+  cacheRead?: number;
+
+  /**
+   * Of `input`, the tokens written to the provider's prompt cache.
+   */
+  cacheWrite?: number;
+
+  /**
+   * Of `cacheWrite`, the tokens written with the one-hour lifetime, which
+   * Anthropic bills at a higher rate than the five-minute one.
+   */
+  cacheWrite1h?: number;
+}
+
+/**
+ * What the loop hands to your `model` function for one call.
+ */
+export interface AgentModelRequest {
+  /**
+   * The system prompt, if the loop has one.
+   */
+  system?: string;
+
+  /**
+   * The whole conversation so far. Map each message to your provider's
+   * format; a `tool` message holds the results of all the calls the
+   * previous reply made, in one message.
+   */
+  messages: AgentMessage[];
+
+  /**
+   * This call's number, from 1.
+   */
+  turn: number;
+
+  /**
+   * The most model calls the loop will make.
+   */
+  maxTurns: number;
+
+  /**
+   * `"none"` on the last turn when the loop has a `wrapUp` text: keep
+   * `tools` in the request, since the conversation uses them, but forbid
+   * calling one (Anthropic: `tool_choice: { type: "none" }`).
+   */
+  toolChoice?: "none";
+
+  /**
+   * The tools in the shape model APIs take. Pass them straight to your SDK.
+   */
+  tools: ToolJsonDefinition[];
+}
+
+/**
+ * What your `model` function answers with: the reply, its text, the tool calls
+ * it asks for and the tokens it used.
+ */
+export interface AgentModelResponse {
+  /**
+   * The assistant's reply, kept in the history as it is.
+   */
+  message: Extract<AgentMessage, { role: "assistant" }>;
+
+  /**
+   * The reply's text, for the final result and `onTurn`.
+   */
+  text?: string;
+
+  /**
+   * The calls the reply asks for. A reply with none is the final one.
+   */
+  toolCalls: AgentToolCall[];
+
+  /**
+   * Tokens this call used, which the loop adds up. Default: none counted.
+   */
+  usage?: AgentUsage;
+
+  /**
+   * The model that answered, such as `claude-sonnet-5-5`. It is given to
+   * `price` to work out what the call cost.
+   */
+  model?: string;
+}
+
+/**
+ * Calls a model once. It runs inside a step, so a failure is retried. The loop
+ * gives up at once on a client error no retry can fix (a 4xx other than 408,
+ * 409 and 429; see `agent.classifyModelError()`), and you can throw a
+ * `NonRetriableError` yourself for anything else a retry can't help.
+ */
+export type AgentModel = (
+  request: AgentModelRequest,
+) => Promise<AgentModelResponse>;
+
+/**
+ * One finished model call, as `onTurn` receives it.
+ */
+export interface AgentTurn {
+  /**
+   * This call's number, from 1.
+   */
+  turn: number;
+
+  /**
+   * The ID of the model call's step.
+   */
+  stepId: string;
+
+  /**
+   * The reply's text.
+   */
+  text: string;
+
+  /**
+   * The calls the reply asked for.
+   */
+  toolCalls: AgentToolCall[];
+
+  /**
+   * Tokens this call used.
+   */
+  usage: AgentUsage;
+
+  /**
+   * What `recordTurn` returned, if the loop has one: it ran inside the model
+   * call's step, so it cost no step of its own.
+   */
+  recorded?: unknown;
+}
+
+/**
+ * One finished tool call. `output` is what the tool returned (the body of an
+ * `agent.toolError()`, or the error message when it threw), `stepId` the ID
+ * of its step (the prefix of its steps for `tool.group()`), and `ms` how long
+ * the call took in this execution, which is short when it replays.
+ *
+ * With typed `tools`, once `isError` is false, checking `name` narrows
+ * `call.input` and `output` to what that tool declares. A failed run is not
+ * narrowed: the model may have named a tool you don't have or passed input
+ * that doesn't fit, so its `name` is any string and its `call.input` unknown.
+ */
+export type AgentToolRun<TTools extends SandboxTools = AnyTools> =
+  | {
+      [TName in keyof TTools & string]: AgentToolRunOf<
+        TName,
+        ToolInputType<TTools[TName]>,
+        false,
+        ToolOutputType<TTools[TName]>
+      >;
+    }[keyof TTools & string]
+  | AgentToolRunOf<string, unknown, true, unknown>;
+
+interface AgentToolRunOf<
+  TName extends string,
+  TInput,
+  TIsError extends boolean,
+  TOutput,
+> {
+  /**
+   * The model call that asked for it.
+   */
+  turn: number;
+
+  /**
+   * The tool's name, the same as `call.name`, on the run itself so that
+   * checking it narrows `call.input` and `output`.
+   */
+  name: TName;
+
+  /**
+   * The call.
+   */
+  call: AgentToolCall<TName, TInput>;
+
+  /**
+   * What the tool returned.
+   */
+  output: TOutput;
+
+  /**
+   * Whether the call failed.
+   */
+  isError: TIsError;
+
+  /**
+   * The ID of the call's step.
+   */
+  stepId: string;
+
+  /**
+   * How long the call took in this execution.
+   */
+  ms: number;
+}
+
+/**
+ * Options of `agent.loop()`.
+ */
+export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
+  /**
+   * Prefix of the step IDs. Default `"agent"`. A second loop with the same
+   * prefix in one run gets `-2` after it, a third `-3`, so loops can repeat
+   * in one function without choosing IDs. The first keeps the plain prefix.
+   */
+  id?: string;
+
+  /**
+   * Calls your model once per turn. Make it with `agent.model()`.
+   */
+  model: AgentModel;
+
+  /**
+   * The system prompt. Default: none.
+   */
+  system?: string;
+
+  /**
+   * The first user message: text, content blocks, or an event such as an
+   * inbox message, which `format` turns into text or blocks.
+   */
+  prompt: AgentInput;
+
+  /**
+   * Turns an event (a `prompt` or a steering message that is an inbox
+   * message) into what the model sees: text or content blocks. Default: the
+   * `data.text` of `agent/message` and `agent/steer`, and the event's name and
+   * data as JSON for any other event.
+   */
+  format?: (event: AgentEvent) => AgentUserContent;
+
+  /**
+   * Tools the model can call, declared like sandbox tools. A tool that
+   * throws, or returns `agent.toolError(body)`, gives the model an error
+   * result to react to. Default: none.
+   */
+  tools?: TTools;
+
+  /**
+   * The most characters of one tool result the model sees; a longer one keeps
+   * its start and end and says how much is missing. Set it high: a result cut
+   * short is information the model never gets back, unless `spill` saves the
+   * whole of it. Default 100000.
+   */
+  maxToolOutput?: number;
+
+  /**
+   * Where the whole of a result goes when it is longer than `maxToolOutput`:
+   * a file in a sandbox, whose path the model is told, so it can read the
+   * part it needs with a tool. `dir` is where the files go and must exist.
+   * Default: nothing is saved. Example: `spill: { sandbox }`.
+   */
+  spill?: { sandbox: Pick<DurableSandbox, "files">; dir?: string };
+
+  /**
+   * Run the tool calls of one reply at the same time, and give the model
+   * their results in the order it called them. A failure is only that call's
+   * result. Set `false` to run them one after another, for tools that touch
+   * the same state. Default `true`.
+   */
+  parallelTools?: boolean;
+
+  /**
+   * The most model calls to make. Default 40.
+   */
+  maxTurns?: number;
+
+  /**
+   * The `history` of an earlier result, to continue its conversation.
+   */
+  history?: AgentMessage[];
+
+  /**
+   * Called between model calls, after the tool results. What it returns
+   * (text, blocks or events, as for `prompt`) reaches the model as user
+   * messages, so a person can redirect a long task. It runs in your function,
+   * so it can use steps to read a durable log.
+   */
+  steer?: (turn: number) => Promise<AgentInput[] | undefined>;
+
+  /**
+   * Called between model calls, after `steer`. Return `true` to end the loop
+   * early with `stopped: "stopped"`. It runs in your function, so it can use
+   * steps to read a durable flag.
+   */
+  stop?: (turn: number) => Promise<boolean>;
+
+  /**
+   * Called before each model call. Return a reason to end the loop with
+   * `stopped: "budget"` and that `reason`, as `control.budget` does when the
+   * agent's `limits.budget` is spent.
+   */
+  budget?: (turn: number) => string | undefined | Promise<string | undefined>;
+
+  /**
+   * The text to send on the last turn (the `maxTurns`th call), with no
+   * tool use allowed, so the model has to write its answer.
+   */
+  wrapUp?: string;
+
+  /**
+   * Summarises the start of the conversation once it nears the model's
+   * context window. Until then every call sends the whole conversation, so a
+   * provider's prompt cache keeps hitting the same prefix and no old message
+   * or tool result is ever edited. Past `maxTokens`, everything but the last
+   * `keep` messages becomes one summary message. The summary is made once,
+   * kept in that model step's saved output (so a replay restores it) and
+   * reused until the conversation passes the budget again. The `history` you
+   * get back is never summarised. Default: off, the conversation is always
+   * sent whole. Example: `compaction: { maxTokens: 700_000 }`.
+   */
+  compaction?: AgentCompactionOptions;
+
+  /**
+   * Called when a tool call finishes, to record or show each call. It runs in
+   * your function on every execution, so put side effects in steps; their IDs
+   * are scoped to the call, so parallel calls don't clash.
+   */
+  onToolResult?: (run: AgentToolRun<TTools>) => void | Promise<void>;
+
+  /**
+   * Called after each model call, for progress. It runs in your function on
+   * every execution, so put side effects in steps (with IDs that include
+   * `turn`) to post to Slack or a database once. An error fails the run.
+   */
+  onTurn?: (turn: AgentTurn) => void | Promise<void>;
+
+  /**
+   * Called inside the model call's step, once the call has answered, to record
+   * the turn without a step of its own. It runs again if the step is retried,
+   * so it must be safe to repeat. What it returns is stored with the reply and
+   * handed to `onTurn` as `turn.recorded`, also on a replay.
+   */
+  recordTurn?: (turn: AgentTurn) => Promise<unknown>;
+
+  /**
+   * What a model call costs: a function of that call's tokens and model that
+   * returns US dollars, or rates per million tokens by model name (`"*"` for
+   * any other). The loop adds the cost of each call to `usage.usd` and to the
+   * turn's `usage.usd`, which is what `limits.budget.usd` counts. The SDK has no
+   * prices of its own. The cost is worked out once, inside the model call's step,
+   * and a replay reuses it.
+   * Spread `...control` to take the agent's `limits.price`.
+   */
+  price?: AgentPrice;
+
+  /**
+   * Whether the loop scores itself. Default: `true`. Each score is written on
+   * a step the loop already runs, with that step's result, so it adds no steps
+   * and a replay never writes it again.
+   *
+   * A model step gets `agent.model_ms` (how long the model function took),
+   * `agent.input_tokens` and `agent.output_tokens` when it reported usage
+   * (plus `agent.cache_read_tokens` and `agent.cache_write_tokens` when it
+   * reported those),
+   * `agent.tool_calls` (how many tools the model asked for) and
+   * `agent.steers` (how many steering messages were folded in before the
+   * call). A tool step gets `agent.tool_ms` and `agent.tool_error` (1 when
+   * the tool threw or returned `agent.toolError()`, else 0). A group of steps
+   * from `tool.group()` is not scored, since it is not one step.
+   *
+   * Spread `control` from an agent body to follow the agent's `scores`
+   * setting.
+   */
+  scores?: boolean;
+}
+
+/**
+ * What `agent.loop()` returns.
+ */
+export interface AgentLoopResult<TTools extends SandboxTools = AnyTools> {
+  /**
+   * The text of the last model reply.
+   */
+  text: string;
+
+  /**
+   * Why the loop ended: the model finished (`"done"`), it ran out of turns,
+   * `stop` asked to end it, or the budget was spent.
+   */
+  stopped: "done" | "maxTurns" | "stopped" | "budget";
+
+  /**
+   * Why the loop ended, for `stopped: "budget"`.
+   */
+  reason?: string;
+
+  /**
+   * How many model calls the loop made.
+   */
+  turns: number;
+
+  /**
+   * The whole conversation. Pass it as `history` to continue.
+   */
+  history: AgentMessage[];
+
+  /**
+   * Tokens used by every model call of this loop.
+   */
+  usage: AgentUsage;
+
+  /**
+   * Every tool call this loop made, in order.
+   */
+  toolCalls: AgentToolRun<TTools>[];
+}
+
+const clip = (text: string, max: number): string => {
+  if (text.length <= max) {
+    return text;
+  }
+
+  const half = max / 2;
+
+  return `${text.slice(0, half)}\n... clipped ${text.length - max} characters ...\n${text.slice(-half)}`;
+};
+
+const addUsage = (
+  base: AgentUsage | undefined,
+  extra: AgentUsage,
+): AgentUsage => {
+  const total: AgentUsage = {
+    input: (base?.input ?? 0) + extra.input,
+    output: (base?.output ?? 0) + extra.output,
+  };
+
+  for (const key of ["cacheRead", "cacheWrite", "cacheWrite1h"] as const) {
+    if (base?.[key] !== undefined || extra[key] !== undefined) {
+      total[key] = (base?.[key] ?? 0) + (extra[key] ?? 0);
+    }
+  }
+
+  return total;
+};
+
+/**
+ * The text of a result the model sees: whole, or clipped with the whole saved
+ * to a sandbox file when `spill` is set.
+ */
+const shown = async (
+  options: { maxToolOutput: number; spill?: AgentLoopOptions["spill"] },
+  stepId: string,
+  name: string,
+  content: string,
+): Promise<string> => {
+  if (content.length <= options.maxToolOutput) {
+    return content;
+  }
+
+  const clipped = clip(content, options.maxToolOutput);
+
+  if (!options.spill) {
+    return clipped;
+  }
+
+  // Named by the content, so runs sharing a sandbox never overwrite a file a
+  // conversation was told about.
+  const hash = hashjs.sha256().update(content).digest("hex").slice(0, 16);
+  const path = `${options.spill.dir ?? "/tmp"}/tool-output-${hash}.txt`;
+
+  try {
+    await options.spill.sandbox.files.write(
+      { id: `${stepId}:spill`, name: `Save the full output of ${name}` },
+      { path, data: content },
+    );
+  } catch (error) {
+    return `${clipped}\nThe full output could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  return `${clipped}\nThe full output is saved in the sandbox at ${path}`;
+};
+
+/**
+ * EXPERIMENTAL: Returns a failure from a tool without throwing, so the model
+ * sees an error result whose body is `body` as it is. Use it for failures the
+ * model can act on; a tool that returns data with an `error` field of its own
+ * is not affected.
+ *
+ * @example
+ * ```ts
+ * run: async ({ id }) => {
+ *   const ticket = await db.tickets.find(id);
+ *
+ *   return ticket ?? agent.toolError({ message: "No such ticket", id });
+ * },
+ * ```
+ */
+const toolError = toolErrorOf;
+
+const runTool = async <TTools extends SandboxTools>(
+  options: AgentLoopOptions<TTools> & {
+    tools: TTools;
+    maxToolOutput: number;
+    scores: boolean;
+  },
+  turn: number,
+  stepId: string,
+  call: AgentToolCall,
+): Promise<{ result: AgentToolResult; run: AgentToolRun<TTools> }> => {
+  const started = Date.now();
+  let output: unknown;
+  let isError = false;
+
+  try {
+    const input = (call.input ?? {}) as Record<string, unknown>;
+    const resolved = await resolveToolCall(
+      options.tools,
+      { op: "call", id: 0, tool: call.name, args: [], kwargs: input },
+      JSON.stringify(input),
+    );
+
+    if (resolved.error !== undefined) {
+      output = resolved.error;
+      isError = true;
+    } else {
+      const name = resolved.displayName ?? call.name;
+      const span = { id: stepId, name, kind: "tool" };
+      const context = {
+        signal: new AbortController().signal,
+        idempotencyKey: call.id,
+      };
+      const value = resolved.group
+        ? await withSpan(span, () => {
+            return withStepIdPrefix(`${stepId}:`, () => {
+              return resolved.invoke(context);
+            });
+          })
+        : await step.run({ id: stepId, name, "~span": span }, async () => {
+            const toolStarted = Date.now();
+
+            try {
+              const answer = await resolved.invoke(context);
+
+              if (options.scores) {
+                scoreThisStep("agent.tool_ms", Date.now() - toolStarted);
+                scoreThisStep("agent.tool_error", isToolError(answer) ? 1 : 0);
+              }
+
+              return answer;
+            } catch (error) {
+              if (options.scores) {
+                scoreThisStep("agent.tool_ms", Date.now() - toolStarted);
+                scoreThisStep("agent.tool_error", 1);
+              }
+
+              throw error;
+            }
+          });
+
+      isError = isToolError(value);
+      output = isToolError(value) ? value["~error"] : value;
+    }
+  } catch (error) {
+    output = error instanceof Error ? error.message : String(error);
+    isError = true;
+  }
+
+  const content = typeof output === "string" ? output : JSON.stringify(output);
+  // The model names the tool and the input at run time, so the compiler can't
+  // connect them to `TTools`. The type promises the narrowing only for runs
+  // that did not fail, and those ran a tool of that name with its input.
+  const run = {
+    turn,
+    name: call.name,
+    call,
+    output,
+    isError,
+    stepId,
+    ms: Date.now() - started,
+  } as AgentToolRun<TTools>;
+
+  await withStepIdPrefix(`${stepId}:`, async () => {
+    await options.onToolResult?.(run);
+  });
+
+  return {
+    run,
+    result: {
+      toolCallId: call.id,
+      name: call.name,
+      input: call.input,
+      content: await shown(options, stepId, call.name, content ?? ""),
+      ...(isError && { isError }),
+    },
+  };
+};
+
+/**
+ * The control of the agent run this loop is part of, if any.
+ */
+const bridgedControl = () => {
+  return getAsyncCtxSync()?.execution?.agentBridge?.control;
+};
+
+/**
+ * The loop's `steer`: the option, or inside an agent body the inbox's, so a
+ * message that arrives during a turn reaches the next model call without the app
+ * wiring it.
+ * @param options The loop options.
+ */
+const steerOf = (options: {
+  steer?: (turn: number) => Promise<AgentInput[] | undefined>;
+}) => {
+  return options.steer ?? bridgedControl()?.steer;
+};
+
+/**
+ * The loop's `stop`: the option, or inside an agent body the inbox's.
+ * @param options The loop options.
+ */
+const stopOf = (options: { stop?: (turn: number) => Promise<boolean> }) => {
+  return options.stop ?? bridgedControl()?.stop;
+};
+
+/**
+ * The step ID prefix of this loop: `id` for the first loop of that name in an
+ * execution of the function, then `id-2`, `id-3`. The count starts again on
+ * every replay and the loops run in the same order, so a loop gets the same
+ * prefix each time.
+ */
+const uniqueLoopId = (id: string): string => {
+  const execution = getAsyncCtxSync()?.execution;
+  const n = execution ? nextCount(execution.instance, `loop:${id}`) : 0;
+
+  return n === 0 ? id : `${id}-${n + 1}`;
+};
+
+// The cost stored on a model step, when it is a usable number of dollars.
+const storedCost = (usd: unknown): number | undefined => {
+  return typeof usd === "number" && Number.isFinite(usd) && usd >= 0
+    ? usd
+    : undefined;
+};
+
+/**
+ * EXPERIMENTAL: Runs a model with tools until it is done. Each model call is
+ * one step, and each tool call is one step (a group of steps for
+ * `tool.group()`).
+ *
+ * `model` is any function that calls a model and answers with the reply, its
+ * tool calls, so any provider's SDK works.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "inngest/experimental/agents";
+ *
+ * const { text } = await agent.loop({
+ *   model: claude, // see `agent.model()`
+ *   prompt: "Fix the failing test",
+ *   tools: sandbox.tools.code(),
+ * });
+ * ```
+ */
+const loop = async <TTools extends SandboxTools>(
+  options: AgentLoopOptions<TTools>,
+): Promise<AgentLoopResult<TTools>> => {
+  const {
+    model,
+    system,
+    maxTurns = 40,
+    maxToolOutput = 100_000,
+    parallelTools = true,
+    scores = true,
+  } = options;
+  const id = uniqueLoopId(options.id ?? "agent");
+  // The key of an MCP server in `tools` names its tools; its list is a step.
+  const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
+  const definitions = toolDefinitions(tools);
+  const format = options.format ?? defaultFormat;
+  const contentOf = (input: AgentInput): AgentUserContent => {
+    return typeof input === "string" || Array.isArray(input)
+      ? input
+      : format(input);
+  };
+  const messages: AgentMessage[] = [
+    ...(options.history ?? []),
+    { role: "user", content: contentOf(options.prompt) },
+  ];
+  const usage: AgentUsage = { input: 0, output: 0 };
+  const toolRuns: AgentToolRun<TTools>[] = [];
+  let text = "";
+  // Steering messages folded in since the last model call.
+  let steered = 0;
+  // The summary of the conversation's start, once there is one.
+  let compaction: AgentCompaction | undefined;
+
+  for (let turn = 1; turn <= maxTurns; turn += 1) {
+    const spent = await options.budget?.(turn);
+
+    if (spent !== undefined) {
+      return {
+        text,
+        stopped: "budget",
+        reason: spent,
+        turns: turn - 1,
+        history: messages,
+        usage,
+        toolCalls: toolRuns,
+      };
+    }
+
+    const modelStep = `${id}:model:${turn}`;
+    const reply = (await step.run(
+      {
+        id: modelStep,
+        name: "Thinking",
+        "~span": { id: modelStep, name: "Thinking", kind: "llm" },
+      },
+      async () => {
+        const last = turn === maxTurns && options.wrapUp !== undefined;
+        const started = Date.now();
+        let answer: AgentModelResponse;
+        let made: AgentCompaction | undefined;
+        let summaryUsage: AgentUsage | undefined;
+        let sent = messages;
+
+        // A 4xx no retry can fix (a rejected request, a bad key) ends the run
+        // instead of retrying it.
+        try {
+          if (options.compaction) {
+            const compacted = await withCompaction({
+              messages,
+              held: compaction,
+              options: options.compaction,
+              summarise: async (summaryPrompt, text) => {
+                const summary = await model({
+                  system: summaryPrompt,
+                  messages: [{ role: "user", content: text }],
+                  tools: [],
+                  turn,
+                  maxTurns,
+                });
+
+                return { text: summary.text ?? "", usage: summary.usage };
+              },
+            });
+
+            sent = compacted.messages;
+            made = compacted.made;
+            summaryUsage = compacted.usage;
+          }
+
+          answer = await model({
+            system,
+            messages: last
+              ? [...sent, { role: "user", content: options.wrapUp as string }]
+              : sent,
+            tools: definitions,
+            turn,
+            maxTurns,
+            ...(last && { toolChoice: "none" as const }),
+          });
+        } catch (error) {
+          throw classifyModelError(error);
+        }
+
+        if (scores) {
+          scoreThisStep("agent.model_ms", Date.now() - started);
+          scoreThisStep("agent.tool_calls", answer.toolCalls.length);
+          scoreThisStep("agent.steers", steered);
+
+          if (answer.usage) {
+            scoreThisStep("agent.input_tokens", answer.usage.input);
+            scoreThisStep("agent.output_tokens", answer.usage.output);
+
+            if (answer.usage.cacheRead !== undefined) {
+              scoreThisStep("agent.cache_read_tokens", answer.usage.cacheRead);
+            }
+
+            if (answer.usage.cacheWrite !== undefined) {
+              scoreThisStep(
+                "agent.cache_write_tokens",
+                answer.usage.cacheWrite,
+              );
+            }
+          }
+        }
+
+        // Priced here and stored with the reply, so a replay uses the number
+        // the call was priced at. A reply that reported no tokens costs nothing.
+        if (summaryUsage) {
+          answer = { ...answer, usage: addUsage(answer.usage, summaryUsage) };
+        }
+
+        const priced: AgentModelResponse & { usd?: number } = options.price
+          ? {
+              ...answer,
+              usd: priceOf(
+                options.price,
+                answer.usage ?? { input: 0, output: 0 },
+                answer.model,
+              ),
+            }
+          : answer;
+
+        const recorded = await options.recordTurn?.({
+          turn,
+          stepId: modelStep,
+          text: priced.text ?? "",
+          toolCalls: priced.toolCalls,
+          usage: {
+            ...(priced.usage ?? { input: 0, output: 0 }),
+            ...(priced.usd !== undefined && { usd: priced.usd }),
+          },
+        });
+
+        // A compaction made here rides in the step's output, so a replay,
+        // which does not run this function, still restores it. So does what
+        // the turn recorded.
+        return {
+          ...priced,
+          ...(made && { compaction: made }),
+          ...(recorded !== undefined && { recorded }),
+        };
+      },
+    )) as AgentModelResponse & {
+      usd?: number;
+      compaction?: AgentCompaction;
+      recorded?: unknown;
+    };
+    steered = 0;
+
+    if (reply.compaction) {
+      compaction = reply.compaction;
+    }
+
+    const callUsage = reply.usage ?? { input: 0, output: 0 };
+    // A step memoized before the cost was stored with it has no `usd`: price
+    // it now.
+    const cost = options.price
+      ? (storedCost(reply.usd) ??
+        priceOf(options.price, callUsage, reply.model))
+      : undefined;
+
+    usage.input += callUsage.input;
+    usage.output += callUsage.output;
+
+    for (const key of ["cacheRead", "cacheWrite", "cacheWrite1h"] as const) {
+      const used = callUsage[key];
+
+      if (used !== undefined) {
+        usage[key] = (usage[key] ?? 0) + used;
+      }
+    }
+
+    if (cost !== undefined) {
+      usage.usd = (usage.usd ?? 0) + cost;
+    }
+
+    text = reply.text ?? "";
+    messages.push(reply.message);
+
+    await options.onTurn?.({
+      turn,
+      stepId: modelStep,
+      text,
+      toolCalls: reply.toolCalls,
+      usage: { ...callUsage, ...(cost !== undefined && { usd: cost }) },
+      ...(reply.recorded !== undefined && { recorded: reply.recorded }),
+    });
+
+    if (reply.toolCalls.length === 0) {
+      return {
+        text,
+        stopped: "done",
+        turns: turn,
+        history: messages,
+        usage,
+        toolCalls: toolRuns,
+      };
+    }
+
+    const run = (call: AgentToolCall, index: number) => {
+      return runTool<TTools>(
+        { ...options, tools, maxToolOutput, scores },
+        turn,
+        `${id}:${turn}.${index}:${call.name}`,
+        call,
+      );
+    };
+    let done: { result: AgentToolResult; run: AgentToolRun<TTools> }[];
+
+    if (parallelTools) {
+      done = await Promise.all(reply.toolCalls.map(run));
+    } else {
+      done = [];
+
+      for (const [index, call] of reply.toolCalls.entries()) {
+        done.push(await run(call, index));
+      }
+    }
+
+    toolRuns.push(...done.map(({ run: finished }) => finished));
+    messages.push({ role: "tool", results: done.map(({ result }) => result) });
+
+    for (const input of (await steerOf(options)?.(turn)) ?? []) {
+      messages.push({ role: "user", content: contentOf(input) });
+      steered += 1;
+    }
+
+    if (await stopOf(options)?.(turn)) {
+      return {
+        text,
+        stopped: "stopped",
+        turns: turn,
+        history: messages,
+        usage,
+        toolCalls: toolRuns,
+      };
+    }
+  }
+
+  return {
+    text,
+    stopped: "maxTurns",
+    turns: maxTurns,
+    history: messages,
+    usage,
+    toolCalls: toolRuns,
+  };
+};
+
+/**
+ * EXPERIMENTAL: Types a model function for `agent.loop()`. It returns the
+ * function it is given and does nothing else.
+ *
+ * Your function is called once per turn, inside a step, with:
+ * - `system`: the system prompt, if you passed one.
+ * - `messages`: the conversation so far. `user` messages are text. An
+ *   `assistant` message is what you returned earlier, as you returned it. A
+ *   `tool` message holds one `results` entry per call of the reply before
+ *   it (`toolCallId`, `name`, `input`, `content`, and `isError` when the tool failed), ready
+ *   to become one provider message.
+ * - `turn` and `maxTurns`: which call this is and how many the loop allows.
+ * - `toolChoice`: `"none"` on a wrap-up turn, when the model must not call a
+ *   tool (keep sending `tools`, since the conversation uses them).
+ * - `tools`: the tool definitions (`name`, `description`, `input_schema`) to
+ *   hand to your SDK.
+ *
+ * It returns:
+ * - `message`: the assistant's reply. The loop stores it verbatim and sends it
+ *   back on every later turn, so provider-specific parts such as thinking
+ *   blocks and their signatures round-trip untouched. It must be JSON.
+ * - `toolCalls`: the calls the reply asks for, as `{ id, name, input }`.
+ * - `text`: the reply's text, for the result and `onTurn`.
+ * - `usage`: tokens, which the loop adds up.
+ *
+ * @example
+ * ```ts
+ * import Anthropic from "@anthropic-ai/sdk";
+ * import { agent } from "inngest/experimental/agents";
+ *
+ * const anthropic = new Anthropic();
+ *
+ * export const claude = agent.model(async ({ system, messages, tools }) => {
+ *   const reply = await anthropic.messages.create({
+ *     model: "claude-sonnet-5-5",
+ *     max_tokens: 8192,
+ *     system,
+ *     tools,
+ *     messages: messages.map((message) => {
+ *       if (message.role === "tool") {
+ *         return {
+ *           role: "user",
+ *           content: message.results.map((result) => {
+ *             return {
+ *               type: "tool_result",
+ *               tool_use_id: result.toolCallId,
+ *               content: result.content,
+ *               is_error: result.isError,
+ *             };
+ *           }),
+ *         };
+ *       }
+ *
+ *       return message;
+ *     }),
+ *   });
+ *
+ *   return {
+ *     message: { role: "assistant", content: reply.content },
+ *     text: reply.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
+ *     toolCalls: reply.content.flatMap((b) => (b.type === "tool_use" ? [b] : [])),
+ *     usage: { input: reply.usage.input_tokens, output: reply.usage.output_tokens },
+ *   };
+ * });
+ * ```
+ */
+const model = (fn: AgentModel): AgentModel => {
+  return fn;
+};
+
+/**
+ * EXPERIMENTAL: The agent helpers: `agent.loop()` runs the model-and-tools
+ * loop, `agent.model()` makes a model function, `agent.toolError()` returns an
+ * error result from a tool, `agent.invoke()` starts another agent,
+ * `agent.classifyModelError()` marks model errors no retry can fix and
+ * `agent.untrusted()` marks text from outside and `agent.anthropic()` is a
+ * model for the Anthropic API.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "inngest/experimental/agents";
+ *
+ * const result = await agent.loop({ model, prompt: "Fix the test", tools });
+ * ```
+ */
+export const agent = {
+  loop,
+  model,
+  toolError,
+  invoke,
+  classifyModelError,
+  untrusted,
+  anthropic,
+};

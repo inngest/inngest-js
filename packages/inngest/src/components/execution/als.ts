@@ -6,6 +6,16 @@ import type { IInngestExecution } from "./InngestExecution.ts";
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
+/**
+ * What `agent.loop()` reads to steer and stop through the agent's inbox.
+ */
+export interface AgentBridge {
+  control?: {
+    steer: () => Promise<{ id?: string; name: string; data: unknown }[]>;
+    stop: () => Promise<boolean>;
+  };
+}
+
 export interface AsyncContext {
   /**
    * The Inngest App that is currently being used to execute the function.
@@ -24,6 +34,11 @@ export interface AsyncContext {
      * The execution instance that is currently running the function.
      */
     instance: IInngestExecution;
+
+    /**
+     * The ID of the function being executed, when the engine knows it.
+     */
+    functionId?: string;
 
     /**
      * The `ctx` object that has been passed in to this function execution,
@@ -91,6 +106,38 @@ export interface AsyncContext {
      * nested step, which is not allowed.
      */
     insideExperimentSelect?: boolean;
+
+    /**
+     * If present, the thread and session of an agent run whose trigger event
+     * does not carry them. Set by the agent function; read by the agent KV.
+     */
+    agent?: { thread: string; session: string };
+
+    /**
+     * The messages of a `step.subscribe()` subscription, read from the run's
+     * state in the order the executor saved them. Only subscriptions use it.
+     */
+    subscriptionMessages?: (key: string) => unknown[];
+
+    /**
+     * Tells the engine that a step was skipped because its answer was already
+     * in the state, so it is not waited for. Only subscriptions use it.
+     */
+    skipStep?: (id: string) => Promise<void>;
+
+    /**
+     * The inbox control of the agent run this function execution is, set by the
+     * agent function once it exists. `agent.loop()` uses it to steer and stop
+     * when it is not given its own.
+     */
+    agentBridge?: AgentBridge;
+
+    /**
+     * The answer the run's state holds for a step, if it has one. Only
+     * subscriptions use it, to tell a park that timed out from one that has not
+     * been answered.
+     */
+    stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
 

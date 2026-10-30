@@ -9,9 +9,11 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { snapshotName } from "inngest/experimental";
 import { describe, expect, test } from "vitest";
 import { cacheScopes, lookupCache } from "./cache/cache.ts";
-import { formatName } from "./cache/names.ts";
+import type { SnapshotName } from "./cache/names.ts";
+import { snapshotEntry } from "./cache/names.ts";
 import { CiUsageError, CommandFailedError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -770,13 +772,19 @@ describe("formatting", () => {
   });
 });
 
+/** The name a snapshot has. */
+const formatName = (name: SnapshotName): string => {
+  return snapshotName(snapshotEntry(name));
+};
+
 describe("looking a cached snapshot up by name", () => {
-  const name = formatName({
+  const entry = snapshotEntry({
     kind: "cache",
     scope: "global",
     jobId: "setup",
     ownKey: "k1",
   });
+  const name = snapshotName(entry);
 
   // One moment for every fixture, so two snapshots built apart still match.
   const now = Date.now();
@@ -820,7 +828,7 @@ describe("looking a cached snapshot up by name", () => {
     return lookupCache(
       scope,
       { key: "v1", scope: "global" },
-      { ownKey: "k1", key: {}, name },
+      { ownKey: "k1", key: {}, entry },
       exclude,
     );
   };

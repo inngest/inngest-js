@@ -1,0 +1,4 @@
+{
+  "title": "Agents and messages",
+  "blurb": "An agent is a function that Inngest runs. Start one, read its inbox, wait for more messages, and see how threads separate runs."
+}

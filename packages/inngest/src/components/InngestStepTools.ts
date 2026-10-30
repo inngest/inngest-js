@@ -34,6 +34,15 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import {
+  eventNameOf,
+  openSubscription,
+  type SubscribeEvent,
+  type SubscribeOptions,
+  type SubscribeTool,
+  type Subscription,
+  streamsOf,
+} from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
@@ -271,6 +280,25 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
         ...currentCtx.execution,
         span: appendSpan(currentCtx.execution.span, span),
       },
+    },
+    callback,
+  );
+};
+
+/**
+ * Run a callback whose steps get no group prefix before their IDs.
+ */
+export const withoutStepIdPrefix = <T>(callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution?.stepIdPrefix) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: { ...currentCtx.execution, stepIdPrefix: undefined },
     },
     callback,
   );
@@ -566,7 +594,157 @@ export const createStepTools = <
    * Each key is the function name and is expected to run `createTool` and pass
    * a generic type for that function as it will appear in the user's code.
    */
+  /**
+   * Opens a subscription whose ops are steps named after it.
+   */
+  const openInbox = (
+    idOrOptions: StepOptionsOrId,
+    opts: SubscribeOptions,
+    allowEmpty: boolean,
+  ): Promise<Subscription> => {
+    const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+
+    // The event of a park, which has no source of its own.
+    const parkEvent = streamsOf(opts, allowEmpty)[0]?.event;
+
+    return openSubscription(
+      function op(stepId, mode, seq, stream, extra) {
+        const target = extra?.target;
+
+        if (
+          !target &&
+          mode !== "park" &&
+          mode !== "poll" &&
+          mode !== "current" &&
+          mode !== "close"
+        ) {
+          throw new Error(`step.subscribe(): no source for stream ${stream}.`);
+        }
+
+        // The executor names the steps of a subscription itself, so a prefix
+        // from a group the op was called in (such as a tool group) must not
+        // change their ids.
+        return withoutStepIdPrefix(() => {
+          return tools["~subscribeOp"](stepId, {
+            event: eventNameOf(
+              target?.event ?? parkEvent ?? "inngest/subscription",
+            ),
+            if: target?.if,
+            subscribe: {
+              key: id,
+              mode,
+              ...(seq ? { seq } : {}),
+              ...(stream ? { stream } : {}),
+              ...(extra?.timeout === undefined
+                ? {}
+                : {
+                    timeout: timeStr(
+                      extra.timeout,
+                      client[internalLoggerSymbol],
+                    ),
+                  }),
+              ...(extra?.attempt ? { attempt: extra.attempt } : {}),
+              ...(extra?.reader ? { reader: extra.reader } : {}),
+              ...(extra?.more?.length
+                ? {
+                    streams: extra.more.map(
+                      ({ stream: index, target: more }) => {
+                        return {
+                          stream: index,
+                          event: eventNameOf(more.event),
+                          ...(more.if ? { if: more.if } : {}),
+                        };
+                      },
+                    ),
+                  }
+                : {}),
+            },
+          });
+        });
+      },
+      id,
+      opts,
+      function read() {
+        return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
+      },
+      async function skip(stepId) {
+        await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
+      },
+      function answerOf(stepId) {
+        return (
+          getAsyncCtxSync()?.execution?.stepAnswer?.(stepId) ?? {
+            found: false,
+          }
+        );
+      },
+      allowEmpty,
+    );
+  };
+
   const tools = {
+    /**
+     * EXPERIMENTAL: a durable subscription. Opens a subscription to events
+     * and returns it; iterate it with `for await`. The executor keeps the
+     * subscription for the life of the run and saves every matching event as
+     * a numbered message, so nothing sent while the function is busy is lost.
+     */
+    subscribe: ((
+      idOrOptions: StepOptionsOrId,
+      opts: SubscribeOptions,
+    ): Promise<Subscription> => {
+      return openInbox(idOrOptions, opts, false);
+    }) as SubscribeTool<StepOptionsOrId>,
+
+    /**
+     * EXPERIMENTAL: an inbox, a subscription that starts with the sources you
+     * give it (maybe none) and takes more with `listen()`. Its messages are one
+     * ordered sequence, read with `next()`, `unread()` and `for await`.
+     */
+    inbox: (
+      idOrOptions: StepOptionsOrId,
+      options?: { sources?: readonly SubscribeEvent[] },
+    ): Promise<Subscription> => {
+      return openInbox(idOrOptions, { events: options?.sources ?? [] }, true);
+    },
+
+    /**
+     * One op of a subscription. Used by `subscribe`.
+     */
+    "~subscribeOp": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          event: string;
+          if?: string;
+          subscribe: {
+            key: string;
+            mode: string;
+            seq?: number;
+            stream?: number;
+            timeout?: string;
+            attempt?: number;
+            reader?: string;
+            streams?: { stream: number; event: string; if?: string }[];
+          };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.WaitForEvent,
+        name: opts.event,
+        displayName: name ?? id,
+        opts: {
+          event: opts.event,
+          if: opts.if,
+          timeout: "",
+          subscribe: opts.subscribe,
+        },
+        userland: { id },
+      };
+    }),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried

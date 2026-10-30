@@ -20,7 +20,7 @@
     "test:sandbox-live": "pnpm run pb:version && tsx src/components/sandbox/live/run.ts",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
-    "test:types": "tsc --noEmit --project tsconfig.types.json",
+    "test:types": "tsc --noEmit --project tsconfig.types.json && tsc --noEmit --project test/agents-e2e/tsconfig.json",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
@@ -33,7 +33,8 @@
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",
     "local:pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz",
     "dev:example": "tsx scripts/runExample.ts",
-    "bench": "vitest bench --run --config vitest.config.bench.ts"
+    "bench": "vitest bench --run --config vitest.config.bench.ts",
+    "test:anthropic-live": "tsx test/anthropic-live/run.ts"
   },
   "exports": {
     ".": {
@@ -228,6 +229,22 @@
       "import": "./internals.js",
       "require": "./internals.cjs"
     },
+    "./experimental/agents": {
+      "types": {
+        "import": "./experimental/agents/index.d.ts",
+        "require": "./experimental/agents/index.d.cts"
+      },
+      "import": "./experimental/agents/index.js",
+      "require": "./experimental/agents/index.cjs"
+    },
+    "./experimental/agents/testing": {
+      "types": {
+        "import": "./experimental/agents/testing.d.ts",
+        "require": "./experimental/agents/testing.d.cts"
+      },
+      "import": "./experimental/agents/testing.js",
+      "require": "./experimental/agents/testing.cjs"
+    },
     "./experimental/durable-endpoints": {
       "types": {
         "import": "./experimental/durable-endpoints/index.d.ts",
@@ -333,6 +350,7 @@
   "devDependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
+    "@anthropic-ai/sdk": "^1.3.0",
     "@arethetypeswrong/cli": "^0.18.2",
     "@inngest/test": "workspace:^",
     "@inngest/test-harness": "workspace:*",
@@ -384,6 +402,7 @@
     "ws": "^8.20.0"
   },
   "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.60.0",
     "@sveltejs/kit": ">=1.27.3",
     "@vercel/node": ">=2.15.9",
     "aws-lambda": ">=1.0.7",
@@ -398,6 +417,9 @@
     "zod": "^3.25.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
     "@sveltejs/kit": {
       "optional": true
     },

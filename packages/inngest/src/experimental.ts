@@ -1,5 +1,7 @@
 // AsyncLocalStorage
 
+export type { KvOAuthStoreOptions } from "./components/agent/mcpOAuthStore.ts";
+export { kvOAuthStore } from "./components/agent/mcpOAuthStore.ts";
 export {
   createDefer,
   DeferredFunction,
@@ -68,6 +70,8 @@ export type {
   SandboxRef,
   SandboxResource,
   SandboxResources,
+  SandboxShell,
+  SandboxShellOptions,
   SandboxSnapshot,
   SandboxSnapshotCloneOptions,
   SandboxSnapshotCreateOptions,
@@ -79,19 +83,45 @@ export type {
   SandboxSnapshotWaitOptions,
   SandboxStatus,
   SandboxWaitUntilRunningOptions,
+  ShellStart,
+  ShellState,
 } from "./components/InngestSandbox.ts";
 export {
+  beginShellCommand,
+  endShellCommand,
   getCommandError,
   getSandboxError,
   SandboxError,
   SandboxValidationError,
   sandboxMiddleware,
+  stripShellReport,
 } from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
+export type {
+  McpAuth,
+  McpServer,
+  McpServerOptions,
+} from "./components/sandbox/mcp.ts";
+export type {
+  McpAuthorizedData,
+  McpNeedsAuthorization,
+  McpOAuthOptions,
+  McpOAuthStore,
+  McpOAuthUserContext,
+} from "./components/sandbox/mcpOAuth.ts";
+export {
+  completeMcpAuthorization,
+  isMcpNeedsAuthorization,
+  McpAuthorizationError,
+  mcpAuthorizedEvent,
+  waitForMcpAuthorization,
+} from "./components/sandbox/mcpOAuth.ts";
+export type { Secret, SecretSource } from "./components/sandbox/secret.ts";
+export { secret } from "./components/sandbox/secret.ts";
 export type {
   ConfigShim,
   ProgramShim,
@@ -106,6 +136,31 @@ export type {
   ShimRun,
 } from "./components/sandbox/shims.ts";
 export type {
+  FindOptions,
+  FoundSnapshot,
+  SnapshotCache,
+  SnapshotCacheAction,
+  SnapshotCacheClient,
+  SnapshotCacheOptions,
+  SnapshotEntry,
+  SnapshotKeyEntry,
+  SnapshotKeyPart,
+  TakenSnapshot,
+  TakeOptions,
+  TakeSnapshot,
+} from "./components/sandbox/snapshotCache.ts";
+export {
+  snapshotCache,
+  snapshotGeneration,
+  snapshotKey,
+  snapshotName,
+  snapshotSlot,
+} from "./components/sandbox/snapshotCache.ts";
+export type {
+  AgentTool,
+  AgentToolDefinition,
+  AgentToolSource,
+  JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,
   SandboxToolEntry,

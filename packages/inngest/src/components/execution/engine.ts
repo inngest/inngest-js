@@ -115,6 +115,7 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
+import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -310,6 +311,10 @@ class InngestExecutionEngine
 
       const tracer = trace.getTracer("inngest", version);
 
+      // The state of a request does not change, so a subscription's messages are
+      // read out of it once.
+      const subscriptionMessagesByKey = new Map<string, unknown[]>();
+
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
           {
@@ -317,6 +322,35 @@ class InngestExecutionEngine
             execution: {
               ctx: this.fnArg,
               instance: this,
+              functionId: this.options.fn.id(),
+              subscriptionMessages: (key: string) => {
+                let messages = subscriptionMessagesByKey.get(key);
+
+                if (!messages) {
+                  messages = subscriptionMessages(
+                    key,
+                    this.options.stepCompletionOrder,
+                    this.options.stepState,
+                  );
+                  subscriptionMessagesByKey.set(key, messages);
+                }
+
+                return messages;
+              },
+              skipStep: async (id: string) => {
+                this.state.remainingStepsToBeSeen.delete(hashId(id));
+
+                if (this.state.allStateUsed()) {
+                  await this.middlewareManager.onMemoizationEnd();
+                }
+              },
+              stepAnswer: (id: string) => {
+                const answer = this.options.stepState[hashId(id)];
+
+                return answer
+                  ? { found: true, data: answer.data }
+                  : { found: false };
+              },
               stream: this.streamTools,
             },
           },
@@ -2226,7 +2260,11 @@ class InngestExecutionEngine
       loop,
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
-      remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
+      // Messages of a subscription are read from the state, never requested as
+      // steps, so they are not waited for.
+      remainingStepsToBeSeen: new Set(
+        stepsToBeSeen(this.options.stepCompletionOrder),
+      ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);
 
@@ -2717,9 +2755,15 @@ class InngestExecutionEngine
                   if (typeof result.data !== "undefined") {
                     // Validate waitForEvent results against the schema if present
                     // Skip validation if result.data is null (timeout case)
+                    //
+                    // Subscription ops (`step.subscribe`) answer with their own
+                    // shapes (acks, counts), so they are not validated here.
                     if (
                       opId.op === StepOpCode.WaitForEvent &&
-                      result.data !== null
+                      result.data !== null &&
+                      !(
+                        step.rawArgs?.[1] as { subscribe?: unknown } | undefined
+                      )?.subscribe
                     ) {
                       const { event } = (step.rawArgs?.[1] ?? {}) as {
                         event: unknown;

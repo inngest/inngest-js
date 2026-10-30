@@ -22,8 +22,10 @@ import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
 import { isInternalTool } from "./internalTool.ts";
+import { McpServer, mcp } from "./mcp.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
+import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import {
   type Sandbox,
   type SandboxDuration,
@@ -76,10 +78,31 @@ export interface SandboxToolContext {
   sandbox?: Sandbox;
 }
 
-type ToolInputOf<TInput extends StandardSchemaV1 | undefined> =
+/**
+ * A JSON Schema written out by hand, for a tool whose schema you already have
+ * as JSON (such as one a user defines). It describes an object. The tool gets
+ * the model's arguments as they come, without them being checked against it.
+ */
+export type JsonSchemaObject = { type: "object"; [key: string]: unknown };
+
+type ToolInput = StandardSchemaV1 | JsonSchemaObject;
+
+const isStandardSchema = (input: ToolInput): input is StandardSchemaV1 => {
+  return "~standard" in input;
+};
+
+type ToolInputOf<TInput extends ToolInput | undefined> =
   TInput extends StandardSchemaV1
     ? StandardSchemaV1.InferOutput<TInput>
-    : never;
+    : TInput extends JsonSchemaObject
+      ? Record<string, unknown>
+      : never;
+
+export {
+  isToolError,
+  type ToolErrorResult,
+  toolErrorOf,
+} from "./toolError.ts";
 
 type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
   TOutput extends StandardSchemaV1
@@ -87,19 +110,48 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * A tool declared with `tool.step()` or `tool.group()`.
+ * What a model passes to a tool: its input schema's output, or `unknown`
+ * when it has none.
  */
-export interface SandboxTool {
+export type ToolCallInput<TInput extends ToolInput | undefined> =
+  TInput extends ToolInput ? ToolInputOf<TInput> : unknown;
+
+/**
+ * What a tool hands back after its output schema checked it, or `unknown`
+ * when it has none.
+ */
+export type ToolCallResult<TOutput extends StandardSchemaV1 | undefined> =
+  TOutput extends StandardSchemaV1
+    ? StandardSchemaV1.InferOutput<TOutput>
+    : unknown;
+
+/**
+ * A tool declared with `tool.step()` or `tool.group()`. `TInput` and
+ * `TOutput` are what the model passes and what the tool gives back, which
+ * `agent.loop()` uses to type its tool runs.
+ */
+export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
+  readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
   /**
    * @internal Only for tools made by the SDK (`internalTool`): `"none"`
    * answers inline, storing nothing.
    */
   readonly memo?: "none";
-  readonly input?: StandardSchemaV1;
+  readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
+
+  /**
+   * Set by `tool.group({ waits: true })`.
+   */
+  readonly waits?: boolean;
+
+  /**
+   * Carries `TInput` and `TOutput` for the compiler. It is never set.
+   */
+  readonly "~types"?: { input: TInput; output: TOutput };
 }
 
 /**
@@ -112,9 +164,53 @@ export type SandboxToolEntry =
   | SandboxTool
   | ((...args: never[]) => unknown)
   | InngestFunction.Any
-  | InngestFunctionReference.Any;
+  | InngestFunctionReference.Any
+  | McpServer
+  | AgentToolSource;
+
+/**
+ * Something that is a tool by carrying one, such as an agent. It goes in
+ * `tools` as it is.
+ */
+export interface AgentToolSource<TInput = unknown, TOutput = unknown> {
+  /**
+   * The tool the model calls to use it. Its `id` is the sanitised ID of the
+   * agent.
+   */
+  readonly "~tool": AgentTool<TInput, TOutput>;
+}
+
+const isToolSource = (entry: unknown): entry is AgentToolSource => {
+  return typeof entry === "object" && entry !== null && "~tool" in entry;
+};
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
+
+/**
+ * What a model passes to the tool `TEntry`; `unknown` for an entry that
+ * isn't a typed tool (a plain function or an Inngest function).
+ */
+export type ToolInputType<TEntry> = TEntry extends SandboxTool<
+  infer TInput,
+  unknown
+>
+  ? TInput
+  : TEntry extends AgentToolSource<infer TInput, unknown>
+    ? TInput
+    : unknown;
+
+/**
+ * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
+ * typed tool.
+ */
+export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
+  unknown,
+  infer TOutput
+>
+  ? TOutput
+  : TEntry extends AgentToolSource<unknown, infer TOutput>
+    ? TOutput
+    : unknown;
 
 export interface SandboxToolOptions {
   /**
@@ -183,7 +279,7 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
 };
 
 export interface ToolDefinition<
-  TInput extends StandardSchemaV1 | undefined,
+  TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
 > {
   /**
@@ -192,10 +288,16 @@ export interface ToolDefinition<
   description?: string;
 
   /**
-   * Any Standard Schema. With it, sandbox code calls the tool with named
-   * arguments (`tools.getCustomer(id="cus_1")`) and a bad call gets a
-   * `ToolError` back without running anything. Without it the tool takes
-   * positional JSON values.
+   * What the tool's step is called in a trace, such as `Look up: cus_1`. A
+   * function gets the call's arguments. Default: the tool's name.
+   */
+  displayName?: string | ((input: ToolInputOf<TInput>) => string);
+
+  /**
+   * Any Standard Schema, or a JSON Schema object. With it, sandbox code calls
+   * the tool with named arguments (`tools.getCustomer(id="cus_1")`) and, with
+   * a Standard Schema, a bad call gets a `ToolError` back without running
+   * anything. Without it the tool takes positional JSON values.
    */
   input?: TInput;
 
@@ -204,19 +306,43 @@ export interface ToolDefinition<
    */
   output?: TOutput;
 
-  run: TInput extends StandardSchemaV1
+  run: TInput extends ToolInput
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
-      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>
+      ) =>
+        | (ToolResultOf<TOutput> | ToolErrorResult)
+        | Promise<ToolResultOf<TOutput> | ToolErrorResult>
     : (
         ...args: never[]
-      ) => ToolResultOf<TOutput> | Promise<ToolResultOf<TOutput>>;
+      ) =>
+        | (ToolResultOf<TOutput> | ToolErrorResult)
+        | Promise<ToolResultOf<TOutput> | ToolErrorResult>;
 }
 
 /**
- * EXPERIMENTAL: Declares a tool that sandbox code can call.
- * `tool.step()` runs its body as one durable step.
+ * What a group tool that may wait for a long time declares on top of the rest.
+ */
+export interface WaitingToolDefinition<
+  TInput extends ToolInput | undefined,
+  TOutput extends StandardSchemaV1 | undefined,
+> extends ToolDefinition<TInput, TOutput> {
+  /**
+   * The tool may wait for longer than a command may run (sleep, wait for an
+   * event, wait for a person). A call to it suspends the code that made it:
+   * its process exits, the body runs here as steps with no command running,
+   * and the command starts again with every earlier call answered from a
+   * journal. The code must make the same calls in the same order each time it
+   * runs, so it reads clocks and randomness through tools. Use it in a command
+   * that runs one interpreter, such as a script: a shell running several
+   * would replay the same journal in each.
+   */
+  waits?: boolean;
+}
+
+/**
+ * EXPERIMENTAL: `tool.step()` declares a tool that sandbox code can call. It
+ * runs its body as one durable step.
  *
  * @example
  * ```ts
@@ -235,14 +361,14 @@ export interface ToolDefinition<
  * });
  * ```
  */
-export const tool = {
+const toolMethods = {
   step: <
-    TInput extends StandardSchemaV1 | undefined = undefined,
+    TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
     definition: ToolDefinition<TInput, TOutput>,
-  ): SandboxTool => {
-    return definition as SandboxTool;
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    return definition;
   },
 
   /**
@@ -271,6 +397,26 @@ export const tool = {
   shim,
 
   /**
+   * EXPERIMENTAL: A remote MCP server as tools. Put the handle in
+   * `agent.loop({ tools: { hex } })` and the model sees the server's tools
+   * as `hex_<tool>`. For a sandbox's `run_code`, use
+   * `sandbox.tools.code({ tools: await hex.tools() })`. Each call is a
+   * durable step that reads the credential inside the call.
+   *
+   * @example
+   * ```ts
+   * const hex = tool.mcp({
+   *   url: "https://app.hex.tech/mcp",
+   *   auth: { bearer: secret("HEX_TOKEN") },
+   *   tools: ["create_thread", "get_thread"],
+   * });
+   *
+   * await agent.loop({ model, prompt, tools: { hex } });
+   * ```
+   */
+  mcp,
+
+  /**
    * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
    * running as one durable step, `run` can use the global `step`
    * (`import { step } from "inngest"`) to run steps, invoke functions, send
@@ -294,21 +440,94 @@ export const tool = {
    * ```
    */
   group: <
-    TInput extends StandardSchemaV1 | undefined = undefined,
+    TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
   >(
-    definition: ToolDefinition<TInput, TOutput>,
-  ): SandboxTool => {
-    return { ...definition, group: true } as SandboxTool;
+    definition: WaitingToolDefinition<TInput, TOutput>,
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    return { ...definition, group: true };
   },
 };
+
+/**
+ * A tool defined with `tool()`: a tool for an agent, which runs in your
+ * function as one durable step per call.
+ */
+export interface AgentTool<TInput = unknown, TOutput = unknown>
+  extends SandboxTool<TInput, TOutput> {
+  readonly kind: "inngest/tool";
+
+  /**
+   * The name the model sees.
+   */
+  readonly id: string;
+}
+
+export interface AgentToolDefinition<
+  TInput extends ToolInput | undefined,
+  TOutput extends StandardSchemaV1 | undefined,
+> extends WaitingToolDefinition<TInput, TOutput> {
+  /**
+   * The tool's name in the model's list. Letters, digits and underscores,
+   * starting with a letter, up to 64 characters.
+   */
+  id: string;
+
+  /**
+   * Runs `run` as a group of steps instead of one step, so it can use the
+   * global `step` (see `tool.group()`).
+   */
+  group?: boolean;
+}
+
+const defineTool = <
+  TInput extends ToolInput | undefined = undefined,
+  TOutput extends StandardSchemaV1 | undefined = undefined,
+>(
+  definition: AgentToolDefinition<TInput, TOutput>,
+): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+  validateTools({ [definition.id]: definition });
+
+  if (definition.waits && !definition.group) {
+    throw new SandboxValidationError(
+      `Tool "${definition.id}" sets waits, which needs group: true: a tool that waits runs as a group of steps`,
+    );
+  }
+
+  return Object.freeze({ ...definition, kind: "inngest/tool" as const });
+};
+
+/**
+ * EXPERIMENTAL: Defines a tool for an agent. It runs in your function, where
+ * your clients and secrets are, and each call is a durable step. Define it at
+ * module scope and name it in an agent's `tools`. `tool.step()` and
+ * `tool.group()` declare tools for code in a sandbox.
+ *
+ * @example
+ * ```ts
+ * export const getOrg = tool({
+ *   id: "getOrg",
+ *   input: z.object({ slug: z.string() }),
+ *   run: async ({ slug }) => {
+ *     return orgs.find(slug);
+ *   },
+ * });
+ * ```
+ */
+export const tool = Object.assign(defineTool, toolMethods);
 
 /**
  * The schema of the data a function takes, when its triggers say: that of its
  * `invoke()` trigger, or of its only event trigger with a schema.
  */
-const triggerSchema = (
+export const triggerSchema = (
   fn: InngestFunction.Any,
+
+  /**
+   * Take only the schema of an `invoke()` trigger, never that of another
+   * event.
+   */
+  invokeOnly = false,
 ): StandardSchemaV1 | undefined => {
   const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
     fn.opts.triggers ?? [];
@@ -327,10 +546,14 @@ const triggerSchema = (
       return trigger.schema;
     });
   const invoked = typed.find((trigger) => {
-    return trigger.event === internalEvents.FunctionInvoked;
+    const name =
+      trigger.event instanceof EventType ? trigger.event.name : trigger.event;
+
+    return name === internalEvents.FunctionInvoked;
   });
 
-  return (invoked ?? (typed.length === 1 ? typed[0] : undefined))?.schema;
+  return (invoked ?? (!invokeOnly && typed.length === 1 ? typed[0] : undefined))
+    ?.schema;
 };
 
 /**
@@ -354,14 +577,35 @@ const functionTool = (
 };
 
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
+  if (entry instanceof McpServer) {
+    throw new SandboxValidationError(
+      "An MCP server goes in agent.loop({ tools }) as it is; anywhere else, spread its tools: { ...(await server.tools()) }",
+    );
+  }
+
   if (typeof entry === "function") {
     return { run: entry };
+  }
+
+  if (isToolSource(entry)) {
+    return entry["~tool"];
   }
 
   return entry instanceof InngestFunction ||
     entry instanceof InngestFunctionReference
     ? functionTool(entry)
     : entry;
+};
+
+/**
+ * Whether a call to `name` suspends the code that made it. An unknown name
+ * doesn't: the call gets its error like any other.
+ */
+export const callWaits = (tools: SandboxTools, name: string): boolean => {
+  return (
+    Object.hasOwn(tools, name) &&
+    toTool(tools[name] as SandboxToolEntry).waits === true
+  );
 };
 
 /**
@@ -384,7 +628,10 @@ const eventSchema = z.discriminatedUnion("op", [
     tool: z.string().max(128),
     args: z.array(z.unknown()),
     kwargs: z.record(z.unknown()).optional(),
+    h: z.string().max(64).optional(),
   }),
+  z.object({ op: z.literal("yielded") }),
+  z.object({ op: z.literal("replayed") }),
   z.object({
     op: z.literal("exit"),
     code: z.number().int(),
@@ -417,7 +664,9 @@ export const parseToolEvent = (line: string): ToolEvent | undefined => {
   }
 };
 
-const issuesMessage = (issues: readonly StandardSchemaV1.Issue[]): string => {
+export const issuesMessage = (
+  issues: readonly StandardSchemaV1.Issue[],
+): string => {
   return issues
     .slice(0, 5)
     .map((issue) => {
@@ -467,22 +716,32 @@ export const resolveToolCall = async (
     }
 
     // A call with nothing passed is an empty set of named arguments.
-    const result = await definition.input["~standard"].validate(
-      kwargs ?? (args.length ? args[0] : {}),
-    );
-    if (result.issues) {
-      return {
-        error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
-      };
-    }
+    const named = kwargs ?? (args.length ? args[0] : {});
 
-    values = [result.value];
+    if (isStandardSchema(definition.input)) {
+      const result = await definition.input["~standard"].validate(named);
+      if (result.issues) {
+        return {
+          error: `Invalid arguments for ${name}: ${issuesMessage(result.issues)}`,
+        };
+      }
+
+      values = [result.value];
+    } else {
+      values = [named];
+    }
   } else if (kwargs) {
     return { error: `${name} takes positional arguments only` };
   }
 
+  const { displayName } = definition;
+
   return {
     group: definition.group === true,
+    displayName:
+      typeof displayName === "function"
+        ? (displayName as (input: unknown) => string)(values[0])
+        : displayName,
     memo:
       isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
     invoke: async (ctx: SandboxToolContext) => {
@@ -491,7 +750,7 @@ export const resolveToolCall = async (
         ...values,
         ...(typeof entry === "function" ? [] : [ctx]),
       );
-      if (!definition.output) {
+      if (!definition.output || isToolError(value)) {
         return value;
       }
 
@@ -527,7 +786,7 @@ type JsonSchemaProvider = {
   };
 };
 
-const toJsonSchema = (
+export const toJsonSchema = (
   name: string,
   schema: StandardSchemaV1,
 ): ToolJsonDefinition["input_schema"] => {
@@ -588,7 +847,11 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
     return {
       name,
       ...(description !== undefined && { description }),
-      input_schema: input ? toJsonSchema(name, input) : { type: "object" },
+      input_schema: !input
+        ? { type: "object" }
+        : isStandardSchema(input)
+          ? toJsonSchema(name, input)
+          : input,
     };
   });
 };
