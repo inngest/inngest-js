@@ -44,6 +44,8 @@ export type {
   FakeMcpOptions,
   FakeMcpServer,
   FakeMcpTool,
+  FakeOAuthCall,
+  FakeOAuthControls,
 } from "../../components/agent/testing/mcp.ts";
 export {
   fakeMcpFetch,

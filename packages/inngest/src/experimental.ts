@@ -1,5 +1,7 @@
 // AsyncLocalStorage
 
+export type { KvOAuthStoreOptions } from "./components/agent/mcpOAuthStore.ts";
+export { kvOAuthStore } from "./components/agent/mcpOAuthStore.ts";
 export {
   createDefer,
   DeferredFunction,
@@ -104,6 +106,20 @@ export type {
   McpServer,
   McpServerOptions,
 } from "./components/sandbox/mcp.ts";
+export type {
+  McpAuthorizedData,
+  McpNeedsAuthorization,
+  McpOAuthOptions,
+  McpOAuthStore,
+  McpOAuthUserContext,
+} from "./components/sandbox/mcpOAuth.ts";
+export {
+  completeMcpAuthorization,
+  isMcpNeedsAuthorization,
+  McpAuthorizationError,
+  mcpAuthorizedEvent,
+  waitForMcpAuthorization,
+} from "./components/sandbox/mcpOAuth.ts";
 export type { Secret, SecretSource } from "./components/sandbox/secret.ts";
 export { secret } from "./components/sandbox/secret.ts";
 export type {

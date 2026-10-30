@@ -13,6 +13,8 @@
  */
 import { durationToMs } from "../../helpers/duration.ts";
 import { version } from "../../version.ts";
+import { kvOAuthStore } from "../agent/mcpOAuthStore.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
 import {
   type McpCallResult,
@@ -22,6 +24,12 @@ import {
   McpProtocolError,
   type McpToolInfo,
 } from "./mcpClient.ts";
+import {
+  McpAuthorizationRequired,
+  type McpNeedsAuthorization,
+  McpOAuth,
+  type McpOAuthOptions,
+} from "./mcpOAuth.ts";
 import { isSecret, type Secret } from "./secret.ts";
 import { toolErrorOf } from "./toolError.ts";
 import type { SandboxTool, SandboxTools } from "./tools.ts";
@@ -42,11 +50,13 @@ const listTimeoutMs = 15_000;
 /**
  * How a server is told who you are. `bearer` sends `Authorization: Bearer`;
  * `headers` sends the headers you name. Values may be `secret()`s, which are
- * read inside the call.
+ * read inside the call. `oauth` signs each user in to the server with their
+ * own account: see `McpOAuthOptions`.
  */
 export type McpAuth =
   | { bearer: string | Secret }
-  | { headers: Record<string, string | Secret> };
+  | { headers: Record<string, string | Secret> }
+  | { oauth: McpOAuthOptions };
 
 export interface McpServerOptions {
   /**
@@ -90,6 +100,12 @@ export interface McpServerOptions {
  */
 export interface McpListing {
   tools: McpToolInfo[];
+
+  /**
+   * Set when the user has not connected the server and its tools are not
+   * known yet: the only tool is then `<name>_connect`.
+   */
+  connect?: boolean;
 }
 
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -121,7 +137,9 @@ const validateOptions = (options: McpServerOptions): void => {
   }
 };
 
-const resolveAuth = async (auth: McpAuth | undefined) => {
+const resolveAuth = async (
+  auth: Exclude<McpAuth, { oauth: unknown }> | undefined,
+) => {
   const headers: Record<string, string> = {};
   const secrets: string[] = [];
   const read = async (
@@ -233,6 +251,34 @@ export const mapMcpResult = (result: McpCallResult): unknown => {
   return byteLength(json) <= maxMcpResultBytes ? value : clip(json);
 };
 
+const trimListing = (found: McpToolInfo[]): McpListing => {
+  return {
+    tools: found.map((info) => {
+      return {
+        name: info.name,
+        ...(info.description !== undefined && {
+          description: info.description.slice(0, maxDescriptionLength),
+        }),
+        inputSchema: {
+          ...(info.inputSchema ?? {}),
+          type: "object" as const,
+        },
+        ...(info.annotations && {
+          annotations: {
+            readOnlyHint: info.annotations.readOnlyHint,
+            idempotentHint: info.annotations.idempotentHint,
+            destructiveHint: info.annotations.destructiveHint,
+          },
+        }),
+      };
+    }),
+  };
+};
+
+const currentRunId = (): string | undefined => {
+  return getAsyncCtxSync()?.execution?.ctx.runId;
+};
+
 const sanitise = (name: string): string => {
   return name.replace(/[^A-Za-z0-9_]/g, "_");
 };
@@ -248,6 +294,7 @@ export class McpServer {
   private readonly options: McpServerOptions;
   private readonly client: McpClient;
   private readonly timeoutMs: number;
+  private readonly oauth?: McpOAuth;
 
   constructor(options: McpServerOptions) {
     validateOptions(options);
@@ -258,13 +305,42 @@ export class McpServer {
     this.timeoutMs = durationToMs(options.timeout ?? defaultCallTimeout, {
       name: "tool.mcp() timeout",
     });
+    const oauthOptions =
+      options.auth && "oauth" in options.auth ? options.auth.oauth : undefined;
+
+    if (oauthOptions) {
+      const store = oauthOptions.store ?? kvOAuthStore();
+
+      this.oauth = new McpOAuth(
+        oauthOptions,
+        options.url,
+        () => {
+          return store;
+        },
+        options.fetch,
+      );
+    }
+
+    const oauth = this.oauth;
+
     this.client = new McpClient({
       url: options.url,
       fetch: options.fetch,
       clientVersion: version,
-      auth: () => {
-        return resolveAuth(options.auth);
+      auth: (user) => {
+        if (oauth) {
+          return oauth.resolve(user ?? "");
+        }
+
+        return resolveAuth(
+          options.auth as Exclude<McpAuth, { oauth: unknown }> | undefined,
+        );
       },
+      onUnauthorized: oauth
+        ? (user, auth) => {
+            return oauth.unauthorized(user ?? "", auth.secrets);
+          }
+        : undefined,
     });
   }
 
@@ -283,7 +359,7 @@ export class McpServer {
     const listing = await step.run(
       { id: `mcp:${name}:list`, name: `List ${name} tools` },
       () => {
-        return this["~list"]();
+        return this["~list"](name);
       },
     );
 
@@ -293,36 +369,53 @@ export class McpServer {
   /**
    * @internal Reads the tool list from the server.
    */
-  async "~list"(): Promise<McpListing> {
-    const found = await this.client.listTools({ timeoutMs: listTimeoutMs });
+  async "~list"(name?: string): Promise<McpListing> {
+    const oauth = this.oauth;
+    let found: McpToolInfo[];
 
-    return {
-      tools: found.map((info) => {
-        return {
-          name: info.name,
-          ...(info.description !== undefined && {
-            description: info.description.slice(0, maxDescriptionLength),
-          }),
-          inputSchema: {
-            ...(info.inputSchema ?? {}),
-            type: "object" as const,
-          },
-          ...(info.annotations && {
-            annotations: {
-              readOnlyHint: info.annotations.readOnlyHint,
-              idempotentHint: info.annotations.idempotentHint,
-              destructiveHint: info.annotations.destructiveHint,
-            },
-          }),
-        };
-      }),
-    };
+    if (oauth) {
+      const user = await oauth.userOf({ runId: currentRunId() });
+
+      try {
+        found = await this.client.listTools({ timeoutMs: listTimeoutMs, user });
+      } catch (error) {
+        if (!(error instanceof McpAuthorizationRequired)) {
+          throw error;
+        }
+
+        // The tools don't depend on the user: show what another user's
+        // connection found, or just a way to connect.
+        const known = await oauth.recall<McpListing>();
+
+        return known ?? { tools: [], connect: name !== undefined };
+      }
+    } else {
+      found = await this.client.listTools({ timeoutMs: listTimeoutMs });
+    }
+
+    const listing = trimListing(found);
+
+    await this.oauth?.remember(listing);
+
+    return listing;
   }
 
   /**
    * @internal Makes the tools of a listing, named `<name>_<tool>`.
    */
   "~build"(name: string, listing: McpListing): SandboxTools {
+    if (listing.connect) {
+      return {
+        [`${name}_connect`]: {
+          description: `Connect the user's ${name} account. Call it when the user wants something from ${name}.`,
+          input: { type: "object", properties: {} },
+          run: (_input: Record<string, unknown>, ctx) => {
+            return this.connect(name, ctx);
+          },
+        } as SandboxTool,
+      };
+    }
+
     const allowed = this.options.tools;
     const known = new Set(
       listing.tools.map((info) => {
@@ -365,7 +458,7 @@ export class McpServer {
         }),
         input: info.inputSchema,
         run: (input: Record<string, unknown>, ctx) => {
-          return this.call(info, input, ctx);
+          return this.call(name, info, input, ctx);
         },
       } as SandboxTool;
     }
@@ -373,11 +466,57 @@ export class McpServer {
     return built;
   }
 
+  /**
+   * The result for a user who has not connected: a link to do it.
+   */
+  private async needsAuthorization(
+    name: string,
+    user: string,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    const oauth = this.oauth as McpOAuth;
+    const options = (this.options.auth as { oauth: McpOAuthOptions }).oauth;
+    const info: McpNeedsAuthorization = await oauth.start(user, name, signal);
+
+    await options.onNeedsAuthorization?.(info);
+
+    return toolErrorOf(info);
+  }
+
+  private async connect(
+    name: string,
+    ctx: { signal: AbortSignal; runId?: string },
+  ): Promise<unknown> {
+    const oauth = this.oauth as McpOAuth;
+    const user = await oauth.userOf({ runId: ctx.runId });
+
+    try {
+      await oauth.resolve(user);
+    } catch (error) {
+      if (error instanceof McpAuthorizationRequired) {
+        return this.needsAuthorization(name, user, ctx.signal);
+      }
+
+      throw error;
+    }
+
+    const listing = await this["~list"]();
+
+    return `Connected. The ${name} tools are available from the next message: ${listing.tools
+      .map((info) => {
+        return info.name;
+      })
+      .join(", ")}`;
+  }
+
   private async call(
+    name: string,
     info: McpToolInfo,
     input: Record<string, unknown>,
-    ctx: { signal: AbortSignal; idempotencyKey: string },
+    ctx: { signal: AbortSignal; idempotencyKey: string; runId?: string },
   ): Promise<unknown> {
+    const oauth = this.oauth;
+    const user = oauth ? await oauth.userOf({ runId: ctx.runId }) : undefined;
     const repeatable =
       info.annotations?.readOnlyHint === true ||
       info.annotations?.idempotentHint === true;
@@ -387,6 +526,7 @@ export class McpServer {
         signal: ctx.signal,
         timeoutMs: this.timeoutMs,
         idempotencyKey: ctx.idempotencyKey,
+        user,
       });
 
       try {
@@ -398,6 +538,10 @@ export class McpServer {
         );
       }
     } catch (error) {
+      if (error instanceof McpAuthorizationRequired && user !== undefined) {
+        return this.needsAuthorization(name, user, ctx.signal);
+      }
+
       if (error instanceof McpOutcomeUnknownError && !repeatable) {
         return toolErrorOf(
           `Outcome unknown: ${info.name} was sent but no answer came back (${error.message}). It may have taken effect: check before calling it again.`,
@@ -456,7 +600,7 @@ export const expandMcpTools = async (
     const listing = await step.run(
       { id: `${prefix}:mcp:${key}:list`, name: `List ${key} tools` },
       () => {
-        return entry["~list"]();
+        return entry["~list"](key);
       },
     );
 

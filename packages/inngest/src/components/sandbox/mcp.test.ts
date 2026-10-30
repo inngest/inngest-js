@@ -256,7 +256,7 @@ describe("tool.mcp", () => {
     server.oauthOnly();
 
     await expect(hex["~list"]()).rejects.toBeInstanceOf(McpAuthError);
-    await expect(hex["~list"]()).rejects.toThrow("auth: { bearer: secret(");
+    await expect(hex["~list"]()).rejects.toThrow("auth: { oauth:");
   });
 
   test("a wrong token is an auth error that names no credential", async () => {

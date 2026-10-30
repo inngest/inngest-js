@@ -27,9 +27,15 @@ export const mcpProtocolVersion = "2025-06-18";
 const maxListPages = 10;
 
 export class McpAuthError extends NonRetriableError {
-  constructor(message: string) {
+  /**
+   * The HTTP status: 401 or 403.
+   */
+  readonly status: number;
+
+  constructor(message: string, status = 401) {
     super(message);
     this.name = "McpAuthError";
+    this.status = status;
   }
 }
 
@@ -105,7 +111,16 @@ export interface McpClientOptions {
    * Reads the auth headers. Runs for every call, so a secret is read inside
    * the step that uses it.
    */
-  auth: () => Promise<McpResolvedAuth>;
+  auth: (user?: string) => Promise<McpResolvedAuth>;
+
+  /**
+   * Called when the server answers 401 to a request sent with `auth`. Return
+   * true to send the request again with fresh auth (once); throw to give up.
+   */
+  onUnauthorized?: (
+    user: string | undefined,
+    auth: McpResolvedAuth,
+  ) => Promise<boolean>;
   clientVersion: string;
 }
 
@@ -119,6 +134,11 @@ export interface McpRequestOptions {
    * The longest the call may take.
    */
   timeoutMs: number;
+
+  /**
+   * Whose credentials to use, for auth that depends on the user.
+   */
+  user?: string;
 }
 
 interface Session {
@@ -341,14 +361,38 @@ export class McpClient {
     params: unknown,
     options: McpRequestOptions,
   ): Promise<unknown> {
-    const auth = await this.#options.auth();
+    let auth = await this.#options.auth(options.user);
     const timeout = withTimeout(options);
+    // Every credential this call used, to redact from anything it throws.
+    const used = new Set(auth.secrets);
 
     try {
-      const result = await this.#send(method, params, auth, timeout);
+      let sent: unknown;
+
+      try {
+        sent = await this.#send(method, params, auth, timeout);
+      } catch (error) {
+        if (
+          !(error instanceof McpAuthError) ||
+          error.status !== 401 ||
+          !this.#options.onUnauthorized ||
+          !(await this.#options.onUnauthorized(options.user, auth))
+        ) {
+          throw error;
+        }
+
+        // The server refused before running anything, so sending again is safe.
+        auth = await this.#options.auth(options.user);
+        for (const secret of auth.secrets) {
+          used.add(secret);
+        }
+        sent = await this.#send(method, params, auth, timeout);
+      }
+
+      const result = sent;
       const text = JSON.stringify(result) ?? "";
       // JSON escapes quotes and backslashes, so look for that form too.
-      const forms = auth.secrets.flatMap((secret) => {
+      const forms = [...used].flatMap((secret) => {
         return [secret, JSON.stringify(secret).slice(1, -1)];
       });
 
@@ -361,8 +405,8 @@ export class McpClient {
     } catch (error) {
       if (error instanceof Error) {
         // The stack repeats the message, and a cause may echo a header.
-        error.message = redact(error.message, auth.secrets);
-        error.stack = redact(error.stack ?? "", auth.secrets);
+        error.message = redact(error.message, [...used]);
+        error.stack = redact(error.stack ?? "", [...used]);
         Object.defineProperty(error, "cause", { value: undefined });
       }
 
@@ -539,13 +583,13 @@ export class McpClient {
 
       throw new McpAuthError(
         oauth
-          ? "The MCP server requires OAuth, which agents don't support yet: give it a bearer token with auth: { bearer: secret(...) }"
+          ? "The MCP server requires OAuth: give tool.mcp() auth: { oauth: { user, redirectUri } }, or a bearer token with auth: { bearer: secret(...) }"
           : "The MCP server rejected the credentials (401)",
       );
     }
 
     if (response.status === 403) {
-      throw new McpAuthError("The MCP server refused access (403)");
+      throw new McpAuthError("The MCP server refused access (403)", 403);
     }
 
     if (response.status === 429 || response.status === 503) {
