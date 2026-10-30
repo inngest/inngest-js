@@ -253,3 +253,5 @@ export const textOf = (
 
   return typeof text === "string" ? text : undefined;
 };
+
+export { createWaitingReporter } from "./testing/reporter.ts";
