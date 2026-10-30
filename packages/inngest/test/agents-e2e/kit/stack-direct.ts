@@ -150,7 +150,7 @@ export const startStack = async (options: StartOptions): Promise<Stack> => {
       "--retry-interval",
       "1",
       "--tick",
-      "10",
+      process.env.AGENTS_VERIFY_TICK ?? "10",
     ],
     {},
   );
