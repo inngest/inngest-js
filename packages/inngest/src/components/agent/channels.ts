@@ -899,6 +899,12 @@ export const createReporter = (
     warn?: (data: Record<string, unknown>, message: string) => void;
 
     /**
+     * How long a best-effort write may take before it is given up on, in
+     * milliseconds. Defaults to 10 seconds.
+     */
+    writeTimeoutMs?: number;
+
+    /**
      * Whether the caller is inside a running step. A report made there is
      * written directly, on that step, instead of in a step of its own: the
      * caller's step memoizes it. A stream's state then lives in `state`
@@ -967,6 +973,24 @@ export const createReporter = (
     const n = ++reports;
     const destinations = destinationsOf(options);
 
+    // The status writes queued before this post land before it, so a late
+    // "working" never shows after the answer. Inside a step the queued writes
+    // cannot be waited on (they are steps of their own), and each is bounded
+    // by the write timeout otherwise, and the wait as a whole is capped at one
+    // timeout. A write given up on cannot be cancelled, so it may still land
+    // after this post.
+    if (hooks?.inStep?.() !== true) {
+      let cap: ReturnType<typeof setTimeout> | undefined;
+
+      await Promise.race([
+        settled(),
+        new Promise<void>((resolve) => {
+          cap = setTimeout(resolve, hooks?.writeTimeoutMs ?? 10_000);
+        }),
+      ]);
+      clearTimeout(cap);
+    }
+
     // Measured from before this report's first post, so a second destination
     // is not scored against its sibling.
     const first = !posted;
@@ -1029,8 +1053,18 @@ export const createReporter = (
       return write();
     }
 
+    const limit = hooks?.writeTimeoutMs ?? 10_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     try {
-      return await write();
+      return await Promise.race([
+        write(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`the write took longer than ${limit}ms`));
+          }, limit);
+        }),
+      ]);
     } catch (error) {
       hooks?.warn?.(
         { kind, destination, error: String(error).slice(0, 160) },
@@ -1038,6 +1072,8 @@ export const createReporter = (
       );
 
       return before;
+    } finally {
+      clearTimeout(timer);
     }
   };
 
