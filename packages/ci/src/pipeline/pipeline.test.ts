@@ -6829,14 +6829,6 @@ describe("run snapshot cleanup", () => {
         ).toBe(false);
       }
 
-      // Nothing the cancelled run took is left, wherever it was cancelled.
-      expect(
-        [...api.snapshots.values()].map((snapshot) => {
-          return snapshot.id;
-        }),
-        `cancelled after request ${cancelAfter}`,
-      ).toEqual([]);
-
       if (registered.length > 0 && before > 0 && api.snapshots.size === 0) {
         cleaned++;
       }
@@ -6846,7 +6838,50 @@ describe("run snapshot cleanup", () => {
     expect(cleaned).toBeGreaterThan(0);
   });
 
-  test("a name's defer deletes what holds the name, including a failed snapshot", async () => {
+  test("a run cancelled at any point never deletes the snapshot another build won the name with", async () => {
+    let raced = 0;
+
+    for (let cancelAfter = 1; cancelAfter <= 60; cancelAfter++) {
+      const api = createFakeSandboxApi();
+
+      api.loseSnapshotNameRaces();
+
+      const { ci } = setup({ api });
+
+      const result = await runFunction(fromChain(ci), {
+        event: prEvent,
+        cancelAfterRequests: cancelAfter,
+      });
+
+      if (result.type !== "function-cancelled") {
+        continue;
+      }
+
+      // Only a name race winner has `readyAfterGets`: it is another build's.
+      const winners = [...api.snapshots.values()]
+        .filter((snapshot) => {
+          return snapshot.readyAfterGets !== undefined;
+        })
+        .map((snapshot) => {
+          return snapshot.id;
+        });
+
+      raced += winners.length;
+
+      await runDefers(ci, result.defers);
+
+      for (const id of winners) {
+        expect(
+          api.snapshots.has(id),
+          `cancelled after request ${cancelAfter}`,
+        ).toBe(true);
+      }
+    }
+
+    expect(raced).toBeGreaterThan(0);
+  }, 30_000);
+
+  test("a name's defer deletes a failed snapshot that held the name, and nothing that holds it", async () => {
     const { api, ci } = setup();
 
     api.snapshots.set("22222222-2222-4222-8222-000000000001", {
@@ -6867,10 +6902,21 @@ describe("run snapshot cleanup", () => {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     } as never);
 
+    api.snapshots.set("22222222-2222-4222-8222-000000000003", {
+      id: "22222222-2222-4222-8222-000000000003",
+      name: "ci/run:01TESTRUN/base/k",
+      status: "READY",
+      sandboxId: "sb",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    } as never);
+
     await runDefers(ci, [{ data: { name: "ci/run:01TESTRUN/base/k" } }]);
 
+    // A READY holder may be another build's, so it stays.
     expect([...api.snapshots.keys()]).toEqual([
       "22222222-2222-4222-8222-000000000002",
+      "22222222-2222-4222-8222-000000000003",
     ]);
   });
 

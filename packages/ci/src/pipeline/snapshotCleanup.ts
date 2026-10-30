@@ -5,10 +5,13 @@
  * on a normal end and aborts the defers, so a run that finishes normally
  * starts no extra run.
  *
- * A snapshot a run takes under a name only it uses is covered before it is
- * created, by a defer keyed on that name (see `ownSnapshotName`): a run ended
- * between the create and the run learning the ID, or a snapshot that failed
- * and never gave one, still has it deleted.
+ * A snapshot a run takes under a name is also covered before it is created, by
+ * a defer keyed on that name (see `ownSnapshotName`), but only for the case
+ * where it failed and never gave the run an ID. That defer deletes nothing that
+ * still holds the name: the holder may be another build's snapshot that won a
+ * name race, and a snapshot has nothing to say who created it. So a run ended
+ * between the create and learning the ID leaves a READY snapshot until it
+ * expires, as do an unnamed fallback and a cache-named snapshot.
  *
  * @module
  */
@@ -54,8 +57,12 @@ export const snapshotCleanupFunction = (
             name: data.name,
           });
 
+          // Only a failed snapshot, which no longer holds the name and so
+          // can't be a race winner's. One that holds it may be another run's.
           for (const snapshot of items) {
-            ids.push(snapshot.id);
+            if (snapshot.status === "FAILED") {
+              ids.push(snapshot.id);
+            }
           }
         }
 
@@ -106,10 +113,9 @@ export const ownSnapshot = (
 };
 
 /**
- * Cover a snapshot the run is about to take under a name that only this run
- * and its builds use, before it exists. The defer deletes whatever holds the
- * name, including a snapshot that failed. Call `releaseSnapshotName` once the
- * run holds the ID and owns it by that.
+ * Cover a snapshot the run is about to take under a name, before it exists.
+ * The defer deletes only a failed snapshot with the name, never one that holds
+ * it. Call `releaseSnapshotName` once the run holds the ID and owns it by that.
  */
 export const ownSnapshotName = (run: CiRunScope, name: string): void => {
   const key = `name:${name}`;
