@@ -1025,40 +1025,34 @@ export async function openSubscription<
     }
 
     closing = (async () => {
-      let count = read().length;
-      let closedAny = false;
+      // One op ends every active source's pause, flushes what was buffered and
+      // gives the authoritative count, so a close is one step.
+      const active = streams
+        .map((entry, stream) => {
+          return { entry, stream };
+        })
+        .filter(({ entry }) => {
+          return entry.active;
+        });
 
-      for (let stream = 0; stream < streams.length; stream++) {
-        const entry = streams[stream];
-
-        if (!entry?.active) {
-          continue;
-        }
-
+      for (const { entry } of active) {
         entry.active = false;
-        closedAny = true;
-
-        const closed = (await op(
-          stepId(stream, "close"),
-          "close",
-          undefined,
-          stream,
-          { target: entry.source },
-        )) as { count: number };
-
-        // The last close sees every message saved before the last pause went.
-        count = closed.count;
       }
 
-      // With no source left to close, one close op still marks the inbox
-      // closed and ends any wait, and gives the authoritative count.
-      if (!closedAny) {
-        const closed = (await op(stepId(0, "close"), "close", undefined, 0, {
-          target: streams[0]?.source,
-        })) as { count: number };
-
-        count = closed.count;
-      }
+      const first = active[0];
+      const closed = (await op(
+        stepId(first?.stream ?? 0, "close"),
+        "close",
+        undefined,
+        first?.stream ?? 0,
+        {
+          target: (first?.entry ?? streams[0])?.source,
+          more: active.slice(1).map(({ entry, stream }) => {
+            return { stream, target: entry.source };
+          }),
+        },
+      )) as { count: number };
+      const count = closed.count;
 
       total = count;
 
