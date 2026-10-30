@@ -194,3 +194,36 @@ describe("a run that began before these steps", () => {
     expect(steps).not.toContain("kv.update:thread:__state:1");
   });
 });
+
+describe("a run that folded the start", () => {
+  test("keeps the start after the first wait writes the state again", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      new Inngest({ id: testClientId }),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.next();
+        await inbox.next();
+
+        return "done";
+      },
+    );
+    const steps: string[] = [];
+
+    await run(fn, {
+      event: trigger,
+      incoming: [
+        { name: "agent/message", data: { text: "two" } },
+        { name: "agent/message", data: { text: "three" } },
+      ],
+      onStep: (step) => {
+        steps.push(step.userland?.id ?? step.id);
+      },
+    });
+
+    // One start, and no read of the last run, which only an old-style start makes.
+    expect(steps.filter((id) => id === "thread:start")).toHaveLength(1);
+    expect(steps).not.toContain("kv.get:thread:__lastRun");
+  });
+});
