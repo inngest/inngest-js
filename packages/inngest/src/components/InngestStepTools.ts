@@ -37,6 +37,7 @@ import {
 import {
   eventNameOf,
   openSubscription,
+  type SubscribeBegin,
   type SubscribeEvent,
   type SubscribeOptions,
   type SubscribeTool,
@@ -601,6 +602,7 @@ export const createStepTools = <
     idOrOptions: StepOptionsOrId,
     opts: SubscribeOptions,
     allowEmpty: boolean,
+    begin?: SubscribeBegin,
   ): Promise<Subscription> => {
     const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
@@ -634,6 +636,7 @@ export const createStepTools = <
               mode,
               ...(seq ? { seq } : {}),
               ...(stream ? { stream } : {}),
+              ...(extra?.output !== undefined ? { output: extra.output } : {}),
               ...(extra?.more?.length
                 ? {
                     streams: extra.more.map(
@@ -706,6 +709,7 @@ export const createStepTools = <
         },
       },
       allowEmpty,
+      begin,
     );
   };
 
@@ -733,6 +737,27 @@ export const createStepTools = <
       options?: { sources?: readonly SubscribeEvent[] },
     ): Promise<Subscription> => {
       return openInbox(idOrOptions, { events: options?.sources ?? [] }, true);
+    },
+
+    /**
+     * A subscription whose open also records the value of `begin`, so the work
+     * costs no step of its own: `begin` runs when the open is not answered yet,
+     * and a replay reads its value from the open's answer.
+     */
+    "~subscribeBegin": async <TOutput>(
+      idOrOptions: StepOptionsOrId,
+      opts: SubscribeOptions,
+      begin: () => Promise<TOutput>,
+    ): Promise<{ subscription: Subscription; output: TOutput }> => {
+      let output: unknown;
+      const subscription = await openInbox(idOrOptions, opts, false, {
+        run: begin,
+        done: (value) => {
+          output = value;
+        },
+      });
+
+      return { subscription, output: output as TOutput };
     },
 
     /**
@@ -774,6 +799,7 @@ export const createStepTools = <
             attempt?: number;
             reader?: string;
             streams?: { stream: number; event: string; if?: string }[];
+            output?: unknown;
           };
         },
       ) => Promise<unknown>

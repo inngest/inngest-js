@@ -83,7 +83,8 @@ describe("steps of an agent run", () => {
     expect(steps.filter((id) => id.startsWith("kv."))).toEqual([
       "kv.get:thread:__state",
     ]);
-    expect(steps).toContain("thread:start");
+    // The start rides in the inbox's open: it is no step of its own.
+    expect(steps).not.toContain("thread:start");
     expect(steps.filter((id) => id.includes(":model:"))).toHaveLength(2);
 
     // The record took in both turns, written inside their model steps.
@@ -196,7 +197,7 @@ describe("a run that began before these steps", () => {
 });
 
 describe("a run that folded the start", () => {
-  test("keeps the start after the first wait writes the state again", async () => {
+  test("keeps the start in the open, and a wait's status write adds no step", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const { fn } = createAgentFunction(
       new Inngest({ id: testClientId }),
@@ -222,8 +223,9 @@ describe("a run that folded the start", () => {
       },
     });
 
-    // One start, and no read of the last run, which only an old-style start makes.
-    expect(steps.filter((id) => id === "thread:start")).toHaveLength(1);
-    expect(steps).not.toContain("kv.get:thread:__lastRun");
+    // The start is in the open, the status writes are not steps, and there is
+    // no read of the last run, which only an old-style start makes.
+    expect(steps).not.toContain("thread:start");
+    expect(steps.filter((id) => id.startsWith("kv."))).toEqual([]);
   });
 });

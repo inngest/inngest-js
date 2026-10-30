@@ -17,6 +17,7 @@ interface SubscribeOpts {
   seq?: number;
   stream?: number;
   streams?: { stream: number }[];
+  output?: unknown;
 }
 
 /**
@@ -253,7 +254,11 @@ export const run = async (
           op.id,
           options.legacyExecutor
             ? { opened: true }
-            : { opened: true, streams: 1 + (sub.streams?.length ?? 0) },
+            : {
+                opened: true,
+                streams: 1 + (sub.streams?.length ?? 0),
+                ...(sub.output === undefined ? {} : { output: sub.output }),
+              },
         );
       } else if (sub.mode === "close") {
         answer(closedId, true);

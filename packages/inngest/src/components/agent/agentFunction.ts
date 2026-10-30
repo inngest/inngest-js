@@ -1973,17 +1973,60 @@ export function createAgentFunction(
           };
         };
 
+        // The inbox's sources: the agent's own events, the triggers that reach
+        // a live run, and the configured inbox sources.
+        const inboxSources = {
+          events: [
+            ...ownEvents.map((name) => {
+              return {
+                event: name,
+                if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+              };
+            }),
+            ...triggers
+              .filter((trigger) => {
+                return trigger.listen;
+              })
+              .map((trigger) => {
+                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+                return {
+                  event: trigger.event,
+                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+                };
+              }),
+            ...(config.inbox ?? []).map((source) => {
+              return {
+                event: source.event,
+                if: inboxFilter(source, data.thread),
+              };
+            }),
+          ],
+        };
+
         // How the run before this one ended is a key of its own, read apart
-        // from the record. Both are KV calls inside one step, so the start
-        // costs one step; the write is safe to repeat if the step is retried.
-        const begun = startedBefore
-          ? await startWith()
-          : await step.run(
-              { id: "thread:start", name: "Thread state" },
-              async () => {
-                return startWith(thread.key);
-              },
-            );
+        // from the record. A new run does the start in the inbox's open, so it
+        // is one step with it; a run that began with its own step (or with
+        // separate KV steps) replays as it ran.
+        const startedAsStep = answer?.("thread:start").found === true;
+        const folded =
+          startedBefore || startedAsStep
+            ? undefined
+            : await step["~subscribeBegin"]("inbox", inboxSources, () => {
+                return withDirectKv(() => {
+                  return startWith(thread.key);
+                });
+              });
+        const begun =
+          folded?.output ??
+          (startedBefore
+            ? await startWith()
+            : await step.run(
+                { id: "thread:start", name: "Thread state" },
+                async () => {
+                  return startWith(thread.key);
+                },
+              ));
         const started = begun.started as ThreadRecord;
         const previousRun = begun.previousRun ?? undefined;
 
@@ -2021,38 +2064,12 @@ export function createAgentFunction(
           );
         }
 
-        // Opened first, so the gap in which a message could be missed is the few
-        // milliseconds between the run starting and this op.
-        // Closed when the run's work is done, whichever way it ends. That only
-        // ends the subscription.
-        await using subscription = await step.subscribe("inbox", {
-          events: [
-            ...ownEvents.map((name) => {
-              return {
-                event: name,
-                if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
-              };
-            }),
-            ...triggers
-              .filter((trigger) => {
-                return trigger.listen;
-              })
-              .map((trigger) => {
-                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
-
-                return {
-                  event: trigger.event,
-                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-                };
-              }),
-            ...(config.inbox ?? []).map((source) => {
-              return {
-                event: source.event,
-                if: inboxFilter(source, data.thread),
-              };
-            }),
-          ],
-        });
+        // Opened in the start above for a new run, so the gap in which a
+        // message could be missed is the few milliseconds between the run
+        // starting and that op. Closed when the run's work is done, whichever
+        // way it ends. That only ends the subscription.
+        await using subscription =
+          folded?.subscription ?? (await step.subscribe("inbox", inboxSources));
 
         // What each inbox source's events are checked against, by the source's
         // stream. The first streams are the agent's own events and the triggers

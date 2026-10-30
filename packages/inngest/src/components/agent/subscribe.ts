@@ -475,8 +475,24 @@ export type SubscribeOp = (
      * Further event sources of an open, opened by the same step as `target`.
      */
     more?: { stream: number; target: SubscribeEvent }[];
+
+    /**
+     * A value the SDK computed to be saved with the open, so a replay finds it
+     * in the open's answer.
+     */
+    output?: unknown;
   },
 ) => Promise<unknown>;
+
+/**
+ * Work folded into a subscription's first open: `run` is called when the open
+ * is not answered yet, and `done` gets its value, from `run` or from the
+ * answer of a replay.
+ */
+export interface SubscribeBegin {
+  run: () => Promise<unknown>;
+  done: (output: unknown) => void;
+}
 
 /**
  * What a subscription needs of the engine it runs in.
@@ -547,6 +563,7 @@ export async function openSubscription<
   answerOf: (id: string) => { found: boolean; data?: unknown },
   engine: SubscribeEngine,
   allowEmpty = false,
+  begin?: SubscribeBegin,
 ): Promise<Subscription<TData, TMessage>> {
   // The event sources, by stream. A stopped source stays in its place, so the
   // numbers of the others do not change.
@@ -573,8 +590,36 @@ export async function openSubscription<
   const openedOneByOne =
     answerOf(`${key}:open`).found || answerOf(`${key}:0:open`).found;
 
+  // Work folded into the first open op: computed before it, carried by it, and
+  // read back from its answer on a replay.
+  let output: unknown;
+  let begunBy: string | undefined;
+
+  const beginOn = async (id: string) => {
+    if (!begin || begunBy !== undefined) {
+      return undefined;
+    }
+
+    begunBy = id;
+
+    const saved = answerOf(id);
+
+    if (saved.found) {
+      output = (saved.data as { output?: unknown } | undefined)?.output;
+
+      return undefined;
+    }
+
+    output = await begin.run();
+
+    return output;
+  };
+
   if (streams.length > 1 && !openedOneByOne) {
-    const answer = await op(`${key}:open:all`, "open", undefined, 0, {
+    const openAll = `${key}:open:all`;
+    const carried = await beginOn(openAll);
+    const answer = await op(openAll, "open", undefined, 0, {
+      output: carried,
       target: streams[0]?.source,
       more: streams.slice(1).map(({ source }, index) => {
         return { stream: index + 1, target: source };
@@ -586,9 +631,23 @@ export async function openSubscription<
   }
 
   for (let stream = opened; stream < streams.length; stream++) {
-    await op(stepId(stream, "open"), "open", undefined, stream, {
+    const id = stepId(stream, "open");
+    const carried = await beginOn(id);
+
+    await op(id, "open", undefined, stream, {
+      output: carried,
       target: streams[stream]?.source,
     });
+  }
+
+  if (begin) {
+    if (begunBy === undefined) {
+      throw new Error(
+        `Subscription "${key}": work to begin with needs an event to open.`,
+      );
+    }
+
+    begin.done(output);
   }
 
   // How many messages have been read, how many polls were made, and how many
