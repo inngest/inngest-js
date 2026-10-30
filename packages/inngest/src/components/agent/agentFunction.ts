@@ -895,6 +895,7 @@ export interface ThreadInbox<
       | "unread"
       | "of"
       | "listen"
+      | "ready"
       | "putBack"
       | "close"
       | typeof Symbol.asyncIterator
@@ -1357,6 +1358,14 @@ function threadInbox(
     );
   }
 
+  // The status is not a step: it is written straight to the KV, best effort and
+  // not awaited, so a read never waits on it and a failed write only logs.
+  function status(write: () => Promise<unknown>) {
+    void withDirectKv(write).catch((error: unknown) => {
+      log.warn(`Could not record the thread status: ${String(error)}`);
+    });
+  }
+
   function next(): Promise<ThreadInboxMessage | null>;
   function next(
     options: NextOptions,
@@ -1364,12 +1373,23 @@ function threadInbox(
   async function next(
     options?: NextOptions,
   ): Promise<ThreadInboxMessage | null | undefined> {
-    // The status is never a step of its own: a turn's write rides in its model
-    // step, and the run's end writes the final state.
+    // `waiting` is written when this read has to wait: nothing is saved for it,
+    // so a replay that resolves from the state writes nothing.
+    if (delivered > 0 && !inbox.ready()) {
+      status(() => {
+        return recorder.waiting();
+      });
+    }
     for (;;) {
       const raw = options ? await inbox.next(options) : await inbox.next();
       if (raw === undefined) {
-        // The wait expired: the agent goes on working.
+        // The wait expired: the agent goes on working, so it is not waiting.
+        if (delivered > 0) {
+          status(() => {
+            return recorder.resumed();
+          });
+        }
+
         return undefined;
       }
 
@@ -1387,6 +1407,14 @@ function threadInbox(
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.name !== agentStopEvent) {
+        // Only the newest message writes it: an older one is a replay or a
+        // backlog, and every request would repeat the write.
+        if (delivered > 1 && !inbox.ready()) {
+          status(() => {
+            return recorder.running(undefined, inflightOf(message));
+          });
+        }
+
         return message;
       }
     }

@@ -1054,6 +1054,48 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
+  test("waiting is written when a wait is reported, never on a replay that resolves from the state", async () => {
+    const inner = memoryKvAdapter();
+    const waitingWrites: string[] = [];
+    const kv = createKv({
+      adapter: {
+        ...inner,
+        async compareAndSet(hash, key, expected, next) {
+          const written = await inner.compareAndSet(hash, key, expected, next);
+
+          // Only a write that took counts: a lost race is retried.
+          if (written && JSON.parse(next).status === "waiting") {
+            waitingWrites.push(key);
+          }
+
+          return written;
+        },
+      },
+    });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.next();
+        await inbox.next();
+      },
+    );
+
+    // Request 1 waits for the second message. Request 2 replays that read from
+    // the state and waits for the third. Request 3 replays both and finishes.
+    await run(fn, {
+      event: trigger("one"),
+      incoming: [
+        { name: "agent/message", data: { text: "two" } },
+        { name: "agent/message", data: { text: "three" } },
+      ],
+    });
+
+    // One write for each wait that was reported, none for a replayed read.
+    expect(waitingWrites).toHaveLength(2);
+  });
+
   test("a wait that expires marks the thread running again when a message was delivered", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const seen: unknown[] = [];
