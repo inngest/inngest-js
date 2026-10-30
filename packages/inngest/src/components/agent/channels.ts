@@ -1137,7 +1137,12 @@ export const createReporter = (
     if (bestEffort && !direct) {
       // Nobody waits: the loop goes on while the write runs as a step of its
       // own. `settled()` is how the end of the run waits for it.
-      const pending = run.catch(noop);
+      const pending = run.catch((error) => {
+        hooks?.warn?.(
+          { kind, error: String(error).slice(0, 160) },
+          "A progress report could not be written; the run goes on",
+        );
+      });
 
       inFlight.add(pending);
       void pending.then(() => {
@@ -1152,14 +1157,17 @@ export const createReporter = (
     });
   };
 
-  async function status(status: ChannelStatus, options?: ReportStreamOptions) {
+  function status(
+    status: ChannelStatus,
+    options?: ReportStreamOptions,
+  ): Promise<void> {
     if (!channelStatuses.includes(status)) {
       throw new NonRetriableError(
         `report.status: the status is one of ${channelStatuses.join(", ")}.`,
       );
     }
 
-    await queued(
+    return queued(
       "status",
       options,
       (channel) => {
@@ -1175,13 +1183,16 @@ export const createReporter = (
 
         return undefined;
       },
-    );
+    ).then(noop);
   }
 
-  async function card(card: ChannelCard, options?: ReportStreamOptions) {
+  function card(
+    card: ChannelCard,
+    options?: ReportStreamOptions,
+  ): Promise<void> {
     checkCard(card);
 
-    await queued(
+    return queued(
       "card",
       options,
       (channel) => {
@@ -1195,18 +1206,18 @@ export const createReporter = (
           restarts,
         );
       },
-    );
+    ).then(noop);
   }
 
-  async function begin(
+  function begin(
     start: ChannelStreamStart,
     options?: ReportStreamOptions,
-  ) {
+  ): Promise<void> {
     for (const card of start.cards ?? []) {
       checkCard(card);
     }
 
-    await queued(
+    return queued(
       "begin",
       options,
       (channel) => {
@@ -1224,7 +1235,7 @@ export const createReporter = (
           restarts,
         );
       },
-    );
+    ).then(noop);
   }
 
   async function finish(

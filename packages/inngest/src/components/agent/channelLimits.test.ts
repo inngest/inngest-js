@@ -11,6 +11,7 @@ import {
   ChannelStreamEnded,
   type ChannelStreamFinal,
   type ChannelStreamStart,
+  createReporter,
   defineChannel,
 } from "./channels.ts";
 import { slack } from "./slack.ts";
@@ -882,6 +883,17 @@ describe("report.status and the Slack status line", () => {
     await expect(report.status("busy" as never)).rejects.toThrow(
       "the status is one of",
     );
+  });
+
+  test("a bad call throws at the call, so an un-awaited one is no unhandled rejection", () => {
+    const report = createReporter({}, undefined, stepper().runStep);
+
+    expect(() => {
+      report.status("busy" as never);
+    }).toThrow("the status is one of");
+    expect(() => {
+      report.card({ id: "a", title: "A", output: 1 as never });
+    }).toThrow("details and output are text");
   });
 
   test("a card's output and sources are checked", async () => {
