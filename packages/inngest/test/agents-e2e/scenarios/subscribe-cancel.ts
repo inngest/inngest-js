@@ -15,6 +15,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "subscribe-cancel-agent";
@@ -39,9 +40,6 @@ export const subscribeCancel = scenario({
         on: {
           event: event("msg"),
           thread: "event.data.thread",
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox }) => {
@@ -51,7 +49,7 @@ export const subscribeCancel = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("read"), function (read) {
-            return [...(read ?? []), message.content ?? ""];
+            return [...(read ?? []), textOf(message) ?? ""];
           });
         }
       },

@@ -173,8 +173,6 @@ describe("trigger helpers", () => {
 
     expect(trigger.thread).toContain("has(event.data.threadTs)");
 
-    expect(trigger.message({ data: { text: "hi" } })).toBe("hi");
-
     expect(slack.thread({ in: ["C1"], allowBots: true }).if).toBe(
       '(event.data.channel == "C1")',
     );
@@ -772,7 +770,7 @@ describe("agent function wiring", () => {
     const result = await run(fn, {
       event: {
         name: "agent/message",
-        data: { agent: `${testClientId}/bot`, thread: "t1", kind: "user" },
+        data: { agent: `${testClientId}/bot`, thread: "t1", text: "hi" },
       },
     });
 

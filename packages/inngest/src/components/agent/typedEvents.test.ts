@@ -10,8 +10,6 @@ import { Inngest } from "../Inngest.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
 import { agent } from "./loop.ts";
-import type { InboxMessage } from "./subscribe.ts";
-import type { ThreadMessage } from "./thread.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
@@ -41,14 +39,37 @@ describe("typed events", () => {
         // The message is the trigger event, flat; a plain thread message is
         // `agent/message`.
         expectTypeOf(message?.name).toEqualTypeOf<
-          "shop/order.created" | "agent/message" | undefined
+          | "shop/order.created"
+          | "agent/message"
+          | "agent/steer"
+          | "agent/stop"
+          | "agent/request"
+          | undefined
         >();
 
         if (message?.name === "shop/order.created") {
           expectTypeOf(message.data).toEqualTypeOf<Order["data"]>();
         }
 
-        expectTypeOf(message?.content).toEqualTypeOf<string | undefined>();
+        switch (message?.name) {
+          case "shop/order.created":
+            expectTypeOf(message.data.total).toBeNumber();
+            break;
+          case "agent/message":
+          case "agent/steer":
+            expectTypeOf(message.data.text).toBeString();
+            expectTypeOf(message.data.thread).toBeString();
+            break;
+          case "agent/stop":
+            expectTypeOf(message.data.when).toEqualTypeOf<"nextTurn">();
+            break;
+          case "agent/request":
+            expectTypeOf(message.data.replyTo).toBeString();
+            expectTypeOf(message.reply).toBeFunction();
+            break;
+          default:
+            break;
+        }
 
         return undefined;
       },
@@ -181,7 +202,6 @@ describe("typed events", () => {
         if (message?.is(order)) {
           expectTypeOf(message.name).toEqualTypeOf<"shop/order.created">();
           expectTypeOf(message.data.total).toBeNumber();
-          expectTypeOf(message.content).toEqualTypeOf<string | undefined>();
         }
 
         // A source's message keeps its own event name; the view types it.
@@ -194,19 +214,6 @@ describe("typed events", () => {
     );
   });
 
-  test("the fields of a thread message never share a name with the fields of an event", () => {
-    // Checked on ThreadMessage itself, not on ThreadMessageFields, which omits
-    // the event's names: if a thread message gains a field named like an event
-    // field, this stops compiling instead of the field silently dropping out.
-    type KeysOfEach<T> = T extends unknown ? keyof T : never;
-    type Shared = Extract<
-      KeysOfEach<ThreadMessage<never, unknown>>,
-      keyof InboxMessage | "reply"
-    >;
-
-    expectTypeOf<Shared>().toEqualTypeOf<never>();
-  });
-
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },
@@ -214,7 +221,12 @@ describe("typed events", () => {
         const message = await inbox.next();
 
         expectTypeOf(message?.name).toEqualTypeOf<
-          "slack/message" | "agent/message" | undefined
+          | "slack/message"
+          | "agent/message"
+          | "agent/steer"
+          | "agent/stop"
+          | "agent/request"
+          | undefined
         >();
 
         if (message?.name === "slack/message") {
@@ -229,7 +241,12 @@ describe("typed events", () => {
       const message = await inbox.next();
 
       expectTypeOf(message?.name).toEqualTypeOf<
-        "inngest/scheduled.timer" | "agent/message" | undefined
+        | "inngest/scheduled.timer"
+        | "agent/message"
+        | "agent/steer"
+        | "agent/stop"
+        | "agent/request"
+        | undefined
       >();
 
       if (message?.name === "inngest/scheduled.timer") {

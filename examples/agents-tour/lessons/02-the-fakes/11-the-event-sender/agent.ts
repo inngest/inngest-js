@@ -6,14 +6,15 @@ export const greeter = agents.agent(
     on: {
       event: "tour/greet",
       thread: "event.data.name",
-      message: (event) => {
-        return `Hello, ${event.data.name}!`;
-      },
     },
   },
   async ({ inbox }) => {
     const message = await inbox.next();
 
-    return message?.content;
+    if (message?.name === "tour/greet") {
+      return `Hello, ${message.data.name}!`;
+    }
+
+    return undefined;
   },
 );

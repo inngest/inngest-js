@@ -28,6 +28,7 @@ import {
 } from "./recovery.ts";
 import { scoreThisStep } from "./scores.ts";
 import {
+  type Inflight,
   lastRunRecordKey,
   summaryLength,
   type ThreadRecord,
@@ -163,7 +164,7 @@ export const threadRecorder = (
        * The message the turn answers, kept until the run waits for the next
        * one: a failed run resends it.
        */
-      inflight?: { content?: string } | null,
+      inflight?: Inflight | null,
 
       /**
        * The thread's key, when called inside a step's callback.
@@ -354,7 +355,7 @@ export const recordEnd = async (
      * The message that started the run, if it carried one, and whether the
      * run began by answering a message.
      */
-    content?: string;
+    inflight?: Inflight;
     turn: boolean;
 
     /**
@@ -392,7 +393,7 @@ export const recordEnd = async (
       const turn = turnInFlight(
         record,
         end.runId,
-        { content: end.content, turn: end.turn },
+        { inflight: end.inflight, turn: end.turn },
         (x, y) => {
           return runScore(x) < runScore(y);
         },
@@ -406,7 +407,7 @@ export const recordEnd = async (
               at: end.at,
               error,
               fingerprint: print,
-              turn: turnOf(turn.content),
+              turn: turnOf(turn.inflight),
               resume: end.resume && turn.resendable,
             }).last;
     }

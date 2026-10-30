@@ -21,6 +21,7 @@
  * final, and a fresh run would only repeat it.
  */
 import hashjs from "hash.js";
+import type { Inflight } from "./thread.ts";
 
 /**
  * How a run ended.
@@ -204,11 +205,15 @@ export const turnOf = (
   /**
    * The message that was being answered.
    */
-  content: string | undefined,
+  inflight: Inflight | undefined,
 ): string => {
   return hashjs
     .sha1()
-    .update(content ?? "")
+    .update(
+      inflight?.event
+        ? JSON.stringify([inflight.event.name, inflight.event.data])
+        : (inflight?.text ?? ""),
+    )
     .digest("hex")
     .slice(0, 12);
 };
@@ -220,7 +225,7 @@ export interface Turn {
   /**
    * The message the run was answering.
    */
-  content?: string;
+  inflight?: Inflight;
 
   /**
    * Whether there is a turn to resend: the run was answering a message when it
@@ -239,7 +244,7 @@ export const turnInFlight = (
    */
   record: {
     runId?: string;
-    inflight?: { content?: string };
+    inflight?: Inflight;
   },
 
   /**
@@ -251,7 +256,7 @@ export const turnInFlight = (
    * The message that started the failed run, if it carried one, and whether
    * the run began with a turn at all.
    */
-  start: { content?: string; turn: boolean },
+  start: { inflight?: Inflight; turn: boolean },
 
   /**
    * Whether a run's ID is older than another's.
@@ -262,7 +267,7 @@ export const turnInFlight = (
   // waited for the next message.
   if (record.runId === runId) {
     return record.inflight
-      ? { content: record.inflight.content, resendable: true }
+      ? { inflight: record.inflight, resendable: true }
       : { resendable: false };
   }
 
@@ -273,7 +278,7 @@ export const turnInFlight = (
 
   // The run failed before it wrote anything: it was answering its first
   // message.
-  return { content: start.content, resendable: start.turn };
+  return { inflight: start.inflight, resendable: start.turn };
 };
 
 /**

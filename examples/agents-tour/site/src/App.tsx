@@ -14,6 +14,7 @@ import type {
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
+import { EventBlock } from "./EventBlock.tsx";
 import { Events } from "./Events.tsx";
 import { Github } from "./Github.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
@@ -295,16 +296,6 @@ export const App = () => {
     store.set("tour:theme", next);
   };
 
-  const showRun = () => {
-    if (
-      files.some((file) => {
-        return file.name === "run.ts";
-      })
-    ) {
-      setActive("run.ts");
-    }
-  };
-
   const nextFile = () => {
     const at = files.findIndex((file) => {
       return file.name === active;
@@ -380,16 +371,16 @@ export const App = () => {
       focusIn(".trace [data-row], .trace");
     },
     message: () => {
-      playTo("message", "message");
+      playTo("message", ".message button");
     },
     slack: () => {
-      playTo("slack", "slackCompose");
+      playTo("slack", ".slack-head button");
     },
     github: () => {
-      playTo("github", ".github select");
+      playTo("github", ".gh-head button");
     },
     events: () => {
-      playTo("events", ".events input");
+      playTo("events", ".events button");
     },
     slackCompose: () => {
       playTo("slack", "slackCompose");
@@ -397,17 +388,20 @@ export const App = () => {
     slackNew: () => {
       playTo("slack", "slackNew");
     },
-    slackChannel: () => {
-      playTo("slack", "slackChannel");
-    },
-    slackReact: () => {
-      playTo("slack", "slackReact");
-    },
     approve: () => {
       playTo("slack", "approve");
     },
     deny: () => {
       playTo("slack", "deny");
+    },
+    sendOther: () => {
+      playTo("message", "sendOther");
+    },
+    githubComment: () => {
+      playTo("github", "githubComment");
+    },
+    githubApprove: () => {
+      playTo("github", "githubApprove");
     },
     githubPull: () => {
       playTo("github", "githubPull");
@@ -416,16 +410,13 @@ export const App = () => {
       playTo("github", "githubIssue");
     },
     sendEvent: () => {
-      playTo("events", "sendEvent");
+      playTo(play === "message" ? "message" : "events", "sendEvent");
     },
     file: nextFile,
     devserver: () => {
       if (devServerUrl) {
         window.open(devServerUrl, "_blank", "noopener");
       }
-    },
-    runEvent: () => {
-      showRun();
     },
     rowDown: () => {},
     rowUp: () => {},
@@ -594,6 +585,9 @@ export const App = () => {
                 __html: renderMarkdown(page.markdown),
               }}
             />
+            {hasCode && page.manifest.start?.length ? (
+              <EventBlock starts={page.manifest.start} dark={dark} />
+            ) : null}
           </section>
           {hasCode && panels.length > 0 ? (
             <>
@@ -674,12 +668,6 @@ export const App = () => {
                       >
                         {file.name}
                         {file.editable ? "" : " (read-only)"}
-                        {file.name === "run.ts" ? (
-                          <>
-                            {" "}
-                            <Kbd action="runEvent" />
-                          </>
-                        ) : null}
                       </button>
                     );
                   })}

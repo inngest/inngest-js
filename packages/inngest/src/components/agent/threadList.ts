@@ -11,7 +11,14 @@
  */
 
 import type { Inngest } from "../Inngest.ts";
-import { agentMessageEvent, getThread, type ThreadHandle } from "./thread.ts";
+import {
+  agentMessageEvent,
+  agentRequestEvent,
+  agentSteerEvent,
+  agentStopEvent,
+  getThread,
+  type ThreadHandle,
+} from "./thread.ts";
 
 /**
  * Runs an Insights SQL query and returns its rows, each a list of values in
@@ -88,7 +95,7 @@ export function threadListSql(
 ): string {
   const session = "JSONExtractString(meta, 'sessions', 'agent_session')";
   const filters = [
-    `name = ${literal(agentMessageEvent)}`,
+    `name IN (${[agentMessageEvent, agentSteerEvent, agentStopEvent, agentRequestEvent].map(literal).join(", ")})`,
     `JSONExtractString(data, 'agent') = ${literal(agent)}`,
     ...(options.session === undefined
       ? []

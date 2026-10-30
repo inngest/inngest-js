@@ -17,6 +17,7 @@ import {
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "sandbox-recycle-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -34,7 +35,7 @@ export const sandboxRecycle = scenario({
       { id: agentId, sandboxes: { work: { sandbox: box, idle: "snapshot" } } },
       async ({ inbox, sandboxes }) => {
         const first = await inbox.next();
-        const command = first?.content ?? "";
+        const command = textOf(first) ?? "";
         const read = async () => {
           const work = await sandboxes.work?.get();
           const bytes = await work?.files.read("notes", "/work/notes.txt");

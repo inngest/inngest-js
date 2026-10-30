@@ -19,6 +19,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {
@@ -89,7 +90,7 @@ export const inboxToolsRestart = scenario({
                   };
               }
             }),
-            prompt: message.data.content ?? "",
+            prompt: message,
             tools: { ...tools },
             onToolResult: async (run) => {
               await kv.thread.update(kvKey<string[]>("log"), (log) => {

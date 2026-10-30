@@ -31,8 +31,7 @@ const trigger = {
   data: {
     agent: `${testClientId}/bot`,
     thread: "t1",
-    kind: "user",
-    content: "go",
+    text: "go",
   },
 };
 
@@ -49,7 +48,7 @@ const build = (
         model: agent.model(async (request) => {
           return turns[request.turn - 1] as AgentModelResponse;
         }),
-        prompt: first?.content ?? "",
+        prompt: first ?? "",
         tools: {},
         ...control,
       });
@@ -138,7 +137,7 @@ describe("a run that began before these steps", () => {
           model: agent.model(async () => {
             return done;
           }),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });
@@ -170,6 +169,9 @@ describe("a run that began before these steps", () => {
         "inbox:0:open": { opened: true },
         "inbox:1:open": { opened: true },
         "inbox:2:open": { opened: true },
+        "inbox:3:open": { opened: true },
+        "inbox:4:open": { opened: true },
+        "inbox:5:open": { opened: true },
         // The model call without a recorded turn, then its own write.
         "agent:model:1": done,
         "kv.update:thread:__state:1": written(record(1)),

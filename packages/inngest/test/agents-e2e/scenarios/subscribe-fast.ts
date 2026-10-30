@@ -14,6 +14,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "subscribe-fast-agent";
@@ -39,16 +40,13 @@ export const subscribeFast = scenario({
         on: {
           event: event("msg"),
           thread: "event.data.thread",
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox }) => {
         const seen: string[] = [];
 
         for await (const message of inbox) {
-          seen.push(message.content ?? "");
+          seen.push(textOf(message) ?? "");
 
           if (seen.length === messages) {
             break;

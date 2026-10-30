@@ -11,7 +11,7 @@ import { threadRecorder } from "./threadState.ts";
 
 const event = {
   name: "agent/message",
-  data: { agent: "a/b", thread: "t1", kind: "user", content: "hi" },
+  data: { agent: "a/b", thread: "t1", text: "hi" },
 };
 
 const pause = () => {
@@ -110,7 +110,7 @@ describe("the message in flight", () => {
       async ({ runId }) => {
         const recorder = threadRecorder(store, runId);
 
-        await recorder.running(undefined, { content: "do it" });
+        await recorder.running(undefined, { text: "do it" });
         seen.push((await recorder.stopped()).inflight);
       },
     );

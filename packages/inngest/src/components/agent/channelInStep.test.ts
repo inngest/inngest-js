@@ -150,8 +150,7 @@ describe("report inside a step of the body", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          kind: "user",
-          content: "hi",
+          text: "hi",
         },
       },
     });

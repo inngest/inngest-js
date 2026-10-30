@@ -1,0 +1,5 @@
+{
+  "panels": ["message"],
+  "start": [{ "agent": "chat", "thread": "ada", "message": "Hi" }],
+  "message": { "agent": "chat", "thread": "ada", "threads": ["ada", "grace"] }
+}

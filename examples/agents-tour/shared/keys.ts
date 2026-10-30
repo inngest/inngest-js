@@ -21,7 +21,6 @@ export type ActionId =
   | "contents"
   | "search"
   | "text"
-  | "runEvent"
   | "trace"
   | "message"
   | "slack"
@@ -29,13 +28,14 @@ export type ActionId =
   | "events"
   | "slackCompose"
   | "slackNew"
-  | "slackChannel"
-  | "slackReact"
+  | "githubComment"
+  | "githubApprove"
   | "approve"
   | "deny"
   | "githubIssue"
   | "githubPull"
   | "sendEvent"
+  | "sendOther"
   | "everything"
   | "file"
   | "devserver"
@@ -131,13 +131,6 @@ export const keys: KeyDef[] = [
     outside: ["1"],
   },
   {
-    id: "runEvent",
-    label: "Show the event Run sends (run.ts)",
-    group: "Code",
-    inField: ["Alt+Shift+2"],
-    outside: ["2"],
-  },
-  {
     id: "message",
     label: "Play pane (message box)",
     group: "Panes",
@@ -174,38 +167,31 @@ export const keys: KeyDef[] = [
   },
   {
     id: "sendEvent",
-    label: "Send the event",
+    label: "Send (a message or an event)",
     group: "Panes",
     inField: ["Alt+Shift+Enter"],
     outside: ["s"],
   },
   {
+    id: "sendOther",
+    label: "Send to the second thread",
+    group: "Panes",
+    inField: ["Alt+Shift+9"],
+    outside: ["9"],
+  },
+  {
     id: "slackCompose",
-    label: "Write in Slack",
+    label: "Mention the bot in Slack",
     group: "Slack",
     inField: ["Alt+Shift+Q"],
     outside: ["i"],
   },
   {
-    id: "slackChannel",
-    label: "Switch Slack channel",
-    group: "Slack",
-    inField: ["Alt+Shift+X"],
-    outside: ["c"],
-  },
-  {
     id: "slackNew",
-    label: "Start a new Slack thread",
+    label: "Reply in the Slack thread",
     group: "Slack",
     inField: ["Alt+Shift+W"],
     outside: ["w"],
-  },
-  {
-    id: "slackReact",
-    label: "React with eyes to the last message",
-    group: "Slack",
-    inField: ["Alt+Shift+Z"],
-    outside: ["z"],
   },
   {
     id: "approve",
@@ -220,6 +206,20 @@ export const keys: KeyDef[] = [
     group: "Slack",
     inField: ["Alt+Shift+N"],
     outside: ["n"],
+  },
+  {
+    id: "githubComment",
+    label: "Comment on the latest issue or pull request",
+    group: "GitHub",
+    inField: ["Alt+Shift+A"],
+    outside: ["a"],
+  },
+  {
+    id: "githubApprove",
+    label: "Approve the latest pull request",
+    group: "GitHub",
+    inField: ["Alt+Shift+I"],
+    outside: ["v"],
   },
   {
     id: "githubPull",

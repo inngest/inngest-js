@@ -100,6 +100,13 @@ export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
+  McpAuth,
+  McpServer,
+  McpServerOptions,
+} from "./components/sandbox/mcp.ts";
+export type { Secret, SecretSource } from "./components/sandbox/secret.ts";
+export { secret } from "./components/sandbox/secret.ts";
+export type {
   ConfigShim,
   ProgramShim,
   SandboxShim,
@@ -136,6 +143,7 @@ export {
 export type {
   AgentTool,
   AgentToolDefinition,
+  AgentToolSource,
   JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,
