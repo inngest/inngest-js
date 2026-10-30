@@ -298,7 +298,7 @@ const limit = async (ctx: Ctx, client: Inngest, tag: string, t: string) => {
     // run side by side and each checks the limit before it saves, so a few
     // messages may squeeze in over it.
     const run = await finishedRun(ctx, start);
-    const reads = ((run.output as { reads?: number[] }).reads ??
+    const reads = (((run.output ?? {}) as { reads?: number[] }).reads ??
       []) as number[];
 
     ctx.check(
@@ -307,7 +307,7 @@ const limit = async (ctx: Ctx, client: Inngest, tag: string, t: string) => {
         reads.length >= saveLimit &&
         reads.length <= saveLimit + 20 &&
         new Set(reads).size === reads.length,
-      { status: run.status, reads: reads.length },
+      { status: run.status, reads: reads.length, log: lines(t).slice(-4) },
     );
   } catch (error) {
     ctx.check(name, false, (error as Error).message);
