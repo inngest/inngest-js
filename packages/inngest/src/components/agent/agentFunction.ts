@@ -2151,6 +2151,9 @@ export function createAgentFunction(
             restarts: () => {
               return recorder.restarts;
             },
+            warn: (data, message) => {
+              logger.warn(data, message);
+            },
             inStep: () => {
               return Boolean(getAsyncCtxSync()?.execution?.executingStep);
             },
@@ -2312,6 +2315,9 @@ export function createAgentFunction(
             },
             control,
           });
+
+          // Progress writes nobody waited for finish before the run ends.
+          await report.settled();
 
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
