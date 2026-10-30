@@ -1152,6 +1152,24 @@ export const createReporter = (
       return Promise.resolve(undefined);
     }
 
+    if (bestEffort) {
+      // On the caller's own step the write is awaited, but a call nobody
+      // awaits must not become an unhandled rejection.
+      return run.then(
+        () => {
+          return ref;
+        },
+        (error) => {
+          hooks?.warn?.(
+            { kind, error: String(error).slice(0, 160) },
+            "A progress report could not be written; the run goes on",
+          );
+
+          return undefined;
+        },
+      );
+    }
+
     return run.then(() => {
       return ref;
     });
