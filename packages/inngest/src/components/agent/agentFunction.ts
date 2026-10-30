@@ -895,7 +895,6 @@ export interface ThreadInbox<
       | "unread"
       | "of"
       | "listen"
-      | "ready"
       | "putBack"
       | "close"
       | typeof Symbol.asyncIterator
@@ -1358,16 +1357,6 @@ function threadInbox(
     );
   }
 
-  // The status is not a step: it is written straight to the KV, best effort,
-  // and a replay writes the latest value again.
-  async function status(write: () => Promise<unknown>) {
-    try {
-      await withDirectKv(write);
-    } catch (error) {
-      log.warn(`Could not record the thread status: ${String(error)}`);
-    }
-  }
-
   function next(): Promise<ThreadInboxMessage | null>;
   function next(
     options: NextOptions,
@@ -1375,24 +1364,12 @@ function threadInbox(
   async function next(
     options?: NextOptions,
   ): Promise<ThreadInboxMessage | null | undefined> {
-    // The status is written only when the read has to wait, so a replay of
-    // answered reads writes nothing.
-    if (delivered > 0 && !inbox.ready()) {
-      await status(() => {
-        return recorder.waiting();
-      });
-    }
-
+    // The status is never a step of its own: a turn's write rides in its model
+    // step, and the run's end writes the final state.
     for (;;) {
       const raw = options ? await inbox.next(options) : await inbox.next();
       if (raw === undefined) {
-        // The wait expired: the agent goes on working, so it is not waiting.
-        if (delivered > 0) {
-          await status(() => {
-            return recorder.resumed();
-          });
-        }
-
+        // The wait expired: the agent goes on working.
         return undefined;
       }
 
@@ -1410,14 +1387,6 @@ function threadInbox(
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.name !== agentStopEvent) {
-        // Only the newest message writes it: an older one is a replay or a
-        // backlog, and the write would be repeated by every request.
-        if (delivered > 1 && !inbox.ready()) {
-          await status(() => {
-            return recorder.running(undefined, inflightOf(message));
-          });
-        }
-
         return message;
       }
     }
