@@ -245,20 +245,20 @@ const sanitise = (name: string): string => {
 export class McpServer {
   readonly url: string;
   readonly id?: string;
-  readonly #options: McpServerOptions;
-  readonly #client: McpClient;
-  readonly #timeoutMs: number;
+  private readonly options: McpServerOptions;
+  private readonly client: McpClient;
+  private readonly timeoutMs: number;
 
   constructor(options: McpServerOptions) {
     validateOptions(options);
 
     this.url = options.url;
     this.id = options.id;
-    this.#options = options;
-    this.#timeoutMs = durationToMs(options.timeout ?? defaultCallTimeout, {
+    this.options = options;
+    this.timeoutMs = durationToMs(options.timeout ?? defaultCallTimeout, {
       name: "tool.mcp() timeout",
     });
-    this.#client = new McpClient({
+    this.client = new McpClient({
       url: options.url,
       fetch: options.fetch,
       clientVersion: version,
@@ -294,7 +294,7 @@ export class McpServer {
    * @internal Reads the tool list from the server.
    */
   async "~list"(): Promise<McpListing> {
-    const found = await this.#client.listTools({ timeoutMs: listTimeoutMs });
+    const found = await this.client.listTools({ timeoutMs: listTimeoutMs });
 
     return {
       tools: found.map((info) => {
@@ -323,7 +323,7 @@ export class McpServer {
    * @internal Makes the tools of a listing, named `<name>_<tool>`.
    */
   "~build"(name: string, listing: McpListing): SandboxTools {
-    const allowed = this.#options.tools;
+    const allowed = this.options.tools;
     const known = new Set(
       listing.tools.map((info) => {
         return info.name;
@@ -365,7 +365,7 @@ export class McpServer {
         }),
         input: info.inputSchema,
         run: (input: Record<string, unknown>, ctx) => {
-          return this.#call(info, input, ctx);
+          return this.call(info, input, ctx);
         },
       } as SandboxTool;
     }
@@ -373,7 +373,7 @@ export class McpServer {
     return built;
   }
 
-  async #call(
+  private async call(
     info: McpToolInfo,
     input: Record<string, unknown>,
     ctx: { signal: AbortSignal; idempotencyKey: string },
@@ -383,9 +383,9 @@ export class McpServer {
       info.annotations?.idempotentHint === true;
 
     try {
-      const answer = await this.#client.callTool(info.name, input, {
+      const answer = await this.client.callTool(info.name, input, {
         signal: ctx.signal,
-        timeoutMs: this.#timeoutMs,
+        timeoutMs: this.timeoutMs,
         idempotencyKey: ctx.idempotencyKey,
       });
 
