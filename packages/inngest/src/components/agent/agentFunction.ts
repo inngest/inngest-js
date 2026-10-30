@@ -2323,6 +2323,7 @@ export function createAgentFunction(
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
         } catch (error) {
+          await report.settled();
           await closeAll();
 
           throw error;

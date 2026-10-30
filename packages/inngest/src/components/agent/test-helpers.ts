@@ -10,7 +10,6 @@ import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
 import { subscriptionMessageIdPrefix } from "../execution/subscription.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
-import { createReporter, type Reporter } from "./channels.ts";
 
 interface SubscribeOpts {
   key: string;
@@ -255,32 +254,4 @@ export const textOf = (
   return typeof text === "string" ? text : undefined;
 };
 
-/**
- * Wraps `createReporter` so `status`, `card` and `begin` resolve once their
- * write has finished, for tests of what a write does. A real call does not
- * wait; the tests of that use `createReporter` directly.
- */
-export const createWaitingReporter = (
-  ...args: Parameters<typeof createReporter>
-): Reporter => {
-  const raw = createReporter(...args);
-  const waits = (name: "status" | "card" | "begin") => {
-    return async (...rest: never[]) => {
-      await (raw[name] as (...a: never[]) => Promise<void>)(...rest);
-      await raw.settled();
-    };
-  };
-
-  return Object.assign(
-    (...rest: Parameters<Reporter>) => {
-      return raw(...rest);
-    },
-    {
-      status: waits("status"),
-      card: waits("card"),
-      begin: waits("begin"),
-      finish: raw.finish,
-      settled: raw.settled,
-    },
-  ) as unknown as Reporter;
-};
+export { createWaitingReporter } from "./testing/reporter.ts";
