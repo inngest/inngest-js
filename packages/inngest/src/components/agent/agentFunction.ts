@@ -1455,6 +1455,12 @@ function threadInbox(
       async current() {
         return clean(await view.current()) as never;
       },
+      putBack(messages) {
+        view.putBack(messages as never);
+      },
+      close() {
+        return view.close();
+      },
       [Symbol.asyncIterator]() {
         return {
           async next() {

@@ -265,6 +265,88 @@ describe("step.subscribe", () => {
     expect(output).toEqual([undefined, "late"]);
   });
 
+  test("listen() of several sources opens them in one op and closes them in one op", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const watch = await inbox.listen([
+          { event: "github/pr.comment", if: "async.data.pr == 12" },
+          { event: "github/pr.review", if: "async.data.review.pr == 12" },
+          { event: "github/check_run", if: "async.data.check_run.pr == 12" },
+        ]);
+
+        await watch.close();
+        await watch.close();
+
+        return "done";
+      },
+    );
+
+    const { ops } = await run(fn, { key: "inbox" });
+
+    // The three sources are streams 1 to 3 of the one inbox: one open, one stop.
+    expect(
+      ops.map((op) => {
+        return [op.mode, op.stream ?? 0];
+      }),
+    ).toEqual([
+      ["open", 0],
+      ["open", 1],
+      ["stop", 1],
+    ]);
+  });
+
+  test("closing a view and a listener that overlap stops each source once", async () => {
+    const stops: { streams: number[] }[] = [];
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const watch = await inbox.listen([
+          { event: "github/pr.comment" },
+          { event: "github/check_run" },
+        ]);
+
+        // Every source of check_run, whoever opened it: stream 2 only.
+        await inbox.of("github/check_run").close();
+        // The listener still closes, and removes what is left: stream 1.
+        await watch.close();
+        // Both are done: nothing more happens.
+        await inbox.of("github/check_run").close();
+        await watch.close();
+
+        return "done";
+      },
+    );
+
+    await run(fn, {
+      key: "inbox",
+      onOp: (op) => {
+        const sub = (
+          op.opts as {
+            subscribe?: {
+              mode?: string;
+              stream?: number;
+              streams?: { stream: number }[];
+            };
+          }
+        ).subscribe;
+
+        if (sub?.mode === "stop") {
+          stops.push({
+            streams: [
+              sub.stream ?? 0,
+              ...(sub.streams ?? []).map((s) => s.stream),
+            ],
+          });
+        }
+      },
+    });
+
+    expect(stops).toEqual([{ streams: [2] }, { streams: [1] }]);
+  });
+
   test("listen() adds a source to the same ordered sequence, and stop() removes it", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

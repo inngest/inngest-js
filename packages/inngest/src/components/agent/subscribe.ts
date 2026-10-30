@@ -303,6 +303,19 @@ export interface View<TMessage> extends AsyncIterable<TMessage> {
    * cursor and never waits.
    */
   current(): Promise<TMessage[]>;
+
+  /**
+   * Puts messages back, in order, so this view's next reads return them first.
+   */
+  putBack(messages: TMessage[]): void;
+
+  /**
+   * Stops every source of this view's event in the inbox, whoever opened it
+   * (the original `step.subscribe()` or any `listen()`). Sources already stopped
+   * are skipped, so it is safe beside a listener's own `close()`. Messages
+   * already saved stay.
+   */
+  close(): Promise<void>;
 }
 
 /**
@@ -347,6 +360,11 @@ export interface Listener<TInbox = unknown> extends AsyncDisposable {
    * saved stay and are read as usual. Calling it again does nothing.
    */
   stop(): Promise<void>;
+
+  /**
+   * The same as `stop()`: stops exactly the sources this `listen()` opened.
+   */
+  close(): Promise<void>;
 }
 
 /**
@@ -413,10 +431,12 @@ export interface Subscription<
    * ordered sequence, from now on (events sent before are not captured). It is
    * one step. The returned listener removes the source again.
    * @param source The event to listen to, a name, an event type or both with an
-   * `if` expression over `async`.
+   * `if` expression over `async`, or an array of them: each is its own pause
+   * (one exact event name and its own `if`), opened by the same step, and
+   * stopped together by the returned listener.
    */
   listen<TSource extends ListenSource>(
-    source: TSource,
+    source: TSource | readonly TSource[],
   ): Promise<Listener<Subscription<TData, TMessage | ListenMessage<TSource>>>>;
 
   /**
@@ -579,6 +599,33 @@ export async function openSubscription<
     return stream === 0 && answerOf(legacy).found
       ? legacy
       : `${key}:${stream}:${name}`;
+  };
+
+  // Stops the sources with these stream numbers that are still active, in one
+  // op. A source that is already stopped is skipped, so overlapping closers (a
+  // listener and an `of(type).close()`) never stop one twice, and closing with
+  // nothing left to stop is no op at all.
+  const stopStreams = async (wanted: readonly number[]) => {
+    const live = wanted.filter((stream) => {
+      return streams[stream]?.active;
+    });
+
+    for (const stream of live) {
+      (streams[stream] as { active: boolean }).active = false;
+    }
+
+    const first = live[0];
+
+    if (first === undefined) {
+      return;
+    }
+
+    await op(stepId(first, "stop"), "stop", undefined, first, {
+      target: streams[first]?.source,
+      more: live.slice(1).map((stream) => {
+        return { stream, target: streams[stream]?.source as SubscribeEvent };
+      }),
+    });
   };
 
   // An inbox with several sources opens them in one step. A run that began
@@ -795,6 +842,7 @@ export async function openSubscription<
     const reader = `v${++views}`;
     let cursor = 0;
     let probes = 0;
+    const heldOf: InboxMessage<TData>[] = [];
     const timedOutAt = new Map<number, number>();
     let order: Promise<unknown> = Promise.resolve();
 
@@ -947,6 +995,27 @@ export async function openSubscription<
           return scan(0, await counted());
         });
       },
+      putBack(messages) {
+        heldOf.unshift(...messages);
+      },
+      close() {
+        // Every source of this event name in the inbox, whoever opened it. The
+        // inbox's other sources and the messages already saved stay.
+        return alone(async () => {
+          await stopStreams(
+            streams
+              .map((entry, stream) => {
+                return { entry, stream };
+              })
+              .filter(({ entry }) => {
+                return eventNameOf(entry.source.event) === wanted;
+              })
+              .map(({ stream }) => {
+                return stream;
+              }),
+          );
+        });
+      },
       [Symbol.asyncIterator]() {
         return {
           async next() {
@@ -1093,28 +1162,45 @@ export async function openSubscription<
         throw new Error(`Subscription "${key}": listen() on a closed inbox.`);
       }
 
-      const target: SubscribeEvent =
-        typeof source === "object" && "event" in source
-          ? source
-          : { event: source };
-      const stream = streams.length;
+      // One source or several: N sources are N streams (N pauses, one each),
+      // opened by one op, and one stop ends all of them.
+      const targets: SubscribeEvent[] = (
+        Array.isArray(source) ? source : [source]
+      ).map((one) => {
+        return typeof one === "object" && "event" in one
+          ? (one as SubscribeEvent)
+          : { event: one as SubscribeEvent["event"] };
+      });
 
-      streams.push({ source: target, active: true });
-      await op(stepId(stream, "open"), "open", undefined, stream, { target });
+      if (targets.length === 0) {
+        throw new Error(`Subscription "${key}": listen() needs a source.`);
+      }
 
-      const entry = streams[stream];
+      const first = streams.length;
+
+      for (const target of targets) {
+        streams.push({ source: target, active: true });
+      }
+
+      await op(stepId(first, "open"), "open", undefined, first, {
+        target: targets[0],
+        more: targets.slice(1).map((target, index) => {
+          return { stream: first + 1 + index, target };
+        }),
+      });
+
       const listener = {
-        stream,
+        stream: first,
         inbox: subscription,
         async stop() {
-          if (!entry?.active) {
-            return;
-          }
-
-          entry.active = false;
-          await op(stepId(stream, "stop"), "stop", undefined, stream, {
-            target,
-          });
+          await stopStreams(
+            targets.map((_, index) => {
+              return first + index;
+            }),
+          );
+        },
+        close() {
+          return listener.stop();
         },
         async [asyncDispose]() {
           await listener.stop();
