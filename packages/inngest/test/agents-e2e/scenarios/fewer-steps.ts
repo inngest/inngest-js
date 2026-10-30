@@ -83,10 +83,10 @@ export const fewerSteps = scenario({
       run.steps,
     );
     ctx.check(
-      "the start is one step and the two turns write the record in their model steps",
+      "the start rides in the inbox open and the two turns write the record in their model steps",
       named((name) => {
         return name === "Thread state";
-      }) === 1 &&
+      }) === 0 &&
         named((name) => {
           return name.startsWith("kv.update:thread:__state");
         }) === 0 &&

@@ -650,6 +650,17 @@ export async function openSubscription<
     begin.done(output);
   }
 
+  // Closed by a limit (the executor's marker) or by a close op of the run: the
+  // close saves no marker, its own answer is the sign.
+  const isClosed = () => {
+    return (
+      engine.closed() ||
+      streams.some((_, stream) => {
+        return answerOf(stepId(stream, "close")).found;
+      })
+    );
+  };
+
   // How many messages have been read, how many polls were made, and how many
   // messages there were once closed.
   let readCount = 0;
@@ -755,7 +766,7 @@ export async function openSubscription<
     }
 
     if (messages.length < seq) {
-      if (engine.closed()) {
+      if (isClosed()) {
         return null;
       }
 
@@ -904,7 +915,7 @@ export async function openSubscription<
           continue;
         }
 
-        if (engine.closed()) {
+        if (isClosed()) {
           return null;
         }
 
