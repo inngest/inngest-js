@@ -11,9 +11,6 @@ export const triage = agents.agent(
       if: 'event.data.owner == "acme" && event.data.repo == "web"',
       thread:
         '"github:" + event.data.owner + "/" + event.data.repo + "#" + string(int(event.data.number))',
-      message: (event) => {
-        return String(event.data.body);
-      },
     },
     channels: ({ event }) => {
       return {
@@ -30,6 +27,8 @@ export const triage = agents.agent(
 
     await report("Thanks, I will take a look.");
 
-    return message?.content;
+    return message?.name === "github/issues.opened"
+      ? String(message.data.body)
+      : undefined;
   },
 );

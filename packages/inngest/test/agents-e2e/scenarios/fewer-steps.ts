@@ -9,6 +9,7 @@ import { tool } from "inngest/experimental";
 import { agent, createAgents } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "fewer-steps-agent";
 
@@ -44,7 +45,7 @@ export const fewerSteps = scenario({
             { call: { name: "note", input: {} } },
             { say: "all done" },
           ]),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: { note },
           ...control,
         });

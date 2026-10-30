@@ -190,8 +190,7 @@ describe("function context in the body", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          kind: "user",
-          content: "hi",
+          text: "hi",
         },
       },
     });
@@ -217,7 +216,7 @@ describe("function context in the body", () => {
     expect(seen).not.toHaveProperty("events");
     expect(seen.event).toMatchObject({
       name: "agent/message",
-      data: { thread: "t1", content: "hi" },
+      data: { thread: "t1", text: "hi" },
     });
   });
 
@@ -239,8 +238,7 @@ describe("function context in the body", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          kind: "user",
-          content: "hi",
+          text: "hi",
         },
       },
     });

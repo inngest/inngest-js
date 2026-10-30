@@ -43,9 +43,6 @@ export const agentsCron = scenario({
         id: agentId,
         on: {
           cron: "* * * * *",
-          message: (tick) => {
-            return `tick ${tick.data.cron}`;
-          },
         },
       },
       async ({ inbox }) => {
@@ -55,7 +52,10 @@ export const agentsCron = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), (turns) => {
-            return [...(turns ?? []), `${message.name}: ${message.content}`];
+            return [
+              ...(turns ?? []),
+              `${message.name}: tick ${(message.data as { cron?: string }).cron}`,
+            ];
           });
           await sleep(120_000);
         }

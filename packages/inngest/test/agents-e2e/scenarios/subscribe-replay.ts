@@ -21,6 +21,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "subscribe-replay-agent";
@@ -57,9 +58,6 @@ export const subscribeReplay = scenario({
         on: {
           event: event("msg"),
           thread: "event.data.thread",
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox, thread }) => {
@@ -67,13 +65,13 @@ export const subscribeReplay = scenario({
           // The position and the event of each message, as every replay sees it.
           appendFileSync(
             seenFile(thread.key),
-            `${message.seq}:${message.content}\n`,
+            `${message.seq}:${textOf(message)}\n`,
           );
 
           const where = message.seq;
 
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), `${message.content ?? ""}@${where}`];
+            return [...(turns ?? []), `${textOf(message) ?? ""}@${where}`];
           });
           // The turn takes a while, as a step: the other stream's message
           // arrives meanwhile and is in history when this `next()` replays.

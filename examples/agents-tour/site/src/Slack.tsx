@@ -4,9 +4,10 @@
  * line, its task cards and the buttons of its questions. It is a view of the
  * fake Slack in the tour server, so what it shows is what the agent did.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Kbd } from "./keyboard.tsx";
 import { postJson, useAction, useFake } from "./live.ts";
+import { messages, pick, replies } from "./random.ts";
 
 interface Card {
   id: string;
@@ -123,13 +124,9 @@ const click = (message: Message, value: string) => {
 const MessageView = ({
   message,
   state,
-  replies,
-  onOpen,
 }: {
   message: Message;
   state: State;
-  replies: number;
-  onOpen?: () => void;
 }) => {
   const author = state.users.find((next) => {
     return next.id === message.user;
@@ -220,109 +217,56 @@ const MessageView = ({
             })}
           </div>
         ) : null}
-        {onOpen && replies > 0 ? (
-          <button type="button" className="replies" onClick={onOpen}>
-            {replies} {replies === 1 ? "reply" : "replies"}
-          </button>
-        ) : null}
       </div>
     </div>
   );
 };
 
+const channelId = "C02ENG";
+
 export const Slack = () => {
   const state = useFake<State>("/api/slack/state", "slack");
-  const [channelId, setChannelId] = useState("C02ENG");
-  const [picked, setThread] = useState<string>();
-  // Until a thread is picked or a new one is started, the latest one is open.
-  const [fresh, setFresh] = useState(false);
-  const [text, setText] = useState("");
-  const box = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
-  const lastRoot = [...(state?.messages ?? [])].reverse().find((message) => {
-    return message.channel === channelId && !message.threadTs;
-  });
-  const thread = picked ?? (fresh ? undefined : lastRoot?.ts);
-  const latest = useRef({ state, channelId, thread });
+  const latest = useRef(state);
 
-  latest.current = { state, channelId, thread };
+  latest.current = state;
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   });
 
-  const send = async () => {
-    if (!text.trim()) {
-      return;
-    }
-
-    const body = text.trim();
-
-    setText("");
-
-    const result = await postJson("/api/slack/messages", {
+  const post = (text: string, threadTs?: string) => {
+    return postJson("/api/slack/messages", {
       channel: channelId,
-      text: body,
-      threadTs: thread,
+      text,
+      threadTs,
     });
-
-    setFresh(false);
-    setThread(String(result.threadTs ?? thread ?? ""));
+  };
+  const lastRoot = () => {
+    return [...(latest.current?.messages ?? [])].reverse().find((message) => {
+      return message.channel === channelId && !message.threadTs;
+    });
   };
 
   useAction("slackCompose", () => {
-    box.current?.focus();
+    void post(pick(messages));
   });
   useAction("slackNew", () => {
-    setThread(undefined);
-    setFresh(true);
-    box.current?.focus();
+    const root = lastRoot();
+
+    if (root) {
+      void post(pick(replies), root.ts);
+    }
   });
-  const cycleChannel = () => {
-    const { state: current, channelId: at } = latest.current;
-    const list = current?.channels ?? [];
-    const next = list[(list.findIndex((c) => c.id === at) + 1) % list.length];
-
-    if (next) {
-      setChannelId(next.id);
-      setThread(undefined);
-      setFresh(false);
-    }
-  };
-  const react = () => {
-    const { state: current, channelId: at, thread: open } = latest.current;
-    const visible = (current?.messages ?? []).filter((message) => {
-      return (
-        message.channel === at &&
-        (open
-          ? message.threadTs === open || message.ts === open
-          : !message.threadTs)
-      );
-    });
-    const last = visible[visible.length - 1];
-
-    if (last) {
-      void postJson("/api/slack/reactions", {
-        channel: last.channel,
-        ts: last.ts,
-        name: "eyes",
-      });
-    }
-  };
-
-  useAction("slackChannel", cycleChannel);
-  useAction("slackReact", react);
 
   const answer = (value: "Approve" | "Deny") => {
-    const pending = [...(latest.current.state?.messages ?? [])]
+    const pending = [...(latest.current?.messages ?? [])]
       .reverse()
       .find((message) => {
         return buttonsOf(message).length > 0;
       });
 
     if (pending) {
-      setChannelId(pending.channel);
-      setThread(pending.threadTs ?? pending.ts);
       void click(pending, value);
     }
   };
@@ -338,118 +282,62 @@ export const Slack = () => {
     return <p className="empty">Loading...</p>;
   }
 
-  const channel = state.channels.find((next) => {
-    return next.id === channelId;
-  });
   const inChannel = state.messages.filter((message) => {
     return message.channel === channelId;
   });
   const roots = inChannel.filter((message) => {
     return !message.threadTs;
   });
-  const repliesTo = (ts: string) => {
-    return inChannel.filter((message) => {
-      return message.threadTs === ts;
-    });
-  };
-  const root = thread
-    ? inChannel.find((message) => {
-        return message.ts === thread;
-      })
-    : undefined;
-  const shown = root ? [root, ...repliesTo(root.ts)] : roots;
-  const status = root
-    ? state.statuses.find((next) => {
-        return next.channel === channelId && next.thread_ts === root.ts;
-      })
-    : undefined;
+  const shown = roots.flatMap((root) => {
+    return [
+      root,
+      ...inChannel.filter((message) => {
+        return message.threadTs === root.ts;
+      }),
+    ];
+  });
 
   return (
     <div className="slack">
       <header className="slack-head">
-        <button type="button" className="ghost" onClick={cycleChannel}>
-          # {channel?.name} <Kbd action="slackChannel" />
-        </button>
-        <span className="topic">{channel?.topic}</span>
-        {root ? (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setThread(undefined);
-              setFresh(true);
-              box.current?.focus();
-            }}
-          >
-            New thread <Kbd action="slackNew" />
-          </button>
-        ) : (
-          <span className="topic">Messages start a thread</span>
-        )}
+        <span className="topic"># eng</span>
         <button
           type="button"
-          className="ghost"
-          disabled={shown.length === 0}
-          onClick={react}
+          onClick={() => {
+            void post(pick(messages));
+          }}
         >
-          React 👀 <Kbd action="slackReact" />
+          Mention the bot <Kbd action="slackCompose" />
+        </button>
+        <button
+          type="button"
+          disabled={roots.length === 0}
+          onClick={() => {
+            const root = lastRoot();
+
+            if (root) {
+              void post(pick(replies), root.ts);
+            }
+          }}
+        >
+          Reply in thread <Kbd action="slackNew" />
         </button>
       </header>
       <div className="messages">
         {shown.length === 0 ? (
-          <p className="empty">
-            Nothing yet. Write a message below; the agent picks it up.
-          </p>
+          <p className="empty">Nothing yet. Press Mention the bot.</p>
         ) : null}
         {shown.map((message) => {
           return (
-            <MessageView
+            <div
               key={message.ts}
-              message={message}
-              state={state}
-              replies={root ? 0 : repliesTo(message.ts).length}
-              onOpen={root ? undefined : () => setThread(message.ts)}
-            />
+              className={message.threadTs ? "indent" : undefined}
+            >
+              <MessageView message={message} state={state} />
+            </div>
           );
         })}
-        {status ? (
-          <div className="status-note">
-            Tour Bot {status.text}
-            <span className="dots" />
-          </div>
-        ) : null}
         <div ref={end} />
-      </div>
-      <div className="composer">
-        <textarea
-          ref={box}
-          value={text}
-          rows={2}
-          aria-label="Message"
-          placeholder={
-            root ? "Reply in the thread" : `Message #${channel?.name}`
-          }
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.ctrlKey &&
-              !event.metaKey
-            ) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="primary"
-          disabled={!text.trim()}
-          onClick={() => void send()}
-        >
-          Send <kbd>Enter</kbd>
-        </button>
       </div>
     </div>
   );

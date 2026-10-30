@@ -23,6 +23,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {
@@ -65,14 +66,14 @@ export const inboxArrival = scenario({
       {
         id: agentId,
         foldMessages: "all",
-        onArrival: async ({ message, thread }) => {
-          appendFileSync(ackFile(thread), `${message.content}\n`);
+        onArrival: async ({ event, thread }) => {
+          appendFileSync(ackFile(thread), `${textOf(event)}\n`);
         },
       },
       async ({ inbox }) => {
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), message.content ?? ""];
+            return [...(turns ?? []), textOf(message) ?? ""];
           });
 
           // No `...control`: the loop steers through the inbox on its own.
@@ -82,7 +83,7 @@ export const inboxArrival = scenario({
               { call: { name: "think", input: {} } },
               { say: "echo: {{last}}" },
             ]),
-            prompt: message.content ?? "",
+            prompt: message,
             tools: { think },
           });
 

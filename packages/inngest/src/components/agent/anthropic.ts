@@ -410,7 +410,12 @@ const toParams = (messages: AgentMessage[]): Param[] => {
 
   for (const message of messages) {
     if (message.role === "user") {
-      add("user", [textBlock(message.content)]);
+      add(
+        "user",
+        typeof message.content === "string"
+          ? [textBlock(message.content)]
+          : [...(message.content as Block[])],
+      );
     } else if (message.role === "tool") {
       add(
         "user",

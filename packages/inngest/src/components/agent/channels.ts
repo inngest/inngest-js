@@ -1402,11 +1402,6 @@ export interface ChannelTrigger<TData = unknown> {
   thread: string;
 
   /**
-   * The text of the message the event carries.
-   */
-  message: (event: { data: Record<string, unknown> }) => string | undefined;
-
-  /**
    * The shape of the event's `data`.
    */
   schema: StandardSchemaV1<unknown, TData>;

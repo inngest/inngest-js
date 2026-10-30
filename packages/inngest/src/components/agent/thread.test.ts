@@ -38,7 +38,7 @@ import { StepOpCode } from "../../types.ts";
 const sessions = { agent_session: "t1", agent_thread: "t1" };
 
 describe("thread handle", () => {
-  test("send and steer are agent/message events in the thread's sessions", async () => {
+  test("send and steer are agent/message and agent/steer events in the thread's sessions", async () => {
     const { client, sent } = fakeClient();
     const thread = getThread(client, "app/bot", "t1");
 
@@ -48,17 +48,12 @@ describe("thread handle", () => {
     expect(sent).toMatchObject([
       {
         name: "agent/message",
-        data: { agent: "app/bot", thread: "t1", kind: "user", content: "hi" },
+        data: { agent: "app/bot", thread: "t1", text: "hi" },
         meta: { sessions },
       },
       {
-        name: "agent/message",
-        data: {
-          agent: "app/bot",
-          thread: "t1",
-          kind: "steer",
-          content: "faster",
-        },
+        name: "agent/steer",
+        data: { agent: "app/bot", thread: "t1", text: "faster" },
         meta: { sessions },
       },
     ]);
@@ -82,13 +77,8 @@ describe("thread handle", () => {
 
     expect(sent).toMatchObject([
       {
-        name: "agent/message",
-        data: {
-          agent: "app/bot",
-          thread: "t1",
-          kind: "stop",
-          when: "nextTurn",
-        },
+        name: "agent/stop",
+        data: { agent: "app/bot", thread: "t1", when: "nextTurn" },
         meta: { sessions },
       },
     ]);
@@ -245,8 +235,8 @@ describe("thread handle", () => {
       expect(bodies).toMatchObject([
         [
           {
-            name: "agent/message",
-            data: { thread: "t1", kind: "steer", content: "faster" },
+            name: "agent/steer",
+            data: { thread: "t1", text: "faster" },
             meta: { sessions },
           },
         ],

@@ -63,9 +63,6 @@ export const invokeCancel = scenario({
         on: {
           event: event("bystander"),
           thread: "event.data.key",
-          message: () => {
-            return "go";
-          },
         },
       },
       async ({ inbox }) => {
@@ -126,8 +123,7 @@ export const invokeCancel = scenario({
           return agent.invoke(`${app}/ic-agent-child`, {
             agent: `${app}/ic-agent-child`,
             thread: trigger.data.key,
-            kind: "user",
-            content: "go",
+            text: "go",
           });
         },
       ),

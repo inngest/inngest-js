@@ -1,56 +1,22 @@
 /**
  * @module
- * The event sender: a name and JSON data, sent to the Dev Server as an event.
+ * The event sender: one button that sends a `tour/greet` event for a random
+ * name, and the list of what it sent.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Kbd } from "./keyboard.tsx";
 import { postJson, useAction } from "./live.ts";
+import { names, pick } from "./random.ts";
 
 export const Events = () => {
-  const [name, setName] = useState("tour/greet");
-  const [data, setData] = useState('{\n  "name": "Ada"\n}');
   const [sent, setSent] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const nameBox = useRef<HTMLInputElement>(null);
-  const latest = useRef({ name, data });
-
-  latest.current = { name, data };
 
   const send = async () => {
-    const { name: eventName, data: text } = latest.current;
-    let parsed: unknown;
+    const event = { name: "tour/greet", data: { name: pick(names) } };
 
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      setError("The data is not valid JSON.");
-
-      return;
-    }
-
-    if (!eventName.trim()) {
-      setError("An event needs a name.");
-
-      return;
-    }
-
-    const result = await postJson("/api/event", {
-      name: eventName.trim(),
-      data: parsed,
-    });
-
-    if (result.error) {
-      setError(String(result.error));
-
-      return;
-    }
-
-    setError("");
+    await postJson("/api/event", event);
     setSent((previous) => {
-      return [
-        JSON.stringify({ name: eventName.trim(), data: parsed }, null, 2),
-        ...previous,
-      ].slice(0, 6);
+      return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
   };
 
@@ -59,37 +25,19 @@ export const Events = () => {
   });
 
   return (
-    <form
-      className="events"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <label>
-        Event name
-        <input
-          ref={nameBox}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label>
-        Data (JSON)
-        <textarea
-          value={data}
-          rows={4}
-          onChange={(event) => setData(event.target.value)}
-        />
-      </label>
-      <button type="submit" className="primary">
-        Send the event <Kbd action="sendEvent" />
+    <div className="events">
+      <p>
+        Send a <code>tour/greet</code> event for a random name.
+      </p>
+      <button
+        type="button"
+        className="primary"
+        onClick={() => {
+          void send();
+        }}
+      >
+        Send an event <Kbd action="sendEvent" />
       </button>
-      {error ? (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      ) : null}
       {sent.map((json, at) => {
         return (
           <pre className="sent" key={`${at}-${json}`}>
@@ -97,6 +45,6 @@ export const Events = () => {
           </pre>
         );
       })}
-    </form>
+    </div>
   );
 };

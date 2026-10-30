@@ -2,9 +2,8 @@
  * @module
  * The Trace panel: a waterfall of the real spans the Dev Server returns, one
  * row per span, a bar on a shared timeline, indentation from group spans.
- * Housekeeping spans (inbox opens, KV reads, the executor's own span) are
- * collapsed by rule into one muted "n hidden" row; "Show everything" lists
- * the raw tree. Up and down move between rows, Enter opens one.
+ * Housekeeping spans (inbox opens, KV reads, thread records) have no row;
+ * "Show everything" lists the raw tree. Up and down move between rows, Enter opens one.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
@@ -12,10 +11,22 @@ import { api } from "./api.ts";
 import { Kbd } from "./keyboard.tsx";
 
 const housekeepingName =
-  /^(kv\.|inbox:\d+:(open|close|stop)$|executor\.|metadata)/;
+  /^(kv\.|thread:|inbox:\d+:(open|close|stop)$|executor\.(?!nonstep)|metadata)/;
+
+// The SDK's `thread:start` step is displayed as "Thread state", so the id,
+// the name and the display name are all checked.
+const housekeepingLabel = /^Thread state$/;
 
 const isHousekeeping = (step: TraceStep) => {
-  return housekeepingName.test(step.name);
+  return (
+    housekeepingName.test(step.name) ||
+    housekeepingName.test(step.id) ||
+    housekeepingLabel.test(step.name)
+  );
+};
+
+const isFinalization = (step: TraceStep) => {
+  return step.name === "executor.nonstep";
 };
 
 // A gap this long between two steps of a run is the run parked, waiting for
@@ -25,7 +36,6 @@ const waitGapMs = 600;
 
 type Row =
   | { kind: "step"; key: string; step: TraceStep; depth: number }
-  | { kind: "hidden"; key: string; steps: TraceStep[]; depth: number }
   | {
       kind: "wait";
       key: string;
@@ -64,7 +74,7 @@ const kindOf = (step: TraceStep): IconKind => {
     return "wait";
   }
 
-  if (step.name === "executor.nonstep") {
+  if (isFinalization(step)) {
     return "code";
   }
 
@@ -105,11 +115,27 @@ const Icon = ({ kind }: { kind: IconKind }) => {
 };
 
 const label = (step: TraceStep) => {
-  if (step.name === "executor.nonstep") {
-    return "Function code";
+  if (isFinalization(step)) {
+    return "Finalization";
   }
 
   return step.name;
+};
+
+// The run ends where its Finalization span ends, or at the run's own finish
+// time when no such span was recorded. Null while the run is still going.
+const finishOf = (run: TraceRun): number | null => {
+  let finalEnd: number | null = null;
+
+  for (const step of run.steps) {
+    const end = isFinalization(step) ? time(step.endedAt) : null;
+
+    if (end !== null && (finalEnd === null || end > finalEnd)) {
+      finalEnd = end;
+    }
+  }
+
+  return finalEnd ?? time(run.endedAt);
 };
 
 const rounded = (ms: number) => {
@@ -133,23 +159,7 @@ const rowsOf = (
   prefix = "",
 ) => {
   const rows: Row[] = [];
-  let pending: TraceStep[] = [];
   let lastEnd: number | null = null;
-
-  const flush = () => {
-    if (pending.length === 0) {
-      return;
-    }
-
-    rows.push({
-      kind: "hidden",
-      key: `${prefix}h:${pending[0]?.id}`,
-      steps: pending,
-      depth,
-    });
-
-    pending = [];
-  };
 
   for (const step of steps) {
     const start = time(step.startedAt);
@@ -160,7 +170,6 @@ const rowsOf = (
       start !== null &&
       start - lastEnd > waitGapMs
     ) {
-      flush();
       rows.push({
         kind: "wait",
         key: `${prefix}w:${step.id}`,
@@ -171,10 +180,7 @@ const rowsOf = (
       });
     }
 
-    if (!everything && isHousekeeping(step)) {
-      pending.push(step);
-    } else {
-      flush();
+    if (everything || !isHousekeeping(step)) {
       rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
       rows.push(
         ...rowsOf(
@@ -195,15 +201,13 @@ const rowsOf = (
     }
   }
 
-  flush();
-
-  if (depth === 0 && live && lastEnd !== null && now - lastEnd > waitGapMs) {
+  if (depth === 0 && lastEnd !== null && now - lastEnd > waitGapMs) {
     rows.push({
       kind: "wait",
       key: `${prefix}w:live`,
       from: lastEnd,
       to: now,
-      live: true,
+      live,
       depth,
     });
   }
@@ -400,12 +404,10 @@ const Run = ({
   run,
   everything,
   now,
-  onToggle,
 }: {
   run: TraceRun;
   everything: boolean;
   now: number;
-  onToggle: () => void;
 }) => {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [showResult, setShowResult] = useState(false);
@@ -425,41 +427,36 @@ const Run = ({
       return next;
     });
   };
+  // The run's end is the end of its Finalization span: it grows with the
+  // clock while the run goes and locks once Finalization has ended.
+  const finish = finishOf(run);
+  const clock = finish ?? now;
   const rows = useMemo(() => {
-    return rowsOf(run.steps, everything, now, live);
-  }, [run.steps, everything, now, live]);
+    return rowsOf(run.steps, everything, clock, live && finish === null);
+  }, [run.steps, everything, clock, live, finish]);
 
   const starts = [time(run.queuedAt), time(run.startedAt)].filter(
     (value): value is number => {
       return value !== null;
     },
   );
-  const walk = (steps: TraceStep[], out: number[]) => {
-    for (const step of steps) {
+  const firstStart = (steps: TraceStep[]): number[] => {
+    return steps.flatMap((step) => {
       const start = time(step.startedAt);
-      const end = endOf(step, now);
 
-      if (start !== null) {
-        out.push(start);
-      }
-
-      if (end !== null) {
-        out.push(end);
-      }
-
-      walk(step.children, out);
-    }
-
-    return out;
+      return [...(start === null ? [] : [start]), ...firstStart(step.children)];
+    });
   };
-  const all = walk(run.steps, [...starts]);
-  const t0 = Math.min(...all, now);
-  const t1 = Math.max(...all, live ? now : (time(run.endedAt) ?? t0), t0 + 500);
+  const t0 = Math.min(...starts, ...firstStart(run.steps), clock);
+  const t1 = Math.max(clock, t0 + 1);
   const span = t1 - t0;
   const bar = (from: number, to: number) => {
+    const left = Math.min(Math.max(from, t0), t1);
+    const right = Math.min(Math.max(to, left), t1);
+
     return {
-      left: `min(${((from - t0) / span) * 100}%, calc(100% - 12px))`,
-      width: `${Math.max(0.8, ((to - from) / span) * 100)}%`,
+      left: `min(${((left - t0) / span) * 100}%, calc(100% - 12px))`,
+      width: `${Math.max(0.8, ((right - left) / span) * 100)}%`,
     };
   };
 
@@ -487,31 +484,12 @@ const Run = ({
         {rows.map((row) => {
           const pad = { paddingLeft: 20 + row.depth * 16 };
 
-          if (row.kind === "hidden") {
-            return (
-              <div role="listitem" key={row.key}>
-                <button
-                  type="button"
-                  className="wf-row hidden-row"
-                  data-row
-                  style={pad}
-                  onClick={onToggle}
-                >
-                  <span className="wf-name">
-                    {row.steps.length} hidden{" "}
-                    {row.steps.length === 1 ? "step" : "steps"}
-                  </span>
-                  <Kbd action="rowOpen" />
-                </button>
-              </div>
-            );
-          }
-
           if (row.kind === "wait") {
             return (
               <div role="listitem" key={row.key}>
                 <div
                   className={`wf-row wait-row ${row.live ? "live" : ""}`}
+                  title="The bar is the time the run spent waiting for a message"
                   data-row
                   tabIndex={-1}
                   style={pad}
@@ -522,7 +500,7 @@ const Run = ({
                   </span>
                   <span className="wf-track">
                     <i
-                      className="wf-bar waiting"
+                      className={`wf-bar ${row.live ? "waiting" : "completed"}`}
                       style={bar(row.from, row.to)}
                     />
                   </span>
@@ -534,7 +512,7 @@ const Run = ({
 
           const { step } = row;
           const start = time(step.startedAt);
-          const end = endOf(step, now);
+          const end = endOf(step, clock);
           const expanded = open.has(row.key);
           const attempts = step.attempts && step.attempts > 1;
 
@@ -564,7 +542,7 @@ const Run = ({
                   ) : null}
                 </span>
                 <span className="wf-time">
-                  {step.duration === null ? "" : rounded(step.duration)}
+                  {start !== null && end !== null ? rounded(end - start) : ""}
                 </span>
               </button>
               {expanded ? <Detail outputID={step.outputID} /> : null}
@@ -638,12 +616,28 @@ export const TracePanel = ({
       return;
     }
 
-    const timer = window.setInterval(() => {
+    // Frames keep a running duration and the bars moving smoothly; people who
+    // ask for less motion get four updates a second.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const timer = window.setInterval(() => {
+        setNow(Date.now());
+      }, 250);
+
+      return () => {
+        window.clearInterval(timer);
+      };
+    }
+
+    let frame = 0;
+    const tick = () => {
       setNow(Date.now());
-    }, 250);
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    frame = window.requestAnimationFrame(tick);
 
     return () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(frame);
     };
   }, [live]);
 
@@ -712,15 +706,7 @@ export const TracePanel = ({
         </p>
       ) : null}
       {[...runs].reverse().map((run) => {
-        return (
-          <Run
-            run={run}
-            everything={everything}
-            now={now}
-            onToggle={onToggle}
-            key={run.id}
-          />
-        );
+        return <Run run={run} everything={everything} now={now} key={run.id} />;
       })}
       <Console
         lines={lines.filter((line) => {

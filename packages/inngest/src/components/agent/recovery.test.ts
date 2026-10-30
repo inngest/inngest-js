@@ -169,8 +169,8 @@ describe("finishedOf", () => {
   });
 
   test("a turn is named by its message", () => {
-    expect(turnOf("hello")).toBe(turnOf("hello"));
-    expect(turnOf("hello")).not.toBe(turnOf("bye"));
+    expect(turnOf({ text: "hello" })).toBe(turnOf({ text: "hello" }));
+    expect(turnOf({ text: "hello" })).not.toBe(turnOf({ text: "bye" }));
   });
 });
 
@@ -180,8 +180,7 @@ describe("the finished function", () => {
     data: {
       agent: `${testClientId}/bot`,
       thread: "t1",
-      kind: "user",
-      content: "build it",
+      text: "build it",
     },
   };
   const finishedEvent = (
@@ -320,7 +319,7 @@ describe("the finished function", () => {
       {
         name: "agent/message",
         id: "recover-r1",
-        data: { thread: "t1", kind: "user", content: "build it" },
+        data: { thread: "t1", text: "build it" },
       },
     ]);
   });
@@ -453,13 +452,13 @@ describe("the finished function", () => {
     await seed({
       status: "running",
       runId: "r1",
-      inflight: { content: "second" },
+      inflight: { text: "second" },
     });
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(sent).toMatchObject([{ data: { content: "second" } }]);
+    expect(sent).toMatchObject([{ data: { text: "second" } }]);
   });
 
   test("a newer run owning the record is told about, not resumed", async () => {
@@ -467,7 +466,7 @@ describe("the finished function", () => {
     const newer = "01K00000000000000000000009";
     const older = "01J00000000000000000000001";
 
-    await seed({ status: "running", runId: newer, inflight: { content: "x" } });
+    await seed({ status: "running", runId: newer, inflight: { text: "x" } });
     await run(agent.finished, {
       event: finishedEvent(older, "Failed", { name: "Error", message: "boom" }),
     });
@@ -521,7 +520,6 @@ describe("the finished function", () => {
     expect(sent).toMatchObject([
       {
         data: {
-          kind: "user",
           thread: "t1",
           event: { name: "shop/order", data: { id: "t1" } },
         },
@@ -592,8 +590,7 @@ describe("what the body is told", () => {
     data: {
       agent: `${testClientId}/bot`,
       thread: "t1",
-      kind: "user",
-      content: "hi",
+      text: "hi",
     },
   };
   const seeded = async (
@@ -666,19 +663,19 @@ describe("what the body is told", () => {
 
     await run(agent.fn, { event: trigger });
 
-    expect((await read())?.inflight).toEqual({ content: "hi" });
+    expect((await read())?.inflight).toEqual({ text: "hi" });
   });
 
   test("a run that begins without a message does not keep the one the run before it left", async () => {
     const { agent, read } = await seeded(
-      { runId: "older-run", inflight: { content: "stale" } },
+      { runId: "older-run", inflight: { text: "stale" } },
       async () => {},
     );
 
     await run(agent.fn, {
       event: {
-        name: "agent/message",
-        data: { ...trigger.data, kind: "steer", content: "faster" },
+        name: "agent/steer",
+        data: { ...trigger.data, text: "faster" },
       },
     });
 

@@ -512,6 +512,73 @@ describe("agent.loop", () => {
     expect(requests[2]?.messages.at(-1)?.role).toBe("tool");
   });
 
+  test("an event as the prompt or a steering message is worded by the default format", async () => {
+    const message = (name: string, data: unknown) => {
+      return { id: "e1", name, data };
+    };
+    const { requests } = await run(
+      [call("add", { a: 1, b: 2 }), call("add", { a: 3, b: 4 }), say("ok")],
+      {
+        prompt: message("agent/message", { text: "hello" }),
+        steer: async (turn) => {
+          if (turn === 1) {
+            return [
+              message("agent/steer", { text: "faster" }),
+              message("ci/status", { state: "red" }),
+              "plain text",
+            ];
+          }
+
+          return undefined;
+        },
+      },
+    );
+
+    expect(requests[0]?.messages[0]).toEqual({
+      role: "user",
+      content: "hello",
+    });
+    expect(requests[1]?.messages.slice(-3)).toEqual([
+      { role: "user", content: "faster" },
+      {
+        role: "user",
+        content: JSON.stringify({ event: "ci/status", data: { state: "red" } }),
+      },
+      { role: "user", content: "plain text" },
+    ]);
+  });
+
+  test("format words events as text or content blocks, and blocks pass through as the prompt", async () => {
+    const { requests } = await run([say("ok")], {
+      prompt: { name: "slack/message", data: { text: "look", image: "u" } },
+      format: (event) => {
+        const data = event.data as { text: string; image: string };
+
+        return [
+          { type: "text", text: data.text },
+          { type: "image", url: data.image },
+        ];
+      },
+    });
+
+    expect(requests[0]?.messages[0]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "look" },
+        { type: "image", url: "u" },
+      ],
+    });
+
+    const { requests: blocks } = await run([say("ok")], {
+      prompt: [{ type: "text", text: "as given" }],
+    });
+
+    expect(blocks[0]?.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "as given" }],
+    });
+  });
+
   test("runs onTurn after each model call, and it can use steps", async () => {
     const { ran, result } = await run(
       [call("add", { a: 1, b: 2 }), say("ok")],

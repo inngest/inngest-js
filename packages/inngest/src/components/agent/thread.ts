@@ -3,10 +3,11 @@
  * EXPERIMENTAL: thread handles. A thread is one agent conversation with an
  * address: its key. It spans many runs.
  *
- * Everything sent to a thread is an event (`agent/message`), so messages show
- * up in the event stream, can be inspected and shared like any other event, and
- * start a run when none is live: the agent function has a singleton per
- * thread, so a message sent while a run is live is skipped as a trigger and
+ * Everything sent to a thread is a plain event (`agent/message`,
+ * `agent/steer`, `agent/stop`, `agent/request`), so messages show up in the
+ * event stream, can be inspected and shared like any other event, and start a
+ * run when none is live (all but a stop): the agent function has a singleton
+ * per thread, so a message sent while a run is live is skipped as a trigger and
  * reaches the run through its subscription instead.
  */
 
@@ -16,16 +17,32 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
 import { parseWithAsync } from "./channels.ts";
-import { agentMessage } from "./events.ts";
+import {
+  type AgentMessageData,
+  type AgentRequestData,
+  type AgentSteerData,
+  type AgentStopData,
+  agentMessage,
+  agentRequest,
+  agentSteer,
+  agentStop,
+} from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { type KvScopeInstance, type KvSource, kvFrom } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
 
 /**
- * The name of the event every thread message is sent as.
+ * The name of the event `thread.send()` sends.
  */
 export const agentMessageEvent = agentMessage.name;
+
+/**
+ * The names of the other events a thread receives from the agent layer.
+ */
+export const agentSteerEvent = agentSteer.name;
+export const agentStopEvent = agentStop.name;
+export const agentRequestEvent = agentRequest.name;
 
 /**
  * An event that started or reached an agent, as the agent sees it: the name
@@ -36,99 +53,6 @@ export type TriggerEvent<TName extends string = string, TData = unknown> = {
   name: TName;
   data: TData;
 };
-
-/**
- * What every thread message carries.
- */
-type ThreadMessageBase<TEvent> = {
-  /**
-   * The agent, as `"appId/functionId"`.
-   */
-  agent: string;
-
-  /**
-   * The thread key.
-   */
-  thread: string;
-
-  /**
-   * For a message made from a trigger event: that event.
-   */
-  event?: TEvent;
-};
-
-/**
- * A message that starts the next turn. `content` is missing when the trigger
- * has no `message`.
- */
-export type ThreadUserMessage<TEvent = TriggerEvent> =
-  ThreadMessageBase<TEvent> & {
-    kind: "user";
-    content?: string;
-  };
-
-/**
- * A message folded into the turn that is running.
- */
-export type ThreadSteerMessage<TEvent = TriggerEvent> =
-  ThreadMessageBase<TEvent> & {
-    kind: "steer";
-    content: string;
-  };
-
-/**
- * A request to stop. `"nextTurn"` lets the running model call finish.
- */
-export type ThreadStopMessage<TEvent = TriggerEvent> =
-  ThreadMessageBase<TEvent> & {
-    kind: "stop";
-    when: "nextTurn";
-    content?: undefined;
-  };
-
-/**
- * A question from another thread.
- */
-export type ThreadRequestMessage<
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-> = ThreadMessageBase<TEvent> & {
-  kind: "request";
-
-  /**
-   * What the other thread asks.
-   */
-  payload: TRequest;
-
-  /**
-   * The signal the reply is sent to.
-   */
-  replyTo: string;
-
-  /**
-   * The key of the thread that asked, when it is a thread.
-   */
-  from?: string;
-  content?: undefined;
-};
-
-/**
- * What a thread message event carries in `data`, by `kind`. `TEvent` is the
- * events of the agent's `on` triggers, so `event` is typed from them;
- * `TRequest` is what other threads ask the agent.
- *
- * - `"user"` starts the next turn.
- * - `"steer"` is folded into the turn that is running.
- * - `"stop"` asks the thread to stop. A stop never starts a run, so stopping
- *   an idle thread does nothing.
- * - `"request"` is a question from another thread, answered with
- *   `message.reply()`.
- */
-export type ThreadMessage<TEvent = TriggerEvent, TRequest = unknown> =
-  | ThreadUserMessage<TEvent>
-  | ThreadSteerMessage<TEvent>
-  | ThreadStopMessage<TEvent>
-  | ThreadRequestMessage<TEvent, TRequest>;
 
 /**
  * The types of the requests an agent takes: what other threads ask and what
@@ -244,7 +168,7 @@ export interface ThreadRecord {
    * The message the run is answering, from its delivery until the run waits
    * for the next one. A failed run resends it.
    */
-  inflight?: { content?: string };
+  inflight?: Inflight;
 
   /**
    * The model call (run and step) whose turn the record last took in, so a
@@ -262,6 +186,14 @@ export interface ThreadRecord {
    */
   restarts?: number;
 }
+
+/**
+ * The message a turn answers, as a failed run resends it: the text of an
+ * `agent/message`, or any other event as it came.
+ */
+export type Inflight =
+  | { text: string; event?: undefined }
+  | { event: { id?: string; name: string; data: unknown }; text?: undefined };
 
 export const threadRecordKey = "__state";
 
@@ -419,7 +351,12 @@ export function getThread<TRequest = unknown, TReply = unknown>(
   // Inside a function the send is a step, so a replay does not send it again.
   async function sendEvent(
     id: string,
-    event: ReturnType<typeof agentMessage.create>,
+    event: ReturnType<
+      | typeof agentMessage.create
+      | typeof agentSteer.create
+      | typeof agentStop.create
+      | typeof agentRequest.create
+    >,
   ) {
     if (stepContext()) {
       await step.sendEvent(id, event);
@@ -430,24 +367,29 @@ export function getThread<TRequest = unknown, TReply = unknown>(
     await client.send(event);
   }
 
-  async function post(message: ThreadMessage) {
-    await sendEvent(
-      `thread:${key}:${message.kind}`,
-      agentMessage.create(message, {
-        meta: { sessions: threadSessions(key, session) },
-      }),
-    );
-  }
+  const meta = { sessions: threadSessions(key, session) };
 
   return {
     agent,
     key,
     session,
     async send(message) {
-      await post({ agent, thread: key, kind: "user", content: message });
+      await sendEvent(
+        `thread:${key}:message`,
+        agentMessage.create(
+          { agent, thread: key, text: message } satisfies AgentMessageData,
+          { meta },
+        ),
+      );
     },
     async steer(message) {
-      await post({ agent, thread: key, kind: "steer", content: message });
+      await sendEvent(
+        `thread:${key}:steer`,
+        agentSteer.create(
+          { agent, thread: key, text: message } satisfies AgentSteerData,
+          { meta },
+        ),
+      );
     },
     async stop({ when }) {
       if (when === "now") {
@@ -478,7 +420,12 @@ export function getThread<TRequest = unknown, TReply = unknown>(
         return { stopped: true };
       }
 
-      await post({ agent, thread: key, kind: "stop", when });
+      await sendEvent(
+        `thread:${key}:stop`,
+        agentStop.create({ agent, thread: key, when } satisfies AgentStopData, {
+          meta,
+        }),
+      );
 
       return { stopped: true };
     },
@@ -524,16 +471,23 @@ export function getThread<TRequest = unknown, TReply = unknown>(
           timeout: requestOptions.timeout ?? "1h",
           onConflict: "replace",
         }),
-        post({
-          agent,
-          thread: key,
-          kind: "request",
-          payload: asked,
-          replyTo: signal,
-          from:
-            execution.agent?.thread ??
-            (event.name === agentMessageEvent ? event.data?.thread : undefined),
-        }),
+        sendEvent(
+          `thread:${key}:request`,
+          agentRequest.create(
+            {
+              agent,
+              thread: key,
+              payload: asked,
+              replyTo: signal,
+              from:
+                execution.agent?.thread ??
+                (event.name.startsWith("agent/")
+                  ? event.data?.thread
+                  : undefined),
+            } satisfies AgentRequestData,
+            { meta },
+          ),
+        ),
       ]);
 
       return (reply?.data ?? null) as TAnswer | null;

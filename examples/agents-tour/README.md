@@ -51,7 +51,6 @@ The cursor starts in the editor, so every key is a modifier key that works there
 | Run (formats first) | Ctrl/Cmd+Enter |
 | Next, previous page | Alt+] and Alt+[ |
 | Lesson text, message box, trace | Alt+Shift+1, Alt+Shift+M, Alt+Shift+T |
-| Show the event Run sends | Alt+Shift+2 |
 | Open the Dev Server | Alt+Shift+. |
 | Leave or return to the editor | Alt+Shift+E |
 

@@ -14,8 +14,10 @@ export const helper = agents.agent(
   async ({ inbox, report }) => {
     const message = await inbox.next();
 
-    await report(`You said: ${message?.content}`);
+    const text = (message?.data as { text?: string } | undefined)?.text ?? "";
 
-    return message?.content;
+    await report(`You said: ${text}`);
+
+    return text;
   },
 );
