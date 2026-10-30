@@ -8,9 +8,9 @@ import { describe, expect, test } from "vitest";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { createAgentFunction } from "./agentFunction.ts";
-import { type ChannelCard, createReporter, defineChannel } from "./channels.ts";
+import { type ChannelCard, defineChannel } from "./channels.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { run } from "./test-helpers.ts";
+import { createWaitingReporter, run } from "./test-helpers.ts";
 
 const surface = () => {
   const calls: string[] = [];
@@ -60,12 +60,18 @@ describe("report on the caller's step", () => {
       },
     };
     const make = () => {
-      return createReporter({ main: channel }, undefined, noSteps, undefined, {
-        inStep: () => {
-          return true;
+      return createWaitingReporter(
+        { main: channel },
+        undefined,
+        noSteps,
+        undefined,
+        {
+          inStep: () => {
+            return true;
+          },
+          state,
         },
-        state,
-      });
+      );
     };
 
     const report = make();
@@ -95,7 +101,7 @@ describe("report on the caller's step", () => {
   test("the default form is unchanged: a step of its own, whose result carries the state", async () => {
     const { channel, calls } = surface();
     const ran: string[] = [];
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       async (id, fn) => {

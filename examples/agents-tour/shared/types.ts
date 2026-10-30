@@ -6,7 +6,7 @@
 export interface StartMessage {
   agent: string;
   thread: string;
-  message: string;
+  text: string;
 }
 
 export interface StartEvent {
@@ -88,8 +88,14 @@ export interface TraceRun {
   endedAt: string | null;
   // The ID of the run's output, read with /api/output.
   output: string | null;
-  // The event that started the run: the inbox's first message.
-  trigger: { name: string; data: Record<string, unknown> } | null;
+  // The event that started the run, as it arrived: the inbox's first message.
+  trigger: {
+    id: string;
+    name: string;
+    data: Record<string, unknown>;
+    ts: number;
+    seq: number;
+  } | null;
   steps: TraceStep[];
 }
 

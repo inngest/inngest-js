@@ -3,7 +3,7 @@
     {
       "agent": "blank",
       "thread": "main",
-      "message": "Hi"
+      "text": "Hi"
     }
   ]
 }

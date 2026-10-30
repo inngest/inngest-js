@@ -15,6 +15,7 @@ import {
   defineChannel,
 } from "./channels.ts";
 import { slack } from "./slack.ts";
+import { createWaitingReporter } from "./test-helpers.ts";
 
 /**
  * A fake surface with Slack's rules: a stream holds at most `maxCards` unique
@@ -142,7 +143,7 @@ const stepper = (saved: Record<string, unknown> = {}) => {
 describe("report.finish returns the message reference", () => {
   test("the stream's own ID when the adapter's stop returns nothing", async () => {
     const surface = fakeSurface();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -161,7 +162,7 @@ describe("report.finish returns the message reference", () => {
       post: async () => {},
       stream: { ...base, stop: async () => "1700000000.000200" },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -176,7 +177,7 @@ describe("report.finish returns the message reference", () => {
     const channel = defineChannel({
       post: async () => "ts-1",
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -186,7 +187,7 @@ describe("report.finish returns the message reference", () => {
   });
 
   test("undefined when nothing was stopped or posted, or the post has no reference", async () => {
-    const silent = createReporter(
+    const silent = createWaitingReporter(
       { main: defineChannel({ post: async () => {} }) },
       undefined,
       stepper().runStep,
@@ -199,7 +200,7 @@ describe("report.finish returns the message reference", () => {
   test("a replay returns the same reference without writing again", async () => {
     const surface = fakeSurface();
     const first = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       first.runStep,
@@ -209,7 +210,7 @@ describe("report.finish returns the message reference", () => {
 
     const ref = await report.finish({ text: "x" });
     const callsBefore = [...surface.calls];
-    const replay = createReporter(
+    const replay = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper(first.results).runStep,
@@ -224,7 +225,7 @@ describe("report.finish returns the message reference", () => {
   test("on the caller's step, the reference comes back and the stream is closed", async () => {
     const surface = fakeSurface();
     const state = new Map<string, unknown>();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -255,7 +256,7 @@ describe("report.card", () => {
   test("100 unique cards never put more than the cap in one stream", async () => {
     const surface = fakeSurface({ maxCards: 50 });
     const { runStep } = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       runStep,
@@ -289,7 +290,7 @@ describe("report.card", () => {
   test("updating a card that exists is not a new card", async () => {
     const surface = fakeSurface({ maxCards: 12, rollAt: 10 });
     const { runStep } = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       runStep,
@@ -311,7 +312,7 @@ describe("report.card", () => {
   test("a stream the surface ended starts a new one with only the card at hand", async () => {
     const surface = fakeSurface({ endAfterWrites: 3 });
     const { runStep } = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       runStep,
@@ -339,7 +340,7 @@ describe("report.card", () => {
     try {
       const surface = fakeSurface({ maxAgeMs: 60_000 });
       const { runStep } = stepper();
-      const report = createReporter(
+      const report = createWaitingReporter(
         { main: surface.channel },
         undefined,
         runStep,
@@ -376,7 +377,7 @@ describe("report.card", () => {
         },
       },
     });
-    const report = createReporter({ main: slow }, undefined, runStep);
+    const report = createWaitingReporter({ main: slow }, undefined, runStep);
 
     await Promise.all([
       report.card({ id: "a", title: "A" }),
@@ -392,7 +393,7 @@ describe("report.card", () => {
   test("a replay writes nothing again and continues from the saved stream state", async () => {
     const surface = fakeSurface();
     const first = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       first.runStep,
@@ -403,7 +404,7 @@ describe("report.card", () => {
 
     const callsBefore = [...surface.calls];
     const again = stepper(first.results);
-    const replay = createReporter(
+    const replay = createWaitingReporter(
       { main: surface.channel },
       undefined,
       again.runStep,
@@ -421,7 +422,7 @@ describe("report.card", () => {
   test("a card updated after its stream was left shows in the current stream", async () => {
     const surface = fakeSurface({ maxCards: 12, rollAt: 3 });
     const { runStep } = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       runStep,
@@ -436,7 +437,7 @@ describe("report.card", () => {
     expect(surface.calls.at(-1)).toBe("append:stream2:a");
   });
 
-  test("a start that fails leaves no stream and fails the write", async () => {
+  test("a start that fails leaves no stream and does not fail the run", async () => {
     const calls: string[] = [];
     const channel = defineChannel({
       post: async () => {},
@@ -452,20 +453,20 @@ describe("report.card", () => {
         },
       },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
     );
 
-    await expect(report.card({ id: "a", title: "A" })).rejects.toThrow("boom");
+    await expect(report.card({ id: "a", title: "A" })).resolves.toBeUndefined();
     expect(calls).toEqual(["start"]);
   });
 
   test("two lists of destinations share one stream per channel", async () => {
     const one = fakeSurface();
     const two = fakeSurface();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { a: one.channel, b: two.channel },
       undefined,
       stepper().runStep,
@@ -500,7 +501,7 @@ describe("report.card", () => {
         },
       },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -508,7 +509,7 @@ describe("report.card", () => {
     const first = report.card({ id: "a", title: "A" });
     const second = report.card({ id: "b", title: "B" });
 
-    await expect(first).rejects.toThrow("boom");
+    await first;
     await second;
     expect(calls).toEqual(["b"]);
   });
@@ -521,7 +522,7 @@ describe("report.card", () => {
       },
     });
     const { runStep, ran } = stepper();
-    const report = createReporter({ main: plain }, undefined, runStep);
+    const report = createWaitingReporter({ main: plain }, undefined, runStep);
 
     await report.card({ id: "a", title: "A" });
     expect(ran).toEqual([]);
@@ -785,7 +786,7 @@ describe("the Slack stream", () => {
 
       return { ok: true };
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: slackChannel() },
       undefined,
       stepper().runStep,
@@ -838,7 +839,7 @@ describe("report.status and the Slack status line", () => {
     });
     const plain = defineChannel({ post: async () => {} });
     const first = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { a: withStatus, b: plain },
       ["a", "b"],
       first.runStep,
@@ -850,7 +851,11 @@ describe("report.status and the Slack status line", () => {
     expect(first.ran).toEqual(["report:status:1:0:a", "report:status:2:0:a"]);
 
     const again = stepper(first.results);
-    const replay = createReporter({ a: withStatus }, ["a"], again.runStep);
+    const replay = createWaitingReporter(
+      { a: withStatus },
+      ["a"],
+      again.runStep,
+    );
 
     await replay.status("working");
     await replay.status("idle");
@@ -865,7 +870,7 @@ describe("report.status and the Slack status line", () => {
         throw new Error("no status for you");
       },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: throwing },
       undefined,
       stepper().runStep,
@@ -880,8 +885,19 @@ describe("report.status and the Slack status line", () => {
     );
   });
 
-  test("a card's output and sources are checked", async () => {
+  test("a bad call throws at the call, so an un-awaited one is no unhandled rejection", () => {
     const report = createReporter({}, undefined, stepper().runStep);
+
+    expect(() => {
+      report.status("busy" as never);
+    }).toThrow("the status is one of");
+    expect(() => {
+      report.card({ id: "a", title: "A", output: 1 as never });
+    }).toThrow("details and output are text");
+  });
+
+  test("a card's output and sources are checked", async () => {
+    const report = createWaitingReporter({}, undefined, stepper().runStep);
 
     await expect(
       report.card({ id: "a", title: "A", output: 1 as never }),
@@ -1009,7 +1025,7 @@ describe("begin, finish, continued and step IDs", () => {
 
   test("begin starts a stream with a title, a recipient and first cards, and a rollover keeps them", async () => {
     const surface = fakeSurface({ maxCards: 12, rollAt: 3 });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1043,7 +1059,7 @@ describe("begin, finish, continued and step IDs", () => {
 
   test("begin leaves the stream that is open, without final content", async () => {
     const surface = fakeSurface();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1063,7 +1079,7 @@ describe("begin, finish, continued and step IDs", () => {
 
   test("finish ends the stream with final content, and the next card starts a new stream", async () => {
     const surface = fakeSurface();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1092,7 +1108,7 @@ describe("begin, finish, continued and step IDs", () => {
       },
       stream: fakeSurface().channel.stream,
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -1111,7 +1127,7 @@ describe("begin, finish, continued and step IDs", () => {
         posted.push(message);
       },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -1130,7 +1146,7 @@ describe("begin, finish, continued and step IDs", () => {
   test("a replay of begin and finish restores where the stream stands", async () => {
     const surface = fakeSurface();
     const first = stepper();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       first.runStep,
@@ -1141,7 +1157,7 @@ describe("begin, finish, continued and step IDs", () => {
 
     const callsBefore = [...surface.calls];
     const again = stepper(first.results);
-    const replay = createReporter(
+    const replay = createWaitingReporter(
       { main: surface.channel },
       undefined,
       again.runStep,
@@ -1161,7 +1177,7 @@ describe("begin, finish, continued and step IDs", () => {
   test("a stream that goes on after a restart says so once, in a card that counts", async () => {
     const surface = fakeSurface({ continued: true });
     let restarts = 0;
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1201,7 +1217,7 @@ describe("begin, finish, continued and step IDs", () => {
       },
       stream: { ...base, stop: undefined },
     });
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: channel },
       undefined,
       stepper().runStep,
@@ -1216,7 +1232,7 @@ describe("begin, finish, continued and step IDs", () => {
   test("the continued card does not count as a step in the summary", async () => {
     const surface = fakeSurface({ continued: true, maxCards: 12, rollAt: 3 });
     let restarts = 0;
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1240,7 +1256,7 @@ describe("begin, finish, continued and step IDs", () => {
 
   test("a channel with no continued card, and a run with no restarts, say nothing", async () => {
     const surface = fakeSurface();
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: surface.channel },
       undefined,
       stepper().runStep,
@@ -1266,7 +1282,11 @@ describe("begin, finish, continued and step IDs", () => {
     const one = fakeSurface();
     const two = fakeSurface();
     const single = stepper();
-    const report = createReporter({ a: one.channel }, ["a"], single.runStep);
+    const report = createWaitingReporter(
+      { a: one.channel },
+      ["a"],
+      single.runStep,
+    );
 
     await report.card({ id: "x", title: "X" }, { stepId: "plan:x" });
     await report.status("working", { stepId: "status:build" });
@@ -1276,7 +1296,7 @@ describe("begin, finish, continued and step IDs", () => {
     expect(single.ran).toEqual(["plan:x", "plan:end", "report:card:2:0:a"]);
 
     const many = stepper();
-    const both = createReporter(
+    const both = createWaitingReporter(
       { a: one.channel, b: two.channel },
       ["a", "b"],
       many.runStep,
@@ -1349,7 +1369,7 @@ describe("structured data in a report", () => {
       },
     });
     const { runStep, results } = stepper();
-    const report = createReporter({ main: channel }, undefined, runStep);
+    const report = createWaitingReporter({ main: channel }, undefined, runStep);
 
     await report({ text: "Built", data: { rows: [1, 2], ok: true } });
     await report("plain");
@@ -1364,9 +1384,14 @@ describe("structured data in a report", () => {
   test("with scores on, the result keeps the time beside the data, and a later post is still scored from it", async () => {
     const channel = defineChannel({ post: async () => {} });
     const { runStep, results } = stepper();
-    const report = createReporter({ main: channel }, undefined, runStep, {
-      since: Date.now() - 5,
-    });
+    const report = createWaitingReporter(
+      { main: channel },
+      undefined,
+      runStep,
+      {
+        since: Date.now() - 5,
+      },
+    );
 
     await report({ text: "a", data: { n: 1 } });
     await report("b");
@@ -1387,7 +1412,7 @@ describe("structured data in a report", () => {
     });
     const first = stepper();
 
-    await createReporter(
+    await createWaitingReporter(
       { main: channel },
       undefined,
       first.runStep,
@@ -1398,7 +1423,7 @@ describe("structured data in a report", () => {
 
     const again = stepper(first.results);
 
-    await createReporter(
+    await createWaitingReporter(
       { main: channel },
       undefined,
       again.runStep,
@@ -1411,7 +1436,7 @@ describe("structured data in a report", () => {
   });
 
   test("data must be a plain JSON object of at most 32 KB", async () => {
-    const report = createReporter(
+    const report = createWaitingReporter(
       { main: defineChannel({ post: async () => {} }) },
       undefined,
       stepper().runStep,

@@ -21,7 +21,6 @@ export type ActionId =
   | "contents"
   | "search"
   | "text"
-  | "runEvent"
   | "trace"
   | "message"
   | "slack"
@@ -130,13 +129,6 @@ export const keys: KeyDef[] = [
     group: "Panes",
     inField: ["Alt+Shift+1"],
     outside: ["1"],
-  },
-  {
-    id: "runEvent",
-    label: "Show the event Run sends (run.ts)",
-    group: "Code",
-    inField: ["Alt+Shift+2"],
-    outside: ["2"],
   },
   {
     id: "message",

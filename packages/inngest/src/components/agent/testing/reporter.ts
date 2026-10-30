@@ -33,8 +33,39 @@ export interface TestReporter {
 }
 
 /**
+ * Wraps `createReporter` so `status`, `card` and `begin` resolve once their
+ * write has finished, for tests of what a write does. A real call does not
+ * wait.
+ */
+export const createWaitingReporter = (
+  ...args: Parameters<typeof createReporter>
+): Reporter => {
+  const raw = createReporter(...args);
+  const waits = (name: "status" | "card" | "begin") => {
+    return async (...rest: never[]) => {
+      await (raw[name] as (...a: never[]) => Promise<void>)(...rest);
+      await raw.settled();
+    };
+  };
+
+  return Object.assign(
+    (...rest: Parameters<Reporter>) => {
+      return raw(...rest);
+    },
+    {
+      status: waits("status"),
+      card: waits("card"),
+      begin: waits("begin"),
+      finish: raw.finish,
+      settled: raw.settled,
+    },
+  ) as unknown as Reporter;
+};
+
+/**
  * A reporter for a test: every `report()`, `report.card()` and
- * `report.finish()` runs its step directly against `channels`, so the test
+ * `report.finish()` runs its step directly against `channels` (`status`, `card`
+ * and `begin` resolve once their write has finished), so the test
  * asserts on what the channels were sent, on the step IDs, and on what
  * `report.finish()` returns. Pass the `results` of one reporter as `saved` to
  * another to see what a replay does (it writes nothing again).
@@ -67,16 +98,20 @@ export const testReporter = (
   const results: Record<string, unknown> = {};
   const ran: string[] = [];
 
-  const report = createReporter(channels, options.report, async (id, fn) => {
-    if (id in saved) {
-      return saved[id];
-    }
+  const report = createWaitingReporter(
+    channels,
+    options.report,
+    async (id, fn) => {
+      if (id in saved) {
+        return saved[id];
+      }
 
-    ran.push(id);
-    results[id] = await fn();
+      ran.push(id);
+      results[id] = await fn();
 
-    return results[id];
-  });
+      return results[id];
+    },
+  );
 
   return { report, ran, results };
 };

@@ -4,7 +4,7 @@
     {
       "agent": "echo",
       "thread": "main",
-      "message": "Hi"
+      "text": "Hi"
     }
   ],
   "message": {

@@ -413,6 +413,8 @@ export type {
   ThreadInboxMessage,
   ThreadListener,
 } from "./agentFunction.ts";
+export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
+
 export type {
   Channel,
   ChannelAsk,

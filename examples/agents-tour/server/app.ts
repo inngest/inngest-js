@@ -211,8 +211,8 @@ export const createTour = async (options: TourOptions) => {
       return;
     }
 
-    await worker.send(start.agent, start.thread, start.message);
-    info(`sent "${start.message}" to ${start.agent}`);
+    await worker.send(start.agent, start.thread, start.text);
+    info(`sent "${start.text}" to ${start.agent}`);
   };
 
   const cancelLive = async () => {

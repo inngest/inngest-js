@@ -41,8 +41,9 @@ import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { SandboxTool, SandboxTools } from "../sandbox/tools.ts";
+import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
+import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { toAsync } from "./cel.ts";
 import {
   type Channel,
@@ -165,7 +166,8 @@ export interface AgentFunctionOptions<
    */
   name?: InngestFunction.Options["name"];
   /**
-   * A longer description of the function, shown in the Inngest UI.
+   * A longer description of the function, shown in the Inngest UI. It is also
+   * what the model reads when the agent is one of the `tools` of another.
    */
   description?: InngestFunction.Options["description"];
 
@@ -1072,6 +1074,14 @@ export interface AgentFunction<
    * its body returns.
    */
   readonly "~types"?: { input: TInput; output: TOutput };
+
+  /**
+   * The agent as a tool, which is what an agent in `tools` becomes. Named by
+   * the agent's ID, described by its `description`. A call takes
+   * `{ message: string }`, or the agent's `invoke()` data when it declares a
+   * typed one, and returns what the agent returns.
+   */
+  readonly "~tool": AgentTool<AgentToolInput<TInput>, TOutput>;
 
   /**
    * The function that runs the body.
@@ -2141,6 +2151,9 @@ export function createAgentFunction(
             restarts: () => {
               return recorder.restarts;
             },
+            warn: (data, message) => {
+              logger.warn(data, message);
+            },
             inStep: () => {
               return Boolean(getAsyncCtxSync()?.execution?.executingStep);
             },
@@ -2303,10 +2316,14 @@ export function createAgentFunction(
             control,
           });
 
+          // Progress writes nobody waited for finish before the run ends.
+          await report.settled();
+
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
         } catch (error) {
+          await report.settled();
           await closeAll();
 
           throw error;
@@ -2351,6 +2368,12 @@ export function createAgentFunction(
   );
 
   return {
+    "~tool": agentToolOf(
+      ref,
+      config.id,
+      fn,
+      config.description,
+    ) as AgentFunction["~tool"],
     fn,
     cleanup,
     finished,
