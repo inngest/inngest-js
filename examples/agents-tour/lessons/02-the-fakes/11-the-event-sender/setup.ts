@@ -1,7 +1,7 @@
 /**
  * @module
- * Read-only. The Inngest client for the tour and the place agents are made.
- * Every page imports `agents` from here.
+ * Read-only. The Inngest client for the tour, the place agents are made, and
+ * the options that point the Slack and GitHub channels at the tour's fakes.
  */
 import { Inngest } from "inngest";
 import { createAgents, memoryKvAdapter } from "inngest/experimental/agents";
@@ -12,6 +12,13 @@ export const agents = createAgents(client, { store: memoryKvAdapter() });
 
 declare const process: { env: Record<string, string | undefined> };
 
-export const slackApi = `${process.env.TOUR_URL}/slack/api`;
+export const slackOptions = {
+  in: ["C02ENG"],
+  apiUrl: `${process.env.TOUR_URL}/slack/api`,
+};
 
-export const githubApi = `${process.env.TOUR_URL}/github`;
+export const githubOptions = {
+  repos: ["acme/web"],
+  apiUrl: `${process.env.TOUR_URL}/github`,
+  token: "tour",
+};

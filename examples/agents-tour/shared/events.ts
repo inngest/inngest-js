@@ -5,14 +5,10 @@
  */
 import type { Start } from "./types.ts";
 
-export const eventOfMessage = (
-  agent: string,
-  thread: string,
-  content: string,
-) => {
+export const eventOfMessage = (agent: string, thread: string, text: string) => {
   return {
     name: "agent/message",
-    data: { agent: `tour/${agent}`, thread, text: content },
+    data: { agent: `tour/${agent}`, thread, text },
   };
 };
 
@@ -25,5 +21,5 @@ export const eventOfStart = (start: Start) => {
     return { name: "slack/message", data: start.slack };
   }
 
-  return eventOfMessage(start.agent, start.thread, start.message);
+  return eventOfMessage(start.agent, start.thread, start.text);
 };

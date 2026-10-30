@@ -1351,6 +1351,40 @@ export function setAppKvStore(app: string, store: KvAdapter): void {
 }
 
 /**
+ * The store an app's KV uses: the one the app gave `createAgents`, else Redis
+ * at `INNGEST_EXPERIMENTAL_KV_URL`. Direct calls, not steps, so other parts of
+ * the SDK that run inside a step (such as MCP OAuth tokens) can share it.
+ * @param app The app ID of the client, if known.
+ */
+export function kvAdapterFor(app?: string): KvAdapter {
+  const given = app ? appStores.get(app) : undefined;
+  if (given) {
+    return given;
+  }
+
+  // A Worker may have no `process`; it gives a store instead.
+  const url =
+    typeof process === "undefined"
+      ? undefined
+      : process.env.INNGEST_EXPERIMENTAL_KV_URL;
+  if (!url) {
+    throw new Error(
+      "kv needs a store: give createAgents(client, { store }) one, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL (redis:// or rediss://).",
+    );
+  }
+
+  // One connection per URL, however many KVs are built (`kv.with(client)`
+  // builds one per call).
+  let found = envStores.get(url);
+  if (!found) {
+    found = redisKvAdapter(url);
+    envStores.set(url, found);
+  }
+
+  return found;
+}
+
+/**
  * Builds a store.
  * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  * @param options.bound Environment and app to use outside a function.
@@ -1361,31 +1395,7 @@ export function createKv(
   // The store of an app: the one this KV was built with, else the one the app
   // gave `createAgents`, else Redis at the environment's URL.
   function store(app?: string): KvAdapter {
-    const given = options.adapter ?? (app ? appStores.get(app) : undefined);
-    if (given) {
-      return given;
-    }
-
-    // A Worker may have no `process`; it gives a store instead.
-    const url =
-      typeof process === "undefined"
-        ? undefined
-        : process.env.INNGEST_EXPERIMENTAL_KV_URL;
-    if (!url) {
-      throw new Error(
-        "kv needs a store: give createAgents(client, { store }) one, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL (redis:// or rediss://).",
-      );
-    }
-
-    // One connection per URL, however many KVs are built (`kv.with(client)`
-    // builds one per call).
-    let found = envStores.get(url);
-    if (!found) {
-      found = redisKvAdapter(url);
-      envStores.set(url, found);
-    }
-
-    return found;
+    return options.adapter ?? kvAdapterFor(app);
   }
 
   function instance(scope: KvScope, explicitId?: string): KvScopeInstance {

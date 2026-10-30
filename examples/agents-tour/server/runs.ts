@@ -109,10 +109,21 @@ const triggerOf = async (devServer: DevServer, id: string | undefined) => {
     id,
   });
   const raw = data.event
-    ? (JSON.parse(data.event.raw) as { data?: Record<string, unknown> })
+    ? (JSON.parse(data.event.raw) as {
+        id?: string;
+        data?: Record<string, unknown>;
+        ts?: number;
+      })
     : null;
   const trigger = data.event
-    ? { name: data.event.name, data: raw?.data ?? {} }
+    ? {
+        id: raw?.id ?? id,
+        name: data.event.name,
+        data: raw?.data ?? {},
+        ts: raw?.ts ?? 0,
+        // The event that starts a run is the inbox's first message.
+        seq: 0,
+      }
     : null;
 
   triggers.set(id, trigger);
