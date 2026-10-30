@@ -163,7 +163,11 @@ export const run = async (
 
       // A read with nothing to read ends its request waiting.
       if (op.op === StepOpCode.None) {
-        ops.push({ id: waitId, mode: "wait" });
+        // A timed read's waiting op rides beside its timer: one wait.
+        if (!waitId.endsWith(":waiting")) {
+          ops.push({ id: waitId, mode: "wait" });
+        }
+
         options.onOp?.(op, saved);
         blocked = true;
         continue;
