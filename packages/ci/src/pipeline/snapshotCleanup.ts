@@ -5,8 +5,10 @@
  * on a normal end and aborts the defers, so a run that finishes normally
  * starts no extra run.
  *
- * A run cancelled after a build ended and before the run adopted its snapshot,
- * which happens within one request, leaves that snapshot to its expiry.
+ * A snapshot a run takes under a name only it uses is covered before it is
+ * created, by a defer keyed on that name (see `ownSnapshotName`): a run ended
+ * between the create and the run learning the ID, or a snapshot that failed
+ * and never gave one, still has it deleted.
  *
  * @module
  */
@@ -40,9 +42,24 @@ export const snapshotCleanupFunction = (
     { id: snapshotCleanupFunctionId },
     async ({ event, step }) => {
       await step.run("delete", async () => {
-        const { failed } = await deleteSnapshots(client, [
-          String((event.data as { snapshotId: string }).snapshotId),
-        ]);
+        const data = event.data as { snapshotId?: string; name?: string };
+        const ids: string[] = [];
+
+        if (data.snapshotId !== undefined) {
+          ids.push(String(data.snapshotId));
+        }
+
+        if (data.name !== undefined) {
+          const { items } = await client.sandboxes.snapshots.list({
+            name: data.name,
+          });
+
+          for (const snapshot of items) {
+            ids.push(snapshot.id);
+          }
+        }
+
+        const { failed } = await deleteSnapshots(client, ids);
 
         // Thrown so the step retries; an ID that is already gone isn't failed.
         if (failed.length > 0) {
@@ -86,6 +103,40 @@ export const ownSnapshot = (
       data: { snapshotId },
     }),
   );
+};
+
+/**
+ * Cover a snapshot the run is about to take under a name that only this run
+ * and its builds use, before it exists. The defer deletes whatever holds the
+ * name, including a snapshot that failed. Call `releaseSnapshotName` once the
+ * run holds the ID and owns it by that.
+ */
+export const ownSnapshotName = (run: CiRunScope, name: string): void => {
+  const key = `name:${name}`;
+
+  if (run.snapshotCleanups.has(key)) {
+    return;
+  }
+
+  run.snapshotCleanups.set(
+    key,
+    run.defer(`snapshot-name:${name}:cleanup`, {
+      function: snapshotCleanupFunction(run.ci.client),
+      data: { name },
+    }),
+  );
+};
+
+/**
+ * The run holds the ID of what the name covered, or the name's snapshot isn't
+ * its own, so the name's defer has nothing left to do.
+ */
+export const releaseSnapshotName = (run: CiRunScope, name: string): void => {
+  const key = `name:${name}`;
+
+  run.snapshotCleanups.get(key)?.abort();
+
+  run.snapshotCleanups.delete(key);
 };
 
 /**

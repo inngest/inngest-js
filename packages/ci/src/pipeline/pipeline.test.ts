@@ -6829,6 +6829,14 @@ describe("run snapshot cleanup", () => {
         ).toBe(false);
       }
 
+      // Nothing the cancelled run took is left, wherever it was cancelled.
+      expect(
+        [...api.snapshots.values()].map((snapshot) => {
+          return snapshot.id;
+        }),
+        `cancelled after request ${cancelAfter}`,
+      ).toEqual([]);
+
       if (registered.length > 0 && before > 0 && api.snapshots.size === 0) {
         cleaned++;
       }
@@ -6836,6 +6844,34 @@ describe("run snapshot cleanup", () => {
 
     // Cancelled while a build's snapshot existed and had its defer.
     expect(cleaned).toBeGreaterThan(0);
+  });
+
+  test("a name's defer deletes what holds the name, including a failed snapshot", async () => {
+    const { api, ci } = setup();
+
+    api.snapshots.set("22222222-2222-4222-8222-000000000001", {
+      id: "22222222-2222-4222-8222-000000000001",
+      name: "ci/run:01TESTRUN/base/k",
+      status: "FAILED",
+      sandboxId: "sb",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    } as never);
+
+    api.snapshots.set("22222222-2222-4222-8222-000000000002", {
+      id: "22222222-2222-4222-8222-000000000002",
+      name: "ci/run:01OTHER/base/k",
+      status: "READY",
+      sandboxId: "sb",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    } as never);
+
+    await runDefers(ci, [{ data: { name: "ci/run:01TESTRUN/base/k" } }]);
+
+    expect([...api.snapshots.keys()]).toEqual([
+      "22222222-2222-4222-8222-000000000002",
+    ]);
   });
 
   test("a snapshot that is already gone is fine for its defer", async () => {

@@ -16,7 +16,11 @@ import {
 import { CiUsageError } from "../errors.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
-import { releaseSnapshot } from "../pipeline/snapshotCleanup.ts";
+import {
+  ownSnapshotName,
+  releaseSnapshot,
+  releaseSnapshotName,
+} from "../pipeline/snapshotCleanup.ts";
 import type {
   BuildInfo,
   CiJobScope,
@@ -753,6 +757,11 @@ const takeSnapshot = async (
         ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
         : await createRunSnapshot(handle, jobPath, stepId);
 
+    // The caller owns it by ID from here, or it isn't this run's to delete.
+    if (cache?.ephemeral) {
+      releaseSnapshotName(run, cache.target.name);
+    }
+
     return taken;
   } catch (error) {
     if (hasCode(error, "sandbox_snapshot_limit_exceeded")) {
@@ -798,6 +807,12 @@ const createNamedSnapshot = async (
   };
 
   let refusal: unknown;
+
+  // A snapshot only this run's pipeline uses is deleted by name if the run
+  // ends before it learns the ID. A cached one is the cache's.
+  if (ephemeral) {
+    ownSnapshotName(run, name);
+  }
 
   try {
     const saved = await attempt(stepId);
