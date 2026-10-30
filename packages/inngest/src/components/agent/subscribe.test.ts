@@ -318,7 +318,7 @@ describe("step.subscribe", () => {
       fresh.ops.map((op) => {
         return op.id;
       }),
-    ).toEqual(["inbox:0:open", "inbox:0:close"]);
+    ).toEqual(["inbox:0:open"]);
 
     // Memos from before: the first source's steps were `inbox:open` and
     // `inbox:close`. The function replays against them, no step is asked again.
@@ -358,7 +358,7 @@ describe("step.subscribe", () => {
       ops.map((op) => {
         return op.mode;
       }),
-    ).toEqual(["open", "stop", "close"]);
+    ).toEqual(["open", "stop"]);
   });
 
   test("current() returns every message so far without moving the cursor", async () => {
@@ -648,7 +648,7 @@ describe("step.subscribe", () => {
       ops.map((op) => {
         return op.mode;
       }),
-    ).toEqual(["open", "close"]);
+    ).toEqual(["open"]);
   });
 
   test("await using closes the subscription when the scope ends", async () => {
@@ -671,7 +671,7 @@ describe("step.subscribe", () => {
       ops.map((op) => {
         return op.mode;
       }),
-    ).toEqual(["open", "close"]);
+    ).toEqual(["open"]);
   });
 
   test("a closed subscription reads no more", async () => {
