@@ -20,6 +20,11 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import { definitionOf, type SandboxToolNames } from "./defs.ts";
+import {
+  agentsAnnounceEvent,
+  announcement,
+  rememberCard,
+} from "./discovery.ts";
 import type { InboxToolsConfig } from "./inboxTools.ts";
 import { type KvStore, setAppKvStore } from "./kv.ts";
 import {
@@ -250,6 +255,15 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
    * ```
    */
   functions(): InngestFunction.Any[];
+
+  /**
+   * Sends the `agents/registered` event with the cards of this client's
+   * agents, so discovery in any app of the environment finds them. Call it
+   * once the app is up (after `serve()` or `connect()`). A daily heartbeat
+   * function in `functions()` sends it again, which keeps the cards inside
+   * the event retention.
+   */
+  announce(): Promise<void>;
 }
 
 /**
@@ -303,6 +317,12 @@ const allowBakes = (
  * the client has.
  */
 const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
+
+/**
+ * The heartbeat function of each client: one, however many `createAgents()`
+ * calls the client has.
+ */
+const announceFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
  * Options of `createAgents`.
@@ -360,6 +380,22 @@ export const createAgents = <TClient extends Inngest.Any>(
       );
 
       made.push(created);
+      rememberCard(client, created.card);
+
+      if (!announceFunctions.has(client)) {
+        announceFunctions.set(
+          client,
+          client.createFunction(
+            {
+              id: "agents-announce",
+              triggers: [{ cron: "0 6 * * *" }, { event: agentsAnnounceEvent }],
+            },
+            async ({ step: announceStep }) => {
+              await announceStep.sendEvent("announce", announcement(client));
+            },
+          ),
+        );
+      }
 
       // Baked skills are built by a function of its own, served once however
       // many agents there are. A sandboxes config that is a function can't be
@@ -389,8 +425,13 @@ export const createAgents = <TClient extends Inngest.Any>(
         ];
       });
       const shared = bakeFunctions.get(client);
+      const heartbeat = announceFunctions.get(client);
+      const all = bakes && shared ? [...functions, shared] : functions;
 
-      return bakes && shared ? [...functions, shared] : functions;
+      return heartbeat && made.length > 0 ? [...all, heartbeat] : all;
+    },
+    async announce() {
+      await client.send(announcement(client));
     },
   };
 };
@@ -414,7 +455,6 @@ export type {
   ThreadListener,
 } from "./agentFunction.ts";
 export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
-
 export type {
   Channel,
   ChannelAsk,
@@ -437,6 +477,19 @@ export {
   ChannelStreamEnded,
   defineChannel,
 } from "./channels.ts";
+export type {
+  AgentCard,
+  AgentShare,
+  AgentsRegisteredData,
+  DiscoveryTools,
+  DiscoveryToolsOptions,
+} from "./discovery.ts";
+export {
+  addressOf,
+  callAgent,
+  discoveryTools,
+  findAgents,
+} from "./discovery.ts";
 export type {
   AgentMessageData,
   AgentRequestData,

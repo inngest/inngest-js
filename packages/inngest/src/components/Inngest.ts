@@ -674,6 +674,19 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return this.inngestApi.queryInsights(sql);
   }
 
+  /**
+   * EXPERIMENTAL: Lists events by name, newest first. Agent discovery uses
+   * it to read the `agents/registered` events.
+   * @param options The event name, page size and cursor.
+   */
+  public listEvents(options: {
+    name: string;
+    limit?: number;
+    cursor?: string;
+  }) {
+    return this.inngestApi.listEvents(options);
+  }
+
   private async _sendSignal({
     signal,
     data,

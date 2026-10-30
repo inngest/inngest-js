@@ -269,6 +269,72 @@ export class InngestApi {
   }
 
   /**
+   * Lists events by name, newest first, through the public events API
+   * (`GET /v1/events`). The Dev Server and Cloud both serve it.
+   * @param options The event name, the page size and the cursor (the
+   * `internalId` of the last event of the previous page).
+   */
+  async listEvents(options: {
+    name: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<
+    {
+      id?: string;
+      internalId: string;
+      name: string;
+      data: unknown;
+      ts?: number;
+    }[]
+  > {
+    const params = new URLSearchParams({ name: options.name });
+
+    if (options.limit) {
+      params.set("limit", String(options.limit));
+    }
+
+    if (options.cursor) {
+      params.set("cursor", options.cursor);
+    }
+
+    const result = await this.req(`/v1/events?${params.toString()}`);
+
+    if (!result.ok) {
+      throw new Error(
+        getErrorMessage(result.error, "Unknown error listing events"),
+      );
+    }
+
+    const res = result.value;
+
+    if (!res.ok) {
+      throw new Error(
+        `Listing events failed: ${res.status} ${res.statusText} - ${await res.text()}`,
+      );
+    }
+
+    const body = (await res.json()) as {
+      data?: {
+        id?: string;
+        internal_id: string;
+        name: string;
+        data: unknown;
+        ts?: number;
+      }[];
+    };
+
+    return (body.data ?? []).map((event) => {
+      return {
+        id: event.id,
+        internalId: event.internal_id,
+        name: event.name,
+        data: event.data,
+        ts: event.ts,
+      };
+    });
+  }
+
+  /**
    * Runs an Insights SQL query. Rows come back as lists of values in the order
    * of `columns`.
    * @param query The Insights query.

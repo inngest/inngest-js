@@ -171,6 +171,15 @@ export interface Scenario {
   sandboxLocalDirs?: string[];
 
   functions: (env: AppEnv) => InngestFunction.Any[];
+
+  /**
+   * Other apps the kit serves next to the main one, each with its own client,
+   * synced to the same Dev Server at `/api/inngest/<client id>`. For a
+   * scenario about apps that never name each other.
+   */
+  apps?: (
+    env: AppEnv,
+  ) => { client: Inngest.Any; functions: InngestFunction.Any[] }[];
   run: (ctx: Ctx) => Promise<void>;
 }
 

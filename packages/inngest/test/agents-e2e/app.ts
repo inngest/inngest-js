@@ -73,21 +73,62 @@ const listed = scenarios.flatMap((s) => {
 });
 const functions = [...new Set(listed)];
 
-createServer(serve({ client, functions })).listen(
-  Number(process.env.PORT),
-  () => {
-    // The CLI waits for the Dev Server to know these before it runs anything.
-    const file = process.env.AGENTS_E2E_EXPECT_FILE;
+const others = scenarios.flatMap((s) => {
+  return (
+    s.apps?.({
+      client,
+      fakes: { url: fakesUrl },
+      redisUrl: process.env.INNGEST_EXPERIMENTAL_KV_URL,
+      event: (name) => {
+        return eventName(s.id, name);
+      },
+    }) ?? []
+  );
+});
+const handlers = others.map((other) => {
+  const path = `/api/inngest/${other.client.id}`;
 
-    if (file) {
-      writeFileSync(
-        file,
-        JSON.stringify(
-          functions.map((fn) => {
-            return fn.id(client.id);
-          }),
-        ),
-      );
-    }
-  },
-);
+  return {
+    path,
+    handler: serve({
+      client: other.client,
+      functions: other.functions,
+      servePath: path,
+    }),
+  };
+});
+const mainHandler = serve({ client, functions });
+
+createServer((req, res) => {
+  const other = handlers.find((entry) => {
+    return req.url?.startsWith(entry.path);
+  });
+
+  return (other?.handler ?? mainHandler)(req, res);
+}).listen(Number(process.env.PORT), () => {
+  // Each other app syncs itself to the Dev Server when it is sent a PUT.
+  for (const { path } of handlers) {
+    void fetch(`http://127.0.0.1:${process.env.PORT}${path}`, {
+      method: "PUT",
+    });
+  }
+
+  // The CLI waits for the Dev Server to know these before it runs anything.
+  const file = process.env.AGENTS_E2E_EXPECT_FILE;
+
+  if (file) {
+    writeFileSync(
+      file,
+      JSON.stringify([
+        ...functions.map((fn) => {
+          return fn.id(client.id);
+        }),
+        ...others.flatMap((other) => {
+          return other.functions.map((fn) => {
+            return fn.id(other.client.id);
+          });
+        }),
+      ]),
+    );
+  }
+});

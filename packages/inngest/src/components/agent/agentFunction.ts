@@ -65,6 +65,7 @@ import {
   sandboxTools,
   stepSandboxes,
 } from "./defs.ts";
+import { type AgentCard, type AgentCardConfig, cardOf } from "./discovery.ts";
 import {
   type AgentMessageData,
   type AgentRequestData,
@@ -465,6 +466,33 @@ export interface AgentFunctionConfig<
    * The function ID. The agent is addressed as `"<appId>/<id>"`.
    */
   id: string;
+
+  /**
+   * Who may find and use the agent through discovery: `"private"` (default),
+   * only agents of its own app; `"team"`, any agent in the environment.
+   */
+  share?: AgentCardConfig["share"];
+
+  /**
+   * What the agent is good at, for the card. Models choose agents by these.
+   */
+  skills?: AgentCardConfig["skills"];
+
+  /**
+   * The team or person who owns the agent, for the card.
+   */
+  owner?: AgentCardConfig["owner"];
+
+  /**
+   * What a call does: `"read"`, `"write"` (default) or `"needs-approval"`,
+   * for the card.
+   */
+  effects?: AgentCardConfig["effects"];
+
+  /**
+   * How long a call takes, for the card.
+   */
+  speed?: AgentCardConfig["speed"];
 
   /**
    * KV store for thread state, or a function that returns one, called at each
@@ -1111,6 +1139,11 @@ export interface AgentFunction<
    * The agent's address, `"<appId>/<functionId>"`.
    */
   ref: string;
+
+  /**
+   * What the agent publishes for discovery.
+   */
+  card: AgentCard;
 
   /**
    * The handle of a thread of this agent.
@@ -2379,6 +2412,7 @@ export function createAgentFunction(
     finished,
     ...(arrival && { arrival }),
     ref,
+    card: cardOf(client.id, config.id, fn, config),
     thread(key, session) {
       return getThread(client, ref, key, {
         session,
