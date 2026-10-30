@@ -1025,13 +1025,40 @@ export async function openSubscription<
     }
 
     closing = (async () => {
-      // No step: the pause ends with the run, and what was saved when this
-      // ran is what the state already holds.
-      for (const entry of streams) {
+      let count = read().length;
+      let closedAny = false;
+
+      for (let stream = 0; stream < streams.length; stream++) {
+        const entry = streams[stream];
+
+        if (!entry?.active) {
+          continue;
+        }
+
         entry.active = false;
+        closedAny = true;
+
+        const closed = (await op(
+          stepId(stream, "close"),
+          "close",
+          undefined,
+          stream,
+          { target: entry.source },
+        )) as { count: number };
+
+        // The last close sees every message saved before the last pause went.
+        count = closed.count;
       }
 
-      const count = read().length;
+      // With no source left to close, one close op still marks the inbox
+      // closed and ends any wait, and gives the authoritative count.
+      if (!closedAny) {
+        const closed = (await op(stepId(0, "close"), "close", undefined, 0, {
+          target: streams[0]?.source,
+        })) as { count: number };
+
+        count = closed.count;
+      }
 
       total = count;
 

@@ -567,22 +567,10 @@ describe("inbox sources", () => {
         { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 5 },
       ],
       onOp: (op) => {
-        const opts = op.opts as
-          | {
-              event?: string;
-              if?: string;
-              subscribe?: { streams?: { event: string; if?: string }[] };
-            }
-          | undefined;
-        const sources = [
-          { event: opts?.event, if: opts?.if },
-          ...(opts?.subscribe?.streams ?? []),
-        ];
+        const opts = op.opts as { event?: string; if?: string } | undefined;
 
-        for (const source of sources) {
-          if (source.event === "ci/status" || source.event === "deploy/done") {
-            filters.push([source.event, source.if]);
-          }
+        if (opts?.event === "ci/status" || opts?.event === "deploy/done") {
+          filters.push([opts.event, opts.if]);
         }
       },
     });
