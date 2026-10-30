@@ -351,6 +351,11 @@ if (!inner) {
       appCommand:
         "pnpm exec tsx --tsconfig test/agents-e2e/tsconfig.json test/agents-e2e/app.ts",
       appEnv: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => {
+            return key.startsWith("AGENTS_E2E_") && typeof process.env[key] === "string";
+          }) as [string, string][],
+        ),
         AGENTS_E2E_SCENARIOS: ids.join(","),
         AGENTS_E2E_FAKES: fakes.url,
         AGENTS_E2E_EXPECT_FILE: expectFile,

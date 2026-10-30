@@ -1935,9 +1935,12 @@ export function createAgentFunction(
         // A run that began with the start as separate KV steps replays them
         // as they were: the KV steps are numbered by how many came before, so
         // folding the start would shift every later one.
+        // A run that folded the start has the `thread:start` step; its later
+        // `waiting()` writes share the old id, so that id alone cannot tell.
+        const answer = getAsyncCtxSync()?.execution?.stepAnswer;
         const startedBefore =
-          getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
-            .found === true;
+          answer?.("thread:start").found !== true &&
+          answer?.("kv.update:thread:__state").found === true;
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
