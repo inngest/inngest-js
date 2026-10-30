@@ -96,7 +96,7 @@ export const inboxListenerView = scenario({
     await deploy("api", 2);
 
     const after = await ctx.until(seen, (s) => {
-      return s.includes("scope:left");
+      return s.includes("scope:left") && s.includes("main:2");
     });
 
     ctx.check(
