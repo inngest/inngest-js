@@ -80,7 +80,7 @@ import {
   type InboxToolsOf,
 } from "./inboxTools.ts";
 import { agentInvokeCancelOn, agentInvokeDepth } from "./invoke.ts";
-import { type Kv, type KvSource, kvFrom } from "./kv.ts";
+import { type Kv, type KvSource, kvFrom, withDirectKv } from "./kv.ts";
 import {
   type AgentLimits,
   budgetReason,
@@ -895,6 +895,7 @@ export interface ThreadInbox<
       | "unread"
       | "of"
       | "listen"
+      | "ready"
       | "putBack"
       | "close"
       | typeof Symbol.asyncIterator
@@ -1357,6 +1358,16 @@ function threadInbox(
     );
   }
 
+  // The status is not a step: it is written straight to the KV, best effort,
+  // and a replay writes the latest value again.
+  async function status(write: () => Promise<unknown>) {
+    try {
+      await withDirectKv(write);
+    } catch (error) {
+      log.warn(`Could not record the thread status: ${String(error)}`);
+    }
+  }
+
   function next(): Promise<ThreadInboxMessage | null>;
   function next(
     options: NextOptions,
@@ -1364,8 +1375,12 @@ function threadInbox(
   async function next(
     options?: NextOptions,
   ): Promise<ThreadInboxMessage | null | undefined> {
-    if (delivered > 0) {
-      await recorder.waiting();
+    // The status is written only when the read has to wait, so a replay of
+    // answered reads writes nothing.
+    if (delivered > 0 && !inbox.ready()) {
+      await status(() => {
+        return recorder.waiting();
+      });
     }
 
     for (;;) {
@@ -1373,7 +1388,9 @@ function threadInbox(
       if (raw === undefined) {
         // The wait expired: the agent goes on working, so it is not waiting.
         if (delivered > 0) {
-          await recorder.resumed();
+          await status(() => {
+            return recorder.resumed();
+          });
         }
 
         return undefined;
@@ -1393,8 +1410,12 @@ function threadInbox(
 
       // While the agent waits for its next message there is nothing to stop.
       if (message.name !== agentStopEvent) {
-        if (delivered > 1) {
-          await recorder.running(undefined, inflightOf(message));
+        // Only the newest message writes it: an older one is a replay or a
+        // backlog, and the write would be repeated by every request.
+        if (delivered > 1 && !inbox.ready()) {
+          await status(() => {
+            return recorder.running(undefined, inflightOf(message));
+          });
         }
 
         return message;

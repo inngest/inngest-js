@@ -57,6 +57,13 @@ export interface AsyncContext {
     };
 
     /**
+     * When true, agent KV calls made in this context run directly instead of
+     * as steps, so a best-effort write (an agent's status) is not memoized and
+     * a replay writes the same latest value again.
+     */
+    kvDirect?: boolean;
+
+    /**
      * If present, indicates the parallel mode that should be applied to steps
      * created within this context. Set by `group.parallel()`.
      */

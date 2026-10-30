@@ -427,6 +427,13 @@ export interface Subscription<
   putBack(messages: TMessage[]): void;
 
   /**
+   * Whether `next()` would return at once, without waiting: a message is held
+   * back, saved and unread, or the subscription is drained. Reads no step.
+   * @internal
+   */
+  ready(): boolean;
+
+  /**
    * Ends the subscription: no new messages are saved. It only ends the
    * subscription. It does not touch the run or the function's singleton, and
    * nothing is re-sent when the run ends.
@@ -1054,6 +1061,9 @@ export async function openSubscription<
     },
     putBack(messages) {
       held.unshift(...messages);
+    },
+    ready() {
+      return held.length > 0 || drained() || read().length > readCount;
     },
     close,
     async [asyncDispose]() {
