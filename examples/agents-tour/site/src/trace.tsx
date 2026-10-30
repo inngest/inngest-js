@@ -387,15 +387,7 @@ const Trigger = ({ run }: { run: TraceRun }) => {
         </span>
         <span className="wf-time" />
       </button>
-      {open ? (
-        <Json
-          value={
-            message
-              ? { event: run.trigger.name, ...run.trigger.data }
-              : run.trigger.data
-          }
-        />
-      ) : null}
+      {open ? <Json value={run.trigger} /> : null}
     </div>
   );
 };
