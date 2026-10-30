@@ -43,8 +43,7 @@ export type ActionId =
   | "rowUp"
   | "rowOpen"
   | "editor"
-  | "undo"
-  | "theme";
+  | "undo";
 
 export interface KeyDef {
   id: ActionId;
@@ -286,13 +285,6 @@ export const keys: KeyDef[] = [
     group: "Code",
     inField: ["Alt+Shift+U"],
     outside: ["u"],
-  },
-  {
-    id: "theme",
-    label: "Switch light, dark and system theme",
-    group: "Focus",
-    inField: ["Alt+Shift+D"],
-    outside: ["d"],
   },
   {
     id: "editor",

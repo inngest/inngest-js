@@ -29,7 +29,6 @@ import { TracePanel } from "./trace.tsx";
 
 type PlayTab = "message" | "slack" | "github" | "events";
 type Overlay = "contents" | "search" | "cheat" | null;
-type Theme = "system" | "light" | "dark";
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
 
@@ -58,10 +57,6 @@ const editKey = (page: Page) => {
   return `tour:edit:${page.id}:${hash(original?.content ?? "")}`;
 };
 
-const prefersDark = () => {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-};
-
 export const App = () => {
   const [index, setIndex] = useState<TourIndex>();
   const [page, setPage] = useState<Page>();
@@ -78,10 +73,6 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
-  const [theme, setTheme] = useState<Theme>(
-    (store.get("tour:theme") as Theme | null) ?? "system",
-  );
-  const [systemDark, setSystemDark] = useState(prefersDark());
   const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
   const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
   const [rightRow, setRightRow] = useState(
@@ -93,24 +84,6 @@ export const App = () => {
   const runButton = useRef<HTMLButtonElement>(null);
   const textPane = useRef<HTMLElement>(null);
   const undoTimer = useRef<number | undefined>(undefined);
-  const dark = theme === "system" ? systemDark : theme === "dark";
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-  }, [dark]);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const change = () => {
-      setSystemDark(query.matches);
-    };
-
-    query.addEventListener("change", change);
-
-    return () => {
-      query.removeEventListener("change", change);
-    };
-  }, []);
 
   useEffect(() => {
     void api.index().then(setIndex);
@@ -288,14 +261,6 @@ export const App = () => {
     }
   };
 
-  const cycleTheme = () => {
-    const next: Theme =
-      theme === "system" ? "light" : theme === "light" ? "dark" : "system";
-
-    setTheme(next);
-    store.set("tour:theme", next);
-  };
-
   const nextFile = () => {
     const at = files.findIndex((file) => {
       return file.name === active;
@@ -428,7 +393,6 @@ export const App = () => {
     },
     editor: toggleEditor,
     undo: undoReset,
-    theme: cycleTheme,
   };
   const latest = useRef(handlers);
 
@@ -544,14 +508,6 @@ export const App = () => {
           >
             Dev Server <Kbd action="devserver" />
           </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={cycleTheme}
-            aria-keyshortcuts={shortcutsOf("theme")}
-          >
-            Theme: {theme} <Kbd action="theme" />
-          </button>
         </nav>
       </header>
 
@@ -586,7 +542,7 @@ export const App = () => {
               }}
             />
             {hasCode && page.manifest.start?.length ? (
-              <EventBlock starts={page.manifest.start} dark={dark} />
+              <EventBlock starts={page.manifest.start} />
             ) : null}
           </section>
           {hasCode && panels.length > 0 ? (
@@ -684,7 +640,6 @@ export const App = () => {
                   ref={editor}
                   files={files}
                   active={active}
-                  dark={dark}
                   markers={markers}
                   handlers={() => {
                     return latest.current;

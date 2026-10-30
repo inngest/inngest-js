@@ -10,7 +10,6 @@ import type { Start } from "../../shared/types.ts";
 
 interface Props {
   starts: Start[];
-  dark: boolean;
 }
 
 export const EventBlock = (props: Props) => {
@@ -25,7 +24,6 @@ export const EventBlock = (props: Props) => {
   useEffect(() => {
     let current = true;
 
-    // Colors come from the active editor theme, which `dark` switches.
     void monaco.editor
       .colorize(json, "typescript", { tabSize: 2 })
       .then((html) => {
@@ -37,7 +35,7 @@ export const EventBlock = (props: Props) => {
     return () => {
       current = false;
     };
-  }, [json, props.dark]);
+  }, [json]);
 
   return (
     <>

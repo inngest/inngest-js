@@ -35,7 +35,6 @@ export interface Marker {
 interface Props {
   files: PageFile[];
   active: string;
-  dark: boolean;
   markers: Marker[];
   handlers: () => Handlers;
   onChange: (name: string, content: string) => void;
@@ -73,31 +72,17 @@ export const addTypes = (files: Record<string, string>) => {
   }
 };
 
-const css = (name: string) => {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-};
-
-const defineThemes = () => {
-  const pick = (name: string, fallback: string) => {
-    return css(name) || fallback;
-  };
-
-  for (const dark of [false, true]) {
-    monaco.editor.defineTheme(dark ? "tour-dark" : "tour-light", {
-      base: dark ? "vs-dark" : "vs",
-      inherit: true,
-      rules: [],
-      colors: {
-        "editor.background": dark ? "#14161c" : "#ffffff",
-        "editorLineNumber.foreground": dark ? "#4b5263" : "#b4b9c4",
-        "editor.lineHighlightBackground": dark ? "#1b1e26" : "#f5f6fa",
-      },
-    });
-  }
-
-  return pick;
+const defineTheme = () => {
+  monaco.editor.defineTheme("tour-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#14161c",
+      "editorLineNumber.foreground": "#4b5263",
+      "editor.lineHighlightBackground": "#1b1e26",
+    },
+  });
 };
 
 const uriOf = (name: string) => {
@@ -140,10 +125,11 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
   });
 
   useEffect(() => {
-    defineThemes();
+    defineTheme();
 
     const created = monaco.editor.create(host.current as HTMLElement, {
       model: null,
+      theme: "tour-dark",
       automaticLayout: true,
       minimap: { enabled: false },
       fontSize: 14,
@@ -210,10 +196,6 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       editor.current.updateOptions({ readOnly: !file?.editable });
     }
   }, [props.active, props.files]);
-
-  useEffect(() => {
-    monaco.editor.setTheme(props.dark ? "tour-dark" : "tour-light");
-  }, [props.dark]);
 
   useEffect(() => {
     for (const file of props.files) {
