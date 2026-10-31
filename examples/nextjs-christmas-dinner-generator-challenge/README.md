@@ -209,7 +209,7 @@ export const generateMeal = inngest.createFunction(
 
     // Generate meal plan using step.ai.infer()
     const mealPlan = await step.ai.infer("Generate a Christmas dinner menu", {
-      model: openai({ model: "gpt-4" }),
+      model: openai({ model: "gpt-6-luna" }),
       body: {
         messages: [
           {
