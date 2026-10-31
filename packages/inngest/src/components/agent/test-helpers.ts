@@ -13,7 +13,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "poll" | "close" | "stop" | "current";
+  mode: "open" | "poll" | "close" | "stop" | "all";
   seq?: number;
   stream?: number;
   streams?: { stream: number }[];
@@ -269,7 +269,7 @@ export const run = async (
         answer(op.id, { count: saved.length });
       } else if (sub.mode === "stop") {
         answer(op.id, { stopped: true });
-      } else if (sub.mode === "current") {
+      } else if (sub.mode === "all") {
         answer(op.id, { count: saved.length });
       } else if (sub.mode === "poll") {
         answer(op.id, saved[(sub.seq as number) - 1] ?? null);

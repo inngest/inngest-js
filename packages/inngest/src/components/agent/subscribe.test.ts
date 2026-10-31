@@ -89,7 +89,7 @@ describe("step.subscribe", () => {
     ).toEqual(["inbox:0:open", "inbox:1"]);
   });
 
-  test("reads of one subscription run in call order, so one wait is outstanding at a time", async () => {
+  test("two reads started together are one read, so one wait is outstanding at a time", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -113,10 +113,9 @@ describe("step.subscribe", () => {
     const arrived = await run(fn, { incoming: ["a", "b"] });
     expect(arrived.output).toEqual([
       [1, "a"],
-      [2, "b"],
+      [1, "a"],
     ]);
   });
-
   test("a message carries the name of its event", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
@@ -347,7 +346,7 @@ describe("step.subscribe", () => {
     expect(stops).toEqual([{ streams: [2] }, { streams: [1] }]);
   });
 
-  test("listen() adds a source to the same ordered sequence, and stop() removes it", async () => {
+  test("listen() adds a source to the same ordered sequence, and close() removes it", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -359,8 +358,8 @@ describe("step.subscribe", () => {
         });
         const second = await inbox.next();
 
-        await listener.stop();
-        await listener.stop();
+        await listener.close();
+        await listener.close();
 
         return [first?.data, second?.data];
       },
@@ -421,7 +420,7 @@ describe("step.subscribe", () => {
         const inbox = await step.inbox("box");
         const listener = await inbox.listen({ event: "other", if: "true" });
 
-        await listener.stop();
+        await listener.close();
         await inbox.close();
 
         const late = await inbox.listen({ event: "other", if: "true" }).then(
@@ -443,32 +442,53 @@ describe("step.subscribe", () => {
     ).toEqual(["open", "stop", "close"]);
   });
 
-  test("current() returns every message so far without moving the cursor", async () => {
+  test("all() takes every message not yet read, and a second all() finds none", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const first = await inbox.next();
-        const all = await inbox.current();
-        const second = await inbox.next();
-        const pending = await inbox.unread();
+        const rest = await inbox.all();
+        const none = await inbox.all();
 
         return [
           first?.data,
-          all.map((m) => {
+          rest.map((m) => {
             return m.data;
           }),
-          second?.data,
-          pending.map((m) => {
-            return m.data;
-          }),
+          none.length,
         ];
       },
     );
 
     const { output } = await run(fn, { saved: ["a", "b", "c"] });
 
-    expect(output).toEqual(["a", ["a", "b", "c"], "b", ["c"]]);
+    expect(output).toEqual(["a", ["b", "c"], 0]);
+  });
+
+  test("a next() while one is pending is the same promise, so a lost race eats no message", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = inbox.next();
+        const second = inbox.next();
+        const lost = await Promise.race([
+          first,
+          new Promise<string>((resolve) => {
+            resolve("timer");
+          }),
+        ]);
+        const again = await inbox.next();
+        const reads = await first;
+
+        return [first === second, lost, again?.data, reads?.data];
+      },
+    );
+
+    const { output } = await run(fn, { saved: ["a", "b"] });
+
+    expect(output).toEqual([true, "timer", "a", "a"]);
   });
 
   test("an inbox starts with no source and takes them with listen()", async () => {
@@ -573,23 +593,19 @@ describe("step.subscribe", () => {
       ).toEqual(["inbox:v1:1", "inbox:v1:2", "inbox:v1:3"]);
     });
 
-    test("unread() takes what is after the cursor, current() lists all, and neither waits", async () => {
+    test("all() takes what is after the cursor and never waits", async () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
           const inbox = await step.subscribe("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const first = await reviews.next();
-          const all = await reviews.current();
-          const rest = await reviews.unread();
-          const none = await reviews.unread();
+          const rest = await reviews.all();
+          const none = await reviews.all();
           const poll = await reviews.next({ timeout: 0 });
 
           return [
             first?.seq,
-            all.map((m) => {
-              return m.seq;
-            }),
             rest.map((m) => {
               return m.seq;
             }),
@@ -603,7 +619,7 @@ describe("step.subscribe", () => {
         saved: [review(1), mention(2), review(3), review(4)],
       });
 
-      expect(output).toEqual([1, [1, 3, 4], [3, 4], 0, undefined]);
+      expect(output).toEqual([1, [3, 4], 0, undefined]);
     });
 
     test("the reads are the same whatever the arrival timing", async () => {

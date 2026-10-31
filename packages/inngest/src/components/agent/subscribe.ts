@@ -277,32 +277,35 @@ export function streamsOf(
 }
 
 /**
- * A reader of one kind of message in an inbox, with a cursor of its own over the
- * same ordered sequence. Reading through a view hides nothing from the inbox or
+ * A reader of messages in an inbox, with a cursor of its own over the same
+ * ordered sequence. The inbox itself, `of(type)` and `listen()` all return this
+ * one kind of object. Reading through a view hides nothing from the inbox or
  * from other views: every reader sees every message in its place.
+ *
+ * Messages are in arrival order: the order the executor received the events,
+ * not the order they were sent or their timestamps.
  */
-export interface View<TMessage> extends AsyncIterable<TMessage> {
+export interface View<TMessage>
+  extends AsyncIterable<TMessage>,
+    AsyncDisposable {
   /**
-   * Waits for the next message of this kind after this view's cursor, or
-   * returns `null` once the inbox is closed and none is left. Like the inbox's
-   * `next()`: `{ timeout }` gives up with `undefined`, and `{ timeout: 0 }` never
-   * waits.
+   * Waits for the next message of this view after its cursor, in arrival order,
+   * or returns `null` once the inbox is closed and none is left. `{ timeout }`
+   * gives up with `undefined`, and `{ timeout: 0 }` never waits.
+   *
+   * A view has at most one `next()` outstanding: calling it while one is
+   * pending returns that same promise, so a read that loses a `Promise.race`
+   * does not take a message away from the next call.
    * @param options The timeout.
    */
   next(): Promise<TMessage | null>;
   next(options: NextOptions): Promise<TMessage | null | undefined>;
 
   /**
-   * Every message of this kind after this view's cursor, in order, advancing
-   * the cursor past them. It never waits.
+   * Every message of this view not yet read, in arrival order, advancing the
+   * cursor past them. It never waits and is empty when nothing is pending.
    */
-  unread(): Promise<TMessage[]>;
-
-  /**
-   * Every message of this kind so far, read or not, in order. It moves no
-   * cursor and never waits.
-   */
-  current(): Promise<TMessage[]>;
+  all(): Promise<TMessage[]>;
 
   /**
    * Puts messages back, in order, so this view's next reads return them first.
@@ -310,9 +313,9 @@ export interface View<TMessage> extends AsyncIterable<TMessage> {
   putBack(messages: TMessage[]): void;
 
   /**
-   * Stops every source of this view's event in the inbox, whoever opened it
-   * (the original `step.subscribe()` or any `listen()`). Sources already stopped
-   * are skipped, so it is safe beside a listener's own `close()`. Messages
+   * Stops the sources of this view: every source of the event for `of(type)`
+   * (whoever opened it), the sources a `listen()` opened for its view. Sources
+   * already stopped are skipped, so it is safe beside another closer. Messages
    * already saved stay.
    */
   close(): Promise<void>;
@@ -340,81 +343,44 @@ export type ListenMessage<TSource extends ListenSource> =
       : never;
 
 /**
- * A source added by `listen()`.
+ * What `listen()` returns: a full view of the messages of the sources it
+ * opened, and nothing else of the inbox. `close()` stops exactly those sources.
  */
-export interface Listener<TInbox = unknown> extends AsyncDisposable {
+export interface ListenView<TMessage> extends View<TMessage> {
   /**
-   * The number of the source in the subscription, which messages it saves carry
-   * as `stream`.
+   * The number of the first source this `listen()` opened, which the messages it
+   * saves carry as `stream`.
+   * @internal
    */
   stream: number;
-
-  /**
-   * The inbox the source was added to, typed with the messages of the source
-   * too.
-   */
-  inbox: TInbox;
-
-  /**
-   * Stops listening: no more events of the source are saved. Messages already
-   * saved stay and are read as usual. Calling it again does nothing.
-   */
-  stop(): Promise<void>;
-
-  /**
-   * The same as `stop()`: stops exactly the sources this `listen()` opened.
-   */
-  close(): Promise<void>;
 }
 
 /**
- * A subscription. Iterate it with `for await`; the loop ends once it is
- * closed and drained.
+ * A subscription: the view of every message of the inbox, plus the means to
+ * view parts of it (`of()`), add sources (`listen()`) and end it (`close()`).
+ * Iterate it with `for await`; the loop ends once it is closed and drained.
+ *
+ * Messages are in arrival order: the order the executor received the events,
+ * not the order they were sent or their timestamps.
+ *
+ * Limits are enforced when buffered messages become steps (at the reader's
+ * next read): 200 messages per subscription, 500 per run, and half the run's
+ * step limit. The message that would break a limit and everything buffered
+ * after it are dropped, the subscription closes, and the reader gets the
+ * messages saved before it, then the end (`next()` returns `null`).
  */
 export interface Subscription<
   TData = unknown,
   // biome-ignore lint/suspicious/noExplicitAny: a view of the messages, whatever their data
   TMessage extends InboxMessage<any, string> = InboxMessage<TData>,
-> extends AsyncIterable<TMessage>,
-    AsyncDisposable {
+> extends Omit<View<TMessage>, "close"> {
   /**
-   * Waits for the next message, or returns `null` once the subscription is
-   * closed and every saved message has been read.
-   *
-   * A `next()` that is waiting still takes its message, even if you stopped
-   * awaiting it: do not race `next()` against a timer or another step in a
-   * plain `Promise.race` and then read again, because the dropped call eats a
-   * message and the next read waits for the one after it. Race a step against
-   * `next({ timeout: 0 })`, or wait with `group.parallel({ mode: "race" })` (a plain
-   * `Promise.race` with `optimizeParallelism` on can leave the run waiting, as it
-   * can with `waitForEvent`). `close()` ends a wait that is still open.
+   * Every message of this subscription not yet read, in arrival order, never
+   * waiting, and moving the cursor past them. It is one step. Use it between
+   * model calls to fold in what arrived while working. Messages put back come
+   * first.
    */
-  next(): Promise<TMessage | null>;
-
-  /**
-   * With a `timeout`: stops waiting after it and returns `undefined`. A
-   * timeout of `0` never waits: it returns the next message if one has
-   * arrived, else `undefined`.
-   * @param options The timeout.
-   */
-  next(options: NextOptions): Promise<TMessage | null | undefined>;
-
-  /**
-   * Every message this subscription has saved so far, read or not, in order.
-   * It moves no cursor and has no read state, and it never waits. It is one
-   * step that records how many messages there were, so a replay returns the
-   * same ones. To take what arrived since you last looked, read with
-   * `next({ timeout: 0 })` until it returns `undefined`.
-   */
-  current(): Promise<TMessage[]>;
-
-  /**
-   * Takes every message after this reader's cursor, in order, advancing the
-   * cursor past them. It never waits and is empty when nothing is pending. Use
-   * it between model calls to fold in what arrived while working. Each message
-   * is a step, so a replay takes the same messages.
-   */
-  unread(): Promise<TMessage[]>;
+  all(): Promise<TMessage[]>;
 
   /**
    * A view of the messages of one event: it reads them with a cursor of its
@@ -427,24 +393,31 @@ export interface Subscription<
   ): View<SourceMessage<{ event: TType }>>;
 
   /**
-   * Adds an event source to this subscription: its messages join the same
+   * Adds event sources to this subscription: their messages join the same
    * ordered sequence, from now on (events sent before are not captured). It is
-   * one step. The returned listener removes the source again.
-   * @param source The event to listen to, a name, an event type or both with an
-   * `if` expression over `async`, or an array of them: each is its own pause
-   * (one exact event name and its own `if`), opened by the same step, and
-   * stopped together by the returned listener.
+   * one step. The returned view reads only the messages of the sources it
+   * opened, with a cursor of its own, and its `close()` stops them.
+   *
+   * A source is an event name, an event type, or one with an `if`. As in
+   * `step.subscribe()`, a low-level source's `if` is the pause form, the same as
+   * `waitForEvent`'s: `async` is the incoming event and `event` is the event
+   * that started the run. (An agent's `config.inbox` sources are trigger-shaped
+   * instead: `event` is the incoming event, and it is rewritten for you.)
+   * An array is several sources, each its own pause (one exact event name and
+   * its own `if`), opened by the same step.
+   *
+   * @example
+   * ```ts
+   * await using ci = await inbox.listen({
+   *   event: "ci/finished",
+   *   if: "async.data.pr == event.data.pr",
+   * });
+   * ```
+   * @param source The event to listen to, or an array of them.
    */
   listen<TSource extends ListenSource>(
     source: TSource | readonly TSource[],
-  ): Promise<Listener<Subscription<TData, TMessage | ListenMessage<TSource>>>>;
-
-  /**
-   * Puts messages back, in order, so the next reads return them before
-   * anything newer. Use it for polled messages that are not yours to handle
-   * yet.
-   */
-  putBack(messages: TMessage[]): void;
+  ): Promise<ListenView<ListenMessage<TSource>>>;
 
   /**
    * Whether `next()` would return at once, without waiting: a message is held
@@ -467,14 +440,6 @@ export interface Subscription<
    * read. They are taken out of the subscription.
    */
   close(): Promise<TMessage[]>;
-
-  /**
-   * Closes the subscription when its scope ends, so `await using` needs no
-   * explicit `close()`. `step.subscribe()` returns a promise, so await it
-   * first: `await using inbox = await step.subscribe(...)`. Needs TypeScript
-   * 5.2 or later; the symbol is polyfilled on Node before 20.5.
-   */
-  [Symbol.asyncDispose](): Promise<void>;
 }
 
 /**
@@ -482,7 +447,7 @@ export interface Subscription<
  */
 export type SubscribeOp = (
   stepId: string,
-  mode: "open" | "poll" | "close" | "stop" | "current",
+  mode: "open" | "poll" | "close" | "stop" | "all",
   seq: number | undefined,
   stream: number,
   extra?: {
@@ -765,10 +730,22 @@ export async function openSubscription<
     return result;
   }
 
+  // One next op at a time: a call while one is pending is that call, so a read
+  // that lost a race cannot take a message from the next one.
+  let pendingNext: Promise<InboxMessage<TData> | null | undefined> | undefined;
+
   function next(options?: NextOptions) {
-    return inOrder(() => {
+    if (pendingNext) {
+      return pendingNext;
+    }
+
+    pendingNext = inOrder(() => {
       return readNext(options);
+    }).finally(() => {
+      pendingNext = undefined;
     }) as Promise<InboxMessage<TData> | null | undefined>;
+
+    return pendingNext;
   }
 
   // How many timers for each message fired. Every timer is its own step, so
@@ -833,18 +810,24 @@ export async function openSubscription<
 
   // Views: a cursor of its own over the same sequence. A view's read is the
   // first message of its kind after the cursor, a function of the stack, so it
-  // is the same on every replay. What depends on the moment (`unread()`,
-  // `current()`, a timeout) first records how many messages there were.
+  // is the same on every replay. What depends on the moment (`all()`,
+  // a timeout) first records how many messages there were.
   let views = 0;
 
-  function of(type: SubscribeEvent["event"]) {
-    const wanted = eventNameOf(type);
+  // A view reads the messages `match` accepts, with a cursor of its own. Its
+  // `of(type)` and `listen()` forms differ only in what they match and which
+  // sources they stop.
+  function makeView(
+    match: (saved: unknown) => boolean,
+    closeStreams: () => readonly number[],
+  ) {
     const reader = `v${++views}`;
     let cursor = 0;
     let probes = 0;
     const heldOf: InboxMessage<TData>[] = [];
     const timedOutAt = new Map<number, number>();
     let order: Promise<unknown> = Promise.resolve();
+    let pendingNext: Promise<unknown> | undefined;
 
     const alone = <T>(run: () => Promise<T>): Promise<T> => {
       const result = order.then(run);
@@ -855,13 +838,14 @@ export async function openSubscription<
       return result;
     };
 
-    // How many messages there were when this step ran, recorded.
+    // How many messages there were when this step ran, recorded. The op also
+    // flushes the inbox's buffer.
     const counted = async () => {
       probes += 1;
 
       const answer = (await op(
-        `${key}:${reader}:current:${probes}`,
-        "current",
+        `${key}:${reader}:all:${probes}`,
+        "all",
         undefined,
         0,
       )) as { count: number };
@@ -876,7 +860,7 @@ export async function openSubscription<
       for (let index = from; index < Math.min(to, messages.length); index++) {
         const saved = messages[index];
 
-        if ((saved as { name?: string } | undefined)?.name === wanted) {
+        if (match(saved)) {
           found.push(messageOf(saved, index + 1));
 
           if (first) {
@@ -909,6 +893,12 @@ export async function openSubscription<
     const nextOf = async (
       options?: NextOptions,
     ): Promise<InboxMessage<TData> | null | undefined> => {
+      const back = heldOf.shift();
+
+      if (back) {
+        return back;
+      }
+
       const startedAt = cursor;
 
       // The bound of the first scan: with a timeout, what was there when the
@@ -974,47 +964,47 @@ export async function openSubscription<
       }
     };
 
-    const view: View<InboxMessage<TData>> = {
+    const view: ListenView<InboxMessage<TData>> = {
+      stream: 0,
       next: ((options?: NextOptions) => {
-        return alone(() => {
+        // One next op at a time: a call while one is pending is that call, so
+        // a read that lost a race cannot take a message from the next one.
+        if (pendingNext) {
+          return pendingNext;
+        }
+
+        const read = alone(() => {
           return nextOf(options);
         });
+
+        pendingNext = read.finally(() => {
+          pendingNext = undefined;
+        });
+
+        return pendingNext;
       }) as View<InboxMessage<TData>>["next"],
-      unread() {
+      all() {
         return alone(async () => {
+          const back = heldOf.splice(0);
           const count = await counted();
           const taken = scan(cursor, count);
 
           cursor = Math.max(cursor, count);
 
-          return taken;
-        });
-      },
-      current() {
-        return alone(async () => {
-          return scan(0, await counted());
+          return [...back, ...taken];
         });
       },
       putBack(messages) {
         heldOf.unshift(...messages);
       },
       close() {
-        // Every source of this event name in the inbox, whoever opened it. The
-        // inbox's other sources and the messages already saved stay.
+        // The inbox's other sources and the messages already saved stay.
         return alone(async () => {
-          await stopStreams(
-            streams
-              .map((entry, stream) => {
-                return { entry, stream };
-              })
-              .filter(({ entry }) => {
-                return eventNameOf(entry.source.event) === wanted;
-              })
-              .map(({ stream }) => {
-                return stream;
-              }),
-          );
+          await stopStreams(closeStreams());
         });
+      },
+      async [asyncDispose]() {
+        await view.close();
       },
       [Symbol.asyncIterator]() {
         return {
@@ -1032,25 +1022,56 @@ export async function openSubscription<
     return view;
   }
 
-  let currents = 0;
+  function of(type: SubscribeEvent["event"]) {
+    const wanted = eventNameOf(type);
 
-  async function current() {
-    currents += 1;
+    // Every source of this event name in the inbox, whoever opened it.
+    return makeView(
+      (saved) => {
+        return (saved as { name?: string } | undefined)?.name === wanted;
+      },
+      () => {
+        return streams
+          .map((entry, stream) => {
+            return { entry, stream };
+          })
+          .filter(({ entry }) => {
+            return eventNameOf(entry.source.event) === wanted;
+          })
+          .map(({ stream }) => {
+            return stream;
+          });
+      },
+    );
+  }
 
-    const answer = (await op(
-      `${key}:current:${currents}`,
-      "current",
-      undefined,
-      0,
-    )) as { count: number };
+  let alls = 0;
 
-    // The count was taken when the step ran; the state of this request holds at
-    // least that many messages, since it was loaded after the step finished.
-    return read()
-      .slice(0, answer.count)
-      .map((saved, index) => {
-        return messageOf(saved, index + 1);
-      });
+  // Every message not yet read, without waiting: one op flushes the inbox's
+  // buffer and answers how many messages there are, and the state of this
+  // request holds at least that many, since it was loaded after the step ran.
+  function all() {
+    return inOrder(async () => {
+      const taken = held.splice(0);
+
+      if (drained()) {
+        return taken;
+      }
+
+      alls += 1;
+
+      const answer = (await op(`${key}:all:${alls}`, "all", undefined, 0)) as {
+        count: number;
+      };
+      const messages = read();
+
+      for (let seq = readCount + 1; seq <= answer.count; seq++) {
+        taken.push(messageOf(messages[seq - 1], seq));
+      }
+      readCount = Math.max(readCount, answer.count);
+
+      return taken;
+    });
   }
 
   // A read of the next message if it has arrived, without waiting. Recorded as
@@ -1075,21 +1096,6 @@ export async function openSubscription<
     readCount = seq;
 
     return messageOf(message, seq);
-  }
-
-  function unread() {
-    return inOrder(async () => {
-      const taken: InboxMessage<TData>[] = [];
-
-      for (;;) {
-        const message = await readPoll();
-        if (!message) {
-          return taken;
-        }
-
-        taken.push(message);
-      }
-    });
   }
 
   let closing: Promise<InboxMessage<TData>[]> | undefined;
@@ -1154,9 +1160,8 @@ export async function openSubscription<
   // `TMessage` is only a narrower view of the same objects.
   const subscription: Subscription<TData> = {
     next: next as Subscription<TData>["next"],
-    current: current as Subscription<TData>["current"],
+    all: all as Subscription<TData>["all"],
     of: of as unknown as Subscription<TData>["of"],
-    unread: unread as Subscription<TData>["unread"],
     async listen(source) {
       if (closing) {
         throw new Error(`Subscription "${key}": listen() on a closed inbox.`);
@@ -1189,25 +1194,24 @@ export async function openSubscription<
         }),
       });
 
-      const listener = {
-        stream: first,
-        inbox: subscription,
-        async stop() {
-          await stopStreams(
-            targets.map((_, index) => {
-              return first + index;
-            }),
-          );
-        },
-        close() {
-          return listener.stop();
-        },
-        async [asyncDispose]() {
-          await listener.stop();
-        },
-      };
+      const streamsOfListen = targets.map((_, index) => {
+        return first + index;
+      });
+      const mine = new Set(streamsOfListen);
 
-      return listener as never;
+      return Object.assign(
+        makeView(
+          (saved) => {
+            return mine.has(
+              (saved as { stream?: number } | undefined)?.stream as number,
+            );
+          },
+          () => {
+            return streamsOfListen;
+          },
+        ),
+        { stream: first },
+      ) as never;
     },
     putBack(messages) {
       held.unshift(...messages);

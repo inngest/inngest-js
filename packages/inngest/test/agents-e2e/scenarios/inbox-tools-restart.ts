@@ -75,7 +75,7 @@ export const inboxToolsRestart = scenario({
                 case 2:
                   return call(2, "inbox_wait", { timeout: "5m", as: "ci" });
                 case 3:
-                  return call(3, "inbox_read", { all: true });
+                  return call(3, "inbox_read", {});
                 case 4:
                   return call(4, "inbox_stop", { as: "ci" });
                 default:

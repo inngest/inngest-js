@@ -104,6 +104,7 @@ import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import {
   type EventMessage,
+  type ListenView,
   eventNameOf,
   type InboxMessage,
   type NextOptions,
@@ -638,25 +639,22 @@ export type InboxListenOptions =
   | { if: string; thread?: string };
 
 /**
- * A source added to the inbox mid-run. It is the view of the source's event,
- * the same as `inbox.of(event)`: it reads the event's messages with a cursor of
- * its own (`next()`, `current()`, `unread()`, `for await`), typed by the event
- * type, and takes nothing from the main inbox, which receives the events too.
+ * A source added to the inbox mid-run. It is a full view of the messages of the
+ * source it opened, the same kind of object as the inbox and `inbox.of(event)`:
+ * `next()`, `all()`, `putBack()`, `close()`, `await using` and `for await`, with
+ * a cursor of its own, typed by the event type. It takes nothing from the main
+ * inbox, which receives the events too. `close()` stops listening; messages
+ * already saved stay in the inbox.
  */
 export interface ThreadListener<
   TType extends InboxSource["event"] = InboxSource["event"],
-> extends View<EventMessage<TType>>,
-    AsyncDisposable {
-  /**
-   * Stops listening. Messages already saved stay in the inbox.
-   */
-  stop(): Promise<void>;
-}
+> extends View<EventMessage<TType>> {}
 
 /**
- * The part of a listener that is not a view: what stops the source.
+ * What a listener is made from: the subscription's view of the sources it
+ * opened.
  */
-type SourceListener = Pick<ThreadListener, "stop" | typeof asyncDispose>;
+type SourceListener = ListenView<InboxMessage>;
 
 /**
  * What `onArrival` is given.
@@ -891,8 +889,7 @@ export interface ThreadInbox<
 > extends Omit<
       Subscription<unknown>,
       | "next"
-      | "current"
-      | "unread"
+      | "all"
       | "of"
       | "listen"
       | "ready"
@@ -934,24 +931,15 @@ export interface ThreadInbox<
   ): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null | undefined>;
 
   /**
-   * Every message the inbox has saved so far, read or not, stops included (not
-   * the event that started the run, which is only the first `next()`), in
-   * order. It moves no cursor and has no read state, and never waits. One step
-   * records how many there were, so a replay returns the same ones. To take what
-   * arrived since you last looked, read with `next({ timeout: 0 })` until it
-   * returns `undefined`.
-   */
-  current(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
-
-  /**
-   * Takes every message after this reader's cursor, in order, without waiting,
-   * and advances the cursor past them: `next()` does not return them again. Stops
-   * are included, so a loop of your own can honor them. Each message is a step,
-   * so a replay takes the same messages. This is what `control.steer()` is made
-   * of; use it to fold in what arrived at the safe point of a loop that is not
+   * Takes every message not yet read, in arrival order, without waiting, and
+   * advances the cursor past them: `next()` does not return them again. Stops
+   * are included (not the event that started the run, which is only the first
+   * `next()`), so a loop of your own can honor them. It is one step, so a
+   * replay takes the same messages. This is what `control.steer()` is made of;
+   * use it to fold in what arrived at the safe point of a loop that is not
    * `agent.loop()`.
    */
-  unread(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
+  all(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
 
   /**
    * A view of the messages of one event: it reads them with a cursor of its
@@ -980,7 +968,7 @@ export interface ThreadInbox<
 
   /**
    * Puts messages back, in order, so the next reads return them before
-   * anything newer. Use it for messages you took with `unread()` that are not
+   * anything newer. Use it for messages you took with `all()` that are not
    * yours to handle yet.
    * @param messages Messages that came from this inbox.
    */
@@ -1422,8 +1410,10 @@ function threadInbox(
 
   // A reader of one event with a cursor of its own, that skips what the inbox
   // skips. `inbox.of()` and the views of listeners are made by it.
-  function viewOf<TType extends InboxSource["event"]>(type: TType) {
-    const view = inbox.of(type);
+  function wrapView<TType extends InboxSource["event"]>(
+    view: View<InboxMessage>,
+    _type?: TType,
+  ) {
     const clean = async <T extends InboxMessage>(messages: T[]) => {
       const kept: T[] = [];
 
@@ -1435,7 +1425,7 @@ function threadInbox(
 
       return kept;
     };
-    const mine: View<EventMessage<typeof type>> = {
+    const mine: View<EventMessage<TType>> = {
       next: (async (options?: NextOptions) => {
         for (;;) {
           const raw = options ? await view.next(options) : await view.next();
@@ -1448,17 +1438,17 @@ function threadInbox(
             return raw;
           }
         }
-      }) as View<EventMessage<typeof type>>["next"],
-      async unread() {
-        return clean(await view.unread()) as never;
-      },
-      async current() {
-        return clean(await view.current()) as never;
+      }) as View<EventMessage<TType>>["next"],
+      async all() {
+        return clean(await view.all()) as never;
       },
       putBack(messages) {
         view.putBack(messages as never);
       },
       close() {
+        return view.close();
+      },
+      [asyncDispose]() {
         return view.close();
       },
       [Symbol.asyncIterator]() {
@@ -1477,24 +1467,19 @@ function threadInbox(
     return mine;
   }
 
+  // A reader of one event with a cursor of its own, that skips what the inbox
+  // skips.
+  function viewOf<TType extends InboxSource["event"]>(type: TType) {
+    return wrapView<TType>(inbox.of(type) as View<InboxMessage>);
+  }
+
   return {
     inbox: {
       next,
-      async current() {
+      async all() {
         const taken: ThreadInboxMessage[] = [];
 
-        for (const raw of await inbox.current()) {
-          if (!(await skipped(raw))) {
-            taken.push(unwrap(raw) as ThreadInboxMessage);
-          }
-        }
-
-        return taken;
-      },
-      async unread() {
-        const taken: ThreadInboxMessage[] = [];
-
-        for (const raw of await inbox.unread()) {
+        for (const raw of await inbox.all()) {
           if (!(await skipped(raw))) {
             taken.push(unwrap(raw) as ThreadInboxMessage);
           }
@@ -1508,18 +1493,8 @@ function threadInbox(
         options?: InboxListenOptions,
       ) {
         const listener = await listenTo(source, options);
-        const view = viewOf(isInboxSource(source) ? source.event : source);
 
-        // The view's methods close over it, not `this`, so spreading is safe.
-        return {
-          ...view,
-          stop: () => {
-            return listener.stop();
-          },
-          [asyncDispose]: () => {
-            return listener[asyncDispose]();
-          },
-        };
+        return wrapView(listener);
       },
       putBack(messages) {
         inbox.putBack(messages.map(rawOf));
@@ -2263,7 +2238,7 @@ export function createAgentFunction(
             // Read everything that has arrived: steering messages and stops
             // apply to the turn that is running; messages for the next turn
             // keep their place in the inbox.
-            for (const message of await inbox.unread()) {
+            for (const message of await inbox.all()) {
               if (
                 message.name === agentSteerEvent ||
                 (config.foldMessages === "all" &&

@@ -401,13 +401,13 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.unread() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.all() takes the pending messages, stops included, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const drained = await inbox.unread();
+        const drained = await inbox.all();
         const after = await inbox.next({ timeout: "1s" });
 
         return [
@@ -655,7 +655,7 @@ describe("inbox sources", () => {
         });
         const heard = await inbox.next();
 
-        await listener.stop();
+        await listener.close();
 
         const bare = await inbox.listen("ci/status", {} as never).then(
           () => "added",
@@ -693,16 +693,14 @@ describe("inbox sources", () => {
           thread: "event.data.t",
         });
         const viewed = await listener.next({ timeout: "1m" });
-        const all = await listener.current();
-        const unread = await listener.unread();
+        const unread = await listener.all();
         const main = await inbox.next();
 
         return [
           viewed?.name,
-          all.length,
           unread.length,
           main?.name,
-          typeof listener.stop,
+          typeof listener.close,
           Symbol.asyncIterator in listener,
           Symbol.asyncDispose in listener,
         ];
@@ -716,43 +714,11 @@ describe("inbox sources", () => {
 
     expect(output).toEqual([
       "ci/status",
-      1,
       0,
       "ci/status",
       "function",
       true,
       true,
-    ]);
-  });
-
-  test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-        const all = await inbox.current();
-        const second = await inbox.next();
-
-        return [
-          textOf(first),
-          all.map((m) => {
-            return m.name;
-          }),
-          textOf(second),
-        ];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "b"), message("stop"), message("user", "c")],
-    });
-
-    expect(output).toEqual([
-      "go",
-      ["agent/message", "agent/stop", "agent/message"],
-      "b",
     ]);
   });
 });

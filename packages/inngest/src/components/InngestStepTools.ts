@@ -616,7 +616,7 @@ export const createStepTools = <
         if (
           !target &&
           mode !== "poll" &&
-          mode !== "current" &&
+          mode !== "all" &&
           mode !== "close"
         ) {
           throw new Error(`step.subscribe(): no source for stream ${stream}.`);
@@ -730,7 +730,7 @@ export const createStepTools = <
     /**
      * EXPERIMENTAL: an inbox, a subscription that starts with the sources you
      * give it (maybe none) and takes more with `listen()`. Its messages are one
-     * ordered sequence, read with `next()`, `unread()` and `for await`.
+     * ordered sequence, read with `next()`, `all()` and `for await`.
      */
     inbox: (
       idOrOptions: StepOptionsOrId,

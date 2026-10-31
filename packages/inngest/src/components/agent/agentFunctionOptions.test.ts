@@ -43,7 +43,7 @@ describe("inbox.next", () => {
         const ended = await inbox.next();
 
         expectTypeOf(ended).toEqualTypeOf<
-          Awaited<ReturnType<typeof inbox.unread>>[number] | null
+          Awaited<ReturnType<typeof inbox.all>>[number] | null
         >();
 
         const waited = await inbox.next({ timeout: "1m" });
