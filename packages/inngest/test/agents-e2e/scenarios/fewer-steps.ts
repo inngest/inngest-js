@@ -74,12 +74,8 @@ export const fewerSteps = scenario({
     ctx.check(
       "the four sources open in one step",
       named((name) => {
-        return name.startsWith("inbox:") && name.endsWith("open:all");
-      }) +
-        named((name) => {
-          return /^inbox:\d+:open$/.test(name);
-        }) ===
-        1,
+        return name === "inbox:open";
+      }) === 1,
       run.steps,
     );
     ctx.check(

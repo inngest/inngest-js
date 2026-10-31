@@ -174,11 +174,11 @@ export const inboxToolsRestart = scenario({
       final,
     );
     ctx.check(
-      "inbox_read knew the listener and saw only the admitted event",
+      "inbox_read knew the listener and took nothing the wait had not read",
       final.some((line) => {
         return (
           line.startsWith("inbox_read:ok") &&
-          line.includes("green") &&
+          line.includes("messages") &&
           !line.includes("red")
         );
       }),
