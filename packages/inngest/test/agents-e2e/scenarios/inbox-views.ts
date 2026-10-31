@@ -2,7 +2,7 @@
  * @module
  * Views of an inbox. A view reads the messages of one event with a cursor of
  * its own: reading through it hides nothing from the main loop, and its
- * `unread()` takes what came after its cursor.
+ * `all()` takes what came after its cursor.
  */
 import { Inngest } from "inngest";
 import {
@@ -54,7 +54,7 @@ export const inboxViews = scenario({
               `main:ci:${(message.data as unknown as { n: number }).n}`,
             );
           } else if (textOf(message) === "unread") {
-            const rest = await ci.unread();
+            const rest = await ci.all();
 
             await record(
               `unread:${rest
@@ -118,7 +118,7 @@ export const inboxViews = scenario({
     });
 
     ctx.check(
-      "unread() of the view takes what came after its cursor",
+      "all() of the view takes what came after its cursor",
       done.includes("unread:2"),
       done,
     );

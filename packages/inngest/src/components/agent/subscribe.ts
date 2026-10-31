@@ -546,9 +546,16 @@ export async function openSubscription<
   // end of it.
   let closedAt: number | undefined;
 
+  // Set as soon as close() is called, before its op has run.
+  let closeRequested = false;
+
   const ended = () => {
     return closedAt !== undefined || engine.closed();
   };
+
+  // What ends a view's wait: closing the inbox ends every view's, closing a view
+  // ends its own.
+  const ends = new Set<() => void>();
 
   let views = 0;
 
@@ -569,6 +576,14 @@ export async function openSubscription<
     let alls = 0;
     let pending: Promise<InboxMessage<TData> | null | undefined> | undefined;
     let stopped = false;
+    let end: () => void = () => {};
+    const endSignal = new Promise<"ended">((resolve) => {
+      end = () => {
+        resolve("ended");
+      };
+    });
+
+    ends.add(end);
 
     // The next message after the cursor that this view reads, within `bound`
     // messages of the inbox.
@@ -651,7 +666,23 @@ export async function openSubscription<
       // waiting for the next message. The request ends here; the function runs
       // again once a message is in the state, and reads it above. The op only
       // returns when its timer won.
-      await op(waitId, "next", { timeout: options?.timeout });
+      // A close() already called ends this read before an op is sent for it.
+      if (stopped || closeRequested) {
+        return take() ?? null;
+      }
+
+      const waited = await Promise.race([
+        op(waitId, "next", { timeout: options?.timeout }).then(() => {
+          return "timeout" as const;
+        }),
+        endSignal,
+      ]);
+
+      // The inbox or the view was closed while the read waited, or the executor
+      // answered the op because the inbox was already closed: its end.
+      if (waited === "ended" || stopped || ended()) {
+        return take() ?? null;
+      }
 
       return undefined;
     }
@@ -685,6 +716,7 @@ export async function openSubscription<
         });
 
         stopped = true;
+        end();
 
         if (active.length === 0) {
           return;
@@ -767,6 +799,7 @@ export async function openSubscription<
     }
 
     closing = (async () => {
+      closeRequested = true;
       const active = sources
         .map((_, stream) => {
           return stream;
@@ -784,6 +817,10 @@ export async function openSubscription<
       })) as { total?: number } | undefined;
 
       closedAt = answer?.total ?? 0;
+
+      for (const end of ends) {
+        end();
+      }
 
       return inboxView.rest(closedAt);
     })();

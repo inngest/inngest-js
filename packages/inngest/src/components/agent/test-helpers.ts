@@ -72,6 +72,7 @@ export const run = async (
   let timeoutsLeft = options.timeouts ?? 0;
   const ops: { id: string; mode: string; streams?: number }[] = [];
   const buffer: unknown[] = [...(options.buffered ?? [])];
+  let closedInbox = false;
   const saved: unknown[] = [];
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
@@ -209,12 +210,31 @@ export const run = async (
         answer(op.id, { stopped: true });
       } else if (sub.mode === "all" || sub.mode === "close") {
         flush();
+        closedInbox = closedInbox || sub.mode === "close";
         answer(op.id, { total: saved.length });
+      } else if (
+        found.some((other) => {
+          return (
+            other !== op &&
+            (other.op === StepOpCode.StepPlanned ||
+              other.op === StepOpCode.StepRun)
+          );
+        }) ||
+        found.some((other) => {
+          const mode = (other.opts as { subscribe?: SubscribeOpts } | undefined)
+            ?.subscribe?.mode;
+
+          return other !== op && mode !== undefined && mode !== "next";
+        })
+      ) {
+        // A next beside an op that is not only a wait leaves the run idle for
+        // nothing: the other op's discovery runs the function again.
       } else if (buffer.length > 0) {
         // next: what is buffered becomes steps, and the run is shown them.
         flush();
-      } else if (options.closed) {
-        // A closed inbox only shows the run its end.
+      } else if (options.closed || closedInbox) {
+        // A next that reaches a closed inbox is answered with null.
+        answer(op.id, null);
       } else if (sub.timeout !== undefined && timeoutsLeft > 0) {
         // The timer won: null is saved under the op.
         timeoutsLeft -= 1;

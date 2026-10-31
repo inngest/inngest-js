@@ -63,9 +63,9 @@ export const inboxSources = scenario({
           } else if (content === "unlisten") {
             await record("message:unlisten");
             await record(
-              `listener-view:${(await listener?.current())?.length ?? 0}`,
+              `listener-view:${(await listener?.all())?.length ?? 0}`,
             );
-            await listener?.stop();
+            await listener?.close();
           } else if (content === "second") {
             await record("message:second");
 

@@ -304,6 +304,24 @@ describe("step.subscribe", () => {
     ]);
   });
 
+  test("close() ends a next that is still waiting, as the end of the inbox", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const pending = inbox.next();
+
+        await inbox.close();
+
+        return await pending;
+      },
+    );
+
+    const { output } = await run(fn);
+
+    expect(output).toBeNull();
+  });
+
   test("after close() next() is null once the saved messages are read", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
