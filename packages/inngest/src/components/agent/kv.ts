@@ -18,7 +18,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { getAsyncCtxSync } from "../execution/als.ts";
+import { getAsyncCtxSync, runWithAsyncCtx } from "../execution/als.ts";
 import { STEP_INDEXING_SUFFIX, step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -1385,6 +1385,24 @@ export function kvAdapterFor(app?: string): KvAdapter {
 }
 
 /**
+ * Runs `callback` with the agent KV calls made in it direct, not as steps. Used
+ * for best-effort writes that a replay should repeat instead of replaying.
+ * @param callback The code whose KV calls are direct.
+ */
+export function withDirectKv<T>(callback: () => T): T {
+  const ctx = getAsyncCtxSync();
+
+  if (!ctx?.execution) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    { ...ctx, execution: { ...ctx.execution, kvDirect: true } },
+    callback,
+  );
+}
+
+/**
  * Builds a store.
  * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  * @param options.bound Environment and app to use outside a function.
@@ -1433,7 +1451,11 @@ export function createKv(
       // it rides on that step instead of being a nested step, so it runs
       // again when that step is retried: `update`, `take` and
       // `setIfAbsent` there must be safe to repeat.
-      if (!inFunction || getAsyncCtxSync()?.execution?.executingStep) {
+      if (
+        !inFunction ||
+        getAsyncCtxSync()?.execution?.executingStep ||
+        getAsyncCtxSync()?.execution?.kvDirect
+      ) {
         return fn(handle);
       }
 

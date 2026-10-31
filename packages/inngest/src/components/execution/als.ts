@@ -57,6 +57,13 @@ export interface AsyncContext {
     };
 
     /**
+     * When true, agent KV calls made in this context run directly instead of
+     * as steps, so a best-effort write (an agent's status) is not memoized and
+     * a replay writes the same latest value again.
+     */
+    kvDirect?: boolean;
+
+    /**
      * If present, indicates the parallel mode that should be applied to steps
      * created within this context. Set by `group.parallel()`.
      */
@@ -120,10 +127,10 @@ export interface AsyncContext {
     subscriptionMessages?: (key: string) => unknown[];
 
     /**
-     * Tells the engine that a step was skipped because its answer was already
-     * in the state, so it is not waited for. Only subscriptions use it.
+     * Whether the run's state holds the step a limit saves when it closes a
+     * `step.subscribe()` inbox. Only subscriptions use it.
      */
-    skipStep?: (id: string) => Promise<void>;
+    subscriptionClosed?: (key: string) => boolean;
 
     /**
      * The inbox control of the agent run this function execution is, set by the
@@ -134,7 +141,7 @@ export interface AsyncContext {
 
     /**
      * The answer the run's state holds for a step, if it has one. Only
-     * subscriptions use it, to tell a park that timed out from one that has not
+     * subscriptions use it, to tell a next that timed out from one that has not
      * been answered.
      */
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };

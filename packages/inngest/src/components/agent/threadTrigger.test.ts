@@ -151,7 +151,6 @@ describe("thread key from a trigger", () => {
         };
 
         if (opts.subscribe?.mode === "open") {
-          seen.push({ event: opts.event, if: opts.if });
           seen.push(...(opts.subscribe.streams ?? []));
         }
       },

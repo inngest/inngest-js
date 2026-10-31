@@ -604,37 +604,24 @@ export const createStepTools = <
   ): Promise<Subscription> => {
     const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
 
-    // The event of a park, which has no source of its own.
-    const parkEvent = streamsOf(opts, allowEmpty)[0]?.event;
+    // The op of an inbox that lists no event has no event of its own.
+    const first = streamsOf(opts, allowEmpty)[0]?.event;
 
     return openSubscription(
-      function op(stepId, mode, seq, stream, extra) {
-        const target = extra?.target;
-
-        if (
-          !target &&
-          mode !== "park" &&
-          mode !== "poll" &&
-          mode !== "current" &&
-          mode !== "close"
-        ) {
-          throw new Error(`step.subscribe(): no source for stream ${stream}.`);
-        }
-
+      function op(stepId, mode, extra) {
         // The executor names the steps of a subscription itself, so a prefix
         // from a group the op was called in (such as a tool group) must not
         // change their ids.
         return withoutStepIdPrefix(() => {
           return tools["~subscribeOp"](stepId, {
             event: eventNameOf(
-              target?.event ?? parkEvent ?? "inngest/subscription",
+              extra?.streams?.[0]?.target.event ??
+                first ??
+                "inngest/subscription",
             ),
-            if: target?.if,
             subscribe: {
               key: id,
               mode,
-              ...(seq ? { seq } : {}),
-              ...(stream ? { stream } : {}),
               ...(extra?.timeout === undefined
                 ? {}
                 : {
@@ -643,19 +630,15 @@ export const createStepTools = <
                       client[internalLoggerSymbol],
                     ),
                   }),
-              ...(extra?.attempt ? { attempt: extra.attempt } : {}),
-              ...(extra?.reader ? { reader: extra.reader } : {}),
-              ...(extra?.more?.length
+              ...(extra?.streams
                 ? {
-                    streams: extra.more.map(
-                      ({ stream: index, target: more }) => {
-                        return {
-                          stream: index,
-                          event: eventNameOf(more.event),
-                          ...(more.if ? { if: more.if } : {}),
-                        };
-                      },
-                    ),
+                    streams: extra.streams.map(({ stream, target }) => {
+                      return {
+                        stream,
+                        event: eventNameOf(target.event),
+                        ...(target.if ? { if: target.if } : {}),
+                      };
+                    }),
                   }
                 : {}),
             },
@@ -664,18 +647,22 @@ export const createStepTools = <
       },
       id,
       opts,
-      function read() {
-        return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
-      },
-      async function skip(stepId) {
-        await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
-      },
-      function answerOf(stepId) {
-        return (
-          getAsyncCtxSync()?.execution?.stepAnswer?.(stepId) ?? {
-            found: false,
-          }
-        );
+      {
+        messages() {
+          return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
+        },
+        closed() {
+          return (
+            getAsyncCtxSync()?.execution?.subscriptionClosed?.(id) ?? false
+          );
+        },
+        answerOf(stepId) {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(stepId) ?? {
+              found: false,
+            }
+          );
+        },
       },
       allowEmpty,
     );
@@ -715,15 +702,10 @@ export const createStepTools = <
         idOrOptions: StepOptionsOrId,
         opts: {
           event: string;
-          if?: string;
           subscribe: {
             key: string;
             mode: string;
-            seq?: number;
-            stream?: number;
             timeout?: string;
-            attempt?: number;
-            reader?: string;
             streams?: { stream: number; event: string; if?: string }[];
           };
         },
@@ -737,7 +719,6 @@ export const createStepTools = <
         displayName: name ?? id,
         opts: {
           event: opts.event,
-          if: opts.if,
           timeout: "",
           subscribe: opts.subscribe,
         },

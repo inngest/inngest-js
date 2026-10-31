@@ -401,13 +401,13 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.unread() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.all() takes the pending messages, stops included, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const drained = await inbox.unread();
+        const drained = await inbox.all();
         const after = await inbox.next({ timeout: "1s" });
 
         return [
@@ -567,10 +567,17 @@ describe("inbox sources", () => {
         { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 5 },
       ],
       onOp: (op) => {
-        const opts = op.opts as { event?: string; if?: string } | undefined;
+        const streams =
+          (
+            op.opts as
+              | { subscribe?: { streams?: { event: string; if?: string }[] } }
+              | undefined
+          )?.subscribe?.streams ?? [];
 
-        if (opts?.event === "ci/status" || opts?.event === "deploy/done") {
-          filters.push([opts.event, opts.if]);
+        for (const source of streams) {
+          if (source.event === "ci/status" || source.event === "deploy/done") {
+            filters.push([source.event, source.if]);
+          }
         }
       },
     });
@@ -632,7 +639,7 @@ describe("inbox sources", () => {
     });
   });
 
-  test("listen() adds a source mid-run, stop() removes it, and a source needs a thread or an if", async () => {
+  test("listen() adds a source mid-run, close() removes it, and a source needs a thread or an if", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -643,7 +650,7 @@ describe("inbox sources", () => {
         });
         const heard = await inbox.next();
 
-        await listener.stop();
+        await listener.close();
 
         const bare = await inbox.listen("ci/status", {} as never).then(
           () => "added",
@@ -665,9 +672,9 @@ describe("inbox sources", () => {
     ]);
     expect(
       ops.map((op) => {
-        return [op.mode, op.stream ?? 0];
+        return op.mode;
       }),
-    ).toContainEqual(["stop", 4]);
+    ).toContain("stop");
   });
 
   test("listen() returns the view of its event: it reads with its own cursor while the main inbox gets the events too", async () => {
@@ -681,16 +688,14 @@ describe("inbox sources", () => {
           thread: "event.data.t",
         });
         const viewed = await listener.next({ timeout: "1m" });
-        const all = await listener.current();
-        const unread = await listener.unread();
+        const unread = await listener.all();
         const main = await inbox.next();
 
         return [
           viewed?.name,
-          all.length,
           unread.length,
           main?.name,
-          typeof listener.stop,
+          typeof listener.close,
           Symbol.asyncIterator in listener,
           Symbol.asyncDispose in listener,
         ];
@@ -704,43 +709,11 @@ describe("inbox sources", () => {
 
     expect(output).toEqual([
       "ci/status",
-      1,
       0,
       "ci/status",
       "function",
       true,
       true,
-    ]);
-  });
-
-  test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-        const all = await inbox.current();
-        const second = await inbox.next();
-
-        return [
-          textOf(first),
-          all.map((m) => {
-            return m.name;
-          }),
-          textOf(second),
-        ];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "b"), message("stop"), message("user", "c")],
-    });
-
-    expect(output).toEqual([
-      "go",
-      ["agent/message", "agent/stop", "agent/message"],
-      "b",
     ]);
   });
 });
@@ -850,7 +823,7 @@ describe("agent cleanup", () => {
     const { ops } = await run(fn, { event: trigger("hi") });
 
     expect(ops[0]).toMatchObject({
-      id: "inbox:open:all",
+      id: "inbox:open",
       mode: "open",
       streams: 4,
     });

@@ -115,7 +115,11 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
+import {
+  stepsToBeSeen,
+  subscriptionClosed,
+  subscriptionMessages,
+} from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -337,12 +341,11 @@ class InngestExecutionEngine
 
                 return messages;
               },
-              skipStep: async (id: string) => {
-                this.state.remainingStepsToBeSeen.delete(hashId(id));
-
-                if (this.state.allStateUsed()) {
-                  await this.middlewareManager.onMemoizationEnd();
-                }
+              subscriptionClosed: (key: string) => {
+                return subscriptionClosed(
+                  key,
+                  this.options.stepCompletionOrder,
+                );
               },
               stepAnswer: (id: string) => {
                 const answer = this.options.stepState[hashId(id)];

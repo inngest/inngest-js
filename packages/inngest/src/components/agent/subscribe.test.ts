@@ -13,8 +13,20 @@ const client = () => {
 
 const subscribeOpts = { event: "msg", if: "async.data.t == 't1'" };
 
+const ids = (ops: { id: string }[]) => {
+  return ops.map((op) => {
+    return op.id;
+  });
+};
+
+const modes = (ops: { mode: string }[]) => {
+  return ops.map((op) => {
+    return op.mode;
+  });
+};
+
 describe("step.subscribe", () => {
-  test("a message that is already saved is read without a step", async () => {
+  test("open is one step; messages already saved are read with no step", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -36,11 +48,10 @@ describe("step.subscribe", () => {
       [1, "a"],
       [2, { b: 1 }],
     ]);
-    // Open is the only step: the messages were in the state.
-    expect(ops).toEqual([{ id: "inbox:0:open", mode: "open" }]);
+    expect(ops).toEqual([{ id: "inbox:open", mode: "open", streams: 1 }]);
   });
 
-  test("next() blocks with one wait when no message has arrived, then reads it from the state", async () => {
+  test("next() with nothing saved is one next op; the message is read in process once it is in the state", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -52,23 +63,33 @@ describe("step.subscribe", () => {
 
     const waiting = await run(fn);
     expect(waiting.waiting).toBe(true);
-    expect(
-      waiting.ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["inbox:0:open", "inbox:1"]);
+    expect(ids(waiting.ops)).toEqual(["inbox:open", "inbox:0:next:1"]);
 
     const arrived = await run(fn, { incoming: ["late"] });
     expect(arrived.output).toBe("late");
-    // The wait is not asked for again once the message is there.
-    expect(
-      arrived.ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "park"]);
+    expect(modes(arrived.ops)).toEqual(["open", "next"]);
   });
 
-  test("a read made inside a step id prefix (a tool group) keeps the step ids the executor expects", async () => {
+  test("buffered messages are flushed by the next op, all of them, and read in arrival order", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const second = await inbox.next();
+        const third = await inbox.next();
+
+        return [first?.data, second?.data, third?.data];
+      },
+    );
+
+    const { ops, output } = await run(fn, { buffered: ["a", "b", "c"] });
+
+    expect(output).toEqual(["a", "b", "c"]);
+    expect(modes(ops)).toEqual(["open", "next"]);
+  });
+
+  test("a read made inside a step id prefix keeps the step ids the executor expects", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
@@ -82,64 +103,157 @@ describe("step.subscribe", () => {
 
     const waiting = await run(fn);
 
-    expect(
-      waiting.ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["inbox:0:open", "inbox:1"]);
+    expect(ids(waiting.ops)).toEqual(["inbox:open", "inbox:0:next:1"]);
   });
 
-  test("reads of one subscription run in call order, so one park is outstanding at a time", async () => {
+  test("a view has one next outstanding: a second call returns the same promise", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
-        const both = await Promise.all([inbox.next(), inbox.next()]);
+        const first = inbox.next();
+        const second = inbox.next();
 
-        return both.map((m) => {
-          return [m?.seq, m?.data];
-        });
+        return [first === second, (await first)?.data];
       },
     );
 
     const waiting = await run(fn);
-    expect(waiting.waiting).toBe(true);
-    expect(
-      waiting.ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "park"]);
+    expect(modes(waiting.ops)).toEqual(["open", "next"]);
 
-    const arrived = await run(fn, { incoming: ["a", "b"] });
-    expect(arrived.output).toEqual([
-      [1, "a"],
-      [2, "b"],
+    const arrived = await run(fn, { incoming: ["a"] });
+    expect(arrived.output).toEqual([true, "a"]);
+  });
+
+  test("a next that times out is recorded under its own id and reads undefined on a replay", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const timedOut = await inbox.next({ timeout: "1m" });
+        const later = await inbox.next();
+
+        return [timedOut, later?.data];
+      },
+    );
+
+    const { ops, output } = await run(fn, {
+      timeouts: 1,
+      incoming: ["after"],
+    });
+
+    expect(output).toEqual([undefined, "after"]);
+    expect(ids(ops)).toEqual([
+      "inbox:open",
+      "inbox:0:next:1",
+      "inbox:0:next:2",
     ]);
   });
 
-  test("a message carries the name of its event", async () => {
+  test("a timeout wins over a message that arrived after it", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+
+        return (await inbox.next({ timeout: "1m" })) === undefined;
+      },
+    );
+
+    const { output } = await run(fn, {
+      timeouts: 1,
+      incoming: ["late"],
+    });
+
+    expect(output).toBe(true);
+  });
+
+  test("next({ timeout: 0 }) flushes, never waits, and reads what was there", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next({ timeout: 0 });
+        const second = await inbox.next({ timeout: 0 });
+
+        return [first?.data, second];
+      },
+    );
+
+    const { ops, output } = await run(fn, { buffered: ["a"] });
+
+    expect(output).toEqual(["a", undefined]);
+    expect(modes(ops)).toEqual(["open", "all", "all"]);
+  });
+
+  test("all() is one flush op and returns every unread message, put-back ones first", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
         const first = await inbox.next();
-        const second = await inbox.next({ timeout: 0 });
 
-        return [first?.name, second?.name];
+        if (first) {
+          inbox.putBack([first]);
+        }
+
+        const rest = await inbox.all();
+
+        return rest.map((message) => {
+          return message.data;
+        });
       },
     );
 
-    const { output } = await run(fn, {
-      saved: [
-        { name: "shop/order.created", data: { id: 1 } },
-        { name: "shop/refund.created", data: { id: 2 } },
-      ],
+    const { ops, output } = await run(fn, {
+      saved: ["a"],
+      buffered: ["b", "c"],
     });
 
-    expect(output).toEqual(["shop/order.created", "shop/refund.created"]);
+    expect(output).toEqual(["a", "b", "c"]);
+    expect(modes(ops)).toEqual(["open", "all"]);
   });
 
-  test("a message is the event flat with its seq: id, name, data, ts, user and seq", async () => {
+  test("all() reads only up to the total its op recorded", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const taken = await inbox.all();
+
+        return taken.length;
+      },
+    );
+
+    // A replay's state holds messages that arrived after the original all(): the
+    // memoized answer bounds what it returns.
+    const { output } = await run(fn, {
+      memos: { "inbox:0:all:1": { total: 1 } },
+      saved: ["a", "b", "c"],
+    });
+
+    expect(output).toBe(1);
+  });
+
+  test("an inbox closed by a limit ends after the messages saved before it", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const first = await inbox.next();
+        const end = await inbox.next();
+
+        return [first?.data, end];
+      },
+    );
+
+    const { ops, output } = await run(fn, { saved: ["a"], closed: true });
+
+    expect(output).toEqual(["a", null]);
+    expect(modes(ops)).toEqual(["open"]);
+  });
+
+  test("a message carries the name of its event, its seq and its stream", async () => {
     const event = {
       id: "evt-1",
       name: "shop/order.created",
@@ -147,6 +261,7 @@ describe("step.subscribe", () => {
       ts: 7,
       user: { id: "u" },
       v: "2",
+      stream: 0,
     };
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
@@ -162,710 +277,197 @@ describe("step.subscribe", () => {
     expect(output).toEqual({ ...event, seq: 1 });
   });
 
-  test("a memo from before messages were flat ({ seq, data: event }) still replays", async () => {
-    const event = {
-      id: "evt-1",
-      name: "shop/order.created",
-      data: { total: 5 },
-      ts: 7,
-      user: {},
-    };
+  test("close() is one op, stops every source, and returns the unread messages", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }],
+        });
         const first = await inbox.next();
-        const polled = await inbox.next({ timeout: 0 });
-        const unread = await inbox.close();
+        const rest = await inbox.close();
+        const again = await inbox.close();
 
-        return [first, polled, unread];
+        return [first?.data, rest.map((m) => m.data), again];
       },
     );
 
-    const { output } = await run(fn, {
-      saved: [
-        { seq: 1, data: event },
-        event,
-        { seq: 3, data: { ...event, id: "evt-3" } },
-      ],
+    const { ops, output } = await run(fn, {
+      saved: ["x"],
+      buffered: ["y", "z"],
     });
 
-    expect(output).toEqual([
-      { ...event, seq: 1 },
-      { ...event, seq: 2 },
-      [{ ...event, id: "evt-3", seq: 3 }],
+    expect(output).toEqual(["x", ["y", "z"], []]);
+    expect(ops).toEqual([
+      { id: "inbox:open", mode: "open", streams: 2 },
+      { id: "inbox:close", mode: "close", streams: 2 },
     ]);
   });
 
-  test("a park that close() ended is the end of the subscription; any other park without a message is an error", async () => {
+  test("after close() next() is null once the saved messages are read", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
+        await inbox.close();
 
         return inbox.next();
       },
     );
 
-    const closed = await run(fn, { parkAnswer: { closed: true } });
-    expect(closed.output).toBeNull();
+    const { output } = await run(fn);
 
-    const missing = await run(fn, { parkAnswer: { seq: 1 } });
-    expect((missing.output as { message?: string }).message).toContain(
-      "message 1 is missing",
-    );
+    expect(output).toBeNull();
   });
 
-  test("next({ timeout }) returns undefined when nothing arrives, and a later read parks again as a new step", async () => {
+  test("of(type) reads the messages of one event with a cursor of its own", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next({ timeout: "1s" });
-        const second = await inbox.next({ timeout: "1s" });
-        const third = await inbox.next();
-
-        return [first, second, third?.data];
-      },
-    );
-
-    const { ops, output } = await run(fn, {
-      incoming: ["late"],
-      timeouts: 2,
-    });
-
-    expect(output).toEqual([undefined, undefined, "late"]);
-    // Three parks for message 1, each its own step.
-    expect(
-      new Set(
-        ops
-          .filter((op) => {
-            return op.mode === "park";
-          })
-          .map((op) => {
-            return op.id;
-          }),
-      ).size,
-    ).toBe(3);
-  });
-
-  test("a timeout that was recorded stays a timeout on replay, even though the message has arrived since", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next({ timeout: "1s" });
-        const second = await inbox.next();
-
-        return [first, second?.data];
-      },
-    );
-
-    const { output } = await run(fn, { incoming: ["late"], timeouts: 1 });
-
-    expect(output).toEqual([undefined, "late"]);
-  });
-
-  test("listen() adds a source to the same ordered sequence, and stop() removes it", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next();
-        const listener = await inbox.listen({
-          event: "other",
-          if: "async.data.x == 1",
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }],
         });
-        const second = await inbox.next();
+        const b = inbox.of("b");
+        const fromB = await b.next();
+        const first = await inbox.next();
 
-        await listener.stop();
-        await listener.stop();
-
-        return [first?.data, second?.data];
+        return [fromB?.data, first?.data, (await b.all()).length];
       },
     );
 
-    const { ops, output } = await run(fn, {
-      saved: ["a"],
-      incoming: ["b"],
+    const { output } = await run(fn, {
+      saved: [
+        { id: "1", name: "a", data: "a1", ts: 0, user: {} },
+        { id: "2", name: "b", data: "b1", ts: 0, user: {} },
+      ],
     });
 
-    expect(output).toEqual(["a", "b"]);
-    // The added source is stream 1, and stopping twice is one stop.
-    expect(
-      ops.map((op) => {
-        return [op.mode, op.stream ?? 0, op.id];
-      }),
-    ).toEqual([
-      ["open", 0, "inbox:0:open"],
-      ["open", 1, "inbox:1:open"],
-      ["park", 0, "inbox:2"],
-      ["stop", 1, "inbox:1:stop"],
+    expect(output).toEqual(["b1", "a1", 0]);
+  });
+
+  test("of(type).close() stops the sources of that event", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }, { event: "b", if: "x" }],
+        });
+
+        await inbox.of("b").close();
+        await inbox.of("b").close();
+
+        return "done";
+      },
+    );
+
+    const { ops } = await run(fn);
+
+    expect(ops).toEqual([
+      { id: "inbox:open", mode: "open", streams: 3 },
+      { id: "inbox:1:stop", mode: "stop", streams: 2 },
     ]);
   });
 
-  test("step ids carry the stream number, and a run that began without it keeps its memos", async () => {
+  test("listen() opens its sources in one op and returns a view of them alone", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
+        await using ci = await inbox.listen([
+          { event: "ci/a" },
+          { event: "ci/b", if: "async.data.pr == 1" },
+        ]);
+        const message = await ci.next();
 
-        return (await inbox.close()).length;
-      },
-    );
-
-    const fresh = await run(fn);
-    expect(
-      fresh.ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["inbox:0:open", "inbox:0:close"]);
-
-    // Memos from before: the first source's steps were `inbox:open` and
-    // `inbox:close`. The function replays against them, no step is asked again.
-    const legacy = await run(fn, {
-      memos: {
-        "inbox:open": { opened: true },
-        "inbox:close": { count: 0 },
-      },
-    });
-    expect(legacy.ops).toEqual([]);
-    expect(legacy.output).toBe(0);
-  });
-
-  test("an inbox with no source left is still closed by one op, and listening after close throws", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.inbox("box");
-        const listener = await inbox.listen({ event: "other", if: "true" });
-
-        await listener.stop();
-        await inbox.close();
-
-        const late = await inbox.listen({ event: "other", if: "true" }).then(
-          () => "added",
-          (error: Error) => error.message,
-        );
-
-        return late;
-      },
-    );
-
-    const { ops, output } = await run(fn, { key: "box" });
-
-    expect(String(output)).toContain("listen() on a closed inbox");
-    expect(
-      ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "stop", "close"]);
-  });
-
-  test("current() returns every message so far without moving the cursor", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next();
-        const all = await inbox.current();
-        const second = await inbox.next();
-        const pending = await inbox.unread();
-
-        return [
-          first?.data,
-          all.map((m) => {
-            return m.data;
-          }),
-          second?.data,
-          pending.map((m) => {
-            return m.data;
-          }),
-        ];
-      },
-    );
-
-    const { output } = await run(fn, { saved: ["a", "b", "c"] });
-
-    expect(output).toEqual(["a", ["a", "b", "c"], "b", ["c"]]);
-  });
-
-  test("an inbox starts with no source and takes them with listen()", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.inbox("box");
-
-        await inbox.listen({ event: "other", if: "async.data.x == 1" });
-
-        return (await inbox.next())?.data;
+        return message?.data;
       },
     );
 
     const { ops, output } = await run(fn, {
-      key: "box",
-      incoming: ["late"],
+      saved: [
+        { id: "1", name: "msg", data: "plain", ts: 0, user: {}, stream: 0 },
+        { id: "2", name: "ci/b", data: "ci", ts: 0, user: {}, stream: 2 },
+      ],
     });
 
-    expect(output).toBe("late");
-    expect(
-      ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["box:0:open", "box:1"]);
+    expect(output).toBe("ci");
+    expect(ops).toEqual([
+      { id: "inbox:open", mode: "open", streams: 1 },
+      { id: "inbox:1:listen", mode: "open", streams: 2 },
+      { id: "inbox:1:stop", mode: "stop", streams: 2 },
+    ]);
   });
 
-  describe("views", () => {
-    const mention = (n: number) => {
-      return {
-        id: `m${n}`,
-        name: "chat/mention",
-        data: { n },
-        ts: n,
-        user: {},
-      };
-    };
-    const review = (n: number) => {
-      return { id: `r${n}`, name: "pr/review", data: { n }, ts: n, user: {} };
-    };
-
-    test("a view is a cursor of its own: it hides nothing from the inbox or other views, and reads by arrival order", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-          const mentions = inbox.of("chat/mention");
-
-          const r1 = await reviews.next();
-          const m1 = await inbox.next();
-          const r2 = await reviews.next();
-          const m2 = await inbox.next();
-          const mention1 = await mentions.next();
-
-          return [r1, m1, r2, m2, mention1].map((m) => {
-            return [m?.seq, m?.name];
-          });
-        },
-      );
-
-      // Stack: seq1 mention, seq2 review, seq3 mention, seq4 review.
-      const { output } = await run(fn, {
-        saved: [mention(1), review(2), mention(3), review(4)],
-      });
-
-      expect(output).toEqual([
-        [2, "pr/review"],
-        [1, "chat/mention"],
-        [4, "pr/review"],
-        [2, "pr/review"],
-        [1, "chat/mention"],
-      ]);
-    });
-
-    test("a view waits for its kind: it parks at the next message and looks again", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-          const got = await reviews.next();
-
-          return [got?.seq, got?.data];
-        },
-      );
-
-      // Two mentions arrive before the review the view waits for.
-      const { output, ops } = await run(fn, {
-        incoming: [mention(1), mention(2), review(3)],
-      });
-
-      expect(output).toEqual([3, { n: 3 }]);
-      expect(
-        ops
-          .filter((op) => {
-            return op.mode === "park";
-          })
-          .map((op) => {
-            return op.id;
-          }),
-      ).toEqual(["inbox:v1:1", "inbox:v1:2", "inbox:v1:3"]);
-    });
-
-    test("unread() takes what is after the cursor, current() lists all, and neither waits", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-          const first = await reviews.next();
-          const all = await reviews.current();
-          const rest = await reviews.unread();
-          const none = await reviews.unread();
-          const poll = await reviews.next({ timeout: 0 });
-
-          return [
-            first?.seq,
-            all.map((m) => {
-              return m.seq;
-            }),
-            rest.map((m) => {
-              return m.seq;
-            }),
-            none.length,
-            poll,
-          ];
-        },
-      );
-
-      const { output } = await run(fn, {
-        saved: [review(1), mention(2), review(3), review(4)],
-      });
-
-      expect(output).toEqual([1, [1, 3, 4], [3, 4], 0, undefined]);
-    });
-
-    test("the reads are the same whatever the arrival timing", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-          const mentions = inbox.of("chat/mention");
-          const r = await reviews.next();
-          const m = await mentions.next();
-          const r2 = await reviews.next();
-
-          return [r?.seq, m?.seq, r2?.seq];
-        },
-      );
-      const all = [mention(1), review(2), mention(3), review(4)];
-
-      const together = await run(fn, { saved: all });
-      const trickled = await run(fn, { incoming: all });
-      const split = await run(fn, {
-        saved: all.slice(0, 2),
-        incoming: all.slice(2),
-      });
-
-      expect(together.output).toEqual([2, 1, 4]);
-      expect(trickled.output).toEqual([2, 1, 4]);
-      expect(split.output).toEqual([2, 1, 4]);
-    });
-
-    test("a view's timeout still applies after a message of another kind wakes it", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-
-          return String(await reviews.next({ timeout: "1s" }));
-        },
-      );
-      const timeouts: unknown[] = [];
-
-      // A mention wakes the first park; the view looks again and waits again.
-      const { waiting } = await run(fn, {
-        incoming: [mention(1)],
-        onOp: (op) => {
-          const park = (
-            op.opts as { subscribe?: { mode?: string; timeout?: string } }
-          ).subscribe;
-
-          if (park?.mode === "park") {
-            timeouts.push(park.timeout);
-          }
-        },
-      });
-
-      expect(waiting).toBe(true);
-      expect(timeouts).toEqual(["1s", "1s"]);
-    });
-
-    test("a timeout of a view stays a timeout on replay, though a match has arrived since", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const reviews = inbox.of("pr/review");
-          const first = await reviews.next({ timeout: "1s" });
-          const second = await reviews.next();
-
-          return [first, second?.seq];
-        },
-      );
-
-      const { output } = await run(fn, {
-        incoming: [review(1)],
-        timeouts: 1,
-      });
-
-      expect(output).toEqual([undefined, 1]);
-    });
-
-    test("msg.is() narrows by event name and is not a field of the message", async () => {
-      const fn = client().createFunction(
-        { id: "sub", triggers: [{ event: "sub/run" }] },
-        async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
-          const a = await inbox.next();
-          const b = await inbox.next();
-
-          return [
-            a?.is("chat/mention"),
-            a?.is("pr/review"),
-            b?.is("pr/review"),
-            Object.keys(a ?? {}).includes("is"),
-          ];
-        },
-      );
-
-      const { output } = await run(fn, { saved: [mention(1), review(2)] });
-
-      expect(output).toEqual([true, false, true, false]);
-    });
-  });
-
-  test("close() ends the subscription and returns what was saved but not read; closing again does nothing", async () => {
+  test("ready() is true when a message is saved and unread, held, or the inbox ended", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
+        const before = inbox.ready();
         const first = await inbox.next();
-        const unread = await inbox.close();
-        const again = await inbox.close();
+        const after = inbox.ready();
 
-        return [
-          first?.data,
-          unread.map((m) => {
-            return m.data;
-          }),
-          again.length,
-        ];
-      },
-    );
-
-    const { ops, output } = await run(fn, { saved: ["a", "b", "c"] });
-
-    expect(output).toEqual(["a", ["b", "c"], 0]);
-    expect(
-      ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "close"]);
-  });
-
-  test("await using closes the subscription when the scope ends", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        {
-          await using inbox = await step.subscribe("inbox", subscribeOpts);
-          await inbox.next();
-        }
-
-        return "left";
-      },
-    );
-
-    const { ops, output } = await run(fn, { saved: ["a"] });
-
-    expect(output).toBe("left");
-    expect(
-      ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "close"]);
-  });
-
-  test("a closed subscription reads no more", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        await inbox.close();
-
-        return [await inbox.next(), await inbox.next({ timeout: 0 })];
-      },
-    );
-
-    const { output } = await run(fn, { saved: [] });
-
-    expect(output).toEqual([null, null]);
-  });
-
-  test("next({ timeout: 0 }) is a step, so its answer is the same when the function replays", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next({ timeout: 0 });
-        const second = await inbox.next({ timeout: 0 });
-
-        return [first?.data ?? null, second?.data ?? null];
-      },
-    );
-
-    const { output, ops } = await run(fn, { saved: ["a"] });
-
-    expect(output).toEqual(["a", null]);
-    expect(
-      ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["inbox:0:open", "inbox:poll:1", "inbox:poll:2"]);
-  });
-
-  test("putBack returns a message before newer ones, without another op", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
-        const first = await inbox.next();
         if (first) {
           inbox.putBack([first]);
         }
 
-        return [(await inbox.next())?.seq, (await inbox.next())?.seq];
+        return [before, after, inbox.ready()];
       },
     );
 
-    const { output } = await run(fn, { saved: ["a", "b"] });
+    const { output } = await run(fn, { saved: ["a"] });
 
-    expect(output).toEqual([1, 2]);
+    expect(output).toEqual([true, false, true]);
   });
 
-  test("several events are one subscription: one open per event, one sequence of messages", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
-          events: [{ event: "a" }, { event: "b" }],
-        });
-
-        return [(await inbox.next())?.data, (await inbox.next())?.data];
-      },
-    );
-
-    const { ops, output } = await run(fn, { saved: ["from-b", "from-a"] });
-
-    expect(output).toEqual(["from-b", "from-a"]);
-    expect(ops).toEqual([{ id: "inbox:open:all", mode: "open", streams: 2 }]);
-  });
-
-  test("an executor that opens only the first stream gets the rest one by one", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
-          events: [{ event: "a" }, { event: "b" }, { event: "c" }],
-        });
-
-        return (await inbox.next())?.data;
-      },
-    );
-
-    const { ops } = await run(fn, { saved: ["x"], legacyExecutor: true });
-
-    expect(
-      ops.map((op) => {
-        return op.id;
-      }),
-    ).toEqual(["inbox:open:all", "inbox:1:open", "inbox:2:open"]);
-  });
-
-  test("a run that opened each stream in its own step keeps replaying", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
-          events: [{ event: "a" }, { event: "b" }, { event: "c" }],
-        });
-
-        return (await inbox.close()).length;
-      },
-    );
-
-    for (const first of ["inbox:open", "inbox:0:open"]) {
-      const { ops } = await run(fn, {
-        memos: {
-          [first]: { opened: true },
-          "inbox:1:open": { opened: true },
-        },
-      });
-
-      // Only the open the run had not done yet is asked: the third stream.
-      expect(
-        ops
-          .filter((op) => {
-            return op.mode === "open";
-          })
-          .map((op) => {
-            return op.id;
-          }),
-      ).toEqual(["inbox:2:open"]);
-    }
-  });
-
-  test("an open for every event is the only step a subscription costs when the messages are there", async () => {
-    const fn = client().createFunction(
-      { id: "sub", triggers: [{ event: "sub/run" }] },
-      async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
-          events: [{ event: "a" }, { event: "b" }],
-        });
-        const read: unknown[] = [];
-
-        for (let n = 0; n < 5; n++) {
-          read.push((await inbox.next())?.data);
-        }
-
-        return read;
-      },
-    );
-
-    const { ops } = await run(fn, { saved: [1, 2, 3, 4, 5] });
-
-    expect(
-      ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open"]);
-  });
-
-  test("a read that was dropped still takes its message, in the first run and on replay alike", async () => {
+  test("a message that is not an event is an error", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         const inbox = await step.subscribe("inbox", subscribeOpts);
-        // Already settled, so it beats the read in every run.
-        const slow = Promise.resolve("timeout");
-        const winner = await Promise.race([inbox.next(), slow]);
 
-        // A macrotask gap: the dropped read has settled by now if it can.
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 5);
+        return inbox.next().catch((error: Error) => {
+          return error.message;
         });
-
-        const next = await inbox.next();
-
-        return [winner, next?.data];
       },
     );
 
-    // The dropped read parks; the second read waits behind it, not beside it.
-    const waiting = await run(fn);
-    expect(waiting.waiting).toBe(true);
-    expect(
-      waiting.ops.map((op) => {
-        return op.mode;
-      }),
-    ).toEqual(["open", "park"]);
+    const { output } = await run(fn, { saved: [{ data: 1, seq: 9 }] });
 
-    // On replay the dropped read finds "a" in the state and takes it; the next
-    // read gets "b". The same answer however the timing of the first run went.
-    const arrived = await run(fn, { incoming: ["a", "b"] });
-    expect(arrived.output).toEqual(["timeout", "b"]);
+    expect(output).toContain("is not an event");
+  });
+
+  test("an inbox with no sources is allowed and still opens", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.inbox("inbox");
+
+        return inbox.ready();
+      },
+    );
+
+    const { ops } = await run(fn);
+
+    expect(ops).toEqual([{ id: "inbox:open", mode: "open", streams: 0 }]);
+  });
+
+  test("step.subscribe() with no event throws", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        try {
+          await step.subscribe("inbox", { events: [] });
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "opened";
+      },
+    );
+
+    const { output } = await run(fn);
+
+    expect(output).toContain("needs at least one event");
   });
 });

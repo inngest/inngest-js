@@ -165,13 +165,7 @@ describe("a run that began before these steps", () => {
         // The old shape of the start: a write, then a read.
         "kv.update:thread:__state": written(record(0)),
         "kv.get:thread:__lastRun": { "~kvRead": true, found: false },
-        // Each source opened in its own step.
-        "inbox:0:open": { opened: true },
-        "inbox:1:open": { opened: true },
-        "inbox:2:open": { opened: true },
-        "inbox:3:open": { opened: true },
-        "inbox:4:open": { opened: true },
-        "inbox:5:open": { opened: true },
+        "inbox:open": { opened: true },
         // The model call without a recorded turn, then its own write.
         "agent:model:1": done,
         "kv.update:thread:__state:1": written(record(1)),

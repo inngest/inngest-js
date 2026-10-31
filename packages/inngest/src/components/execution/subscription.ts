@@ -47,6 +47,21 @@ export const subscriptionMessages = (
 };
 
 /**
+ * Whether the run's state holds the step the executor saves when a limit closes
+ * the inbox: the end of it, after the messages saved before.
+ * @param key The subscription ID.
+ * @param stack The run's stack: step IDs in the order they were saved.
+ */
+export const subscriptionClosed = (
+  key: string,
+  stack: readonly string[],
+): boolean => {
+  const id = `${subscriptionMessagePrefix}closed:${sha1().update(key).digest("hex")}`;
+
+  return stack.includes(id);
+};
+
+/**
  * The steps of a run that are waited for when its state is replayed: every
  * step but the messages of a subscription, which are read from the state and
  * never requested. Only the ID counts, never what a step returned.

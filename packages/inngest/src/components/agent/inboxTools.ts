@@ -102,14 +102,9 @@ export interface InboxToolView {
   }) => Promise<InboxToolMessage | null | undefined>;
 
   /**
-   * Every message after the read position, moving the position to the end.
+   * Every message not yet read, moving the read position to the end.
    */
-  unread: () => Promise<InboxToolMessage[]>;
-
-  /**
-   * Every message so far, without moving the read position.
-   */
-  current: () => Promise<InboxToolMessage[]>;
+  all: () => Promise<InboxToolMessage[]>;
 }
 
 /**
@@ -119,12 +114,12 @@ export interface InboxToolView {
 export interface InboxToolInbox {
   /**
    * Starts saving the events that pass `thread` (and `if`) to the thread's
-   * inbox. `stop()` ends it.
+   * inbox. `close()` ends it.
    */
   listen: (
     event: string | EventTypeWithAnySchema<string>,
     options: { thread: string; if?: string },
-  ) => Promise<{ stop: () => Promise<void> }>;
+  ) => Promise<{ close: () => Promise<void> }>;
 
   /**
    * A reader of one event's messages with a read position of its own.
@@ -162,7 +157,6 @@ const maxMatchValueChars = 200;
 const maxMatchKeyChars = 128;
 const defaultMaxPerRun = 3;
 const defaultMaxTotalWait = "2h";
-const maxReadMessages = 20;
 
 const eventName = (source: InboxToolSource): string => {
   return typeof source.event === "string" ? source.event : source.event.name;
@@ -290,9 +284,8 @@ const render = (message: InboxToolMessage) => {
  * - `inbox_wait({ timeout, as? })` waits for the next message of a listener's
  *   event and returns it, or says that nothing came. In `run_code` it
  *   suspends the script like any waiting tool, so the wait can be long.
- * - `inbox_read({ as?, all? })` returns what has arrived since the last read,
- *   without waiting (`view.unread()`). With `all` it returns the latest 20 of
- *   everything so far, without moving the read position (`view.current()`).
+ * - `inbox_read({ as? })` returns what has arrived since the last read,
+ *   without waiting (`view.all()`).
  * - `inbox_stop({ as })` stops a listener.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
@@ -345,7 +338,7 @@ export const createInboxTools = (
     {
       source: string;
       ready: Promise<{
-        listener: { stop: () => Promise<void> };
+        listener: { close: () => Promise<void> };
         view: InboxToolView;
       }>;
     }
@@ -511,33 +504,17 @@ export const createInboxTools = (
 
     inbox_read: tool.group({
       description:
-        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as". With all: true, return the latest 20 of everything received so far instead, and how many there are in all.',
+        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as".',
       input: z.object({
         as: z.string().optional(),
-        all: z.boolean().optional(),
       }),
-      run: async ({ as, all }) => {
+      run: async ({ as }) => {
         const views = await viewsFor(as);
-
-        if (all) {
-          const everything = (
-            await Promise.all(
-              views.map((view) => {
-                return view.current();
-              }),
-            )
-          ).flat();
-
-          return {
-            total: everything.length,
-            messages: everything.slice(-maxReadMessages).map(render),
-          };
-        }
 
         const fresh = (
           await Promise.all(
             views.map((view) => {
-              return view.unread();
+              return view.all();
             }),
           )
         ).flat();
@@ -559,7 +536,7 @@ export const createInboxTools = (
         }
 
         listeners.delete(as);
-        await (await listener.ready).listener.stop();
+        await (await listener.ready).listener.close();
 
         return { stopped: as };
       },

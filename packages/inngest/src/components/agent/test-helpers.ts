@@ -8,22 +8,25 @@
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
-import { subscriptionMessageIdPrefix } from "../execution/subscription.ts";
+import {
+  subscriptionMessageIdPrefix,
+  subscriptionMessagePrefix,
+} from "../execution/subscription.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 
 interface SubscribeOpts {
   key: string;
-  mode: "open" | "park" | "poll" | "close" | "stop" | "current";
-  seq?: number;
-  stream?: number;
-  streams?: { stream: number }[];
+  mode: "open" | "next" | "all" | "close" | "stop";
+  timeout?: string;
+  streams?: { stream: number; event: string; if?: string }[];
 }
 
 /**
  * Runs `fn`. `incoming` are the events that arrive, in order, one for each
  * time the function blocks waiting for a message; once they run out, a wait
  * ends the run as `waiting`. `saved` are events that were already saved as
- * messages before the run read.
+ * messages before the run read, and `buffered` are events held in the inbox's
+ * buffer, which an op flushes into steps.
  */
 export const run = async (
   fn: InngestFunction.Any,
@@ -34,16 +37,15 @@ export const run = async (
     incoming?: unknown[];
 
     /**
-     * Answers an open the way an executor that predates many-source opens
-     * does: without the count of streams it opened.
+     * Events the executor holds in the inbox's buffer when the run starts: they
+     * are steps only once an op flushes them.
      */
-    legacyExecutor?: boolean;
+    buffered?: unknown[];
 
     /**
-     * What a park is answered with instead of the usual wake, whatever the
-     * state holds: `{ closed: true }` is how close() ends a park.
+     * Whether the inbox was closed by a limit before the run reads.
      */
-    parkAnswer?: unknown;
+    closed?: boolean;
 
     /**
      * Steps the run already holds, by the ID the function gave them: the memos
@@ -65,9 +67,11 @@ export const run = async (
 ) => {
   const key = options.key ?? "inbox";
   const prefix = subscriptionMessageIdPrefix(key);
+  const closedId = `${subscriptionMessagePrefix}closed:${prefix.slice(subscriptionMessagePrefix.length, -1)}`;
   const incoming = [...(options.incoming ?? [])];
   let timeoutsLeft = options.timeouts ?? 0;
-  const ops: { id: string; mode: string; seq?: number; stream?: number }[] = [];
+  const ops: { id: string; mode: string; streams?: number }[] = [];
+  const buffer: unknown[] = [...(options.buffered ?? [])];
   const saved: unknown[] = [];
   const stack: string[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
@@ -109,6 +113,17 @@ export const run = async (
 
   for (const data of options.saved ?? []) {
     save(data);
+  }
+
+  // The executor flushes the buffer into steps, in arrival order.
+  const flush = () => {
+    for (const value of buffer.splice(0)) {
+      save(value);
+    }
+  };
+
+  if (options.closed) {
+    answer(closedId, { limit: "test" });
   }
 
   for (let request = 0; request < 80; request++) {
@@ -184,57 +199,31 @@ export const run = async (
       ops.push({
         id: op.userland?.id ?? op.id,
         mode: sub.mode,
-        seq: sub.seq,
-        ...(sub.stream ? { stream: sub.stream } : {}),
-        ...(sub.streams ? { streams: sub.streams.length + 1 } : {}),
+        ...(sub.streams ? { streams: sub.streams.length } : {}),
       });
       options.onOp?.(op, saved);
 
       if (sub.mode === "open") {
-        answer(
-          op.id,
-          options.legacyExecutor
-            ? { opened: true }
-            : { opened: true, streams: 1 + (sub.streams?.length ?? 0) },
-        );
-      } else if (sub.mode === "close") {
-        answer(op.id, { count: saved.length });
+        answer(op.id, { opened: true });
       } else if (sub.mode === "stop") {
         answer(op.id, { stopped: true });
-      } else if (sub.mode === "current") {
-        answer(op.id, { count: saved.length });
-      } else if (sub.mode === "poll") {
-        answer(op.id, saved[(sub.seq as number) - 1] ?? null);
+      } else if (sub.mode === "all" || sub.mode === "close") {
+        flush();
+        answer(op.id, { total: saved.length });
+      } else if (buffer.length > 0) {
+        // next: what is buffered becomes steps, and the run is shown them.
+        flush();
+      } else if (options.closed) {
+        // A closed inbox only shows the run its end.
+      } else if (sub.timeout !== undefined && timeoutsLeft > 0) {
+        // The timer won: null is saved under the op.
+        timeoutsLeft -= 1;
+        answer(op.id, null);
+      } else if (incoming.length > 0) {
+        // A message arrives while the op waits: a step, and a discovery.
+        save(incoming.shift());
       } else {
-        if (options.parkAnswer !== undefined) {
-          answer(op.id, options.parkAnswer);
-          continue;
-        }
-
-        // A park with a timeout ends unanswered while timeouts are left.
-        if (
-          (sub as { timeout?: string }).timeout !== undefined &&
-          timeoutsLeft > 0 &&
-          saved.length < (sub.seq as number)
-        ) {
-          timeoutsLeft -= 1;
-          answer(op.id, null);
-          continue;
-        }
-
-        // next: the function is blocked until the message exists.
-        while (saved.length < (sub.seq as number)) {
-          if (incoming.length === 0) {
-            return { ops, saved, output: undefined, waiting: true };
-          }
-
-          save(incoming.shift());
-        }
-
-        // The executor answers the wait with the ID of the message it waited for.
-        if (saved.length >= (sub.seq as number)) {
-          answer(op.id, `${prefix}${sub.seq}`);
-        }
+        return { ops, saved, output: undefined, waiting: true };
       }
     }
   }
