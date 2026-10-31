@@ -125,6 +125,32 @@ describe("step.subscribe", () => {
     expect(arrived.output).toEqual([true, "a"]);
   });
 
+  test("two views waiting at once send one next op, and the second reads when its message comes", async () => {
+    const fn = client().createFunction(
+      { id: "sub", triggers: [{ event: "sub/run" }] },
+      async ({ step }) => {
+        const inbox = await step.subscribe("inbox", {
+          events: [{ event: "a" }, { event: "b" }],
+        });
+        const [a, b] = await Promise.all([
+          inbox.of("a").next({ timeout: "1m" }),
+          inbox.of("b").next(),
+        ]);
+
+        return [a, b?.data];
+      },
+    );
+
+    const waiting = await run(fn);
+    expect(modes(waiting.ops)).toEqual(["open", "next"]);
+
+    const arrived = await run(fn, {
+      incoming: [{ id: "1", name: "b", data: "b1", ts: 0, user: {} }],
+      timeouts: 1,
+    });
+    expect(arrived.output).toEqual([undefined, "b1"]);
+  });
+
   test("a next that times out is recorded under its own id and reads undefined on a replay", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },

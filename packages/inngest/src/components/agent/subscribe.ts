@@ -549,6 +549,9 @@ export async function openSubscription<
   // Set as soon as close() is called, before its op has run.
   let closeRequested = false;
 
+  // The next op that is waiting, if any: the inbox has one wait at a time.
+  let outstanding: Promise<unknown> | undefined;
+
   const ended = () => {
     return closedAt !== undefined || engine.closed();
   };
@@ -653,26 +656,47 @@ export async function openSubscription<
         return undefined;
       }
 
-      const message = take();
-      if (message) {
-        return message;
-      }
+      for (;;) {
+        const message = take();
+        if (message) {
+          return message;
+        }
 
-      if (drained()) {
-        return null;
+        if (drained() || stopped || closeRequested) {
+          return null;
+        }
+
+        if (!outstanding) {
+          break;
+        }
+
+        // The inbox has one wait: another view's next is already waiting, and any
+        // message wakes the run for both, so this read sends its op after it.
+        await Promise.race([
+          outstanding.then(
+            () => {},
+            () => {},
+          ),
+          endSignal,
+        ]);
       }
 
       // Nothing to read: the executor flushes what is buffered, or leaves the run
       // waiting for the next message. The request ends here; the function runs
       // again once a message is in the state, and reads it above. The op only
       // returns when its timer won.
-      // A close() already called ends this read before an op is sent for it.
-      if (stopped || closeRequested) {
-        return take() ?? null;
-      }
+      const sent = op(waitId, "next", { timeout: options?.timeout });
+      const done = () => {
+        if (outstanding === sent) {
+          outstanding = undefined;
+        }
+      };
+
+      outstanding = sent;
+      sent.then(done, done);
 
       const waited = await Promise.race([
-        op(waitId, "next", { timeout: options?.timeout }).then(() => {
+        sent.then(() => {
           return "timeout" as const;
         }),
         endSignal,
