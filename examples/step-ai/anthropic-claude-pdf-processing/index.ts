@@ -11,7 +11,7 @@ const pdfFunction = inngest.createFunction(
   async ({ step }) => {
     const result = await step.ai.infer("parse-pdf", {
       model: anthropic({
-        model: "claude-3-5-sonnet-latest",
+        model: "claude-sonnet-4-6",
         defaultParameters: { max_tokens: 3094 },
       }),
       body: {
