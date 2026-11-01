@@ -766,7 +766,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     this.#taken += ids.length;
 
-    this.#deps.report(`${op}:read`, this.#deps.inbox, ids, false, op);
+    this.#deps.report(`${op}:read`, this.#deps.inbox, ids, true, op);
 
     return ids.map((id) => {
       return this.#deps.message(id) as TMessage;

@@ -160,7 +160,7 @@ const batchMessageBeforeTimeout: Flow = {
   expect: {
     output: { ns: [1] },
     bodies: {},
-    rows: ["inbox", "inbox:close", "inbox:next:batch"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
   },
 };
 

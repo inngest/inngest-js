@@ -156,3 +156,70 @@ describe("closing an inbox", () => {
     expect(closes).toHaveLength(1);
   });
 });
+
+describe("batch reads", () => {
+  const withBatch = (
+    unread: string[],
+    answer: unknown,
+    seen: unknown[] = [],
+  ) => {
+    const { deps } = fakeDeps(unread);
+    deps.batch = async (op, read) => {
+      seen.push({ op, ...read });
+
+      return answer;
+    };
+    deps.unread = (_inbox, _taken, _want, upTo) => {
+      // The state as far as the step the answer names: the first two messages.
+      return upTo === undefined ? unread : unread.slice(0, 2);
+    };
+
+    return new Inbox(deps);
+  };
+
+  test("drain() is answered by the executor: the messages up to the answer's step, then its ids", async () => {
+    const asked: unknown[] = [];
+    const inbox = withBatch(
+      ["m1", "m2", "m3"],
+      { seen: "m2", ids: ["m9"] },
+      asked,
+    );
+
+    const drained = await inbox.drain();
+
+    expect(drained).toEqual([
+      { name: "msg", data: { id: "m1" } },
+      { name: "msg", data: { id: "m2" } },
+      { name: "msg", data: { id: "m9" } },
+    ]);
+    expect(asked).toMatchObject([
+      { op: "inbox:next", drain: true, unread: true, seen: "inbox" },
+    ]);
+  });
+
+  test("max is split between what the SDK holds and the room it gives the executor", async () => {
+    const asked: unknown[] = [];
+    const inbox = withBatch(["m1", "m2"], { seen: "m2", ids: [] }, asked);
+
+    const drained = await inbox.drain({ max: 1 });
+
+    expect(drained).toEqual([{ name: "msg", data: { id: "m1" } }]);
+    expect(asked).toMatchObject([{ room: 0 }]);
+  });
+
+  test("nextBatch() returns null when the executor answers with the timeout's null", async () => {
+    const inbox = withBatch([], null);
+
+    expect(await inbox.nextBatch({ timeout: "1m" })).toBeNull();
+  });
+
+  test("nextBatch() asks to wait only when nothing is unread", async () => {
+    const asked: unknown[] = [];
+    const inbox = withBatch([], { seen: "inbox", ids: ["m1"] }, asked);
+
+    expect(await inbox.nextBatch()).toEqual([
+      { name: "msg", data: { id: "m1" } },
+    ]);
+    expect(asked).toMatchObject([{ drain: false, unread: false }]);
+  });
+});

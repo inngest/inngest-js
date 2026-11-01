@@ -245,14 +245,7 @@ const twoParallelBatches: Flow = {
   expect: {
     output: { a: [1], b: [2] },
     bodies: {},
-    rows: [
-      "inbox",
-      "inbox:close",
-      "inbox:next",
-      "inbox:next:1",
-      "inbox:next:1:batch",
-      "inbox:next:batch",
-    ],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
   },
 };
 
@@ -301,10 +294,7 @@ const backgroundBatches: Flow = {
       "inbox:next",
       "inbox:next:1",
       "inbox:close",
-      "inbox:next:1:batch",
       "inbox:next:2",
-      "inbox:next:2:batch",
-      "inbox:next:batch",
       "slow",
     ],
   },

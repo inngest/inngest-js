@@ -61,8 +61,8 @@ const burstThenBatch: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: { work: 1 },
-    rows: ["end", "inbox", "inbox:close", "inbox:next:batch", "work"],
-    ticks: { inbox: 3, "inbox:next:batch": 3 },
+    rows: ["end", "inbox", "inbox:close", "inbox:next", "work"],
+    ticks: { inbox: 3, "inbox:next": 3 },
 
     // The open record, the work, three messages, the one batch record and
     // the last sleep.
@@ -110,10 +110,8 @@ const maxLeavesTheRest: Flow = {
       "inbox",
       "inbox:next",
       "inbox:close",
-      "inbox:next:batch",
-      "inbox:next:1:batch",
-      "inbox:next:2:batch",
-      "inbox:next:batch",
+      "inbox:next:1",
+      "inbox:next:2",
     ],
 
     // The open record, three messages, three batch records and the last
@@ -143,8 +141,8 @@ const batchWaits: Flow = {
   expect: {
     output: { ns: [1] },
     bodies: {},
-    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:batch"],
-    ticks: { inbox: 1, "inbox:next:batch": 1 },
+    rows: ["inbox", "inbox:close", "inbox:next"],
+    ticks: { inbox: 1, "inbox:next": 1 },
   },
 };
 
@@ -181,14 +179,7 @@ const emptyDrain: Flow = {
   expect: {
     output: { none: 0, some: [1] },
     bodies: {},
-    rows: [
-      "end",
-      "inbox",
-      "inbox:close",
-      "inbox:next:batch",
-      "inbox:next:1:batch",
-      "nap",
-    ],
+    rows: ["end", "inbox", "inbox:close", "inbox:next", "inbox:next:1", "nap"],
 
     // The open record, one message, two batch records and two sleeps.
     steps: 7,
@@ -238,16 +229,14 @@ const batchesLoop: Flow = {
       "inbox",
       "inbox:next",
       "inbox:close",
-      "inbox:next:batch",
-      "inbox:next:1:batch",
-      "inbox:next:2:batch",
-      "inbox:next:batch",
+      "inbox:next:1",
+      "inbox:next:2",
     ],
     ticks: {
       inbox: 5,
-      "inbox:next:batch": 2,
-      "inbox:next:1:batch": 2,
-      "inbox:next:2:batch": 1,
+      "inbox:next": 2,
+      "inbox:next:1": 2,
+      "inbox:next:2": 1,
     },
   },
 };
