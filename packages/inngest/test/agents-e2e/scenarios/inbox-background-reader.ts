@@ -14,12 +14,7 @@
  * themselves.
  */
 import { group } from "inngest";
-import {
-  type Flow,
-  type FlowHandle,
-  flowScenario,
-  sleep,
-} from "../kit/flow.ts";
+import { type Flow, type FlowHandle, flowScenario } from "../kit/flow.ts";
 
 const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
@@ -76,8 +71,7 @@ const withGapAndMessage = (name: string): Flow => {
       const foreground = async () => {
         const a = await work(h, "a");
 
-        await h.until("sent");
-        await h.step.sleep("gap", "1s");
+        await h.step.sleep("gap", "3s");
 
         const b = await work(h, "b");
 
@@ -91,8 +85,6 @@ const withGapAndMessage = (name: string): Flow => {
     drive: async (d) => {
       await d.opened("inbox");
       await d.send("msg", { n: 7 });
-      await sleep(1000);
-      d.mark("sent");
     },
     expect: {
       output: {
