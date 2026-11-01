@@ -16,6 +16,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -48,8 +49,8 @@ export const threadHandle = scenario({
       { id: workerId },
       async ({ inbox, thread, control }) => {
         for await (const message of inbox) {
-          if (message.kind === "request") {
-            const { n } = message.payload as { n: number };
+          if (message.name === "agent/request") {
+            const { n } = message.data.payload as { n: number };
             await message.reply({ answer: n * 2, by: thread.key });
 
             continue;
@@ -61,7 +62,7 @@ export const threadHandle = scenario({
               { call: { name: "think", input: {} } },
               { say: "echo: {{last}}" },
             ]),
-            prompt: message.content ?? "",
+            prompt: message,
             tools: { think },
             ...control,
           });
@@ -79,7 +80,7 @@ export const threadHandle = scenario({
     // Asks the worker thread named in the message, from inside this function.
     const asker = agents.agent({ id: askerId }, async ({ inbox }) => {
       const message = await inbox.next();
-      const [key, n] = (message?.content ?? "").split(":") as [string, string];
+      const [key, n] = (textOf(message) ?? "").split(":") as [string, string];
       const reply = await worker
         .thread(key)
         .request({ n: Number(n) }, { timeout: "1m" });

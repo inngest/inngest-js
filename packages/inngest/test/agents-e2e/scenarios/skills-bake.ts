@@ -17,6 +17,7 @@ import {
   skills,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "skills-bake-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -47,7 +48,7 @@ export const skillsBake = scenario({
         const first = await inbox.next();
         const result = await agent.loop({
           model: script([{ say: "ready" }]),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: {},
           ...control,
         });

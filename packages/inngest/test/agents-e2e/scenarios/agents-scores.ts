@@ -13,6 +13,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const scored = "agents-scores-on";
 const silent = "agents-scores-off";
@@ -57,7 +58,7 @@ export const agentsScores = scenario({
               { call: { name: "note", input: {} } },
               { say: "all done" },
             ]),
-            prompt: first?.content ?? "",
+            prompt: first ?? "",
             tools: { note },
             ...control,
           });

@@ -4,6 +4,7 @@
  * panels on the right; a bar to move between pages.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ActionId } from "../../shared/keys.ts";
 import type {
   Page,
   PageSummary,
@@ -13,17 +14,30 @@ import type {
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
+import { EventBlock } from "./EventBlock.tsx";
+import { Events } from "./Events.tsx";
+import { Github } from "./Github.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
+import { announceChange, sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { MessagePanel, OutputPanel, TracePanel } from "./panels.tsx";
+import { MessagePanel } from "./panels.tsx";
+import { Divider } from "./panes.tsx";
 import { hash, store } from "./platform.ts";
+import { Slack } from "./Slack.tsx";
+import { TracePanel } from "./trace.tsx";
 
+type PlayTab = "message" | "slack" | "github" | "events";
 type Overlay = "contents" | "search" | "cheat" | null;
-type Tab = "output" | "trace" | "message";
-type Theme = "system" | "light" | "dark";
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
+
+const tabNames: Record<PlayTab, string> = {
+  message: "Messages",
+  slack: "Slack",
+  github: "GitHub",
+  events: "Events",
+};
 
 const pathOf = (id: string) => {
   return `/tour/${id}`;
@@ -43,16 +57,13 @@ const editKey = (page: Page) => {
   return `tour:edit:${page.id}:${hash(original?.content ?? "")}`;
 };
 
-const prefersDark = () => {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-};
-
 export const App = () => {
   const [index, setIndex] = useState<TourIndex>();
   const [page, setPage] = useState<Page>();
   const [files, setFiles] = useState<Page["files"]>([]);
   const [active, setActive] = useState("agent.ts");
-  const [tab, setTab] = useState<Tab>("trace");
+  const [ready, setReady] = useState(false);
+  const [devServerUrl, setDevServerUrl] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [runs, setRuns] = useState<TraceRun[]>([]);
@@ -62,40 +73,29 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
-  const [theme, setTheme] = useState<Theme>(
-    (store.get("tour:theme") as Theme | null) ?? "system",
+  const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
+  const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
+  const [rightRow, setRightRow] = useState(
+    Number(store.get("tour:right")) || 56,
   );
-  const [systemDark, setSystemDark] = useState(prefersDark());
-  const [panelHeight, setPanelHeight] = useState(
-    Number(store.get("tour:panel")) || 260,
-  );
+  const [play, setPlay] = useState<PlayTab>("message");
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
   const textPane = useRef<HTMLElement>(null);
   const undoTimer = useRef<number | undefined>(undefined);
-  const dark = theme === "system" ? systemDark : theme === "dark";
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-  }, [dark]);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const change = () => {
-      setSystemDark(query.matches);
-    };
-
-    query.addEventListener("change", change);
-
-    return () => {
-      query.removeEventListener("change", change);
-    };
-  }, []);
 
   useEffect(() => {
     void api.index().then(setIndex);
-    void api.types().then(addTypes);
+    void api.info().then((info) => {
+      setDevServerUrl(info.devServerUrl);
+    });
+    // The SDK's declarations go in before any page opens, so the editor's
+    // first check of a page already knows them.
+    void api.types().then((files) => {
+      addTypes(files);
+      setReady(true);
+    });
 
     return api.stream((event) => {
       if (event.type === "log") {
@@ -108,6 +108,8 @@ export const App = () => {
         setStatus(event);
       } else if (event.type === "runs") {
         setRuns(event.runs);
+      } else if (event.type === "fakes") {
+        announceChange(event.topic);
       }
     });
   }, []);
@@ -135,7 +137,6 @@ export const App = () => {
       setActive("agent.ts");
       setLines([]);
       setUndo(null);
-      setTab((next.manifest.open as Tab | undefined) ?? "output");
       store.set("tour:last", id);
 
       if (push) {
@@ -153,7 +154,7 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (flat.length === 0) {
+    if (flat.length === 0 || !ready) {
       return;
     }
 
@@ -177,7 +178,7 @@ export const App = () => {
     return () => {
       window.removeEventListener("popstate", onPop);
     };
-  }, [flat, open]);
+  }, [flat, open, ready]);
 
   const position = flat.findIndex((candidate) => {
     return candidate.id === page?.id;
@@ -200,10 +201,12 @@ export const App = () => {
     );
   });
 
-  const run = () => {
+  const run = async () => {
     if (!page || !hasCode) {
       return;
     }
+
+    await editor.current?.format();
 
     const values = editor.current?.values() ?? {};
     const edited = values["agent.ts"];
@@ -258,19 +261,48 @@ export const App = () => {
     }
   };
 
-  const cycleTheme = () => {
-    const next: Theme =
-      theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+  const nextFile = () => {
+    const at = files.findIndex((file) => {
+      return file.name === active;
+    });
+    const next = files[(at + 1) % Math.max(1, files.length)];
 
-    setTheme(next);
-    store.set("tour:theme", next);
+    if (next) {
+      setActive(next.name);
+    }
   };
 
-  const panels = (page?.manifest.panels ?? ["output", "trace"]) as Tab[];
-  const showTab = (next: Tab) => {
-    if (panels.includes(next)) {
-      setTab(next);
+  const target = page?.manifest.message;
+  const panels: PlayTab[] =
+    (page?.manifest.panels as PlayTab[] | undefined) ??
+    (target ? ["message"] : []);
+  const panelsKey = panels.join(",");
+
+  useEffect(() => {
+    setPlay(panelsKey.split(",")[0] as PlayTab);
+  }, [page?.id, panelsKey]);
+
+  // Opens a tab of the play pane, then focuses something in it or hands a key
+  // action to it once it is on screen.
+  const playTo = (tab: PlayTab, then: string | ActionId) => {
+    if (!panels.includes(tab)) {
+      return;
     }
+
+    setPlay(tab);
+    window.setTimeout(() => {
+      if (then.startsWith(".")) {
+        document.querySelector<HTMLElement>(then)?.focus();
+      } else {
+        sendAction(then as ActionId);
+      }
+    }, 40);
+  };
+
+  const focusIn = (selector: string) => {
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(selector)?.focus();
+    }, 0);
   };
 
   const handlers: Handlers = {
@@ -280,7 +312,7 @@ export const App = () => {
     },
     reset,
     format: () => {
-      editor.current?.format();
+      void editor.current?.format();
     },
     next: () => {
       go(1);
@@ -297,15 +329,63 @@ export const App = () => {
     search: () => {
       setOverlay("search");
     },
-    output: () => {
-      showTab("output");
+    text: () => {
+      textPane.current?.focus();
     },
     trace: () => {
-      showTab("trace");
+      focusIn(".trace [data-row], .trace");
     },
     message: () => {
-      showTab("message");
+      playTo("message", ".message button");
     },
+    slack: () => {
+      playTo("slack", ".slack-head button");
+    },
+    github: () => {
+      playTo("github", ".gh-head button");
+    },
+    events: () => {
+      playTo("events", ".events button");
+    },
+    slackCompose: () => {
+      playTo("slack", "slackCompose");
+    },
+    slackNew: () => {
+      playTo("slack", "slackNew");
+    },
+    approve: () => {
+      playTo("slack", "approve");
+    },
+    deny: () => {
+      playTo("slack", "deny");
+    },
+    sendOther: () => {
+      playTo("message", "sendOther");
+    },
+    githubComment: () => {
+      playTo("github", "githubComment");
+    },
+    githubApprove: () => {
+      playTo("github", "githubApprove");
+    },
+    githubPull: () => {
+      playTo("github", "githubPull");
+    },
+    githubIssue: () => {
+      playTo("github", "githubIssue");
+    },
+    sendEvent: () => {
+      playTo(play === "message" ? "message" : "events", "sendEvent");
+    },
+    file: nextFile,
+    devserver: () => {
+      if (devServerUrl) {
+        window.open(devServerUrl, "_blank", "noopener");
+      }
+    },
+    rowDown: () => {},
+    rowUp: () => {},
+    rowOpen: () => {},
     everything: () => {
       setEverything((value) => {
         return !value;
@@ -313,7 +393,6 @@ export const App = () => {
     },
     editor: toggleEditor,
     undo: undoReset,
-    theme: cycleTheme,
   };
   const latest = useRef(handlers);
 
@@ -345,28 +424,44 @@ export const App = () => {
     open(summary.id);
   };
 
-  const dragPanel = (event: React.PointerEvent) => {
-    const start = event.clientY;
-    const from = panelHeight;
-    const move = (next: PointerEvent) => {
-      setPanelHeight(
-        Math.max(120, Math.min(600, from + (start - next.clientY))),
-      );
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
+  const saveSplit = (
+    key: string,
+    set: (value: number) => void,
+    value: number,
+  ) => {
+    set(value);
+    store.set(key, String(Math.round(value)));
+  };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+  const tabKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabs = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="tab"]',
+      ),
+    ];
+    const at = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | undefined;
+
+    if (event.key === "ArrowRight") {
+      next = (at + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft") {
+      next = (at - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = tabs.length - 1;
+    }
+
+    if (next !== undefined) {
+      event.preventDefault();
+      tabs[next]?.focus();
+      tabs[next]?.click();
+    }
   };
 
   if (!index || !page) {
     return <div className="loading">Loading the tour...</div>;
   }
-
-  const target = page.manifest.message;
 
   return (
     <div className="app">
@@ -407,191 +502,220 @@ export const App = () => {
           <button
             type="button"
             className="ghost"
-            onClick={cycleTheme}
-            aria-keyshortcuts={shortcutsOf("theme")}
+            onClick={handlers.devserver}
+            title="The Dev Server in this tour is a bare binary with no dashboard, so this opens a stub page. The Trace pane shows the same runs."
+            aria-keyshortcuts={shortcutsOf("devserver")}
           >
-            Theme: {theme} <Kbd action="theme" />
+            Dev Server <Kbd action="devserver" />
           </button>
         </nav>
       </header>
 
-      <main className={hasCode ? "split" : "single"}>
-        <section
-          className="text"
-          ref={textPane}
-          tabIndex={-1}
-          aria-label="Lesson"
+      <main
+        className={hasCode ? "grid" : "single"}
+        style={
+          hasCode
+            ? { gridTemplateColumns: `${cols}fr 6px ${100 - cols}fr` }
+            : undefined
+        }
+      >
+        <div
+          className="col"
+          style={
+            hasCode && panels.length > 0
+              ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
+              : undefined
+          }
         >
-          <p className="crumb">{page.lessonTitle}</p>
-          <h2>{page.title}</h2>
-          <div
-            className="prose"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(page.markdown) }}
-          />
-        </section>
+          <section
+            className="text"
+            ref={textPane}
+            tabIndex={-1}
+            aria-label="Lesson"
+          >
+            <p className="crumb">{page.lessonTitle}</p>
+            <h2>{page.title}</h2>
+            <div
+              className="prose"
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(page.markdown),
+              }}
+            />
+            {hasCode && page.manifest.start?.length ? (
+              <EventBlock starts={page.manifest.start} />
+            ) : null}
+          </section>
+          {hasCode && panels.length > 0 ? (
+            <>
+              <Divider
+                axis="horizontal"
+                value={leftRow}
+                label="Resize the lesson text and the message box"
+                onChange={(value) => saveSplit("tour:left", setLeftRow, value)}
+              />
+              <section className="play" aria-label="Play">
+                <div className="tabs" role="tablist" onKeyDown={tabKeys}>
+                  {panels.map((tab) => {
+                    return (
+                      <button
+                        type="button"
+                        role="tab"
+                        id={`play-tab-${tab}`}
+                        key={tab}
+                        aria-selected={play === tab}
+                        aria-controls="play-panel"
+                        tabIndex={play === tab ? 0 : -1}
+                        onClick={() => setPlay(tab)}
+                        aria-keyshortcuts={shortcutsOf(tab)}
+                      >
+                        {tabNames[tab]} <Kbd action={tab} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  className="panel"
+                  role="tabpanel"
+                  id="play-panel"
+                  aria-labelledby={`play-tab-${play}`}
+                >
+                  {play === "message" && target ? (
+                    <MessagePanel
+                      target={target}
+                      disabled={status.state !== "live"}
+                    />
+                  ) : null}
+                  {play === "slack" ? <Slack /> : null}
+                  {play === "github" ? <Github /> : null}
+                  {play === "events" ? <Events /> : null}
+                </div>
+              </section>
+            </>
+          ) : null}
+        </div>
 
         {hasCode ? (
-          <section className="work" aria-label="Code and results">
-            <div className="tabs files" role="tablist">
-              {files.map((file) => {
-                return (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active === file.name}
-                    key={file.name}
-                    onClick={() => {
-                      setActive(file.name);
-                    }}
-                  >
-                    {file.name}
-                    {file.editable ? "" : " (read-only)"}
-                  </button>
-                );
-              })}
-            </div>
-            <Editor
-              ref={editor}
-              files={files}
-              active={active}
-              dark={dark}
-              markers={markers}
-              handlers={() => {
-                return latest.current;
-              }}
-              onChange={(name, content) => {
-                if (name === "agent.ts") {
-                  store.set(editKey(page), content);
-                }
-              }}
+          <>
+            <Divider
+              axis="vertical"
+              value={cols}
+              label="Resize the lesson and the code"
+              low={25}
+              high={70}
+              onChange={(value) => saveSplit("tour:cols", setCols, value)}
             />
-            <div className="controls">
-              <button
-                type="button"
-                className="primary"
-                ref={runButton}
-                onClick={run}
-                aria-keyshortcuts={shortcutsOf("run")}
-              >
-                Run <Kbd action="run" />
-              </button>
-              {live ? (
-                <button
-                  type="button"
-                  onClick={handlers.kill}
-                  aria-keyshortcuts={shortcutsOf("kill")}
-                >
-                  Kill <Kbd action="kill" />
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={handlers.format}
-                aria-keyshortcuts={shortcutsOf("format")}
-              >
-                Format <Kbd action="format" />
-              </button>
-              <button
-                type="button"
-                onClick={reset}
-                aria-keyshortcuts={shortcutsOf("reset")}
-              >
-                Reset <Kbd action="reset" />
-              </button>
-              {undo ? (
-                <button
-                  type="button"
-                  className="toast"
-                  onClick={undoReset}
-                  aria-keyshortcuts={shortcutsOf("undo")}
-                >
-                  Undo reset <Kbd action="undo" />
-                </button>
-              ) : null}
-              <span className={`status-line ${status.state}`} role="status">
-                {status.text}
-              </span>
-            </div>
             <div
-              className="divider"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize the panels"
-              tabIndex={0}
-              onPointerDown={dragPanel}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowUp") {
-                  setPanelHeight((value) => {
-                    return Math.min(600, value + 24);
-                  });
-                } else if (event.key === "ArrowDown") {
-                  setPanelHeight((value) => {
-                    return Math.max(120, value - 24);
-                  });
-                }
+              className="col right"
+              style={{
+                gridTemplateRows: `${rightRow}fr 6px ${100 - rightRow}fr`,
               }}
-            />
-            <div className="lower" style={{ height: panelHeight }}>
-              <div className="tabs" role="tablist">
-                {panels.includes("output") ? (
+            >
+              <section className="work" aria-label="Code">
+                <div className="tabs files" role="tablist" onKeyDown={tabKeys}>
+                  {files.map((file) => {
+                    return (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={active === file.name}
+                        tabIndex={active === file.name ? 0 : -1}
+                        key={file.name}
+                        onClick={() => setActive(file.name)}
+                      >
+                        {file.name}
+                        {file.editable ? "" : " (read-only)"}
+                      </button>
+                    );
+                  })}
                   <button
                     type="button"
-                    role="tab"
-                    aria-selected={tab === "output"}
-                    onClick={() => {
-                      setTab("output");
-                    }}
-                    aria-keyshortcuts={shortcutsOf("output")}
+                    className="ghost files-key"
+                    onClick={nextFile}
+                    aria-keyshortcuts={shortcutsOf("file")}
                   >
-                    Output <Kbd action="output" />
+                    Next file <Kbd action="file" />
                   </button>
-                ) : null}
-                {panels.includes("trace") ? (
+                </div>
+                <Editor
+                  ref={editor}
+                  files={files}
+                  active={active}
+                  markers={markers}
+                  handlers={() => {
+                    return latest.current;
+                  }}
+                  onChange={(name, content) => {
+                    if (name === "agent.ts") {
+                      store.set(editKey(page), content);
+                    }
+                  }}
+                />
+                <div className="controls">
                   <button
                     type="button"
-                    role="tab"
-                    aria-selected={tab === "trace"}
-                    onClick={() => {
-                      setTab("trace");
-                    }}
-                    aria-keyshortcuts={shortcutsOf("trace")}
+                    className="primary"
+                    ref={runButton}
+                    onClick={run}
+                    aria-keyshortcuts={shortcutsOf("run")}
                   >
-                    Trace <Kbd action="trace" />
+                    Run <Kbd action="run" />
                   </button>
-                ) : null}
-                {panels.includes("message") ? (
+                  {live ? (
+                    <button
+                      type="button"
+                      onClick={handlers.kill}
+                      aria-keyshortcuts={shortcutsOf("kill")}
+                    >
+                      Kill <Kbd action="kill" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    role="tab"
-                    aria-selected={tab === "message"}
-                    onClick={() => {
-                      setTab("message");
-                    }}
-                    aria-keyshortcuts={shortcutsOf("message")}
+                    onClick={handlers.format}
+                    aria-keyshortcuts={shortcutsOf("format")}
                   >
-                    Message <Kbd action="message" />
+                    Format <Kbd action="format" />
                   </button>
-                ) : null}
-              </div>
-              <div className="panel" role="tabpanel">
-                {tab === "output" ? <OutputPanel lines={lines} /> : null}
-                {tab === "trace" ? (
-                  <TracePanel
-                    runs={runs}
-                    everything={everything}
-                    onToggle={handlers.everything}
-                    hint={<Kbd action="everything" />}
-                  />
-                ) : null}
-                {tab === "message" && target ? (
-                  <MessagePanel
-                    target={target}
-                    disabled={status.state !== "live"}
-                  />
-                ) : null}
-              </div>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    aria-keyshortcuts={shortcutsOf("reset")}
+                  >
+                    Reset <Kbd action="reset" />
+                  </button>
+                  {undo ? (
+                    <button
+                      type="button"
+                      className="toast"
+                      onClick={undoReset}
+                      aria-keyshortcuts={shortcutsOf("undo")}
+                    >
+                      Undo reset <Kbd action="undo" />
+                    </button>
+                  ) : null}
+                  <span className={`status-line ${status.state}`} role="status">
+                    {status.text}
+                  </span>
+                </div>
+              </section>
+              <Divider
+                axis="horizontal"
+                value={rightRow}
+                label="Resize the code and the trace"
+                onChange={(value) =>
+                  saveSplit("tour:right", setRightRow, value)
+                }
+              />
+              <section className="tracepane" aria-label="Trace">
+                <TracePanel
+                  runs={runs}
+                  lines={lines}
+                  everything={everything}
+                  onToggle={handlers.everything}
+                />
+              </section>
             </div>
-          </section>
+          </>
         ) : null}
       </main>
 

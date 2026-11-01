@@ -820,6 +820,11 @@ export interface CommandResult {
   /** Whether output was cut to fit. The whole of it is on the machine. */
   truncated: boolean;
   /**
+   * Both streams in the order they were written, for a command that ran as a
+   * process. A command that ran as one step reports them apart only.
+   */
+  merged?: string;
+  /**
    * How long the command ran, from the machine's own timestamps. Missing when
    * the Sandbox API doesn't report them, which today is commands with a
    * timeout of 5 minutes or less.

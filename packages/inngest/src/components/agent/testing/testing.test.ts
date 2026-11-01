@@ -84,6 +84,8 @@ describe("the entry", () => {
   test("exports exactly the documented names", () => {
     expect(Object.keys(entry).sort()).toEqual([
       "fakeGitDataApi",
+      "fakeMcpFetch",
+      "fakeMcpServer",
       "fakeSandbox",
       "script",
       "startFakes",

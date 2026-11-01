@@ -52,9 +52,6 @@ export const agentsAppEvent = scenario({
             event: order,
             if: "event.data.id != 'ignored'",
             thread: "event.data.id",
-            message: (trigger) => {
-              return `order ${trigger.data.id}: ${trigger.data.note}`;
-            },
           },
         ],
       },
@@ -65,7 +62,12 @@ export const agentsAppEvent = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), (turns) => {
-            return [...(turns ?? []), message.content ?? ""];
+            return [
+              ...(turns ?? []),
+              message.name === order.name
+                ? `order ${(message.data as unknown as { id: string }).id}: ${(message.data as unknown as { note: string }).note}`
+                : "",
+            ];
           });
           await sleep(100);
         }

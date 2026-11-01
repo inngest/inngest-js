@@ -38,6 +38,19 @@ export type {
   GitSeed,
 } from "../../components/agent/testing/gitRemote.ts";
 export { startGitRemote } from "../../components/agent/testing/gitRemote.ts";
+export type {
+  FakeMcp,
+  FakeMcpCall,
+  FakeMcpOptions,
+  FakeMcpServer,
+  FakeMcpTool,
+  FakeOAuthCall,
+  FakeOAuthControls,
+} from "../../components/agent/testing/mcp.ts";
+export {
+  fakeMcpFetch,
+  fakeMcpServer,
+} from "../../components/agent/testing/mcp.ts";
 export type { ScriptStep } from "../../components/agent/testing/model.ts";
 export { script } from "../../components/agent/testing/model.ts";
 export type { TestReporter } from "../../components/agent/testing/reporter.ts";

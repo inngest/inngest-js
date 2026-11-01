@@ -1,0 +1,14 @@
+{
+  "panels": ["message"],
+  "start": [
+    {
+      "agent": "echo",
+      "thread": "main",
+      "text": "Hi"
+    }
+  ],
+  "message": {
+    "agent": "echo",
+    "thread": "main"
+  }
+}

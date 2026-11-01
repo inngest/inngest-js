@@ -15,3 +15,5 @@ The client and the run engine.
 - `buildLock.ts`: how concurrent runs that miss the same cached job build it once. A run listens for `ci/build.done`, looks the snapshot up, and on a miss sends `ci/build.requested`. The `ci/build` function that takes it claims a machine named for the entry (`ci-build-<hash>`); only one succeeds, builds, snapshots, and when its run ends destroys the machine and sends `ci/build.done` with what the build gave back. A build whose run ends sends a failed `ci/build.done` from its own cleanup. Jobs with a `from` are invoked instead.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.
+- `jobReport.ts`: what a job's check shows, worked out from its scope: links, machine, the failure's class and excerpt, and the payload for queued, running, cache hit, passed and failed. The wording is in `github/render`.
+- `pipelineReport.ts`: what the pipeline's check shows, from what each job recorded about itself in `run.jobGraph` (`markJob`): progress while running, then passed, failed or cancelled.

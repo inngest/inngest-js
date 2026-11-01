@@ -58,7 +58,7 @@ describe("inbox.next", () => {
           return "closed";
         }
 
-        expectTypeOf(waited.kind).toBeString();
+        expectTypeOf(waited.name).toBeString();
 
         return "message";
       });

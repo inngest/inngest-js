@@ -21,6 +21,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "recovery-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -83,7 +84,7 @@ export const agentRecovery = scenario({
         );
 
         for await (const message of inbox) {
-          const text = message.content ?? "";
+          const text = textOf(message) ?? "";
 
           if (text.startsWith("explode")) {
             throw new Error(`exploded on ${text} at ${Date.now()}`);

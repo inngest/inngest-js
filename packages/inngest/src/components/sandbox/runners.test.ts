@@ -164,7 +164,7 @@ describe.each(languages)(
         expect.objectContaining({ id: "py:run", name: "Running code" }),
         expect.objectContaining({ action: "exec" }),
         undefined,
-        { tools, toolOptions: { maxCalls: 3 } },
+        expect.objectContaining({ tools, toolOptions: { maxCalls: 3 } }),
       );
     });
   },

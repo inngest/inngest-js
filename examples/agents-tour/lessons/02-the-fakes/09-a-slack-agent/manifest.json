@@ -1,0 +1,4 @@
+{
+  "panels": ["slack"],
+  "start": [{ "slack": { "channel": "C02ENG", "text": "Hello" } }]
+}

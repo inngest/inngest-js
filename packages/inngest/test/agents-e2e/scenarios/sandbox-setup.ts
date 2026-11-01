@@ -15,6 +15,7 @@ import {
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 
 const agentId = "sandbox-setup-agent";
 const ref = `agents-e2e/${agentId}`;
@@ -60,7 +61,7 @@ export const sandboxSetup = scenario({
             },
             { say: "done" },
           ]),
-          prompt: first?.content ?? "",
+          prompt: first ?? "",
           tools: sandboxTools,
           ...control,
         });

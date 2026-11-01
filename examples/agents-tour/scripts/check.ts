@@ -51,7 +51,7 @@ for (const page of pages) {
       !page.files[0]?.content.includes(`"${start.agent}"`)
     ) {
       problems.push(
-        `${page.id}: start message names agent ${start.agent}, which agent.ts does not define`,
+        `${page.id}: start event names agent ${start.agent}, which agent.ts does not define`,
       );
     }
   }

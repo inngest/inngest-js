@@ -2,6 +2,6 @@
 
 An agent is a function that Inngest runs for you.
 
-This one has an `id` and does nothing.
+It starts when an event arrives. Run sends one, an `agent/message` event, shown below.
 
-Press **Run**. The tour sends the agent a message, and a run appears in the Trace panel.
+This agent has an `id` and does nothing. Press **Run**: the Trace shows the run, and its first row is that event.

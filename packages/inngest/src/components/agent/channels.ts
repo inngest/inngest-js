@@ -453,6 +453,11 @@ export type ReportConfigValue<Ctx> = ConfigValue<ReportConfig, Ctx>;
  * stream's state is then kept in the thread's durable state rather than in
  * step results, so use one form for a stream; a stream written in one form and
  * then in the other starts again.
+ *
+ * `status()`, `card()` and `begin()` are best effort: they never block the
+ * caller and never fail the run. The write is a step that nobody waits for; a
+ * failure is logged and the step still completes, without retries. `finish()`
+ * and the plain post are not: they are awaited and surface their errors.
  */
 export interface Reporter {
   /**
@@ -547,6 +552,13 @@ export interface Reporter {
     final?: ChannelStreamFinal,
     options?: ReportStreamOptions,
   ): Promise<string | undefined>;
+
+  /**
+   * Resolves once every best-effort write started so far has finished. The
+   * agent waits for it when the body returns, so no write is left dangling at
+   * the end of the run; `finish()` needs no wait, as it queues after them.
+   */
+  settled(): Promise<void>;
 }
 
 /**
@@ -882,6 +894,17 @@ export const createReporter = (
     restarts?: () => number;
 
     /**
+     * Logs a best-effort write that failed.
+     */
+    warn?: (data: Record<string, unknown>, message: string) => void;
+
+    /**
+     * How long a best-effort write may take before it is given up on, in
+     * milliseconds. Defaults to 10 seconds.
+     */
+    writeTimeoutMs?: number;
+
+    /**
      * Whether the caller is inside a running step. A report made there is
      * written directly, on that step, instead of in a step of its own: the
      * caller's step memoizes it. A stream's state then lives in `state`
@@ -950,6 +973,24 @@ export const createReporter = (
     const n = ++reports;
     const destinations = destinationsOf(options);
 
+    // The status writes queued before this post land before it, so a late
+    // "working" never shows after the answer. Inside a step the queued writes
+    // cannot be waited on (they are steps of their own), and each is bounded
+    // by the write timeout otherwise, and the wait as a whole is capped at one
+    // timeout. A write given up on cannot be cancelled, so it may still land
+    // after this post.
+    if (hooks?.inStep?.() !== true) {
+      let cap: ReturnType<typeof setTimeout> | undefined;
+
+      await Promise.race([
+        settled(),
+        new Promise<void>((resolve) => {
+          cap = setTimeout(resolve, hooks?.writeTimeoutMs ?? 10_000);
+        }),
+      ]);
+      clearTimeout(cap);
+    }
+
     // Measured from before this report's first post, so a second destination
     // is not scored against its sibling.
     const first = !posted;
@@ -994,6 +1035,47 @@ export const createReporter = (
   const cardStreams = new Map<Channel, CardStreamState | null>();
   let queue: Promise<unknown> = Promise.resolve();
   const counts = { card: 0, status: 0, begin: 0, finish: 0 };
+  const inFlight = new Set<Promise<unknown>>();
+
+  /**
+   * Runs one write. A best-effort write that throws is logged and leaves its
+   * stream where it was, so the step that runs it completes (no retries, no
+   * backoff) and the run goes on.
+   */
+  const attempt = async <T>(
+    kind: string,
+    destination: string,
+    bestEffort: boolean,
+    before: CardStreamState | undefined,
+    write: () => Promise<T>,
+  ): Promise<T | CardStreamState | undefined> => {
+    if (!bestEffort) {
+      return write();
+    }
+
+    const limit = hooks?.writeTimeoutMs ?? 10_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        write(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`the write took longer than ${limit}ms`));
+          }, limit);
+        }),
+      ]);
+    } catch (error) {
+      hooks?.warn?.(
+        { kind, destination, error: String(error).slice(0, 160) },
+        "A progress report could not be written; the run goes on",
+      );
+
+      return before;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   /**
    * One write to the destinations' streams, queued after the ones before it.
@@ -1010,6 +1092,7 @@ export const createReporter = (
       restarts: number,
     ) => Promise<CardStreamState | FinishedRef | null | undefined>,
   ): Promise<string | undefined> => {
+    const bestEffort = kind !== "finish";
     const n = ++counts[kind];
     const direct = hooks?.inStep?.() === true;
     const destinations = destinationsOf(options).filter(({ channel }) => {
@@ -1031,7 +1114,9 @@ export const createReporter = (
           const before =
             (held === undefined ? cardStreams.get(channel) : held) ?? undefined;
           const written =
-            (await write(channel, before, hooks?.restarts?.() ?? 0)) ?? null;
+            (await attempt(kind, name, bestEffort, before, () => {
+              return write(channel, before, hooks?.restarts?.() ?? 0);
+            })) ?? null;
           const state = isFinishedRef(written) ? null : written;
 
           if (isFinishedRef(written)) {
@@ -1059,7 +1144,11 @@ export const createReporter = (
           // The step saves where the stream stands, not a time: the runner is
           // typed for the post steps, which save one.
           (async () => {
-            return (await write(channel, before, restarts)) ?? null;
+            return (
+              (await attempt(kind, name, bestEffort, before, () => {
+                return write(channel, before, restarts);
+              })) ?? null
+            );
           }) as unknown as () => Promise<number | undefined>,
         );
 
@@ -1081,19 +1170,58 @@ export const createReporter = (
     // One failed write must not stop the ones after it from running.
     queue = run.catch(noop);
 
+    if (bestEffort && !direct) {
+      // Nobody waits: the loop goes on while the write runs as a step of its
+      // own. `settled()` is how the end of the run waits for it.
+      const pending = run.catch((error) => {
+        hooks?.warn?.(
+          { kind, error: String(error).slice(0, 160) },
+          "A progress report could not be written; the run goes on",
+        );
+      });
+
+      inFlight.add(pending);
+      void pending.then(() => {
+        inFlight.delete(pending);
+      });
+
+      return Promise.resolve(undefined);
+    }
+
+    if (bestEffort) {
+      // On the caller's own step the write is awaited, but a call nobody
+      // awaits must not become an unhandled rejection.
+      return run.then(
+        () => {
+          return ref;
+        },
+        (error) => {
+          hooks?.warn?.(
+            { kind, error: String(error).slice(0, 160) },
+            "A progress report could not be written; the run goes on",
+          );
+
+          return undefined;
+        },
+      );
+    }
+
     return run.then(() => {
       return ref;
     });
   };
 
-  async function status(status: ChannelStatus, options?: ReportStreamOptions) {
+  function status(
+    status: ChannelStatus,
+    options?: ReportStreamOptions,
+  ): Promise<void> {
     if (!channelStatuses.includes(status)) {
       throw new NonRetriableError(
         `report.status: the status is one of ${channelStatuses.join(", ")}.`,
       );
     }
 
-    await queued(
+    return queued(
       "status",
       options,
       (channel) => {
@@ -1109,13 +1237,16 @@ export const createReporter = (
 
         return undefined;
       },
-    );
+    ).then(noop);
   }
 
-  async function card(card: ChannelCard, options?: ReportStreamOptions) {
+  function card(
+    card: ChannelCard,
+    options?: ReportStreamOptions,
+  ): Promise<void> {
     checkCard(card);
 
-    await queued(
+    return queued(
       "card",
       options,
       (channel) => {
@@ -1129,18 +1260,18 @@ export const createReporter = (
           restarts,
         );
       },
-    );
+    ).then(noop);
   }
 
-  async function begin(
+  function begin(
     start: ChannelStreamStart,
     options?: ReportStreamOptions,
-  ) {
+  ): Promise<void> {
     for (const card of start.cards ?? []) {
       checkCard(card);
     }
 
-    await queued(
+    return queued(
       "begin",
       options,
       (channel) => {
@@ -1158,7 +1289,7 @@ export const createReporter = (
           restarts,
         );
       },
-    );
+    ).then(noop);
   }
 
   async function finish(
@@ -1201,7 +1332,19 @@ export const createReporter = (
     );
   }
 
-  return Object.assign(report, { card, status, begin, finish }) as Reporter;
+  async function settled() {
+    while (inFlight.size > 0) {
+      await Promise.all([...inFlight]);
+    }
+  }
+
+  return Object.assign(report, {
+    card,
+    status,
+    begin,
+    finish,
+    settled,
+  }) as Reporter;
 };
 
 /**
@@ -1400,11 +1543,6 @@ export interface ChannelTrigger<TData = unknown> {
    * The thread key, a CEL expression over `event`.
    */
   thread: string;
-
-  /**
-   * The text of the message the event carries.
-   */
-  message: (event: { data: Record<string, unknown> }) => string | undefined;
 
   /**
    * The shape of the event's `data`.

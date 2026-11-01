@@ -16,6 +16,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "thread-key-agent";
@@ -48,9 +49,6 @@ export const threadKey = scenario({
           event: event("msg"),
           thread:
             'event.data.channel + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)',
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox }) => {
@@ -60,7 +58,7 @@ export const threadKey = scenario({
 
         for await (const message of inbox) {
           await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
-            return [...(turns ?? []), message.content ?? ""];
+            return [...(turns ?? []), textOf(message) ?? ""];
           });
           await sleep(150);
         }

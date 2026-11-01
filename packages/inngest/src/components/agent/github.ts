@@ -245,9 +245,6 @@ export const github = {
       if: `(${repos.join(" || ")})${ignored.join("")}`,
       thread:
         '"github:" + event.data.owner + "/" + event.data.repo + "#" + string(int(event.data.number))',
-      message: (event) => {
-        return (event.data as unknown as GithubCommentData).body;
-      },
       schema: githubCommentSchema,
     };
   },

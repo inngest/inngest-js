@@ -28,6 +28,7 @@ import {
 } from "./recovery.ts";
 import { scoreThisStep } from "./scores.ts";
 import {
+  type Inflight,
   lastRunRecordKey,
   summaryLength,
   type ThreadRecord,
@@ -100,10 +101,15 @@ export const threadRecorder = (
   // number at the same point of the body.
   let restarts = 0;
 
+  // Inside a step's callback the run's own thread is not in scope, so a write
+  // there names the thread. Elsewhere it is the run's, and the step is named by
+  // the scope alone.
   const record = async (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
+    thread?: string,
   ) => {
-    const written = await store.thread.update(recordKey, (found) => {
+    const scope = thread ? store.scope("thread", thread) : store.thread;
+    const written = await scope.update(recordKey, (found) => {
       const current = found ?? emptyRecord();
       const mine = current.runId === runId;
       const moved =
@@ -124,6 +130,16 @@ export const threadRecorder = (
   };
 
   return {
+    /**
+     * Takes in what a turn recorded inside its step, which a replay does not
+     * run again: the restarts it saw.
+     */
+    observe: (recorded: { usage: ThreadRecord["usage"]; restarts: number }) => {
+      restarts = recorded.restarts;
+
+      return recorded;
+    },
+
     /**
      * How many times the run has continued in another process: a restart, a
      * deploy or another instance picking it up.
@@ -148,7 +164,12 @@ export const threadRecorder = (
        * The message the turn answers, kept until the run waits for the next
        * one: a failed run resends it.
        */
-      inflight?: { content?: string } | null,
+      inflight?: Inflight | null,
+
+      /**
+       * The thread's key, when called inside a step's callback.
+       */
+      thread?: string,
     ) => {
       return record((current) => {
         // A dollar budget is for the run it was passed to, so it is not kept.
@@ -164,7 +185,7 @@ export const threadRecorder = (
           ...(inflight === null && { inflight: undefined }),
           ...(inflight && { inflight }),
         };
-      });
+      }, thread);
     },
 
     /**
@@ -210,10 +231,23 @@ export const threadRecorder = (
        * The loop turn.
        */
       turn: AgentTurn,
+
+      /**
+       * The thread's key, when called inside a step's callback.
+       */
+      thread?: string,
     ) => {
       return record((current) => {
+        // The same call again, from a retried step: already taken in.
+        const taken = `${runId}/${turn.stepId}`;
+
+        if (current.turnStep === taken) {
+          return {};
+        }
+
         return {
           status: "running",
+          turnStep: taken,
           turn: turn.turn,
           summary: turn.text
             ? turn.text.slice(0, summaryLength)
@@ -226,7 +260,7 @@ export const threadRecorder = (
               : {}),
           },
         };
-      });
+      }, thread);
     },
   };
 };
@@ -239,8 +273,15 @@ export const readLastRun = (
    * KV store of the thread state.
    */
   store: Kv,
+
+  /**
+   * The thread's key, when called inside a step's callback.
+   */
+  thread?: string,
 ): Promise<LastRun | undefined> => {
-  return store.thread.get(lastRunKey);
+  return (thread ? store.scope("thread", thread) : store.thread).get(
+    lastRunKey,
+  );
 };
 
 /**
@@ -314,7 +355,7 @@ export const recordEnd = async (
      * The message that started the run, if it carried one, and whether the
      * run began by answering a message.
      */
-    content?: string;
+    inflight?: Inflight;
     turn: boolean;
 
     /**
@@ -352,7 +393,7 @@ export const recordEnd = async (
       const turn = turnInFlight(
         record,
         end.runId,
-        { content: end.content, turn: end.turn },
+        { inflight: end.inflight, turn: end.turn },
         (x, y) => {
           return runScore(x) < runScore(y);
         },
@@ -366,7 +407,7 @@ export const recordEnd = async (
               at: end.at,
               error,
               fingerprint: print,
-              turn: turnOf(turn.content),
+              turn: turnOf(turn.inflight),
               resume: end.resume && turn.resendable,
             }).last;
     }

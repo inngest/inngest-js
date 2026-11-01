@@ -23,6 +23,7 @@ import { image } from "../sandbox/image.ts";
 import { hasCode } from "../sandbox/snapshotCache.ts";
 import {
   type AgentTool,
+  type AgentToolSource,
   type SandboxToolEntry,
   type SandboxTools,
   validateTools,
@@ -1206,12 +1207,17 @@ export const sandboxTools = (
 };
 
 /**
- * Agent tools by name, for `agent.loop()`. The name is the tool's `id`.
+ * Agent tools by name, for `agent.loop()`. The name is the tool's `id`; an
+ * agent in the list is named by its sanitised ID.
  */
-export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
+export const agentTools = (
+  tools: readonly (AgentTool | AgentToolSource)[],
+): SandboxTools => {
   return toolsByName(
     tools.map((entry) => {
-      return [entry.id, entry] as const;
+      const name = "~tool" in entry ? entry["~tool"].id : entry.id;
+
+      return [name, entry] as const;
     }),
   );
 };

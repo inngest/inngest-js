@@ -14,6 +14,8 @@ import { freePort } from "../scripts/lib.ts";
 
 export interface WorkerEnv {
   root: string;
+  // The tour server's own address, where the fake Slack and GitHub are.
+  publicUrl: string;
   // Base URL of the Dev Server, handed to the app.
   devServerUrl: string;
   onOutput: (kind: "out" | "err", text: string) => void;
@@ -50,6 +52,8 @@ export class Worker {
       env: {
         ...process.env,
         TOUR_DIR: dir,
+        TOUR_URL: this.env.publicUrl,
+        SLACK_BOT_TOKEN: "xoxb-tour",
         PORT: String(port),
         INNGEST_DEV: "1",
         INNGEST_BASE_URL: this.env.devServerUrl,

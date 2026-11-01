@@ -20,6 +20,8 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
+import type { CommandRow } from "../github/render/commands.ts";
+import { reportProgress, runningPayload } from "../pipeline/jobReport.ts";
 import { ciRun } from "../pipeline/metadata.ts";
 import type { StepSpec } from "../pipeline/names.ts";
 import { ciStep, spans, steps, traceName } from "../pipeline/names.ts";
@@ -32,6 +34,7 @@ import {
   requireJobScope,
 } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
+import { classifyCommand } from "../report/classify.ts";
 import type {
   BackgroundProcess,
   Command,
@@ -49,6 +52,7 @@ import {
   truncateLabel,
 } from "../util.ts";
 import { directSandbox, ensureMachine, inMachineSpan } from "./machine.ts";
+import { collectReports } from "./reports.ts";
 
 /**
  * Captured `commands.run` is capped at five minutes, so anything longer runs
@@ -357,7 +361,10 @@ class CommandBuilder implements Command {
           { suffix, label: "output" },
         );
 
-        return maskSecrets(`${output.stdout}${output.stderr}`, secrets);
+        return maskSecrets(
+          output.merged ?? `${output.stdout}${output.stderr}`,
+          secrets,
+        );
       },
     };
   }
@@ -448,11 +455,12 @@ class CommandBuilder implements Command {
     };
   }
 
-  private timeoutError(scope: CiJobScope): CommandTimeoutError {
+  private timeoutError(scope: CiJobScope, stepId: string): CommandTimeoutError {
     return new CommandTimeoutError({
       command: this.state.argv,
       timeout: formatDuration(this.state.timeoutMs ?? 0, true),
       jobPath: scope.path,
+      stepId,
     });
   }
 
@@ -487,6 +495,9 @@ class CommandBuilder implements Command {
     const scope = this.getScope();
     const stepId = this.stepId(scope);
     const attempts = Math.max(0, this.state.retries) + 1;
+    const row: CommandRow = { state: "running", command: this.commandText() };
+
+    scope.commands.push(row);
 
     for (let attempt = 1; ; attempt++) {
       const attemptId =
@@ -496,11 +507,19 @@ class CommandBuilder implements Command {
 
       scope.run.ci.hooks.commandStarted(scope, attemptInfo);
 
+      row.state = "running";
+
+      await showProgress(scope);
+
       const runAttempt = async () => {
         const result = await this.runOnce(scope, attemptId);
 
         if (result.exitCode !== 0 && !this.state.nothrow) {
-          await recordFailure(scope, attemptId, this.failure(scope, result));
+          await recordFailure(
+            scope,
+            attemptId,
+            this.failure(scope, result, stepId),
+          );
         }
 
         return result;
@@ -510,7 +529,33 @@ class CommandBuilder implements Command {
         return attempts === 1
           ? runAttempt()
           : inSpan(spans.attempt(attempt), runAttempt);
+      }).catch((error: unknown) => {
+        row.state = "failed";
+
+        throw error;
       });
+
+      const reported = await collectReports(
+        scope,
+        {
+          argv: this.state.argv,
+          stepId: attemptId,
+          ...(this.state.cwd ? { cwd: this.state.cwd } : {}),
+        },
+        result,
+      );
+
+      // A failed attempt that is retried leaves nothing on the job.
+      if (result.exitCode === 0 || this.state.nothrow || attempt >= attempts) {
+        scope.found.push(...reported);
+      }
+
+      row.state =
+        result.exitCode === 0 || this.state.nothrow ? "done" : "failed";
+
+      if (result.durationMs !== undefined) {
+        row.ms = result.durationMs;
+      }
 
       scope.run.ci.hooks.commandFinished(scope, attemptInfo, result);
 
@@ -518,7 +563,7 @@ class CommandBuilder implements Command {
         return result;
       }
 
-      const error = this.failure(scope, result);
+      const error = this.failure(scope, result, stepId);
 
       if (attempt >= attempts) {
         throw error;
@@ -537,12 +582,16 @@ class CommandBuilder implements Command {
   private failure(
     scope: CiJobScope,
     result: CommandResult,
+    stepId: string,
   ): CommandFailedError {
     return new CommandFailedError({
+      errorClass: classifyCommand(result),
+      stepId,
       command: this.state.argv,
       exitCode: result.exitCode,
       stdoutTail: result.stdout,
       stderrTail: result.stderr,
+      ...(result.merged ? { mergedTail: result.merged } : {}),
       jobPath: scope.path,
     });
   }
@@ -603,7 +652,7 @@ class CommandBuilder implements Command {
 
       await this.state.onTimeout?.();
 
-      throw this.timeoutError(scope);
+      throw this.timeoutError(scope, stepId);
     }
   }
 
@@ -649,7 +698,7 @@ class CommandBuilder implements Command {
         signal: 9,
       });
 
-      throw this.timeoutError(scope);
+      throw this.timeoutError(scope, stepId);
     }
 
     const result = await readResult({
@@ -848,6 +897,8 @@ const sandboxStep = <T>(
 interface ProcessOutput {
   stdout: string;
   stderr: string;
+  /** Both streams in the order they were written. */
+  merged?: string;
   truncated: boolean;
 }
 
@@ -882,10 +933,12 @@ const readProcessOutput = async (
   const decoded = decodeChunks(await process.getOutput({ tailBytes }));
   const stdout = tail(decoded.stdout, tailBytes);
   const stderr = tail(decoded.stderr, tailBytes);
+  const merged = tail(decoded.merged, tailBytes);
 
   return {
     stdout: stdout.text,
     stderr: stderr.text,
+    merged: merged.text,
     truncated: stdout.truncated || stderr.truncated,
   };
 };
@@ -1248,6 +1301,9 @@ const readResult = async (opts: {
       opts.secrets,
     ),
     stderr: maskSecrets(output.stderr, opts.secrets),
+    ...(output.merged
+      ? { merged: maskSecrets(output.merged, opts.secrets) }
+      : {}),
     truncated: output.truncated,
     ...processDuration(process),
   };
@@ -1305,19 +1361,46 @@ const publishOutput = async (
   }
 };
 
+/**
+ * Show the job's check as it stands, when a command starts and never
+ * more often, so it stays within GitHub's rate limits.
+ */
+const showProgress = async (scope: CiJobScope): Promise<void> => {
+  // A job without a check of its own has none to update, and would leave a
+  // pending one behind.
+  if (!scope.check) {
+    return;
+  }
+
+  await reportProgress(
+    scope.run,
+    scope.jobPath,
+    () => {
+      return runningPayload(
+        scope,
+        scope.startedAt === undefined ? 0 : Date.now() - scope.startedAt,
+      );
+    },
+    scope.check.name,
+  );
+};
+
 const decoder = new TextDecoder();
 
 const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
-}): { stdout: string; stderr: string } => {
+}): { stdout: string; stderr: string; merged: string } => {
   let stdout = "";
   let stderr = "";
+  let merged = "";
 
   for (const chunk of output?.chunks ?? []) {
     const text =
       typeof chunk.data === "string"
         ? chunk.data
         : decoder.decode(chunk.data as Uint8Array);
+
+    merged += text;
 
     if (chunk.stream === "STDERR") {
       stderr += text;
@@ -1326,7 +1409,7 @@ const decodeChunks = (output: {
     }
   }
 
-  return { stdout, stderr };
+  return { stdout, stderr, merged };
 };
 
 /**

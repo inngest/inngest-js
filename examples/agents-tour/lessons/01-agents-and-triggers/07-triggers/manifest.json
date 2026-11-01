@@ -1,5 +1,0 @@
-{
-  "panels": ["output", "trace"],
-  "open": "output",
-  "start": [{ "event": { "name": "tour/greet", "data": { "name": "Ada" } } }]
-}

@@ -21,7 +21,16 @@ import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
-import { type SandboxDuration, SandboxValidationError } from "./types.ts";
+import { isInternalTool } from "./internalTool.ts";
+import { McpServer, mcp } from "./mcp.ts";
+import { type SandboxShim, shim } from "./shims.ts";
+import type { ToolBinary } from "./toolBinary.ts";
+import { isToolError, type ToolErrorResult } from "./toolError.ts";
+import {
+  type Sandbox,
+  type SandboxDuration,
+  SandboxValidationError,
+} from "./types.ts";
 
 /**
  * The most a request line from the sandbox may weigh.
@@ -54,6 +63,19 @@ export interface SandboxToolContext {
    * writes, so a retry doesn't send the same Slack message twice.
    */
   idempotencyKey: string;
+
+  /**
+   * The ID of the run that is calling.
+   */
+  runId?: string;
+
+  /**
+   * The sandbox the command runs in, for reading and writing its files and
+   * running commands while the command waits for this call. Not set for
+   * tools made with `tool.group()`. Calls on it aren't steps of their own:
+   * they belong to the step that answers the call, so a retry repeats them.
+   */
+  sandbox?: Sandbox;
 }
 
 /**
@@ -76,45 +98,11 @@ type ToolInputOf<TInput extends ToolInput | undefined> =
       ? Record<string, unknown>
       : never;
 
-/**
- * What `agent.toolError(body)` returns: a tool's way to give the model an
- * error result instead of a value. A tool whose `output` schema describes its
- * values may return it too; it is not checked against the schema.
- */
-export interface ToolErrorResult {
-  /**
-   * The error body the model reads.
-   */
-  readonly "~error": unknown;
-}
-
-const toolErrorKey = "~error";
-
-/**
- * Makes a tool error result. See `agent.toolError()`.
- */
-export const toolErrorOf = (
-  /**
-   * What the model should read as the error.
-   */
-  body: unknown,
-): ToolErrorResult => {
-  return { [toolErrorKey]: body };
-};
-
-/**
- * Whether a tool returned an error result.
- */
-export const isToolError = (
-  /**
-   * What the tool returned.
-   */
-  output: unknown,
-): output is ToolErrorResult => {
-  return (
-    typeof output === "object" && output !== null && toolErrorKey in output
-  );
-};
+export {
+  isToolError,
+  type ToolErrorResult,
+  toolErrorOf,
+} from "./toolError.ts";
 
 type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
   TOutput extends StandardSchemaV1
@@ -146,6 +134,11 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
+  /**
+   * @internal Only for tools made by the SDK (`internalTool`): `"none"`
+   * answers inline, storing nothing.
+   */
+  readonly memo?: "none";
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
@@ -171,7 +164,25 @@ export type SandboxToolEntry =
   | SandboxTool
   | ((...args: never[]) => unknown)
   | InngestFunction.Any
-  | InngestFunctionReference.Any;
+  | InngestFunctionReference.Any
+  | McpServer
+  | AgentToolSource;
+
+/**
+ * Something that is a tool by carrying one, such as an agent. It goes in
+ * `tools` as it is.
+ */
+export interface AgentToolSource<TInput = unknown, TOutput = unknown> {
+  /**
+   * The tool the model calls to use it. Its `id` is the sanitised ID of the
+   * agent.
+   */
+  readonly "~tool": AgentTool<TInput, TOutput>;
+}
+
+const isToolSource = (entry: unknown): entry is AgentToolSource => {
+  return typeof entry === "object" && entry !== null && "~tool" in entry;
+};
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
 
@@ -184,7 +195,9 @@ export type ToolInputType<TEntry> = TEntry extends SandboxTool<
   unknown
 >
   ? TInput
-  : unknown;
+  : TEntry extends AgentToolSource<infer TInput, unknown>
+    ? TInput
+    : unknown;
 
 /**
  * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
@@ -195,18 +208,21 @@ export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
   infer TOutput
 >
   ? TOutput
-  : unknown;
+  : TEntry extends AgentToolSource<unknown, infer TOutput>
+    ? TOutput
+    : unknown;
 
 export interface SandboxToolOptions {
   /**
    * The longest one wait step blocks before a fresh one continues. It is a
    * ceiling, not a delay: a wait ends soon after the process exits or a tool
-   * is called. Default 20s.
+   * is called. Default 20s, or 60s for a command that may run past five minutes. At most 240s.
    */
   waitWindow?: SandboxDuration;
 
   /**
-   * How long one `tool.step()` may run before its step fails. Default 30s.
+   * How long one tool call, or one shim handler, may run before its step
+   * fails. Default 30s.
    */
   toolTimeout?: SandboxDuration;
 
@@ -231,10 +247,35 @@ export interface SandboxToolsOptions {
    */
   tools?: SandboxTools;
   toolOptions?: SandboxToolOptions;
+
+  /**
+   * EXPERIMENTAL: Programs on `PATH` that call a handler in your app, made
+   * with `tool.shim()`, and nothing else. See `shims.ts`. Count as tools for
+   * the command's limits.
+   */
+  shims?: readonly SandboxShim[];
 }
 
 export type SandboxToolsRequest = SandboxToolsOptions & {
   tools: SandboxTools;
+
+  /**
+   * The binary handler shims need, put into the sandbox before the command.
+   */
+  binary?: ToolBinary;
+
+  /**
+   * What the process runs in place of the operation's command: the command
+   * wrapped in its shims. The operation keeps the user's command, which is
+   * what the trace shows.
+   */
+  command?: string[];
+
+  /**
+   * The command's own timeout, which may pass the five minutes one exec can
+   * wait: the command is a process and steps follow it in windows.
+   */
+  timeoutMs?: number;
 };
 
 export interface ToolDefinition<
@@ -329,6 +370,51 @@ const toolMethods = {
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
     return definition;
   },
+
+  /**
+   * EXPERIMENTAL: Declares a program that stands in for the real one inside a
+   * sandbox command. Pass it in `shims` on `commands.run()` or `$`. When
+   * code runs the program, the handler runs here, in your app, and decides
+   * what happens: `run()` the real program (as called, or with another
+   * `argv`, extra `env` or `stdin`), `reply()` with an exit code and
+   * output, or `refuse()`. The handler gets the `sandbox`, so it can do work
+   * that needs a credential in your app and reply with the result. See
+   * `shims.ts`.
+   *
+   * `tool.shim.config()` exposes plain settings to the sandbox.
+   *
+   * @example
+   * ```ts
+   * const terraform = tool.shim("terraform", ({ argv, run, refuse }) => {
+   *   return argv[0] === "apply"
+   *     ? refuse("apply goes through a pull request")
+   *     : run();
+   * });
+   *
+   * await sandbox.$({ shims: [terraform] }).sh`terraform plan`;
+   * ```
+   */
+  shim,
+
+  /**
+   * EXPERIMENTAL: A remote MCP server as tools. Put the handle in
+   * `agent.loop({ tools: { hex } })` and the model sees the server's tools
+   * as `hex_<tool>`. For a sandbox's `run_code`, use
+   * `sandbox.tools.code({ tools: await hex.tools() })`. Each call is a
+   * durable step that reads the credential inside the call.
+   *
+   * @example
+   * ```ts
+   * const hex = tool.mcp({
+   *   url: "https://app.hex.tech/mcp",
+   *   auth: { bearer: secret("HEX_TOKEN") },
+   *   tools: ["create_thread", "get_thread"],
+   * });
+   *
+   * await agent.loop({ model, prompt, tools: { hex } });
+   * ```
+   */
+  mcp,
 
   /**
    * EXPERIMENTAL: Declares a tool whose body is a group of steps. Instead of
@@ -434,8 +520,14 @@ export const tool = Object.assign(defineTool, toolMethods);
  * The schema of the data a function takes, when its triggers say: that of its
  * `invoke()` trigger, or of its only event trigger with a schema.
  */
-const triggerSchema = (
+export const triggerSchema = (
   fn: InngestFunction.Any,
+
+  /**
+   * Take only the schema of an `invoke()` trigger, never that of another
+   * event.
+   */
+  invokeOnly = false,
 ): StandardSchemaV1 | undefined => {
   const triggers: { event?: unknown; schema?: StandardSchemaV1 }[] =
     fn.opts.triggers ?? [];
@@ -454,10 +546,14 @@ const triggerSchema = (
       return trigger.schema;
     });
   const invoked = typed.find((trigger) => {
-    return trigger.event === internalEvents.FunctionInvoked;
+    const name =
+      trigger.event instanceof EventType ? trigger.event.name : trigger.event;
+
+    return name === internalEvents.FunctionInvoked;
   });
 
-  return (invoked ?? (typed.length === 1 ? typed[0] : undefined))?.schema;
+  return (invoked ?? (!invokeOnly && typed.length === 1 ? typed[0] : undefined))
+    ?.schema;
 };
 
 /**
@@ -481,8 +577,18 @@ const functionTool = (
 };
 
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
+  if (entry instanceof McpServer) {
+    throw new SandboxValidationError(
+      "An MCP server goes in agent.loop({ tools }) as it is; anywhere else, spread its tools: { ...(await server.tools()) }",
+    );
+  }
+
   if (typeof entry === "function") {
     return { run: entry };
+  }
+
+  if (isToolSource(entry)) {
+    return entry["~tool"];
   }
 
   return entry instanceof InngestFunction ||
@@ -531,6 +637,8 @@ const eventSchema = z.discriminatedUnion("op", [
     code: z.number().int(),
     stdout: z.string(),
     stderr: z.string(),
+    stdoutBytes: z.number().int().nonnegative().optional(),
+    stderrBytes: z.number().int().nonnegative().optional(),
   }),
 ]);
 
@@ -634,6 +742,8 @@ export const resolveToolCall = async (
       typeof displayName === "function"
         ? (displayName as (input: unknown) => string)(values[0])
         : displayName,
+    memo:
+      isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
     invoke: async (ctx: SandboxToolContext) => {
       // A plain function takes positional values and no context.
       const value = await run(

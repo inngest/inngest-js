@@ -48,6 +48,7 @@ import { lockMachineName } from "../machine/machine.ts";
 import type { JobConfig } from "../types.ts";
 import { errorMessage } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
+import { reportProgress, waitingBuildPayload } from "./jobReport.ts";
 import { ciStep, traceName } from "./names.ts";
 import type { CiRunScope } from "./scope.ts";
 import { joinId, rootRunIdOf } from "./scope.ts";
@@ -107,6 +108,8 @@ export const requestBuild = async ({
   stepPath,
   config,
   target,
+  unchecked,
+  checkName,
   data,
   reused,
 }: {
@@ -117,6 +120,10 @@ export const requestBuild = async ({
   stepPath: string;
   config: JobConfig;
   target: CacheTarget;
+  /** Whether the job that waits has no check, so nothing shows the wait. */
+  unchecked?: boolean;
+  /** That check's name, if it was given one. */
+  checkName?: string;
   /** What the builder needs, which it can't work out from the lock. */
   data: CacheBuildData;
   /** What a build gives back for a snapshot that is found. */
@@ -194,6 +201,19 @@ export const requestBuild = async ({
     }
 
     run.ci.hooks.activity(run, path, "asking for a build…");
+
+    if (round === 0) {
+      if (!unchecked) {
+        await reportProgress(
+          run,
+          path,
+          () => {
+            return waitingBuildPayload(run, path, config.id);
+          },
+          checkName,
+        );
+      }
+    }
 
     // A request for a build that is still going is skipped, so asking again
     // after a wait that ran out is how a lost build is noticed.

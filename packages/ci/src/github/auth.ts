@@ -62,10 +62,18 @@ export interface ConsoleCheckRecord {
   at: string;
   pipeline: string;
   name: string;
-  status: "queued" | "in_progress" | "completed";
+  status: "queued" | "in_progress" | "updated" | "completed";
   conclusion?: string;
   title?: string;
   summary?: string;
+  /** What a completed check carried, in GitHub's shape. */
+  annotations?: Array<{
+    path: string;
+    start_line: number;
+    annotation_level: string;
+    title?: string;
+    message: string;
+  }>;
   url?: string;
 }
 

@@ -1,19 +1,17 @@
 /**
  * @module
- * Type tests: a thread message is a union by `kind`, and an agent's
- * `requests` config types `request()`, the `"request"` payload and `reply()`.
+ * Type tests: an inbox message is a union by event `name`, and an agent's
+ * `requests` config types `request()`, the `agent/request` payload and
+ * `reply()`.
  */
 import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { staticSchema } from "../triggers/triggers.ts";
+import type { ThreadInboxMessage } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import type { ChannelMessage, ChannelStreamFinal } from "./channels.ts";
-import {
-  getThread,
-  type ThreadMessage,
-  type ThreadRequests,
-} from "./thread.ts";
+import { getThread, type ThreadRequests } from "./thread.ts";
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
@@ -23,52 +21,35 @@ const asks = {
   reply: z.object({ answer: z.string() }),
 };
 
-describe("thread message kinds", () => {
+describe("thread message events", () => {
   // Never called: the test is the types.
-  const types = (message: ThreadMessage) => {
-    if (message.kind === "request") {
-      expectTypeOf(message.payload).toBeUnknown();
-      expectTypeOf(message.replyTo).toBeString();
-      expectTypeOf(message.from).toEqualTypeOf<string | undefined>();
+  const types = (message: ThreadInboxMessage) => {
+    switch (message.name) {
+      case "agent/request":
+        expectTypeOf(message.data.payload).toBeUnknown();
+        expectTypeOf(message.data.replyTo).toBeString();
+        expectTypeOf(message.data.from).toEqualTypeOf<string | undefined>();
+        break;
+      case "agent/stop":
+        expectTypeOf(message.data.when).toEqualTypeOf<"nextTurn">();
+        break;
+      case "agent/steer":
+      case "agent/message":
+        expectTypeOf(message.data.text).toBeString();
+
+        // @ts-expect-error only a request has a payload
+        message.data.payload;
+
+        // @ts-expect-error only a stop has a when
+        message.data.when;
+        break;
+      default:
+        break;
     }
-
-    if (message.kind === "stop") {
-      expectTypeOf(message.when).toEqualTypeOf<"nextTurn">();
-    }
-
-    if (message.kind === "steer") {
-      expectTypeOf(message.content).toBeString();
-    }
-
-    if (message.kind === "user") {
-      expectTypeOf(message.content).toEqualTypeOf<string | undefined>();
-
-      // @ts-expect-error only a request has a payload
-      message.payload;
-
-      // @ts-expect-error only a request has a reply signal
-      message.replyTo;
-
-      // @ts-expect-error only a stop has a when
-      message.when;
-    }
-
-    // Any message can be read for its text.
-    expectTypeOf(message.content).toEqualTypeOf<string | undefined>();
   };
 
-  test("each kind has its own fields", () => {
+  test("each event has its own data", () => {
     expect(types).toBeTypeOf("function");
-  });
-
-  test("a message must carry its kind's required fields", () => {
-    // @ts-expect-error a request needs a payload and a reply signal
-    const request: ThreadMessage = { agent: "a", thread: "t", kind: "request" };
-
-    // @ts-expect-error a stop needs a when
-    const stop: ThreadMessage = { agent: "a", thread: "t", kind: "stop" };
-
-    expect([request, stop]).toHaveLength(2);
   });
 });
 
@@ -93,8 +74,8 @@ describe("requests", () => {
     async ({ inbox, thread }) => {
       const message = await inbox.next();
 
-      if (message?.kind === "request") {
-        expectTypeOf(message.payload).toEqualTypeOf<{
+      if (message?.name === "agent/request") {
+        expectTypeOf(message.data.payload).toEqualTypeOf<{
           question: string;
         }>();
 
@@ -168,11 +149,10 @@ describe("requests", () => {
       async ({ inbox }) => {
         const message = await inbox.next();
 
-        if (message?.kind === "request") {
-          expectTypeOf(message.payload).toBeUnknown();
+        if (message?.name === "agent/request") {
+          expectTypeOf(message.data.payload).toBeUnknown();
+          await message.reply({ anything: 1 });
         }
-
-        await message?.reply({ anything: 1 });
 
         return undefined;
       },

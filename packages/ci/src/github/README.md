@@ -10,3 +10,4 @@ Everything GitHub.
 - `rest.ts`: the durable REST client.
 - `source.ts`: resolving the repository and ref `checkout()` and `files()` read to a commit, and finding the installation that can read it.
 - `helpers.ts`: the `github.*` helpers, gathered in `index.ts`.
+- `render/`: pure markdown for the check runs: `job.ts` and `pipeline.ts` build each state's title, summary, text and buttons from plain data; `callout.ts`, `links.ts`, `commands.ts`, `gantt.ts`, `dag.ts` and `tree.ts` are the pieces. Nothing here talks to GitHub.

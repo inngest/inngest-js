@@ -21,7 +21,7 @@ self.MonacoEnvironment = {
 export interface EditorApi {
   focus(): void;
   hasFocus(): boolean;
-  format(): void;
+  format(): Promise<void>;
   values(): Record<string, string>;
   setValue(name: string, content: string): void;
 }
@@ -35,13 +35,25 @@ export interface Marker {
 interface Props {
   files: PageFile[];
   active: string;
-  dark: boolean;
   markers: Marker[];
   handlers: () => Handlers;
   onChange: (name: string, content: string) => void;
 }
 
 let typesAdded = false;
+
+const compilerOptions = (): monaco.languages.typescript.CompilerOptions => {
+  return {
+    target: monaco.languages.typescript.ScriptTarget.ES2020,
+    module: monaco.languages.typescript.ModuleKind.ESNext,
+    moduleResolution: 100 as monaco.languages.typescript.ModuleResolutionKind,
+    lib: ["es2023", "dom"],
+    strict: true,
+    noEmit: true,
+    allowNonTsExtensions: true,
+    skipLibCheck: true,
+  };
+};
 
 export const addTypes = (files: Record<string, string>) => {
   if (typesAdded) {
@@ -53,51 +65,28 @@ export const addTypes = (files: Record<string, string>) => {
   const ts = monaco.languages.typescript.typescriptDefaults;
 
   ts.setEagerModelSync(true);
-  ts.setCompilerOptions({
-    target: monaco.languages.typescript.ScriptTarget.ES2020,
-    module: monaco.languages.typescript.ModuleKind.ESNext,
-    moduleResolution: 100 as monaco.languages.typescript.ModuleResolutionKind,
-    lib: ["es2023", "dom"],
-    strict: true,
-    noEmit: true,
-    allowNonTsExtensions: true,
-    skipLibCheck: true,
-  });
+  ts.setCompilerOptions(compilerOptions());
 
   for (const [path, content] of Object.entries(files)) {
     ts.addExtraLib(content, path);
   }
 };
 
-const css = (name: string) => {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-};
-
-const defineThemes = () => {
-  const pick = (name: string, fallback: string) => {
-    return css(name) || fallback;
-  };
-
-  for (const dark of [false, true]) {
-    monaco.editor.defineTheme(dark ? "tour-dark" : "tour-light", {
-      base: dark ? "vs-dark" : "vs",
-      inherit: true,
-      rules: [],
-      colors: {
-        "editor.background": dark ? "#14161c" : "#ffffff",
-        "editorLineNumber.foreground": dark ? "#4b5263" : "#b4b9c4",
-        "editor.lineHighlightBackground": dark ? "#1b1e26" : "#f5f6fa",
-      },
-    });
-  }
-
-  return pick;
+const defineTheme = () => {
+  monaco.editor.defineTheme("tour-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#14161c",
+      "editorLineNumber.foreground": "#4b5263",
+      "editor.lineHighlightBackground": "#1b1e26",
+    },
+  });
 };
 
 const uriOf = (name: string) => {
-  return monaco.Uri.parse(`file:///${name}`);
+  return monaco.Uri.parse(`file:///lesson/${name}`);
 };
 
 export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
@@ -115,8 +104,8 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       hasFocus: () => {
         return Boolean(editor.current?.hasTextFocus());
       },
-      format: () => {
-        void editor.current?.getAction("editor.action.formatDocument")?.run();
+      format: async () => {
+        await editor.current?.getAction("editor.action.formatDocument")?.run();
       },
       values: () => {
         const out: Record<string, string> = {};
@@ -136,10 +125,11 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
   });
 
   useEffect(() => {
-    defineThemes();
+    defineTheme();
 
     const created = monaco.editor.create(host.current as HTMLElement, {
       model: null,
+      theme: "tour-dark",
       automaticLayout: true,
       minimap: { enabled: false },
       fontSize: 14,
@@ -181,6 +171,13 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       return model;
     });
 
+    // Each model is validated the moment it is created, before its siblings
+    // exist, so `./setup` would be reported missing until the next edit.
+    // Re-applying the options revalidates every model now that all exist.
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
+      compilerOptions(),
+    );
+
     return () => {
       for (const model of models) {
         model.dispose();
@@ -199,10 +196,6 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       editor.current.updateOptions({ readOnly: !file?.editable });
     }
   }, [props.active, props.files]);
-
-  useEffect(() => {
-    monaco.editor.setTheme(props.dark ? "tour-dark" : "tour-light");
-  }, [props.dark]);
 
   useEffect(() => {
     for (const file of props.files) {

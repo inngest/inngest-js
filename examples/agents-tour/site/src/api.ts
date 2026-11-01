@@ -31,6 +31,9 @@ export const api = {
   page: (id: string) => {
     return get<Page>(`/api/page?id=${encodeURIComponent(id)}`);
   },
+  info: () => {
+    return get<{ devServerUrl: string }>("/api/info");
+  },
   types: () => {
     return get<Record<string, string>>("/api/types");
   },
@@ -38,7 +41,7 @@ export const api = {
     return get<{
       input: string | null;
       data: string | null;
-      error: { message: string } | null;
+      error: { message: string; name: string | null; stack?: string } | null;
     }>(`/api/output?id=${encodeURIComponent(id)}`);
   },
   open: (id: string) => {

@@ -13,11 +13,11 @@ import { step } from "../InngestStepTools.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { agentMessage } from "./events.ts";
+import { agentMessage, agentSteer } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { skillsBake } from "./skills.ts";
 import { run } from "./test-helpers.ts";
-import { agentMessageEvent, type ThreadMessage } from "./thread.ts";
+import { agentMessageEvent, agentSteerEvent } from "./thread.ts";
 import {
   compileTriggers,
   schemaProblem,
@@ -31,7 +31,6 @@ const refund = eventType("shop/refund.created", {
   schema: z.object({ order: z.string(), amount: z.number() }),
 });
 const ping = eventType("shop/ping");
-const asked = invoke(z.object({ question: z.string() }));
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
@@ -71,88 +70,7 @@ describe("types", () => {
     );
   });
 
-  test("message is typed from the trigger's event type", () => {
-    agents.agent(
-      {
-        id: "t6",
-        on: [
-          {
-            event: order,
-            thread: "event.data.id",
-            message: (event) => {
-              expectTypeOf(event.data).toEqualTypeOf<{
-                id: string;
-                total: number;
-              }>();
-
-              return String(event.data.total);
-            },
-          },
-          {
-            event: refund,
-            thread: "event.data.order",
-            message: (event) => {
-              expectTypeOf(event.data).toEqualTypeOf<{
-                order: string;
-                amount: number;
-              }>();
-
-              return String(event.data.amount);
-            },
-          },
-          {
-            event: "plain/name",
-            thread: "event.data.id",
-            message: (event) => {
-              return String(event.data.anything);
-            },
-          },
-          {
-            cron: "0 * * * *",
-            message: (event) => {
-              expectTypeOf(event.data).toEqualTypeOf<{ cron: string }>();
-
-              return event.data.cron;
-            },
-          },
-        ],
-      },
-      noop,
-    );
-
-    agents.agent(
-      {
-        id: "t7",
-        on: {
-          event: order,
-          thread: "event.data.id",
-          message: (event) => {
-            expectTypeOf(event.data.total).toBeNumber();
-
-            return undefined;
-          },
-        },
-      },
-      noop,
-    );
-  });
-
   test("a wrong field or a non-trigger is a type error", () => {
-    agents.agent(
-      {
-        id: "t8",
-        on: {
-          event: order,
-          thread: "event.data.id",
-          message: (event) => {
-            // @ts-expect-error order has no amount
-            return String(event.data.amount);
-          },
-        },
-      },
-      noop,
-    );
-
     expect(() => {
       // @ts-expect-error a name alone is not a trigger
       return agents.agent({ id: "t9", on: ["shop/x"] }, noop);
@@ -162,13 +80,16 @@ describe("types", () => {
   test("the agent's events are event types with typed data", () => {
     expectTypeOf(agentMessage.name).toEqualTypeOf<"agent/message">();
     expectTypeOf(agentMessageEvent).toEqualTypeOf<"agent/message">();
-    expectTypeOf(agentMessage.create)
+    expectTypeOf(agentSteer.name).toEqualTypeOf<"agent/steer">();
+    expectTypeOf(agentSteerEvent).toEqualTypeOf<"agent/steer">();
+    expectTypeOf(agentSteer.create)
       .parameter(0)
-      .toEqualTypeOf<ThreadMessage>();
+      .toExtend<{ agent: string; thread: string; text: string }>();
+
     expectTypeOf(skillsBake.name).toEqualTypeOf<"agent/skills.bake">();
 
     // @ts-expect-error a message needs its thread
-    agentMessage.create({ agent: "app/bot", kind: "user" });
+    agentMessage.create({ agent: "app/bot", text: "hi" });
   });
 });
 
@@ -289,7 +210,7 @@ describe("events", () => {
     const message = agentMessage.create({
       agent: "app/bot",
       thread: "t1",
-      kind: "user",
+      text: "hi",
     });
 
     await expect(message.validate()).resolves.toBeUndefined();
@@ -314,6 +235,8 @@ describe("triggers", () => {
 
     expect(options.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
+      expect.objectContaining({ event: "agent/steer" }),
+      expect.objectContaining({ event: "agent/request" }),
       { event: order, if: "event.data.total > 5" },
       { event: ping },
     ]);
@@ -370,7 +293,7 @@ describe("triggers", () => {
     const agent = agents.agent({ id: "u2", on: { cron: "0 3 * * *" } }, noop);
     const options = fnOptions(agent.fn);
 
-    expect(options.triggers[1]).toEqual({ cron: "0 3 * * *" });
+    expect(options.triggers[3]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );
@@ -403,29 +326,15 @@ describe("triggers", () => {
         data: { _agent: { depth: 1 } },
       }),
     ).toBe("worker");
-
-    agents.agent(
-      {
-        id: "u3",
-        on: [
-          {
-            event: asked,
-            message: (event) => {
-              expectTypeOf(event.data).toEqualTypeOf<{ question: string }>();
-
-              return event.data.question;
-            },
-          },
-        ],
-      },
-      noop,
-    );
   });
 
   test("the agent's own events and mixed triggers are refused", () => {
     expect(() => {
       return compileTriggers("bot", { on: agentMessage });
     }).toThrow(/"agent\/message" is an event the agent layer owns/);
+    expect(() => {
+      return compileTriggers("bot", { on: agentSteer });
+    }).toThrow(/"agent\/steer" is an event the agent layer owns/);
     expect(() => {
       return compileTriggers("bot", { on: skillsBake });
     }).toThrow(/"agent\/skills.bake" is an event the agent layer owns/);
@@ -451,10 +360,10 @@ describe("triggers", () => {
     }).toThrow(/not both/);
   });
 
-  test("only the first of several crons sets session and message", () => {
+  test("only the first of several crons sets session", () => {
     expect(() => {
       return compileTriggers("bot", {
-        on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *", message: () => "x" }],
+        on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *", session: '"s"' }],
       });
     }).toThrow(/first cron/);
   });
@@ -476,16 +385,20 @@ describe("inbox validation", () => {
         on: {
           event: order,
           thread: "event.data.id",
-          message: (trigger) => {
-            return `order ${trigger.data.id} ${trigger.data.total}`;
-          },
         },
       },
       async ({ inbox }) => {
         const first = await inbox.next();
         const second = await inbox.next();
+        const word = (message: typeof first) => {
+          const data = message?.data as
+            | { id: string; total: number }
+            | undefined;
 
-        return [first?.content, second?.content];
+          return data ? `order ${data.id} ${data.total}` : undefined;
+        };
+
+        return [word(first), word(second)];
       },
     );
   };
@@ -526,7 +439,6 @@ describe("inbox validation", () => {
           id: "throwing",
           kv: createKv({ adapter: memoryKvAdapter() }),
           on: { event: throwingEvent, thread: "event.data.id" },
-          message: undefined,
         } as never,
         async ({ inbox }) => {
           await inbox.next();

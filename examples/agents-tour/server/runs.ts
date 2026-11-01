@@ -8,7 +8,7 @@ import type { DevServer } from "./devserver.ts";
 
 const spanFields = `
   spanID name status stepOp stepID attempts duration startedAt endedAt
-  outputID isUserland
+  outputID isUserland stepType groupKind
 `;
 
 const runsQuery = `
@@ -20,7 +20,7 @@ const runsQuery = `
     ) {
       edges {
         node {
-          id status queuedAt startedAt endedAt output
+          id status queuedAt startedAt endedAt output triggerIDs
           function { name slug }
           trace {
             outputID
@@ -48,6 +48,8 @@ interface Span {
   endedAt: string | null;
   outputID: string | null;
   isUserland: boolean;
+  stepType: string | null;
+  groupKind: string | null;
   childrenSpans?: Span[];
 }
 
@@ -58,6 +60,7 @@ interface RunNode {
   startedAt: string | null;
   endedAt: string | null;
   output: string | null;
+  triggerIDs: string[];
   function: { name: string; slug: string };
   trace: (Span & { outputID: string | null }) | null;
 }
@@ -74,6 +77,8 @@ const stepOf = (span: Span): TraceStep => {
     endedAt: span.endedAt,
     outputID: span.outputID,
     userland: span.isUserland,
+    type: span.stepType,
+    group: span.groupKind,
     children: (span.childrenSpans ?? []).map(stepOf),
   };
 };
@@ -85,17 +90,63 @@ export const terminal = new Set([
   "SKIPPED",
 ]);
 
+const triggers = new Map<string, TraceRun["trigger"]>();
+
+const triggerOf = async (devServer: DevServer, id: string | undefined) => {
+  if (!id) {
+    return null;
+  }
+
+  const known = triggers.get(id);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const data = await devServer.gql<{
+    event: { name: string; raw: string } | null;
+  }>(`query Event($id: ID!) { event(query: { eventId: $id }) { name raw } }`, {
+    id,
+  });
+  const raw = data.event
+    ? (JSON.parse(data.event.raw) as {
+        id?: string;
+        data?: Record<string, unknown>;
+        ts?: number;
+      })
+    : null;
+  const trigger = data.event
+    ? {
+        id: raw?.id ?? id,
+        name: data.event.name,
+        data: raw?.data ?? {},
+        ts: raw?.ts ?? 0,
+        // The event that starts a run is the inbox's first message.
+        seq: 0,
+      }
+    : null;
+
+  triggers.set(id, trigger);
+
+  return trigger;
+};
+
 export const readRuns = async (devServer: DevServer, from: string) => {
   const data = await devServer.gql<{
     runs: { edges: { node: RunNode }[] };
   }>(runsQuery, { from });
-
-  return data.runs.edges
-    .filter(({ node }) => {
-      return !/-(cleanup|finished|arrival)$/.test(node.function.slug);
+  const nodes = data.runs.edges
+    .map(({ node }) => {
+      return node;
     })
-    .map(({ node }): TraceRun => {
+    .filter((node) => {
+      return !/-(cleanup|finished|arrival)$/.test(node.function.slug);
+    });
+
+  return Promise.all(
+    nodes.map(async (node): Promise<TraceRun> => {
       return {
+        trigger: await triggerOf(devServer, node.triggerIDs[0]),
         id: node.id,
         fn: node.function.name,
         status: node.status,
@@ -105,7 +156,8 @@ export const readRuns = async (devServer: DevServer, from: string) => {
         output: node.trace?.outputID ?? null,
         steps: (node.trace?.childrenSpans ?? []).map(stepOf),
       };
-    });
+    }),
+  );
 };
 
 export const readOutput = async (devServer: DevServer, outputID: string) => {
@@ -113,11 +165,11 @@ export const readOutput = async (devServer: DevServer, outputID: string) => {
     runTraceSpanOutputByID: {
       input: string | null;
       data: string | null;
-      error: { message: string; name: string | null } | null;
+      error: { message: string; name: string | null; stack?: string } | null;
     };
   }>(
     `query Output($id: String!) {
-       runTraceSpanOutputByID(outputID: $id) { input data error { message name } }
+       runTraceSpanOutputByID(outputID: $id) { input data error { message name stack } }
      }`,
     { id: outputID },
   );

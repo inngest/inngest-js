@@ -13,6 +13,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const agentId = "subscribe-finish-agent";
@@ -31,9 +32,6 @@ export const subscribeFinish = scenario({
         on: {
           event: event("msg"),
           thread: "event.data.thread",
-          message: (trigger) => {
-            return trigger.data.text as string;
-          },
         },
       },
       async ({ inbox }) => {
@@ -41,8 +39,8 @@ export const subscribeFinish = scenario({
         const second = await inbox.next();
 
         await kv.thread.set("read", [
-          first?.content ?? null,
-          second?.content ?? null,
+          textOf(first) ?? null,
+          textOf(second) ?? null,
         ]);
 
         return "done";

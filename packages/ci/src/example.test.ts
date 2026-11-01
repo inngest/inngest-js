@@ -349,6 +349,6 @@ describe("the example's pr pipeline", () => {
     });
 
     expect(pipelineCheck?.conclusion).toBe("failure");
-    expect(pipelineCheck?.title).toContain("(exit 1)");
+    expect(pipelineCheck?.title).toMatch(/^❌ \d+ of \d+ jobs failed: /);
   });
 });

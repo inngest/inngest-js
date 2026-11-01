@@ -254,13 +254,20 @@ export const Search = ({
 };
 
 export const Cheat = ({ onClose }: { onClose: () => void }) => {
-  const groups = ["Code", "Pages", "Panels", "Focus"] as const;
+  const groups = [
+    "Code",
+    "Pages",
+    "Panes",
+    "Slack",
+    "GitHub",
+    "Trace",
+    "Focus",
+  ] as const;
 
   return (
     <Modal title="Keys" onClose={onClose}>
       <p className="modal-hint">
-        The first column works while the editor or a text box has focus. The
-        second works anywhere else.
+        These keys work everywhere, inside the editor too.
       </p>
       <div className="cheat">
         {groups.map((group) => {
@@ -284,13 +291,6 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
                               );
                             })}
                           </td>
-                          <td>
-                            {def.outside.map((spec) => {
-                              return (
-                                <kbd key={spec}>{hintOf(spec, isMac)}</kbd>
-                              );
-                            })}
-                          </td>
                         </tr>
                       );
                     })}
@@ -307,7 +307,7 @@ export const Cheat = ({ onClose }: { onClose: () => void }) => {
                 return (
                   <tr key={item.label}>
                     <td>{item.label}</td>
-                    <td colSpan={2}>
+                    <td>
                       <kbd>{item.combo}</kbd>
                     </td>
                   </tr>
