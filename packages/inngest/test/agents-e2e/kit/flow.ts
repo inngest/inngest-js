@@ -161,8 +161,8 @@ const logFile = (key: string) => {
 
 /**
  * Writes how many steps the run's state holds each time the function starts a
- * request. The last line is the run's total, since every flow sends all its
- * events before the function reads the last one.
+ * request. The largest is the run's total, since every flow sends all its events
+ * before the function reads the last one.
  */
 class StepTally extends Middleware.BaseMiddleware {
   readonly id = "step-tally";
@@ -463,16 +463,21 @@ const runCell = async (
     }
 
     if (flow.expect.steps !== undefined) {
-      const tally = log
-        .filter((line) => {
-          return line.startsWith("steps:");
-        })
-        .at(-1);
+      // Requests can overlap, so the last line may come from an older
+      // request; the most any request saw is the run's total.
+      const most = Math.max(
+        0,
+        ...log
+          .filter((line) => {
+            return line.startsWith("steps:");
+          })
+          .map((line) => {
+            return Number(line.slice(6));
+          }),
+      );
 
-      if (tally !== `steps:${flow.expect.steps}`) {
-        failures.push(
-          `${tally ?? "no steps line"}, wanted steps:${flow.expect.steps}`,
-        );
+      if (most !== flow.expect.steps) {
+        failures.push(`steps:${most}, wanted steps:${flow.expect.steps}`);
       }
     }
 
