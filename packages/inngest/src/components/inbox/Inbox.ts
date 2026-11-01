@@ -11,7 +11,13 @@
  * state.
  */
 import type { EventPayload } from "../../types.ts";
-import type { InboxRead, Want } from "../execution/inboxState.ts";
+import {
+  type InboxRead,
+  takenIn,
+  takenKey,
+  type Want,
+  withTaken,
+} from "../execution/inboxState.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -184,6 +190,12 @@ export interface InboxDeps {
    * returns the ids saved the first time.
    */
   record: (op: string, take: () => string[]) => Promise<string[]>;
+
+  /**
+   * Runs `body` as an ordinary step with the ID `op` and returns what it
+   * returned, the way a replay does too.
+   */
+  step: (op: string, body: () => Promise<unknown>) => Promise<unknown>;
 
   /**
    * Tells the executor which messages the read `op` took, so it can draw them.
@@ -755,6 +767,53 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     return ids.map((id) => {
       return this.#deps.message(id) as TMessage;
+    });
+  }
+
+  /**
+   * Runs a step whose body takes this reader's unread messages and returns what
+   * the step returns to the caller. The ids of the messages taken are saved in
+   * the step's output, so a replay moves the reader past them when it reaches
+   * the step, and a failed attempt takes nothing. The body gets the messages
+   * (up to `max`, oldest first) from the state the request loaded. Other
+   * readers are not moved. Like a read, it waits for the reads before it on
+   * this reader.
+   *
+   * @internal for the agent loop only.
+   */
+  takeIn<T>(
+    id: string,
+    body: (fresh: TMessage[]) => T | Promise<T>,
+    options?: BatchOptions,
+  ): Promise<T> {
+    return this.#enqueue(async () => {
+      await this.#ready();
+
+      const want = this.#want();
+
+      const output = await this.#deps.step(id, async () => {
+        const unread = this.closed
+          ? []
+          : this.#deps.unread(this.#deps.inbox, this.#taken, want);
+        const ids =
+          options?.max === undefined ? unread : unread.slice(0, options.max);
+        const value = await body(
+          ids.map((messageId) => {
+            return this.#deps.message(messageId) as TMessage;
+          }),
+        );
+
+        return withTaken(ids, value);
+      });
+
+      const taken = takenIn(output);
+      const ids = taken?.[takenKey] ?? [];
+
+      this.#taken += ids.length;
+
+      this.#deps.report(id, this.#deps.inbox, ids, false);
+
+      return taken?.value as T;
     });
   }
 

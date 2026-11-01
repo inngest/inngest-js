@@ -658,6 +658,9 @@ export const createStepTools = <
         record: (op, take) => {
           return tools.run(`${op}:batch`, take);
         },
+        step: (op, body) => {
+          return tools.run(op, body);
+        },
         report: (op, inbox, messages, draw) => {
           const runId = getAsyncCtxSync()?.execution?.ctx.runId;
 
