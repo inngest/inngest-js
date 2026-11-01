@@ -1338,7 +1338,8 @@ function threadInbox(
   // every replay, which takes and keeps the same messages.
   const lead: InboxMessage[] = started ? [started] : [];
 
-  // What `view()` keeps of messages the source handed over.
+  // What is left of messages the source handed over once the ones that break
+  // their schema are dropped.
   async function keep(raws: InboxMessage[]) {
     const kept: InboxMessage[] = [];
 
@@ -1349,6 +1350,14 @@ function threadInbox(
     }
 
     return kept;
+  }
+
+  // What a reader returns: a stop is control, not conversation, so no read
+  // shows it. Steering still sees it through `keep()`.
+  async function readable(raws: InboxMessage[]) {
+    return (await keep(raws)).filter((raw) => {
+      return raw.name !== agentStopEvent;
+    });
   }
 
   // A reader with the agent's rules over an `Inbox`. Only the main one starts
@@ -1443,7 +1452,7 @@ function threadInbox(
             raws = got;
           }
 
-          const kept = await keep(raws);
+          const kept = await readable(raws);
           if (kept.length > 0) {
             const batch = kept.map(present);
 
@@ -1485,12 +1494,12 @@ function threadInbox(
       async drain(options?: BatchOptions) {
         const raws = [...first.splice(0), ...(await source.drain(options))];
 
-        return (await keep(raws)).map(present);
+        return (await readable(raws)).map(present);
       },
       async close() {
         const raws = [...first.splice(0), ...(await source.close())];
 
-        return (await keep(raws)).map(present);
+        return (await readable(raws)).map(present);
       },
       get closed() {
         return source.closed;

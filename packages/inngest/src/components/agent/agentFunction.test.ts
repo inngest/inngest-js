@@ -8,6 +8,7 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { eventType, invoke, staticSchema } from "../triggers/triggers.ts";
+import type { ThreadInbox } from "./agentFunction.ts";
 import {
   type AgentFunctionConfig,
   createAgentFunction,
@@ -399,7 +400,7 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.drain() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.drain() takes the pending messages, without the stop, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -423,10 +424,7 @@ describe("inbox arrival", () => {
       timeouts: 1,
     });
 
-    expect(output).toEqual([
-      ["agent/message", "agent/stop", "agent/steer"],
-      null,
-    ]);
+    expect(output).toEqual([["agent/message", "agent/steer"], null]);
   });
 
   describe("onArrival", () => {
@@ -857,6 +855,54 @@ describe("agent cleanup", () => {
     expect(output).toEqual([["a", "b"], undefined]);
   });
 
+  test("no read of the inbox returns a stop, whatever the read", async () => {
+    const reads = {
+      nextBatch: async (inbox: ThreadInbox) => {
+        return (await inbox.nextBatch()) ?? [];
+      },
+      drain: async (inbox: ThreadInbox) => {
+        return await inbox.drain();
+      },
+      batches: async (inbox: ThreadInbox) => {
+        for await (const batch of inbox.batches()) {
+          return batch;
+        }
+
+        return [];
+      },
+      next: async (inbox: ThreadInbox) => {
+        const got = await inbox.next();
+
+        return got ? [got] : [];
+      },
+      close: async (inbox: ThreadInbox) => {
+        return await inbox.close();
+      },
+    };
+
+    for (const [name, read] of Object.entries(reads)) {
+      const { fn } = createAgentFunction(
+        makeClient(),
+        { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+        async ({ inbox }) => {
+          await inbox.next();
+          const got = await read(inbox);
+
+          return got.map((m) => {
+            return m.name;
+          });
+        },
+      );
+
+      const { output } = await run(fn, {
+        event: trigger("go"),
+        saved: [message("user", "a"), message("stop")],
+      });
+
+      expect({ name, output }).toEqual({ name, output: ["agent/message"] });
+    }
+  });
+
   test("the agent opens one inbox for its own events, with a source per event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
@@ -1228,6 +1274,35 @@ describe("thread state", () => {
     );
 
     await run(fn, { event: trigger("go"), saved: [message("stop")] });
+
+    expect(await record(kv)).toMatchObject({ status: "stopped" });
+  });
+
+  test("a stop that arrives with a message still stops the turn", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox, control }) => {
+        await inbox.next();
+        await agent.loop({
+          model: agent.model(async () => {
+            return {
+              message: { role: "assistant", content: [] },
+              toolCalls: [{ id: "c1", name: "missing", input: {} }],
+            };
+          }),
+          prompt: "go",
+          tools: {},
+          ...control,
+        });
+      },
+    );
+
+    await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "later"), message("stop")],
+    });
 
     expect(await record(kv)).toMatchObject({ status: "stopped" });
   });
