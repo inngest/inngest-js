@@ -8,7 +8,6 @@
  * order the executor saved them, are the run's stack filtered by it.
  */
 import hashjs from "hash.js";
-import { subscriptionMessagePrefix } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -203,9 +202,6 @@ export const unseenSteps = (
   stepState: Record<string, { data?: unknown } | undefined>,
 ): string[] => {
   return stack.filter((id) => {
-    return (
-      !id.startsWith(subscriptionMessagePrefix) &&
-      !isInboxMessage(stepState[id]?.data)
-    );
+    return !isInboxMessage(stepState[id]?.data);
   });
 };

@@ -123,7 +123,6 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import { subscriptionMessages } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -327,10 +326,6 @@ class InngestExecutionEngine
 
       const tracer = trace.getTracer("inngest", version);
 
-      // The state of a request does not change, so a subscription's messages are
-      // read out of it once.
-      const subscriptionMessagesByKey = new Map<string, unknown[]>();
-
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
           {
@@ -339,20 +334,6 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               functionId: this.options.fn.id(),
-              subscriptionMessages: (key: string) => {
-                let messages = subscriptionMessagesByKey.get(key);
-
-                if (!messages) {
-                  messages = subscriptionMessages(
-                    key,
-                    this.options.stepCompletionOrder,
-                    this.options.stepState,
-                  );
-                  subscriptionMessagesByKey.set(key, messages);
-                }
-
-                return messages;
-              },
               inbox: {
                 read: (
                   inbox: string,
@@ -2854,15 +2835,9 @@ class InngestExecutionEngine
                   if (typeof result.data !== "undefined") {
                     // Validate waitForEvent results against the schema if present
                     // Skip validation if result.data is null (timeout case)
-                    //
-                    // Subscription ops (`step.subscribe`) answer with their own
-                    // shapes (acks, counts), so they are not validated here.
                     if (
                       opId.op === StepOpCode.WaitForEvent &&
-                      result.data !== null &&
-                      !(
-                        step.rawArgs?.[1] as { subscribe?: unknown } | undefined
-                      )?.subscribe
+                      result.data !== null
                     ) {
                       const { event } = (step.rawArgs?.[1] ?? {}) as {
                         event: unknown;

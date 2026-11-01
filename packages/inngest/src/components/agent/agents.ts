@@ -562,14 +562,11 @@ export type {
 export { slack, slackMessageEvent } from "./slack.ts";
 export type {
   EventMessage,
+  InboxEvent,
   InboxMessage,
   NextOptions,
-  SubscribeData,
-  SubscribeEvent,
-  SubscribeOptions,
-  Subscription,
   View,
-} from "./subscribe.ts";
+} from "./inboxMessage.ts";
 export type {
   RequestOptions,
   ThreadHandle,

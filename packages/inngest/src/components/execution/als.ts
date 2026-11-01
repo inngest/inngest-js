@@ -138,14 +138,8 @@ export interface AsyncContext {
     };
 
     /**
-     * The messages of a `step.subscribe()` subscription, read from the run's
-     * state in the order the executor saved them. Only subscriptions use it.
-     */
-    subscriptionMessages?: (key: string) => unknown[];
-
-    /**
      * Tells the engine that a step was skipped because its answer was already
-     * in the state, so it is not waited for. Only subscriptions use it.
+     * in the state, so it is not waited for. Only inboxes use it.
      */
     skipStep?: (id: string) => Promise<void>;
 
@@ -158,7 +152,7 @@ export interface AsyncContext {
 
     /**
      * The answer the run's state holds for a step, if it has one. Only
-     * subscriptions use it, to tell a park that timed out from one that has not
+     * inboxes use it, to tell a read that timed out from one that has not
      * been answered.
      */
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };
