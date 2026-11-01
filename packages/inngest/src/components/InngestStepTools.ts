@@ -37,11 +37,7 @@ import {
 } from "../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
-import {
-  firstReport,
-  hashedStepId,
-  type Want,
-} from "./execution/inboxState.ts";
+import { firstReport, hashedStepId } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -67,9 +63,10 @@ import {
   validateStepScoreOptions,
 } from "./InngestScore.ts";
 import {
+  type Cut,
   Inbox,
+  type InboxMessageOf,
   type InboxSources,
-  type SourcesMessage,
   sourcesOf,
 } from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
@@ -620,7 +617,7 @@ export const createStepTools = <
     subscribe: <const S extends InboxSources>(
       idOrOptions: StepOptionsOrId,
       sources: S, // what the inbox receives
-    ): Inbox<SourcesMessage<S>> => {
+    ): Inbox<InboxMessageOf<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
       const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
 
@@ -636,52 +633,38 @@ export const createStepTools = <
         sources: sourcesOf(sources),
         id,
         inbox: hashedStepId(`${prefix}${id}`),
-        open: (op, opened, inbox) => {
-          return tools["~inboxOpen"](inbox === undefined ? idOrOptions : op, {
-            sources: opened,
-            ...(inbox === undefined ? {} : { inbox }),
-          });
+        open: (_op, opened) => {
+          return tools["~inboxOpen"](idOrOptions, { sources: opened });
         },
         waitId: (op) => {
           return hashedStepId(`${prefix}${op}`);
         },
-        wait: (op, inbox, seen, want, timeout) => {
+        wait: (op, inbox, seen, timeout) => {
           return tools["~inboxWait"](op, {
             inbox,
             seen,
-            ...(want === undefined ? {} : { want }),
             ...(timeout === undefined
               ? {}
               : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
           });
         },
-        read: (inbox, taken, wait, want) => {
+        read: (inbox, taken, wait) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.read(
-              inbox,
-              taken,
-              wait,
-              want,
-            ) ?? {
+            getAsyncCtxSync()?.execution?.inbox?.read(inbox, taken, wait) ?? {
               found: "nothing",
             }
           );
         },
-        unread: (inbox, taken, want, upTo) => {
+        unread: (inbox, taken, upTo) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.unread(
-              inbox,
-              taken,
-              want,
-              upTo,
-            ) ?? []
+            getAsyncCtxSync()?.execution?.inbox?.unread(inbox, taken, upTo) ??
+            []
           );
         },
         batch: (op, read) => {
           return tools["~inboxWait"](op, {
             inbox: read.inbox,
             seen: read.seen,
-            ...(read.want === undefined ? {} : { want: read.want }),
             ...(read.timeout === undefined
               ? {}
               : {
@@ -690,7 +673,7 @@ export const createStepTools = <
             batch: {
               ...(read.drain ? { drain: true } : {}),
               ...(read.unread ? { unread: true } : {}),
-              ...(read.room === undefined ? {} : { room: read.room }),
+              ...(read.max === undefined ? {} : { max: read.max }),
             },
           });
         },
@@ -734,7 +717,7 @@ export const createStepTools = <
           );
         },
         close: (op, closing) => {
-          return tools["~inboxClose"](op, closing) as Promise<string[]>;
+          return tools["~inboxClose"](op, closing) as Promise<Cut>;
         },
         place: async (id) => {
           await getAsyncCtxSync()?.execution?.inbox?.place(id);
@@ -748,7 +731,7 @@ export const createStepTools = <
     "~inboxOpen": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { sources: { event: string; if?: string }[]; inbox?: string },
+        opts: { sources: { event: string; if?: string }[] },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -757,29 +740,19 @@ export const createStepTools = <
         op: StepOpCode.Subscribe,
         name: id,
         displayName: name ?? id,
-        opts: {
-          sources: opts.sources,
-          ...(opts.inbox === undefined ? {} : { inbox: opts.inbox }),
-        },
+        opts: { sources: opts.sources },
         userland: { id },
       };
     }),
 
     /**
-     * The op that closes an inbox or a view. Used by `subscribe`. It settles
-     * with the ids of the messages the handle had not read, as the executor
-     * saved them.
+     * The op that closes an inbox. Used by `subscribe`. It settles with the cut
+     * the executor saved: the last message the inbox had.
      */
     "~inboxClose": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: {
-          inbox: string;
-          ids: string[];
-          pauses: { id: string; event: string }[];
-          waits: string[];
-          rows: string[];
-        },
+        opts: { inbox: string },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -788,13 +761,7 @@ export const createStepTools = <
         op: StepOpCode.SubscribeClose,
         name: id,
         displayName: name ?? id,
-        opts: {
-          inbox: opts.inbox,
-          ids: opts.ids,
-          pauses: opts.pauses,
-          waits: opts.waits,
-          rows: opts.rows,
-        },
+        opts: { inbox: opts.inbox },
         userland: { id },
       };
     }),
@@ -810,9 +777,8 @@ export const createStepTools = <
         opts: {
           inbox: string;
           seen: string;
-          want?: Want;
           timeout?: string;
-          batch?: { drain?: boolean; unread?: boolean; room?: number };
+          batch?: { drain?: boolean; unread?: boolean; max?: number };
         },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
@@ -825,7 +791,6 @@ export const createStepTools = <
         opts: {
           inbox: opts.inbox,
           seen: opts.seen,
-          ...(opts.want === undefined ? {} : { want: opts.want }),
           ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
           ...(opts.batch === undefined ? {} : { batch: opts.batch }),
         },
