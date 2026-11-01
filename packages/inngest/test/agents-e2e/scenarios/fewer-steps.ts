@@ -1,7 +1,7 @@
 /**
  * @module
- * The fixed steps of an agent run: an inbox with several sources opens in one
- * step, the thread record is written at the start without a step of its own
+ * The fixed steps of an agent run: an inbox opens its own events in one
+ * step and the config sources in one more, the thread record is written at the start without a step of its own
  * beside the read of the last run, and each model turn's record rides in its
  * model step.
  */
@@ -72,14 +72,13 @@ export const fewerSteps = scenario({
     };
 
     ctx.check(
-      "the four sources open in one step",
+      "the agent's own events open in one step and the inbox config's sources in one more",
       named((name) => {
-        return name.startsWith("inbox:") && name.endsWith("open:all");
-      }) +
+        return name === "inbox";
+      }) === 1 &&
         named((name) => {
-          return /^inbox:\d+:open$/.test(name);
-        }) ===
-        1,
+          return name === "inbox:listen";
+        }) === 1,
       run.steps,
     );
     ctx.check(
