@@ -420,6 +420,20 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   }
 
   /**
+   * Whether `close()` has been called on this reader or on a reader it is a
+   * view of, settled or not. A read that starts after the call is past the
+   * close in program order: it ends without a wait, because the close op
+   * cannot name it.
+   */
+  #isEnding(): boolean {
+    if (this.#closing !== undefined) {
+      return true;
+    }
+
+    return this.#parent ? this.#parent.#isEnding() : false;
+  }
+
+  /**
    * Whether this reader is closed: it was closed, or a reader it is a view of
    * was. A closed reader reads nothing.
    */
@@ -712,11 +726,15 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (this.closed) {
+    if (this.closed || this.#isEnding()) {
       return wait ? undefined : [];
     }
 
     await this.#ready();
+
+    if (this.#isEnding()) {
+      return wait ? undefined : [];
+    }
 
     const op = readId(this.#base, n);
     const want = this.#want();
@@ -778,11 +796,15 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     n: number,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (this.closed) {
+    if (this.closed || this.#isEnding()) {
       return undefined;
     }
 
     await this.#ready();
+
+    if (this.#isEnding()) {
+      return undefined;
+    }
 
     const op = readId(this.#base, n);
     const want = this.#want();
