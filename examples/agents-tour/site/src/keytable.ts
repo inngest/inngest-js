@@ -10,6 +10,9 @@ import {
   type KeyDef,
 } from "../../shared/keys.ts";
 
+export type ActionKey = KeyDef & { id: ActionId };
+
+// The glob loads the very lists that make up `ActionId`, so every id is one.
 export const keys = assembleKeys(
   areasOf(
     import.meta.glob<Record<string, readonly KeyDef[]>>(
@@ -17,7 +20,7 @@ export const keys = assembleKeys(
       { eager: true },
     ),
   ),
-);
+) as ActionKey[];
 
 export const keyOf = (id: ActionId) => {
   const def = keys.find((candidate) => {

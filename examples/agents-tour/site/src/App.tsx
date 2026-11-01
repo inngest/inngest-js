@@ -4,8 +4,8 @@
  * panels on the right; a bar to move between pages.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActionId } from "../../shared/keys.ts";
 import type { coreKeys } from "../../shared/keys/core.ts";
+import type { ActionId } from "../../shared/keys.ts";
 import type {
   Page,
   PageSummary,
@@ -14,18 +14,18 @@ import type {
   TraceRun,
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
-import { clearEdits, saveEdits, withEdits } from "./edits.ts";
-import { routeStreamEvent } from "./stream.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
+import { clearEdits, saveEdits, withEdits } from "./edits.ts";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
+import { panelKeys } from "./keytable.ts";
 import { sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
 import { allPanels, type PanelDef, panelOf } from "./panels/index.ts";
-import { panelKeys } from "./keytable.ts";
 import { Divider } from "./panes.tsx";
 import { store } from "./platform.ts";
+import { routeStreamEvent } from "./stream.ts";
 import { TracePanel } from "./trace.tsx";
 
 type Overlay = "contents" | "search" | "cheat" | null;
@@ -319,7 +319,7 @@ export const App = () => {
     };
 
     for (const key of panelKeys(def.id)) {
-      panelHandlers[key.id as ActionId] = () => {
+      panelHandlers[key.id] = () => {
         const owners = tabs.filter((tab) => {
           return key.panels?.includes(tab.id);
         });
@@ -329,7 +329,7 @@ export const App = () => {
           }) ?? owners[0];
 
         if (owner) {
-          forwardTo(owner, key.id as ActionId);
+          forwardTo(owner, key.id);
         }
       };
     }
@@ -395,9 +395,9 @@ export const App = () => {
 
     for (const line of lines) {
       for (const file of files) {
-        const match = new RegExp(`${file.name.replace(".", "\\.")}:(\\d+)`).exec(
-          line.text,
-        );
+        const match = new RegExp(
+          `${file.name.replace(".", "\\.")}:(\\d+)`,
+        ).exec(line.text);
 
         if (file.editable && line.kind === "err" && match) {
           out.push({

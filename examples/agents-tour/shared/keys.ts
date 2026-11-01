@@ -34,7 +34,6 @@ export interface KeyDef {
  * Each file in `keys/` adds its list here, so `ActionId` is the ids of every
  * list and a mistyped action fails the type check.
  */
-// biome-ignore lint/suspicious/noEmptyInterface: filled by `declare module` in each file of `keys/`
 export interface KeyLists {}
 
 export type ActionId = KeyLists[keyof KeyLists][number]["id"];

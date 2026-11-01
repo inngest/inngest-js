@@ -14,10 +14,9 @@ export const loadKeyTable = async (dir = join(root, "shared/keys")) => {
 
   for (const file of readdirSync(dir)) {
     if (file.endsWith(".ts")) {
-      modules[file] = (await import(pathToFileURL(join(dir, file)).href)) as Record<
-        string,
-        readonly KeyDef[]
-      >;
+      modules[file] = (await import(
+        pathToFileURL(join(dir, file)).href
+      )) as Record<string, readonly KeyDef[]>;
     }
   }
 
