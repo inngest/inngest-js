@@ -61,7 +61,10 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
   ): this is SourceMessage<{ event: TType }>;
 }
 
-export type { BatchOptions, ReadOptions as NextOptions } from "../inbox/Inbox.ts";
+export type {
+  BatchOptions,
+  ReadOptions as NextOptions,
+} from "../inbox/Inbox.ts";
 
 /**
  * One event an inbox receives.
@@ -118,7 +121,9 @@ export function eventNameOf(source: InboxEvent["event"]): string {
  * view of it. Reading through one hides nothing from the inbox or from other
  * views: every reader sees every message in its place.
  */
-export interface View<TMessage> extends AsyncIterable<TMessage>, AsyncDisposable {
+export interface View<TMessage>
+  extends AsyncIterable<TMessage>,
+    AsyncDisposable {
   /**
    * The next message, waiting for one if none is unread. `undefined` once the
    * reader is closed. With a `timeout`, `null` when none arrives in time.

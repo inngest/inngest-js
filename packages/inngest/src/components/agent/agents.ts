@@ -512,6 +512,13 @@ export type {
 } from "./github.ts";
 export { github, githubCommentEvent } from "./github.ts";
 export type {
+  EventMessage,
+  InboxEvent,
+  InboxMessage,
+  NextOptions,
+  View,
+} from "./inboxMessage.ts";
+export type {
   Kv,
   KvAdapter,
   KvIndex,
@@ -560,13 +567,6 @@ export type {
   SlackThreadOptions,
 } from "./slack.ts";
 export { slack, slackMessageEvent } from "./slack.ts";
-export type {
-  EventMessage,
-  InboxEvent,
-  InboxMessage,
-  NextOptions,
-  View,
-} from "./inboxMessage.ts";
 export type {
   RequestOptions,
   ThreadHandle,

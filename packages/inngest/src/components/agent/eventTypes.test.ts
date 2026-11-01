@@ -27,9 +27,6 @@ import {
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
 });
-const refund = eventType("shop/refund.created", {
-  schema: z.object({ order: z.string(), amount: z.number() }),
-});
 const ping = eventType("shop/ping");
 
 const client = new Inngest({ id: testClientId });
@@ -90,119 +87,6 @@ describe("types", () => {
 
     // @ts-expect-error a message needs its thread
     agentMessage.create({ agent: "app/bot", text: "hi" });
-  });
-});
-
-describe("step.subscribeLegacy", () => {
-  // Never called: the test is the types.
-  const types = async () => {
-    const one = await step.subscribeLegacy("one", { event: order });
-    const message = await one.next();
-
-    expectTypeOf(message?.data).toEqualTypeOf<
-      { id: string; total: number } | undefined
-    >();
-
-    const many = await step.subscribeLegacy("many", {
-      events: [
-        { event: order },
-        { event: refund, if: "async.data.amount > 1" },
-      ],
-    });
-    const either = await many.next();
-
-    expectTypeOf(either?.data).toEqualTypeOf<
-      | { id: string; total: number }
-      | { order: string; amount: number }
-      | undefined
-    >();
-
-    const named = await step.subscribeLegacy("named", { event: "shop/x" });
-
-    expectTypeOf((await named.next())?.data).toBeUnknown();
-
-    const given = await step.subscribeLegacy<{ n: number }>("given", {
-      event: "shop/x",
-    });
-
-    expectTypeOf((await given.next())?.data).toEqualTypeOf<
-      { n: number } | undefined
-    >();
-
-    // An explicit any stays any, for events named by a string.
-    // biome-ignore lint/suspicious/noExplicitAny: the case under test
-    const loose = await step.subscribeLegacy<any>("loose", { event: "shop/x" });
-
-    expectTypeOf((await loose.next())?.data).toBeAny();
-
-    // @ts-expect-error an event type already gives the message data: it is not overridden
-    await step.subscribeLegacy<{ q: 1 }>("override", { event: order });
-
-    // @ts-expect-error a mistyped option would be dropped, so it is an error
-    await step.subscribeLegacy("typo", {
-      event: order,
-      iff: "async.data.id == 1",
-    });
-
-    // @ts-expect-error a mistyped field of an event in the list
-    await step.subscribeLegacy("typo-in-list", {
-      events: [
-        { event: order },
-        { event: refund, iff: "async.data.amount > 1" },
-      ],
-    });
-
-    // @ts-expect-error events and event are alternatives
-    await step.subscribeLegacy("both", {
-      event: order,
-      events: [{ event: refund }],
-    });
-
-    // Several events: checking the name narrows the data.
-    const firstOfMany = await many.next();
-
-    expectTypeOf(firstOfMany?.name).toEqualTypeOf<
-      "shop/order.created" | "shop/refund.created" | undefined
-    >();
-
-    if (firstOfMany?.name === "shop/order.created") {
-      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
-        id: string;
-        total: number;
-      }>();
-    } else if (firstOfMany) {
-      expectTypeOf(firstOfMany.data).toEqualTypeOf<{
-        order: string;
-        amount: number;
-      }>();
-    }
-
-    // A view is typed by its event type, and msg.is() narrows by name and data.
-    const orders = one.of(order);
-    const viewed = await orders.next();
-
-    expectTypeOf(viewed?.data).toEqualTypeOf<
-      { id: string; total: number } | undefined
-    >();
-    expectTypeOf(viewed?.name).toEqualTypeOf<
-      "shop/order.created" | undefined
-    >();
-
-    const anything = await many.next();
-
-    if (anything?.is(refund)) {
-      expectTypeOf(anything.data).toEqualTypeOf<{
-        order: string;
-        amount: number;
-      }>();
-    }
-
-    // @ts-expect-error an event type's data has no such field
-    (await one.next())?.data.amount;
-  };
-
-  test("takes event types and infers the message data", () => {
-    expect(types).toBeTypeOf("function");
   });
 });
 

@@ -117,14 +117,17 @@ describe("agent function", () => {
       async ({ inbox, control }) => {
         let history: AgentMessage[] = [];
         let last = "";
+        let n = -1;
 
         for await (const m of inbox) {
+          n += 1;
+
           const result = await agent.loop({
-            id: `turn${m.seq}`,
+            id: `turn${n}`,
             model: agent.model(async (request) => {
               prompts.push(userTexts(request.messages));
 
-              return say(`ok ${m.seq}`);
+              return say(`ok ${n}`);
             }),
             prompt: m,
             tools: {},
@@ -134,7 +137,7 @@ describe("agent function", () => {
           history = result.history;
           last = result.text;
 
-          if (m.seq === 2) {
+          if (n === 2) {
             break;
           }
         }
@@ -203,13 +206,10 @@ describe("agent function", () => {
         return [first, second].map((m) => {
           return {
             name: m?.name,
-            seq: m?.seq,
             text: textOf(m),
             extra: m
               ? Object.keys(m).filter((key) => {
-                  return !["data", "id", "name", "seq", "ts", "user"].includes(
-                    key,
-                  );
+                  return !["data", "id", "name", "ts", "user"].includes(key);
                 })
               : null,
             isMessage: m?.is("agent/message"),
@@ -226,14 +226,12 @@ describe("agent function", () => {
     expect(output).toEqual([
       {
         name: "agent/message",
-        seq: 0,
         text: "go",
         extra: [],
         isMessage: true,
       },
       {
         name: "agent/steer",
-        seq: 1,
         text: "left",
         extra: [],
         isMessage: false,
@@ -401,17 +399,17 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.unread() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.drain() takes the pending messages, stops included, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const drained = await inbox.unread();
+        const drained = await inbox.drain();
         const after = await inbox.next({ timeout: "1s" });
 
         return [
-          drained.map((m) => {
+          drained.map((m: { name: string }) => {
             return m.name;
           }),
           after,
@@ -427,7 +425,7 @@ describe("inbox arrival", () => {
 
     expect(output).toEqual([
       ["agent/message", "agent/stop", "agent/steer"],
-      undefined,
+      null,
     ]);
   });
 
@@ -564,13 +562,17 @@ describe("inbox sources", () => {
       event: trigger("go"),
       incoming: [
         ci("red"),
-        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 5 },
+        { name: "deploy/done", data: { t: "t1", v: "1.2" } },
       ],
       onOp: (op) => {
-        const opts = op.opts as { event?: string; if?: string } | undefined;
+        const opts = op.opts as
+          | { sources?: { event: string; if?: string }[] }
+          | undefined;
 
-        if (opts?.event === "ci/status" || opts?.event === "deploy/done") {
-          filters.push([opts.event, opts.if]);
+        for (const source of opts?.sources ?? []) {
+          if (source.event === "ci/status" || source.event === "deploy/done") {
+            filters.push([source.event, source.if]);
+          }
         }
       },
     });
@@ -638,17 +640,20 @@ describe("inbox sources", () => {
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const listener = await inbox.listen("ci/status", {
+        const listener = inbox.listen("ci/status", {
           thread: "event.data.t",
         });
         const heard = await inbox.next();
 
         await listener.stop();
 
-        const bare = await inbox.listen("ci/status", {} as never).then(
-          () => "added",
-          (error: Error) => error.message,
-        );
+        let bare: string;
+        try {
+          inbox.listen("ci/status", {} as never);
+          bare = "added";
+        } catch (error) {
+          bare = (error as Error).message;
+        }
 
         return [heard?.name, bare];
       },
@@ -665,29 +670,27 @@ describe("inbox sources", () => {
     ]);
     expect(
       ops.map((op) => {
-        return [op.mode, op.stream ?? 0];
+        return op.op;
       }),
-    ).toContainEqual(["stop", 4]);
+    ).toContain("close");
   });
 
-  test("listen() returns the view of its event: it reads with its own cursor while the main inbox gets the events too", async () => {
+  test("listen() returns the view of its source: it reads from a position of its own while the main inbox gets the events too", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
 
-        const listener = await inbox.listen("ci/status", {
+        const listener = inbox.listen("ci/status", {
           thread: "event.data.t",
         });
         const viewed = await listener.next({ timeout: "1m" });
-        const all = await listener.current();
-        const unread = await listener.unread();
+        const unread = await listener.drain();
         const main = await inbox.next();
 
         return [
           viewed?.name,
-          all.length,
           unread.length,
           main?.name,
           typeof listener.stop,
@@ -704,7 +707,6 @@ describe("inbox sources", () => {
 
     expect(output).toEqual([
       "ci/status",
-      1,
       0,
       "ci/status",
       "function",
@@ -713,40 +715,7 @@ describe("inbox sources", () => {
     ]);
   });
 
-  test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-        const all = await inbox.current();
-        const second = await inbox.next();
-
-        return [
-          textOf(first),
-          all.map((m) => {
-            return m.name;
-          }),
-          textOf(second),
-        ];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "b"), message("stop"), message("user", "c")],
-    });
-
-    expect(output).toEqual([
-      "go",
-      ["agent/message", "agent/stop", "agent/message"],
-      "b",
-    ]);
-  });
-});
-
-describe("inbox timeouts", () => {
-  test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
+  test("next({ timeout }) returns null when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -765,7 +734,7 @@ describe("inbox timeouts", () => {
       timeouts: 1,
     });
 
-    expect(output).toEqual(["a", undefined, "b"]);
+    expect(output).toEqual(["a", null, "b"]);
   });
 
   test("a stop message that is skipped starts a new wait, which can expire", async () => {
@@ -776,7 +745,7 @@ describe("inbox timeouts", () => {
         await inbox.next();
         const expired = await inbox.next({ timeout: "1s" });
 
-        return expired === undefined ? "expired" : "message";
+        return expired === null ? "expired" : "message";
       },
     );
 
@@ -840,7 +809,55 @@ describe("agent cleanup", () => {
     expect(await bound.scope("run", "run2").all()).toEqual({ scratch: 2 });
   });
 
-  test("the agent function defers the cleanup with its run ID", async () => {
+  test("the trigger is the inbox's first message and is read without a step or a wait", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        return textOf(first);
+      },
+    );
+
+    const { output, ops } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("go");
+    expect(
+      ops.map((op) => {
+        return op.op;
+      }),
+    ).not.toContain("wait");
+  });
+
+  test("nextBatch() returns what is unread, skipping a message that breaks nothing, and a closed inbox returns undefined", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const batch = await inbox.nextBatch();
+        await inbox.close();
+        const closed = await inbox.next();
+
+        return [
+          batch?.map((m) => {
+            return textOf(m);
+          }),
+          closed,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "a"), message("steer", "b")],
+    });
+
+    expect(output).toEqual([["a", "b"], undefined]);
+  });
+
+  test("the agent opens one inbox for its own events, with a source per event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -849,11 +866,14 @@ describe("agent cleanup", () => {
 
     const { ops } = await run(fn, { event: trigger("hi") });
 
-    expect(ops[0]).toMatchObject({
-      id: "inbox:open:all",
-      mode: "open",
-      streams: 4,
-    });
+    expect(ops[0]).toMatchObject({ id: "inbox", op: "open" });
+    expect(
+      (ops[0]?.opts as { sources: { event: string }[] }).sources.map(
+        (source) => {
+          return source.event;
+        },
+      ),
+    ).toEqual(["agent/message", "agent/steer", "agent/stop", "agent/request"]);
   });
 });
 
@@ -973,15 +993,19 @@ describe("thread state", () => {
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
-    // The body replays on every request, so a turn's record is kept by seq.
+    // The body replays on every request, so a turn's record is kept by turn.
     const seen = new Map<number, unknown>();
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv },
       async ({ inbox, control }) => {
+        let n = -1;
+
         for await (const m of inbox) {
+          n += 1;
+
           await agent.loop({
-            id: `turn${m.seq}`,
+            id: `turn${n}`,
             model: agent.model(async () => {
               return {
                 ...say(`reply to ${textOf(m)}`),
@@ -992,9 +1016,9 @@ describe("thread state", () => {
             tools: {},
             ...control,
           });
-          seen.set(m.seq, await record(kv));
+          seen.set(n, await record(kv));
 
-          if (m.seq === 1) {
+          if (n === 1) {
             break;
           }
         }
@@ -1093,7 +1117,7 @@ describe("thread state", () => {
 
     // The body ran again for each request; the last run is the final one.
     expect(seen.length).toBeGreaterThanOrEqual(3);
-    expect(seen.slice(-3)).toEqual([undefined, "running", "running"]);
+    expect(seen.slice(-3)).toEqual([null, "running", "running"]);
   });
 
   test("a wait that expires does not undo a stop", async () => {

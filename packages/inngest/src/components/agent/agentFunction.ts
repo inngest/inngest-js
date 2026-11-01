@@ -27,7 +27,6 @@ import type {
   ApplyAllMiddlewareStepExtensions,
 } from "../../types.ts";
 import { createDefer } from "../DeferredFunction.ts";
-import type { Inbox } from "../inbox/Inbox.ts";
 import {
   type AgentBridge,
   getAsyncCtxSync,
@@ -40,6 +39,7 @@ import {
 } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
+import type { Inbox } from "../inbox/Inbox.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
@@ -76,6 +76,15 @@ import {
   agentMessage,
 } from "./events.ts";
 import {
+  type BatchOptions,
+  type EventMessage,
+  eventNameOf,
+  type InboxMessage,
+  type NextOptions,
+  type View,
+  withIs,
+} from "./inboxMessage.ts";
+import {
   createInboxTools,
   type InboxToolInbox,
   type InboxToolsConfig,
@@ -104,15 +113,6 @@ import {
 } from "./recovery.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
-import {
-  type BatchOptions,
-  type EventMessage,
-  eventNameOf,
-  type InboxMessage,
-  type NextOptions,
-  type View,
-  withIs,
-} from "./inboxMessage.ts";
 import {
   agentMessageEvent,
   agentRequestEvent,
@@ -1197,11 +1197,6 @@ interface ThreadSources {
   inbox: Inbox<InboxMessage>;
 
   /**
-   * An inbox over the events steering folds, with a read position of its own.
-   */
-  steer: Inbox<InboxMessage>;
-
-  /**
    * A view of one event.
    */
   of: (type: InboxSource["event"]) => Inbox<InboxMessage>;
@@ -1247,9 +1242,12 @@ function threadInbox(
   inbox: ThreadInbox;
   steering: {
     take: () => Promise<ThreadInboxMessage[]>;
-    consume: (message: ThreadInboxMessage) => void;
+    keep: (messages: ThreadInboxMessage[]) => void;
   };
 } {
+  // The event each message was made from, to leave it unread as it came.
+  const raws = new WeakMap<object, InboxMessage>();
+
   function unwrap(message: InboxMessage | null): ThreadInboxMessage | null {
     if (!message) {
       return null;
@@ -1285,12 +1283,18 @@ function threadInbox(
         },
       }),
     });
+    raws.set(unwrapped, message);
+
     // One cast: the spread above is a plain object, and `ThreadInboxMessage` is
     // a union that depends on the caller's `on` triggers, which the runtime
     // cannot derive.
     return unwrapped as unknown as ThreadInboxMessage;
   }
 
+  function rawOf(message: ThreadInboxMessage): InboxMessage {
+    // A message that did not come from `unwrap` is already an event.
+    return raws.get(message) ?? (message as unknown as InboxMessage);
+  }
 
   let delivered = 0;
 
@@ -1329,22 +1333,16 @@ function threadInbox(
     );
   }
 
-  // Messages steering took: the inbox does not return them again.
-  const consumed = new Set<string>();
-
-  // Messages to return before the source's, once: the event that started the
-  // run.
+  // Messages to return before the source's: the event that started the run,
+  // and the ones steering took and left for the next turn. They are rebuilt on
+  // every replay, which takes and keeps the same messages.
   const lead: InboxMessage[] = started ? [started] : [];
 
   // What `view()` keeps of messages the source handed over.
-  async function keep(raws: InboxMessage[], main: boolean) {
+  async function keep(raws: InboxMessage[]) {
     const kept: InboxMessage[] = [];
 
     for (const raw of raws) {
-      if (main && consumed.has(raw.id)) {
-        continue;
-      }
-
       if (!(await skipped(raw))) {
         kept.push(raw);
       }
@@ -1386,10 +1384,6 @@ function threadInbox(
             }
 
             return null;
-          }
-
-          if (main && consumed.has(raw.id)) {
-            continue;
           }
 
           if (await skipped(raw)) {
@@ -1436,7 +1430,7 @@ function threadInbox(
             raws = got;
           }
 
-          const kept = await keep(raws, main);
+          const kept = await keep(raws);
           if (kept.length > 0) {
             return kept.map(present);
           }
@@ -1456,12 +1450,12 @@ function threadInbox(
       async drain(options?: BatchOptions) {
         const raws = [...first.splice(0), ...(await source.drain(options))];
 
-        return (await keep(raws, main)).map(present);
+        return (await keep(raws)).map(present);
       },
       async close() {
         const raws = [...first.splice(0), ...(await source.close())];
 
-        return (await keep(raws, main)).map(present);
+        return (await keep(raws)).map(present);
       },
       get closed() {
         return source.closed;
@@ -1525,14 +1519,17 @@ function threadInbox(
     }) as ThreadInbox,
     steering: {
       async take() {
-        const raws = await keep(await sources.steer.drain(), false);
+        const raws = await keep([
+          ...lead.splice(0),
+          ...(await sources.inbox.drain()),
+        ]);
 
         return raws.map((raw) => {
           return unwrap(raw) as ThreadInboxMessage;
         });
       },
-      consume(message) {
-        consumed.add((message as { id: string }).id);
+      keep(messages) {
+        lead.unshift(...messages.map(rawOf));
       },
     },
   };
@@ -2100,18 +2097,6 @@ export function createAgentFunction(
           user: {},
         }) as InboxMessage;
 
-        // The events steering folds: those that reach a live run.
-        const steerEvents = [
-          ...ownEvents,
-          ...triggers
-            .filter((trigger) => {
-              return trigger.listen;
-            })
-            .map((trigger) => {
-              return trigger.event;
-            }),
-        ];
-
         const bindings = await resolveSandboxes(config.sandboxes, {
           event: event as unknown as AgentConfigContext["event"],
         });
@@ -2195,7 +2180,6 @@ export function createAgentFunction(
         const { inbox, steering } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<InboxMessage>,
-            steer: subscription.of(steerEvents) as unknown as Inbox<InboxMessage>,
             of: (type) => {
               return subscription.of(
                 eventNameOf(type),
@@ -2249,19 +2233,23 @@ export function createAgentFunction(
             // Read everything that has arrived: steering messages and stops
             // apply to the turn that is running; messages for the next turn
             // stay unread in the inbox.
+            const waiting: ThreadInboxMessage[] = [];
+
             for (const message of await steering.take()) {
               if (
                 message.name === agentSteerEvent ||
                 (config.foldMessages === "all" &&
                   inflightOf(message) !== undefined)
               ) {
-                steering.consume(message);
                 folded.push(message);
               } else if (message.name === agentStopEvent) {
-                steering.consume(message);
                 stopRequested = true;
+              } else {
+                waiting.push(message);
               }
             }
+
+            steering.keep(waiting);
 
             return folded;
           },

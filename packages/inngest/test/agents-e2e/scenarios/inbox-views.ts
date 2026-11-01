@@ -2,7 +2,7 @@
  * @module
  * Views of an inbox. A view reads the messages of one event with a cursor of
  * its own: reading through it hides nothing from the main loop, and its
- * `drain()` takes what came after its cursor.
+ * `drain()` takes what came after its read position.
  */
 import { Inngest } from "inngest";
 import {
@@ -118,7 +118,7 @@ export const inboxViews = scenario({
     });
 
     ctx.check(
-      "drain() of the view takes what came after its cursor",
+      "drain() of the view takes what came after its read position",
       done.includes("unread:2"),
       done,
     );

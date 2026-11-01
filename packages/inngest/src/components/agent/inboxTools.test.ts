@@ -67,19 +67,14 @@ const fakeInbox = () => {
 
           return message ?? null;
         },
-        unread: async () => {
-          calls.push(["unread", name]);
+        drain: async () => {
+          calls.push(["drain", name]);
 
           const at = read.get(name) ?? 0;
 
           read.set(name, queue(name).length);
 
           return queue(name).slice(at);
-        },
-        current: async () => {
-          calls.push(["current", name]);
-
-          return [...queue(name)];
         },
       };
     },
@@ -397,7 +392,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
       "can wait at most 30m",
     );
     await call("inbox_wait", { timeout: 0 });
-    expect(calls.at(-1)).toEqual(["next", "ci/status", { timeout: 0 }]);
+    expect(calls.at(-1)).toEqual(["drain", "ci/status"]);
   });
 
   test("wait is a suspending tool for run_code", () => {
@@ -425,26 +420,13 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     await expect(call("inbox_read")).resolves.toEqual({ messages: [] });
   });
 
-  test("read with all returns the latest 20 and how many there are, and 'as' picks a listener", async () => {
-    const { call, push, calls } = setup();
+  test("read takes what a listener has, and 'as' picks a listener", async () => {
+    const { call, push } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
     await call("inbox_listen", { source: "github/check_run", as: "gh" });
-
-    for (let n = 0; n < 25; n += 1) {
-      push("ci/status", { name: "ci/status", data: { n } });
-    }
-
+    push("ci/status", { name: "ci/status", data: { n: 1 } });
     push("github/check_run", { name: "github/check_run", data: { n: 99 } });
-
-    const { messages, total } = (await call("inbox_read", { all: true })) as {
-      total: number;
-      messages: { content: string }[];
-    };
-
-    expect(total).toBe(26);
-    expect(messages).toHaveLength(20);
-    expect(calls.filter((entry) => entry[0] === "current")).toHaveLength(2);
 
     const only = (await call("inbox_read", { as: "gh" })) as {
       messages: { source: string }[];
