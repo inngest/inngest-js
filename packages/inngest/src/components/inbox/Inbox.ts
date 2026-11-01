@@ -61,7 +61,7 @@ type SourceMessage<TSource> = TSource extends EventTypeWithAnySchema<string>
  * The messages the sources produce: the union of the shapes of the event types
  * among them. A source written as a name contributes the default message.
  */
-export type SourcesMessage<TSources> = TSources extends readonly (infer TItem)[]
+export type InboxMessageOf<TSources> = TSources extends readonly (infer TItem)[]
   ? SourceMessage<TItem>
   : SourceMessage<TSources>;
 
@@ -294,7 +294,7 @@ export interface BatchOptions {
  * What an inbox hands back by default: the event, with `is()` to narrow it to
  * the event types it was asked about and `data` left `unknown` until it is.
  */
-export type DefaultMessage = Omit<EventPayload, "data"> & {
+export type UntypedInboxMessage = Omit<EventPayload, "data"> & {
   data: unknown;
 } & EventIs;
 
@@ -307,11 +307,8 @@ export type DefaultMessage = Omit<EventPayload, "data"> & {
  * const handle = (message: InboxMessage<typeof inbox>) => {};
  * ```
  */
-export type InboxMessage<TInbox = Inbox<DefaultMessage>> = TInbox extends Inbox<
-  infer TMessage
->
-  ? TMessage
-  : never;
+export type InboxMessage<TInbox = Inbox<UntypedInboxMessage>> =
+  TInbox extends Inbox<infer TMessage> ? TMessage : never;
 
 /**
  * A durable collection of the events that matched the sources of one
@@ -321,7 +318,7 @@ export type InboxMessage<TInbox = Inbox<DefaultMessage>> = TInbox extends Inbox<
  * An inbox has one reader: nothing is read twice, and reads are served in the
  * order they were made.
  */
-export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
+export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   private _deps: InboxDeps;
   private _opened: Promise<void>;
 

@@ -65,8 +65,8 @@ import {
 import {
   type Cut,
   Inbox,
+  type InboxMessageOf,
   type InboxSources,
-  type SourcesMessage,
   sourcesOf,
 } from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
@@ -598,7 +598,7 @@ export const createStepTools = <
     subscribe: <const S extends InboxSources>(
       idOrOptions: StepOptionsOrId,
       sources: S, // what the inbox receives
-    ): Inbox<SourcesMessage<S>> => {
+    ): Inbox<InboxMessageOf<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
       const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
 

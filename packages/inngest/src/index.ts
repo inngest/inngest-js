@@ -65,12 +65,12 @@ export type {
 export { group, step } from "./components/InngestStepTools.ts";
 export type {
   BatchOptions,
-  DefaultMessage,
   Inbox,
   InboxMessage,
+  InboxMessageOf,
   InboxSources,
   ReadOptions,
-  SourcesMessage,
+  UntypedInboxMessage,
 } from "./components/inbox/Inbox";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
