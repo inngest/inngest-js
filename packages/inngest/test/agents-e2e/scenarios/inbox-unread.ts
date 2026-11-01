@@ -1,7 +1,7 @@
 /**
  * @module
  * The flows of `step.subscribe` for messages that arrive while the code is
- * busy: unread messages are read in process, a plain loop over N messages costs
+ * occupied: unread messages are read in process, a plain loop over N messages costs
  * N + 1 steps, a lookalike step is not a message, and one event matching two
  * sources is one message. Every flow runs in all 8 cells of the matrix.
  *
@@ -43,7 +43,7 @@ const unreadMessages: Flow = {
     const inbox = h.step.subscribe("inbox", source(h));
 
     try {
-      // The function is busy until the driver has sent all three messages.
+      // The function is held until the driver has sent all three messages.
       await h.until("sent");
 
       const got = [];
