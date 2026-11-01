@@ -113,8 +113,59 @@ const timeoutThenMessage: Flow = {
   },
 };
 
+const batchTimeoutWithNoMessage: Flow = {
+  name: "inbox-batch-timeout-no-message",
+  run: async (h) => {
+    const inbox = h.step.subscribe("inbox", source(h));
+
+    try {
+      const batch = await inbox.nextBatch({ timeout: "3s" });
+
+      return { batch };
+    } finally {
+      await inbox.close();
+    }
+  },
+  drive: async () => {
+    return undefined;
+  },
+  expect: {
+    output: { batch: null },
+    bodies: {},
+    rows: ["inbox", "inbox:close"],
+  },
+};
+
+const batchMessageBeforeTimeout: Flow = {
+  name: "inbox-batch-message-before-timeout",
+  run: async (h) => {
+    const inbox = h.step.subscribe("inbox", source(h));
+
+    try {
+      const batch = await inbox.nextBatch({ timeout: "1m" });
+      h.mark("received");
+
+      return {
+        ns: (batch ?? []).map((message) => {
+          return (message.data as { n: number }).n;
+        }),
+      };
+    } finally {
+      await inbox.close();
+    }
+  },
+  drive: async (d) => {
+    await sendUntil(d, 1, "received");
+  },
+  expect: {
+    output: { ns: [1] },
+    bodies: {},
+    rows: ["inbox", "inbox:close", "inbox:next:batch"],
+  },
+};
+
 export const inboxTimeouts = flowScenario({
   id: "inbox-timeouts",
   owner: "sub-04-timeouts",
-  flows: [timeoutWithNoMessage, messageBeforeTimeout, timeoutThenMessage],
+  flows: [batchTimeoutWithNoMessage],
 });

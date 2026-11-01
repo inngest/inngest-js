@@ -567,9 +567,20 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    * is one small step listing the messages it took. A closed reader, or one
    * that closes while this waits, returns `undefined`.
    */
-  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined> {
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
+
+  /**
+   * Returns every unread message, waiting for at least one to arrive, or `null`
+   * if none arrives in time. Returns `undefined` once the reader is closed.
+   */
+  nextBatch(
+    options: BatchOptions & ReadOptions,
+  ): Promise<TMessage[] | null | undefined>;
+  nextBatch(
+    options?: BatchOptions & Partial<ReadOptions>,
+  ): Promise<TMessage[] | null | undefined> {
     return this.#enqueue((n) => {
-      return this.#readBatch(n, options?.max, true);
+      return this.#readBatch(n, options?.max, true, options?.timeout);
     });
   }
 
@@ -631,7 +642,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     n: number,
     max: number | undefined,
     wait: boolean,
-  ): Promise<TMessage[] | undefined> {
+    timeout?: ReadTimeout,
+  ): Promise<TMessage[] | null | undefined> {
     if (this.closed) {
       return wait ? undefined : [];
     }
@@ -641,11 +653,29 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     const op = readId(this.#base, n);
     const want = this.#want();
 
+    // A timeout that lost to a message is saved in state and never asked for.
+    let timedOut = false;
+    if (wait && timeout !== undefined) {
+      const found = this.#deps.read(
+        this.#deps.inbox,
+        this.#taken,
+        this.#deps.waitId(op),
+        want,
+      );
+
+      if (found.found === "message" && found.timedOut) {
+        await this.#deps.skip(op);
+      }
+
+      timedOut = found.found === "timeout";
+    }
+
     if (
       wait &&
-      this.#deps.unread(this.#deps.inbox, this.#taken, want).length === 0
+      (timedOut ||
+        this.#deps.unread(this.#deps.inbox, this.#taken, want).length === 0)
     ) {
-      if (this.#closedInState()) {
+      if (!timedOut && this.#closedInState()) {
         await this.#ended();
 
         return undefined;
@@ -653,7 +683,18 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
       // Nothing is unread. The executor wakes the run when a message arrives,
       // and the replay finds it in state, so this does not settle here.
-      await this.#deps.wait(op, this.#deps.inbox, this.#deps.lastSeen(), want);
+      const answer = await this.#deps.wait(
+        op,
+        this.#deps.inbox,
+        this.#deps.lastSeen(),
+        want,
+        timeout,
+      );
+
+      // The timeout passed with nothing unread.
+      if (answer === null) {
+        return null;
+      }
     }
 
     const ids = await this.#deps.record(op, () => {
