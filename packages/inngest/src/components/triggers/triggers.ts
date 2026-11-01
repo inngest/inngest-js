@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { EventMeta } from "../../types.ts";
+import { matchesEventName } from "./eventName.ts";
 import type { EventTypeToShape } from "./typeHelpers.ts";
 
 /**
@@ -24,8 +25,7 @@ type EventTrigger = {
   event: string;
   if?: string;
 
-  // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
-  schema?: StandardSchemaV1<any>;
+  schema?: StandardSchemaV1<Record<string, unknown>>;
 };
 
 /**
@@ -106,8 +106,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
   TName,
-  // biome-ignore lint/suspicious/noExplicitAny: any is fine
-  any
+  StandardSchemaV1<Record<string, unknown>> | undefined
 >;
 
 /**
@@ -214,14 +213,17 @@ export class EventType<
 }
 
 /**
- * Whether a value is an object carrying the given event name.
+ * Whether a value is an object whose event name matches the given name, which
+ * may end in a wildcard as a trigger's does.
  */
 export function hasEventName(value: unknown, name: string): boolean {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
-  return (value as { name?: unknown }).name === name;
+  const valueName = (value as { name?: unknown }).name;
+
+  return typeof valueName === "string" && matchesEventName(valueName, name);
 }
 
 /**
