@@ -116,7 +116,7 @@ const loopOf = (n: number): Flow => {
     expect: {
       output: { ns: upTo(n) },
       bodies: {},
-      rows: ["inbox", "inbox:close"],
+      rows: ["inbox", "inbox:close", ...reads(n)],
       ticks: {
         inbox: n,
         ...Object.fromEntries(

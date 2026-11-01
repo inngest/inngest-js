@@ -70,7 +70,7 @@ const closeReturnsUnread: Flow = {
       drained: 0,
     },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
     steps: 5,
   },
 };
@@ -106,7 +106,7 @@ const closeEndsBackgroundLoop: Flow = {
   expect: {
     output: { got: [1, 2], unread: [], loop: "ended" },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
     steps: 4,
   },
 };
@@ -131,7 +131,7 @@ const closeEndsTimedRead: Flow = {
   expect: {
     output: { unread: [], ended: true, closed: true },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
     steps: 2,
   },
 };
@@ -179,7 +179,15 @@ const closingListenKeepsInboxCopies: Flow = {
       viewClosed: true,
     },
     bodies: {},
-    rows: ["inbox", "inbox:listen", "inbox:listen:close", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:listen",
+      "inbox:listen:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:2",
+    ],
     steps: 7,
   },
 };
@@ -225,7 +233,15 @@ const closingOfEndsOnlyThatReader: Flow = {
       rest: [],
     },
     bodies: {},
-    rows: ["inbox", "inbox:close", "inbox:of:agents-e2e/inbox-close/a:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:2",
+      "inbox:next:3",
+      "inbox:of:agents-e2e/inbox-close/a:close",
+    ],
     steps: 7,
   },
 };
@@ -263,7 +279,12 @@ const closingInboxClosesViews: Flow = {
       fromView: [1],
     },
     bodies: {},
-    rows: ["inbox", "inbox:close", "inbox:of:agents-e2e/inbox-close/a:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:of:agents-e2e/inbox-close/a:close",
+    ],
     steps: 5,
   },
 };
