@@ -4,7 +4,7 @@
  * read asks the executor, what a cut answers, what `close()` sends, and what a
  * closed inbox returns.
  */
-import { Inbox, type InboxDeps } from "./Inbox.ts";
+import { Inbox, type InboxDeps, inboxOpenedPromise } from "./Inbox.ts";
 
 /**
  * Fake dependencies over a run state that holds the messages `ids`, oldest
@@ -305,5 +305,31 @@ describe("batch reads", () => {
 
     expect(await inbox.drain({ max: 1 })).toMatchObject([message("m1")]);
     expect(await inbox.drain()).toMatchObject([message("m2"), message("m3")]);
+  });
+});
+
+describe("opening an inbox", () => {
+  test("inboxOpenedPromise() settles once the open is replayed past", async () => {
+    const { deps } = fakeDeps([]);
+    let finish: () => void = () => undefined;
+    deps.open = () => {
+      return new Promise((resolve) => {
+        finish = () => {
+          resolve({ pauses: [] });
+        };
+      });
+    };
+    const inbox = new Inbox(deps);
+    let opened = false;
+    void inboxOpenedPromise(inbox).then(() => {
+      opened = true;
+    });
+
+    await tick();
+    expect(opened).toBe(false);
+
+    finish();
+    await tick();
+    expect(opened).toBe(true);
   });
 });

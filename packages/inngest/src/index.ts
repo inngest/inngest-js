@@ -72,7 +72,6 @@ export type {
   ReadOptions,
   SourcesMessage,
 } from "./components/inbox/Inbox";
-export { inboxOpened } from "./components/inbox/Inbox";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";

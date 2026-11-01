@@ -101,10 +101,18 @@ const isList = (sources: InboxSources): sources is readonly OneSource[] => {
   return Array.isArray(sources);
 };
 
+// The promise that settles once each inbox is open. It lives here, not on the
+// class, so nothing internal is part of the public declaration.
+const openedPromises = new WeakMap<object, Promise<void>>();
+
 /**
- * The key of the internal method that settles once the inbox is open.
+ * Settles once the executor has recorded the open of `inbox`. Code that does
+ * other work before its first read awaits it, so that work does not share a
+ * request with the open. Internal: the package root does not export it.
  */
-export const inboxOpened: unique symbol = Symbol("inngest.inbox.opened");
+export const inboxOpenedPromise = (inbox: object): Promise<void> => {
+  return openedPromises.get(inbox) ?? Promise.resolve();
+};
 
 /**
  * The ID of the op of the `n`th read of an inbox.
@@ -350,6 +358,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
       return undefined;
     });
 
+    openedPromises.set(this, this._opened);
+
     // A failed open is reported where the inbox is read; this keeps it from
     // also being reported as unhandled.
     this._opened.catch(() => {
@@ -362,15 +372,6 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    */
   get closed(): boolean {
     return this._closed;
-  }
-
-  /**
-   * Settles once the executor has recorded the open. Code that does other work
-   * before its first read awaits it, so that work does not share a request with
-   * the open. Keyed by a symbol the package does not export to users.
-   */
-  [inboxOpened](): Promise<void> {
-    return this._opened;
   }
 
   /**
