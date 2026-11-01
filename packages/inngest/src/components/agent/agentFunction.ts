@@ -1412,6 +1412,10 @@ function threadInbox(
         }
       }) as View<TOut>["next"],
       nextBatch: (async (options?: BatchOptions & Partial<NextOptions>) => {
+        if (main && delivered > 0) {
+          await recorder.waiting();
+        }
+
         for (;;) {
           const queued = first.splice(0);
           let raws: InboxMessage[];
@@ -1423,7 +1427,16 @@ function threadInbox(
               options as BatchOptions & NextOptions,
             );
 
-            if (got === undefined || got === null) {
+            if (got === undefined) {
+              return got;
+            }
+
+            if (got === null) {
+              // The wait expired: the agent goes on working, so it is not waiting.
+              if (main && delivered > 0) {
+                await recorder.resumed();
+              }
+
               return got;
             }
 
@@ -1432,7 +1445,29 @@ function threadInbox(
 
           const kept = await keep(raws);
           if (kept.length > 0) {
-            return kept.map(present);
+            const batch = kept.map(present);
+
+            if (!main) {
+              return batch;
+            }
+
+            delivered += batch.length;
+
+            // The thread resends one message when a failed run recovers: the
+            // last one of the batch that starts a turn.
+            let inflight: Inflight | undefined;
+
+            for (const message of batch) {
+              inflight =
+                inflightOf(message as unknown as ThreadInboxMessage) ??
+                inflight;
+            }
+
+            if (delivered > 1) {
+              await recorder.running(undefined, inflight);
+            }
+
+            return batch;
           }
         }
       }) as View<TOut>["nextBatch"],

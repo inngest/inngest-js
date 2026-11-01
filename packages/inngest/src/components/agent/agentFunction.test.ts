@@ -1067,6 +1067,68 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
+  test("a batch waited for after the first marks the thread waiting", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        for await (const _batch of inbox.batches()) {
+          // Each batch is answered, then the next one is waited for.
+        }
+      },
+    );
+
+    // The second read finds nothing, so the run ends waiting.
+    await run(fn, { event: trigger("one") });
+
+    expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
+  });
+
+  test("a delivered batch after the first marks the thread running with its message in flight", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.nextBatch();
+        seen.push(await record(kv));
+      },
+    );
+
+    await run(fn, {
+      event: trigger("one"),
+      saved: [message("user", "two")],
+    });
+
+    expect(seen.at(-1)).toMatchObject({
+      status: "running",
+      inflight: { text: "two" },
+    });
+  });
+
+  test("a batch wait that expires marks the thread running again when a message was delivered", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.nextBatch();
+        await inbox.nextBatch({ timeout: "1s" }).catch(() => undefined);
+        seen.push(
+          ((await record(kv)) as { status?: string } | undefined)?.status,
+        );
+      },
+    );
+
+    await run(fn, { event: trigger("one"), timeouts: 1 });
+
+    expect(seen.at(-1)).toBe("running");
+  });
+
   test("a wait that expires marks the thread running again when a message was delivered", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const seen: unknown[] = [];
