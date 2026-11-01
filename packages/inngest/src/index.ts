@@ -67,6 +67,12 @@ export type {
   ParallelOptions,
 } from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
+export type {
+  BatchOptions,
+  Inbox,
+  InboxSources,
+  ReadOptions,
+} from "./components/inbox/Inbox";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
