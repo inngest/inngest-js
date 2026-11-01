@@ -134,6 +134,38 @@ describe("closing an inbox", () => {
     expect(waiting).toBeInstanceOf(Promise);
   });
 
+  test("a read that starts while the close is in flight ends without reporting a wait", async () => {
+    const { deps } = fakeDeps([]);
+    const waits: string[] = [];
+    let finish: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+
+    deps.wait = (...args: unknown[]) => {
+      waits.push(String(args[0]));
+
+      return new Promise(() => {
+        return undefined;
+      });
+    };
+    deps.close = async (_op, closing) => {
+      await gate;
+
+      return closing.ids;
+    };
+
+    const inbox = new Inbox(deps);
+    const closing = inbox.close();
+    const late = inbox.next();
+
+    finish();
+    await closing;
+
+    expect(await late).toBeUndefined();
+    expect(waits).toEqual([]);
+  });
+
   test("closing a reader closes the views under it", async () => {
     const { deps } = fakeDeps(["m1"]);
     const inbox = new Inbox(deps);

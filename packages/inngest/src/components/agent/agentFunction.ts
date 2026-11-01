@@ -1916,6 +1916,10 @@ export function createAgentFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // An agent's reads wake it as soon as a message lands, and a reader left
+      // waiting beside its work never holds the run back.
+      optimizeParallelism: false,
       triggers: [
         // A stop never starts a run, so stopping an idle thread does nothing.
         ...[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(
