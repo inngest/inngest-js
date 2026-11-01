@@ -20,8 +20,8 @@ import {
 } from "../../src/components/agent/anthropic.ts";
 import { priceOf } from "../../src/components/agent/cost.ts";
 import type {
-  AgentMessage,
   AgentModelRequest,
+  ModelMessage,
 } from "../../src/components/agent/loop.ts";
 
 const model = "claude-haiku-5-5";
@@ -72,7 +72,7 @@ const main = async () => {
     maxTokens: 400,
     cache: { ttl: "5m" },
   });
-  const messages: AgentMessage[] = [
+  const messages: ModelMessage[] = [
     { role: "user", content: "What is 2 + 3? Use the add tool." },
   ];
   const request = (turn: number): AgentModelRequest => {

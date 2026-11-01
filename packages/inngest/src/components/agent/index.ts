@@ -86,6 +86,7 @@ export {
   agentInvokeDepth,
   agentInvokeInput,
 } from "./invoke.ts";
+export type { Json, JsonSchema } from "./json.ts";
 export type { AgentBudget, AgentLimits } from "./limits.ts";
 export { AgentLimitError } from "./limits.ts";
 export type {
@@ -94,7 +95,6 @@ export type {
   AgentInput,
   AgentLoopOptions,
   AgentLoopResult,
-  AgentMessage,
   AgentModel,
   AgentModelRequest,
   AgentModelResponse,
@@ -104,6 +104,7 @@ export type {
   AgentTurn,
   AgentUsage,
   AgentUserContent,
+  ModelMessage,
 } from "./loop.ts";
 export { agent } from "./loop.ts";
 export type { UntrustedOptions } from "./modelErrors.ts";
