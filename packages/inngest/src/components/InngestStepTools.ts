@@ -36,7 +36,11 @@ import {
 } from "../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
-import { hashedStepId, type Want } from "./execution/inboxState.ts";
+import {
+  firstReport,
+  hashedStepId,
+  type Want,
+} from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -654,6 +658,21 @@ export const createStepTools = <
         record: (op, take) => {
           return tools.run(`${op}:batch`, take);
         },
+        report: (op, inbox, messages, draw) => {
+          const runId = getAsyncCtxSync()?.execution?.ctx.runId;
+
+          if (
+            messages.length === 0 ||
+            runId === undefined ||
+            !firstReport(runId, `${prefix}${op}`)
+          ) {
+            return;
+          }
+
+          void tools["~inboxRead"](op, { inbox, messages, draw }).catch(
+            () => undefined,
+          );
+        },
         skip: async (op) => {
           await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
         },
@@ -752,6 +771,31 @@ export const createStepTools = <
           seen: opts.seen,
           ...(opts.want === undefined ? {} : { want: opts.want }),
           ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The lazy op that reports the messages a read took. Used by `subscribe`.
+     * It rides on the next message to the executor and has no answer.
+     */
+    "~inboxRead": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { inbox: string; messages: string[]; draw: boolean },
+      ) => Promise<void>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.SubscribeRead,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          messages: opts.messages,
+          ...(opts.draw ? { draw: true } : {}),
         },
         userland: { id },
       };

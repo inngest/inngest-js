@@ -205,3 +205,39 @@ export const unseenSteps = (
     return !isInboxMessage(stepState[id]?.data);
   });
 };
+
+// The runs whose reads this process has reported, and which. A replay reports
+// every read it answers from state, and the executor draws the same spans each
+// time, so this only keeps a long run from reporting its whole history on every
+// request. A request on another process reports again, which is harmless.
+const reportedReads = new Map<string, Set<string>>();
+const reportedRuns = 1000;
+
+/**
+ * Whether the read `id` of run `runId` has not been reported by this process.
+ * Asking marks it reported.
+ */
+export const firstReport = (runId: string, id: string): boolean => {
+  let ids = reportedReads.get(runId);
+
+  if (!ids) {
+    ids = new Set();
+    reportedReads.set(runId, ids);
+
+    if (reportedReads.size > reportedRuns) {
+      const oldest = reportedReads.keys().next().value;
+
+      if (oldest !== undefined) {
+        reportedReads.delete(oldest);
+      }
+    }
+  }
+
+  if (ids.has(id)) {
+    return false;
+  }
+
+  ids.add(id);
+
+  return true;
+};

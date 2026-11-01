@@ -64,7 +64,7 @@ const allWithStep: Flow = {
   expect: {
     output: { work: "slow-done", n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:close", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -89,7 +89,7 @@ const allMessageFirst: Flow = {
   expect: {
     output: { work: "slow-done", n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:close", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -118,7 +118,7 @@ const raceReadWins: Flow = {
   expect: {
     output: { settled: true, next: "after-done" },
     bodies: { slow: 1, after: 1 },
-    rows: ["after", "inbox", "inbox:close", "slow"],
+    rows: ["after", "inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -149,7 +149,7 @@ const raceStepWins: Flow = {
   expect: {
     output: { settled: true, next: "after-done" },
     bodies: { slow: 1, after: 1 },
-    rows: ["after", "inbox", "inbox:close", "slow"],
+    rows: ["after", "inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -176,7 +176,7 @@ const twoParallelNexts: Flow = {
   expect: {
     output: { a: 1, b: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
   },
 };
 
@@ -212,7 +212,13 @@ const twoParallelNextsQueued: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:2",
+    ],
   },
 };
 
@@ -239,7 +245,14 @@ const twoParallelBatches: Flow = {
   expect: {
     output: { a: [1], b: [2] },
     bodies: {},
-    rows: ["inbox", "inbox:close", "inbox:next:1:batch", "inbox:next:batch"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:1:batch",
+      "inbox:next:batch",
+    ],
   },
 };
 
@@ -285,8 +298,11 @@ const backgroundBatches: Flow = {
     bodies: { slow: 1 },
     rows: [
       "inbox",
+      "inbox:next",
+      "inbox:next:1",
       "inbox:close",
       "inbox:next:1:batch",
+      "inbox:next:2",
       "inbox:next:2:batch",
       "inbox:next:batch",
       "slow",
@@ -321,7 +337,7 @@ const reuseTheRead: Flow = {
   expect: {
     output: { settled: true, n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:close", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 

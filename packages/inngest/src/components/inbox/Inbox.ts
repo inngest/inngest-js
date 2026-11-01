@@ -186,6 +186,17 @@ export interface InboxDeps {
   record: (op: string, take: () => string[]) => Promise<string[]>;
 
   /**
+   * Tells the executor which messages the read `op` took, so it can draw them.
+   * `draw` says the read has no row yet because nothing waited or ran for it.
+   */
+  report: (
+    op: string,
+    inbox: string,
+    messages: string[],
+    draw: boolean,
+  ) => void;
+
+  /**
    * Marks a wait op as seen without requesting it. A timeout that lost to a
    * message is saved in state and never asked for.
    */
@@ -705,6 +716,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     this.#taken += ids.length;
 
+    this.#deps.report(`${op}:batch`, this.#deps.inbox, ids, false);
+
     const last = ids.at(-1);
     if (last !== undefined) {
       await this.#deps.place(last);
@@ -741,6 +754,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       if (found.timedOut) {
         await this.#deps.skip(op);
       }
+
+      this.#deps.report(op, this.#deps.inbox, [found.id], true);
 
       await this.#deps.place(found.id);
 
