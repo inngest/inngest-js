@@ -85,22 +85,32 @@ it("should pass custom event data to the function", async () => {
   expect(receivedEvent.data.greeting).toBe("hi");
 });
 
-it.each(["parallel", "sequential"] as const)(
-  "returns duplicate step ID warnings for %s calls without changing results",
-  async (mode) => {
+it.each([
+  { mode: "parallel", idStyle: "string" },
+  { mode: "parallel", idStyle: "object" },
+  { mode: "parallel", idStyle: "mixed" },
+  { mode: "sequential", idStyle: "string" },
+] as const)(
+  "returns duplicate step ID warnings for $mode calls with $idStyle IDs",
+  async ({ mode, idStyle }) => {
     const inngest = new Inngest({ id: "test-app", logger: silentLogger });
     const fn = inngest.createFunction(
-      { id: `duplicate-step-ids-${mode}`, triggers: [{ event: "test/event" }] },
+      {
+        id: `duplicate-step-ids-${mode}-${idStyle}`,
+        triggers: [{ event: "test/event" }],
+      },
       async ({ step }) => {
+        const firstId = idStyle === "string" ? "op" : { id: "op" };
+        const secondId = idStyle === "object" ? { id: "op" } : "op";
         const [first, second] =
           mode === "parallel"
             ? await Promise.all([
-                step.run("op", () => "first"),
-                step.run("op", () => "second"),
+                step.run(firstId, () => "first"),
+                step.run(secondId, () => "second"),
               ])
             : [
-                await step.run("op", () => "first"),
-                await step.run("op", () => "second"),
+                await step.run(firstId, () => "first"),
+                await step.run(secondId, () => "second"),
               ];
         return { first, second };
       },

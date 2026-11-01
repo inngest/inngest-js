@@ -235,7 +235,7 @@ export class InngestTestEngine {
    * existing options.
    */
   public clone(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): InngestTestEngine {
     const cloned = new InngestTestEngine({ ...this.options, ...inlineOpts });
     // Share the same mock handler cache to maintain memoization across clones
@@ -254,14 +254,14 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestRun.RunOutput> {
     const runEngine = this.clone(inlineOpts);
     runEngine.warnings = [];
     const output = await runEngine.individualExecution();
 
     const resolutionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-resolved">
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">,
     ) => {
       return {
         ctx: output.ctx,
@@ -272,7 +272,7 @@ export class InngestTestEngine {
     };
 
     const rejectionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-rejected">
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
     ) => {
       if (
         typeof output === "object" &&
@@ -292,7 +292,7 @@ export class InngestTestEngine {
             error = output.result.step.error;
           } else {
             error = new Error(
-              "Function rejected without a visible error; this is a bug"
+              "Function rejected without a visible error; this is a bug",
             );
           }
         }
@@ -310,11 +310,11 @@ export class InngestTestEngine {
 
     if (output.result.type === "function-resolved") {
       return resolutionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-resolved">
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">,
       );
     } else if (output.result.type === "function-rejected") {
       return rejectionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-rejected">
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">,
       );
     } else if (output.result.type === "step-ran") {
       // Any error halts execution until retries are modelled
@@ -323,7 +323,7 @@ export class InngestTestEngine {
           .error
       ) {
         return rejectionHandler(
-          output as InngestTestEngine.ExecutionOutput<"function-rejected">
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
         );
       }
     }
@@ -347,7 +347,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions
+    inlineOpts?: InngestTestEngine.ExecuteOptions,
   ): Promise<InngestTestRun.RunStepOutput> {
     const runEngine = this.clone({
       ...inlineOpts,
@@ -365,13 +365,13 @@ export class InngestTestEngine {
     const hashedStepId = InngestExecutionEngine._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
-      (step) => step.id === hashedStepId
+      (step) => step.id === hashedStepId,
     );
 
     // never found the step? Unexpected.
     if (!step) {
       throw new Error(
-        `Step "${stepId}" not found, but execution was still paused. This is a bug.`
+        `Step "${stepId}" not found, but execution was still paused. This is a bug.`,
       );
     }
 
@@ -448,7 +448,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     const { run } = await this.individualExecution(inlineOpts);
 
@@ -459,7 +459,7 @@ export class InngestTestEngine {
    * Execute the function with the given inline options.
    */
   protected async individualExecution(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
       ...this.options,
@@ -516,7 +516,7 @@ export class InngestTestEngine {
     // Helper to execute the mock handler, with memoization across executions
     const executeMockHandler = async (
       mockStep: InternalMemoizedOp,
-      stepId: string
+      stepId: string,
     ): Promise<void> => {
       // Ensure cache entry exists (should always exist from the forEach above)
       if (!this.mockHandlerCache[stepId]) {
@@ -551,7 +551,7 @@ export class InngestTestEngine {
 
           // Notify all registered lazy handlers (from all executions)
           await Promise.all(
-            cacheEntry.lazyHandlers.map((handler) => handler({ data }))
+            cacheEntry.lazyHandlers.map((handler) => handler({ data })),
           );
         } catch (err) {
           const error = errors.serializeError(err);
@@ -559,7 +559,7 @@ export class InngestTestEngine {
 
           // Notify all registered lazy handlers (from all executions)
           await Promise.all(
-            cacheEntry.lazyHandlers.map((handler) => handler({ error }))
+            cacheEntry.lazyHandlers.map((handler) => handler({ error })),
           );
         } finally {
           resolve();
@@ -573,7 +573,7 @@ export class InngestTestEngine {
     const wrapLazyPromise = <T>(
       promise: Promise<T>,
       mockStep: InternalMemoizedOp,
-      stepId: string
+      stepId: string,
     ): Promise<T> => {
       return new Proxy(promise, {
         get(target, prop) {
@@ -583,7 +583,7 @@ export class InngestTestEngine {
               ...args: Parameters<Promise<T>["then"]>
             ) {
               return executeMockHandler(mockStep, stepId).then(() =>
-                target.then(...args)
+                target.then(...args),
               );
             };
           }
@@ -660,13 +660,22 @@ export class InngestTestEngine {
       const step = new Proxy(transformed.step, {
         get: (target, property) => {
           const value = Reflect.get(target, property, target);
-          if (property !== "run" || typeof value !== "function") {
+          if (typeof value !== "function") {
             return value;
           }
           return new Proxy(value, {
             apply: (run, thisArg, args) => {
-              const id = args[0];
-              if (typeof id === "string") {
+              const idOrOptions: unknown = args[0];
+              const id =
+                typeof idOrOptions === "string"
+                  ? idOrOptions
+                  : typeof idOrOptions === "object" &&
+                      idOrOptions !== null &&
+                      "id" in idOrOptions &&
+                      typeof idOrOptions.id === "string"
+                    ? idOrOptions.id
+                    : undefined;
+              if (id !== undefined) {
                 if (seenStepIds.has(id)) {
                   const message = `Duplicate step ID "${id}" detected in test run`;
                   if (
@@ -727,7 +736,7 @@ export class InngestTestEngine {
     const { ctx, ops, ...result } = await execution.start();
 
     const mockState: InngestTestEngine.MockState = await Object.keys(
-      ops
+      ops,
     ).reduce(
       async (acc, stepId) => {
         const op = ops[stepId];
@@ -746,7 +755,7 @@ export class InngestTestEngine {
           [stepId]: op.promise,
         };
       },
-      Promise.resolve({}) as Promise<InngestTestEngine.MockState>
+      Promise.resolve({}) as Promise<InngestTestEngine.MockState>,
     );
 
     InngestTestRun["updateState"](options, result);
