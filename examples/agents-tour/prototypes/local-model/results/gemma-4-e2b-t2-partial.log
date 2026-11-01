@@ -1,0 +1,105 @@
+
+> agents-tour@1.0.0 tour:model-proto /home/nixos/repo/inngest/wt/inngest-js/agents-tour-model-proto/examples/agents-tour
+> node --disable-warning=ExperimentalWarning prototypes/local-model/run.ts --model gemma-4-e2b --runs 5 --threads 2 --tag t2
+
+⠋ Gathering information
+⠙ Gathering information
+⠹ Gathering information
+⠸ Gathering information
+⠼ Gathering information
+⠴ Gathering information
+⠦ Gathering information
+Downloading to ~/.cache/agents-tour-models
+✔ hf_unslot...K_M.gguf downloaded 3.11GB in 1m
+Downloaded to ~/.cache/agents-tour-models/hf_unsloth_gemma-4-E2B-it.Q4_K_M.gguf
+[node-llama-cpp] load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+[node-llama-cpp] load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+[node-llama-cpp] load: control-looking token:      1 '<eos>' was not control-type; this is probably a bug in the model. its type will be overridden
+[node-llama-cpp] load: '</s>' is a normal token here, removing it from EOG list
+
+gemma-4-e2b: 3.11 GB, loaded in 12970 ms (download step 106267 ms)
+
+[answer 1/5] FAIL reached 0/2 in 115300 ms
+  FAIL answer (52502 ms, ttft 1544, 238 tok) tools=0 codes=5 len=1027
+       in : user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a
+       raw: "The user wants three HTTP status codes that indicate a client-side error (a mistake made by the client).\nI need to list them in a numbered format, showing the code and its name.\n\nCommon client error codes include:\n1.  400 Bad Request\n2.  401 Unauthorized (often client error, but specifically r
+  FAIL follow-up (62798 ms, ttft 13649, 219 tok) second=401 asks=true
+       in : user: and the second one?
+       raw: "The user is asking for clarification about the \"second one\" mentioned in the previous response.\n\nThe previous response listed three codes:\n1. 400 Bad Request\n2. 401 Unauthorized\n3. 404 Not Found\n\nI need to identify which one the user is referring to, or provide context for the second item 
+
+[answer 2/5] FAIL reached 0/2 in 104992 ms
+  FAIL answer (60779 ms, ttft 895, 273 tok) tools=0 codes=5 len=1232
+       in : user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a
+       raw: "The user wants three HTTP status codes that indicate a client-side error (a mistake made by the client).\nI need to list them in a numbered format, showing the code and its name.\n\nCommon client error codes include:\n1.  400 Bad Request (The request was malformed or invalid).\n2.  401 Unauthorized
+  FAIL follow-up (44213 ms, ttft 7810, 208 tok) second=401 asks=true
+       in : user: and the second one?
+       raw: "The user is asking for clarification or further detail about the \"second one\" mentioned in the previous response.\n\nThe previous response listed three codes:\n1. 400 Bad Request\n2. 401 Unauthorized\n3. 403 Forbidden\n\nI should assume they are asking for more context on the second item, which i
+
+[answer 3/5] FAIL reached 0/2 in 71663 ms
+  FAIL answer (47570 ms, ttft 817, 242 tok) tools=0 codes=5 len=1048
+       in : user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a
+       raw: "The user wants three HTTP status codes that indicate a client-side error (a mistake made by the client).\nI need to list them in a numbered format, showing the code and its name.\n\nCommon client error codes include:\n1.  400 Bad Request (The request was malformed or invalid).\n2.  401 Unauthorized
+  FAIL follow-up (24093 ms, ttft 5193, 149 tok) second=401 asks=true
+       in : user: and the second one?
+       raw: "The user is asking for clarification on \"the second one\" from the previous list.\nThe previous list was:\n1. 400 Bad Request\n2. 401 Unauthorized\n3. 404 Not Found\n\nI need to identify which status code they are referring to and provide a brief explanation of why it signifies a client mistake.<c
+
+[answer 4/5] FAIL reached 0/2 in 61312 ms
+  FAIL answer (27596 ms, ttft 429, 232 tok) tools=0 codes=5 len=995
+       in : user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a
+       raw: "The user wants three HTTP status codes that indicate a client-side error (a mistake made by the client).\nI need to list them in a numbered format, showing the code and its name.\n\nCommon client error codes include:\n1.  400 Bad Request\n2.  401 Unauthorized (often client error, but specifically r
+  FAIL follow-up (33716 ms, ttft 5381, 263 tok) second=401 asks=true
+       in : user: and the second one?
+       raw: "The user is asking for clarification or elaboration on the \"second one\" mentioned in the previous response.\n\nThe previous response listed three codes:\n1. 400 Bad Request\n2. 401 Unauthorized\n3. 404 Not Found\n\nI need to identify which one the user is referring to, or provide more context abo
+
+[answer 5/5] FAIL reached 0/2 in 47880 ms
+  FAIL answer (21913 ms, ttft 458, 225 tok) tools=0 codes=5 len=950
+       in : user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a
+       raw: "The user wants three HTTP status codes that indicate a client-side error (a mistake made by the client).\nI need to list them in a numbered format, showing the code and its name.\n\nCommon client error codes include:\n1.  400 Bad Request\n2.  401 Unauthorized (often client error if authentication f
+  FAIL follow-up (25967 ms, ttft 4777, 177 tok) second=401 asks=true
+       in : user: and the second one?
+       raw: "The user is asking for clarification or further detail about the \"second one\" mentioned in the previous response.\n\nThe previous response listed three codes:\n1. 400 Bad Request\n2. 401 Unauthorized\n3. 404 Not Found\n\nI should assume they are asking for more context on the second item, which w
+
+[tool 1/5] PASS reached 3/3 in 133755 ms
+  ok   call (74090 ms, ttft 15124, 103 tok) calls=lookup_order args={"order_id":"A-1043"}
+       in : user: Where is my order A-1043?
+       raw: "The user is asking for the status of an order with the ID \"A-1043\".\nI need to check the available tools to see if there is one that can look up order information.\nThe `lookup_order` tool has the description: \"Looks up an order by its id and returns its status.\" and accepts an `order_id`.\n\nT
+  ok   final (16474 ms, ttft 6953, 36 tok) tools=0
+       in : tool results: lookup_order
+       raw: "\nYour order A-1043 has been **shipped** via UPS, with an estimated arrival date of 2026-11-04."
+  ok   no-tool (43191 ms, ttft 1606, 224 tok) calls=none
+       in : user: What does HTTP status 404 mean?
+       raw: "The user is asking for the meaning of an HTTP status code (404).\nI need to determine if any of the provided tools can answer this general knowledge question.\n\n1.  `lookup_order`: Looks up an order status. Not relevant.\n2.  `get_weather`: Gets weather information. Not relevant.\n3.  `create_tick
+
+[tool 2/5] PASS reached 3/3 in 72981 ms
+  ok   call (26498 ms, ttft 851, 191 tok) calls=lookup_order args={"order_id":"A-1043"}
+       in : user: Where is my order A-1043?
+       raw: "The user is asking for the status of an order with the ID \"A-1043\".\nI need to check the available tools to see if any can fulfill this request.\nI have the following tools:\n1. `lookup_order(order_id)`: Looks up an order by its id and returns its status.\n2. `get_weather(city)`: Gets the current
+  ok   final (9560 ms, ttft 5869, 32 tok) tools=0
+       in : tool results: lookup_order
+       raw: "\nYour order A-1043 has been shipped via UPS and is estimated to arrive on 2026-11-04."
+  ok   no-tool (36923 ms, ttft 915, 284 tok) calls=none
+       in : user: What does HTTP status 404 mean?
+       raw: "The user is asking for the meaning of an HTTP status code (404).\nI need to determine if any of the provided tools can answer this general knowledge question.\n\n1.  `lookup_order`: Looks up an order status. (Irrelevant)\n2.  `get_weather`: Gets weather information. (Irrelevant)\n3.  `create_ticket
+
+[tool 3/5] FAIL reached 2/3 in 52425 ms
+  ok   call (23391 ms, ttft 883, 158 tok) calls=lookup_order args={"order_id":"A-1043"}
+       in : user: Where is my order A-1043?
+       raw: "The user is asking for the status or location of an order with the ID \"A-1043\".\nI need to check the available tools to see if any can fulfill this request.\n\n1.  `lookup_order`: This tool \"Looks up an order by its id and returns its status.\" This matches the user's request perfectly.\n2.  `ge
+  ok   final (8915 ms, ttft 4861, 37 tok) tools=0
+       in : tool results: lookup_order
+       raw: "\nYour order A-1043 has been **shipped** via **UPS**, with an estimated arrival date of **2026-11-04**."
+  FAIL no-tool (20120 ms, ttft 854, 140 tok) calls=search_docs
+       in : user: What does HTTP status 404 mean?
+       raw: "The user is asking for the meaning of an HTTP status code (404).\nI need to determine if any of the available tools can provide this information.\n\n1.  `lookup_order`: Looks up an order status. Not relevant.\n2.  `get_weather`: Gets weather information. Not relevant.\n3.  `create_ticket`: Creates 
+
+[tool 4/5] FAIL reached 2/3 in 60273 ms
+  ok   call (25040 ms, ttft 879, 173 tok) calls=lookup_order args={"order_id":"A-1043"}
+       in : user: Where is my order A-1043?
+       raw: "The user is asking for the status of an order with the ID \"A-1043\".\nI need to check the available tools to see if any can fulfill this request.\nI have the following tools:\n1. `lookup_order(order_id)`: Looks up an order by its id and returns its status.\n2. `get_weather(city)`: Gets the current
+  ok   final (9707 ms, ttft 5757, 32 tok) tools=0
+       in : tool results: lookup_order
+       raw: "\nYour order A-1043 has been shipped via UPS and is expected to arrive on 2026-11-04."
+  FAIL no-tool (25526 ms, ttft 1198, 139 tok) calls=search_docs
+       in : user: What does HTTP status 404 mean?
+       raw: "The user is asking for the meaning of an HTTP status code (404).\nI need to determine if any of the available tools can provide this information.\n\n1.  `lookup_order`: Looks up an order status. Not relevant.\n2.  `get_weather`: Gets weather information. Not relevant.\n3.  `create_ticket`: Creates 
+ ELIFECYCLE  Command failed.
