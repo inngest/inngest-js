@@ -1,6 +1,6 @@
 /**
  * @module
- * A chat agent on `step.subscribe`: every message is a turn, steering and
+ * A chat agent on `step.subscribeLegacy`: every message is a turn, steering and
  * stopping reach the running turn, a burst is processed once each, and
  * stopping an idle thread starts nothing.
  */

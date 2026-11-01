@@ -1,6 +1,6 @@
 /**
  * @module
- * The `step.subscribe` matrix. One scenario file per (checkpointing,
+ * The `step.subscribeLegacy` matrix. One scenario file per (checkpointing,
  * optimizeParallelism) pair builds its scenario here. A scenario runs one run
  * per cell: a user code shape crossed with a message timing. Every cell
  * asserts the same things:
@@ -131,10 +131,10 @@ export const matrixScenario = (config: {
                 if: `async.data.t == '${t}'`,
               };
             };
-            const inbox = await step.subscribe("inbox", options("msg"));
+            const inbox = await step.subscribeLegacy("inbox", options("msg"));
             const inbox2 =
               shape === "two"
-                ? await step.subscribe("inbox2", options("msg2"))
+                ? await step.subscribeLegacy("inbox2", options("msg2"))
                 : undefined;
 
             log("opened");

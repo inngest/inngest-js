@@ -1,6 +1,6 @@
 /**
  * @module
- * `step.subscribe` as a parked marker. Messages only accumulate in the run's
+ * `step.subscribeLegacy` as a parked marker. Messages only accumulate in the run's
  * state; `next()` reads the next one from there, and only when there is none
  * does the run park. A delivery wakes a parked run and nothing else.
  *
@@ -108,7 +108,7 @@ export const subscribePark = scenario({
               return { got: [(msg?.data as { n: number }).n] };
             }
 
-            const inbox = await step.subscribe("inbox", {
+            const inbox = await step.subscribeLegacy("inbox", {
               event: event("msg"),
               if: `async.data.t == '${t}'`,
             });

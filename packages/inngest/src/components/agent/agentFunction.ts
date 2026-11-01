@@ -5,7 +5,7 @@
  * conversation that spans runs:
  *
  * - a singleton per thread, so there is never more than one live run per thread;
- * - `inbox`, a `step.subscribe()` of the thread's messages, whose first message
+ * - `inbox`, a `step.subscribeLegacy()` of the thread's messages, whose first message
  *   is the event that started the run;
  * - `control`, which spreads into `agent.loop()` so a running turn takes
  *   steering messages and a stop request.
@@ -2034,7 +2034,7 @@ export function createAgentFunction(
         // milliseconds between the run starting and this op.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the subscription.
-        await using subscription = await step.subscribe("inbox", {
+        await using subscription = await step.subscribeLegacy("inbox", {
           events: [
             ...ownEvents.map((name) => {
               return {

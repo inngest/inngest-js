@@ -1,6 +1,6 @@
 /**
  * @module
- * The step.subscribe matrix with checkpointing off and optimizeParallelism off. See `kit/matrix.ts`.
+ * The step.subscribeLegacy matrix with checkpointing off and optimizeParallelism off. See `kit/matrix.ts`.
  */
 import { matrixScenario } from "../kit/matrix.ts";
 

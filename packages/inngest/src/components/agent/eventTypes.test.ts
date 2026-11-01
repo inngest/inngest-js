@@ -93,17 +93,17 @@ describe("types", () => {
   });
 });
 
-describe("step.subscribe", () => {
+describe("step.subscribeLegacy", () => {
   // Never called: the test is the types.
   const types = async () => {
-    const one = await step.subscribe("one", { event: order });
+    const one = await step.subscribeLegacy("one", { event: order });
     const message = await one.next();
 
     expectTypeOf(message?.data).toEqualTypeOf<
       { id: string; total: number } | undefined
     >();
 
-    const many = await step.subscribe("many", {
+    const many = await step.subscribeLegacy("many", {
       events: [
         { event: order },
         { event: refund, if: "async.data.amount > 1" },
@@ -117,11 +117,11 @@ describe("step.subscribe", () => {
       | undefined
     >();
 
-    const named = await step.subscribe("named", { event: "shop/x" });
+    const named = await step.subscribeLegacy("named", { event: "shop/x" });
 
     expectTypeOf((await named.next())?.data).toBeUnknown();
 
-    const given = await step.subscribe<{ n: number }>("given", {
+    const given = await step.subscribeLegacy<{ n: number }>("given", {
       event: "shop/x",
     });
 
@@ -131,18 +131,21 @@ describe("step.subscribe", () => {
 
     // An explicit any stays any, for events named by a string.
     // biome-ignore lint/suspicious/noExplicitAny: the case under test
-    const loose = await step.subscribe<any>("loose", { event: "shop/x" });
+    const loose = await step.subscribeLegacy<any>("loose", { event: "shop/x" });
 
     expectTypeOf((await loose.next())?.data).toBeAny();
 
     // @ts-expect-error an event type already gives the message data: it is not overridden
-    await step.subscribe<{ q: 1 }>("override", { event: order });
+    await step.subscribeLegacy<{ q: 1 }>("override", { event: order });
 
     // @ts-expect-error a mistyped option would be dropped, so it is an error
-    await step.subscribe("typo", { event: order, iff: "async.data.id == 1" });
+    await step.subscribeLegacy("typo", {
+      event: order,
+      iff: "async.data.id == 1",
+    });
 
     // @ts-expect-error a mistyped field of an event in the list
-    await step.subscribe("typo-in-list", {
+    await step.subscribeLegacy("typo-in-list", {
       events: [
         { event: order },
         { event: refund, iff: "async.data.amount > 1" },
@@ -150,7 +153,10 @@ describe("step.subscribe", () => {
     });
 
     // @ts-expect-error events and event are alternatives
-    await step.subscribe("both", { event: order, events: [{ event: refund }] });
+    await step.subscribeLegacy("both", {
+      event: order,
+      events: [{ event: refund }],
+    });
 
     // Several events: checking the name narrows the data.
     const firstOfMany = await many.next();

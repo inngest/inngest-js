@@ -103,6 +103,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
+import { inboxMessages, unseenSteps } from "./inboxState.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
@@ -116,7 +117,7 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
+import { subscriptionMessages } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -337,6 +338,18 @@ class InngestExecutionEngine
                 }
 
                 return messages;
+              },
+              inbox: {
+                messages: (inbox: string) => {
+                  return inboxMessages(
+                    inbox,
+                    this.options.stepCompletionOrder,
+                    this.options.stepState,
+                  );
+                },
+                lastSeen: () => {
+                  return this.options.stepCompletionOrder.at(-1) ?? "";
+                },
               },
               skipStep: async (id: string) => {
                 this.state.remainingStepsToBeSeen.delete(hashId(id));
@@ -2261,10 +2274,10 @@ class InngestExecutionEngine
       loop,
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
-      // Messages of a subscription are read from the state, never requested as
+      // Messages of an inbox are read from the state, never requested as
       // steps, so they are not waited for.
       remainingStepsToBeSeen: new Set(
-        stepsToBeSeen(this.options.stepCompletionOrder),
+        unseenSteps(this.options.stepCompletionOrder, this.options.stepState),
       ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);

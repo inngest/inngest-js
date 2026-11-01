@@ -1,6 +1,6 @@
 /**
  * @module
- * Tests for `step.subscribe()` against a fake executor.
+ * Tests for `step.subscribeLegacy()` against a fake executor.
  */
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
@@ -13,12 +13,12 @@ const client = () => {
 
 const subscribeOpts = { event: "msg", if: "async.data.t == 't1'" };
 
-describe("step.subscribe", () => {
+describe("step.subscribeLegacy", () => {
   test("a message that is already saved is read without a step", async () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const seen: unknown[] = [];
 
         for (let n = 0; n < 2; n++) {
@@ -44,7 +44,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
 
         return (await inbox.next())?.data;
       },
@@ -72,7 +72,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
 
         return withStepIdPrefix("tool:", () => {
           return inbox.next();
@@ -93,7 +93,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const both = await Promise.all([inbox.next(), inbox.next()]);
 
         return both.map((m) => {
@@ -121,7 +121,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         const second = await inbox.next({ timeout: 0 });
 
@@ -151,7 +151,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
 
         return inbox.next();
       },
@@ -173,7 +173,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         const polled = await inbox.next({ timeout: 0 });
         const unread = await inbox.close();
@@ -201,7 +201,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
 
         return inbox.next();
       },
@@ -220,7 +220,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next({ timeout: "1s" });
         const second = await inbox.next({ timeout: "1s" });
         const third = await inbox.next();
@@ -253,7 +253,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next({ timeout: "1s" });
         const second = await inbox.next();
 
@@ -270,7 +270,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         const listener = await inbox.listen({
           event: "other",
@@ -308,7 +308,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
 
         return (await inbox.close()).length;
       },
@@ -366,7 +366,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         const all = await inbox.current();
         const second = await inbox.next();
@@ -433,7 +433,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const mentions = inbox.of("chat/mention");
 
@@ -467,7 +467,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const got = await reviews.next();
 
@@ -496,7 +496,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const first = await reviews.next();
           const all = await reviews.current();
@@ -529,7 +529,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const mentions = inbox.of("chat/mention");
           const r = await reviews.next();
@@ -557,7 +557,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
 
           return String(await reviews.next({ timeout: "1s" }));
@@ -587,7 +587,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const reviews = inbox.of("pr/review");
           const first = await reviews.next({ timeout: "1s" });
           const second = await reviews.next();
@@ -608,7 +608,7 @@ describe("step.subscribe", () => {
       const fn = client().createFunction(
         { id: "sub", triggers: [{ event: "sub/run" }] },
         async ({ step }) => {
-          const inbox = await step.subscribe("inbox", subscribeOpts);
+          const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
           const a = await inbox.next();
           const b = await inbox.next();
 
@@ -631,7 +631,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         const unread = await inbox.close();
         const again = await inbox.close();
@@ -661,7 +661,10 @@ describe("step.subscribe", () => {
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
         {
-          await using inbox = await step.subscribe("inbox", subscribeOpts);
+          await using inbox = await step.subscribeLegacy(
+            "inbox",
+            subscribeOpts,
+          );
           await inbox.next();
         }
 
@@ -683,7 +686,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         await inbox.close();
 
         return [await inbox.next(), await inbox.next({ timeout: 0 })];
@@ -699,7 +702,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next({ timeout: 0 });
         const second = await inbox.next({ timeout: 0 });
 
@@ -721,7 +724,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         const first = await inbox.next();
         if (first) {
           inbox.putBack([first]);
@@ -740,7 +743,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
+        const inbox = await step.subscribeLegacy("inbox", {
           events: [{ event: "a" }, { event: "b" }],
         });
 
@@ -758,7 +761,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
+        const inbox = await step.subscribeLegacy("inbox", {
           events: [{ event: "a" }, { event: "b" }, { event: "c" }],
         });
 
@@ -779,7 +782,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
+        const inbox = await step.subscribeLegacy("inbox", {
           events: [{ event: "a" }, { event: "b" }, { event: "c" }],
         });
 
@@ -812,7 +815,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", {
+        const inbox = await step.subscribeLegacy("inbox", {
           events: [{ event: "a" }, { event: "b" }],
         });
         const read: unknown[] = [];
@@ -838,7 +841,7 @@ describe("step.subscribe", () => {
     const fn = client().createFunction(
       { id: "sub", triggers: [{ event: "sub/run" }] },
       async ({ step }) => {
-        const inbox = await step.subscribe("inbox", subscribeOpts);
+        const inbox = await step.subscribeLegacy("inbox", subscribeOpts);
         // Already settled, so it beats the read in every run.
         const slow = Promise.resolve("timeout");
         const winner = await Promise.race([inbox.next(), slow]);

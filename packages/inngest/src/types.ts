@@ -288,6 +288,18 @@ export enum StepOpCode {
 
   DeferAdd = "DeferAdd",
   DeferAbort = "DeferAbort",
+
+  /**
+   * Opens an inbox: the executor writes one pause per source, then saves the
+   * open record.
+   */
+  Subscribe = "Subscribe",
+
+  /**
+   * A read of an inbox that has nothing unread. The executor records it and
+   * wakes it when a message it wants is saved.
+   */
+  SubscribeWait = "SubscribeWait",
 }
 
 /**

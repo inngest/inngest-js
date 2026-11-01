@@ -47,7 +47,7 @@ export const subscribeRepark = scenario({
         },
         async ({ event: trigger, step }) => {
           const t = trigger.data.t as string;
-          const inbox = await step.subscribe("inbox", {
+          const inbox = await step.subscribeLegacy("inbox", {
             event: event("msg"),
             if: `async.data.t == '${t}'`,
           });

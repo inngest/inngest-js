@@ -45,6 +45,7 @@ import {
 } from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
+import { hashedStepId } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -69,6 +70,7 @@ import {
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
+import { Inbox, type InboxSources, sourcesOf } from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -688,12 +690,91 @@ export const createStepTools = <
      * subscription for the life of the run and saves every matching event as
      * a numbered message, so nothing sent while the function is busy is lost.
      */
-    subscribe: ((
+    subscribeLegacy: ((
       idOrOptions: StepOptionsOrId,
       opts: SubscribeOptions,
     ): Promise<Subscription> => {
       return openInbox(idOrOptions, opts, false);
     }) as SubscribeTool<StepOptionsOrId>,
+
+    /**
+     * EXPERIMENTAL: opens an inbox inside the run. Every event that matches
+     * one of the sources and arrives afterwards becomes a message, saved once
+     * as its own step whether or not it is read. Read the inbox with `next()`.
+     *
+     * A source is written like a trigger: an event type (or its name), or an
+     * object with the event and an `if` expression, which sees the arriving
+     * event as `async`. Pass one source or an array.
+     *
+     * @example
+     * ```ts
+     * await using inbox = step.subscribe("reviews", pr.reviewed);
+     * const review = await inbox.next();
+     * ```
+     */
+    subscribe: (idOrOptions: StepOptionsOrId, sources: InboxSources): Inbox => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
+
+      return new Inbox({
+        sources: sourcesOf(sources),
+        inbox: hashedStepId(`${prefix}${id}`),
+        open: (opened) => {
+          return tools["~inboxOpen"](idOrOptions, { sources: opened });
+        },
+        wait: (inbox, seen) => {
+          return tools["~inboxWait"](`${id}:next`, { inbox, seen });
+        },
+        messages: (inbox) => {
+          return getAsyncCtxSync()?.execution?.inbox?.messages(inbox) ?? [];
+        },
+        lastSeen: () => {
+          return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
+        },
+      });
+    },
+
+    /**
+     * The op that opens an inbox. Used by `subscribe`.
+     */
+    "~inboxOpen": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { sources: { event: string; if?: string }[] },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.Subscribe,
+        name: id,
+        displayName: name ?? id,
+        opts: { sources: opts.sources },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op of a read of an inbox that has nothing unread. Used by
+     * `subscribe`. It is never answered from state: the executor wakes the run
+     * and the read finds its message there.
+     */
+    "~inboxWait": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { inbox: string; seen: string },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeWait,
+        name: id,
+        displayName: name ?? id,
+        opts: { inbox: opts.inbox, seen: opts.seen },
+        userland: { id },
+      };
+    }),
 
     /**
      * EXPERIMENTAL: an inbox, a subscription that starts with the sources you

@@ -76,12 +76,14 @@ describe("composition", () => {
 
         expectTypeOf(found).toEqualTypeOf<{ answer: string }>();
 
-        const refunds = await step.subscribe("refunds", { event: refund });
+        const refunds = await step.subscribeLegacy("refunds", {
+          event: refund,
+        });
         const refunded = await refunds.next();
 
         expectTypeOf(refunded?.data.amount).toEqualTypeOf<number | undefined>();
 
-        const mixed = await step.subscribe("mixed", {
+        const mixed = await step.subscribeLegacy("mixed", {
           events: [{ event: order }, { event: refund }],
         });
         const either = await mixed.next();
@@ -92,7 +94,7 @@ describe("composition", () => {
           | undefined
         >();
 
-        const named = await step.subscribe("named", { event: "x/y" });
+        const named = await step.subscribeLegacy("named", { event: "x/y" });
 
         expectTypeOf((await named.next())?.data).toBeUnknown();
 
@@ -139,7 +141,7 @@ describe("composition", () => {
 
   test("an explicit subscription type is for named events, and any stays any", () => {
     const check = async () => {
-      const explicit = await step.subscribe<{ q: 1 }>("e", {
+      const explicit = await step.subscribeLegacy<{ q: 1 }>("e", {
         event: "shop/order.created",
       });
 
@@ -148,12 +150,12 @@ describe("composition", () => {
       >();
 
       // biome-ignore lint/suspicious/noExplicitAny: the test is that any stays any
-      const loose = await step.subscribe<any>("l", { event: "shop/x" });
+      const loose = await step.subscribeLegacy<any>("l", { event: "shop/x" });
 
       expectTypeOf((await loose.next())?.data).toBeAny();
 
       // @ts-expect-error an event type gives the message data, so it is not overridden
-      await step.subscribe<{ q: 1 }>("o", { event: order });
+      await step.subscribeLegacy<{ q: 1 }>("o", { event: order });
     };
 
     expect(check).toBeTypeOf("function");

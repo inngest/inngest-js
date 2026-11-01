@@ -114,6 +114,16 @@ export interface AsyncContext {
     agent?: { thread: string; session: string };
 
     /**
+     * What an inbox (`step.subscribe()`) reads from the run's state: its
+     * messages in the order the executor saved them, and the last step of the
+     * stack this request loaded.
+     */
+    inbox?: {
+      messages: (inbox: string) => unknown[];
+      lastSeen: () => string;
+    };
+
+    /**
      * The messages of a `step.subscribe()` subscription, read from the run's
      * state in the order the executor saved them. Only subscriptions use it.
      */
