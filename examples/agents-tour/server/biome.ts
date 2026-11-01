@@ -38,7 +38,11 @@ export interface Formatted {
 /**
  * Formats `content` as the file `name`, in the project at `root`.
  */
-export const formatWithBiome = (root: string, name: string, content: string) => {
+export const formatWithBiome = (
+  root: string,
+  name: string,
+  content: string,
+) => {
   return new Promise<Formatted>((resolve, reject) => {
     const child = spawn(
       findBiome(root),

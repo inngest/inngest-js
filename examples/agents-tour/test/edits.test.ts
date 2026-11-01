@@ -5,7 +5,12 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { Page } from "../shared/types.ts";
-import { clearEdits, type EditStore, saveEdits, withEdits } from "../site/src/edits.ts";
+import {
+  clearEdits,
+  type EditStore,
+  saveEdits,
+  withEdits,
+} from "../site/src/edits.ts";
 
 const page = (agent = "export const a = 1;"): Page => {
   return {

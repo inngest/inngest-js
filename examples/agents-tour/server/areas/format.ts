@@ -4,8 +4,8 @@
  * formats first and the Format button calls the same route.
  */
 import type { AreaFactory } from "../area.ts";
-import { HttpError } from "../http-error.ts";
 import { formatWithBiome } from "../biome.ts";
+import { HttpError } from "../http-error.ts";
 
 export const area: AreaFactory = (ctx) => {
   return {
@@ -15,7 +15,10 @@ export const area: AreaFactory = (ctx) => {
         method: "POST",
         path: "/api/format",
         handle: ({ body }) => {
-          if (typeof body.name !== "string" || typeof body.content !== "string") {
+          if (
+            typeof body.name !== "string" ||
+            typeof body.content !== "string"
+          ) {
             throw new HttpError(400, {
               error: "Send the file's name and content",
             });

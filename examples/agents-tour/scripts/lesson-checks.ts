@@ -9,9 +9,9 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { actionNamed, hintTokens } from "../shared/hints.ts";
-import { type LoadedPage, loadLessons } from "../server/lessons.ts";
 import { formatWithBiome } from "../server/biome.ts";
+import { type LoadedPage, loadLessons } from "../server/lessons.ts";
+import { actionNamed, hintTokens } from "../shared/hints.ts";
 import { loadKeyTable } from "./keytable.ts";
 import { root } from "./lib.ts";
 

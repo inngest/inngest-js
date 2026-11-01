@@ -32,7 +32,10 @@ describe("routing stream events", () => {
       seen.push((event as CustomEvent).detail);
     });
 
-    assert.equal(routeStreamEvent({ type: "fakes", topic: "slack" }, target), true);
+    assert.equal(
+      routeStreamEvent({ type: "fakes", topic: "slack" }, target),
+      true,
+    );
     assert.deepEqual(seen, ["slack"]);
   });
 

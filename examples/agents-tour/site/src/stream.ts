@@ -19,7 +19,9 @@ export interface AreaEventDetail {
  */
 export const routeStreamEvent = (event: TourEvent, target: EventTarget) => {
   if (event.type === "fakes") {
-    target.dispatchEvent(new CustomEvent("tour:fakes", { detail: event.topic }));
+    target.dispatchEvent(
+      new CustomEvent("tour:fakes", { detail: event.topic }),
+    );
 
     return true;
   }

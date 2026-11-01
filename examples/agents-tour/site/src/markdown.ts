@@ -4,8 +4,9 @@
  * own line), `code`, **bold**, *italic*, literal `<kbd>` tags, and key hints
  * such as `{Run}` (see `shared/hints.ts`). Everything else is escaped.
  */
-import { hintOf } from "../../shared/keys.ts";
+
 import { replaceHints } from "../../shared/hints.ts";
+import { hintOf } from "../../shared/keys.ts";
 import { keys } from "./keytable.ts";
 import { isMac } from "./platform.ts";
 

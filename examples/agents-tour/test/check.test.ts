@@ -14,7 +14,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { type CheckOptions, checkLessons, defaults } from "../scripts/lesson-checks.ts";
+import {
+  type CheckOptions,
+  checkLessons,
+  defaults,
+} from "../scripts/lesson-checks.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures", "lessons");
 const made: string[] = [];
@@ -41,7 +45,10 @@ describe("the lesson checks", () => {
   });
 
   it("find nothing wrong with good lessons", async () => {
-    assert.deepEqual(await checkLessons({ ...defaults, lessonsDir: fixtures }), []);
+    assert.deepEqual(
+      await checkLessons({ ...defaults, lessonsDir: fixtures }),
+      [],
+    );
   });
 
   it("fail a page without a title", async () => {
@@ -111,7 +118,9 @@ describe("the lesson checks", () => {
       );
     });
 
-    assert.deepEqual(problems, ["first/extra: a Go deeper page cannot be an exercise"]);
+    assert.deepEqual(problems, [
+      "first/extra: a Go deeper page cannot be an exercise",
+    ]);
   });
 
   it("fail a page with no editable file", async () => {
@@ -137,12 +146,18 @@ describe("the lesson checks", () => {
       write(dir, "01-first/01-hello/agent.ts", "export const (\n");
     });
 
-    assert.deepEqual(problems, ["first/hello: agent.ts cannot be formatted by Biome"]);
+    assert.deepEqual(problems, [
+      "first/hello: agent.ts cannot be formatted by Biome",
+    ]);
   });
 
   it("fail a solution Biome would change", async () => {
     const problems = await withLessons((dir) => {
-      write(dir, "01-first/03-exercise/solution/agent.ts", "export const a   = 1\n");
+      write(
+        dir,
+        "01-first/03-exercise/solution/agent.ts",
+        "export const a   = 1\n",
+      );
     });
 
     assert.deepEqual(problems, [
@@ -152,7 +167,11 @@ describe("the lesson checks", () => {
 
   it("report a lesson the loader refuses", async () => {
     const problems = await withLessons((dir) => {
-      write(dir, "01-first/01-hello/manifest.json", '{ "readOnly": ["nope.ts"] }');
+      write(
+        dir,
+        "01-first/01-hello/manifest.json",
+        '{ "readOnly": ["nope.ts"] }',
+      );
     });
 
     assert.deepEqual(problems, ["first/hello: no shared file nope.ts"]);
@@ -168,9 +187,15 @@ describe("the lesson checks", () => {
       'export const coreKeys = [{ id: "a", label: "x", group: "G", inField: [], outside: ["q"] }, { id: "b", label: "x", group: "G", inField: [], outside: ["q"] }];\n',
     );
 
-    const options: CheckOptions = { ...defaults, lessonsDir: fixtures, keysDir };
+    const options: CheckOptions = {
+      ...defaults,
+      lessonsDir: fixtures,
+      keysDir,
+    };
     const problems = await checkLessons(options);
 
-    assert.ok(problems.some((line) => line.includes("out:q is bound to both a and b")));
+    assert.ok(
+      problems.some((line) => line.includes("out:q is bound to both a and b")),
+    );
   });
 });
