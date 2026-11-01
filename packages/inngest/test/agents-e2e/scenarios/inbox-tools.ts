@@ -95,9 +95,9 @@ export const inboxTools = scenario({
                 case 4:
                   return call(4, "work", {});
                 case 5:
-                  return call(5, "inbox_read", { as: "ci" });
+                  return call(5, "inbox_next_batch", { as: "ci" });
                 case 6:
-                  return call(6, "inbox_stop", { as: "ci" });
+                  return call(6, "inbox_close", { as: "ci" });
                 default:
                   return {
                     message: {
@@ -199,7 +199,7 @@ export const inboxTools = scenario({
     ctx.check(
       "the cap on listeners refuses another",
       lines.some((line) => {
-        return line.includes("Already listening 1 times");
+        return line.includes("Already 1 inboxes open");
       }),
       lines,
     );
@@ -210,16 +210,16 @@ export const inboxTools = scenario({
       await state(),
     );
     ctx.check(
-      "inbox_read still shows the event the loop folded in, since it reads through the listener's own view",
+      "inbox_next_batch still shows the event the loop folded in, since it reads through the listener's own view",
       final.some((line) => {
-        return line.startsWith("inbox_read:ok") && line.includes("green");
+        return line.startsWith("inbox_next_batch:ok") && line.includes("green");
       }),
       final,
     );
     ctx.check(
       "the model stopped the listener",
       final.some((line) => {
-        return line.startsWith("inbox_stop:ok");
+        return line.startsWith("inbox_close:ok");
       }),
       final,
     );
