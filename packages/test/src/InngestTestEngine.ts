@@ -153,6 +153,14 @@ export namespace InngestTestEngine {
    */
   export type MockState = Record<string, Promise<unknown>>;
 
+  export interface Warning {
+    code: string;
+    message: string;
+    explanation?: string;
+    action?: string;
+    docs?: string;
+  }
+
   /**
    * The output of an individual function execution.
    */
@@ -177,6 +185,9 @@ export namespace InngestTestEngine {
      * output.
      */
     state: InngestTestEngine.MockState;
+
+    /** Warnings emitted or detected during this test run. */
+    warnings: Warning[];
 
     /**
      * An {@link InngestTestRun} instance that allows you to wait for specific
@@ -213,6 +224,7 @@ interface MockHandlerCache {
 export class InngestTestEngine {
   protected options: InngestTestEngine.Options;
   protected mockHandlerCache: MockHandlerCache = {};
+  protected warnings: InngestTestEngine.Warning[] = [];
 
   constructor(options: InngestTestEngine.Options) {
     this.options = options;
@@ -228,6 +240,7 @@ export class InngestTestEngine {
     const cloned = new InngestTestEngine({ ...this.options, ...inlineOpts });
     // Share the same mock handler cache to maintain memoization across clones
     cloned.mockHandlerCache = this.mockHandlerCache;
+    cloned.warnings = this.warnings;
     return cloned;
   }
 
@@ -243,7 +256,9 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestRun.RunOutput> {
-    const output = await this.individualExecution(inlineOpts);
+    const runEngine = this.clone(inlineOpts);
+    runEngine.warnings = [];
+    const output = await runEngine.individualExecution();
 
     const resolutionHandler = (
       output: InngestTestEngine.ExecutionOutput<"function-resolved">
@@ -252,6 +267,7 @@ export class InngestTestEngine {
         ctx: output.ctx,
         state: output.state,
         result: output.result.data,
+        warnings: output.warnings,
       };
     };
 
@@ -285,6 +301,7 @@ export class InngestTestEngine {
           ctx: output.ctx,
           state: output.state,
           error,
+          warnings: output.warnings,
         };
       }
 
@@ -332,12 +349,14 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions
   ): Promise<InngestTestRun.RunStepOutput> {
-    const { run } = await this.individualExecution({
+    const runEngine = this.clone({
       ...inlineOpts,
       // always overwrite this so it's easier to capture non-runnable steps in
       // the same flow.
       disableImmediateExecution: true,
     });
+    runEngine.warnings = [];
+    const { run } = await runEngine.individualExecution();
 
     const foundSteps = await run.waitFor("steps-found", {
       steps: [{ id: stepId }],
@@ -366,6 +385,7 @@ export class InngestTestEngine {
       ctx: foundSteps.ctx,
       state: foundSteps.state,
       step,
+      warnings: foundSteps.warnings,
     };
 
     const opHandlers: Record<
@@ -406,6 +426,7 @@ export class InngestTestEngine {
       result: runOutput.result.step.data,
       error: runOutput.result.step.error,
       step: runOutput.result.step,
+      warnings: runOutput.warnings,
     };
   }
 
@@ -609,12 +630,76 @@ export class InngestTestEngine {
 
     const runId = ulid();
 
+    const client = (options.function as InngestFunction.Any)["client"];
+    const warningClient = new Proxy(client, {
+      get: (target, property) => {
+        const value = Reflect.get(target, property, target);
+        if (property === "warnMetadata") {
+          return (
+            warningTarget: unknown,
+            code: string,
+            warning: InngestTestEngine.Warning,
+          ) => {
+            this.warnings.push({ ...warning, code });
+            return (
+              value as (
+                target: unknown,
+                code: string,
+                warning: InngestTestEngine.Warning,
+              ) => Promise<void>
+            ).call(target, warningTarget, code, warning);
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const transformCtx = (ctx: Context.Any): Context.Any => {
+      const transformed = (options.transformCtx ?? mockCtx)(ctx);
+      const seenStepIds = new Set<string>();
+      const step = new Proxy(transformed.step, {
+        get: (target, property) => {
+          const value = Reflect.get(target, property, target);
+          if (property !== "run" || typeof value !== "function") {
+            return value;
+          }
+          return new Proxy(value, {
+            apply: (run, thisArg, args) => {
+              const id = args[0];
+              if (typeof id === "string") {
+                if (seenStepIds.has(id)) {
+                  const message = `Duplicate step ID "${id}" detected in test run`;
+                  if (
+                    !this.warnings.some(
+                      (warning) =>
+                        warning.code ===
+                          errors.ErrCode.AUTOMATIC_PARALLEL_INDEXING &&
+                        warning.message.includes(`"${id}"`),
+                    )
+                  ) {
+                    this.warnings.push({
+                      code: errors.ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+                      message,
+                    });
+                  }
+                } else {
+                  seenStepIds.add(id);
+                }
+              }
+              return Reflect.apply(run, thisArg, args);
+            },
+          });
+        },
+      });
+      return { ...transformed, step };
+    };
+
     const execution = (options.function as InngestFunction.Any)[
       "createExecution"
     ]({
       partialOptions: {
         runId,
-        client: (options.function as InngestFunction.Any)["client"],
+        client: warningClient,
         data: {
           runId,
           attempt: 0, // TODO retries?
@@ -635,7 +720,7 @@ export class InngestTestEngine {
           debug: () => {},
         }),
         requestedRunStep: options.targetStepId,
-        transformCtx: this.options.transformCtx ?? mockCtx,
+        transformCtx,
       },
     });
 
@@ -674,6 +759,7 @@ export class InngestTestEngine {
       result,
       ctx: ctx as unknown as InngestTestEngine.MockContext,
       state: mockState,
+      warnings: this.warnings,
       run,
     };
   }
