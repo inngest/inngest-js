@@ -1,9 +1,0 @@
-{
-  "start": [
-    {
-      "agent": "blank",
-      "thread": "main",
-      "text": "Hi"
-    }
-  ]
-}
