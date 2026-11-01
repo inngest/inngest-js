@@ -95,8 +95,9 @@ export const inboxListenerView = scenario({
     await deploy("web", 1);
     await deploy("api", 2);
 
+    // The main loop reads the event after the scope is left, so wait for both.
     const after = await ctx.until(seen, (s) => {
-      return s.includes("scope:left");
+      return s.includes("scope:left") && s.includes("main:2");
     });
 
     ctx.check(
