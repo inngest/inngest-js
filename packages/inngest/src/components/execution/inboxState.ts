@@ -199,7 +199,7 @@ export const inboxMessage = (
 /**
  * The steps of a run that are waited for when its state is replayed: every
  * step but the messages of an inbox, which are read from the state and never
- * requested. Only a step's ID and saved value count.
+ * requested. Only a step's ID and saved value matter.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
