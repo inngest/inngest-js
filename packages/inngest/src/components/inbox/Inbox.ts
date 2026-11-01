@@ -11,6 +11,7 @@
  * state.
  */
 import type { EventPayload } from "../../types.ts";
+import type { InboxRead } from "../execution/inboxState.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -89,20 +90,56 @@ export interface InboxDeps {
   open: (sources: OpenedSource[]) => Promise<unknown>;
 
   /**
-   * Reports a read with nothing unread. Never settles in the request that
-   * reports it.
+   * The hashed ID of the wait op of the `n`th read of this inbox. It is known
+   * before the op is reported, so the run's state can be asked whether the read
+   * timed out.
    */
-  wait: (inbox: string, seen: string) => Promise<unknown>;
+  waitId: (n: number) => string;
 
   /**
-   * The events the inbox has received, from the run's state, in order.
+   * Reports the `n`th read, which has nothing unread. Never settles in the
+   * request that reports it, unless the read timed out: then it settles with
+   * `null`. A timeout is a duration or a timestamp, like the one of
+   * `waitForEvent`.
    */
-  messages: (inbox: string) => unknown[];
+  wait: (
+    n: number,
+    inbox: string,
+    seen: string,
+    timeout?: ReadTimeout,
+  ) => Promise<unknown>;
+
+  /**
+   * What the read after the first `taken` messages finds in the run's state.
+   */
+  read: (inbox: string, taken: number, wait: string) => InboxRead;
+
+  /**
+   * Marks a wait op as seen without requesting it. A timeout that lost to a
+   * message is saved in state and never asked for.
+   */
+  skip: (n: number) => Promise<void>;
 
   /**
    * The last step of the run's stack that this request loaded.
    */
   lastSeen: () => string;
+}
+
+/**
+ * How long a read waits for a message: milliseconds, an `ms`-compatible string
+ * like `"30s"`, or a `Date`.
+ */
+export type ReadTimeout = number | string | Date;
+
+/**
+ * Options of a read.
+ */
+export interface ReadOptions {
+  /**
+   * The read returns `null` if no message arrives in this time.
+   */
+  timeout: ReadTimeout;
 }
 
 /**
@@ -116,6 +153,10 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
   // Messages taken by reads so far in this replay.
   #taken = 0;
+
+  // Reads started so far. Each has an op of its own, named by this number, so
+  // that its place in the run's state is known before it is reported.
+  #reads = 0;
 
   // Reads on one inbox are served in order, like an async generator's.
   #queue: Promise<unknown> = Promise.resolve();
@@ -137,9 +178,18 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    * Returns the next unread message. If none is unread, waits for one to
    * arrive.
    */
-  next(): Promise<TMessage> {
+  next(): Promise<TMessage>;
+
+  /**
+   * Returns the next unread message, or `null` if none arrives in time.
+   */
+  next(options: ReadOptions): Promise<TMessage | null>;
+  next(options?: ReadOptions): Promise<TMessage | null> {
+    const n = this.#reads;
+    this.#reads += 1;
+
     const read = this.#queue.then(() => {
-      return this.#readOne();
+      return this.#readOne(n, options?.timeout);
     });
 
     this.#queue = read.catch(() => {
@@ -149,23 +199,36 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     return read;
   }
 
-  async #readOne(): Promise<TMessage> {
+  async #readOne(n: number, timeout?: ReadTimeout): Promise<TMessage | null> {
     await this.#opened;
 
-    const messages = this.#deps.messages(this.#deps.inbox);
-    if (this.#taken < messages.length) {
-      const message = messages[this.#taken] as TMessage;
+    const found = this.#deps.read(
+      this.#deps.inbox,
+      this.#taken,
+      this.#deps.waitId(n),
+    );
+
+    if (found.found === "message") {
       this.#taken += 1;
 
-      return message;
+      if (found.timedOut) {
+        await this.#deps.skip(n);
+      }
+
+      return found.message as TMessage;
     }
 
     // Nothing is unread. The executor wakes the run when a message arrives and
-    // the replay finds it in state, so this does not settle in this request.
-    return (await this.#deps.wait(
+    // the replay finds it in state, so this does not settle in this request. A
+    // read that timed out settles with the null the executor saved.
+    const answer = await this.#deps.wait(
+      n,
       this.#deps.inbox,
       this.#deps.lastSeen(),
-    )) as TMessage;
+      timeout,
+    );
+
+    return answer as TMessage | null;
   }
 
   /**

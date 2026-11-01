@@ -45,27 +45,60 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 };
 
 /**
- * The events an inbox received, in the order the executor saved them.
+ * What a read of an inbox finds in the run's state.
+ */
+export type InboxRead =
+  | { found: "message"; message: unknown; timedOut: boolean }
+  | { found: "timeout" }
+  | { found: "nothing" };
+
+/**
+ * What the read at a position of an inbox finds. Walking the stack in the order
+ * the executor saved it, the first thing after the messages earlier reads took
+ * is the answer: a message, or the `null` the executor saved when the read's
+ * timeout passed. A message that arrived after a read timed out comes later in
+ * the stack, so it is not that read's.
+ *
+ * When a timeout and a message raced and both were saved, the message is first
+ * and the timeout is an ignored step: `timedOut` says it is in the stack, so
+ * the caller can mark it as seen.
  * @param inbox The hashed ID of the step that opened the inbox.
+ * @param taken How many messages earlier reads took.
+ * @param wait The hashed ID of the read's wait op.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
-export const inboxMessages = (
+export const inboxRead = (
   inbox: string,
+  taken: number,
+  wait: string,
   stack: readonly string[],
   stepState: Record<string, { data?: unknown } | undefined>,
-): unknown[] => {
-  const messages: unknown[] = [];
+): InboxRead => {
+  let seen = 0;
+  let found: InboxRead = { found: "nothing" };
 
   for (const id of stack) {
     const value = stepState[id]?.data;
 
     if (isInboxMessage(value) && value[inboxKey] === inbox) {
-      messages.push(value.data);
+      if (found.found === "nothing" && seen === taken) {
+        found = { found: "message", message: value.data, timedOut: false };
+      }
+
+      seen += 1;
+    } else if (id === wait) {
+      if (found.found === "nothing") {
+        return { found: "timeout" };
+      }
+
+      if (found.found === "message") {
+        found.timedOut = true;
+      }
     }
   }
 
-  return messages;
+  return found;
 };
 
 /**
