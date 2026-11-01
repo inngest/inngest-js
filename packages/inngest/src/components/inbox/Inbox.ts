@@ -318,7 +318,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   private _opened: Promise<void>;
 
   // Set once `close()` has been called, settled or not. A read made after it
-  // returns at once.
+  // takes a message it can already read, and otherwise ends.
   private _closeCalled = false;
 
   // Set once `close()` has settled.
@@ -484,7 +484,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (afterClose || this._closed) {
+    if (this._closed) {
       return wait ? undefined : [];
     }
 
@@ -493,12 +493,13 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     const op = readId(this._deps.id, n);
     const held = this._deps.unread(this._deps.inbox, this._taken);
 
-    // A read that finds nothing and whose inbox was closed ends, as a wait does.
+    // A read that finds nothing and whose inbox was closed, or whose close was
+    // called before the read started, ends instead of waiting.
     if (
       wait &&
       held.length === 0 &&
       !this._deps.answered(op) &&
-      this._closedInState()
+      (afterClose || this._closedInState())
     ) {
       await this._whenClosed;
 
@@ -542,7 +543,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     afterClose: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (afterClose || this._closed) {
+    if (this._closed) {
       return undefined;
     }
 
@@ -570,8 +571,10 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
       return addEventIs(found.message as object) as TMessage;
     }
 
-    // The inbox was closed while this read had nothing to read: it ends.
-    if (found.found === "nothing" && this._closedInState()) {
+    // The inbox was closed while this read had nothing to read, or its close
+    // was called before the read started: it ends. The close op cannot name a
+    // read that started after it, so a wait here would never be ended.
+    if (found.found === "nothing" && (afterClose || this._closedInState())) {
       await this._whenClosed;
 
       return undefined;
@@ -623,7 +626,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   /**
    * Closes the inbox: its sources stop receiving, every read waiting ends with
    * `undefined`, and it returns the messages that were not read. A read made
-   * after this call returns at once.
+   * after this call that would have to wait ends with `undefined`.
    */
   close(): Promise<TMessage[]> {
     this._closeCalled = true;

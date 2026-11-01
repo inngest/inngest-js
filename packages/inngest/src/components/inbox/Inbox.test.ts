@@ -132,8 +132,34 @@ describe("closing an inbox", () => {
     expect(batches).toEqual([]);
   });
 
-  test("a read made after close() was called returns at once and sends no op, even before the close settles", async () => {
-    const { deps, waits, batches } = fakeDeps(["m1"]);
+  test("a read that starts while the close is in flight ends without reporting a wait", async () => {
+    const { deps, waits, batches } = fakeDeps([]);
+    let finish: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    deps.close = async () => {
+      await gate;
+
+      return { cut: null };
+    };
+    const inbox = new Inbox(deps);
+
+    const closing = inbox.close();
+    const late = inbox.next();
+    const lateBatch = inbox.nextBatch();
+
+    finish();
+    await closing;
+
+    expect(await late).toBeUndefined();
+    expect(await lateBatch).toBeUndefined();
+    expect(waits).toEqual([]);
+    expect(batches).toEqual([]);
+  });
+
+  test("a read that starts while the close is in flight still takes a message it can already read", async () => {
+    const { deps, waits } = fakeDeps(["m1"]);
     deps.close = () => {
       return new Promise(() => {
         return undefined;
@@ -143,12 +169,8 @@ describe("closing an inbox", () => {
 
     void inbox.close();
 
-    expect(await inbox.next()).toBeUndefined();
-    expect(await inbox.nextBatch()).toBeUndefined();
-    expect(await inbox.drain()).toEqual([]);
+    expect(await inbox.next()).toMatchObject(message("m1"));
     expect(waits).toEqual([]);
-    expect(batches).toEqual([]);
-    expect(inbox.closed).toBe(false);
   });
 
   test("a read that found nothing and whose close is in state ends when the close is replayed past", async () => {
