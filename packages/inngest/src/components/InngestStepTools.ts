@@ -66,7 +66,12 @@ import {
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
-import { Inbox, type InboxSources, sourcesOf } from "./inbox/Inbox.ts";
+import {
+  Inbox,
+  type InboxSources,
+  type SourcesMessage,
+  sourcesOf,
+} from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -583,13 +588,20 @@ export const createStepTools = <
      * object with the event and an `if` expression, which sees the arriving
      * event as `async`. Pass one source or an array.
      *
+     * The inbox's messages are typed from the sources: the union of the shapes
+     * of the event types given. A source written as a name has no schema, so
+     * its messages stay the default message, whose `data` is `unknown`.
+     *
      * @example
      * ```ts
      * await using inbox = step.subscribe("reviews", pr.reviewed);
      * const review = await inbox.next();
      * ```
      */
-    subscribe: (idOrOptions: StepOptionsOrId, sources: InboxSources): Inbox => {
+    subscribe: <const S extends InboxSources>(
+      idOrOptions: StepOptionsOrId,
+      sources: S, // what the inbox receives
+    ): Inbox<SourcesMessage<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
       const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
 
