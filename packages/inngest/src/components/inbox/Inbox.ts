@@ -314,18 +314,6 @@ export interface BatchOptions {
 }
 
 /**
- * The type of the messages an inbox reads, so code can name it.
- *
- * @example
- * ```ts
- * const handle = (message: InboxMessage<typeof inbox>) => {};
- * ```
- */
-export type InboxMessage<TInbox> = TInbox extends Inbox<infer TMessage>
-  ? TMessage
-  : never;
-
-/**
  * A durable collection of the events that matched the sources of one
  * `step.subscribe()`, or a view of one. Open it with `await using` so it closes
  * at the end of the block.
