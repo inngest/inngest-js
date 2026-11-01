@@ -80,6 +80,56 @@ describe("ops of an inbox", () => {
     });
 
     const [step] = (result as { steps: { opts: object }[] }).steps;
-    expect(Object.keys(step?.opts ?? {})).toEqual(["inbox"]);
+    expect(Object.keys(step?.opts ?? {}).sort()).toEqual([
+      "inbox",
+      "origin",
+      "span",
+    ]);
+  });
+
+  test("every op of a read is one tagged statement group with an inngest origin", async () => {
+    const result = await run((inbox) => {
+      return inbox.next();
+    });
+
+    expect(result).toMatchObject({
+      steps: [
+        {
+          op: "SubscribeWait",
+          opts: {
+            span: [{ id: "inbox:next", name: "next", kind: "\u2709\uFE0F" }],
+            origin: expect.stringMatching(/^inngest@/),
+          },
+        },
+      ],
+    });
+  });
+
+  test("a batch read and a drain are named for what the user wrote", async () => {
+    const batch = await run((inbox) => {
+      return inbox.nextBatch();
+    });
+
+    expect(batch).toMatchObject({
+      steps: [{ opts: { span: [{ id: "inbox:next", name: "nextBatch" }] } }],
+    });
+  });
+
+  test("a close is a tagged statement group", async () => {
+    const result = await run((inbox) => {
+      return inbox.close();
+    });
+
+    expect(result).toMatchObject({
+      steps: [
+        {
+          op: "SubscribeClose",
+          opts: {
+            span: [{ id: "inbox:close", name: "close", kind: "\u2709\uFE0F" }],
+            origin: expect.stringMatching(/^inngest@/),
+          },
+        },
+      ],
+    });
   });
 });
