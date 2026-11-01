@@ -129,6 +129,12 @@ export interface AsyncContext {
       unread: (inbox: string, taken: number, want?: Want) => string[];
       message: (id: string) => unknown;
       lastSeen: () => string;
+
+      /**
+       * Settles when replay reaches the message step `id` in the run's stack,
+       * after every found step earlier in the stack has been handed back.
+       */
+      place: (id: string) => Promise<void>;
     };
 
     /**

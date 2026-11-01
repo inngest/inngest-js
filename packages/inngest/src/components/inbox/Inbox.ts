@@ -215,6 +215,13 @@ export interface InboxDeps {
       waits: string[];
     },
   ) => Promise<string[]>;
+
+  /**
+   * Settles when replay reaches the message step `id` in the run's stack. A read
+   * answered from state settles here, so a race between it and a step has the
+   * same winner on every replay.
+   */
+  place: (id: string) => Promise<void>;
 }
 
 /**
@@ -637,6 +644,11 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     this.#taken += ids.length;
 
+    const last = ids.at(-1);
+    if (last !== undefined) {
+      await this.#deps.place(last);
+    }
+
     return ids.map((id) => {
       return this.#deps.message(id) as TMessage;
     });
@@ -668,6 +680,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       if (found.timedOut) {
         await this.#deps.skip(op);
       }
+
+      await this.#deps.place(found.id);
 
       return found.message as TMessage;
     }

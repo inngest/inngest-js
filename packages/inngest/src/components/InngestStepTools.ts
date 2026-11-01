@@ -778,6 +778,9 @@ export const createStepTools = <
         close: (op, closing) => {
           return tools["~inboxClose"](op, closing) as Promise<string[]>;
         },
+        place: async (id) => {
+          await getAsyncCtxSync()?.execution?.inbox?.place(id);
+        },
       });
     },
 

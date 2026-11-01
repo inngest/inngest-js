@@ -193,6 +193,14 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+
+  /**
+   * Settles when replay reaches a step in the run's stack. Set up with the step
+   * tools, which own the order steps are handed back in.
+   */
+  private reachStackPlace: (id: string) => Promise<void> = () => {
+    return Promise.resolve();
+  };
   private failuresAreFinal = false;
   private middlewareManager: MiddlewareManager;
   /**
@@ -375,6 +383,9 @@ class InngestExecutionEngine
                 },
                 lastSeen: () => {
                   return this.options.stepCompletionOrder.at(-1) ?? "";
+                },
+                place: (id: string) => {
+                  return this.reachStackPlace(id);
                 },
               },
               skipStep: async (id: string) => {
@@ -2436,7 +2447,10 @@ class InngestExecutionEngine
      * A map of the subset of found steps to report that have not yet been
      * handled. Used for fast access to steps that need to be handled in order.
      */
-    const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
+    const unhandledFoundStepsToReport: Map<
+      string,
+      Pick<FoundStep, "handle">
+    > = new Map();
 
     /**
      * A map of the latest sequential step indexes found for each step ID. Used
@@ -2565,6 +2579,44 @@ class InngestExecutionEngine
       foundStepsToReport.set(step.hashedId, step);
       unhandledFoundStepsToReport.set(step.hashedId, step);
       reportNextTick();
+    };
+
+    /**
+     * Resolvers of the reads waiting for a message step's place in the stack.
+     */
+    const stackPlaces = new Map<string, (() => void)[]>();
+
+    /**
+     * Settles when a step already in the stack is handed back, in the same order
+     * as the found steps: a read answered from state waits here so it settles at
+     * its message's place, never before a step that comes earlier.
+     */
+    this.reachStackPlace = (id: string) => {
+      if (!remainingStepCompletionOrder.includes(id)) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        const waiting = stackPlaces.get(id);
+        if (waiting) {
+          waiting.push(resolve);
+
+          return;
+        }
+
+        stackPlaces.set(id, [resolve]);
+        unhandledFoundStepsToReport.set(id, {
+          handle: () => {
+            for (const resolver of stackPlaces.get(id) ?? []) {
+              resolver();
+            }
+            stackPlaces.delete(id);
+
+            return true;
+          },
+        });
+        reportNextTick();
+      });
     };
 
     const stepHandler: StepHandler = async ({
