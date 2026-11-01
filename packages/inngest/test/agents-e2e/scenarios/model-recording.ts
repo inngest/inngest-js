@@ -82,8 +82,10 @@ export const modelRecording = scenario({
     await thread.steer("faster please");
 
     await ctx.eventually("the steer is answered", thread.state, (state) => {
-      return (state.last as { text?: string } | undefined)?.text ===
-        "echo: faster please";
+      return (
+        (state.last as { text?: string } | undefined)?.text ===
+        "echo: faster please"
+      );
     });
 
     const calls = await ctx.model(modelName).calls();

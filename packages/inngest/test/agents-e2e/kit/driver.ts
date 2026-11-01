@@ -11,11 +11,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
 import type { sandboxMiddleware } from "inngest/experimental";
-import type { CallFilter, Fakes } from "./channels.ts";
-import { redisCommand } from "./redis.ts";
-
 import type { AgentModel } from "inngest/experimental/agents";
+import type { CallFilter, Fakes } from "./channels.ts";
 import { type ModelCall, type ScriptStep, script } from "./model.ts";
+import { redisCommand } from "./redis.ts";
 
 export const modelName = (id: string, name: string) => {
   return `${id}/${name}`;
