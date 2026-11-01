@@ -20,6 +20,10 @@ describe("the tour's port", () => {
   });
 
   it("ignores a TOUR_PORT that is not a port", () => {
-    assert.equal(tourPort({ TOUR_PORT: "nope" }), tourPort({}));
+    for (const given of ["nope", "0", "-5", "65536", "1.5", ""]) {
+      assert.equal(tourPort({ TOUR_PORT: given }), tourPort({}), given);
+    }
+
+    assert.equal(tourPort({ TOUR_PORT: "65535" }), 65535);
   });
 });

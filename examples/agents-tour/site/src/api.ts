@@ -53,6 +53,15 @@ export const api = {
   kill: () => {
     return post("/api/kill", {});
   },
+  format: async (name: string, content: string) => {
+    const res = await fetch("/api/format", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, content }),
+    });
+
+    return ((await res.json()) as { content: string }).content;
+  },
   reset: () => {
     return post("/api/reset", {});
   },

@@ -31,9 +31,6 @@ export interface Exercise {
 export interface Manifest {
   // Pages without code (the welcome pages) hide the right side.
   code?: boolean;
-  // Core pages carry the reader on; Go deeper pages are optional. The page's
-  // label (`3` or `3a`) comes from its folder name.
-  kind?: "core" | "deeper";
   // Files the reader edits, from the page's folder. Default: `agent.ts`.
   editable?: string[];
   // Read-only files shown on the page, found in the module's `_shared`
@@ -61,9 +58,7 @@ export interface PageFile {
 
 export interface PageSummary {
   id: string;
-  // The core number, shared by a core page and the Go deeper pages after it.
-  number: number;
-  // `3` for a core page, `3a` for a Go deeper page.
+  // `3` for a core page, `3a` for a Go deeper page (from the folder name).
   label: string;
   kind: "core" | "deeper";
   module: string;
@@ -75,7 +70,6 @@ export interface Page extends PageSummary {
   markdown: string;
   files: PageFile[];
   manifest: Manifest;
-  exercise: boolean;
 }
 
 export interface Module {

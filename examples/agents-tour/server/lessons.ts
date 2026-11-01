@@ -10,7 +10,7 @@
  * ```
  *
  * A page's folder starts with its core number; a Go deeper page adds a
- * letter (`03a-`), which becomes its label. A manifest names the read-only
+ * letter (`03a-`). The folder gives the label (`3`, `3a`) and the kind. A manifest names the read-only
  * files its page shows; each is found in the module's `_shared` folder, then
  * in the tour-wide one, so it is stored once. An exercise page starts from
  * its `stub` folder and keeps its `solution` folder back.
@@ -22,6 +22,7 @@ import type {
   Module,
   Page,
   PageFile,
+  PageSummary,
   TourIndex,
 } from "../shared/types.ts";
 
@@ -152,33 +153,24 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
         }
       }
 
-      const number = Number.parseInt(match[1] as string, 10);
-      const page: LoadedPage = {
+      const summary: PageSummary = {
         id,
-        number,
-        label: `${number}${match[2]}`,
-        kind: manifest.kind ?? "core",
+        label: `${Number.parseInt(match[1] as string, 10)}${match[2]}`,
+        kind: match[2] ? "deeper" : "core",
         module: module.id,
         moduleTitle: module.title,
         title: titleOf(markdown),
+      };
+
+      pages.push({
+        ...summary,
         markdown: withoutTitle(markdown),
         files,
         manifest,
-        exercise: manifest.exercise !== undefined,
         dir,
         exerciseFiles,
-      };
-
-      pages.push(page);
-      module.pages.push({
-        id: page.id,
-        number: page.number,
-        label: page.label,
-        kind: page.kind,
-        module: page.module,
-        moduleTitle: page.moduleTitle,
-        title: page.title,
       });
+      module.pages.push(summary);
     }
 
     modules.push(module);

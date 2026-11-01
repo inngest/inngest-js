@@ -2,11 +2,12 @@
  * @module
  * The keys of the page itself: code, pages, panes, trace and focus.
  */
-import type { KeyDef } from "../keys.ts";
+import { defineKeys } from "../keys.ts";
 
-export const coreKeys: KeyDef[] = [
+export const coreKeys = defineKeys([
   {
     id: "run",
+    rank: 1,
     label: "Run",
     group: "Code",
     inField: ["Mod+Enter"],
@@ -14,6 +15,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "kill",
+    rank: 2,
     label: "Kill live runs",
     group: "Code",
     inField: ["Alt+Shift+K"],
@@ -21,6 +23,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "reset",
+    rank: 3,
     label: "Reset the code and the runs",
     group: "Code",
     inField: ["Alt+Shift+R"],
@@ -28,6 +31,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "format",
+    rank: 4,
     label: "Format",
     group: "Code",
     inField: ["Alt+Shift+F"],
@@ -35,6 +39,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "next",
+    rank: 5,
     label: "Next page",
     group: "Pages",
     inField: ["Alt+]", "Alt+PageDown"],
@@ -42,6 +47,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "prev",
+    rank: 6,
     label: "Previous page",
     group: "Pages",
     inField: ["Alt+[", "Alt+PageUp"],
@@ -49,6 +55,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "contents",
+    rank: 7,
     label: "Contents",
     group: "Pages",
     inField: ["Alt+Shift+C"],
@@ -56,6 +63,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "search",
+    rank: 8,
     label: "Search pages",
     group: "Pages",
     inField: ["Alt+Shift+P"],
@@ -63,13 +71,15 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "cheat",
-    label: "This cheat sheet",
+    rank: 9,
+    label: "Cheat sheet",
     group: "Pages",
     inField: ["Alt+/"],
     outside: ["?"],
   },
   {
     id: "text",
+    rank: 10,
     label: "Lesson text",
     group: "Panes",
     inField: ["Alt+Shift+1"],
@@ -77,6 +87,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "trace",
+    rank: 12,
     label: "Trace",
     group: "Panes",
     inField: ["Alt+Shift+T"],
@@ -84,6 +95,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "everything",
+    rank: 26,
     label: "Show every trace step",
     group: "Trace",
     inField: ["Alt+Shift+H"],
@@ -91,6 +103,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "rowDown",
+    rank: 27,
     label: "Next trace row",
     group: "Trace",
     inField: [],
@@ -99,6 +112,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "rowUp",
+    rank: 28,
     label: "Previous trace row",
     group: "Trace",
     inField: [],
@@ -107,6 +121,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "rowOpen",
+    rank: 29,
     label: "Open a trace row or its hidden steps",
     group: "Trace",
     inField: [],
@@ -115,6 +130,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "file",
+    rank: 30,
     label: "Switch between the code files",
     group: "Code",
     inField: ["Alt+Shift+L"],
@@ -122,6 +138,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "devserver",
+    rank: 31,
     label: "Open the Dev Server",
     group: "Pages",
     inField: ["Alt+Shift+."],
@@ -129,6 +146,7 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "undo",
+    rank: 32,
     label: "Undo reset",
     group: "Code",
     inField: ["Alt+Shift+U"],
@@ -136,10 +154,17 @@ export const coreKeys: KeyDef[] = [
   },
   {
     id: "editor",
+    rank: 33,
     label: "Leave or return to the editor",
     group: "Focus",
     inField: ["Alt+Shift+E"],
     outside: ["e"],
     note: "Esc also leaves when no editor widget is open",
   },
-];
+]);
+
+declare module "../keys.ts" {
+  interface KeyLists {
+    core: typeof coreKeys;
+  }
+}

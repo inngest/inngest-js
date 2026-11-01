@@ -1,9 +1,14 @@
 /**
  * @module
  * A small Markdown subset for lesson text: paragraphs (each line stays its
- * own line), `code`, **bold**, *italic*, and literal `<kbd>` tags. Everything
- * else is escaped.
+ * own line), `code`, **bold**, *italic*, literal `<kbd>` tags, and key hints
+ * such as `{Run}` (see `shared/hints.ts`). Everything else is escaped.
  */
+import { hintOf } from "../../shared/keys.ts";
+import { replaceHints } from "../../shared/hints.ts";
+import { keys } from "./keytable.ts";
+import { isMac } from "./platform.ts";
+
 const escapeHtml = (text: string) => {
   return text
     .replaceAll("&", "&amp;")
@@ -25,6 +30,13 @@ const inline = (line: string) => {
 
   text = text.replace(/`([^`]+)`/g, (_all, code: string) => {
     return hold(`<code>${escapeHtml(code)}</code>`);
+  });
+  text = replaceHints(text, keys, (action) => {
+    const spec = action.inField[0] ?? action.outside[0] ?? "";
+
+    return hold(
+      `<strong>${escapeHtml(action.label)}</strong> <kbd>${escapeHtml(hintOf(spec, isMac))}</kbd>`,
+    );
   });
   text = escapeHtml(text)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")

@@ -1,7 +1,8 @@
 /**
  * @module
- * The app the tour runs for the learner. It loads the lesson's `setup.ts` and
- * `agent.ts` from `TOUR_DIR`, serves the agents over HTTP the way any app
+ * The app the tour runs for the learner. It imports the page's files, which
+ * `TOUR_FILES` lists, from `TOUR_DIR`; the files together export `client` and
+ * `agents`. It serves the agents over HTTP the way any app
  * would, and answers a few tour-only routes: health, the agents it found, and
  * "send a message to a thread", which uses the agent's own thread handle.
  */
@@ -16,22 +17,40 @@ interface ThreadSender {
 
 const dir = process.env.TOUR_DIR ?? "";
 
-const setup = await import(pathToFileURL(join(dir, "setup.ts")).href);
-const lesson = await import(pathToFileURL(join(dir, "agent.ts")).href);
-
+const names = JSON.parse(process.env.TOUR_FILES ?? "[]") as string[];
 const senders = new Map<string, ThreadSender>();
+let client: unknown;
+let agents: unknown;
 
-for (const [name, value] of Object.entries(lesson)) {
-  const candidate = value as Partial<ThreadSender> | undefined;
+for (const name of names) {
+  const loaded = (await import(pathToFileURL(join(dir, name)).href)) as Record<
+    string,
+    unknown
+  >;
 
-  if (candidate && typeof candidate.thread === "function") {
-    senders.set(name, candidate as ThreadSender);
+  client ??= loaded.client;
+  agents ??= loaded.agents;
+
+  for (const [exported, value] of Object.entries(loaded)) {
+    const candidate = value as Partial<ThreadSender> | undefined;
+
+    if (candidate && typeof candidate.thread === "function") {
+      senders.set(exported, candidate as ThreadSender);
+    }
   }
 }
 
+if (!client || !agents) {
+  throw new Error(
+    `The page's files (${names.join(", ")}) must export client and agents`,
+  );
+}
+
 const inngest = serve({
-  client: setup.client,
-  functions: setup.agents.functions(),
+  client: client as Parameters<typeof serve>[0]["client"],
+  functions: (
+    agents as { functions: () => Parameters<typeof serve>[0]["functions"] }
+  ).functions(),
 });
 
 const readBody = async (req: import("node:http").IncomingMessage) => {

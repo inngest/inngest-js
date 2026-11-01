@@ -20,14 +20,9 @@ import {
 } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  type Area,
-  type AreaFactory,
-  HttpError,
-  type Route,
-  type TourContext,
-} from "./area.ts";
+import type { Area, AreaFactory, Route, TourContext } from "./area.ts";
 import { DevServer, type DevServerPorts } from "./devserver.ts";
+import { HttpError } from "./http-error.ts";
 import { Hub } from "./hub.ts";
 import { loadLessons } from "./lessons.ts";
 import { Worker } from "./worker.ts";
@@ -39,8 +34,12 @@ export interface TourOptions {
   binary: string;
   port: number;
   ports: DevServerPorts;
-  // Areas to load in addition to the files in `areas/`.
+  // Where the areas are. Default: `areas` beside this file.
+  areasDir?: string;
+  // Areas to load in addition to the ones there.
   areas?: AreaFactory[];
+  // Where the tour keeps what it writes. Default: `.tour` in the root.
+  dataDir?: string;
 }
 
 const mime: Record<string, string> = {
@@ -58,8 +57,7 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   res.end(JSON.stringify(body));
 };
 
-const loadAreaFactories = async () => {
-  const dir = join(import.meta.dirname, "areas");
+const loadAreaFactories = async (dir: string) => {
   const factories: AreaFactory[] = [];
 
   for (const file of readdirSync(dir).sort()) {
@@ -95,7 +93,7 @@ export const createTour = async (options: TourOptions) => {
       return `http://${host}`;
     }),
   );
-  const dataDir = join(root, ".tour");
+  const dataDir = options.dataDir ?? join(root, ".tour");
   const { pages, index } = loadLessons(
     options.lessonsDir ?? join(root, "lessons"),
   );
@@ -138,7 +136,9 @@ export const createTour = async (options: TourOptions) => {
     },
   };
 
-  areas = [...(await loadAreaFactories()), ...(options.areas ?? [])].map(
+  areas = [...(await loadAreaFactories(
+      options.areasDir ?? join(import.meta.dirname, "areas"),
+    )), ...(options.areas ?? [])].map(
     (factory) => {
       return factory(ctx);
     },
@@ -168,17 +168,22 @@ export const createTour = async (options: TourOptions) => {
     return Buffer.concat(chunks).toString("utf8");
   };
 
+  // An area may own routes outside `/api/`, such as a fake's own REST API.
+  const answeredRaw = async (req: IncomingMessage, res: ServerResponse) => {
+    for (const area of areas) {
+      if (await area.raw?.(req, res)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const handleApi = async (
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
   ) => {
-    for (const area of areas) {
-      if (await area.raw?.(req, res)) {
-        return;
-      }
-    }
-
     if (url.pathname === "/api/stream") {
       hub.open(
         res,
@@ -205,7 +210,7 @@ export const createTour = async (options: TourOptions) => {
       return sendJson(res, 200, await route.handle({ url, body }));
     } catch (error) {
       if (error instanceof HttpError) {
-        return sendJson(res, error.status, { error: error.message });
+        return sendJson(res, error.status, error.body);
       }
 
       return sendJson(res, 500, { error: String(error) });
@@ -257,6 +262,8 @@ export const createTour = async (options: TourOptions) => {
     try {
       if (url.pathname === "/api/inngest") {
         worker.proxy(req, res);
+      } else if (await answeredRaw(req, res)) {
+        return;
       } else if (url.pathname.startsWith("/api/")) {
         await handleApi(req, res, url);
       } else {
@@ -292,10 +299,9 @@ export const createTour = async (options: TourOptions) => {
     },
     stop: async () => {
       worker.stop();
-      for (const area of areas) {
-        await area.stop?.();
-      }
+
       await devServer.stop();
+
       hub.close();
       server.close();
       server.closeAllConnections();

@@ -3,8 +3,8 @@
  * `pnpm tour`: checks the machine, starts the Dev Server from the cached
  * build on free ports, starts the tour server, opens the browser, and stops
  * everything on Ctrl-C. It listens on a fixed port (`TOUR_PORT` overrides),
- * so the address stays the same; `--live` is for the lead's long-running
- * tour and does not open a browser.
+ * so the address stays the same, and opens no browser when `TOUR_NO_OPEN` is
+ * set.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -87,7 +87,7 @@ try {
 console.log(`\nThe Agents Tour is running at ${tour.url}`);
 console.log("Press Ctrl-C to stop it.\n");
 
-if (!process.env.TOUR_NO_OPEN && !process.argv.includes("--live")) {
+if (!process.env.TOUR_NO_OPEN) {
   const opener =
     process.platform === "darwin"
       ? ["open"]

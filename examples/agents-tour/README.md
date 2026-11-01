@@ -86,6 +86,6 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 | `shared/keys/` | one key list per area (`core.ts`, `slack.ts`, ...), joined into the one table; a clash fails `tour:check` and the site |
 | `test/` | `pnpm tour:test`: the tour server through its HTTP API, the key table, the port |
 
-`pnpm tour` listens on port 4730 unless `TOUR_PORT` says otherwise; `pnpm tour:live` is the same without opening a browser, for a tour that stays up on the integration branch. A browser may reach it as `127.0.0.1`, `localhost` or `[::1]`.
+`pnpm tour` listens on port 4730 unless `TOUR_PORT` says otherwise; `pnpm tour:live` is the same without opening a browser, for a tour you leave running. A browser may reach it as `127.0.0.1` or `localhost`.
 
 `pnpm typecheck` writes each page's files (read-only ones beside them) to `.tour/typecheck/` and checks them against the real SDK types, the site, and `tour:check`. The repo root script `agents:examples` runs it with biome.

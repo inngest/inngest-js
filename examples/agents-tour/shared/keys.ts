@@ -11,21 +11,40 @@
  * works only when focus is not in a text field; `g c` is a sequence.
  */
 
-// An action's id; each area's key list names its own.
-export type ActionId = string;
-
 export interface KeyDef {
-  id: ActionId;
+  id: string;
   label: string;
   group: string;
   // Bindings that work while the editor or another text field has focus.
-  inField: string[];
+  inField: readonly string[];
   // Bindings that work when focus is not in a text field.
-  outside: string[];
+  outside: readonly string[];
   note?: string;
   // Handled by the pane that owns it, not by the window.
   local?: boolean;
+  // Place in the table, and so in the cheat sheet. Keys without one follow
+  // the ranked ones.
+  rank?: number;
+  // The play-pane panels (by id) this action belongs to: it opens the tab and
+  // is handed to the panel.
+  panels?: readonly string[];
 }
+
+/**
+ * Each file in `keys/` adds its list here, so `ActionId` is the ids of every
+ * list and a mistyped action fails the type check.
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by `declare module` in each file of `keys/`
+export interface KeyLists {}
+
+export type ActionId = KeyLists[keyof KeyLists][number]["id"];
+
+/**
+ * Types a list so its ids stay literal.
+ */
+export const defineKeys = <const T extends readonly KeyDef[]>(defs: T) => {
+  return defs;
+};
 
 export const monacoOnly = [
   {
@@ -149,12 +168,49 @@ export const hintOf = (spec: string, isMac: boolean) => {
 };
 
 /**
- * Joins the areas' key lists into the one table. An area adds a file of keys
- * and touches no other; the table refuses two actions that share an id, or
- * two that bind the same key.
+ * Names each module's lists by its file (`shared/keys/slack.ts` is `slack`),
+ * ready for `assembleKeys`.
  */
-export const assembleKeys = (lists: KeyDef[][]) => {
-  const table = lists.flat();
+export const areasOf = (
+  modules: Record<string, Record<string, readonly KeyDef[]>>,
+) => {
+  const byArea: Record<string, readonly KeyDef[]> = {};
+
+  for (const [path, module] of Object.entries(modules)) {
+    byArea[path.replace(/^.*\//, "").replace(/\.ts$/, "")] =
+      Object.values(module).flat();
+  }
+
+  return byArea;
+};
+
+/**
+ * Joins the areas' key lists, by area name, into the one table: the page's own
+ * (`core`) first, then each area by name, then ordered by `rank` (keys
+ * without one stay after the ranked ones, in that order). An area adds a file
+ * of keys and touches no other; the table refuses two actions that share an
+ * id, or two that bind the same key.
+ */
+export const assembleKeys = (byArea: Record<string, readonly KeyDef[]>) => {
+  const names = Object.keys(byArea).sort((a, b) => {
+    return Number(b === "core") - Number(a === "core") || a.localeCompare(b);
+  });
+  const joined = names.flatMap((name) => {
+    return byArea[name] ?? [];
+  });
+  const table = joined
+    .map((def, at) => {
+      return { def, at };
+    })
+    .sort((a, b) => {
+      return (
+        (a.def.rank ?? Number.POSITIVE_INFINITY) -
+          (b.def.rank ?? Number.POSITIVE_INFINITY) || a.at - b.at
+      );
+    })
+    .map((entry) => {
+      return entry.def;
+    });
   const problems: string[] = [];
   const ids = new Set<string>();
   const seen = new Map<string, string>();

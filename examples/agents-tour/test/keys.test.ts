@@ -26,6 +26,44 @@ describe("the key table", () => {
     assert.equal(new Set(ids).size, ids.length);
   });
 
+  it("puts the page's keys before the areas' however the areas are named", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "keys-"));
+
+    writeFileSync(join(dir, "ci.ts"), list("ciKeys", "c", "c"));
+    writeFileSync(join(dir, "core.ts"), list("coreKeys", "a", "a"));
+
+    const table = await loadKeyTable(dir);
+
+    assert.deepEqual(
+      table.map((def) => {
+        return def.id;
+      }),
+      ["a", "c"],
+    );
+  });
+
+  it("orders by rank, with unranked keys after the ranked ones", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "keys-"));
+
+    writeFileSync(
+      join(dir, "core.ts"),
+      'export const coreKeys = [{ id: "a", label: "x", group: "G", inField: [], outside: ["a"] }, { id: "b", rank: 2, label: "x", group: "G", inField: [], outside: ["b"] }];\n',
+    );
+    writeFileSync(
+      join(dir, "extra.ts"),
+      'export const extraKeys = [{ id: "c", rank: 1, label: "x", group: "G", inField: [], outside: ["c"] }];\n',
+    );
+
+    const table = await loadKeyTable(dir);
+
+    assert.deepEqual(
+      table.map((def) => {
+        return def.id;
+      }),
+      ["c", "b", "a"],
+    );
+  });
+
   it("takes a new area's file with no other change", async () => {
     const dir = mkdtempSync(join(tmpdir(), "keys-"));
 

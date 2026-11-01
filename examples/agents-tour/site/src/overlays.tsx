@@ -255,22 +255,12 @@ export const Search = ({
 };
 
 export const Cheat = ({ onClose }: { onClose: () => void }) => {
-  // The usual order first; an area's own group follows in table order.
-  const usual = ["Code", "Pages", "Panes", "Slack", "GitHub", "Trace", "Focus"];
-  const present = [
+  const groups = [
     ...new Set(
       keys.map((def) => {
         return def.group;
       }),
     ),
-  ];
-  const groups = [
-    ...usual.filter((group) => {
-      return present.includes(group);
-    }),
-    ...present.filter((group) => {
-      return !usual.includes(group);
-    }),
   ];
 
   return (

@@ -4,8 +4,8 @@
 
 **Format** tidies the code. **Next** and **Previous** change page.
 
-Every button shows its key. The keys work everywhere, inside the editor too: <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs the code.
+Every button shows its key. The keys work everywhere, inside the editor too: {Run} starts your code.
 
-Press <kbd>Alt</kbd>+<kbd>/</kbd> to see all of them. **Dev Server** opens the Dev Server in a new tab.
+Press {cheat} to see all of them. **Dev Server** opens the Dev Server in a new tab.
 
 *Note:* <kbd>Tab</kbd> indents inside the editor. <kbd>Ctrl</kbd>+<kbd>M</kbd> makes it move focus instead.

@@ -4,17 +4,9 @@
  * JSON or throw `HttpError`.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { HttpError } from "../http-error.ts";
 
-export class HttpError extends Error {
-  status: number;
-  body: unknown;
-
-  constructor(status: number, body: unknown) {
-    super(typeof body === "string" ? body : JSON.stringify(body));
-    this.status = status;
-    this.body = body;
-  }
-}
+export { HttpError };
 
 export interface Request {
   params: Record<string, string>;

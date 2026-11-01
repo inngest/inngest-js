@@ -54,13 +54,13 @@ export const resolveBinary = () => {
 };
 
 /**
- * The port the tour listens on: a fixed default, so the live tour keeps one
+ * The port the tour listens on: a fixed default, so the tour keeps one
  * address, unless `TOUR_PORT` says otherwise.
  */
 export const tourPort = (env: Record<string, string | undefined>) => {
   const given = Number(env.TOUR_PORT);
 
-  return Number.isInteger(given) && given > 0 ? given : 4730;
+  return Number.isInteger(given) && given > 0 && given < 65536 ? given : 4730;
 };
 
 export const run = (cmd: string, args: string[], cwd = root) => {

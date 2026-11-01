@@ -1,8 +1,10 @@
 /**
  * @module
  * The play pane's panels. A panel is a file `panels/<id>.panel.tsx` that
- * calls `registerPanel` with its tab, its key and its component; the page
- * loads every such file, so a new panel edits no other file.
+ * calls `registerPanel` with its id, label and component; the page loads every
+ * such file, so a new panel edits no other file. The panel's id is also the
+ * action in `shared/keys/` that opens its tab, and the actions that list the
+ * panel in `panels` belong to it.
  */
 import type { ComponentType } from "react";
 import type { ActionId } from "../../../shared/keys.ts";
@@ -15,15 +17,11 @@ export interface PanelProps {
 }
 
 export interface PanelDef {
-  // The name a manifest lists in `panels`.
-  id: string;
+  // The name a manifest lists in `panels`, and the action that opens the tab.
+  id: ActionId;
   label: string;
-  // The key that opens this tab.
-  key: ActionId;
   // What to focus once the tab is open.
   focus: string;
-  // Keys of the panel's own: each opens the tab and is handed to the panel.
-  actions?: ActionId[];
   component: ComponentType<PanelProps>;
 }
 

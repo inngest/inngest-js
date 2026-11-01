@@ -8,7 +8,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Start, TraceRun } from "../../shared/types.ts";
-import { type Area, type AreaFactory, HttpError } from "../area.ts";
+import type { Area, AreaFactory } from "../area.ts";
+import { HttpError } from "../http-error.ts";
 import type { LoadedPage } from "../lessons.ts";
 import { cancelRun, readOutput, readRuns, terminal } from "../runs.ts";
 import { readTypes } from "../types.ts";
@@ -27,6 +28,11 @@ export const area: AreaFactory = (ctx) => {
   // before cannot bring them back.
   let epoch = 0;
   let running: Promise<void> = Promise.resolve();
+  // Identifies the page the reader is on. Opening a page ends the one before,
+  // and anything the old page's Run still has to do is dropped.
+  let session = 0;
+  // Set once a Run has sent something that may have started a run.
+  let mayBeLive = false;
 
   const poll = async () => {
     if (hub.status.state === "idle" || hub.clients.size === 0) {
@@ -105,30 +111,72 @@ export const area: AreaFactory = (ctx) => {
     throw new Error("No area sends this start entry");
   };
 
-  const cancelLive = async () => {
-    for (const run of runs) {
+  const cancelOnce = async () => {
+    const seen = await readRuns(devServer, from).catch(() => {
+      return runs;
+    });
+    let cancelled = 0;
+
+    for (const run of seen) {
       if (!terminal.has(run.status)) {
         await cancelRun(devServer, run.id).catch(() => {});
+        cancelled += 1;
       }
+    }
+
+    return cancelled;
+  };
+
+  // Cancels every run of the page since it was opened, asking the Dev Server
+  // rather than trusting the last poll. After a Run sent something, looks a
+  // second time for runs the Dev Server had not made yet.
+  const cancelLive = async () => {
+    await cancelOnce();
+
+    if (mayBeLive) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
+      await cancelOnce();
+      mayBeLive = false;
     }
   };
 
   const run = (id: string, files: Record<string, string>) => {
+    session += 1;
+
+    const mine = session;
+    const stale = () => {
+      return mine !== session;
+    };
     const task = running.then(async () => {
       const page = byId.get(id);
 
-      if (!page || page.manifest.code === false) {
+      if (!page || page.manifest.code === false || stale()) {
         return;
       }
 
       await cancelLive();
+
+      if (stale()) {
+        return;
+      }
+
       clearRuns();
       await ctx.resetAreas();
       hub.setStatus("starting", "Starting your code...");
 
       const started = Date.now();
       const dir = writeLesson(page, files);
-      const result = await worker.reload(dir);
+      const result = await worker.reload(dir, page.files.map((file) => {
+        return file.name;
+      }));
+
+      if (stale()) {
+        worker.stop();
+
+        return;
+      }
 
       if (!result.ok) {
         hub.emit({
@@ -144,9 +192,15 @@ export const area: AreaFactory = (ctx) => {
       try {
         await worker.sync(publicUrl);
       } catch (error) {
-        hub.emit({ type: "log", kind: "err", text: String(error) });
-        hub.setStatus("failed", "The Dev Server did not accept the app");
+        if (!stale()) {
+          hub.emit({ type: "log", kind: "err", text: String(error) });
+          hub.setStatus("failed", "The Dev Server did not accept the app");
+        }
 
+        return;
+      }
+
+      if (stale()) {
         return;
       }
 
@@ -154,6 +208,12 @@ export const area: AreaFactory = (ctx) => {
       hub.setStatus("live", "Live");
 
       for (const start of page.manifest.start ?? []) {
+        if (stale()) {
+          return;
+        }
+
+        mayBeLive = true;
+
         try {
           const sent = await Promise.all(
             ctx.areas().map((other) => {
@@ -165,7 +225,9 @@ export const area: AreaFactory = (ctx) => {
             await sendStart(start);
           }
         } catch (error) {
-          hub.emit({ type: "log", kind: "err", text: String(error) });
+          if (!stale()) {
+            hub.emit({ type: "log", kind: "err", text: String(error) });
+          }
         }
       }
     });
@@ -195,7 +257,7 @@ export const area: AreaFactory = (ctx) => {
           const page = byId.get(url.searchParams.get("id") ?? "");
 
           if (!page) {
-            throw new HttpError(404, "No such page");
+            throw new HttpError(404, { error: "No such page" });
           }
 
           const { dir: _dir, exerciseFiles: _exerciseFiles, ...rest } = page;
@@ -228,8 +290,12 @@ export const area: AreaFactory = (ctx) => {
         method: "POST",
         path: "/api/open",
         handle: async () => {
+          session += 1;
+          worker.abortStarting();
+
           await running;
           await cancelLive();
+
           clearRuns();
           await ctx.resetAreas();
           hub.setStatus("idle", "Ready");
@@ -263,6 +329,9 @@ export const area: AreaFactory = (ctx) => {
         method: "POST",
         path: "/api/reset",
         handle: async () => {
+          session += 1;
+          worker.abortStarting();
+
           const task = running.then(async () => {
             worker.stop();
             clearRuns();

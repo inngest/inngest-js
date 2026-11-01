@@ -3,7 +3,7 @@
  * What an area of the tour server is. An area is one file in `areas/` that
  * exports `area`: a function from the shared context to the routes it
  * answers, the event-stream events a new browser should get, and what it
- * does when the page is opened, Run is pressed or the tour stops. The server
+ * does when a page is opened or Run is pressed. The server
  * loads every file in `areas/`, so a new area touches no other file.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -12,18 +12,6 @@ import type { DevServer } from "./devserver.ts";
 import type { Hub } from "./hub.ts";
 import type { LoadedPage } from "./lessons.ts";
 import type { Worker } from "./worker.ts";
-
-/**
- * Thrown by a route to answer with a status other than 200.
- */
-export class HttpError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
 
 export interface Call {
   url: URL;
@@ -49,11 +37,10 @@ export interface Area {
   ) => boolean | Promise<boolean>;
   // Events a browser gets when it opens the event stream.
   replay?: () => TourEvent[];
-  // The page was opened, Run was pressed, or the tour was reset.
+  // A page was opened, Run was pressed, or the tour was reset.
   reset?: () => void | Promise<void>;
   // A `start` entry of a manifest: return true when this area sent it.
   send?: (start: Start) => boolean | Promise<boolean>;
-  stop?: () => void | Promise<void>;
 }
 
 export interface TourContext {
