@@ -1,0 +1,497 @@
+{
+  "model": "qwen3-0.6b",
+  "uri": "hf:unsloth/Qwen3-0.6B-GGUF:Q4_K_M",
+  "file": "/home/nixos/.cache/agents-tour-models/hf_unsloth_Qwen3-0.6B.Q4_K_M.gguf",
+  "sizeBytes": 396705472,
+  "loadMs": 5155.845729000001,
+  "peakRssBytes": 2004234240,
+  "cache": true,
+  "threads": 2,
+  "machine": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12600K",
+    "logicalCores": 16,
+    "totalMemGb": 23,
+    "loadavgAtEnd": [
+      51.07,
+      42.62,
+      34.75
+    ]
+  },
+  "runs": [
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "toolCalls": [],
+          "ms": 79220.086086,
+          "firstTokenMs": 944.1307889999989,
+          "outputTokens": 57,
+          "promptTokens": 105,
+          "pass": true,
+          "note": "tools=0 codes=2 len=219"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n2. **404 Not Found** – The requested resource is not available.",
+          "text": "2. **404 Not Found** – The requested resource is not available.",
+          "toolCalls": [],
+          "ms": 3131.7987279999943,
+          "firstTokenMs": 1148.6846340000047,
+          "outputTokens": 18,
+          "promptTokens": 137,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 82351.88481399999,
+      "load": 15.79
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **405 Method Not Allowed** – The client sent an incorrect method.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **405 Method Not Allowed** – The client sent an incorrect method.",
+          "toolCalls": [],
+          "ms": 2588.530562,
+          "firstTokenMs": 256.4118330000056,
+          "outputTokens": 57,
+          "promptTokens": 105,
+          "pass": true,
+          "note": "tools=0 codes=3 len=209"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.",
+          "toolCalls": [],
+          "ms": 2079.921174000003,
+          "firstTokenMs": 469.0773300000001,
+          "outputTokens": 38,
+          "promptTokens": 157,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 4668.451736000003,
+      "load": 96
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request** – The server cannot process the request.  \n2. **404 Not Found** – The requested resource is not found.  \n3. **500 Internal Server Error** – The server is unable to handle the request.",
+          "text": "1. **400 Bad Request** – The server cannot process the request.  \n2. **404 Not Found** – The requested resource is not found.  \n3. **500 Internal Server Error** – The server is unable to handle the request.",
+          "toolCalls": [],
+          "ms": 2396.9971170000063,
+          "firstTokenMs": 108.63974899999448,
+          "outputTokens": 57,
+          "promptTokens": 105,
+          "pass": true,
+          "note": "tools=0 codes=2 len=206"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here are the three HTTP status codes that indicate a client made a mistake:\n\n1. **400 Bad Request** – The server cannot process the request.  \n2. **404 Not Found** – The requested resource is not found.  \n3. **500 Internal Server Error** – The server is unable to handle the request.",
+          "text": "Sure! Here are the three HTTP status codes that indicate a client made a mistake:\n\n1. **400 Bad Request** – The server cannot process the request.  \n2. **404 Not Found** – The requested resource is not found.  \n3. **500 Internal Server Error** – The server is unable to handle the request.",
+          "toolCalls": [],
+          "ms": 3514.6848809999938,
+          "firstTokenMs": 558.4987929999916,
+          "outputTokens": 74,
+          "promptTokens": 193,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 5911.681998,
+      "load": 89.67
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource was not found.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource was not found.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "toolCalls": [],
+          "ms": 3038.10983999999,
+          "firstTokenMs": 122.83815100000356,
+          "outputTokens": 57,
+          "promptTokens": 105,
+          "pass": true,
+          "note": "tools=0 codes=2 len=216"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource was not found.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource was not found.",
+          "toolCalls": [],
+          "ms": 4493.535413999998,
+          "firstTokenMs": 524.6231260000059,
+          "outputTokens": 38,
+          "promptTokens": 157,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 7531.645253999988,
+      "load": 83.93
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "text": "1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "toolCalls": [],
+          "ms": 3719.718921000007,
+          "firstTokenMs": 359.0602590000053,
+          "outputTokens": 57,
+          "promptTokens": 105,
+          "pass": true,
+          "note": "tools=0 codes=2 len=219"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here are three HTTP status codes that mean the client made a mistake, listed with their numbers and descriptions:\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "text": "Sure! Here are three HTTP status codes that mean the client made a mistake, listed with their numbers and descriptions:\n\n1. **400 Bad Request** – Client made a mistake in requesting a resource.  \n2. **404 Not Found** – The requested resource is not available.  \n3. **500 Internal Server Error** – The server encountered an unexpected error.",
+          "toolCalls": [],
+          "ms": 3510.126078000001,
+          "firstTokenMs": 529.6470039999986,
+          "outputTokens": 80,
+          "promptTokens": 199,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 7229.844999000008,
+      "load": 75.06
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI don't have access to your order details. Could you please provide the order ID and the city you are located in?",
+          "text": "I don't have access to your order details. Could you please provide the order ID and the city you are located in?",
+          "toolCalls": [],
+          "ms": 3285.175657,
+          "firstTokenMs": 2207.9501119999913,
+          "outputTokens": 26,
+          "promptTokens": 428,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means the requested resource is not found.",
+          "text": "HTTP status 404 means the requested resource is not found.",
+          "toolCalls": [],
+          "ms": 1069.1570820000052,
+          "firstTokenMs": 290.47919700000784,
+          "outputTokens": 15,
+          "promptTokens": 416,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 1,
+      "of": 3,
+      "pass": false,
+      "ms": 4354.332739000005,
+      "load": 72.09
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI don't have access to your order details. Could you please provide the order ID?",
+          "text": "I don't have access to your order details. Could you please provide the order ID?",
+          "toolCalls": [],
+          "ms": 1374.080993999989,
+          "firstTokenMs": 251.10032100000535,
+          "outputTokens": 19,
+          "promptTokens": 421,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means the requested resource is not found.",
+          "text": "HTTP status 404 means the requested resource is not found.",
+          "toolCalls": [],
+          "ms": 928.6220620000095,
+          "firstTokenMs": 342.3935239999846,
+          "outputTokens": 15,
+          "promptTokens": 416,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 1,
+      "of": 3,
+      "pass": false,
+      "ms": 2302.7030559999985,
+      "load": 67.2
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI don't have access to your order details. Could you please provide me with the order ID or the order number?",
+          "text": "I don't have access to your order details. Could you please provide me with the order ID or the order number?",
+          "toolCalls": [],
+          "ms": 1165.7564849999908,
+          "firstTokenMs": 216.58694199999445,
+          "outputTokens": 25,
+          "promptTokens": 427,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means the requested resource is not found.",
+          "text": "HTTP status 404 means the requested resource is not found.",
+          "toolCalls": [],
+          "ms": 847.7887060000212,
+          "firstTokenMs": 303.9914369999897,
+          "outputTokens": 15,
+          "promptTokens": 416,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 1,
+      "of": 3,
+      "pass": false,
+      "ms": 2013.545191000012,
+      "load": 62.54
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI don't have access to your order details. Could you please provide the order ID?",
+          "text": "I don't have access to your order details. Could you please provide the order ID?",
+          "toolCalls": [],
+          "ms": 1012.024516000005,
+          "firstTokenMs": 228.25194300001021,
+          "outputTokens": 19,
+          "promptTokens": 421,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means the requested resource is not found.",
+          "text": "HTTP status 404 means the requested resource is not found.",
+          "toolCalls": [],
+          "ms": 865.1693089999899,
+          "firstTokenMs": 272.551827999996,
+          "outputTokens": 15,
+          "promptTokens": 416,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 1,
+      "of": 3,
+      "pass": false,
+      "ms": 1877.1938249999948,
+      "load": 62.54
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI don't have access to your order details. Could you please provide me with the order ID?",
+          "text": "I don't have access to your order details. Could you please provide me with the order ID?",
+          "toolCalls": [],
+          "ms": 1055.2582650000113,
+          "firstTokenMs": 202.59909299999708,
+          "outputTokens": 21,
+          "promptTokens": 423,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means the requested resource is not found.",
+          "text": "HTTP status 404 means the requested resource is not found.",
+          "toolCalls": [],
+          "ms": 897.2288110000081,
+          "firstTokenMs": 258.0115349999978,
+          "outputTokens": 15,
+          "promptTokens": 416,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 1,
+      "of": 3,
+      "pass": false,
+      "ms": 1952.4870760000194,
+      "load": 62.54
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI don't have access to the PR 42 review process. Could you please provide more details or clarify what you need?",
+          "text": "I don't have access to the PR 42 review process. Could you please provide more details or clarify what you need?",
+          "toolCalls": [],
+          "ms": 4171.963403000002,
+          "firstTokenMs": 2844.292788999999,
+          "outputTokens": 27,
+          "promptTokens": 533,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 4171.963403000002,
+      "load": 58.33
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI cannot get PR 42 reviewed directly. Could you please provide more details or specify what needs to be reviewed?",
+          "text": "I cannot get PR 42 reviewed directly. Could you please provide more details or specify what needs to be reviewed?",
+          "toolCalls": [],
+          "ms": 1253.2669340000139,
+          "firstTokenMs": 115.27938000002177,
+          "outputTokens": 25,
+          "promptTokens": 531,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 1253.2669340000139,
+      "load": 54.38
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI cannot get PR 42 reviewed directly. Could you please provide more details or clarify what you need?",
+          "text": "I cannot get PR 42 reviewed directly. Could you please provide more details or clarify what you need?",
+          "toolCalls": [],
+          "ms": 1869.3386290000053,
+          "firstTokenMs": 335.4296709999908,
+          "outputTokens": 23,
+          "promptTokens": 529,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 1869.3386290000053,
+      "load": 54.38
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI don't have access to PR 42. Could you please provide more details or clarify what you need?",
+          "text": "I don't have access to PR 42. Could you please provide more details or clarify what you need?",
+          "toolCalls": [],
+          "ms": 1466.2161799999885,
+          "firstTokenMs": 179.101548000006,
+          "outputTokens": 24,
+          "promptTokens": 530,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 1466.2161799999885,
+      "load": 54.38
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI cannot get PR 42 reviewed directly. Could you please provide more details about the request or the specific issue you'd like me to review?",
+          "text": "I cannot get PR 42 reviewed directly. Could you please provide more details about the request or the specific issue you'd like me to review?",
+          "toolCalls": [],
+          "ms": 1677.0379700000049,
+          "firstTokenMs": 145.29069600001094,
+          "outputTokens": 31,
+          "promptTokens": 537,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 1677.0379700000049,
+      "load": 54.38
+    }
+  ]
+}

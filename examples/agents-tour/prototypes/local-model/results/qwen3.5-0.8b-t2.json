@@ -1,0 +1,646 @@
+{
+  "model": "qwen3.5-0.8b",
+  "uri": "hf:unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M",
+  "file": "/home/nixos/.cache/agents-tour-models/hf_unsloth_Qwen3.5-0.8B.Q4_K_M.gguf",
+  "sizeBytes": 532517120,
+  "loadMs": 6370.1373010000025,
+  "peakRssBytes": 1673297920,
+  "cache": true,
+  "threads": 2,
+  "machine": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12600K",
+    "logicalCores": 16,
+    "totalMemGb": 23,
+    "loadavgAtEnd": [
+      17.99,
+      24.01,
+      28.66
+    ]
+  },
+  "runs": [
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid HTTP request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit for the service.\n\nThese codes are commonly used to indicate specific errors in web requests, helping clients and developers understand the nature of the issue.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid HTTP request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit for the service.\n\nThese codes are commonly used to indicate specific errors in web requests, helping clients and developers understand the nature of the issue.",
+          "toolCalls": [],
+          "ms": 9838.671747,
+          "firstTokenMs": 588.733236,
+          "outputTokens": 104,
+          "promptTokens": 154,
+          "pass": true,
+          "note": "tools=0 codes=3 len=452"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid HTTP request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit for the service.\n\nThese codes are commonly used to indicate specific errors in web requests, helping clients and developers understand the nature of the issue.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid HTTP request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit for the service.\n\nThese codes are commonly used to indicate specific errors in web requests, helping clients and developers understand the nature of the issue.",
+          "toolCalls": [],
+          "ms": 7720.595664,
+          "firstTokenMs": 1080.3756549999962,
+          "outputTokens": 104,
+          "promptTokens": 272,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 17559.267411,
+      "load": 17.92
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent a request that the server could not process or interpret correctly.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or has no valid credentials to access the server's resources.\n\n3. **403 Forbidden**\n   - Meaning: The server does not have permission to access the requested resource or the client is not authorized to access it.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent a request that the server could not process or interpret correctly.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or has no valid credentials to access the server's resources.\n\n3. **403 Forbidden**\n   - Meaning: The server does not have permission to access the requested resource or the client is not authorized to access it.",
+          "toolCalls": [],
+          "ms": 5668.940652999998,
+          "firstTokenMs": 158.59049799999775,
+          "outputTokens": 96,
+          "promptTokens": 146,
+          "pass": true,
+          "note": "tools=0 codes=3 len=404"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent a request that the server could not process or interpret correctly.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or has no valid credentials to access the server's resources.\n\n3. **403 Forbidden**\n   - Meaning: The server does not have permission to access the requested resource or the client is not authorized to access it.\n\nThese codes are standard in HTTP/HTTPS and commonly used in web development to indicate specific types of errors.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent a request that the server could not process or interpret correctly.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or has no valid credentials to access the server's resources.\n\n3. **403 Forbidden**\n   - Meaning: The server does not have permission to access the requested resource or the client is not authorized to access it.\n\nThese codes are standard in HTTP/HTTPS and commonly used in web development to indicate specific types of errors.",
+          "toolCalls": [],
+          "ms": 8329.597734000003,
+          "firstTokenMs": 974.1571570000015,
+          "outputTokens": 118,
+          "promptTokens": 278,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 13998.538387,
+      "load": 19.55
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authorized to perform the requested action.\n\n3. **403 Forbidden**\n   - Meaning: The client does not have permission to perform the requested action.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authorized to perform the requested action.\n\n3. **403 Forbidden**\n   - Meaning: The client does not have permission to perform the requested action.",
+          "toolCalls": [],
+          "ms": 5177.938622999995,
+          "firstTokenMs": 182.91957099999854,
+          "outputTokens": 75,
+          "promptTokens": 125,
+          "pass": true,
+          "note": "tools=0 codes=3 len=291"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authorized to perform the requested action.\n\n3. **403 Forbidden**\n   - Meaning: The client does not have permission to perform the requested action.\n\nThese codes are commonly used in web development and API design to indicate specific types of errors.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authorized to perform the requested action.\n\n3. **403 Forbidden**\n   - Meaning: The client does not have permission to perform the requested action.\n\nThese codes are commonly used in web development and API design to indicate specific types of errors.",
+          "toolCalls": [],
+          "ms": 10294.399233000004,
+          "firstTokenMs": 865.747374000006,
+          "outputTokens": 94,
+          "promptTokens": 233,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 15472.337855999998,
+      "load": 20.09
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit or is throttled by the server.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit or is throttled by the server.",
+          "toolCalls": [],
+          "ms": 6417.709264000005,
+          "firstTokenMs": 229.40003300001263,
+          "outputTokens": 84,
+          "promptTokens": 134,
+          "pass": true,
+          "note": "tools=0 codes=3 len=331"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit or is throttled by the server.\n\nThese are the three most common HTTP status codes that indicate a client made a mistake or error.",
+          "text": "1. **400 Bad Request**\n   - Meaning: The client sent an invalid or malformed request.\n\n2. **401 Unauthorized**\n   - Meaning: The client is not authenticated or lacks the necessary permissions to access the resource.\n\n3. **429 Too Many Requests**\n   - Meaning: The client has exceeded their rate limit or is throttled by the server.\n\nThese are the three most common HTTP status codes that indicate a client made a mistake or error.",
+          "toolCalls": [],
+          "ms": 8061.706639000011,
+          "firstTokenMs": 1058.4827189999924,
+          "outputTokens": 104,
+          "promptTokens": 252,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 14479.415903000016,
+      "load": 23.41
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. **400 Bad Request**\n   - **Meaning:** The client sent an invalid HTTP request.\n   - **Context:** This is the most common error code in web development, indicating that the server cannot process the request due to a malformed or incorrect request.\n\n2. **401 Unauthorized**\n   - **Meaning:** The client is not authenticated.\n   - **Context:** This occurs when the client sends a request without valid credentials, such as a password or token.\n\n3. **403 Forbidden**\n   - **Meaning:** The client does not have permission to access the resource.\n   - **Context:** This is typically used when the server denies access to a resource due to lack of permissions or authentication.\n\nThese codes are commonly used in web development to communicate errors to the client, ensuring proper error handling and user experience.",
+          "text": "1. **400 Bad Request**\n   - **Meaning:** The client sent an invalid HTTP request.\n   - **Context:** This is the most common error code in web development, indicating that the server cannot process the request due to a malformed or incorrect request.\n\n2. **401 Unauthorized**\n   - **Meaning:** The client is not authenticated.\n   - **Context:** This occurs when the client sends a request without valid credentials, such as a password or token.\n\n3. **403 Forbidden**\n   - **Meaning:** The client does not have permission to access the resource.\n   - **Context:** This is typically used when the server denies access to a resource due to lack of permissions or authentication.\n\nThese codes are commonly used in web development to communicate errors to the client, ensuring proper error handling and user experience.",
+          "toolCalls": [],
+          "ms": 11877.887944000002,
+          "firstTokenMs": 229.73492299999634,
+          "outputTokens": 182,
+          "promptTokens": 232,
+          "pass": false,
+          "note": "tools=0 codes=3 len=813"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\n1. **400 Bad Request**\n   - **Meaning:** The client sent an invalid HTTP request.\n   - **Context:** This is the most common error code in web development, indicating that the server cannot process the request due to a malformed or incorrect request.\n\n2. **401 Unauthorized**\n   - **Meaning:** The client is not authenticated.\n   - **Context:** This occurs when the client sends a request without valid credentials, such as a password or token.\n\n3. **403 Forbidden**\n   - **Meaning:** The client does not have permission to access the resource.\n   - **Context:** This is typically used when the server denies access to a resource due to lack of permissions or authentication.\n\nThese codes are commonly used in web development to communicate errors to the client, ensuring proper error handling and user experience.",
+          "text": "1. **400 Bad Request**\n   - **Meaning:** The client sent an invalid HTTP request.\n   - **Context:** This is the most common error code in web development, indicating that the server cannot process the request due to a malformed or incorrect request.\n\n2. **401 Unauthorized**\n   - **Meaning:** The client is not authenticated.\n   - **Context:** This occurs when the client sends a request without valid credentials, such as a password or token.\n\n3. **403 Forbidden**\n   - **Meaning:** The client does not have permission to access the resource.\n   - **Context:** This is typically used when the server denies access to a resource due to lack of permissions or authentication.\n\nThese codes are commonly used in web development to communicate errors to the client, ensuring proper error handling and user experience.",
+          "toolCalls": [],
+          "ms": 13546.202676,
+          "firstTokenMs": 1716.6295269999973,
+          "outputTokens": 182,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 1,
+      "of": 2,
+      "pass": false,
+      "ms": 25424.090620000003,
+      "load": 23.17
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 6115.832697999998,
+          "firstTokenMs": 4288.329538000005,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** by UPS. The estimated delivery date is **November 4, 2026**.",
+          "text": "Your order A-1043 is currently **shipped** by UPS. The estimated delivery date is **November 4, 2026**.",
+          "toolCalls": [],
+          "ms": 2588.308989000012,
+          "firstTokenMs": 688.085150999992,
+          "outputTokens": 34,
+          "promptTokens": 639,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status code 404 means \"Not Found\" - it indicates that the request couldn't be fulfilled.\n\nThis is a common error that occurs when:\n\n1. **The URL doesn't exist** - The request is being sent to a page that doesn't exist\n2. **The request is to a non-existent resource** - The server doesn't have the data you're asking for\n3. **The request is to a different endpoint** - The request is being sent to a different URL than the one you intended\n\n## What to do about it:\n\n1. **Check the URL** - Make sure you're sending the correct URL\n2. **Verify the page exists** - Ensure the page you're trying to access actually exists\n3. **Try a different approach** - Sometimes you might need to use a different method or endpoint\n\nWould you like me to help you with something else?",
+          "text": "HTTP status code 404 means \"Not Found\" - it indicates that the request couldn't be fulfilled.\n\nThis is a common error that occurs when:\n\n1. **The URL doesn't exist** - The request is being sent to a page that doesn't exist\n2. **The request is to a non-existent resource** - The server doesn't have the data you're asking for\n3. **The request is to a different endpoint** - The request is being sent to a different URL than the one you intended\n\n## What to do about it:\n\n1. **Check the URL** - Make sure you're sending the correct URL\n2. **Verify the page exists** - Ensure the page you're trying to access actually exists\n3. **Try a different approach** - Sometimes you might need to use a different method or endpoint\n\nWould you like me to help you with something else?",
+          "toolCalls": [],
+          "ms": 14077.054608999999,
+          "firstTokenMs": 3965.1086529999884,
+          "outputTokens": 187,
+          "promptTokens": 708,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 22781.19629600001,
+      "load": 20.19
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 6135.417167000007,
+          "firstTokenMs": 4541.179330999992,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** by UPS. The estimated delivery date is **November 4, 2026**.",
+          "text": "Your order A-1043 is currently **shipped** by UPS. The estimated delivery date is **November 4, 2026**.",
+          "toolCalls": [],
+          "ms": 2921.6524540000246,
+          "firstTokenMs": 892.5771470000036,
+          "outputTokens": 34,
+          "promptTokens": 639,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status 404 means \"Not Found\" or \"Not Found\". This is a standard HTTP status code that indicates that the requested resource (URL) does not exist on the server's server.\n\n## What it means:\n\n- **HTTP 404** - \"Not Found\"\n- **HTTP 400** - \"Bad Request\"\n- **HTTP 401** - \"Unauthorized\"\n- **HTTP 403** - \"Forbidden\"\n- **HTTP 404** - \"Not Found\"\n\n## Common Causes:\n\n1. **The URL doesn't exist** - The page you're trying to access doesn't exist\n2. **The URL is wrong** - You're trying to access a page that doesn't exist\n3. **The page is not accessible** - The page is not reachable from the server\n4. **The page is not loaded** - The page is not being served to the browser\n\n## How to handle it:\n\n1. **Check the URL** - Make sure you're accessing the correct page\n2. **Try a different browser** - Sometimes a different browser or device can resolve the URL\n3. **Check the browser console** - Some browsers show error messages in the console\n4. **Contact support** - If you're still having trouble, contact your support team\n\nWould you like me to help you with something else?",
+          "text": "HTTP status 404 means \"Not Found\" or \"Not Found\". This is a standard HTTP status code that indicates that the requested resource (URL) does not exist on the server's server.\n\n## What it means:\n\n- **HTTP 404** - \"Not Found\"\n- **HTTP 400** - \"Bad Request\"\n- **HTTP 401** - \"Unauthorized\"\n- **HTTP 403** - \"Forbidden\"\n- **HTTP 404** - \"Not Found\"\n\n## Common Causes:\n\n1. **The URL doesn't exist** - The page you're trying to access doesn't exist\n2. **The URL is wrong** - You're trying to access a page that doesn't exist\n3. **The page is not accessible** - The page is not reachable from the server\n4. **The page is not loaded** - The page is not being served to the browser\n\n## How to handle it:\n\n1. **Check the URL** - Make sure you're accessing the correct page\n2. **Try a different browser** - Sometimes a different browser or device can resolve the URL\n3. **Check the browser console** - Some browsers show error messages in the console\n4. **Contact support** - If you're still having trouble, contact your support team\n\nWould you like me to help you with something else?",
+          "toolCalls": [],
+          "ms": 26920.053814999992,
+          "firstTokenMs": 4854.461219000019,
+          "outputTokens": 295,
+          "promptTokens": 816,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 35977.12343600002,
+      "load": 17.98
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 8924.286773999978,
+          "firstTokenMs": 6480.125392000016,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** by **UPS** and is expected to arrive on **November 4, 2026**.",
+          "text": "Your order A-1043 is currently **shipped** by **UPS** and is expected to arrive on **November 4, 2026**.",
+          "toolCalls": [],
+          "ms": 2913.6390529999917,
+          "firstTokenMs": 773.1752449999913,
+          "outputTokens": 36,
+          "promptTokens": 641,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "12345"
+              }
+            }
+          ],
+          "ms": 6117.672150000028,
+          "firstTokenMs": 4048.056912,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=lookup_order"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 17955.597976999998,
+      "load": 17.24
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 6324.716554999992,
+          "firstTokenMs": 4887.162607000006,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** by UPS, with an estimated delivery date of **November 4, 2026**.",
+          "text": "Your order A-1043 is currently **shipped** by UPS, with an estimated delivery date of **November 4, 2026**.",
+          "toolCalls": [],
+          "ms": 2438.0748890000104,
+          "firstTokenMs": 802.6779370000004,
+          "outputTokens": 35,
+          "promptTokens": 640,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nHTTP status code 404 means \"Not Found\" or \"Resource Not Found\". This indicates that the server couldn't locate the requested resource.\n\nHere's what to do about it:\n\n1. **Check the URL** - Verify that the URL you're trying to access is correct and doesn't have any typos\n2. **Check the request** - Ensure you're sending the correct HTTP method (GET, POST, etc.) and headers\n3. **Check the request body** - Make sure the request body is properly formatted\n4. **Check the server** - Verify that the server is running and accessible\n5. **Check the browser** - Make sure you're using the correct browser and address\n\nIf you're experiencing a 404 error, I can help you investigate further by looking up the specific order or providing more context about what you're trying to access.",
+          "text": "HTTP status code 404 means \"Not Found\" or \"Resource Not Found\". This indicates that the server couldn't locate the requested resource.\n\nHere's what to do about it:\n\n1. **Check the URL** - Verify that the URL you're trying to access is correct and doesn't have any typos\n2. **Check the request** - Ensure you're sending the correct HTTP method (GET, POST, etc.) and headers\n3. **Check the request body** - Make sure the request body is properly formatted\n4. **Check the server** - Verify that the server is running and accessible\n5. **Check the browser** - Make sure you're using the correct browser and address\n\nIf you're experiencing a 404 error, I can help you investigate further by looking up the specific order or providing more context about what you're trying to access.",
+          "toolCalls": [],
+          "ms": 18058.992862000014,
+          "firstTokenMs": 3817.326301000023,
+          "outputTokens": 183,
+          "promptTokens": 704,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 26821.784306000016,
+      "load": 18.93
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\nI can help you find information about your order. Let me look up order A-1043 to see its status.\n\n",
+          "text": "I can help you find information about your order. Let me look up order A-1043 to see its status.",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 7222.094809000002,
+          "firstTokenMs": 3915.086456000019,
+          "outputTokens": 28,
+          "promptTokens": 586,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** by UPS, with an estimated delivery date of **November 4, 2026**.",
+          "text": "Your order A-1043 is currently **shipped** by UPS, with an estimated delivery date of **November 4, 2026**.",
+          "toolCalls": [],
+          "ms": 4193.772631,
+          "firstTokenMs": 1351.90264700001,
+          "outputTokens": 35,
+          "promptTokens": 666,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "12345"
+              }
+            }
+          ],
+          "ms": 6584.245651000005,
+          "firstTokenMs": 4744.772324999998,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=lookup_order"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 18000.113091000007,
+      "load": 19.9
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "agent_pr_review"
+              }
+            }
+          ],
+          "ms": 7238.08963599999,
+          "firstTokenMs": 5548.799105000013,
+          "outputTokens": 1,
+          "promptTokens": 659,
+          "pass": false,
+          "note": "calls=describe_agent"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 7238.08963599999,
+      "load": 19.07
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "PR42"
+              }
+            }
+          ],
+          "ms": 2030.7669900000037,
+          "firstTokenMs": 173.3398659999948,
+          "outputTokens": 1,
+          "promptTokens": 659,
+          "pass": false,
+          "note": "calls=describe_agent"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 2030.7669900000037,
+      "load": 18.02
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "pr_reviewer"
+              }
+            }
+          ],
+          "ms": 2227.240951999993,
+          "firstTokenMs": 183.0381659999839,
+          "outputTokens": 1,
+          "promptTokens": 659,
+          "pass": false,
+          "note": "calls=describe_agent"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 2227.240951999993,
+      "load": 18.34
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "pr_reviewer"
+              }
+            }
+          ],
+          "ms": 1961.4797039999976,
+          "firstTokenMs": 211.8787350000057,
+          "outputTokens": 1,
+          "promptTokens": 659,
+          "pass": false,
+          "note": "calls=describe_agent"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 1961.4797039999976,
+      "load": 18.34
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "pr_reviewer"
+              }
+            }
+          ],
+          "ms": 2184.908311999985,
+          "firstTokenMs": 214.74194800000987,
+          "outputTokens": 1,
+          "promptTokens": 659,
+          "pass": false,
+          "note": "calls=describe_agent"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 2184.908311999985,
+      "load": 17.99
+    }
+  ]
+}

@@ -1,0 +1,637 @@
+{
+  "model": "qwen3-1.7b",
+  "uri": "hf:unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
+  "file": "/home/nixos/.cache/agents-tour-models/hf_unsloth_Qwen3-1.7B.Q4_K_M.gguf",
+  "sizeBytes": 1107409472,
+  "loadMs": 26490.872725,
+  "peakRssBytes": 3251023872,
+  "cache": true,
+  "threads": 2,
+  "machine": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12600K",
+    "logicalCores": 16,
+    "totalMemGb": 23,
+    "loadavgAtEnd": [
+      16.54,
+      33.41,
+      30.73
+    ]
+  },
+  "runs": [
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "text": "1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "toolCalls": [],
+          "ms": 78817.380364,
+          "firstTokenMs": 10687.679209000005,
+          "outputTokens": 28,
+          "promptTokens": 76,
+          "pass": true,
+          "note": "tools=0 codes=3 len=65"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "text": "Sure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "toolCalls": [],
+          "ms": 19238.146936999998,
+          "firstTokenMs": 4614.766785,
+          "outputTokens": 54,
+          "promptTokens": 144,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 98055.527301,
+      "load": 42.25
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "text": "1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "toolCalls": [],
+          "ms": 5300.015061999991,
+          "firstTokenMs": 251.92235499998787,
+          "outputTokens": 28,
+          "promptTokens": 76,
+          "pass": true,
+          "note": "tools=0 codes=3 len=65"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "text": "Sure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "toolCalls": [],
+          "ms": 12937.078358999992,
+          "firstTokenMs": 1453.7565430000104,
+          "outputTokens": 54,
+          "promptTokens": 144,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 18237.093420999983,
+      "load": 85.94
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "text": "1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "toolCalls": [],
+          "ms": 4279.723574999982,
+          "firstTokenMs": 409.57714199999464,
+          "outputTokens": 28,
+          "promptTokens": 76,
+          "pass": true,
+          "note": "tools=0 codes=3 len=65"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "text": "Sure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "toolCalls": [],
+          "ms": 8750.742739999987,
+          "firstTokenMs": 2571.634388000006,
+          "outputTokens": 54,
+          "promptTokens": 144,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 13030.466314999969,
+      "load": 75.38
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "text": "1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "toolCalls": [],
+          "ms": 4641.737911000004,
+          "firstTokenMs": 383.0143269999826,
+          "outputTokens": 28,
+          "promptTokens": 76,
+          "pass": true,
+          "note": "tools=0 codes=3 len=65"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "text": "Sure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "toolCalls": [],
+          "ms": 9363.481979000004,
+          "firstTokenMs": 1191.86911900001,
+          "outputTokens": 54,
+          "promptTokens": 144,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 14005.219890000008,
+      "load": 63.22
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "text": "1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden",
+          "toolCalls": [],
+          "ms": 4560.8894119999895,
+          "firstTokenMs": 829.0354609999922,
+          "outputTokens": 28,
+          "promptTokens": 76,
+          "pass": true,
+          "note": "tools=0 codes=3 len=65"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nSure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "text": "Sure! Here's the list again with the second one highlighted:\n\n1. 400 - Bad Request  \n2. 401 - Unauthorized  \n3. 403 - Forbidden\n\nThe second one is **401 - Unauthorized**.",
+          "toolCalls": [],
+          "ms": 10678.644553999999,
+          "firstTokenMs": 1826.6110430000117,
+          "outputTokens": 54,
+          "promptTokens": 144,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 15239.533965999988,
+      "load": 54
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 14020.622704000009,
+          "firstTokenMs": 8448.88002099999,
+          "outputTokens": 1,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 6213.805083000014,
+          "firstTokenMs": 1970.2761069999833,
+          "outputTokens": 30,
+          "promptTokens": 506,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nThe HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "text": "The HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "toolCalls": [],
+          "ms": 9149.649958000024,
+          "firstTokenMs": 1320.2697160000098,
+          "outputTokens": 28,
+          "promptTokens": 429,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 29384.077745000046,
+      "load": 46.78
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 4396.381783999997,
+          "firstTokenMs": 634.5121710000094,
+          "outputTokens": 1,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 5817.035310000007,
+          "firstTokenMs": 1605.4618070000142,
+          "outputTokens": 30,
+          "promptTokens": 506,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nThe HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "text": "The HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "toolCalls": [],
+          "ms": 4736.510780000011,
+          "firstTokenMs": 689.7041230000032,
+          "outputTokens": 28,
+          "promptTokens": 429,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 14949.927874000015,
+      "load": 37.23
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 4965.573220999999,
+          "firstTokenMs": 1247.9652769999811,
+          "outputTokens": 1,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 5390.099241000018,
+          "firstTokenMs": 1549.6257719999994,
+          "outputTokens": 30,
+          "promptTokens": 506,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nThe HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "text": "The HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "toolCalls": [],
+          "ms": 3647.9817619999812,
+          "firstTokenMs": 778.3987879999913,
+          "outputTokens": 28,
+          "promptTokens": 429,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 14003.654223999998,
+      "load": 35.38
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 4462.678885000001,
+          "firstTokenMs": 759.769066000008,
+          "outputTokens": 1,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 5893.427178000013,
+          "firstTokenMs": 1761.9688290000195,
+          "outputTokens": 30,
+          "promptTokens": 506,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nThe HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "text": "The HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "toolCalls": [],
+          "ms": 4705.440581000003,
+          "firstTokenMs": 834.6454680000024,
+          "outputTokens": 28,
+          "promptTokens": 429,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 15061.546644000016,
+      "load": 32.04
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 4562.477340999991,
+          "firstTokenMs": 770.2416319999902,
+          "outputTokens": 1,
+          "promptTokens": 428,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 has been shipped by UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 4961.558935999987,
+          "firstTokenMs": 1546.500141000026,
+          "outputTokens": 30,
+          "promptTokens": 506,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\nThe HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "text": "The HTTP status 404 means \"Not Found.\" It indicates that the server could not find the requested resource on the server.",
+          "toolCalls": [],
+          "ms": 3453.9216320000123,
+          "firstTokenMs": 778.4265969999833,
+          "outputTokens": 28,
+          "promptTokens": 429,
+          "pass": true,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 3,
+      "of": 3,
+      "pass": true,
+      "ms": 12977.95790899999,
+      "load": 28.87
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI can't assist with that request. Please provide more details or clarify your request.",
+          "text": "I can't assist with that request. Please provide more details or clarify your request.",
+          "toolCalls": [],
+          "ms": 9769.54323000001,
+          "firstTokenMs": 8008.391524000035,
+          "outputTokens": 18,
+          "promptTokens": 524,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 9769.54323000001,
+      "load": 25.84
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\n<List agents>\n",
+          "text": "I need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\n<List agents>",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "PR"
+              }
+            }
+          ],
+          "ms": 5143.069286999991,
+          "firstTokenMs": 314.26462099998025,
+          "outputTokens": 30,
+          "promptTokens": 555,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\nI found agents that can help with reviewing a PR. Here are the details:\n\n1. **platform/reviewer**: Reviews a pull request and reports what it finds.\n2. **platform/triager**: Reads new issues, labels them, and assigns an owner.\n3. **platform/release-notes**: Drafts release notes from merged pull requests.\n\nI need to choose which agent to use. Let me describe the agent to see what it requires.\n\n<describe_agent id=\"platform/reviewer\">",
+          "text": "I found agents that can help with reviewing a PR. Here are the details:\n\n1. **platform/reviewer**: Reviews a pull request and reports what it finds.\n2. **platform/triager**: Reads new issues, labels them, and assigns an owner.\n3. **platform/release-notes**: Drafts release notes from merged pull requests.\n\nI need to choose which agent to use. Let me describe the agent to see what it requires.\n\n<describe_agent id=\"platform/reviewer\">",
+          "toolCalls": [],
+          "ms": 11653.526868999994,
+          "firstTokenMs": 2312.9723140000133,
+          "outputTokens": 99,
+          "promptTokens": 735,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 16796.596155999985,
+      "load": 23.72
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI cannot directly get PR 42 reviewed. However, I can help you with tasks related to GitHub PRs, such as reviewing PRs, fetching PR details, or interacting with GitHub's API. Let me know how I can assist you.",
+          "text": "I cannot directly get PR 42 reviewed. However, I can help you with tasks related to GitHub PRs, such as reviewing PRs, fetching PR details, or interacting with GitHub's API. Let me know how I can assist you.",
+          "toolCalls": [],
+          "ms": 5003.9783790000365,
+          "firstTokenMs": 332.73170900001423,
+          "outputTokens": 51,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 5003.9783790000365,
+      "load": 21.04
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\n<List agents>\n",
+          "text": "I need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\n<List agents>",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "PR"
+              }
+            }
+          ],
+          "ms": 4983.705669999996,
+          "firstTokenMs": 359.47896100004436,
+          "outputTokens": 30,
+          "promptTokens": 555,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\nI found agents that can help with reviewing a PR. Here are the details:\n\n1. **platform/reviewer**: Reviews a pull request and reports what it finds.\n2. **platform/triager**: Reads new issues, labels them, and assigns an owner.\n3. **platform/release-notes**: Drafts release notes from merged pull requests.\n\nI need to choose which agent to use. Let me describe the agent to see what it requires.\n\n<describe_agent id=\"platform/reviewer\">",
+          "text": "I found agents that can help with reviewing a PR. Here are the details:\n\n1. **platform/reviewer**: Reviews a pull request and reports what it finds.\n2. **platform/triager**: Reads new issues, labels them, and assigns an owner.\n3. **platform/release-notes**: Drafts release notes from merged pull requests.\n\nI need to choose which agent to use. Let me describe the agent to see what it requires.\n\n<describe_agent id=\"platform/reviewer\">",
+          "toolCalls": [],
+          "ms": 11084.275059000007,
+          "firstTokenMs": 2205.0380200000363,
+          "outputTokens": 99,
+          "promptTokens": 735,
+          "pass": false,
+          "note": "calls=none args=undefined"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 16067.980729000003,
+      "load": 20.07
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\nLet me list the agents I can start or message.",
+          "text": "I need to find out which agent can help with reviewing a PR. Let me list the agents to see what they can do.\n\nLet me list the agents I can start or message.",
+          "toolCalls": [],
+          "ms": 3623.8306030000094,
+          "firstTokenMs": 284.7023930000141,
+          "outputTokens": 38,
+          "promptTokens": 544,
+          "pass": false,
+          "note": "calls=none"
+        }
+      ],
+      "reached": 0,
+      "of": 4,
+      "pass": false,
+      "ms": 3623.8306030000094,
+      "load": 16.54
+    }
+  ]
+}

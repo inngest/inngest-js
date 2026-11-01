@@ -1,0 +1,792 @@
+{
+  "model": "qwen3.5-2b",
+  "uri": "hf:unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+  "file": "/home/nixos/.cache/agents-tour-models/hf_unsloth_Qwen3.5-2B.Q4_K_M.gguf",
+  "sizeBytes": 1280835840,
+  "loadMs": 8351.060280999998,
+  "peakRssBytes": 2741342208,
+  "cache": true,
+  "threads": 2,
+  "machine": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12600K",
+    "logicalCores": 16,
+    "totalMemGb": 23,
+    "loadavgAtEnd": [
+      21.44,
+      26.34,
+      29.04
+    ]
+  },
+  "runs": [
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\nHere are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request (e.g., malformed syntax, missing required parameters, or incorrect HTTP method).\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it (e.g., the user does not have permission to access the requested resource).",
+          "text": "Here are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request (e.g., malformed syntax, missing required parameters, or incorrect HTTP method).\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it (e.g., the user does not have permission to access the requested resource).",
+          "toolCalls": [],
+          "ms": 61193.76060899999,
+          "firstTokenMs": 2134.798922999995,
+          "outputTokens": 135,
+          "promptTokens": 185,
+          "pass": false,
+          "note": "tools=0 codes=3 len=575"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nThe second HTTP status code that indicates the client made a mistake is:\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n\n*Note: While 401 is often associated with authentication failures, it is technically a client-side error (the client sent invalid or missing credentials), whereas 403 Forbidden is more about server-side permission issues. However, in the context of \"client made a mistake,\" 401 is the most common answer for credential-related errors.*\n\n**Correction:** If you are looking for a code specifically about the client making a mistake (like invalid credentials), **401 Unauthorized** is the standard answer. However, if you want a code where the server *understood* the request but the client made a mistake (like sending the wrong method or body), **400 Bad Request** is the best fit.\n\nLet's clarify based on your previous request for \"client made a mistake\":\n\n1.  **400 Bad Request** - The client made a mistake (e.g., invalid syntax).\n2.  **401 Unauthorized** - The client made a mistake (e.g., invalid credentials).\n3.  **403 Forbidden** - The server refused the request (client made a mistake in permissions).\n\nIf you need a specific code where the *server* understood the request but the *client* made a mistake (like sending the wrong method), **400 Bad Request** is the best fit.\n\n**Final Answer:**\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request (e.g., malformed syntax, missing required parameters, or incorrect HTTP method).\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it (e.g., the user does not have permission to access the requested resource).",
+          "text": "The second HTTP status code that indicates the client made a mistake is:\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n\n*Note: While 401 is often associated with authentication failures, it is technically a client-side error (the client sent invalid or missing credentials), whereas 403 Forbidden is more about server-side permission issues. However, in the context of \"client made a mistake,\" 401 is the most common answer for credential-related errors.*\n\n**Correction:** If you are looking for a code specifically about the client making a mistake (like invalid credentials), **401 Unauthorized** is the standard answer. However, if you want a code where the server *understood* the request but the client made a mistake (like sending the wrong method or body), **400 Bad Request** is the best fit.\n\nLet's clarify based on your previous request for \"client made a mistake\":\n\n1.  **400 Bad Request** - The client made a mistake (e.g., invalid syntax).\n2.  **401 Unauthorized** - The client made a mistake (e.g., invalid credentials).\n3.  **403 Forbidden** - The server refused the request (client made a mistake in permissions).\n\nIf you need a specific code where the *server* understood the request but the *client* made a mistake (like sending the wrong method), **400 Bad Request** is the best fit.\n\n**Final Answer:**\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request (e.g., malformed syntax, missing required parameters, or incorrect HTTP method).\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received the request but does not recognize the authorization credentials provided by the client.\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it (e.g., the user does not have permission to access the requested resource).",
+          "toolCalls": [],
+          "ms": 132810.998433,
+          "firstTokenMs": 15542.628112999984,
+          "outputTokens": 453,
+          "promptTokens": 652,
+          "pass": false,
+          "note": "second=401 asks=true"
+        }
+      ],
+      "reached": 0,
+      "of": 2,
+      "pass": false,
+      "ms": 194004.759042,
+      "load": 32.28
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\nHere are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n2.  **401 Unauthorized**\n3.  **403 Forbidden**",
+          "text": "Here are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n2.  **401 Unauthorized**\n3.  **403 Forbidden**",
+          "toolCalls": [],
+          "ms": 6984.556004999962,
+          "firstTokenMs": 429.38872300001094,
+          "outputTokens": 46,
+          "promptTokens": 96,
+          "pass": true,
+          "note": "tools=0 codes=3 len=145"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nThe second HTTP status code that indicates the client made a mistake is:\n\n2.  **401 Unauthorized**\n\nThis code typically means the server received the request but cannot verify the identity of the client (e.g., missing or invalid credentials).",
+          "text": "The second HTTP status code that indicates the client made a mistake is:\n\n2.  **401 Unauthorized**\n\nThis code typically means the server received the request but cannot verify the identity of the client (e.g., missing or invalid credentials).",
+          "toolCalls": [],
+          "ms": 9412.883036000014,
+          "firstTokenMs": 1555.8814169999678,
+          "outputTokens": 52,
+          "promptTokens": 162,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 2,
+      "of": 2,
+      "pass": true,
+      "ms": 16397.439040999976,
+      "load": 35.01
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\nHere are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can occur due to malformed syntax, missing required parameters, or other errors in the request structure.\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request that it considers unauthorized. This typically happens when authentication credentials are missing, invalid, or have expired.\n\n3.  **404 Not Found**\n    *   **Meaning:** The server received the request but could not find the resource requested by the client. This indicates a missing URL or a resource that no longer exists.",
+          "text": "Here are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can occur due to malformed syntax, missing required parameters, or other errors in the request structure.\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request that it considers unauthorized. This typically happens when authentication credentials are missing, invalid, or have expired.\n\n3.  **404 Not Found**\n    *   **Meaning:** The server received the request but could not find the resource requested by the client. This indicates a missing URL or a resource that no longer exists.",
+          "toolCalls": [],
+          "ms": 19141.49338900001,
+          "firstTokenMs": 394.3093070000177,
+          "outputTokens": 152,
+          "promptTokens": 202,
+          "pass": false,
+          "note": "tools=0 codes=3 len=672"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nThe second HTTP status code that indicates the client made a mistake is:\n\n2. **401 Unauthorized**\n    *   **Meaning:** The server received a request that it considers unauthorized. This typically happens when authentication credentials are missing, invalid, or have expired.\n\nIf you need more details or have further questions, feel free to ask!",
+          "text": "The second HTTP status code that indicates the client made a mistake is:\n\n2. **401 Unauthorized**\n    *   **Meaning:** The server received a request that it considers unauthorized. This typically happens when authentication credentials are missing, invalid, or have expired.\n\nIf you need more details or have further questions, feel free to ask!",
+          "toolCalls": [],
+          "ms": 12155.570148999977,
+          "firstTokenMs": 3264.405689999985,
+          "outputTokens": 73,
+          "promptTokens": 289,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 1,
+      "of": 2,
+      "pass": false,
+      "ms": 31297.063537999988,
+      "load": 31.11
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\nHere are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can happen if the client sends malformed data, uses the wrong HTTP method (e.g., GET instead of POST), or sends a request with missing required parameters.\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request for an authenticated resource, but the authentication credentials were invalid or expired. This often occurs when a client tries to access a protected endpoint without a valid token or password.\n\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it. This typically happens when the client has the correct credentials and the correct method, but lacks the necessary permissions or rights to access the requested resource.",
+          "text": "Here are three HTTP status codes that indicate the client made a mistake:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can happen if the client sends malformed data, uses the wrong HTTP method (e.g., GET instead of POST), or sends a request with missing required parameters.\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request for an authenticated resource, but the authentication credentials were invalid or expired. This often occurs when a client tries to access a protected endpoint without a valid token or password.\n\n3.  **403 Forbidden**\n    *   **Meaning:** The server understood the request but refuses to authorize it. This typically happens when the client has the correct credentials and the correct method, but lacks the necessary permissions or rights to access the requested resource.",
+          "toolCalls": [],
+          "ms": 24024.378785999957,
+          "firstTokenMs": 388.37975399999414,
+          "outputTokens": 187,
+          "promptTokens": 237,
+          "pass": false,
+          "note": "tools=0 codes=3 len=870"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nThe second HTTP status code you asked for is:\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request for an authenticated resource, but the authentication credentials were invalid or expired. This often occurs when a client tries to access a protected endpoint without a valid token or password.",
+          "text": "The second HTTP status code you asked for is:\n\n2.  **401 Unauthorized**\n    *   **Meaning:** The server received a request for an authenticated resource, but the authentication credentials were invalid or expired. This often occurs when a client tries to access a protected endpoint without a valid token or password.",
+          "toolCalls": [],
+          "ms": 13950.598751000012,
+          "firstTokenMs": 3771.503927999991,
+          "outputTokens": 67,
+          "promptTokens": 318,
+          "pass": true,
+          "note": "second=401 asks=false"
+        }
+      ],
+      "reached": 1,
+      "of": 2,
+      "pass": false,
+      "ms": 37974.97753699997,
+      "load": 26.17
+    },
+    {
+      "scenario": "answer",
+      "steps": [
+        {
+          "label": "answer",
+          "requestSummary": "user: Name three HTTP status codes that mean the client made a mistake, as a numbered list with the code a",
+          "raw": "\n\nHere are three HTTP status codes that indicate the client made a mistake, along with their names:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can happen if the request contains syntax errors, malformed data, or is missing required fields.\n2.  **404 Not Found**\n    *   **Meaning:** The server was unable to find the requested resource on the server. This is often used when a URL is incorrect or the resource does not exist.\n3.  **405 Method Not Allowed**\n    *   **Meaning:** The server received a request for a resource, but the method (e.g., GET, POST) used is not allowed for that specific resource.\n4.  **406 Not Acceptable**\n    *   **Meaning:** The server cannot fulfill the request because the requested resource is not available in the requested format or media type.\n5.  **410 Gone**\n    *   **Meaning:** The server has permanently removed the resource. This is often used when a resource is deleted or is no longer available.\n6.  **422 Unprocessable Entity**\n    *   **Meaning:** The server was able to parse the request and understand the content, but it could not process it. This is often used when the request is valid but the server cannot perform the action (e.g., validation errors).\n7.  **429 Too Many Requests**\n    *   **Meaning:** The server has received too many requests from the client within a specific time period. This is often used to prevent rate limiting or abuse.\n8.  **500 Internal Server Error**\n    *   **Meaning:** The server encountered an unexpected condition that prevented it from fulfilling the request. This is a generic error that indicates a problem within the server itself.\n9.  **502 Bad Gateway**\n    *   **Meaning:** The server received an error while acting as a gateway or proxy. This is often used when the server cannot connect to the upstream server to fulfill the request.\n10. **503 Service Unavailable**\n    *   **Meaning:** The server is currently unable to handle the request due to temporary overloading or maintenance. This is often used when the server is busy or undergoing maintenance.\n11. **504 Gateway",
+          "text": "Here are three HTTP status codes that indicate the client made a mistake, along with their names:\n\n1.  **400 Bad Request**\n    *   **Meaning:** The server received an invalid request. This can happen if the request contains syntax errors, malformed data, or is missing required fields.\n2.  **404 Not Found**\n    *   **Meaning:** The server was unable to find the requested resource on the server. This is often used when a URL is incorrect or the resource does not exist.\n3.  **405 Method Not Allowed**\n    *   **Meaning:** The server received a request for a resource, but the method (e.g., GET, POST) used is not allowed for that specific resource.\n4.  **406 Not Acceptable**\n    *   **Meaning:** The server cannot fulfill the request because the requested resource is not available in the requested format or media type.\n5.  **410 Gone**\n    *   **Meaning:** The server has permanently removed the resource. This is often used when a resource is deleted or is no longer available.\n6.  **422 Unprocessable Entity**\n    *   **Meaning:** The server was able to parse the request and understand the content, but it could not process it. This is often used when the request is valid but the server cannot perform the action (e.g., validation errors).\n7.  **429 Too Many Requests**\n    *   **Meaning:** The server has received too many requests from the client within a specific time period. This is often used to prevent rate limiting or abuse.\n8.  **500 Internal Server Error**\n    *   **Meaning:** The server encountered an unexpected condition that prevented it from fulfilling the request. This is a generic error that indicates a problem within the server itself.\n9.  **502 Bad Gateway**\n    *   **Meaning:** The server received an error while acting as a gateway or proxy. This is often used when the server cannot connect to the upstream server to fulfill the request.\n10. **503 Service Unavailable**\n    *   **Meaning:** The server is currently unable to handle the request due to temporary overloading or maintenance. This is often used when the server is busy or undergoing maintenance.\n11. **504 Gateway",
+          "toolCalls": [],
+          "ms": 80254.01094499999,
+          "firstTokenMs": 299.306746999966,
+          "outputTokens": 511,
+          "promptTokens": 560,
+          "pass": false,
+          "note": "tools=0 codes=7 len=2112"
+        },
+        {
+          "label": "follow-up",
+          "requestSummary": "user: and the second one?",
+          "raw": "\n\nThe second HTTP status code that indicates the client made a mistake is:\n\n**404 Not Found**\n*   **Meaning:** The server was unable to find the requested resource on the server. This is often used when a URL is incorrect or the resource does not exist.",
+          "text": "The second HTTP status code that indicates the client made a mistake is:\n\n**404 Not Found**\n*   **Meaning:** The server was unable to find the requested resource on the server. This is often used when a URL is incorrect or the resource does not exist.",
+          "toolCalls": [],
+          "ms": 18518.508756000025,
+          "firstTokenMs": 10400.509176000021,
+          "outputTokens": 59,
+          "promptTokens": 634,
+          "pass": true,
+          "note": "second=404 asks=false"
+        }
+      ],
+      "reached": 1,
+      "of": 2,
+      "pass": false,
+      "ms": 98772.51970100001,
+      "load": 19.83
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 18294.308485999994,
+          "firstTokenMs": 10969.835687000013,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 9129.727283999964,
+          "firstTokenMs": 2087.6744789999793,
+          "outputTokens": 33,
+          "promptTokens": 638,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "search_docs",
+              "input": {
+                "query": "HTTP status 404"
+              }
+            }
+          ],
+          "ms": 14825.996092999994,
+          "firstTokenMs": 10678.443903999985,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=search_docs"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 42250.03186299995,
+      "load": 19.41
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 21769.560048999963,
+          "firstTokenMs": 16726.935357999988,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\n\nYour order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 9210.749796000018,
+          "firstTokenMs": 2411.6779630000237,
+          "outputTokens": 34,
+          "promptTokens": 638,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "search_docs",
+              "input": {
+                "query": "HTTP status 404"
+              }
+            }
+          ],
+          "ms": 17226.822725999984,
+          "firstTokenMs": 12580.242773000035,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=search_docs"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 48207.132570999966,
+      "load": 23.38
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 15549.49091599998,
+          "firstTokenMs": 10912.516466999892,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\nYour order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 9667.590159000014,
+          "firstTokenMs": 2891.3117179999826,
+          "outputTokens": 33,
+          "promptTokens": 638,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "search_docs",
+              "input": {
+                "query": "HTTP status 404"
+              }
+            }
+          ],
+          "ms": 17321.59031999996,
+          "firstTokenMs": 12171.882985000033,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=search_docs"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 42538.671394999954,
+      "load": 24.72
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 16008.522436000057,
+          "firstTokenMs": 11205.31057500001,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\n\nYour order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 6377.743235999951,
+          "firstTokenMs": 1885.4046500000404,
+          "outputTokens": 34,
+          "promptTokens": 638,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "search_docs",
+              "input": {
+                "query": "HTTP status 404"
+              }
+            }
+          ],
+          "ms": 24894.209297999972,
+          "firstTokenMs": 20170.197851000004,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=search_docs"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 47280.47496999998,
+      "load": 21.44
+    },
+    {
+      "scenario": "tool",
+      "steps": [
+        {
+          "label": "call",
+          "requestSummary": "user: Where is my order A-1043?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "lookup_order",
+              "input": {
+                "order_id": "A-1043"
+              }
+            }
+          ],
+          "ms": 16781.201876999927,
+          "firstTokenMs": 12428.909665999934,
+          "outputTokens": 1,
+          "promptTokens": 559,
+          "pass": true,
+          "note": "calls=lookup_order args={\"order_id\":\"A-1043\"}"
+        },
+        {
+          "label": "final",
+          "requestSummary": "tool results: lookup_order",
+          "raw": "\n\n\nYour order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "text": "Your order A-1043 is currently **shipped** via UPS and is expected to arrive on November 4, 2026.",
+          "toolCalls": [],
+          "ms": 7778.640329999966,
+          "firstTokenMs": 2073.88343799999,
+          "outputTokens": 34,
+          "promptTokens": 638,
+          "pass": true,
+          "note": "tools=0"
+        },
+        {
+          "label": "no-tool",
+          "requestSummary": "user: What does HTTP status 404 mean?",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "search_docs",
+              "input": {
+                "query": "HTTP status 404"
+              }
+            }
+          ],
+          "ms": 18893.503879999975,
+          "firstTokenMs": 14760.634537999984,
+          "outputTokens": 1,
+          "promptTokens": 557,
+          "pass": false,
+          "note": "calls=search_docs"
+        }
+      ],
+      "reached": 2,
+      "of": 3,
+      "pass": false,
+      "ms": 43453.34608699987,
+      "load": 27.61
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "review"
+              }
+            }
+          ],
+          "ms": 21014.235979999998,
+          "firstTokenMs": 16081.596511000069,
+          "outputTokens": 1,
+          "promptTokens": 657,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "start_agent",
+              "input": {
+                "id": "platform/reviewer",
+                "input": {}
+              }
+            }
+          ],
+          "ms": 7812.841552000027,
+          "firstTokenMs": 2806.5255709999474,
+          "outputTokens": 2,
+          "promptTokens": 774,
+          "pass": false,
+          "note": "calls=start_agent args={\"id\":\"platform/reviewer\",\"input\":{}}"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 28827.077532000025,
+      "load": 31.35
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "review"
+              }
+            }
+          ],
+          "ms": 5234.310418999987,
+          "firstTokenMs": 435.3570309999632,
+          "outputTokens": 1,
+          "promptTokens": 657,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "start_agent",
+              "input": {
+                "id": "platform/reviewer",
+                "input": {}
+              }
+            }
+          ],
+          "ms": 14093.684069000068,
+          "firstTokenMs": 2978.206476000021,
+          "outputTokens": 2,
+          "promptTokens": 774,
+          "pass": false,
+          "note": "calls=start_agent args={\"id\":\"platform/reviewer\",\"input\":{}}"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 19327.994488000055,
+      "load": 27.85
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\nI'll help you review PR 42. Let me first check what agents are available to see if there's a code review or PR review agent.\n\n",
+          "text": "I'll help you review PR 42. Let me first check what agents are available to see if there's a code review or PR review agent.",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "review"
+              }
+            }
+          ],
+          "ms": 9652.367528000032,
+          "firstTokenMs": 574.3927119999425,
+          "outputTokens": 33,
+          "promptTokens": 689,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\nI found an agent that can review pull requests. Let me start it and provide you with the PR details.\n\n",
+          "text": "I found an agent that can review pull requests. Let me start it and provide you with the PR details.",
+          "toolCalls": [
+            {
+              "name": "start_agent",
+              "input": {
+                "id": "platform/reviewer",
+                "input": {}
+              }
+            }
+          ],
+          "ms": 10850.647222000058,
+          "firstTokenMs": 2964.2367869999725,
+          "outputTokens": 24,
+          "promptTokens": 828,
+          "pass": false,
+          "note": "calls=start_agent args={\"id\":\"platform/reviewer\",\"input\":{}}"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 20503.01475000009,
+      "load": 28.87
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "review"
+              }
+            }
+          ],
+          "ms": 3637.320390000008,
+          "firstTokenMs": 369.2733250000747,
+          "outputTokens": 1,
+          "promptTokens": 657,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "start_agent",
+              "input": {
+                "id": "platform/reviewer",
+                "input": {}
+              }
+            }
+          ],
+          "ms": 6959.2315669999225,
+          "firstTokenMs": 2511.0028269999893,
+          "outputTokens": 2,
+          "promptTokens": 774,
+          "pass": false,
+          "note": "calls=start_agent args={\"id\":\"platform/reviewer\",\"input\":{}}"
+        }
+      ],
+      "reached": 1,
+      "of": 4,
+      "pass": false,
+      "ms": 10596.55195699993,
+      "load": 25.77
+    },
+    {
+      "scenario": "chain",
+      "steps": [
+        {
+          "label": "list_agents",
+          "requestSummary": "user: Get PR 42 reviewed.",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "list_agents",
+              "input": {
+                "query": "review"
+              }
+            }
+          ],
+          "ms": 3897.2474619999994,
+          "firstTokenMs": 581.0218230000464,
+          "outputTokens": 1,
+          "promptTokens": 657,
+          "pass": true,
+          "note": "calls=list_agents"
+        },
+        {
+          "label": "describe_agent",
+          "requestSummary": "tool results: list_agents",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "describe_agent",
+              "input": {
+                "id": "platform/reviewer"
+              }
+            }
+          ],
+          "ms": 7234.663040000014,
+          "firstTokenMs": 2833.2864740000805,
+          "outputTokens": 1,
+          "promptTokens": 769,
+          "pass": true,
+          "note": "calls=describe_agent args={\"id\":\"platform/reviewer\"}"
+        },
+        {
+          "label": "start_agent",
+          "requestSummary": "tool results: describe_agent",
+          "raw": "\n\n",
+          "text": "",
+          "toolCalls": [
+            {
+              "name": "start_agent",
+              "input": {
+                "id": "platform/reviewer",
+                "input": {}
+              }
+            }
+          ],
+          "ms": 6857.374763999949,
+          "firstTokenMs": 2493.611523000058,
+          "outputTokens": 1,
+          "promptTokens": 877,
+          "pass": false,
+          "note": "calls=start_agent args={\"id\":\"platform/reviewer\",\"input\":{}}"
+        }
+      ],
+      "reached": 2,
+      "of": 4,
+      "pass": false,
+      "ms": 17989.285265999963,
+      "load": 24.66
+    }
+  ]
+}

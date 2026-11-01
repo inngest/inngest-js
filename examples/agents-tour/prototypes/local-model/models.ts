@@ -13,6 +13,8 @@ export interface Candidate {
 }
 
 export const candidates: Candidate[] = [
+  { name: "qwen3-0.6b", uri: "hf:unsloth/Qwen3-0.6B-GGUF:Q4_K_M" },
+  { name: "qwen3.5-0.8b", uri: "hf:unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M" },
   { name: "qwen3-1.7b", uri: "hf:unsloth/Qwen3-1.7B-GGUF:Q4_K_M" },
   {
     name: "qwen3-4b-instruct-2507",
