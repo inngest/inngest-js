@@ -52,7 +52,6 @@ import {
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
-import { parseWithAsync } from "./validate.ts";
 import type { AgentPrice } from "./cost.ts";
 import {
   type ConfigValue,
@@ -151,6 +150,7 @@ import {
   type ThreadTriggerEvent,
   type ThreadTriggers,
 } from "./threadTrigger.ts";
+import { parseWithAsync } from "./validate.ts";
 
 /**
  * The options of a plain Inngest function that an agent takes as they are.

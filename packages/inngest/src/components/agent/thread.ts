@@ -16,7 +16,6 @@ import type { InngestApi } from "../../api/api.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
-import { parseWithAsync } from "./validate.ts";
 import {
   type AgentMessageData,
   type AgentRequestData,
@@ -31,6 +30,7 @@ import { nextCount } from "./executionCounter.ts";
 import { type KvScopeInstance, type KvSource, kvFrom } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
+import { parseWithAsync } from "./validate.ts";
 
 /**
  * The name of the event `thread.send()` sends.

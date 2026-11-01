@@ -20,21 +20,14 @@ import {
   type ChannelTrigger,
   defineChannel,
 } from "./channels.ts";
-import {
-  apiError,
-  postJson,
-  resolveToken,
-  retryableStatus,
-} from "./http.ts";
+import { apiError, postJson, resolveToken, retryableStatus } from "./http.ts";
+import { truncate } from "./text.ts";
 import {
   assertAllowed,
   assertSignal,
   objectSchema,
   parseWith,
 } from "./validate.ts";
-import {
-  truncate,
-} from "./text.ts";
 
 /**
  * The `data` of a `slack/message` event.

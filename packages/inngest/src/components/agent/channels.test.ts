@@ -17,8 +17,8 @@ import {
 import { github, githubCommentEvent } from "./github.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { slack, slackMessageEvent } from "./slack.ts";
-import { truncate } from "./text.ts";
 import { run } from "./test-helpers.ts";
+import { truncate } from "./text.ts";
 
 const recorder = () => {
   const posts: ChannelMessage[] = [];
