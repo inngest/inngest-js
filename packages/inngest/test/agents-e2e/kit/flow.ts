@@ -128,6 +128,13 @@ export interface Flow {
     rows?: string[];
 
     /**
+     * How many ticks each row carries, by the row's display name: the messages
+     * that arrived at an inbox, or that a read took. A row not listed carries
+     * none. Ticks are never rows themselves.
+     */
+    ticks?: Record<string, number>;
+
+    /**
      * How many steps the run holds when its function last ran: every step
      * saved in its state, messages included.
      */
@@ -494,6 +501,27 @@ const runCell = async (
       failures.push(
         `trace rows ${JSON.stringify(rows)}, wanted ${JSON.stringify(distinct(flow.expect.rows))}`,
       );
+    }
+
+    if (flow.expect.ticks) {
+      const counts = Object.fromEntries(
+        Object.entries(run.ticks).map(([row, ticks]) => {
+          return [
+            row,
+            new Set(ticks.map((tick) => `${tick.id}/${tick.readAt !== null}`))
+              .size,
+          ];
+        }),
+      );
+
+      if (
+        JSON.stringify(sortKeys(counts)) !==
+        JSON.stringify(sortKeys(flow.expect.ticks))
+      ) {
+        failures.push(
+          `ticks ${JSON.stringify(counts)}, wanted ${JSON.stringify(flow.expect.ticks)}`,
+        );
+      }
     }
   } catch (error) {
     failures.push(`error: ${(error as Error).message}`);

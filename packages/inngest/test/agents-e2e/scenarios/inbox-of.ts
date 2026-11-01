@@ -51,7 +51,17 @@ const ofSkipsOtherTypes: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:of:agents-e2e/inbox-of/a:next",
+    ],
+    ticks: {
+      inbox: 2,
+      "inbox:next": 1,
+      "inbox:of:agents-e2e/inbox-of/a:next": 1,
+    },
     steps: 4,
   },
 };
@@ -81,7 +91,12 @@ const twoViewsInParallel: Flow = {
   expect: {
     output: { a: 2, b: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:of:agents-e2e/inbox-of/a:next",
+      "inbox:of:agents-e2e/inbox-of/b:next",
+    ],
     steps: 4,
   },
 };
@@ -117,7 +132,12 @@ const sameFilterSameReader: Flow = {
   expect: {
     output: { first: 1, second: 2, same: true },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:of:agents-e2e/inbox-of/a:next",
+      "inbox:of:agents-e2e/inbox-of/a:next:1",
+    ],
     steps: 4,
   },
 };
@@ -152,7 +172,12 @@ const viewReadsFromTheStart: Flow = {
   expect: {
     output: { root: 1, view: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:of:agents-e2e/inbox-of/b:next",
+    ],
     steps: 4,
   },
 };

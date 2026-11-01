@@ -43,7 +43,8 @@ const idleNextThenMessage: Flow = {
   expect: {
     output: { n: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
+    ticks: { inbox: 1, "inbox:next": 1 },
     steps: 3,
   },
 };
@@ -74,7 +75,8 @@ const twoWaits: Flow = {
   expect: {
     output: { first: 1, second: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
+    ticks: { inbox: 2, "inbox:next": 1, "inbox:next:1": 1 },
     steps: 4,
   },
 };

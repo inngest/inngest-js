@@ -52,6 +52,13 @@ export interface RunInfo {
   steps: string[];
 
   /**
+   * The ticks the trace rolled onto each row, by the row's display name: the
+   * messages that arrived at an inbox, or that a read took (those have
+   * `readAt`). Ticks are never rows of their own.
+   */
+  ticks: Record<string, { id: string; at: string; readAt: string | null }[]>;
+
+  /**
    * The Dev Server's IDs for the steps: the SHA-1 of the ID the function gave
    * them. `toHaveSteps` hashes the IDs you pass, so you never read these.
    */
@@ -219,6 +226,18 @@ const gql = async (devUrl: string, query: string, variables: object) => {
   return json.data;
 };
 
+const ticksOf = (found: any[]): RunInfo["ticks"] => {
+  const byRow: RunInfo["ticks"] = {};
+
+  for (const span of found) {
+    if (span.ticks?.length) {
+      byRow[span.name] = [...(byRow[span.name] ?? []), ...span.ticks];
+    }
+  }
+
+  return byRow;
+};
+
 const spans = (span: any): { name: string; stepID: string | null }[] => {
   return (span.childrenSpans ?? []).flatMap((child: any) => {
     return [child, ...spans(child)];
@@ -279,7 +298,7 @@ const hash = (id: string) => {
 const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
   const data = await gql(
     devUrl,
-    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID childrenSpans { name stepID childrenSpans { name stepID childrenSpans { name stepID } } } } } } }`,
+    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } } } } } } } }`,
     { id },
   );
   const run = data.run;
@@ -312,6 +331,7 @@ const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
     steps: found.map((span) => {
       return span.name;
     }),
+    ticks: ticksOf(found),
     stepHashes: found.flatMap((span) => {
       return span.stepID ? [span.stepID] : [];
     }),
