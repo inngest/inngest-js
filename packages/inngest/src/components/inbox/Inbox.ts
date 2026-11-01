@@ -15,7 +15,11 @@ import type { EventPayload } from "../../types.ts";
 import type { InboxRead, Want } from "../execution/inboxState.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { addEventIs } from "../triggers/triggers.ts";
-import type { EventIs, EventTypesToShape } from "../triggers/typeHelpers.ts";
+import type {
+  EventIs,
+  EventTypesToShape,
+  EventTypeToShape,
+} from "../triggers/typeHelpers.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -39,6 +43,44 @@ type OneSource = string | { name: string } | InboxSource;
  * One source or several.
  */
 export type InboxSources = OneSource | readonly OneSource[];
+
+/**
+ * The message of one event type, or of a source that is not one: a name, or an
+ * object with only a name, has no schema, so its messages are the default
+ * `InboxMessage`, whose `data` is `unknown` because nothing says what it is.
+ */
+type TypedMessage<TEvent> = TEvent extends EventTypeWithAnySchema<string>
+  ? EventTypeToShape<TEvent> & EventIs
+  : InboxMessage;
+
+// An event type has an `event` field of its own (its name), so it is checked
+// before the `{ event, if }` form.
+type SourceMessage<TSource> = TSource extends EventTypeWithAnySchema<string>
+  ? TypedMessage<TSource>
+  : TSource extends { event: infer TEvent }
+    ? TypedMessage<TEvent>
+    : TypedMessage<TSource>;
+
+/**
+ * The messages the sources produce: the union of the shapes of the event types
+ * among them. A source written as a name contributes the default message.
+ */
+export type SourcesMessage<TSources> = TSources extends readonly (infer TItem)[]
+  ? SourceMessage<TItem>
+  : SourceMessage<TSources>;
+
+/**
+ * The messages of a view of the given event types under a reader of
+ * `TMessage`: the types asked for, kept to the ones the reader receives.
+ */
+type ViewMessage<TMessage, TTypes> =
+  EventTypesToShape<TTypes> extends infer TShape
+    ? string extends NameOf<TMessage>
+      ? TShape & EventIs
+      : Extract<TMessage, { name: NameOf<TShape> }>
+    : never;
+
+type NameOf<TMessage> = TMessage extends { name: infer TName } ? TName : never;
 
 /**
  * What the executor is told about a source.
@@ -450,7 +492,7 @@ export class Inbox<TMessage = InboxMessage> implements AsyncDisposable {
    */
   of<const T extends InboxTypes>(
     types: T, // the event types the view reads
-  ): Inbox<EventTypesToShape<T> & EventIs> {
+  ): Inbox<ViewMessage<TMessage, T>> {
     const names = [...new Set(namesOf(types))].sort();
     const events = this.#events
       ? names.filter((name) => {
@@ -470,14 +512,16 @@ export class Inbox<TMessage = InboxMessage> implements AsyncDisposable {
       this.#children.push(view);
     }
 
-    return view as unknown as Inbox<EventTypesToShape<T> & EventIs>;
+    return view as unknown as Inbox<ViewMessage<TMessage, T>>;
   }
 
   /**
    * Adds sources to the inbox and returns a view over just them. Each call adds
    * its own sources, even if another view has the same.
    */
-  listen(sources: InboxSources): Inbox<TMessage> {
+  listen<const S extends InboxSources>(
+    sources: S, // the sources to add
+  ): Inbox<SourcesMessage<S>> {
     const op = listenId(this.#base, this.#listens);
     this.#listens += 1;
 
@@ -488,7 +532,7 @@ export class Inbox<TMessage = InboxMessage> implements AsyncDisposable {
     });
     this.#children.push(view);
 
-    return view;
+    return view as unknown as Inbox<SourcesMessage<S>>;
   }
 
   /**
