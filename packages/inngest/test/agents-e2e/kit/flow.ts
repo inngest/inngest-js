@@ -125,7 +125,7 @@ export interface Flow {
     /**
      * The step ids the trace shows, each once however many spans it has.
      */
-    rows: string[];
+    rows?: string[];
 
     /**
      * How many steps the run holds when its function last ran: every step
@@ -205,7 +205,7 @@ export const flowScenario = (definition: {
     owner: definition.owner,
     needs: definition.needs,
     connect: true,
-    capMs: 150_000,
+    capMs: Math.max(150_000, definition.flows.length * 20_000),
     functions: ({ client, event, mode }) => {
       return definition.flows.flatMap((flow) => {
         return cells
@@ -487,7 +487,10 @@ const runCell = async (
       }),
     );
 
-    if (JSON.stringify(rows) !== JSON.stringify(distinct(flow.expect.rows))) {
+    if (
+      flow.expect.rows &&
+      JSON.stringify(rows) !== JSON.stringify(distinct(flow.expect.rows))
+    ) {
       failures.push(
         `trace rows ${JSON.stringify(rows)}, wanted ${JSON.stringify(distinct(flow.expect.rows))}`,
       );

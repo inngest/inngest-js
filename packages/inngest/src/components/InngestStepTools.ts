@@ -769,6 +769,9 @@ export const createStepTools = <
         lastSeen: () => {
           return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
         },
+        place: async (id) => {
+          await getAsyncCtxSync()?.execution?.inbox?.place(id);
+        },
       });
     },
 

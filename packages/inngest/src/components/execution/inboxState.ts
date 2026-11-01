@@ -86,7 +86,7 @@ export const wants = (
  * What a read of an inbox finds in the run's state.
  */
 export type InboxRead =
-  | { found: "message"; message: unknown; timedOut: boolean }
+  | { found: "message"; id: string; message: unknown; timedOut: boolean }
   | { found: "timeout" }
   | { found: "nothing" };
 
@@ -127,7 +127,12 @@ export const inboxRead = (
       }
 
       if (found.found === "nothing" && seen === taken) {
-        found = { found: "message", message: value.data, timedOut: false };
+        found = {
+          found: "message",
+          id,
+          message: value.data,
+          timedOut: false,
+        };
       }
 
       seen += 1;
