@@ -30,9 +30,6 @@ describe("thread message events", () => {
         expectTypeOf(message.data.replyTo).toBeString();
         expectTypeOf(message.data.from).toEqualTypeOf<string | undefined>();
         break;
-      case "agent/stop":
-        expectTypeOf(message.data.when).toEqualTypeOf<"nextTurn">();
-        break;
       case "agent/steer":
       case "agent/message":
         expectTypeOf(message.data.text).toBeString();

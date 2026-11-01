@@ -69,38 +69,23 @@ describe("thread handle", () => {
     ]);
   });
 
-  test("stop nextTurn is a stop message", async () => {
-    const { client, sent } = fakeClient();
-    const thread = getThread(client, "app/bot", "t1");
-
-    expect(await thread.stop({ when: "nextTurn" })).toEqual({ stopped: true });
-
-    expect(sent).toMatchObject([
-      {
-        name: "agent/stop",
-        data: { agent: "app/bot", thread: "t1", when: "nextTurn" },
-        meta: { sessions },
-      },
-    ]);
-  });
-
-  test("stop now cancels the live run by its run ID, whatever the thread key looks like", async () => {
+  test("stop cancels the live run by its run ID, whatever the thread key looks like", async () => {
     const { client, sent, cancelled } = fakeClient();
     const kv = createKv({ adapter: memoryKvAdapter() });
     const thread = getThread(client, "app/bot", "C1/1.2", { kv });
     const state = kv.with(client).scope("thread", "C1/1.2");
 
     // No record: nothing to cancel, and the answer says so.
-    expect(await thread.stop({ when: "now" })).toEqual({ stopped: false });
+    expect(await thread.stop()).toEqual({ stopped: false });
     expect(cancelled).toEqual([]);
 
     await state.set("__state", { status: "waiting", turn: 0, runId: "run-1" });
-    expect(await thread.stop({ when: "now" })).toEqual({ stopped: true });
+    expect(await thread.stop()).toEqual({ stopped: true });
     expect(cancelled).toEqual(["run-1"]);
 
     // A finished run is not cancelled again.
     await state.set("__state", { status: "idle", turn: 0, runId: "run-1" });
-    expect(await thread.stop({ when: "now" })).toEqual({ stopped: false });
+    expect(await thread.stop()).toEqual({ stopped: false });
     expect(cancelled).toEqual(["run-1"]);
     expect(sent).toEqual([]);
   });
@@ -115,9 +100,7 @@ describe("thread handle", () => {
     });
     await store.with(gone.client).scope("thread", "t1").set("__state", record);
     expect(
-      await getThread(gone.client, "app/bot", "t1", { kv: store }).stop({
-        when: "now",
-      }),
+      await getThread(gone.client, "app/bot", "t1", { kv: store }).stop(),
     ).toEqual({ stopped: true });
 
     const broken = fakeClient({
@@ -129,9 +112,7 @@ describe("thread handle", () => {
       .scope("thread", "t2")
       .set("__state", record);
     await expect(
-      getThread(broken.client, "app/bot", "t2", { kv: store }).stop({
-        when: "now",
-      }),
+      getThread(broken.client, "app/bot", "t2", { kv: store }).stop(),
     ).rejects.toThrow(/server error/);
   });
 
@@ -179,9 +160,6 @@ describe("thread handle", () => {
 
     await state.set("__state", { ...base, status: "waiting", runId: "r1" });
     expect((await thread.state()).status).toBe("waiting");
-
-    await state.set("__state", { ...base, status: "stopped", runId: "r1" });
-    expect((await thread.state()).status).toBe("stopped");
   });
 
   test("request outside a function says why it cannot wait", async () => {

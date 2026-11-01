@@ -232,7 +232,7 @@ export const threadKey = scenario({
     const s1Handle = getThread(client, stopRef, `${channel}-stop/s`, {
       kv: store,
     });
-    const s1Stop = await s1.stop({ when: "now" });
+    const s1Stop = await s1.stop();
     ctx.check("stop now found the live run", s1Stop.stopped === true, s1Stop);
 
     // The cancelled run is cleaned up before the next event: otherwise the

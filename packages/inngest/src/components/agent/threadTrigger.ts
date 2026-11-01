@@ -42,7 +42,6 @@ import {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   type TriggerEvent,
 } from "./thread.ts";
 
@@ -275,7 +274,6 @@ const cronEvent = internalEvents.ScheduledTimer;
 const reservedEvents: string[] = [
   agentMessageEvent,
   agentSteerEvent,
-  agentStopEvent,
   agentRequestEvent,
   skillsBakeEvent,
 ];
