@@ -13,31 +13,53 @@ import {
 } from "./inboxTools.ts";
 
 /**
- * An inbox whose listeners get their messages from `queues`, by event name,
- * with a read position of their own, like a view.
+ * An inbox whose named inboxes get their messages from `queues`, by event
+ * name, each with a read position of its own. The thread's own inbox reads the
+ * queue named "handler".
  */
 const fakeInbox = () => {
   const calls: unknown[][] = [];
-  const stopped: string[] = [];
+  const closed: string[] = [];
   const queues = new Map<string, InboxToolMessage[]>();
   const read = new Map<string, number>();
-  let listens = 0;
   let delay = false;
 
-  const queue = (event: string): InboxToolMessage[] => {
-    if (!queues.has(event)) {
-      queues.set(event, []);
+  const queue = (name: string): InboxToolMessage[] => {
+    if (!queues.has(name)) {
+      queues.set(name, []);
     }
 
-    return queues.get(event) as InboxToolMessage[];
+    return queues.get(name) as InboxToolMessage[];
+  };
+  const reader = (key: string, name: string) => {
+    return {
+      next: async (options: { timeout: number | string }) => {
+        calls.push(["next", key, options]);
+
+        const at = read.get(key) ?? 0;
+        const message = queue(name)[at];
+
+        if (message) {
+          read.set(key, at + 1);
+        }
+
+        return message ?? null;
+      },
+      drain: async () => {
+        calls.push(["drain", key]);
+
+        const at = read.get(key) ?? 0;
+
+        read.set(key, queue(name).length);
+
+        return queue(name).slice(at);
+      },
+    };
   };
   const inbox: InboxToolInbox = {
-    listen: async (event, options) => {
-      listens += 1;
-
-      const n = listens;
-
-      calls.push(["listen", event, options]);
+    handler: reader("handler", "handler"),
+    open: async (as, event, options) => {
+      calls.push(["open", as, event, options]);
 
       if (delay) {
         await new Promise<void>((resolve) => {
@@ -45,36 +67,14 @@ const fakeInbox = () => {
         });
       }
 
-      return {
-        stop: async () => {
-          stopped.push(`l${n}`);
-        },
-      };
-    },
-    of: (event) => {
-      const name = String(event);
+      const mine = reader(as, String(event));
 
       return {
-        next: async (options) => {
-          calls.push(["next", name, options]);
+        ...mine,
+        close: async () => {
+          closed.push(as);
 
-          const at = read.get(name) ?? 0;
-          const message = queue(name)[at];
-
-          if (message) {
-            read.set(name, at + 1);
-          }
-
-          return message ?? null;
-        },
-        drain: async () => {
-          calls.push(["drain", name]);
-
-          const at = read.get(name) ?? 0;
-
-          read.set(name, queue(name).length);
-
-          return queue(name).slice(at);
+          return mine.drain();
         },
       };
     },
@@ -83,7 +83,7 @@ const fakeInbox = () => {
   return {
     inbox,
     calls,
-    stopped,
+    closed,
     push: (event: string, ...messages: InboxToolMessage[]) => {
       queue(event).push(...messages);
     },
@@ -131,7 +131,8 @@ describe("inbox_listen", () => {
       }),
     ).resolves.toEqual({ listening: "checks", source: "github/check_run" });
     expect(calls[0]).toEqual([
-      "listen",
+      "open",
+      "checks",
       "github/check_run",
       {
         thread: '"slack:" + event.data.slackThread',
@@ -166,7 +167,7 @@ describe("inbox_listen", () => {
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
 
-    expect(calls[0]?.[2]).toEqual({ thread: "event.data.deployId" });
+    expect(calls[0]?.[3]).toEqual({ thread: "event.data.deployId" });
   });
 
   test.each([
@@ -203,7 +204,7 @@ describe("inbox_listen", () => {
     const tools = createInboxTools(
       {
         ...fake.inbox,
-        listen: async (event, options) => {
+        open: async (as, event, options) => {
           calls += 1;
 
           if (calls === 1) {
@@ -214,7 +215,7 @@ describe("inbox_listen", () => {
             throw new Error("backend down");
           }
 
-          return fake.inbox.listen(event, options);
+          return fake.inbox.open(as, event, options);
         },
       },
       { listen: [{ event: "ci/status", thread: "t" }], maxListeners: 3 },
@@ -226,14 +227,14 @@ describe("inbox_listen", () => {
     const firstSettled = first.catch(() => "failed");
 
     // Stopped and taken again while the first is still pending.
-    const stopped = run("inbox_stop", { as: "a" }).catch(() => "stop-failed");
+    const stopped = run("inbox_close", { as: "a" }).catch(() => "stop-failed");
 
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 1);
     });
     await run("inbox_listen", { source: "ci/status", as: "a" });
     await Promise.all([firstSettled, stopped]);
-    await expect(run("inbox_read", { as: "a" })).resolves.toEqual({
+    await expect(run("inbox_next_batch", { as: "a" })).resolves.toEqual({
       messages: [],
     });
   });
@@ -245,7 +246,7 @@ describe("inbox_listen", () => {
     await call("inbox_listen", { source: "ci/status", as: "b" });
     await expect(
       call("inbox_listen", { source: "ci/status", as: "c" }),
-    ).rejects.toThrow("Already listening 2 times");
+    ).rejects.toThrow("Already 2 inboxes open");
 
     const perSource = setup({ maxListeners: 10 });
 
@@ -298,14 +299,14 @@ describe("inbox_listen", () => {
     const tools = createInboxTools(
       {
         ...fake.inbox,
-        listen: async (event, options) => {
+        open: async (as, event, options) => {
           if (first) {
             first = false;
 
             throw new Error("backend down");
           }
 
-          return fake.inbox.listen(event, options);
+          return fake.inbox.open(as, event, options);
         },
       },
       { listen: [{ event: "ci/status", thread: "t", maxPerRun: 1 }] },
@@ -327,7 +328,7 @@ describe("inbox_listen", () => {
     await call("inbox_listen", { source: "ci/status", as: "a" });
     await expect(
       call("inbox_listen", { source: "ci/status", as: "a" }),
-    ).rejects.toThrow("already running");
+    ).rejects.toThrow("already open");
     expect(() =>
       createInboxTools(fakeInbox().inbox, {
         listen: [
@@ -339,14 +340,14 @@ describe("inbox_listen", () => {
   });
 });
 
-describe("inbox_wait, inbox_read and inbox_stop", () => {
+describe("inbox_next, inbox_next_batch and inbox_close", () => {
   test("wait takes the next message of the listener, marked untrusted, or null on a timeout", async () => {
     const { call, calls, push } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
     push("ci/status", { name: "ci/status", data: { state: "green" } });
 
-    const got = (await call("inbox_wait", { timeout: "10m" })) as {
+    const got = (await call("inbox_next", { timeout: "10m", as: "ci" })) as {
       message: { source: string; content: string };
     };
 
@@ -354,50 +355,45 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     expect(got.message.content).toBe(
       '<untrusted source="ci/status">\n{"state":"green"}\n</untrusted>',
     );
-    expect(calls.at(-1)).toEqual(["next", "ci/status", { timeout: 600_000 }]);
-    await expect(call("inbox_wait", { timeout: "1m" })).resolves.toEqual({
+    expect(calls.at(-1)).toEqual(["next", "ci", { timeout: 600_000 }]);
+    await expect(
+      call("inbox_next", { timeout: "1m", as: "ci" }),
+    ).resolves.toEqual({
       message: null,
     });
   });
 
-  test("wait needs 'as' when more than one listener runs, and a listener to exist", async () => {
+  test("an unknown name is an error that lists the open inboxes", async () => {
     const { call, push } = setup();
 
-    await expect(call("inbox_wait", { timeout: "1m" })).rejects.toThrow(
-      "not listening to anything",
-    );
     await call("inbox_listen", { source: "ci/status", as: "ci" });
     await call("inbox_listen", { source: "github/check_run", as: "gh" });
-    await expect(call("inbox_wait", { timeout: "1m" })).rejects.toThrow(
-      'say which one to wait for with "as"',
-    );
-
     push("github/check_run", { name: "github/check_run", data: { n: 1 } });
 
-    const got = (await call("inbox_wait", { timeout: "1m", as: "gh" })) as {
+    const got = (await call("inbox_next", { timeout: "1m", as: "gh" })) as {
       message: { source: string };
     };
 
     expect(got.message.source).toBe("github/check_run");
     await expect(
-      call("inbox_wait", { timeout: "1m", as: "nope" }),
-    ).rejects.toThrow("No listener named nope. Running: ci, gh.");
+      call("inbox_next", { timeout: "1m", as: "nope" }),
+    ).rejects.toThrow("No inbox named nope. Open: ci, gh.");
   });
 
   test("wait refuses a timeout above maxWait, and 0 reads without waiting", async () => {
     const { call, calls } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await expect(call("inbox_wait", { timeout: "31m" })).rejects.toThrow(
+    await expect(call("inbox_next", { timeout: "31m" })).rejects.toThrow(
       "can wait at most 30m",
     );
-    await call("inbox_wait", { timeout: 0 });
-    expect(calls.at(-1)).toEqual(["drain", "ci/status"]);
+    await call("inbox_next", { timeout: 0, as: "ci" });
+    expect(calls.at(-1)).toEqual(["drain", "ci"]);
   });
 
   test("wait is a suspending tool for run_code", () => {
-    expect(setup().tools.inbox_wait.waits).toBe(true);
-    expect(setup().tools.inbox_read.waits).toBeUndefined();
+    expect(setup().tools.inbox_next.waits).toBe(true);
+    expect(setup().tools.inbox_next_batch.waits).toBeUndefined();
   });
 
   test("read returns what the listeners have not read, long messages clipped", async () => {
@@ -410,14 +406,16 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
       { name: "ci/status", data: { text: "y".repeat(5000) } },
     );
 
-    const { messages } = (await call("inbox_read")) as {
+    const { messages } = (await call("inbox_next_batch", { as: "ci" })) as {
       messages: { source: string; content: string }[];
     };
 
     expect(messages).toHaveLength(2);
     expect(messages[1]?.content).toContain("more characters");
     expect(messages[1]?.content.length).toBeLessThan(4_300);
-    await expect(call("inbox_read")).resolves.toEqual({ messages: [] });
+    await expect(call("inbox_next_batch", { as: "ci" })).resolves.toEqual({
+      messages: [],
+    });
   });
 
   test("read takes what a listener has, and 'as' picks a listener", async () => {
@@ -428,7 +426,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     push("ci/status", { name: "ci/status", data: { n: 1 } });
     push("github/check_run", { name: "github/check_run", data: { n: 99 } });
 
-    const only = (await call("inbox_read", { as: "gh" })) as {
+    const only = (await call("inbox_next_batch", { as: "gh" })) as {
       messages: { source: string }[];
     };
 
@@ -451,11 +449,11 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
       as: "y",
     });
 
-    expect(calls[0]?.[2]).toEqual({
+    expect(calls[0]?.[3]).toEqual({
       thread: "event.data.deployId",
       if: '(event.data.title == "\\") || (true")',
     });
-    expect(calls[1]?.[2]).toEqual({
+    expect(calls[1]?.[3]).toEqual({
       thread: '"slack:" + event.data.slackThread',
       if: '(event.data.repo == "app") && (event.data.title == "a\\nb\\u2028c\\\\")',
     });
@@ -466,7 +464,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
 
     await call("inbox_listen", { source: "ci/status", match: {}, as: "x" });
 
-    expect(calls[0]?.[2]).toEqual({ thread: "event.data.deployId" });
+    expect(calls[0]?.[3]).toEqual({ thread: "event.data.deployId" });
   });
 
   test("a new execution that replays the calls rebuilds the listeners, so wait, read and stop still work", async () => {
@@ -494,10 +492,10 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     await run(second, "inbox_listen", { source: "ci/status", as: "ci" });
     fake.push("ci/status", { name: "ci/status", data: { n: 1 } });
     await expect(
-      run(second, "inbox_wait", { timeout: "1m", as: "ci" }),
+      run(second, "inbox_next", { timeout: "1m", as: "ci" }),
     ).resolves.toMatchObject({ message: { source: "ci/status" } });
-    await expect(run(second, "inbox_stop", { as: "ci" })).resolves.toEqual({
-      stopped: "ci",
+    await expect(run(second, "inbox_close", { as: "ci" })).resolves.toEqual({
+      closed: "ci",
     });
   });
 
@@ -505,38 +503,58 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     const { call } = setup({ maxTotalWait: "50m", maxWait: "30m" });
 
     await call("inbox_listen", { source: "ci/status", as: "a" });
-    await call("inbox_wait", { timeout: "30m" });
-    await expect(call("inbox_wait", { timeout: "30m" })).rejects.toThrow(
+    await call("inbox_next", { timeout: "30m" });
+    await expect(call("inbox_next", { timeout: "30m" })).rejects.toThrow(
       "This run may wait 50m in all",
     );
-    await call("inbox_wait", { timeout: "20m" });
-    await call("inbox_stop", { as: "a" });
+    await call("inbox_next", { timeout: "20m" });
+    await call("inbox_close", { as: "a" });
     await call("inbox_listen", { source: "ci/status", as: "b" });
-    await call("inbox_stop", { as: "b" });
+    await call("inbox_close", { as: "b" });
     await call("inbox_listen", { source: "ci/status", as: "c" });
-    await call("inbox_stop", { as: "c" });
+    await call("inbox_close", { as: "c" });
     // Stopping doesn't give a place back: the default is three per source.
     await expect(
       call("inbox_listen", { source: "ci/status", as: "d" }),
     ).rejects.toThrow("can be listened to 3 times");
   });
 
-  test("two listeners on one event share its messages, so a read shows each once", async () => {
-    const { call, push } = setup({ maxListeners: 5 });
+  test("without 'as' the tools read the thread's own inbox", async () => {
+    const { call, calls, push } = setup();
 
-    await call("inbox_listen", { source: "github/check_run", as: "a" });
-    await call("inbox_listen", {
-      source: "github/check_run",
-      as: "b",
-      if: "event.data.pr == 1",
-    });
-    push("github/check_run", { name: "github/check_run", data: { pr: 1 } });
+    push("handler", { name: "agent/message", data: { text: "hi" } });
 
-    const { messages } = (await call("inbox_read")) as {
-      messages: unknown[];
+    const got = (await call("inbox_next", { timeout: "1m" })) as {
+      message: { source: string };
     };
 
-    expect(messages).toHaveLength(1);
+    expect(got.message.source).toBe("agent/message");
+    expect(calls.at(-1)).toEqual(["next", "handler", { timeout: 60_000 }]);
+
+    push("handler", { name: "agent/steer", data: { text: "x" } });
+
+    const { messages } = (await call("inbox_next_batch")) as {
+      messages: { source: string }[];
+    };
+
+    expect(messages.map((message) => message.source)).toEqual(["agent/steer"]);
+  });
+
+  test("inbox_close returns what the inbox had not read", async () => {
+    const { call, push } = setup();
+
+    await call("inbox_listen", { source: "ci/status", as: "ci" });
+    push("ci/status", { name: "ci/status", data: { n: 1 } });
+
+    const result = (await call("inbox_close", { as: "ci" })) as {
+      closed: string;
+      unread: { source: string }[];
+    };
+
+    expect(result.closed).toBe("ci");
+    expect(result.unread.map((message) => message.source)).toEqual([
+      "ci/status",
+    ]);
   });
 
   test("a failed listen gives back its own slot, not the count it saw", async () => {
@@ -545,7 +563,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     const tools = createInboxTools(
       {
         ...fake.inbox,
-        listen: async (event, options) => {
+        open: async (as, event, options) => {
           await new Promise<void>((resolve) => {
             setTimeout(resolve, 5);
           });
@@ -556,7 +574,7 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
             throw new Error("backend down");
           }
 
-          return fake.inbox.listen(event, options);
+          return fake.inbox.open(as, event, options);
         },
       },
       { listen: [{ event: "ci/status", thread: "t", maxPerRun: 2 }] },
@@ -578,18 +596,18 @@ describe("inbox_wait, inbox_read and inbox_stop", () => {
     );
   });
 
-  test("stop stops the listener and frees its name and its slot", async () => {
-    const { call, stopped } = setup();
+  test("close closes the inbox and frees its name and its slot", async () => {
+    const { call, closed } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "a" });
     await call("inbox_listen", { source: "ci/status", as: "b" });
-    await expect(call("inbox_stop", { as: "a" })).resolves.toEqual({
-      stopped: "a",
+    await expect(call("inbox_close", { as: "a" })).resolves.toEqual({
+      closed: "a",
     });
-    expect(stopped).toEqual(["l1"]);
+    expect(closed).toEqual(["a"]);
     await call("inbox_listen", { source: "ci/status", as: "a" });
-    await expect(call("inbox_stop", { as: "zzz" })).rejects.toThrow(
-      "No listener named zzz. Running: b, a.",
+    await expect(call("inbox_close", { as: "zzz" })).rejects.toThrow(
+      "No inbox named zzz. Open: b, a.",
     );
   });
 });

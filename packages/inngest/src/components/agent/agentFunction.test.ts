@@ -16,6 +16,7 @@ import {
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
+import { agentMessage } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentMessage, type AgentModelResponse, agent } from "./loop.ts";
 import { skills } from "./skills.ts";
@@ -166,7 +167,7 @@ describe("agent function", () => {
                   return !["data", "id", "name", "ts", "user"].includes(key);
                 })
               : null,
-            isMessage: m?.is("agent/message"),
+            isMessage: m?.is(agentMessage),
           };
         });
       },
@@ -471,7 +472,7 @@ describe("inbox sources", () => {
           {
             event: "ci/status",
             thread: "event.data.t",
-            if: 'event.data.state != "ok"',
+            if: 'async.data.state != "ok"',
           },
           {
             event: "deploy/done",
@@ -564,28 +565,18 @@ describe("inbox sources", () => {
     });
   });
 
-  test("listen() adds a source mid-run, stop() removes it, and a source needs a thread or an if", async () => {
+  test("every source is one subscribe of the handler's inbox: the run's own messages and the definition's sources, and no listen op", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [{ event: "ci/status", thread: "event.data.t" }],
+      },
       async ({ inbox }) => {
         await inbox.next();
-        const listener = inbox.listen("ci/status", {
-          thread: "event.data.t",
-        });
-        const heard = await inbox.next();
 
-        await listener.stop();
-
-        let bare: string;
-        try {
-          inbox.listen("ci/status", {} as never);
-          bare = "added";
-        } catch (error) {
-          bare = (error as Error).message;
-        }
-
-        return [heard?.name, bare];
+        return (await inbox.next())?.name;
       },
     );
 
@@ -594,55 +585,77 @@ describe("inbox sources", () => {
       incoming: [ci("red")],
     });
 
-    expect(output).toEqual([
-      "ci/status",
-      "An inbox source needs a `thread` or an `if`.",
-    ]);
+    expect(output).toBe("ci/status");
+
+    const opens = ops.filter((op) => {
+      return (op.opts as { sources?: unknown } | undefined)?.sources;
+    });
+
+    expect(opens).toHaveLength(1);
     expect(
-      ops.map((op) => {
-        return op.op;
+      (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
+        return s.event;
       }),
-    ).toContain("close");
+    ).toEqual(["agent/message", "agent/steer", "agent/request", "ci/status"]);
   });
 
-  test("listen() returns the view of its source: it reads from a position of its own while the main inbox gets the events too", async () => {
+  test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
+    const names = ["reply", "reaction", "mention", "tap", "dry"] as const;
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      {
+        id: "improver",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: names.map((name) => {
+          return {
+            event: `slack/${name}`,
+            if: "async.data.thread == event.data.thread",
+          };
+        }),
+      },
       async ({ inbox }) => {
         await inbox.next();
+        const heard: string[] = [];
 
-        const listener = inbox.listen("ci/status", {
-          thread: "event.data.t",
-        });
-        const viewed = await listener.next({ timeout: "1m" });
-        const unread = await listener.drain();
-        const main = await inbox.next();
+        for (const _ of names) {
+          const next = await inbox.next();
 
-        return [
-          viewed?.name,
-          unread.length,
-          main?.name,
-          typeof listener.stop,
-          Symbol.asyncIterator in listener,
-          Symbol.asyncDispose in listener,
-        ];
+          heard.push(next?.name ?? "none");
+        }
+
+        return heard;
       },
     );
 
-    const { output } = await run(fn, {
+    const { output, ops } = await run(fn, {
       event: trigger("go"),
-      incoming: [ci("red")],
+      incoming: names.map((name) => {
+        return { name: `slack/${name}`, data: { thread: "t1" }, stream: 4 };
+      }),
     });
 
-    expect(output).toEqual([
-      "ci/status",
-      0,
-      "ci/status",
-      "function",
-      true,
-      true,
-    ]);
+    expect(output).toEqual(names.map((name) => `slack/${name}`));
+
+    const sources = ops.flatMap((op) => {
+      return (
+        (op.opts as { sources?: { event: string; if?: string }[] })?.sources ??
+        []
+      );
+    });
+
+    // The if is handed to the executor as written: `event` is the trigger.
+    expect(
+      sources.filter((source) => {
+        return source.event.startsWith("slack/");
+      }),
+    ).toEqual(
+      names.map((name) => {
+        return {
+          event: `slack/${name}`,
+          if: "(async.data.thread == event.data.thread)",
+        };
+      }),
+    );
   });
 
   test("next({ timeout }) returns null when it expires, and a later message is read by the next call", async () => {

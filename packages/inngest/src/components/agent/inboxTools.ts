@@ -88,14 +88,13 @@ export interface InboxToolMessage {
 }
 
 /**
- * A reader of the messages of one listened event: it has a cursor of its own,
- * so reading never takes a message from the conversation, the other listeners
- * or the loop's steering.
+ * A reader of an inbox the tools can reach: the thread's own, or one the model
+ * opened. Each has a read position of its own.
  */
-export interface InboxToolView {
+export interface InboxToolReader {
   /**
-   * The next message after the view's read position, waiting up to `timeout`
-   * for one. Nothing when none came in time.
+   * The next message after the read position, waiting up to `timeout` for one.
+   * Nothing when none came in time.
    */
   next: (options: {
     timeout: number | string;
@@ -109,23 +108,33 @@ export interface InboxToolView {
 }
 
 /**
- * What the tools need of the thread's inbox: `inbox.listen()` and
- * `inbox.of()`.
+ * An inbox the model opened with `inbox_listen`.
+ */
+export interface InboxToolOpened extends InboxToolReader {
+  /**
+   * Ends the inbox. Messages it did not read are returned.
+   */
+  close: () => Promise<InboxToolMessage[]>;
+}
+
+/**
+ * What the tools need of the thread: its inbox, and a way to open a named one.
  */
 export interface InboxToolInbox {
   /**
-   * Starts saving the events that pass `thread` (and `if`) to the thread's
-   * inbox. `stop()` ends it.
+   * The thread's own inbox, which `as` leaves out.
    */
-  listen: (
-    event: string | EventTypeWithAnySchema<string>,
-    options: { thread: string; if?: string },
-  ) => Promise<{ stop: () => Promise<void> }>;
+  handler: InboxToolReader;
 
   /**
-   * A reader of one event's messages with a read position of its own.
+   * Opens a new inbox named `as` on one source: the events that pass `thread`
+   * (and `if`). It is one `step.subscribe`, with an ID made from `as`.
    */
-  of: (event: string | EventTypeWithAnySchema<string>) => InboxToolView;
+  open: (
+    as: string,
+    event: string | EventTypeWithAnySchema<string>,
+    options: { thread: string; if?: string },
+  ) => Promise<InboxToolOpened>;
 }
 
 /**
@@ -133,9 +142,9 @@ export interface InboxToolInbox {
  */
 export type InboxToolName =
   | "inbox_listen"
-  | "inbox_wait"
-  | "inbox_read"
-  | "inbox_stop";
+  | "inbox_next"
+  | "inbox_next_batch"
+  | "inbox_close";
 
 /**
  * The `inboxTools` an agent's body gets for its config's `inboxTools` type
@@ -273,30 +282,26 @@ const render = (message: InboxToolMessage) => {
 
 /**
  * EXPERIMENTAL: The model-facing inbox tools for `inbox`, as `inbox_listen`,
- * `inbox_wait`, `inbox_read` and `inbox_stop`. An agent with `inboxTools` in
- * its config gets them as `inboxTools` in its body; pass them to `agent.loop()`
- * as `tools: { ...inboxTools }`, and to `sandbox.tools.code({ tools })` to give
- * `run_code` scripts the same inbox under the same allowlist.
+ * `inbox_next`, `inbox_next_batch` and `inbox_close`. An agent with
+ * `inboxTools` in its config gets them as `inboxTools` in its body; pass them
+ * to `agent.loop()` as `tools: { ...inboxTools }`, and to
+ * `sandbox.tools.code({ tools })` to give `run_code` scripts the same inbox
+ * under the same allowlist.
  *
- * - `inbox_listen({ source, match?, as })` starts listening in the background
- *   to an allowed source. `as` names the listener, and `match` maps event
- *   fields (`"data.user"`) to the values they must equal; the SDK builds the
- *   CEL, so the model's input is never parsed as an expression.
- * - `inbox_wait({ timeout, as? })` waits for the next message of a listener's
- *   event and returns it, or says that nothing came. In `run_code` it
- *   suspends the script like any waiting tool, so the wait can be long.
- * - `inbox_read({ as? })` returns what has arrived since the last read,
- *   without waiting (`view.drain()`).
- * - `inbox_stop({ as })` stops a listener.
+ * - `inbox_listen({ source, match?, as })` opens a new inbox named `as` on an
+ *   allowed source, and carries on. `match` maps event fields (`"data.user"`)
+ *   to the values they must equal; the SDK builds the CEL, so the model's input
+ *   is never parsed as an expression.
+ * - `inbox_next({ timeout, as? })` waits for the next message of the inbox
+ *   named `as` and returns it, or says that nothing came. Without `as` it
+ *   reads the thread's own inbox. In `run_code` it suspends the script like any
+ *   waiting tool, so the wait can be long.
+ * - `inbox_next_batch({ as? })` returns what has arrived since the last read,
+ *   without waiting.
+ * - `inbox_close({ as })` closes an inbox it opened.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
- * outside. `inbox_wait` and `inbox_read` read the messages of the event a
- * listener listens to through a view of their own, so they never take a stop,
- * a user message or a request from the loop, and a message the loop's steering
- * already handed to the model can still be read. `as` picks the listener's
- * event; the model's `match` narrows what is saved from the moment it listens,
- * and the messages of the event already in the thread are read as they are.
- * Two listeners on one event share its messages.
+ * outside.
  *
  * @example
  * ```ts
@@ -334,51 +339,33 @@ export const createInboxTools = (
     }),
   );
   const allowed = [...sources.keys()].join(", ") || "none";
-  const listeners = new Map<
+  const opened = new Map<
     string,
-    {
-      source: string;
-      ready: Promise<{
-        listener: { stop: () => Promise<void> };
-        view: InboxToolView;
-      }>;
-    }
+    { source: string; ready: Promise<InboxToolOpened> }
   >();
   const started = new Map<string, number>();
-  // One view per event, made as soon as the first listener for it is taken
-  // (before any await), so view numbers follow the order of the calls.
-  const views = new Map<string, InboxToolView>();
-  // The readers to use for `as`: that listener's, or every listener's.
-  const viewsFor = async (as: string | undefined): Promise<InboxToolView[]> => {
-    if (as !== undefined) {
-      const listener = listeners.get(as);
-
-      if (!listener) {
-        throw new Error(
-          `No listener named ${as}. Running: ${[...listeners.keys()].join(", ") || "none"}.`,
-        );
-      }
-
-      return [(await listener.ready).view];
+  // The reader to use for `as`: that inbox, or the thread's own.
+  const readerFor = async (
+    as: string | undefined,
+  ): Promise<InboxToolReader> => {
+    if (as === undefined) {
+      return inbox.handler;
     }
 
-    if (listeners.size === 0) {
-      throw new Error("You are not listening to anything. Use inbox_listen.");
+    const found = opened.get(as);
+
+    if (!found) {
+      throw new Error(
+        `No inbox named ${as}. Open: ${[...opened.keys()].join(", ") || "none"}.`,
+      );
     }
 
-    const ready = await Promise.all(
-      [...listeners.values()].map(async (listener) => {
-        return (await listener.ready).view;
-      }),
-    );
-
-    // Listeners on one event share a view.
-    return [...new Set(ready)];
+    return found.ready;
   };
 
   return {
     inbox_listen: tool.group({
-      description: `Start listening in the background for events from a source, and carry on with your work. What arrives is handed to you at your next turn, or read it with inbox_wait or inbox_read. Sources: ${allowed}. Give "match" (fields of the event and the values they must equal, such as { "data.pr": 12 }) to narrow what you hear, and "as" to name the listener.`,
+      description: `Open a new inbox on a source and carry on with your work. What arrives is handed to you at your next turn, or read it with inbox_next or inbox_next_batch. Sources: ${allowed}. Give "match" (fields of the event and the values they must equal, such as { "data.pr": 12 }) to narrow what you hear, and "as" to name the inbox.`,
       input: z.object({
         source: z.string(),
         match: z
@@ -395,13 +382,13 @@ export const createInboxTools = (
           );
         }
 
-        if (listeners.has(as)) {
-          throw new Error(`A listener named ${as} is already running.`);
+        if (opened.has(as)) {
+          throw new Error(`An inbox named ${as} is already open.`);
         }
 
-        if (listeners.size >= maxListeners) {
+        if (opened.size >= maxListeners) {
           throw new Error(
-            `Already listening ${maxListeners} times. Stop one with inbox_stop first.`,
+            `Already ${maxListeners} inboxes open. Close one with inbox_close first.`,
           );
         }
 
@@ -421,39 +408,29 @@ export const createInboxTools = (
         const filters = [source.if, narrow].filter((filter) => {
           return filter !== undefined && filter !== "";
         });
-        // Taken before the first await, so that listens made at the same time
+
+        // Reserved before the first await, so that opens made at the same time
         // can't pass the same checks.
-        let view = views.get(name);
-
-        if (!view) {
-          view = inbox.of(source.event);
-          views.set(name, view);
-        }
-
-        const reserved = (async () => {
-          const listener = await inbox.listen(source.event, {
-            thread: source.thread,
-            ...(filters.length > 0 && {
-              if: filters
-                .map((filter) => {
-                  return `(${filter})`;
-                })
-                .join(" && "),
-            }),
-          });
-
-          return { listener, view };
-        })();
+        const reserved = inbox.open(as, source.event, {
+          thread: source.thread,
+          ...(filters.length > 0 && {
+            if: filters
+              .map((filter) => {
+                return `(${filter})`;
+              })
+              .join(" && "),
+          }),
+        });
 
         started.set(name, count + 1);
-        listeners.set(as, { source: name, ready: reserved });
+        opened.set(as, { source: name, ready: reserved });
 
         try {
           await reserved;
         } catch (error) {
-          // Only its own entry: the name may have been stopped and taken again.
-          if (listeners.get(as)?.ready === reserved) {
-            listeners.delete(as);
+          // Only its own entry: the name may have been closed and taken again.
+          if (opened.get(as)?.ready === reserved) {
+            opened.delete(as);
           }
           started.set(name, (started.get(name) ?? 1) - 1);
 
@@ -464,8 +441,8 @@ export const createInboxTools = (
       },
     }),
 
-    inbox_wait: tool.group({
-      description: `Wait for the next message of a listener to arrive, up to the timeout (at most ${String(config.maxWait ?? defaultMaxWait)}), and return it. Name the listener with "as" when you have more than one. Returns nothing if none came in time.`,
+    inbox_next: tool.group({
+      description: `Wait for the next message of an inbox, up to the timeout (at most ${String(config.maxWait ?? defaultMaxWait)}), and return it. Name the inbox you opened with "as"; without it you read your own inbox. Returns nothing if none came in time.`,
       input: z.object({
         timeout: z.union([z.string(), z.number()]),
         as: z.string().optional(),
@@ -477,7 +454,7 @@ export const createInboxTools = (
 
         if (ms > maxWaitMs) {
           throw new Error(
-            `inbox_wait can wait at most ${String(config.maxWait ?? defaultMaxWait)}.`,
+            `inbox_next can wait at most ${String(config.maxWait ?? defaultMaxWait)}.`,
           );
         }
 
@@ -489,19 +466,11 @@ export const createInboxTools = (
 
         waited += ms;
 
-        const views = await viewsFor(as);
-
-        if (views.length > 1) {
-          throw new Error(
-            `You have ${views.length} listeners: say which one to wait for with "as".`,
-          );
-        }
-
-        const view = views[0] as InboxToolView;
+        const reader = await readerFor(as);
 
         // A timeout of 0 does not wait: it takes what has arrived.
         if (ms === 0) {
-          const [first, ...more] = await view.drain();
+          const [first, ...more] = await reader.drain();
 
           return {
             message: first ? render(first) : null,
@@ -509,49 +478,44 @@ export const createInboxTools = (
           };
         }
 
-        const message = await view.next({ timeout: ms });
+        const message = await reader.next({ timeout: ms });
 
         return message ? { message: render(message) } : { message: null };
       },
     }),
 
-    inbox_read: tool.group({
+    inbox_next_batch: tool.group({
       description:
-        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as".',
+        'Return the messages an inbox has received since you last read, without waiting, each tagged with its source. Name the inbox you opened with "as"; without it you read your own inbox.',
       input: z.object({
         as: z.string().optional(),
       }),
       run: async ({ as }) => {
-        const views = await viewsFor(as);
-
-        const fresh = (
-          await Promise.all(
-            views.map((view) => {
-              return view.drain();
-            }),
-          )
-        ).flat();
+        const fresh = await (await readerFor(as)).drain();
 
         return { messages: fresh.map(render) };
       },
     }),
 
-    inbox_stop: tool.group({
-      description: "Stop a listener you started with inbox_listen.",
+    inbox_close: tool.group({
+      description: "Close an inbox you opened with inbox_listen.",
       input: z.object({ as: z.string() }),
       run: async ({ as }) => {
-        const listener = listeners.get(as);
+        const found = opened.get(as);
 
-        if (!listener) {
+        if (!found) {
           throw new Error(
-            `No listener named ${as}. Running: ${[...listeners.keys()].join(", ") || "none"}.`,
+            `No inbox named ${as}. Open: ${[...opened.keys()].join(", ") || "none"}.`,
           );
         }
 
-        listeners.delete(as);
-        await (await listener.ready).listener.stop();
+        opened.delete(as);
+        const unread = await (await found.ready).close();
 
-        return { stopped: as };
+        return {
+          closed: as,
+          ...(unread.length > 0 && { unread: unread.map(render) }),
+        };
       },
     }),
   };

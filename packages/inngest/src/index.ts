@@ -39,7 +39,6 @@
 
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
-export type { NextOptions } from "./components/agent/inboxMessage";
 export { experiment } from "./components/ExperimentStrategies.ts";
 export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
