@@ -1,12 +1,18 @@
 /**
  * @module
- * Tests for closing an `Inbox` against fake dependencies: what `close()` sends
- * the executor, what a closed reader returns, and `await using`.
+ * Tests for reading and closing an `Inbox` against fake dependencies: what each
+ * read asks the executor, what a cut answers, what `close()` sends, and what a
+ * closed inbox returns.
  */
-import { eventType } from "../triggers/triggers.ts";
-import { Inbox, type InboxDeps } from "./Inbox.ts";
+import { Inbox, type InboxDeps, inboxOpenedPromise } from "./Inbox.ts";
 
-const fakeDeps = (unread: string[]) => {
+/**
+ * Fake dependencies over a run state that holds the messages `ids`, oldest
+ * first. `waits`, `batches` and `closes` record what the inbox sent.
+ */
+const fakeDeps = (ids: string[] = []) => {
+  const waits: unknown[] = [];
+  const batches: unknown[] = [];
   const closes: unknown[] = [];
 
   const deps: InboxDeps = {
@@ -19,22 +25,30 @@ const fakeDeps = (unread: string[]) => {
     waitId: (op) => {
       return `hash:${op}`;
     },
-    wait: () => {
+    wait: (op, inbox, seen, timeout) => {
+      waits.push({ op, inbox, seen, timeout });
+
       return new Promise(() => {
         return undefined;
       });
     },
-    read: () => {
-      return { found: "nothing" };
+    read: (_inbox, taken) => {
+      const id = ids[taken];
+
+      return id === undefined
+        ? { found: "nothing" }
+        : { found: "message", id, message: message(id), timedOut: false };
     },
-    unread: () => {
-      return unread;
+    unread: (_inbox, taken, upTo) => {
+      return ids.slice(taken, upTo === undefined ? undefined : cutEnd(upTo));
     },
     message: (id) => {
-      return { name: "msg", data: { id } };
+      return message(id);
     },
-    batch: async () => {
-      return { seen: "inbox", ids: [] };
+    batch: async (op, read) => {
+      batches.push({ op, ...read });
+
+      return { cut: ids.at(-1) ?? null };
     },
     answered: () => {
       return false;
@@ -57,41 +71,51 @@ const fakeDeps = (unread: string[]) => {
     close: async (op, closing) => {
       closes.push({ op, closing });
 
-      return closing.ids;
+      return { cut: ids.at(-1) ?? null };
     },
   };
 
-  return { deps, closes };
+  const cutEnd = (upTo: string): number => {
+    return ids.indexOf(upTo) + 1;
+  };
+
+  return { deps, waits, batches, closes };
+};
+
+const message = (id: string) => {
+  return { name: "msg", data: { id } };
+};
+
+const tick = () => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 10);
+  });
 };
 
 describe("closing an inbox", () => {
-  test("close() sends the unread ids and the source pauses, and returns the unread messages", async () => {
+  test("close() sends only the inbox, and returns the messages up to the cut that were not read", async () => {
     const { deps, closes } = fakeDeps(["m1", "m2"]);
     const inbox = new Inbox(deps);
+
+    expect(await inbox.next()).toMatchObject(message("m1"));
 
     const unread = await inbox.close();
 
     expect(closes).toEqual([
-      {
-        op: "inbox:close",
-        closing: {
-          inbox: "inbox",
-          ids: ["m1", "m2"],
-          pauses: [{ id: "p1", event: "msg" }],
-          waits: [],
-          rows: ["inbox"],
-        },
-      },
+      { op: "inbox:close", closing: { inbox: "inbox" } },
     ]);
-    expect(unread).toEqual([
-      { name: "msg", data: { id: "m1" } },
-      { name: "msg", data: { id: "m2" } },
-    ]);
+    expect(unread).toMatchObject([message("m2")]);
     expect(inbox.closed).toBe(true);
   });
 
-  test("a closed reader reads nothing and sends no op", async () => {
-    const { deps } = fakeDeps(["m1"]);
+  test("a close whose cut is null returns nothing", async () => {
+    const { deps } = fakeDeps([]);
+
+    expect(await new Inbox(deps).close()).toEqual([]);
+  });
+
+  test("a closed inbox reads nothing and sends no op", async () => {
+    const { deps, waits, batches } = fakeDeps(["m1"]);
     const inbox = new Inbox(deps);
     await inbox.close();
 
@@ -104,46 +128,63 @@ describe("closing an inbox", () => {
       seen.push(message);
     }
     expect(seen).toEqual([]);
+    expect(waits).toEqual([]);
+    expect(batches).toEqual([]);
   });
 
-  test("a read waiting under a closed reader is named by the close and ends", async () => {
-    const { deps, closes } = fakeDeps([]);
+  test("a read that starts while the close is in flight ends without reporting a wait", async () => {
+    const { deps, waits, batches } = fakeDeps([]);
+    let finish: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    deps.close = async () => {
+      await gate;
+
+      return { cut: null };
+    };
     const inbox = new Inbox(deps);
 
-    const waiting = inbox.next();
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
+    const closing = inbox.close();
+    const late = inbox.next();
+    const lateBatch = inbox.nextBatch();
 
-    await inbox.close();
+    finish();
+    await closing;
 
-    expect(closes).toMatchObject([{ closing: { waits: ["hash:inbox:next"] } }]);
+    expect(await late).toBeUndefined();
+    expect(await lateBatch).toBeUndefined();
+    expect(waits).toEqual([]);
+    expect(batches).toEqual([]);
+  });
 
-    // The run is replayed once the close is recorded: the read finds nothing
-    // and the state holds the close.
-    const replayed = fakeDeps([]);
-    replayed.deps.closed = (op) => {
+  test("a read that starts while the close is in flight still takes a message it can already read", async () => {
+    const { deps, waits } = fakeDeps(["m1"]);
+    deps.close = () => {
+      return new Promise(() => {
+        return undefined;
+      });
+    };
+    const inbox = new Inbox(deps);
+
+    void inbox.close();
+
+    expect(await inbox.next()).toMatchObject(message("m1"));
+    expect(waits).toEqual([]);
+  });
+
+  test("a read that found nothing and whose close is in state ends when the close is replayed past", async () => {
+    const { deps, waits } = fakeDeps([]);
+    deps.closed = (op) => {
       return op === "inbox:close";
     };
-    const again = new Inbox(replayed.deps);
-
-    const ending = again.next();
-    await again.close();
-
-    expect(await ending).toBeUndefined();
-    expect(waiting).toBeInstanceOf(Promise);
-  });
-
-  test("closing a reader closes the views under it", async () => {
-    const { deps } = fakeDeps(["m1"]);
     const inbox = new Inbox(deps);
-    const view = inbox.of(eventType("msg"));
 
+    const ending = inbox.next();
     await inbox.close();
 
-    expect(view.closed).toBe(true);
-    expect(await view.next()).toBeUndefined();
-    expect((await view.close()).length).toBe(1);
+    expect(await ending).toBeUndefined();
+    expect(waits).toEqual([]);
   });
 
   test("await using closes at the end of the block, once", async () => {
@@ -158,69 +199,137 @@ describe("closing an inbox", () => {
   });
 });
 
-describe("batch reads", () => {
-  const withBatch = (
-    unread: string[],
-    answer: unknown,
-    seen: unknown[] = [],
-  ) => {
-    const { deps } = fakeDeps(unread);
-    deps.batch = async (op, read) => {
-      seen.push({ op, ...read });
+describe("reads on one inbox", () => {
+  test("parallel reads are served in order, each taking the next message", async () => {
+    const { deps } = fakeDeps(["m1", "m2", "m3"]);
+    const inbox = new Inbox(deps);
 
-      return answer;
-    };
-    deps.unread = (_inbox, _taken, _want, upTo) => {
-      // The state as far as the step the answer names: the first two messages.
-      return upTo === undefined ? unread : unread.slice(0, 2);
-    };
+    const reads = await Promise.all([inbox.next(), inbox.next(), inbox.next()]);
 
-    return new Inbox(deps);
-  };
+    expect(reads).toMatchObject([message("m1"), message("m2"), message("m3")]);
+  });
 
-  test("drain() is answered by the executor: the messages up to the answer's step, then its ids", async () => {
-    const asked: unknown[] = [];
-    const inbox = withBatch(
-      ["m1", "m2", "m3"],
-      { seen: "m2", ids: ["m9"] },
-      asked,
-    );
+  test("a read with nothing unread reports a wait with the inbox and the last step seen, and no filter", async () => {
+    const { deps, waits } = fakeDeps([]);
+    const inbox = new Inbox(deps);
 
-    const drained = await inbox.drain();
+    void inbox.next({ timeout: "1m" });
+    await tick();
 
-    expect(drained).toEqual([
-      { name: "msg", data: { id: "m1" } },
-      { name: "msg", data: { id: "m2" } },
-      { name: "msg", data: { id: "m9" } },
-    ]);
-    expect(asked).toMatchObject([
-      { op: "inbox:next", drain: true, unread: true, seen: "inbox" },
+    expect(waits).toEqual([
+      { op: "inbox:next", inbox: "inbox", seen: "inbox", timeout: "1m" },
     ]);
   });
 
-  test("max is split between what the SDK holds and the room it gives the executor", async () => {
-    const asked: unknown[] = [];
-    const inbox = withBatch(["m1", "m2"], { seen: "m2", ids: [] }, asked);
+  test("a read behind a waiting read does not report until it ends", async () => {
+    const { deps, waits } = fakeDeps([]);
+    const inbox = new Inbox(deps);
 
-    const drained = await inbox.drain({ max: 1 });
+    void inbox.next();
+    void inbox.next();
+    await tick();
 
-    expect(drained).toEqual([{ name: "msg", data: { id: "m1" } }]);
-    expect(asked).toMatchObject([{ room: 0 }]);
+    expect(waits).toHaveLength(1);
+  });
+});
+
+describe("batch reads", () => {
+  test("drain() takes the messages up to the executor's cut", async () => {
+    const { deps, batches } = fakeDeps(["m1", "m2", "m3"]);
+    deps.batch = async (op, read) => {
+      batches.push({ op, ...read });
+
+      return { cut: "m2" };
+    };
+
+    const drained = await new Inbox(deps).drain();
+
+    expect(drained).toMatchObject([message("m1"), message("m2")]);
+    expect(batches).toEqual([
+      {
+        op: "inbox:next",
+        inbox: "inbox",
+        seen: "inbox",
+        drain: true,
+        unread: true,
+      },
+    ]);
+  });
+
+  test("a batch read sends max as it is, and takes at most that many", async () => {
+    const { deps, batches } = fakeDeps(["m1", "m2", "m3"]);
+
+    const drained = await new Inbox(deps).drain({ max: 2 });
+
+    expect(drained).toMatchObject([message("m1"), message("m2")]);
+    expect(batches).toMatchObject([{ max: 2 }]);
+  });
+
+  test("a cut of null is an empty batch", async () => {
+    const { deps } = fakeDeps([]);
+
+    expect(await new Inbox(deps).drain()).toEqual([]);
   });
 
   test("nextBatch() returns null when the executor answers with the timeout's null", async () => {
-    const inbox = withBatch([], null);
+    const { deps } = fakeDeps([]);
+    deps.batch = async () => {
+      return null;
+    };
 
-    expect(await inbox.nextBatch({ timeout: "1m" })).toBeNull();
+    expect(await new Inbox(deps).nextBatch({ timeout: "1m" })).toBeNull();
   });
 
   test("nextBatch() asks to wait only when nothing is unread", async () => {
-    const asked: unknown[] = [];
-    const inbox = withBatch([], { seen: "inbox", ids: ["m1"] }, asked);
+    const empty = fakeDeps([]);
+    empty.deps.batch = async (op, read) => {
+      empty.batches.push({ op, ...read });
 
-    expect(await inbox.nextBatch()).toEqual([
-      { name: "msg", data: { id: "m1" } },
-    ]);
-    expect(asked).toMatchObject([{ drain: false, unread: false }]);
+      return { cut: "m1" };
+    };
+    empty.deps.unread = (_inbox, taken, upTo) => {
+      return upTo === undefined || taken > 0 ? [] : ["m1"];
+    };
+
+    await new Inbox(empty.deps).nextBatch();
+    expect(empty.batches).toMatchObject([{ drain: false, unread: false }]);
+
+    const held = fakeDeps(["m1"]);
+    await new Inbox(held.deps).nextBatch();
+    expect(held.batches).toMatchObject([{ drain: false, unread: true }]);
+  });
+
+  test("the second batch starts after the first one's messages", async () => {
+    const { deps } = fakeDeps(["m1", "m2", "m3"]);
+    const inbox = new Inbox(deps);
+
+    expect(await inbox.drain({ max: 1 })).toMatchObject([message("m1")]);
+    expect(await inbox.drain()).toMatchObject([message("m2"), message("m3")]);
+  });
+});
+
+describe("opening an inbox", () => {
+  test("inboxOpenedPromise() settles once the open is replayed past", async () => {
+    const { deps } = fakeDeps([]);
+    let finish: () => void = () => undefined;
+    deps.open = () => {
+      return new Promise((resolve) => {
+        finish = () => {
+          resolve({ pauses: [] });
+        };
+      });
+    };
+    const inbox = new Inbox(deps);
+    let opened = false;
+    void inboxOpenedPromise(inbox).then(() => {
+      opened = true;
+    });
+
+    await tick();
+    expect(opened).toBe(false);
+
+    finish();
+    await tick();
+    expect(opened).toBe(true);
   });
 });

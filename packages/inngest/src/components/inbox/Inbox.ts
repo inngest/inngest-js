@@ -12,14 +12,10 @@
  */
 import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { EventPayload } from "../../types.ts";
-import type { InboxRead, Want } from "../execution/inboxState.ts";
+import type { InboxRead } from "../execution/inboxState.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
 import { addEventIs } from "../triggers/triggers.ts";
-import type {
-  EventIs,
-  EventTypesToShape,
-  EventTypeToShape,
-} from "../triggers/typeHelpers.ts";
+import type { EventIs, EventTypeToShape } from "../triggers/typeHelpers.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -62,25 +58,13 @@ type SourceMessage<TSource> = TSource extends EventTypeWithAnySchema<string>
     : TypedMessage<TSource>;
 
 /**
- * The messages the sources produce: the union of the shapes of the event types
- * among them. A source written as a name contributes the default message.
+ * The messages the sources of an inbox produce: the union of the shapes of the
+ * event types among them. A source written as a name contributes the untyped
+ * message. Exported mainly so declaration files can name inbox types.
  */
-export type SourcesMessage<TSources> = TSources extends readonly (infer TItem)[]
+export type InboxMessageOf<TSources> = TSources extends readonly (infer TItem)[]
   ? SourceMessage<TItem>
   : SourceMessage<TSources>;
-
-/**
- * The messages of a view of the given event types under a reader of
- * `TMessage`: the types asked for, kept to the ones the reader receives.
- */
-type ViewMessage<TMessage, TTypes> =
-  EventTypesToShape<TTypes> extends infer TShape
-    ? string extends NameOf<TMessage>
-      ? TShape & EventIs
-      : Extract<TMessage, { name: NameOf<TShape> }>
-    : never;
-
-type NameOf<TMessage> = TMessage extends { name: infer TName } ? TName : never;
 
 /**
  * What the executor is told about a source.
@@ -118,45 +102,28 @@ const isList = (sources: InboxSources): sources is readonly OneSource[] => {
   return Array.isArray(sources);
 };
 
+// The promise that settles once each inbox is open. It lives here, not on the
+// class, so nothing internal is part of the public declaration.
+const openedPromises = new WeakMap<object, Promise<void>>();
+
 /**
- * One event type or several. A view is typed from them, so a name alone is
- * not accepted.
+ * Settles once the executor has recorded the open of `inbox`. Code that does
+ * other work before its first read awaits it, so that work does not share a
+ * request with the open. Internal: the package root does not export it.
  */
-export type InboxTypes =
-  | EventTypeWithAnySchema<string>
-  | readonly EventTypeWithAnySchema<string>[];
-
-const namesOf = (types: InboxTypes): string[] => {
-  const list: readonly { name: string }[] = Array.isArray(types)
-    ? types
-    : [types as { name: string }];
-
-  return list.map((type) => {
-    return type.name;
-  });
+export const inboxOpenedPromise = (inbox: object): Promise<void> => {
+  return openedPromises.get(inbox) ?? Promise.resolve();
 };
 
 /**
- * The key of the internal method that settles once the inbox is open.
- */
-export const inboxOpened: unique symbol = Symbol("inngest.inbox.opened");
-
-/**
- * The ID of the op of the `n`th read of a reader.
+ * The ID of the op of the `n`th read of an inbox.
  */
 const readId = (base: string, n: number): string => {
   return n === 0 ? `${base}:next` : `${base}:next:${n}`;
 };
 
 /**
- * The ID of the op of the `n`th `listen()` of a reader.
- */
-const listenId = (base: string, n: number): string => {
-  return n === 0 ? `${base}:listen` : `${base}:listen:${n}`;
-};
-
-/**
- * The ID of the op that closes a reader.
+ * The ID of the op that closes an inbox.
  */
 const closeId = (base: string): string => {
   return `${base}:close`;
@@ -164,15 +131,13 @@ const closeId = (base: string): string => {
 
 /**
  * What an inbox needs from the step tools and the run's state. Ops are named by
- * the unhashed ID of the op; every reader (the inbox and each view) has a base
- * ID its ops are named from.
+ * the unhashed ID of the op, which every op of the inbox is named from.
  */
 export interface InboxDeps {
   sources: OpenedSource[];
 
   /**
-   * The unhashed ID of the op that opens the inbox: the base of the inbox's own
-   * reads.
+   * The unhashed ID of the op that opens the inbox: the base of its reads.
    */
   id: string;
 
@@ -182,15 +147,10 @@ export interface InboxDeps {
   inbox: string;
 
   /**
-   * Opens the inbox on the executor, or with `inbox` set adds the sources of a
-   * view to the inbox with that ID. Settles with what the executor recorded
+   * Opens the inbox on the executor. Settles with what the executor recorded
    * (the pauses of the sources) once the run has replayed past the record.
    */
-  open: (
-    op: string,
-    sources: OpenedSource[],
-    inbox?: string,
-  ) => Promise<unknown>;
+  open: (op: string, sources: OpenedSource[]) => Promise<unknown>;
 
   /**
    * The hashed ID of the wait op `op`. It is known before the op is reported, so
@@ -208,44 +168,37 @@ export interface InboxDeps {
     op: string,
     inbox: string,
     seen: string,
-    want?: Want,
     timeout?: ReadTimeout,
   ) => Promise<unknown>;
 
   /**
-   * What the read after the first `taken` messages the reader wants finds in the
-   * run's state.
+   * What the read after the first `taken` messages finds in the run's state.
    */
-  read: (inbox: string, taken: number, wait: string, want?: Want) => InboxRead;
+  read: (inbox: string, taken: number, wait: string) => InboxRead;
 
   /**
-   * The step ids of the messages the reader wants after the first `taken` of
-   * them, in the order they were saved. With `upTo`, only the steps of the stack
-   * as far as that step are read.
+   * The step ids of the messages after the first `taken` of them, in the order
+   * they were saved. With `upTo`, only the steps of the stack as far as that
+   * step are read.
    */
-  unread: (
-    inbox: string,
-    taken: number,
-    want?: Want,
-    upTo?: string,
-  ) => string[];
+  unread: (inbox: string, taken: number, upTo?: string) => string[];
 
   /**
-   * Reports the batch read `op`. The executor answers it with the messages the
-   * reader wants that were saved after `seen` (`{ seen, ids }`, saved under the
-   * op) and wakes the run, or with `null` if the timeout passed with nothing
-   * unread. A `drain` is always answered at once; a read waits only if it is not
-   * a `drain`, the SDK holds no `unread` messages and none was saved since.
+   * Reports the batch read `op`. The executor answers it with a cut: the last
+   * message the read covers (`{ cut }`, saved under the op), or `{ cut: null }`
+   * if there is none, and wakes the run. It answers with `null` if the timeout
+   * passed with nothing unread. A `drain` is always answered at once; a read
+   * waits only if it is not a `drain`, the SDK holds `unread` messages and none
+   * was saved since.
    */
   batch: (
     op: string,
     read: {
       inbox: string;
       seen: string;
-      want?: Want;
       drain: boolean;
       unread: boolean;
-      room?: number;
+      max?: number;
       timeout?: ReadTimeout;
     },
   ) => Promise<unknown>;
@@ -291,19 +244,10 @@ export interface InboxDeps {
   closed: (op: string) => boolean;
 
   /**
-   * Closes a reader. Settles with the ids the executor saved: those of the
-   * first close that reached it, which are the ones every replay returns.
+   * Closes the inbox. Settles with the cut the executor saved: the last message
+   * the inbox had at the first close that reached it, or `null`.
    */
-  close: (
-    op: string,
-    closing: {
-      inbox: string;
-      ids: string[];
-      pauses: { id: string; event: string }[];
-      waits: string[];
-      rows: string[];
-    },
-  ) => Promise<string[]>;
+  close: (op: string, closing: { inbox: string }) => Promise<Cut>;
 
   /**
    * Settles when replay reaches the message step `id` in the run's stack. A read
@@ -314,27 +258,11 @@ export interface InboxDeps {
 }
 
 /**
- * What makes an inbox a view of another.
- *
- * @internal
+ * The last message step an answer of the executor covers, or `null` if there is
+ * none.
  */
-interface ViewInit<TMessage> {
-  parent: Inbox<TMessage>;
-
-  /**
-   * The base ID of the view's ops.
-   */
-  base: string;
-
-  /**
-   * The event names an `of()` view reads, within its parent's.
-   */
-  events?: readonly string[];
-
-  /**
-   * The sources a `listen()` view adds, and the ID of its op.
-   */
-  listen?: { op: string; sources: OpenedSource[] };
+export interface Cut {
+  cut: string | null;
 }
 
 /**
@@ -364,10 +292,11 @@ export interface BatchOptions {
 }
 
 /**
- * What an inbox hands back by default: the event, with `is()` to narrow it to
- * the event types it was asked about and `data` left `unknown` until it is.
+ * What an inbox yields when no source narrows it: the event with `data` left
+ * `unknown` until `is()` narrows it. Exported mainly so declaration files can
+ * name inbox types.
  */
-type DefaultMessage = Omit<EventPayload, "data"> & {
+export type UntypedInboxMessage = Omit<EventPayload, "data"> & {
   data: unknown;
 } & EventIs;
 
@@ -380,341 +309,98 @@ type DefaultMessage = Omit<EventPayload, "data"> & {
  * const handle = (message: InboxMessage<typeof inbox>) => {};
  * ```
  */
-export type InboxMessage<TInbox = Inbox<DefaultMessage>> =
+export type InboxMessage<TInbox = Inbox<UntypedInboxMessage>> =
   TInbox extends Inbox<infer TMessage> ? TMessage : never;
 
 /**
  * A durable collection of the events that matched the sources of one
- * `step.subscribe()`, or a view of one. Open it with `await using` so it closes
- * at the end of the block.
+ * `step.subscribe()`. Open it with `await using` so it closes at the end of the
+ * block.
  *
- * Every reader (the inbox and each view) sees every message it matches, and
- * keeps its own position: nothing one reader takes is hidden from another.
+ * An inbox has one reader: nothing is read twice, and reads are served in the
+ * order they were made.
  */
-export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
-  #deps: InboxDeps;
-  #opened: Promise<void>;
+export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
+  private _deps: InboxDeps;
+  private _opened: Promise<void>;
 
-  // The base of the ops of this reader's reads and views.
-  #base: string;
+  // Set once `close()` has been called, settled or not. A read made after it
+  // takes a message it can already read, and otherwise ends.
+  private _closeCalled = false;
 
-  // Set on a view.
-  #parent?: Inbox<TMessage>;
+  // Set once `close()` has settled.
+  private _closed = false;
 
-  // The event names this reader wants, when it is an `of()` view.
-  #events?: readonly string[];
+  // Settles once `close()` has settled.
+  private _whenClosed: Promise<void>;
+  private _markClosed: () => void = () => undefined;
 
-  // Whether this reader is a `listen()` view, which wants its own sources.
-  #listening = false;
-
-  // The pauses of the sources this reader added, from its record, and the
-  // event each one receives.
-  #pauses: string[] = [];
-  #sources: { id: string; event: string }[] = [];
-
-  // Set once this reader's own `close()` has settled.
-  #closed = false;
-
-  // Settles once this reader, or a reader it is a view of, has closed.
-  #whenClosed: Promise<void>;
-  #markClosed: () => void = () => undefined;
-
-  // The close of this reader, once started.
-  #closing?: Promise<string[]>;
-
-  // The ops of the reads that have started and not settled.
-  #unsettled = new Set<string>();
-
-  // Views made from this reader.
-  #children: Inbox<TMessage>[] = [];
-
-  // The `of()` views of this reader by the event names they read, so that the
-  // same filter is the same reader.
-  #views = new Map<string, Inbox<TMessage>>();
-
-  // `listen()` calls made on this reader so far; each has an op of its own.
-  #listens = 0;
+  // The close, once started.
+  private _closing?: Promise<string[]>;
 
   // Messages taken by reads so far in this replay.
-  #taken = 0;
+  private _taken = 0;
 
   // Reads started so far. Each has an op of its own, named by this number, so
   // that its place in the run's state is known before it is reported.
-  #reads = 0;
+  private _reads = 0;
 
-  // Reads on one reader are served in order, like an async generator's.
-  #queue: Promise<unknown> = Promise.resolve();
+  // Reads are served in order, like an async generator's.
+  private _queue: Promise<unknown> = Promise.resolve();
 
-  constructor(deps: InboxDeps, view?: ViewInit<TMessage>) {
-    this.#deps = deps;
-    this.#whenClosed = new Promise<void>((resolve) => {
-      this.#markClosed = resolve;
+  constructor(deps: InboxDeps) {
+    this._deps = deps;
+    this._whenClosed = new Promise<void>((resolve) => {
+      this._markClosed = resolve;
     });
-    this.#base = view?.base ?? deps.id;
-    this.#parent = view?.parent;
-    this.#events = view?.events;
+    this._opened = deps.open(deps.id, deps.sources).then(() => {
+      return undefined;
+    });
 
-    if (view?.listen) {
-      this.#listening = true;
-
-      this.#opened = deps
-        .open(view.listen.op, view.listen.sources, deps.inbox)
-        .then((record) => {
-          this.#record(view.listen?.sources ?? [], record);
-
-          return undefined;
-        });
-    } else if (view) {
-      this.#opened = Promise.resolve();
-    } else {
-      this.#opened = deps.open(deps.id, deps.sources).then((record) => {
-        this.#record(deps.sources, record);
-
-        return undefined;
-      });
-    }
+    openedPromises.set(this, this._opened);
 
     // A failed open is reported where the inbox is read; this keeps it from
     // also being reported as unhandled.
-    this.#opened.catch(() => {
+    this._opened.catch(() => {
       return undefined;
     });
   }
 
-  // The record of an open lists the pauses of the sources, in their order.
-  #record(sources: OpenedSource[], record: unknown): void {
-    this.#pauses = (record as { pauses?: string[] } | null)?.pauses ?? [];
-    this.#sources = this.#pauses.map((id, i) => {
-      return { id, event: sources[i]?.event ?? "" };
-    });
-  }
-
   /**
-   * Whether this reader is closed: it was closed, or a reader it is a view of
-   * was. A closed reader reads nothing.
+   * Whether the inbox is closed. A closed inbox reads nothing.
    */
   get closed(): boolean {
-    return this.#closed || (this.#parent?.closed ?? false);
-  }
-
-  /**
-   * A view of the messages of these event types. Calling it again with the same
-   * types gives the same reader, wherever it is called, and a view reads from
-   * the start of the inbox.
-   */
-  of<const T extends InboxTypes>(
-    types: T, // the event types the view reads
-  ): Inbox<ViewMessage<TMessage, T>> {
-    const names = [...new Set(namesOf(types))].sort();
-    const events = this.#events
-      ? names.filter((name) => {
-          return this.#events?.includes(name);
-        })
-      : names;
-    const key = events.join("\n");
-
-    let view = this.#views.get(key);
-    if (!view) {
-      view = new Inbox<TMessage>(this.#deps, {
-        parent: this,
-        base: `${this.#base}:of:${events.join(",")}`,
-        events,
-      });
-      this.#views.set(key, view);
-      this.#children.push(view);
-    }
-
-    return view as unknown as Inbox<ViewMessage<TMessage, T>>;
-  }
-
-  /**
-   * Adds sources to the inbox and returns a view over just them. Each call adds
-   * its own sources, even if another view has the same.
-   */
-  listen<const S extends InboxSources>(
-    sources: S, // the sources to add
-  ): Inbox<SourcesMessage<S>> {
-    const op = listenId(this.#base, this.#listens);
-    this.#listens += 1;
-
-    const view = new Inbox<TMessage>(this.#deps, {
-      parent: this,
-      base: op,
-      listen: { op, sources: sourcesOf(sources) },
-    });
-    this.#children.push(view);
-
-    return view as unknown as Inbox<SourcesMessage<S>>;
-  }
-
-  /**
-   * The pauses of this reader's sources and of every view's under it.
-   */
-  #sourcePauses(): string[] {
-    return [
-      ...this.#pauses,
-      ...this.#children.flatMap((child) => {
-        return child.#sourcePauses();
-      }),
-    ];
-  }
-
-  /**
-   * The source pauses of this reader and of every view under it, with their
-   * events, which a close deletes.
-   */
-  #closingPauses(): { id: string; event: string }[] {
-    return [
-      ...this.#sources,
-      ...this.#children.flatMap((child) => {
-        return child.#closingPauses();
-      }),
-    ];
-  }
-
-  /**
-   * The reads of this reader and of every view under it that have not settled.
-   */
-  /**
-   * The hashed ids of the open and listen ops whose rows this close ends: this
-   * reader's own, if it is the inbox or a `listen()` view, and the ones of every
-   * `listen()` view under it. An `of()` view has no row.
-   */
-  #closingRows(): string[] {
-    const own = this.#listening
-      ? [this.#deps.waitId(this.#base)]
-      : this.#parent || this.#events
-        ? []
-        : [this.#deps.inbox];
-
-    return [
-      ...own,
-      ...this.#children.flatMap((child) => {
-        return child.#closingRows();
-      }),
-    ];
-  }
-
-  #closingReads(): string[] {
-    return [
-      ...this.#unsettled,
-      ...this.#children.flatMap((child) => {
-        return child.#closingReads();
-      }),
-    ];
-  }
-
-  /**
-   * Settles once this reader, or one it is a view of, has closed, which is when
-   * the code's `close()` is replayed past. A read that finds nothing and whose
-   * close is in the run's state parks here instead of reporting a wait: it ends
-   * in the place of the close, after the steps that came before it, so a race
-   * against a step has the same winner on every replay.
-   */
-  #ended(): Promise<void> {
-    return this.#parent
-      ? Promise.race([this.#whenClosed, this.#parent.#ended()])
-      : this.#whenClosed;
-  }
-
-  /**
-   * Whether the run's state holds the close of this reader or of one it is a
-   * view of. Nothing will wake a read that finds nothing then.
-   */
-  #closedInState(): boolean {
-    if (this.#deps.closed(closeId(this.#base))) {
-      return true;
-    }
-
-    return this.#parent ? this.#parent.#closedInState() : false;
-  }
-
-  /**
-   * What this reader wants of the inbox's messages: a `listen()` view and any
-   * `of()` view under it want the messages that came through the sources of the
-   * nearest `listen()` view, and an `of()` view wants its event names.
-   */
-  #want(): Want | undefined {
-    let owner: Inbox<TMessage> | undefined = this;
-    while (owner && !owner.#listening) {
-      owner = owner.#parent;
-    }
-
-    const want: Want = {};
-    if (owner) {
-      want.src = owner.#sourcePauses();
-    }
-    if (this.#events) {
-      want.events = this.#events;
-    }
-
-    return want.src || want.events ? want : undefined;
-  }
-
-  /**
-   * Settles once the opens of this reader, of the readers it is a view of, and
-   * of the views under it have been replayed past: until then the sources a
-   * filter names are not known.
-   */
-  async #ready(): Promise<void> {
-    await Promise.all([this.#openedAbove(), this.#openedBelow()]);
-  }
-
-  async #openedAbove(): Promise<void> {
-    await this.#opened;
-
-    if (this.#parent) {
-      await this.#parent.#openedAbove();
-    }
-  }
-
-  async #openedBelow(): Promise<void> {
-    await Promise.all([
-      this.#opened,
-      ...this.#children.map((child) => {
-        return child.#openedBelow();
-      }),
-    ]);
-  }
-
-  /**
-   * Settles once the executor has recorded the opens of this reader and of the
-   * views under it. Code that does other work before its first read awaits it,
-   * so that work does not share a request with the open. Keyed by a symbol the
-   * package does not export to users.
-   */
-  [inboxOpened](): Promise<void> {
-    return this.#ready();
+    return this._closed;
   }
 
   /**
    * Returns the next unread message. If none is unread, waits for one to
-   * arrive. Returns `undefined` once the reader is closed, also for a read
-   * that was waiting when it closed.
+   * arrive. Returns `undefined` once the inbox is closed, also for a read that
+   * was waiting when it closed.
    */
   next(): Promise<TMessage | undefined>;
 
   /**
    * Returns the next unread message, `null` if none arrives in time, or
-   * `undefined` once the reader is closed.
+   * `undefined` once the inbox is closed.
    */
   next(options: ReadOptions): Promise<TMessage | null | undefined>;
   next(options?: ReadOptions): Promise<TMessage | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readOne(n, options?.timeout);
+    return this._enqueue((n, afterClose) => {
+      return this._readOne(n, afterClose, options?.timeout);
     });
   }
 
   /**
    * Returns every unread message, waiting for at least one to arrive. The batch
-   * is one small step listing the messages it took. A closed reader, or one
+   * is one small step naming the last message it took. A closed inbox, or one
    * that closes while this waits, returns `undefined`.
    */
   nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
 
   /**
    * Returns every unread message, waiting for at least one to arrive, or `null`
-   * if none arrives in time. Returns `undefined` once the reader is closed.
+   * if none arrives in time. Returns `undefined` once the inbox is closed.
    */
   nextBatch(
     options: BatchOptions & ReadOptions,
@@ -722,8 +408,14 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   nextBatch(
     options?: BatchOptions & Partial<ReadOptions>,
   ): Promise<TMessage[] | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readBatch(n, options?.max, true, options?.timeout);
+    return this._enqueue((n, afterClose) => {
+      return this._readBatch(
+        n,
+        afterClose,
+        options?.max,
+        true,
+        options?.timeout,
+      );
     });
   }
 
@@ -732,22 +424,28 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * none. The read is still saved as a step, so a replay returns the same set.
    */
   drain(options?: BatchOptions): Promise<TMessage[]> {
-    return this.#enqueue(async (n) => {
-      return (await this.#readBatch(n, options?.max, false)) ?? [];
+    return this._enqueue(async (n, afterClose) => {
+      return (await this._readBatch(n, afterClose, options?.max, false)) ?? [];
     });
   }
 
   /**
    * Reads the inbox batch by batch with `for await`. Each batch waits for at
-   * least one message. The loop ends when the reader closes, when a wait
-   * passes `timeout` with nothing unread, or when the code breaks out of it.
+   * least one message. The loop ends when the inbox closes, when a wait passes
+   * `timeout` with nothing unread, or when the code breaks out of it.
    */
   async *batches(
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined> {
     while (true) {
-      const batch = await this.#enqueue((n) => {
-        return this.#readBatch(n, options?.max, true, options?.timeout);
+      const batch = await this._enqueue((n, afterClose) => {
+        return this._readBatch(
+          n,
+          afterClose,
+          options?.max,
+          true,
+          options?.timeout,
+        );
       });
 
       if (batch === undefined || batch === null) {
@@ -758,136 +456,126 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     }
   }
 
-  // Reads on one inbox are served in order. Each gets its own number `n`.
-  #enqueue<T>(read: (n: number) => Promise<T>): Promise<T> {
-    const n = this.#reads;
-    this.#reads += 1;
+  // Reads are served in order. Each gets its own number `n`, and knows whether
+  // `close()` had been called when it was made.
+  private _enqueue<T>(
+    read: (n: number, afterClose: boolean) => Promise<T>,
+  ): Promise<T> {
+    const n = this._reads;
+    this._reads += 1;
 
-    // The read is unsettled from the moment it starts, so a close that comes
-    // before the read reports its wait still names it.
-    const op = this.#deps.waitId(readId(this.#base, n));
-    this.#unsettled.add(op);
+    const afterClose = this._closeCalled;
 
-    const result = this.#queue
-      .then(() => {
-        return read(n);
-      })
-      .finally(() => {
-        this.#unsettled.delete(op);
-      });
+    const result = this._queue.then(() => {
+      return read(n, afterClose);
+    });
 
-    this.#queue = result.catch(() => {
+    this._queue = result.catch(() => {
       return undefined;
     });
 
     return result;
   }
 
-  async #readBatch(
+  private async _readBatch(
     n: number,
+    afterClose: boolean,
     max: number | undefined,
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (this.closed) {
+    if (this._closed) {
       return wait ? undefined : [];
     }
 
-    await this.#ready();
+    await this._opened;
 
-    const op = readId(this.#base, n);
-    const want = this.#want();
-    const loaded = this.#deps.unread(this.#deps.inbox, this.#taken, want);
+    const op = readId(this._deps.id, n);
+    const held = this._deps.unread(this._deps.inbox, this._taken);
 
-    // A read that finds nothing and whose reader was closed ends, as a wait does.
+    // A read that finds nothing and whose inbox was closed, or whose close was
+    // called before the read started, ends instead of waiting.
     if (
       wait &&
-      loaded.length === 0 &&
-      !this.#deps.answered(op) &&
-      this.#closedInState()
+      held.length === 0 &&
+      !this._deps.answered(op) &&
+      (afterClose || this._closedInState())
     ) {
-      await this.#ended();
+      await this._whenClosed;
 
       return undefined;
     }
 
-    const held = max === undefined ? loaded : loaded.slice(0, max);
-
-    // The executor answers with the messages saved after the step this request
-    // last saw. The answer is the read's record: it names that step, so a replay
-    // reads the same messages from the state it loaded, and the ids it lists.
-    const answer = (await this.#deps.batch(op, {
-      inbox: this.#deps.inbox,
-      seen: this.#deps.lastSeen(),
-      ...(want === undefined ? {} : { want }),
+    // The executor answers with the last message the read covers. The answer is
+    // the read's record: a replay reads the same messages from the state it
+    // loaded.
+    const answer = (await this._deps.batch(op, {
+      inbox: this._deps.inbox,
+      seen: this._deps.lastSeen(),
       drain: !wait,
       unread: held.length > 0,
-      ...(max === undefined ? {} : { room: Math.max(0, max - held.length) }),
+      ...(max === undefined ? {} : { max }),
       ...(timeout === undefined ? {} : { timeout }),
-    })) as { seen: string; ids: string[] } | null;
+    })) as Cut | null;
 
     // The timeout passed with nothing unread.
     if (answer === null) {
       return null;
     }
 
-    const before = this.#deps.unread(
-      this.#deps.inbox,
-      this.#taken,
-      want,
-      answer.seen,
-    );
-    const ids = [
-      ...(max === undefined ? before : before.slice(0, max)),
-      ...answer.ids,
-    ];
+    const covered =
+      answer.cut === null
+        ? []
+        : this._deps.unread(this._deps.inbox, this._taken, answer.cut);
+    const ids = max === undefined ? covered : covered.slice(0, max);
 
-    this.#taken += ids.length;
+    this._taken += ids.length;
 
-    this.#deps.report(`${op}:read`, this.#deps.inbox, ids, true, op);
+    this._deps.report(`${op}:read`, this._deps.inbox, ids, true, op);
 
     return ids.map((id) => {
-      return addEventIs(this.#deps.message(id) as object) as TMessage;
+      return addEventIs(this._deps.message(id) as object) as TMessage;
     });
   }
 
-  async #readOne(
+  private async _readOne(
     n: number,
+    afterClose: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (this.closed) {
+    if (this._closed) {
       return undefined;
     }
 
-    await this.#ready();
+    await this._opened;
 
-    const op = readId(this.#base, n);
-    const want = this.#want();
+    const op = readId(this._deps.id, n);
 
-    const found = this.#deps.read(
-      this.#deps.inbox,
-      this.#taken,
-      this.#deps.waitId(op),
-      want,
+    const found = this._deps.read(
+      this._deps.inbox,
+      this._taken,
+      this._deps.waitId(op),
     );
 
     if (found.found === "message") {
-      this.#taken += 1;
+      this._taken += 1;
 
       if (found.timedOut) {
-        await this.#deps.skip(op);
+        await this._deps.skip(op);
       }
 
-      this.#deps.report(op, this.#deps.inbox, [found.id], true);
+      this._deps.report(op, this._deps.inbox, [found.id], true);
 
-      await this.#deps.place(found.id);
+      await this._deps.place(found.id);
 
       return addEventIs(found.message as object) as TMessage;
     }
 
-    // The reader was closed while this read had nothing to read: it ends.
-    if (found.found === "nothing" && this.#closedInState()) {
-      await this.#ended();
+    // The inbox was closed while this read had nothing to read, or its close
+    // was called before the read started: it ends. The close op cannot name a
+    // read that started after it, so a wait here would never be ended.
+    if (found.found === "nothing" && (afterClose || this._closedInState())) {
+      await this._whenClosed;
 
       return undefined;
     }
@@ -895,11 +583,10 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     // Nothing is unread. The executor wakes the run when a message arrives and
     // the replay finds it in state, so this does not settle in this request. A
     // read that timed out settles with the null the executor saved.
-    const answer = await this.#deps.wait(
+    const answer = await this._deps.wait(
       op,
-      this.#deps.inbox,
-      this.#deps.lastSeen(),
-      want,
+      this._deps.inbox,
+      this._deps.lastSeen(),
       timeout,
     );
 
@@ -911,7 +598,17 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   }
 
   /**
-   * Reads the inbox in order with `for await`. The loop ends when the reader
+   * Whether the run's state holds the close. Nothing will wake a read that
+   * finds nothing then: it ends in the place of the close, after the steps that
+   * came before it, so a race against a step has the same winner on every
+   * replay.
+   */
+  private _closedInState(): boolean {
+    return this._deps.closed(closeId(this._deps.id));
+  }
+
+  /**
+   * Reads the inbox in order with `for await`. The loop ends when the inbox
    * closes or the code breaks out of it.
    */
   async *[Symbol.asyncIterator](): AsyncGenerator<TMessage, void, undefined> {
@@ -927,46 +624,34 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   }
 
   /**
-   * Closes this reader and everything under it: the sources it added stop
-   * receiving, every read waiting under it ends with `undefined`, and it
-   * returns the messages it had not read. A view keeps its own unread
-   * messages when a reader above it closes, and returns them from its own
-   * `close()`. Closing a `listen()` view leaves the inbox's copies; closing an
-   * `of()` view ends only that reader.
+   * Closes the inbox: its sources stop receiving, every read waiting ends with
+   * `undefined`, and it returns the messages that were not read. A read made
+   * after this call that would have to wait ends with `undefined`.
    */
   close(): Promise<TMessage[]> {
-    this.#closing ??= this.#close();
+    this._closeCalled = true;
+    this._closing ??= this._close();
 
-    return this.#closing.then((ids) => {
+    return this._closing.then((ids) => {
       return ids.map((id) => {
-        return addEventIs(this.#deps.message(id) as object) as TMessage;
+        return addEventIs(this._deps.message(id) as object) as TMessage;
       });
     });
   }
 
-  async #close(): Promise<string[]> {
-    await this.#ready();
+  private async _close(): Promise<string[]> {
+    await this._opened;
 
-    const ids = await this.#deps.close(closeId(this.#base), {
-      inbox: this.#deps.inbox,
-      ids: this.#deps.unread(this.#deps.inbox, this.#taken, this.#want()),
-      pauses: this.#closingPauses(),
-      waits: this.#closingReads(),
-      rows: this.#closingRows(),
+    const { cut } = await this._deps.close(closeId(this._deps.id), {
+      inbox: this._deps.inbox,
     });
 
-    this.#closed = true;
-    this.#markClosedTree();
+    this._closed = true;
+    this._markClosed();
 
-    return ids;
-  }
-
-  #markClosedTree(): void {
-    this.#markClosed();
-
-    for (const child of this.#children) {
-      child.#markClosedTree();
-    }
+    return cut === null
+      ? []
+      : this._deps.unread(this._deps.inbox, this._taken, cut);
   }
 
   async [asyncDispose](): Promise<void> {

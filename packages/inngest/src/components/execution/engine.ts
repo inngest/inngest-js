@@ -108,7 +108,6 @@ import {
   inboxRead,
   inboxUnread,
   unseenSteps,
-  type Want,
 } from "./inboxState.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
@@ -335,31 +334,19 @@ class InngestExecutionEngine
               instance: this,
               executorCapabilities: this.options.executorCapabilities,
               inbox: {
-                read: (
-                  inbox: string,
-                  taken: number,
-                  wait: string,
-                  want?: Want,
-                ) => {
+                read: (inbox: string, taken: number, wait: string) => {
                   return inboxRead(
                     inbox,
                     taken,
                     wait,
-                    want,
                     this.options.stepCompletionOrder,
                     this.options.stepState,
                   );
                 },
-                unread: (
-                  inbox: string,
-                  taken: number,
-                  want?: Want,
-                  upTo?: string,
-                ) => {
+                unread: (inbox: string, taken: number, upTo?: string) => {
                   return inboxUnread(
                     inbox,
                     taken,
-                    want,
                     this.options.stepCompletionOrder,
                     this.options.stepState,
                     upTo,
