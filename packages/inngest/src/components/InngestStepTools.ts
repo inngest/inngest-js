@@ -2,6 +2,7 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import { subscribeCapability } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import {
   normalizeEventMeta,
@@ -621,6 +622,14 @@ export const createStepTools = <
       sources: S, // what the inbox receives
     ): Inbox<SourcesMessage<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
+
+      if (capabilities && !capabilities.includes(subscribeCapability)) {
+        throw new NonRetriableError(
+          "step.subscribe needs an executor that supports inboxes, and this one did not say it does. Upgrade the Dev Server (`npx inngest-cli@latest dev`) or use an Inngest Cloud environment with inboxes enabled.",
+        );
+      }
+
       const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
 
       return new Inbox({
