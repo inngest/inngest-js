@@ -132,7 +132,7 @@ const batchTimeoutWithNoMessage: Flow = {
   expect: {
     output: { batch: null },
     bodies: {},
-    rows: ["inbox", "inbox:close"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
   },
 };
 

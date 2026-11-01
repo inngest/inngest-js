@@ -135,6 +135,12 @@ export interface Flow {
     ticks?: Record<string, number>;
 
     /**
+     * The rows that must have ended once the run has, by display name: an
+     * inbox row ends at its close, or with the run if it is never closed.
+     */
+    ended?: string[];
+
+    /**
      * How many steps the run holds when its function last ran: every step
      * saved in its state, messages included.
      */
@@ -501,6 +507,12 @@ const runCell = async (
       failures.push(
         `trace rows ${JSON.stringify(rows)}, wanted ${JSON.stringify(distinct(flow.expect.rows))}`,
       );
+    }
+
+    for (const row of flow.expect.ended ?? []) {
+      if (run.ended[row] !== true) {
+        failures.push(`row ${row} has not ended`);
+      }
     }
 
     if (flow.expect.ticks) {

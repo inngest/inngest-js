@@ -61,6 +61,7 @@ const listenAddsSources: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
+    ended: ["inbox", "inbox:listen"],
     rows: [
       "inbox",
       "inbox:close",
@@ -159,6 +160,7 @@ const listensWithDifferentExpressions: Flow = {
   expect: {
     output: { one: 1, two: 2 },
     bodies: {},
+    ended: ["inbox", "inbox:listen", "inbox:listen:1"],
     rows: [
       "inbox",
       "inbox:close",
