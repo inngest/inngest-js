@@ -45,7 +45,7 @@ import {
 } from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
-import { hashedStepId } from "./execution/inboxState.ts";
+import { hashedStepId, type Want } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -342,13 +342,6 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-/**
- * The ID of the op of the `n`th read of an inbox.
- */
-const readId = (inbox: string, n: number): string => {
-  return n === 0 ? `${inbox}:next` : `${inbox}:next:${n}`;
-};
-
 /**
  * Merge client-level and function-level middleware into a single array type
  * for use with ApplyAllMiddlewareTransforms etc.
@@ -725,33 +718,41 @@ export const createStepTools = <
 
       return new Inbox({
         sources: sourcesOf(sources),
+        id,
         inbox: hashedStepId(`${prefix}${id}`),
-        open: (opened) => {
-          return tools["~inboxOpen"](idOrOptions, { sources: opened });
+        open: (op, opened, inbox) => {
+          return tools["~inboxOpen"](inbox === undefined ? idOrOptions : op, {
+            sources: opened,
+            ...(inbox === undefined ? {} : { inbox }),
+          });
         },
-        waitId: (n) => {
-          return hashedStepId(`${prefix}${readId(id, n)}`);
+        waitId: (op) => {
+          return hashedStepId(`${prefix}${op}`);
         },
-        wait: (n, inbox, seen, timeout) => {
-          return tools["~inboxWait"](readId(id, n), {
+        wait: (op, inbox, seen, want, timeout) => {
+          return tools["~inboxWait"](op, {
             inbox,
             seen,
+            ...(want === undefined ? {} : { want }),
             ...(timeout === undefined
               ? {}
               : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
           });
         },
-        read: (inbox, taken, wait) => {
+        read: (inbox, taken, wait, want) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.read(inbox, taken, wait) ?? {
+            getAsyncCtxSync()?.execution?.inbox?.read(
+              inbox,
+              taken,
+              wait,
+              want,
+            ) ?? {
               found: "nothing",
             }
           );
         },
-        skip: async (n) => {
-          await getAsyncCtxSync()?.execution?.skipStep?.(
-            `${prefix}${readId(id, n)}`,
-          );
+        skip: async (op) => {
+          await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
         },
         lastSeen: () => {
           return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
@@ -765,7 +766,7 @@ export const createStepTools = <
     "~inboxOpen": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { sources: { event: string; if?: string }[] },
+        opts: { sources: { event: string; if?: string }[]; inbox?: string },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -774,7 +775,10 @@ export const createStepTools = <
         op: StepOpCode.Subscribe,
         name: id,
         displayName: name ?? id,
-        opts: { sources: opts.sources },
+        opts: {
+          sources: opts.sources,
+          ...(opts.inbox === undefined ? {} : { inbox: opts.inbox }),
+        },
         userland: { id },
       };
     }),
@@ -787,7 +791,7 @@ export const createStepTools = <
     "~inboxWait": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { inbox: string; seen: string; timeout?: string },
+        opts: { inbox: string; seen: string; want?: Want; timeout?: string },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -799,6 +803,7 @@ export const createStepTools = <
         opts: {
           inbox: opts.inbox,
           seen: opts.seen,
+          ...(opts.want === undefined ? {} : { want: opts.want }),
           ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
         },
         userland: { id },

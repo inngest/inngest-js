@@ -45,6 +45,44 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 };
 
 /**
+ * What a reader wants of its inbox's messages, sent to the executor with a wait
+ * and applied here when a read walks the stack. A message has to pass every part
+ * that is there; no part wants every message.
+ */
+export interface Want {
+  /**
+   * The pauses of the sources the message came through: it wants a message whose
+   * `src` includes one of them.
+   */
+  src?: readonly string[];
+
+  /**
+   * The event names it wants.
+   */
+  events?: readonly string[];
+}
+
+/**
+ * Whether a filter wants a message.
+ */
+export const wants = (
+  want: Want | undefined,
+  message: MessageValue,
+): boolean => {
+  if (want?.src && !message.src.some((pause) => want.src?.includes(pause))) {
+    return false;
+  }
+
+  if (want?.events) {
+    const name = (message.data as { name?: unknown } | null)?.name;
+
+    return typeof name === "string" && want.events.includes(name);
+  }
+
+  return true;
+};
+
+/**
  * What a read of an inbox finds in the run's state.
  */
 export type InboxRead =
@@ -65,6 +103,7 @@ export type InboxRead =
  * @param inbox The hashed ID of the step that opened the inbox.
  * @param taken How many messages earlier reads took.
  * @param wait The hashed ID of the read's wait op.
+ * @param want The filter of the reader; only the messages it wants count.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
@@ -72,6 +111,7 @@ export const inboxRead = (
   inbox: string,
   taken: number,
   wait: string,
+  want: Want | undefined,
   stack: readonly string[],
   stepState: Record<string, { data?: unknown } | undefined>,
 ): InboxRead => {
@@ -82,6 +122,10 @@ export const inboxRead = (
     const value = stepState[id]?.data;
 
     if (isInboxMessage(value) && value[inboxKey] === inbox) {
+      if (!wants(want, value)) {
+        continue;
+      }
+
       if (found.found === "nothing" && seen === taken) {
         found = { found: "message", message: value.data, timedOut: false };
       }
