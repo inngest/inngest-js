@@ -6,7 +6,7 @@
  * that triggers on one gets its `event.data` typed.
  *
  * Everything a thread receives is a plain event. `agent/message` carries text
- * for the model; `agent/steer`, `agent/stop` and `agent/request` are the
+ * for the model; `agent/steer` and `agent/request` are the
  * agent's own control events, and show up in the thread's inbox like any other.
  */
 import { eventType, staticSchema } from "../triggers/triggers.ts";
@@ -50,14 +50,6 @@ export type AgentSteerData = AgentRouting & {
 };
 
 /**
- * The data of `agent/stop`: a request to stop. `"nextTurn"` lets the running
- * model call finish.
- */
-export type AgentStopData = AgentRouting & {
-  when: "nextTurn";
-};
-
-/**
  * The data of `agent/request`: a question from another thread.
  */
 export type AgentRequestData<TRequest = unknown> = AgentRouting & {
@@ -89,14 +81,6 @@ export const agentMessage = eventType("agent/message", {
  */
 export const agentSteer = eventType("agent/steer", {
   schema: staticSchema<AgentSteerData>(),
-});
-
-/**
- * A request to stop. A stop never starts a run, so stopping an idle thread
- * does nothing.
- */
-export const agentStop = eventType("agent/stop", {
-  schema: staticSchema<AgentStopData>(),
 });
 
 /**

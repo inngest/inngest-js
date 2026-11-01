@@ -496,13 +496,11 @@ export type {
   AgentResendData,
   AgentRouting,
   AgentSteerData,
-  AgentStopData,
 } from "./events.ts";
 export {
   agentMessage,
   agentRequest,
   agentSteer,
-  agentStop,
 } from "./events.ts";
 export type {
   GithubChannelOptions,
@@ -580,7 +578,6 @@ export {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   getThread,
 } from "./thread.ts";
 export type {

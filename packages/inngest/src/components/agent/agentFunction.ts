@@ -8,7 +8,7 @@
  * - `inbox`, a `step.subscribe()` inbox of the thread's messages, whose first message
  *   is the event that started the run;
  * - `control`, which spreads into `agent.loop()` so a running turn takes
- *   steering messages and a stop request.
+ *   steering messages.
  *
  * The inbox closes when the body returns. Messages it saved but the body never
  * read are discarded, and a message that arrives after that, while the thread's
@@ -72,7 +72,6 @@ import {
   type AgentRequestData,
   type AgentResendData,
   type AgentSteerData,
-  type AgentStopData,
   agentMessage,
 } from "./events.ts";
 import {
@@ -117,7 +116,6 @@ import {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   getThread,
   type Inflight,
   type ThreadHandle,
@@ -556,7 +554,7 @@ export interface AgentFunctionConfig<
    * call. `"steer"` (default): only `agent/steer` events; the rest wait
    * for their own turn. `"all"`: every event that would start a turn too (an
    * `agent/message`, a trigger event, an inbox source's event), as steering
-   * messages; requests and stops keep their meaning. A folded message is consumed: `next()` does
+   * messages; requests keep their meaning. A folded message is consumed: `next()` does
    * not return it again.
    */
   foldMessages?: "steer" | "all";
@@ -604,8 +602,7 @@ export interface AgentFunctionConfig<
   /**
    * Whether the agent scores itself. Default: `true`. The loop scores each
    * model and tool step (see `agent.loop()`), `report()` scores how long
-   * the first post and each gap between posts took, and a stop request sets
-   * `agent.stopped` on the step that records it. Every score rides on a
+   * the first post and each gap between posts took. Every score rides on a
    * step that already runs, so none adds a step. `false` turns those off;
    * `scores.score()` in the body still works.
    */
@@ -618,7 +615,7 @@ export interface AgentFunctionConfig<
    * turn that fails twice with the same error is not resent, and the failure
    * is reported as stuck. Only the message `inbox.next()` delivered last is
    * resent: messages that arrived during the failed turn and were not read
-   * stay with the failed run. A cancelled run (a stop now, a `cancelOn` event
+   * stay with the failed run. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
    * is kept either way: see `previousRun` and `thread.state().lastRun`.
@@ -697,7 +694,7 @@ export interface AgentArrivalContext {
 
   /**
    * The event that arrived: a thread message (`agent/message`,
-   * `agent/steer`, `agent/stop`, `agent/request`) or an event of the
+   * `agent/steer`, `agent/request`) or an event of the
    * agent's triggers or inbox sources.
    */
   event: { id?: string; name: string; data: unknown };
@@ -823,8 +820,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
-   * during a turn into the next model call, and `stop` ends the loop when a
-   * stop message arrived. Messages that start the next turn stay in the inbox.
+   * during a turn into the next model call. Messages that start the next turn stay in the inbox.
    * `onTurn` records the turn, the usage and a summary for
    * `thread.state()`: if you pass your own `onTurn`, put `...control` first
    * and call `control.onTurn(turn)` from yours with the turn unchanged: the
@@ -833,7 +829,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    */
   control: {
     steer: () => Promise<AgentEvent[]>;
-    stop: () => Promise<boolean>;
     onTurn: (turn: AgentTurn) => Promise<void>;
 
     /**
@@ -873,7 +868,7 @@ type TriggerMessage<TEvent> = TEvent extends {
  * - An event of `on` (a trigger, which also starts the run as message 1) has
  *   its own name and data, typed from `on`.
  * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
- *   `agent/stop` (`thread.stop()`) carry the thread and agent beside their
+ *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
  * - `agent/request` is a question from another thread's `handle.request()`,
  *   answered with `reply()`.
@@ -890,7 +885,6 @@ export type ThreadInboxMessage<
   | TriggerMessage<TEvent>
   | InboxMessage<AgentMessageData, "agent/message">
   | InboxMessage<AgentSteerData, "agent/steer">
-  | InboxMessage<AgentStopData, "agent/stop">
   | (InboxMessage<AgentRequestData<TRequest>, "agent/request"> & {
       /**
        * Answers the request: sends `data` to the thread that asked. It is a
@@ -907,8 +901,7 @@ export type ThreadInboxMessage<
 /**
  * The thread's inbox: an `Inbox` (`step.subscribe()`'s) whose first message is
  * the event that started the run, and whose messages can reply. A message that
- * breaks its schema is dropped, and a stop is skipped, because while the agent
- * waits for its next message there is nothing to stop.
+ * breaks its schema is dropped.
  */
 export interface ThreadInbox<
   TEvent = TriggerEvent,
@@ -1112,13 +1105,12 @@ const triggerOf = (event: TriggerEvent | undefined) => {
 const ownEvents: string[] = [
   agentMessageEvent,
   agentSteerEvent,
-  agentStopEvent,
   agentRequestEvent,
 ];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
- * message that does not start a turn (a steer, a stop or a request).
+ * message that does not start a turn (a steer or a request).
  * @param event The event.
  */
 const inflightOf = (event: {
@@ -1126,11 +1118,7 @@ const inflightOf = (event: {
   name: string;
   data: unknown;
 }): Inflight | undefined => {
-  if (
-    event.name === agentSteerEvent ||
-    event.name === agentStopEvent ||
-    event.name === agentRequestEvent
-  ) {
+  if (event.name === agentSteerEvent || event.name === agentRequestEvent) {
     return undefined;
   }
 
@@ -1211,9 +1199,7 @@ interface ThreadSources {
 }
 
 /**
- * The thread's view of its inbox: a message is the event as it came, and stop
- * messages are skipped, because while the agent waits for its next message
- * there is nothing to stop.
+ * The thread's view of its inbox: a message is the event as it came.
  */
 function threadInbox(
   sources: ThreadSources,
@@ -1338,7 +1324,8 @@ function threadInbox(
   // every replay, which takes and keeps the same messages.
   const lead: InboxMessage[] = started ? [started] : [];
 
-  // What `view()` keeps of messages the source handed over.
+  // What is left of messages the source handed over once the ones that break
+  // their schema are dropped.
   async function keep(raws: InboxMessage[]) {
     const kept: InboxMessage[] = [];
 
@@ -1352,8 +1339,7 @@ function threadInbox(
   }
 
   // A reader with the agent's rules over an `Inbox`. Only the main one starts
-  // with the event that started the run, skips stops and records the thread's
-  // status.
+  // with the event that started the run and records the thread's status.
   function view<TOut>(
     source: Inbox<InboxMessage>,
     present: (raw: InboxMessage) => TOut,
@@ -1398,17 +1384,14 @@ function threadInbox(
 
           delivered += 1;
 
-          // While the agent waits for its next message there is nothing to stop.
-          if (raw.name !== agentStopEvent) {
-            if (delivered > 1) {
-              await recorder.running(
-                undefined,
-                inflightOf(message as unknown as ThreadInboxMessage),
-              );
-            }
-
-            return message;
+          if (delivered > 1) {
+            await recorder.running(
+              undefined,
+              inflightOf(message as unknown as ThreadInboxMessage),
+            );
           }
+
+          return message;
         }
       }) as View<TOut>["next"],
       nextBatch: (async (options?: BatchOptions & Partial<NextOptions>) => {
@@ -1921,7 +1904,6 @@ export function createAgentFunction(
       // waiting beside its work never holds the run back.
       optimizeParallelism: false,
       triggers: [
-        // A stop never starts a run, so stopping an idle thread does nothing.
         ...[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(
           (name) => {
             return { event: name, if: `event.data.agent == ${quote(ref)}` };
@@ -1965,7 +1947,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId, scoring);
+        const recorder = threadRecorder(store, runId);
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -2217,7 +2199,6 @@ export function createAgentFunction(
         );
         const agentScores = createAgentScores(client);
 
-        let stopRequested = false;
         const { inbox, steering } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<InboxMessage>,
@@ -2285,8 +2266,6 @@ export function createAgentFunction(
                   inflightOf(message) !== undefined)
               ) {
                 folded.push(message);
-              } else if (message.name === agentStopEvent) {
-                stopRequested = true;
               } else {
                 waiting.push(message);
               }
@@ -2295,16 +2274,6 @@ export function createAgentFunction(
             steering.keep(waiting);
 
             return folded;
-          },
-          async stop() {
-            const requested = stopRequested;
-            stopRequested = false;
-
-            if (requested) {
-              await recorder.stopped();
-            }
-
-            return requested;
           },
           budget() {
             return budgetReason(limits);
@@ -2331,7 +2300,7 @@ export function createAgentFunction(
           },
         };
 
-        // `agent.loop()` steers and stops through the inbox unless it is given
+        // `agent.loop()` steers through the inbox unless it is given
         // its own.
         bridge.control = control;
 

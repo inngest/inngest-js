@@ -109,7 +109,7 @@ export const agentsTypedInvoke = scenario({
         return s.status === "waiting";
       },
     );
-    await waiting.stop({ when: "now" });
+    await waiting.stop();
 
     // The executor completes the caller's run itself when the invoked run is
     // cancelled (null output, nothing after the invoke runs), as it does for

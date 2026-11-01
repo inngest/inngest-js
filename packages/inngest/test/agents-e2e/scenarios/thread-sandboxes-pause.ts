@@ -176,7 +176,7 @@ export const threadSandboxesPause = scenario({
       },
     );
 
-    const stopped = await gamma.stop({ when: "now" });
+    const stopped = await gamma.stop();
 
     ctx.check("stop now found the live run", stopped.stopped === true, stopped);
     // The cleanup defer of the cancelled run pauses the sandbox.

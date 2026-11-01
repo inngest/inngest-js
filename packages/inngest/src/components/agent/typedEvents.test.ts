@@ -42,7 +42,6 @@ describe("typed events", () => {
           | "shop/order.created"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();
@@ -59,9 +58,6 @@ describe("typed events", () => {
           case "agent/steer":
             expectTypeOf(message.data.text).toBeString();
             expectTypeOf(message.data.thread).toBeString();
-            break;
-          case "agent/stop":
-            expectTypeOf(message.data.when).toEqualTypeOf<"nextTurn">();
             break;
           case "agent/request":
             expectTypeOf(message.data.replyTo).toBeString();
@@ -224,7 +220,6 @@ describe("typed events", () => {
           | "slack/message"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();
@@ -244,7 +239,6 @@ describe("typed events", () => {
         | "inngest/scheduled.timer"
         | "agent/message"
         | "agent/steer"
-        | "agent/stop"
         | "agent/request"
         | undefined
       >();

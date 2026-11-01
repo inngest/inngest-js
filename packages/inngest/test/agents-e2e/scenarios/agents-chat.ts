@@ -152,11 +152,11 @@ export const agentsChat = scenario({
       turns,
     );
 
-    // stop now cancels the live run; a stop with no live run starts nothing.
+    // stop cancels the live run; a stop with no live run starts nothing.
     const before = ((await t1.state()).turns as string[]).length;
-    await t1.stop({ when: "now" });
+    await t1.stop();
     await sleep(2000);
-    await t1.stop({ when: "nextTurn" });
+    await t1.stop();
     await sleep(2000);
     ctx.check(
       "stop on an idle thread starts no run",
@@ -169,7 +169,7 @@ export const agentsChat = scenario({
     await ctx.until(t2.state, (s) => {
       return ((s.started as string[] | undefined) ?? []).includes("long");
     });
-    await t2.stop({ when: "now" });
+    await t2.stop();
     await sleep(3000);
     ctx.check(
       "stop now cancels the running turn",

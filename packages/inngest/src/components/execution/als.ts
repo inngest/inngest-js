@@ -8,12 +8,11 @@ import type { InboxRead, Want } from "./inboxState.ts";
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
 /**
- * What `agent.loop()` reads to steer and stop through the agent's inbox.
+ * What `agent.loop()` reads to steer through the agent's inbox.
  */
 export interface AgentBridge {
   control?: {
     steer: () => Promise<{ id?: string; name: string; data: unknown }[]>;
-    stop: () => Promise<boolean>;
   };
 }
 
@@ -156,7 +155,7 @@ export interface AsyncContext {
 
     /**
      * The inbox control of the agent run this function execution is, set by the
-     * agent function once it exists. `agent.loop()` uses it to steer and stop
+     * agent function once it exists. `agent.loop()` uses it to steer
      * when it is not given its own.
      */
     agentBridge?: AgentBridge;

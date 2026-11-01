@@ -67,10 +67,6 @@ export const threadHandle = scenario({
             ...control,
           });
           await kv.thread.set("last", { text: result.text });
-
-          if (result.stopped === "stopped") {
-            return "stopped";
-          }
         }
 
         return "closed";
@@ -137,19 +133,13 @@ export const threadHandle = scenario({
       waiting,
     );
 
-    // stop nextTurn lets the running model call finish and ends the thread.
+    // stop cancels the live run.
     await worker.send("long");
     await ctx.until(worker.state, (s) => {
       return s.status === "running" && s.turn >= 1;
     });
-    await worker.stop({ when: "nextTurn" });
-    await ctx.eventually(
-      "the thread stops at the next turn",
-      worker.state,
-      (s) => {
-        return s.status === "stopped";
-      },
-    );
+    const stopped = await worker.stop();
+    ctx.check("stop cancels the live run", stopped.stopped, stopped);
 
     // Another thread asks this one, which has no live run: the request wakes it.
     const asker = getThread(client, askerRef, `asker-${Date.now()}`, {

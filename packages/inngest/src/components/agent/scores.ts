@@ -28,8 +28,7 @@ export type AgentScoreName =
   | "agent.tool_ms"
   | "agent.tool_error"
   | "agent.first_output_ms"
-  | "agent.output_gap_ms"
-  | "agent.stopped";
+  | "agent.output_gap_ms";
 
 const frameworkPrefix = "agent.";
 
