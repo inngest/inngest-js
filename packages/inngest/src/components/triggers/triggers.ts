@@ -150,11 +150,9 @@ export class EventType<
   /**
    * Narrows any value, including plain JSON such as the result of an
    * `invoke`, to this event type. A name check.
-   *
-   * @param value - The value to check
    */
   is<TValue>(
-    value: TValue,
+    value: TValue, // the value to check
   ): value is TValue & EventTypeToShape<EventType<TName, TSchema>> {
     return hasEventName(value, this.name);
   }
