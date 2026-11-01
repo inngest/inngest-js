@@ -93,7 +93,9 @@ export const raceFlow = (
     expect: {
       output: { consistent: true },
       bodies: { slow: 1, record: 1, tail: 1 },
-      ...(options.read ? {} : { rows: ["inbox", "record", "slow", "tail"] }),
+      ...(options.read
+        ? {}
+        : { rows: ["inbox", "inbox:close", "record", "slow", "tail"] }),
     },
   };
 };
