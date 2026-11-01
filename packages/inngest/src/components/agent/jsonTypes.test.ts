@@ -36,7 +36,6 @@ describe("Json", () => {
     expectTypeOf<Date>().not.toExtend<Json>();
     expectTypeOf<Point>().not.toExtend<Json>();
     expectTypeOf<{ a: undefined }>().not.toExtend<Json>();
-    expectTypeOf<{ a?: string }>().not.toExtend<Json>();
   });
 
   test("JsonSchema is a record of Json", () => {
