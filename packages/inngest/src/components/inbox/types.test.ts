@@ -6,7 +6,7 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { eventType } from "../triggers/triggers.ts";
-import type { EventIs } from "../triggers/typeHelpers.ts";
+import type { EventIs, EventTypeToShape } from "../triggers/typeHelpers.ts";
 import type { Inbox, InboxMessage } from "./Inbox.ts";
 
 const review = eventType("review", {
@@ -20,6 +20,10 @@ type Reviews = { name: "review"; data: { state: string } };
 type Comments = { name: "comment"; data: { body: string } };
 
 declare const inbox: Inbox;
+declare const union: Inbox<
+  | (EventTypeToShape<typeof review> & EventIs)
+  | (EventTypeToShape<typeof comment> & EventIs)
+>;
 
 /**
  * The checks run only at compile time; the function is never called.
@@ -87,26 +91,8 @@ const checks = async () => {
     expectTypeOf(m.data).toBeUnknown();
   }
 
-  // Views are typed from the event types they read.
-  const reviews = inbox.of(review);
-  expectTypeOf(await reviews.next()).toMatchTypeOf<
-    (Reviews & EventIs) | undefined
-  >();
-  const one = (await reviews.next())!;
-  expectTypeOf(one.name).toEqualTypeOf<"review">();
-  expectTypeOf(one.data).toEqualTypeOf<{ state: string }>();
-  expectTypeOf(one.data).not.toBeAny();
-
-  const timed = await reviews.next({ timeout: "1s" });
-  expectTypeOf(timed).toEqualTypeOf<typeof one | null | undefined>();
-
-  const batch = await reviews.nextBatch({ max: 3 });
-  expectTypeOf(batch).toEqualTypeOf<(typeof one)[] | undefined>();
-  expectTypeOf(await reviews.drain()).toEqualTypeOf<(typeof one)[]>();
-  expectTypeOf(await reviews.close()).toEqualTypeOf<(typeof one)[]>();
-
-  const both = inbox.of([review, comment]);
-  const either = (await both.next())!;
+  // An inbox of several event types narrows with is() on its union.
+  const either = (await union.next())!;
   expectTypeOf(either.name).toEqualTypeOf<"review" | "comment">();
 
   if (either.is(review)) {
@@ -120,13 +106,13 @@ const checks = async () => {
     expectTypeOf(either.name).toEqualTypeOf<"review">();
   }
 
-  // listen() is typed from its own sources; a name has no schema.
-  const listened = inbox.listen("review");
-  expectTypeOf(await listened.next()).toEqualTypeOf<InboxMessage | undefined>();
+  // One inbox, one reader: there are no views.
+  // @ts-expect-error listen() is gone
+  inbox.listen("review");
+  // @ts-expect-error of() is gone
+  inbox.of(review);
 
-  // Not public: a name alone, and opened().
-  // @ts-expect-error a view is typed from event types, not a name
-  inbox.of("review");
+  // Not public: opened().
   // @ts-expect-error opened() is internal
   inbox.opened();
 };

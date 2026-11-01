@@ -1,6 +1,6 @@
 /**
  * @module
- * Type tests for how `step.subscribe()` and `listen()` type the messages of an
+ * Type tests for how `step.subscribe()` types the messages of an
  * inbox from its sources.
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -50,35 +50,16 @@ const fn = createClient({ id: "test" }).createFunction(
     expectTypeOf(n).toEqualTypeOf<InboxMessage>();
     expectTypeOf(n.data).toBeUnknown();
 
-    await using mixed = step.subscribe("mixed", [review, "other"]);
-    const x = (await mixed.next())!;
-    expectTypeOf(x.name).toEqualTypeOf<string>();
-
-    // A view of a view intersects with its parent.
-    const reviews = many.of(review);
-    expectTypeOf((await reviews.next())!.name).toEqualTypeOf<"review">();
-
-    const both = many.of([review, comment]);
-    expectTypeOf((await both.next())!.name).toEqualTypeOf<
-      "review" | "comment"
-    >();
-
-    const none = many.of(push);
-    expectTypeOf(await none.next()).toEqualTypeOf<undefined>();
-
-    const nested = many.of([review, comment]).of(comment);
-    expectTypeOf((await nested.next())!.name).toEqualTypeOf<"comment">();
-
-    // A listen() view is typed from its own sources.
-    const pushes = one.listen(push);
+    // Two inboxes in one function are typed apart, each from its own sources.
+    await using pushes = step.subscribe("pushes", push);
     const p = (await pushes.next())!;
     expectTypeOf(p.name).toEqualTypeOf<"push">();
     expectTypeOf(p.data).toEqualTypeOf<{ sha: string }>();
+    expectTypeOf((await one.next())!.name).toEqualTypeOf<"review">();
 
-    const listenedNamed = one.listen("push");
-    expectTypeOf(await listenedNamed.next()).toEqualTypeOf<
-      InboxMessage | undefined
-    >();
+    await using mixed = step.subscribe("mixed", [review, "other"]);
+    const x = (await mixed.next())!;
+    expectTypeOf(x.name).toEqualTypeOf<string>();
   },
 );
 

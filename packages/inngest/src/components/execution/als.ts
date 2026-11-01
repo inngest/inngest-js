@@ -2,7 +2,7 @@ import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
-import type { InboxRead, Want } from "./inboxState.ts";
+import type { InboxRead } from "./inboxState.ts";
 
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
@@ -105,18 +105,8 @@ export interface AsyncContext {
      * stack this request loaded.
      */
     inbox?: {
-      read: (
-        inbox: string,
-        taken: number,
-        wait: string,
-        want?: Want,
-      ) => InboxRead;
-      unread: (
-        inbox: string,
-        taken: number,
-        want?: Want,
-        upTo?: string,
-      ) => string[];
+      read: (inbox: string, taken: number, wait: string) => InboxRead;
+      unread: (inbox: string, taken: number, upTo?: string) => string[];
       message: (id: string) => unknown;
       lastSeen: () => string;
 

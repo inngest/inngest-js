@@ -47,7 +47,7 @@ const fakeDeps = (): InboxDeps => {
       return { name: "review", data: { state: "ok" } };
     },
     batch: async () => {
-      return { seen: "inbox", ids: [] };
+      return { cut: "m1" };
     },
     answered: () => {
       return false;
@@ -67,8 +67,8 @@ const fakeDeps = (): InboxDeps => {
     closed: () => {
       return false;
     },
-    close: async (_op, closing) => {
-      return closing.ids;
+    close: async () => {
+      return { cut: "m1" };
     },
   };
 };
@@ -118,13 +118,13 @@ describe("inbox messages have is()", () => {
   test("batches({ timeout }) ends the loop at the first timed out wait", async () => {
     const deps = fakeDeps();
     let reads = 0;
-    deps.unread = () => {
-      return [];
+    deps.unread = (_inbox, taken) => {
+      return taken === 0 ? ["m1"] : [];
     };
     deps.batch = async () => {
       reads += 1;
 
-      return reads === 1 ? { seen: "inbox", ids: ["m1"] } : null;
+      return reads === 1 ? { cut: "m1" } : null;
     };
 
     const seen: unknown[][] = [];
