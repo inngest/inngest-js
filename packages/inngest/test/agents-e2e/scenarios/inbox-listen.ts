@@ -61,7 +61,13 @@ const listenAddsSources: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:listen"],
+    rows: ["inbox", "inbox:listen", "inbox:listen:next", "inbox:next"],
+    ticks: {
+      inbox: 1,
+      "inbox:listen": 1,
+      "inbox:listen:next": 1,
+      "inbox:next": 1,
+    },
     steps: 4,
   },
 };
@@ -101,7 +107,11 @@ const nestedOfUnderListen: Flow = {
   expect: {
     output: { nested: 3 },
     bodies: {},
-    rows: ["inbox", "inbox:listen"],
+    rows: [
+      "inbox",
+      "inbox:listen",
+      "inbox:listen:of:agents-e2e/inbox-listen/c:next",
+    ],
     steps: 5,
   },
 };
@@ -142,7 +152,13 @@ const listensWithDifferentExpressions: Flow = {
   expect: {
     output: { one: 1, two: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:listen", "inbox:listen:1"],
+    rows: [
+      "inbox",
+      "inbox:listen",
+      "inbox:listen:1",
+      "inbox:listen:1:next",
+      "inbox:listen:next",
+    ],
     steps: 5,
   },
 };

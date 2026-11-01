@@ -65,9 +65,16 @@ const unreadMessages: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: {},
-    rows: ["inbox"],
+    rows: ["inbox", "inbox:next", "inbox:next:1", "inbox:next:2"],
     steps: 4,
   },
+};
+
+// The rows of the first `n` reads of an inbox.
+const reads = (n: number) => {
+  return Array.from({ length: n }, (_, i) => {
+    return i === 0 ? "inbox:next" : `inbox:next:${i}`;
+  });
 };
 
 const loopOf = (n: number): Flow => {
@@ -103,7 +110,15 @@ const loopOf = (n: number): Flow => {
     expect: {
       output: { ns: upTo(n) },
       bodies: {},
-      rows: ["inbox"],
+      rows: ["inbox", ...reads(n)],
+      ticks: {
+        inbox: n,
+        ...Object.fromEntries(
+          reads(n).map((row) => {
+            return [row, 1];
+          }),
+        ),
+      },
       steps: n + 1,
     },
   };
@@ -135,7 +150,7 @@ const lookalikeStep: Flow = {
   expect: {
     output: { fake: 99, real: 1 },
     bodies: { fake: 1 },
-    rows: ["fake", "inbox"],
+    rows: ["fake", "inbox", "inbox:next"],
     steps: 3,
   },
 };
@@ -167,7 +182,7 @@ const twoSources: Flow = {
   expect: {
     output: { ns: [1, 2] },
     bodies: {},
-    rows: ["inbox"],
+    rows: ["inbox", "inbox:next", "inbox:next:1"],
     steps: 3,
   },
 };

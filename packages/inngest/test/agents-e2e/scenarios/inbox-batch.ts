@@ -62,6 +62,7 @@ const burstThenBatch: Flow = {
     output: { ns: [1, 2, 3] },
     bodies: { work: 1 },
     rows: ["end", "inbox", "inbox:next:batch", "work"],
+    ticks: { inbox: 3, "inbox:next:batch": 3 },
 
     // The open record, the work, three messages, the one batch record and
     // the last sleep.
@@ -107,9 +108,10 @@ const maxLeavesTheRest: Flow = {
     rows: [
       "end",
       "inbox",
-      "inbox:next:batch",
+      "inbox:next",
       "inbox:next:1:batch",
       "inbox:next:2:batch",
+      "inbox:next:batch",
     ],
 
     // The open record, three messages, three batch records and the last
@@ -139,7 +141,8 @@ const batchWaits: Flow = {
   expect: {
     output: { ns: [1] },
     bodies: {},
-    rows: ["inbox", "inbox:next:batch"],
+    rows: ["inbox", "inbox:next", "inbox:next:batch"],
+    ticks: { inbox: 1, "inbox:next:batch": 1 },
   },
 };
 
@@ -224,10 +227,17 @@ const batchesLoop: Flow = {
     bodies: {},
     rows: [
       "inbox",
-      "inbox:next:batch",
+      "inbox:next",
       "inbox:next:1:batch",
       "inbox:next:2:batch",
+      "inbox:next:batch",
     ],
+    ticks: {
+      inbox: 5,
+      "inbox:next:batch": 2,
+      "inbox:next:1:batch": 2,
+      "inbox:next:2:batch": 1,
+    },
   },
 };
 

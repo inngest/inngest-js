@@ -300,6 +300,12 @@ export enum StepOpCode {
    * wakes it when a message it wants is saved.
    */
   SubscribeWait = "SubscribeWait",
+
+  /**
+   * A lazy op reporting the messages a read of an inbox took, so the executor
+   * can draw the read and stamp when each message was read. It saves nothing.
+   */
+  SubscribeRead = "SubscribeRead",
 }
 
 /**

@@ -54,7 +54,7 @@ const timeoutWithNoMessage: Flow = {
   expect: {
     output: { message: null },
     bodies: {},
-    rows: ["inbox"],
+    rows: ["inbox", "inbox:next"],
   },
 };
 
@@ -79,7 +79,7 @@ const messageBeforeTimeout: Flow = {
   expect: {
     output: { n: 1 },
     bodies: {},
-    rows: ["inbox"],
+    rows: ["inbox", "inbox:next"],
   },
 };
 
@@ -109,7 +109,7 @@ const timeoutThenMessage: Flow = {
   expect: {
     output: { first: null, n: 1 },
     bodies: {},
-    rows: ["inbox"],
+    rows: ["inbox", "inbox:next", "inbox:next:1"],
   },
 };
 
