@@ -3,8 +3,8 @@
  * The GitHub panel: the issues and pull requests of the fake GitHub, each
  * with its comments, and two buttons that open a new one as a person would.
  */
-import { Kbd } from "./keyboard.tsx";
-import { postJson, useAction, useFake } from "./live.ts";
+import { Kbd } from "../keyboard.tsx";
+import { postJson, useAction, useFake } from "../live.ts";
 
 interface Item {
   repo: string;

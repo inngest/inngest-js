@@ -4,9 +4,9 @@
  * name, and the list of what it sent.
  */
 import { useState } from "react";
-import { Kbd } from "./keyboard.tsx";
-import { postJson, useAction } from "./live.ts";
-import { names, pick } from "./random.ts";
+import { Kbd } from "../keyboard.tsx";
+import { postJson, useAction } from "../live.ts";
+import { names, pick } from "../random.ts";
 
 export const Events = () => {
   const [sent, setSent] = useState<string[]>([]);

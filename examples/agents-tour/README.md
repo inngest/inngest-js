@@ -73,11 +73,19 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 
 | Path | What |
 |---|---|
-| `lessons/<nn-lesson>/<nn-page>/` | `page.md`, `agent.ts`, `setup.ts` (read-only in the editor, identical for a lesson), `manifest.json` (start events, panels) |
-| `scripts/` | `tour.ts`, `devserver.ts`, `check.ts` (what the type checker cannot see), shared `lib.ts` |
+| `lessons/<nn-module>/module.json` | a module's `title` and `opening` line |
+| `lessons/<nn-module>/<nn>[a-z]-<page>/` | `page.md`, `manifest.json` and the editable files; `03-` is a core page, `03a-` a Go deeper page (label `3a`). An exercise adds `check.ts` and `stub/` and `solution/` folders |
+| `lessons/_shared/`, `lessons/<nn-module>/_shared/` | read-only files stored once; a manifest's `readOnly` names which a page shows (the module's first, then the tour-wide one) |
+| `scripts/` | `tour.ts`, `devserver.ts`, `check.ts` (what the type checker cannot see), `typecheck-lessons.ts`, shared `lib.ts` |
 | `server/` | the tour server, the Dev Server and app supervisors, the trace reader |
+| `server/areas/` | one file per area of the server (`pages.ts`, `panels.ts`), each exporting `area`; a new file is picked up with no other edit |
 | `runtime/host.ts` | the app the learner's code runs in |
 | `site/` | the React and Monaco front end (Vite) |
-| `shared/` | the key table and the types the site and server share |
+| `site/src/panels/` | one `<id>.panel.tsx` per play-pane panel, calling `registerPanel` |
+| `shared/` | the key table's helpers and the types the site and server share |
+| `shared/keys/` | one key list per area (`core.ts`, `slack.ts`, ...), joined into the one table; a clash fails `tour:check` and the site |
+| `test/` | `pnpm tour:test`: the tour server through its HTTP API, the key table, the port |
 
-`pnpm typecheck` checks the lessons against the real SDK types, the site, and `tour:check`. The repo root script `agents:examples` runs it with biome.
+`pnpm tour` listens on port 4730 unless `TOUR_PORT` says otherwise; `pnpm tour:live` is the same without opening a browser, for a tour that stays up on the integration branch. A browser may reach it as `127.0.0.1`, `localhost` or `[::1]`.
+
+`pnpm typecheck` writes each page's files (read-only ones beside them) to `.tour/typecheck/` and checks them against the real SDK types, the site, and `tour:check`. The repo root script `agents:examples` runs it with biome.

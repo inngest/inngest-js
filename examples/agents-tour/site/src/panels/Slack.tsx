@@ -5,9 +5,9 @@
  * fake Slack in the tour server, so what it shows is what the agent did.
  */
 import { useEffect, useRef } from "react";
-import { Kbd } from "./keyboard.tsx";
-import { postJson, useAction, useFake } from "./live.ts";
-import { messages, pick, replies } from "./random.ts";
+import { Kbd } from "../keyboard.tsx";
+import { postJson, useAction, useFake } from "../live.ts";
+import { messages, pick, replies } from "../random.ts";
 
 interface Card {
   id: string;

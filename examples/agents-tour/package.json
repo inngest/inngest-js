@@ -12,7 +12,9 @@
     "tour:devserver": "node --disable-warning=ExperimentalWarning scripts/devserver.ts",
     "tour:check-editor": "node --disable-warning=ExperimentalWarning scripts/check-editor.ts",
     "tour:check": "node --disable-warning=ExperimentalWarning scripts/check.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p site/tsconfig.json && node --disable-warning=ExperimentalWarning scripts/check.ts"
+    "tour:test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "tour:live": "node --disable-warning=ExperimentalWarning scripts/tour.ts --live",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p site/tsconfig.json && node --disable-warning=ExperimentalWarning scripts/typecheck-lessons.ts && node --disable-warning=ExperimentalWarning scripts/check.ts"
   },
   "dependencies": {
     "inngest": "link:../../packages/inngest/dist",

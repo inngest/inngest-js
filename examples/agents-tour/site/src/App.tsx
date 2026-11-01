@@ -15,29 +15,19 @@ import type {
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
-import { Events } from "./Events.tsx";
-import { Github } from "./Github.tsx";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { announceChange, sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { MessagePanel } from "./panels.tsx";
+import { allPanels, panelOf } from "./panels/index.ts";
 import { Divider } from "./panes.tsx";
 import { hash, store } from "./platform.ts";
-import { Slack } from "./Slack.tsx";
 import { TracePanel } from "./trace.tsx";
 
-type PlayTab = "message" | "slack" | "github" | "events";
+type PlayTab = string;
 type Overlay = "contents" | "search" | "cheat" | null;
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
-
-const tabNames: Record<PlayTab, string> = {
-  message: "Messages",
-  slack: "Slack",
-  github: "GitHub",
-  events: "Events",
-};
 
 const pathOf = (id: string) => {
   return `/tour/${id}`;
@@ -116,8 +106,8 @@ export const App = () => {
 
   const flat = useMemo(() => {
     return (
-      index?.lessons.flatMap((lesson) => {
-        return lesson.pages;
+      index?.modules.flatMap((module) => {
+        return module.pages;
       }) ?? []
     );
   }, [index]);
@@ -273,13 +263,16 @@ export const App = () => {
   };
 
   const target = page?.manifest.message;
-  const panels: PlayTab[] =
-    (page?.manifest.panels as PlayTab[] | undefined) ??
-    (target ? ["message"] : []);
+  const panels: PlayTab[] = (
+    page?.manifest.panels ?? (target ? ["message"] : [])
+  ).filter((id) => {
+    return panelOf(id) !== undefined;
+  });
   const panelsKey = panels.join(",");
+  const Panel = panelOf(play)?.component;
 
   useEffect(() => {
-    setPlay(panelsKey.split(",")[0] as PlayTab);
+    setPlay(panelsKey.split(",")[0] ?? "");
   }, [page?.id, panelsKey]);
 
   // Opens a tab of the play pane, then focuses something in it or hands a key
@@ -305,7 +298,34 @@ export const App = () => {
     }, 0);
   };
 
+  // Each panel's tab key opens it; each of its own keys opens it and is
+  // handed on. A key several panels declare goes to the open one first.
+  const panelHandlers: Handlers = {};
+
+  for (const def of allPanels()) {
+    panelHandlers[def.key] = () => {
+      playTo(def.id, def.focus);
+    };
+
+    for (const action of def.actions ?? []) {
+      panelHandlers[action] = () => {
+        const owners = allPanels().filter((other) => {
+          return other.actions?.includes(action) && panels.includes(other.id);
+        });
+        const target =
+          owners.find((other) => {
+            return other.id === play;
+          }) ?? owners[0];
+
+        if (target) {
+          playTo(target.id, action);
+        }
+      };
+    }
+  }
+
   const handlers: Handlers = {
+    ...panelHandlers,
     run,
     kill: () => {
       void api.kill();
@@ -334,48 +354,6 @@ export const App = () => {
     },
     trace: () => {
       focusIn(".trace [data-row], .trace");
-    },
-    message: () => {
-      playTo("message", ".message button");
-    },
-    slack: () => {
-      playTo("slack", ".slack-head button");
-    },
-    github: () => {
-      playTo("github", ".gh-head button");
-    },
-    events: () => {
-      playTo("events", ".events button");
-    },
-    slackCompose: () => {
-      playTo("slack", "slackCompose");
-    },
-    slackNew: () => {
-      playTo("slack", "slackNew");
-    },
-    approve: () => {
-      playTo("slack", "approve");
-    },
-    deny: () => {
-      playTo("slack", "deny");
-    },
-    sendOther: () => {
-      playTo("message", "sendOther");
-    },
-    githubComment: () => {
-      playTo("github", "githubComment");
-    },
-    githubApprove: () => {
-      playTo("github", "githubApprove");
-    },
-    githubPull: () => {
-      playTo("github", "githubPull");
-    },
-    githubIssue: () => {
-      playTo("github", "githubIssue");
-    },
-    sendEvent: () => {
-      playTo(play === "message" ? "message" : "events", "sendEvent");
     },
     file: nextFile,
     devserver: () => {
@@ -533,7 +511,7 @@ export const App = () => {
             tabIndex={-1}
             aria-label="Lesson"
           >
-            <p className="crumb">{page.lessonTitle}</p>
+            <p className="crumb">{page.moduleTitle}</p>
             <h2>{page.title}</h2>
             <div
               className="prose"
@@ -556,6 +534,12 @@ export const App = () => {
               <section className="play" aria-label="Play">
                 <div className="tabs" role="tablist" onKeyDown={tabKeys}>
                   {panels.map((tab) => {
+                    const def = panelOf(tab);
+
+                    if (!def) {
+                      return null;
+                    }
+
                     return (
                       <button
                         type="button"
@@ -566,9 +550,9 @@ export const App = () => {
                         aria-controls="play-panel"
                         tabIndex={play === tab ? 0 : -1}
                         onClick={() => setPlay(tab)}
-                        aria-keyshortcuts={shortcutsOf(tab)}
+                        aria-keyshortcuts={shortcutsOf(def.key)}
                       >
-                        {tabNames[tab]} <Kbd action={tab} />
+                        {def.label} <Kbd action={def.key} />
                       </button>
                     );
                   })}
@@ -579,15 +563,9 @@ export const App = () => {
                   id="play-panel"
                   aria-labelledby={`play-tab-${play}`}
                 >
-                  {play === "message" && target ? (
-                    <MessagePanel
-                      target={target}
-                      disabled={status.state !== "live"}
-                    />
+                  {Panel && page ? (
+                    <Panel page={page} live={status.state === "live"} />
                   ) : null}
-                  {play === "slack" ? <Slack /> : null}
-                  {play === "github" ? <Github /> : null}
-                  {play === "events" ? <Events /> : null}
                 </div>
               </section>
             </>
@@ -711,7 +689,9 @@ export const App = () => {
                   runs={runs}
                   lines={lines}
                   everything={everything}
-                  onToggle={handlers.everything}
+                  onToggle={() => {
+                    handlers.everything?.();
+                  }}
                 />
               </section>
             </div>
@@ -731,7 +711,7 @@ export const App = () => {
           Previous <Kbd action="prev" />
         </button>
         <span className="counter">
-          {page.number} / {flat.length}
+          {page.label} / {flat.filter((entry) => entry.kind === "core").length}
         </span>
         <button
           type="button"

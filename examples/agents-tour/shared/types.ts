@@ -20,15 +20,37 @@ export interface StartSlack {
 
 export type Start = StartMessage | StartEvent | StartSlack;
 
+export interface Exercise {
+  // The check script in the page's folder.
+  check: string;
+  // Folders in the page's folder holding one file per editable file.
+  stub: string;
+  solution: string;
+}
+
 export interface Manifest {
   // Pages without code (the welcome pages) hide the right side.
   code?: boolean;
-  // The tabs of the play pane: `message`, and later `slack`, `github`, `events`.
+  // Core pages carry the reader on; Go deeper pages are optional. The page's
+  // label (`3` or `3a`) comes from its folder name.
+  kind?: "core" | "deeper";
+  // Files the reader edits, from the page's folder. Default: `agent.ts`.
+  editable?: string[];
+  // Read-only files shown on the page, found in the module's `_shared`
+  // folder, then in the tour-wide one. Default: `setup.ts`.
+  readOnly?: string[];
+  // The tabs of the play pane, by the id a panel registered with.
   panels?: string[];
+  // What Run sends.
   start?: Start[];
   // The message box sends to this agent and thread.
   // `threads` adds one button per thread; the first is the default.
   message?: { agent: string; thread: string; threads?: string[] };
+  // The concepts and APIs this page introduces.
+  concepts?: string[];
+  apis?: string[];
+  // Present on an exercise page.
+  exercise?: Exercise;
 }
 
 export interface PageFile {
@@ -39,9 +61,13 @@ export interface PageFile {
 
 export interface PageSummary {
   id: string;
+  // The core number, shared by a core page and the Go deeper pages after it.
   number: number;
-  lesson: string;
-  lessonTitle: string;
+  // `3` for a core page, `3a` for a Go deeper page.
+  label: string;
+  kind: "core" | "deeper";
+  module: string;
+  moduleTitle: string;
   title: string;
 }
 
@@ -49,17 +75,19 @@ export interface Page extends PageSummary {
   markdown: string;
   files: PageFile[];
   manifest: Manifest;
+  exercise: boolean;
 }
 
-export interface Lesson {
+export interface Module {
   id: string;
   title: string;
-  blurb: string;
+  // The opening line shown in Contents.
+  opening: string;
   pages: PageSummary[];
 }
 
 export interface TourIndex {
-  lessons: Lesson[];
+  modules: Module[];
 }
 
 export interface TraceStep {
@@ -112,4 +140,6 @@ export type TourEvent =
       text: string;
     }
   | { type: "runs"; runs: TraceRun[] }
-  | { type: "fakes"; topic: "slack" | "github" };
+  | { type: "fakes"; topic: "slack" | "github" }
+  // Any area's own topic: the site turns it into a `tour:area` window event.
+  | { type: "area"; area: string; topic: string; data?: unknown };

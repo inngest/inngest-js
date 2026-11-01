@@ -5,11 +5,11 @@
  * each message as the event it became.
  */
 import { useState } from "react";
-import { eventOfMessage } from "../../shared/events.ts";
-import { api } from "./api.ts";
-import { Kbd } from "./keyboard.tsx";
-import { useAction } from "./live.ts";
-import { messages, pick } from "./random.ts";
+import { eventOfMessage } from "../../../shared/events.ts";
+import { api } from "../api.ts";
+import { Kbd } from "../keyboard.tsx";
+import { useAction } from "../live.ts";
+import { messages, pick } from "../random.ts";
 
 export const MessagePanel = ({
   target,

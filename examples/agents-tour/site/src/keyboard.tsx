@@ -9,14 +9,14 @@ import { useEffect, useRef } from "react";
 import {
   type ActionId,
   hintOf,
-  keyOf,
-  keys,
   matches,
   parseCombo,
 } from "../../shared/keys.ts";
+import { keyOf, keys } from "./keytable.ts";
 import { isMac } from "./platform.ts";
 
-export type Handlers = Record<ActionId, () => void>;
+// Core handlers live in the page; each panel adds the ones for its own keys.
+export type Handlers = Partial<Record<ActionId, () => void>>;
 
 const textTags = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
@@ -58,7 +58,7 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
       const fire = (id: ActionId) => {
         event.preventDefault();
         event.stopPropagation();
-        latest.current.handlers[id]();
+        latest.current.handlers[id]?.();
       };
 
       // Monaco has focus: its own commands (registered from the same table)
@@ -210,7 +210,7 @@ export const registerEditorCommands = (
 
       if (binding !== undefined) {
         editor.addCommand(binding, () => {
-          handlers()[def.id]();
+          handlers()[def.id]?.();
         });
       }
     }
@@ -219,7 +219,7 @@ export const registerEditorCommands = (
   editor.addCommand(
     monaco.KeyCode.Escape,
     () => {
-      handlers().editor();
+      handlers().editor?.();
     },
     "!suggestWidgetVisible && !findWidgetVisible && !parameterHintsVisible && !renameInputVisible && !editorHasSelection && !inReferenceSearchEditor && !editorHasMultipleSelections && !hasOtherSuggestions && !accessibilityHelpWidgetVisible",
   );
