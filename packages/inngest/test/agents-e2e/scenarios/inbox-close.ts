@@ -70,6 +70,7 @@ const closeReturnsUnread: Flow = {
       drained: 0,
     },
     bodies: {},
+    ended: ["inbox"],
     rows: ["inbox", "inbox:close", "inbox:next"],
     steps: 5,
   },
@@ -188,6 +189,7 @@ const closingListenKeepsInboxCopies: Flow = {
       "inbox:next:1",
       "inbox:next:2",
     ],
+    ended: ["inbox", "inbox:listen"],
     steps: 7,
   },
 };
@@ -289,10 +291,30 @@ const closingInboxClosesViews: Flow = {
   },
 };
 
+const neverClosed: Flow = {
+  name: "inbox-never-closed",
+  run: async (h) => {
+    const inbox = h.step.subscribe("inbox", when(h, "a"));
+
+    return { first: n(await inbox.next()) };
+  },
+  drive: async (d) => {
+    await d.opened("inbox");
+    await d.send("a", { n: 1 });
+  },
+  expect: {
+    output: { first: 1 },
+    bodies: {},
+    rows: ["inbox", "inbox:next"],
+    ended: ["inbox"],
+  },
+};
+
 export const inboxClose = flowScenario({
   id: "inbox-close",
   owner: "sub-07-close",
   flows: [
+    neverClosed,
     closeReturnsUnread,
     closeEndsBackgroundLoop,
     closeEndsTimedRead,

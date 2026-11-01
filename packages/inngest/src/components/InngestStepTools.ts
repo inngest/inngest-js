@@ -839,6 +839,7 @@ export const createStepTools = <
           ids: string[];
           pauses: { id: string; event: string }[];
           waits: string[];
+          rows: string[];
         },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
@@ -853,6 +854,7 @@ export const createStepTools = <
           ids: opts.ids,
           pauses: opts.pauses,
           waits: opts.waits,
+          rows: opts.rows,
         },
         userland: { id },
       };

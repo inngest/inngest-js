@@ -224,6 +224,7 @@ export interface InboxDeps {
       ids: string[];
       pauses: { id: string; event: string }[];
       waits: string[];
+      rows: string[];
     },
   ) => Promise<string[]>;
 
@@ -473,6 +474,26 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   /**
    * The reads of this reader and of every view under it that have not settled.
    */
+  /**
+   * The hashed ids of the open and listen ops whose rows this close ends: this
+   * reader's own, if it is the inbox or a `listen()` view, and the ones of every
+   * `listen()` view under it. An `of()` view has no row.
+   */
+  #closingRows(): string[] {
+    const own = this.#listening
+      ? [this.#deps.waitId(this.#base)]
+      : this.#parent || this.#events
+        ? []
+        : [this.#deps.inbox];
+
+    return [
+      ...own,
+      ...this.#children.flatMap((child) => {
+        return child.#closingRows();
+      }),
+    ];
+  }
+
   #closingReads(): string[] {
     return [
       ...this.#unsettled,
@@ -825,6 +846,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       ids: this.#deps.unread(this.#deps.inbox, this.#taken, this.#want()),
       pauses: this.#closingPauses(),
       waits: this.#closingReads(),
+      rows: this.#closingRows(),
     });
 
     this.#closed = true;

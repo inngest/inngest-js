@@ -59,6 +59,12 @@ export interface RunInfo {
   ticks: Record<string, { id: string; at: string; readAt: string | null }[]>;
 
   /**
+   * Whether each row has ended, by the row's display name: true when every row
+   * of that name has an end time.
+   */
+  ended: Record<string, boolean>;
+
+  /**
    * The Dev Server's IDs for the steps: the SHA-1 of the ID the function gave
    * them. `toHaveSteps` hashes the IDs you pass, so you never read these.
    */
@@ -226,6 +232,16 @@ const gql = async (devUrl: string, query: string, variables: object) => {
   return json.data;
 };
 
+const endedOf = (found: any[]): RunInfo["ended"] => {
+  const byRow: RunInfo["ended"] = {};
+
+  for (const span of found) {
+    byRow[span.name] = (byRow[span.name] ?? true) && Boolean(span.endedAt);
+  }
+
+  return byRow;
+};
+
 const ticksOf = (found: any[]): RunInfo["ticks"] => {
   const byRow: RunInfo["ticks"] = {};
 
@@ -298,7 +314,7 @@ const hash = (id: string) => {
 const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
   const data = await gql(
     devUrl,
-    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } childrenSpans { name stepID ticks { id at readAt } } } } } } } }`,
+    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } } } } } } } }`,
     { id },
   );
   const run = data.run;
@@ -332,6 +348,7 @@ const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
       return span.name;
     }),
     ticks: ticksOf(found),
+    ended: endedOf(found),
     stepHashes: found.flatMap((span) => {
       return span.stepID ? [span.stepID] : [];
     }),

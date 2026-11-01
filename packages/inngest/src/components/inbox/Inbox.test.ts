@@ -75,6 +75,7 @@ describe("closing an inbox", () => {
           ids: ["m1", "m2"],
           pauses: [{ id: "p1", event: "msg" }],
           waits: [],
+          rows: ["inbox"],
         },
       },
     ]);
