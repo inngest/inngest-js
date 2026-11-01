@@ -442,7 +442,7 @@ const SYNTH3={bpm:184,bars:16,gtr:{k:8,hp:140,mf:2000,mg:2,lp:3600,lv:.36},
  bar(i,at,gtr){
   const BAR=240/184,sx=BAR/16,blast=i>=8;
   FASTR[FSONG[i]].forEach((o,s)=>{if(o!==NN){gt(R2+o,at(s*sx),sx*.85,.17,gtr,.8);sub(R2+o%12,at(s*sx),sx*.8,.08);}});
-  if(blast){for(let s=0;s<16;s+=1)kick(at(s*sx),.5);[2,6,10,14].forEach(s=>snare(at(s*sx),.8));for(let s=0;s<16;s+=4)hiss(at(s*sx),.05,.03,7000);}
+  if(blast){for(let s=0;s<16;s+=1)nt("sine",150,at(s*sx),.07,.3,null,{to:50,sl:.05,sus:.2,a:.002});[2,6,10,14].forEach(s=>snare(at(s*sx),.8));for(let s=0;s<16;s+=4)hiss(at(s*sx),.05,.03,7000);}
   else{[0,4,8,12].forEach(s=>kick(at(s*sx),.8));[4,12].forEach(s=>snare(at(s*sx),.9));for(let s=0;s<16;s+=2)hiss(at(s*sx),.03,.025,8000);}
   if(i===0||i===8)crash(at(0),1.4,.7);
   if(i===7||i===15)[12,13,14,15].forEach(s=>snare(at(s*sx),.6));

@@ -29,7 +29,7 @@ out.tracks=[];
 for(let i=0;i<7;i++){await ev(`__sound.dmSetTrack(${i})`);await sleep(400);
  out.tracks.push(await ev(`(async()=>{const t=__sound.TRACKS[${i}],b=await __sound.trackBuffer(t);return JSON.stringify({id:t.id,name:t.name,sec:+b.duration.toFixed(3),ch:b.numberOfChannels,rms:b.__rms,ms:b.__ms,render:b.__render,looping:mus.src&&mus.src.loop,label:document.querySelector('#dtname').textContent,btn:document.querySelector('#dtrack').textContent})})()`));}
 // keys: v cycles, Shift+V opens list, digits pick, Esc closes
-await ev("__sound.dmSetTrack(0)");await key("v");await sleep(300);out.afterV=await ev("__sound.dm.track");
+out.diag=await ev("JSON.stringify({active:__sound.dm.active,over:__sound.dm.over,muted:__sound.st.muted,focus:document.activeElement.tagName+'#'+document.activeElement.id,menu:!document.querySelector('#menu').hidden})");await ev("__sound.dmSetTrack(0)");await key("v");await sleep(300);out.afterV=await ev("__sound.dm.track");
 await key("V",true);await sleep(150);out.listOpen=await ev("!document.querySelector('#tracklist').hidden");
 await key("4");await sleep(300);out.afterListPick4=await ev("JSON.stringify({track:__sound.dm.track,listOpen:!document.querySelector('#tracklist').hidden,hp:__sound.dm.hp})");
 await key("V",true);await sleep(100);await key("Escape");await sleep(100);out.escClosed=await ev("document.querySelector('#tracklist').hidden");
