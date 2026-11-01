@@ -63,6 +63,22 @@ describe("handler event.is", () => {
         } else if (event.is([b, c])) {
           expectTypeOf(event.name).toEqualTypeOf<"b" | "c">();
         }
+
+        if (event.is(a)) {
+          expectTypeOf(event.name).toEqualTypeOf<"a">();
+        } else {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "b" | "c" | "inngest/function.invoked"
+          >();
+        }
+
+        if (event.is([a, b])) {
+          expectTypeOf(event.name).toEqualTypeOf<"a" | "b">();
+        } else {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "c" | "inngest/function.invoked"
+          >();
+        }
       },
     );
 
