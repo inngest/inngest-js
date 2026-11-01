@@ -94,6 +94,12 @@ export interface AsyncContext {
     insideExperimentSelect?: boolean;
 
     /**
+     * What the executor said it supports on this request. Undefined when
+     * unknown.
+     */
+    executorCapabilities?: string[];
+
+    /**
      * What an inbox (`step.subscribe()`) reads from the run's state: its
      * messages in the order the executor saved them, and the last step of the
      * stack this request loaded.
