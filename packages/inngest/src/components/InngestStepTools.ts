@@ -36,7 +36,7 @@ import {
 } from "../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
-import { fetch as stepFetch } from "./Fetch.ts";
+import { type StepFetch, fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
   type GetFunctionOutputRaw,
@@ -326,6 +326,280 @@ type MergedMiddleware<
   ...(TFnMiddleware extends Middleware.Class[] ? TFnMiddleware : []),
 ];
 
+/**
+ * The set of tools available to a function handler as `step`, as returned
+ * by {@link createStepTools}.
+ *
+ * This surface is a named, exported interface — rather than the anonymous
+ * object type otherwise inferred from `createStepTools` — so that
+ * TypeScript's declaration emit can refer to it by name. Without a name,
+ * the whole step surface is copied into the declaration of every exported
+ * function (~40 KB each; see #1859).
+ *
+ * `TMiddleware` is the already-merged middleware list (client-level and
+ * function-level combined, e.g. via {@link MergedMiddleware}) whose
+ * transforms apply to step results. Carrying the merged list directly —
+ * rather than the client and function middleware as separate arguments —
+ * preserves structural compatibility when the client already contributes
+ * the same middleware. All method generics, overloads and optionality
+ * match the object returned by `createStepTools`.
+ */
+export interface StepTools<
+  TClient extends Inngest.Any,
+  TMiddleware extends Middleware.Class[],
+> {
+  /**
+   * Send one or many events to Inngest. Should always be used in place of
+   * `inngest.send()` to ensure that the event send is successfully retried
+   * and not sent multiple times due to memoisation.
+   *
+   * @example
+   * ```ts
+   * await step.sendEvent("emit-user-creation", {
+   *   name: "app/user.created",
+   *   data: { id: 123 },
+   * });
+   *
+   * await step.sendEvent("emit-user-updates", [
+   *   {
+   *     name: "app/user.created",
+   *     data: { id: 123 },
+   *   },
+   *   {
+   *     name: "app/user.feed.created",
+   *     data: { id: 123 },
+   *   },
+   * ]);
+   * ```
+   *
+   * Returns a promise that will resolve once the event has been sent.
+   */
+  sendEvent: (
+    idOrOptions: StepOptionsOrId,
+    payload: SendEventPayload,
+  ) => Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
+
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Wait for a particular signal to be received before continuing. When the
+   * signal is received, its data will be returned.
+   */
+  waitForSignal: <TData>(
+    idOrOptions: StepOptionsOrId,
+    opts: WaitForSignalOpts,
+  ) => Promise<{ signal: string; data: Jsonify<TData> } | null>;
+
+  /**
+   * Step-level functionality related to realtime features.
+   *
+   * Unlike client-level realtime methods (`inngest.realtime.*`), these tools
+   * will be their own durable steps when run. If you wish to use realtime
+   * features outside of a step, make sure to use the client-level methods
+   * instead.
+   */
+  realtime: {
+    /**
+     * Publish a realtime message as a durable step. Memoized and will not
+     * re-fire on retry, unlike client-level `inngest.realtime.publish()`.
+     *
+     * Uses topic accessors: `step.realtime.publish("id", chat.status, data)`
+     */
+    publish: <TData>(
+      idOrOptions: StepOptionsOrId,
+      topicRef: Realtime.TopicRef<TData>,
+      data: TData,
+    ) => Promise<TData>;
+  };
+
+  /**
+   * Send a Signal to Inngest.
+   */
+  sendSignal: (
+    idOrOptions: StepOptionsOrId,
+    opts: SendSignalOpts,
+  ) => Promise<SendSignalResponse>;
+
+  /**
+   * Wait for a particular event to be received before continuing. When the
+   * event is received, it will be returned.
+   *
+   * You can also provide options to control the particular event that is
+   * received, for example to ensure that a user ID matches between two
+   * events, or to only wait a maximum amount of time before giving up and
+   * returning `null` instead of any event data.
+   */
+  waitForEvent: <
+    TOpts extends {
+      /**
+       * The event to wait for.
+       */
+      event:
+        | string
+        // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
+        | EventType<string, any>;
+
+      /**
+       * The step function will wait for the event for a maximum of this
+       * time, at which point the signal will be returned as `null` instead
+       * of any signal data.
+       *
+       * The time to wait can be specified using a `number` of milliseconds,
+       * an `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or
+       * `"2.5d"`, a `Date`, a `Temporal.Duration` (relative wait), or a
+       * `Temporal.Instant` / `Temporal.ZonedDateTime` (absolute deadline).
+       *
+       * Durations of less than 1 second round up to `1s`, the minimum
+       * resolution of a durable wait.
+       *
+       * {@link https://npm.im/ms}
+       */
+      timeout:
+        | number
+        | string
+        | Date
+        | Temporal.DurationLike
+        | Temporal.InstantLike
+        | Temporal.ZonedDateTimeLike;
+    } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
+  >(
+    idOrOptions: StepOptionsOrId,
+    opts: TOpts,
+  ) => Promise<WaitForEventResult<TOpts>>;
+
+  /**
+   * Use this tool to run business logic. Each call to `run` will be retried
+   * individually, meaning you can compose complex workflows that safely
+   * retry dependent asynchronous actions.
+   *
+   * The function you pass to `run` will be called only when this "step" is to
+   * be executed and can be synchronous or asynchronous.
+   *
+   * In either case, the return value of the function will be the return value
+   * of the `run` tool, meaning you can return and reason about return data
+   * for next steps.
+   */
+  run: <
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    TFn extends (...args: any[]) => unknown,
+  >(
+    idOrOptions: StepOptionsOrId,
+    fn: TFn,
+    ...input: Parameters<TFn>
+  ) => Promise<
+    ApplyAllMiddlewareTransforms<
+      TMiddleware,
+      TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+        ? Awaited<U extends void ? null : U>
+        : ReturnType<TFn> extends void
+          ? null
+          : ReturnType<TFn>
+    >
+  >;
+
+  /**
+   * AI tooling for running AI models and other AI-related tasks.
+   */
+  ai: {
+    /**
+     * Use this tool to have Inngest make your AI calls. Useful for agentic workflows.
+     *
+     * Input is also tracked for this tool, meaning you can pass input to the
+     * function and it will be displayed and editable in the UI.
+     */
+    infer: <TAdapter extends AiAdapter>(
+      idOrOptions: StepOptionsOrId,
+      options: AiInferOpts<TAdapter>,
+    ) => Promise<AiAdapter.Output<TAdapter>>;
+
+    /**
+     * Use this tool to wrap AI models and other AI-related tasks. Each call
+     * to `wrap` will be retried individually, meaning you can compose complex
+     * workflows that safely retry dependent asynchronous actions.
+     *
+     * Input is also tracked for this tool, meaning you can pass input to the
+     * function and it will be displayed and editable in the UI.
+     */
+    wrap: <
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
+      TFn extends (...args: any[]) => unknown,
+    >(
+      idOrOptions: StepOptionsOrId,
+      fn: TFn,
+      ...input: Parameters<TFn>
+    ) => Promise<
+      ApplyAllMiddlewareTransforms<
+        TMiddleware,
+        TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+          ? Awaited<U extends void ? null : U>
+          : ReturnType<TFn> extends void
+            ? null
+            : ReturnType<TFn>
+      >
+    >;
+
+    /**
+     * Models for AI inference and other AI-related tasks.
+     */
+    models: typeof models;
+  };
+
+  /**
+   * Wait a specified amount of time before continuing.
+   *
+   * The time to wait can be specified using a `number` of milliseconds or an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`.
+   *
+   * Durations of less than 1 second round up to `1s`, the minimum
+   * resolution of a durable wait.
+   *
+   * {@link https://npm.im/ms}
+   *
+   * To wait until a particular date, use `sleepUntil` instead.
+   */
+  sleep: (
+    idOrOptions: StepOptionsOrId,
+    time: number | string | Temporal.DurationLike,
+  ) => Promise<void>;
+
+  /**
+   * Wait until a particular date before continuing by passing a `Date`.
+   *
+   * To wait for a particular amount of time from now, always use `sleep`
+   * instead.
+   */
+  sleepUntil: (
+    idOrOptions: StepOptionsOrId,
+    time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike,
+  ) => Promise<void>;
+
+  /**
+   * Invoke a passed Inngest `function` with the given `data`. Returns the
+   * result of the returned value of the function or `null` if the function
+   * does not return a value.
+   */
+  invoke: <TFunction extends InvokeTargetFunctionDefinition>(
+    idOrOptions: StepOptionsOrId,
+    opts: InvocationOpts<TFunction>,
+  ) => InvocationResult<
+    ApplyAllMiddlewareTransforms<
+      TMiddleware,
+      GetFunctionOutputRaw<TFunction>,
+      "functionOutputTransform"
+    >
+  >;
+
+  /**
+   * `step.fetch` is a Fetch-API-compatible function that can be used to make
+   * any HTTP code durable if it's called within an Inngest function.
+   *
+   * It will gracefully fall back to the global `fetch` if called outside of
+   * this context, and a custom fallback can be set using the `config` method.
+   */
+  fetch: StepFetch;
+}
+
 export const createStepTools = <
   TClient extends Inngest.Any,
   TFnMiddleware extends Middleware.Class[] | undefined = undefined,
@@ -333,7 +607,7 @@ export const createStepTools = <
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler,
-) => {
+): StepTools<TClient, MergedMiddleware<TClient, TFnMiddleware>> => {
   /**
    * A local helper used to create tools that can be used to submit an op.
    *
