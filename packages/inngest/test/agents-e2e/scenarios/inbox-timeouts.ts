@@ -97,7 +97,7 @@ const timeoutThenMessage: Flow = {
       const second = await inbox.next();
       h.mark("received");
 
-      return { first, n: (second.data as { n: number }).n };
+      return { first, n: (second?.data as { n: number }).n };
     } finally {
       await inbox.close();
     }

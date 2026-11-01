@@ -21,10 +21,10 @@ const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
 };
 
-const numbers = (messages: { data?: unknown }[]) => {
+const numbers = (messages: ({ data?: unknown } | undefined)[]) => {
   return messages
     .map((message) => {
-      return (message.data as { n: number }).n;
+      return (message?.data as { n: number }).n;
     })
     .sort((a, b) => {
       return a - b;
@@ -123,7 +123,7 @@ const lookalikeStep: Flow = {
       });
       const real = await inbox.next();
 
-      return { fake: fake.data.n, real: (real.data as { n: number }).n };
+      return { fake: fake.data.n, real: (real?.data as { n: number }).n };
     } finally {
       await inbox.close();
     }

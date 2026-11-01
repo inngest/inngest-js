@@ -300,6 +300,13 @@ export enum StepOpCode {
    * wakes it when a message it wants is saved.
    */
   SubscribeWait = "SubscribeWait",
+
+  /**
+   * Closes an inbox or a view of one: the executor deletes the pauses of its
+   * sources, ends the reads waiting under it and saves the ids of the
+   * messages it had not read.
+   */
+  SubscribeClose = "SubscribeClose",
 }
 
 /**

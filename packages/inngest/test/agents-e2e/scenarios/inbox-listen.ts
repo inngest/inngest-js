@@ -22,8 +22,8 @@ const sources = (h: FlowHandle) => {
   ];
 };
 
-const n = (message: { data?: unknown }) => {
-  return (message.data as { n: number }).n;
+const n = (message: { data?: unknown } | undefined) => {
+  return (message?.data as { n: number }).n;
 };
 
 const listenAddsSources: Flow = {
