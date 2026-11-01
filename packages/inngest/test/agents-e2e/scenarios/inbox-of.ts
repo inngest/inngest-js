@@ -157,6 +157,51 @@ const viewReadsFromTheStart: Flow = {
   },
 };
 
+const viewBatchTakesOnlyItsMessages: Flow = {
+  name: "inbox-view-batch",
+  run: async (h) => {
+    const inbox = h.step.subscribe("inbox", sources(h));
+
+    try {
+      // A step ends the request, so the drains below load the messages.
+      await h.step.run("hold", async () => {
+        h.ran("hold");
+        await h.until("sent");
+      });
+
+      const view = await inbox.of(h.event("a")).drain();
+      const root = await inbox.drain();
+
+      await h.step.sleep("end", "1s");
+
+      // Events sent together can be saved in any order, so only the sets are
+      // asserted.
+      return { view: view.map(n).sort(), root: root.map(n).sort() };
+    } finally {
+      await inbox.close();
+    }
+  },
+  drive: async (d) => {
+    await d.opened("inbox");
+    await d.sendAll("a", [{ n: 1 }, { n: 3 }]);
+    await d.sendAll("b", [{ n: 2 }]);
+    await sleep(1000);
+    d.mark("sent");
+  },
+  expect: {
+    output: { view: [1, 3], root: [1, 2, 3] },
+    bodies: { hold: 1 },
+    rows: [
+      "end",
+      "hold",
+      "inbox",
+      "inbox:next:batch",
+      "inbox:of:agents-e2e/inbox-of/a:next:batch",
+    ],
+    steps: 8,
+  },
+};
+
 export const inboxOf = flowScenario({
   id: "inbox-of",
   owner: "sub-06-views",
@@ -165,5 +210,6 @@ export const inboxOf = flowScenario({
     twoViewsInParallel,
     sameFilterSameReader,
     viewReadsFromTheStart,
+    viewBatchTakesOnlyItsMessages,
   ],
 });

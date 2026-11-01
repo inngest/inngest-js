@@ -751,6 +751,18 @@ export const createStepTools = <
             }
           );
         },
+        unread: (inbox, taken, want) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.unread(inbox, taken, want) ??
+            []
+          );
+        },
+        message: (messageId) => {
+          return getAsyncCtxSync()?.execution?.inbox?.message(messageId);
+        },
+        record: (op, take) => {
+          return tools.run(`${op}:batch`, take);
+        },
         skip: async (op) => {
           await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
         },

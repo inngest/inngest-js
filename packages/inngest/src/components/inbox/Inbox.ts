@@ -161,6 +161,24 @@ export interface InboxDeps {
   read: (inbox: string, taken: number, wait: string, want?: Want) => InboxRead;
 
   /**
+   * The step ids of the messages the reader wants after the first `taken` of
+   * them, in the order they were saved.
+   */
+  unread: (inbox: string, taken: number, want?: Want) => string[];
+
+  /**
+   * The event of a message step.
+   */
+  message: (id: string) => unknown;
+
+  /**
+   * Saves the batch of the read `op` as an ordinary step. `take` runs only when the
+   * step is new, and returns the ids of the messages the batch takes; a replay
+   * returns the ids saved the first time.
+   */
+  record: (op: string, take: () => string[]) => Promise<string[]>;
+
+  /**
    * Marks a wait op as seen without requesting it. A timeout that lost to a
    * message is saved in state and never asked for.
    */
@@ -210,6 +228,16 @@ export interface ReadOptions {
    * The read returns `null` if no message arrives in this time.
    */
   timeout: ReadTimeout;
+}
+
+/**
+ * Options of a batch read.
+ */
+export interface BatchOptions {
+  /**
+   * Takes at most this many messages, oldest first; the rest stays unread.
+   */
+  max?: number;
 }
 
 /**
@@ -407,18 +435,89 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    */
   next(options: ReadOptions): Promise<TMessage | null>;
   next(options?: ReadOptions): Promise<TMessage | null> {
+    return this.#enqueue((n) => {
+      return this.#readOne(n, options?.timeout);
+    });
+  }
+
+  /**
+   * Returns every unread message, waiting for at least one to arrive. The batch
+   * is one small step listing the messages it took.
+   */
+  nextBatch(options?: BatchOptions): Promise<TMessage[]> {
+    return this.#enqueue((n) => {
+      return this.#readBatch(n, options?.max, true);
+    });
+  }
+
+  /**
+   * Returns every unread message without waiting: an empty array if there is
+   * none. The read is still saved as a step, so a replay returns the same set.
+   */
+  drain(options?: BatchOptions): Promise<TMessage[]> {
+    return this.#enqueue((n) => {
+      return this.#readBatch(n, options?.max, false);
+    });
+  }
+
+  /**
+   * Reads the inbox batch by batch with `for await`. Each batch waits for at
+   * least one message. The loop ends when the code breaks out of it.
+   */
+  async *batches(
+    options?: BatchOptions,
+  ): AsyncGenerator<TMessage[], void, undefined> {
+    while (true) {
+      yield await this.nextBatch(options);
+    }
+  }
+
+  // Reads on one inbox are served in order. Each gets its own number `n`.
+  #enqueue<T>(read: (n: number) => Promise<T>): Promise<T> {
     const n = this.#reads;
     this.#reads += 1;
 
-    const read = this.#queue.then(() => {
-      return this.#readOne(n, options?.timeout);
+    const result = this.#queue.then(() => {
+      return read(n);
     });
 
-    this.#queue = read.catch(() => {
+    this.#queue = result.catch(() => {
       return undefined;
     });
 
-    return read;
+    return result;
+  }
+
+  async #readBatch(
+    n: number,
+    max: number | undefined,
+    wait: boolean,
+  ): Promise<TMessage[]> {
+    await this.#ready();
+
+    const op = readId(this.#base, n);
+    const want = this.#want();
+
+    if (
+      wait &&
+      this.#deps.unread(this.#deps.inbox, this.#taken, want).length === 0
+    ) {
+      // Nothing is unread. The executor wakes the run when a message arrives,
+      // and the replay finds it in state, so this does not settle here.
+      await this.#deps.wait(op, this.#deps.inbox, this.#deps.lastSeen(), want);
+    }
+
+    const ids = await this.#deps.record(op, () => {
+      const unread = this.#deps.unread(this.#deps.inbox, this.#taken, want);
+
+      return max === undefined ? unread : unread.slice(0, max);
+    });
+
+    this.#taken += ids.length;
+
+    return ids.map((id) => {
+      return this.#deps.message(id) as TMessage;
+    });
   }
 
   async #readOne(n: number, timeout?: ReadTimeout): Promise<TMessage | null> {
