@@ -367,9 +367,21 @@ export interface BatchOptions {
  * What an inbox hands back by default: the event, with `is()` to narrow it to
  * the event types it was asked about and `data` left `unknown` until it is.
  */
-export type InboxMessage = Omit<EventPayload, "data"> & {
+type DefaultMessage = Omit<EventPayload, "data"> & {
   data: unknown;
 } & EventIs;
+
+/**
+ * The type of the messages an inbox reads, so code can name it. Without a
+ * type argument it is what an inbox hands back by default.
+ *
+ * @example
+ * ```ts
+ * const handle = (message: InboxMessage<typeof inbox>) => {};
+ * ```
+ */
+export type InboxMessage<TInbox = Inbox<DefaultMessage>> =
+  TInbox extends Inbox<infer TMessage> ? TMessage : never;
 
 /**
  * A durable collection of the events that matched the sources of one
@@ -379,7 +391,7 @@ export type InboxMessage = Omit<EventPayload, "data"> & {
  * Every reader (the inbox and each view) sees every message it matches, and
  * keeps its own position: nothing one reader takes is hidden from another.
  */
-export class Inbox<TMessage = InboxMessage> implements AsyncDisposable {
+export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   #deps: InboxDeps;
   #opened: Promise<void>;
 

@@ -70,6 +70,7 @@ export { group, step } from "./components/InngestStepTools.ts";
 export type {
   BatchOptions,
   Inbox,
+  InboxMessage,
   InboxSources,
   ReadOptions,
 } from "./components/inbox/Inbox";
