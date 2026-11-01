@@ -169,6 +169,16 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   }
 
   /**
+   * Reads the inbox in order with `for await`. The loop ends when the code
+   * breaks out of it.
+   */
+  async *[Symbol.asyncIterator](): AsyncGenerator<TMessage, void, undefined> {
+    while (true) {
+      yield await this.next();
+    }
+  }
+
+  /**
    * Stops the inbox from receiving. The pauses live until the run ends.
    */
   async close(): Promise<void> {

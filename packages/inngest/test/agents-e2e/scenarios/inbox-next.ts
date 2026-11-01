@@ -4,10 +4,8 @@
  * unread so the read waits, and wake on a message. Every flow runs in all 8
  * cells of the matrix.
  *
- * An inbox only receives events that arrive after it opens, and nothing the
- * function can observe tells the driver the open has been handled. So the
- * driver sends its message again until the function has read it. Messages
- * that nobody reads are saved and ignored.
+ * An inbox only receives events that arrive after it opens, so the driver waits
+ * for the open record to show in the run, then sends each event once.
  *
  * The kit's loader cannot parse `await using`, so the flows close the inbox in
  * a `finally`.
@@ -17,23 +15,7 @@ import {
   type FlowDriver,
   type FlowHandle,
   flowScenario,
-  sleep,
 } from "../kit/flow.ts";
-
-/**
- * Sends `n` every 500ms until the function has marked `line`.
- */
-const sendUntil = async (d: FlowDriver, n: number, line: string) => {
-  let reached = false;
-  const done = d.reached(line).then(() => {
-    reached = true;
-  });
-
-  while (!reached) {
-    await d.send("msg", { n });
-    await Promise.race([done, sleep(500)]);
-  }
-};
 
 const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
@@ -55,12 +37,14 @@ const idleNextThenMessage: Flow = {
     }
   },
   drive: async (d) => {
-    await sendUntil(d, 1, "received");
+    await d.opened("inbox");
+    await d.send("msg", { n: 1 });
   },
   expect: {
     output: { n: 1 },
     bodies: {},
     rows: ["inbox"],
+    steps: 2,
   },
 };
 
@@ -73,12 +57,7 @@ const twoWaits: Flow = {
       const first = (await inbox.next()).data as { n: number };
       h.mark("got:1");
 
-      // Copies of the first message may have arrived while the driver was
-      // sending it again; skip them.
-      let second = (await inbox.next()).data as { n: number };
-      while (second.n === first.n) {
-        second = (await inbox.next()).data as { n: number };
-      }
+      const second = (await inbox.next()).data as { n: number };
       h.mark("got:2");
 
       return { first: first.n, second: second.n };
@@ -87,13 +66,16 @@ const twoWaits: Flow = {
     }
   },
   drive: async (d) => {
-    await sendUntil(d, 1, "got:1");
-    await sendUntil(d, 2, "got:2");
+    await d.opened("inbox");
+    await d.send("msg", { n: 1 });
+    await d.reached("got:1");
+    await d.send("msg", { n: 2 });
   },
   expect: {
     output: { first: 1, second: 2 },
     bodies: {},
     rows: ["inbox"],
+    steps: 3,
   },
 };
 

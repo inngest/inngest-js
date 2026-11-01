@@ -2,8 +2,9 @@
  * @module
  * Where the messages of an inbox are in a run's state. The executor saves each
  * message as its own step whose value is the event plus the inbox it belongs to
- * and the sources that matched: `{ data, inbox, src }`. The step id is opaque,
- * so a message is told apart by that value. The messages of an inbox, in the
+ * and the sources that matched: `{ data, "inngest/inbox", src }`. The step id
+ * is opaque, so a message is told apart by that reserved key, which no user
+ * value carries. The messages of an inbox, in the
  * order the executor saved them, are the run's stack filtered by it.
  */
 import hashjs from "hash.js";
@@ -18,9 +19,15 @@ export const hashedStepId = (id: string): string => {
   return sha1().update(id).digest("hex");
 };
 
+/**
+ * The reserved key of a message step's value. It holds the id of the op that
+ * opened the inbox.
+ */
+export const inboxKey = "inngest/inbox";
+
 interface MessageValue {
   data: unknown;
-  inbox: string;
+  "inngest/inbox": string;
   src: string[];
 }
 
@@ -34,7 +41,7 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 
   const v = value as Partial<MessageValue>;
 
-  return typeof v.inbox === "string" && Array.isArray(v.src) && "data" in v;
+  return typeof v[inboxKey] === "string" && Array.isArray(v.src) && "data" in v;
 };
 
 /**
@@ -53,7 +60,7 @@ export const inboxMessages = (
   for (const id of stack) {
     const value = stepState[id]?.data;
 
-    if (isInboxMessage(value) && value.inbox === inbox) {
+    if (isInboxMessage(value) && value[inboxKey] === inbox) {
       messages.push(value.data);
     }
   }

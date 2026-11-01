@@ -17,7 +17,7 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GetStepTools } from "inngest";
-import { Inngest } from "inngest";
+import { Inngest, Middleware } from "inngest";
 import { type Ctx, type KitClient, scenario } from "./driver.ts";
 
 export const sleep = (ms: number) => {
@@ -53,6 +53,12 @@ export interface FlowHandle {
    * asserts how many times each body ran.
    */
   ran: (id: string) => void;
+
+  /**
+   * Resolves once the driver has marked `line`, or fails after 30s. Call it
+   * between steps to hold the function until the driver has done something.
+   */
+  until: (line: string) => Promise<void>;
 }
 
 export interface FlowDriver {
@@ -62,6 +68,24 @@ export interface FlowDriver {
    * Sends the scenario's event `name` with the cell's key in `data.key`.
    */
   send: (name: string, data?: Record<string, unknown>) => Promise<void>;
+
+  /**
+   * Sends the scenario's event `name` once for each item of `items`, in one
+   * request, with the cell's key in `data.key`.
+   */
+  sendAll: (name: string, items: Record<string, unknown>[]) => Promise<void>;
+
+  /**
+   * Resolves once the run's trace shows a step with this display name. A
+   * step's pauses are written before its row appears, so an event sent after
+   * `opened("inbox")` is received by the inbox.
+   */
+  opened: (row: string) => Promise<void>;
+
+  /**
+   * Writes a line to the run's log, for the function's `until`.
+   */
+  mark: (line: string) => void;
 
   /**
    * Resolves once the function has marked `line`, or fails after 30s.
@@ -90,6 +114,12 @@ export interface Flow {
      * The step ids the trace shows, each once however many spans it has.
      */
     rows: string[];
+
+    /**
+     * How many steps the run holds when its function last ran: every step
+     * saved in its state, messages included.
+     */
+    steps?: number;
   };
 }
 
@@ -116,6 +146,25 @@ const functionId = (flow: Flow, cell: Cell) => {
 const logFile = (key: string) => {
   return join(tmpdir(), `agents-e2e-flow-${key}.log`);
 };
+
+/**
+ * Writes how many steps the run's state holds each time the function starts a
+ * request. The last line is the run's total, since every flow sends all its
+ * events before the function reads the last one.
+ */
+class StepTally extends Middleware.BaseMiddleware {
+  readonly id = "step-tally";
+
+  override transformFunctionInput(arg: Middleware.TransformFunctionInputArgs) {
+    const key = (arg.ctx.event as { data?: { key?: string } }).data?.key;
+
+    if (key) {
+      appendFileSync(logFile(key), `steps:${Object.keys(arg.steps).length}\n`);
+    }
+
+    return arg;
+  }
+}
 
 const readLog = (key: string) => {
   return existsSync(logFile(key))
@@ -160,6 +209,7 @@ export const flowScenario = (definition: {
                 triggers: [{ event: event(`go-${id}`) }],
                 checkpointing: cell.checkpointing,
                 optimizeParallelism: cell.optimize,
+                middleware: [StepTally],
               },
               async ({ event: trigger, step }) => {
                 const key = trigger.data.key as string;
@@ -176,6 +226,17 @@ export const flowScenario = (definition: {
                   mark,
                   ran: (stepId) => {
                     mark(`ran:${stepId}`);
+                  },
+                  until: async (line) => {
+                    const end = Date.now() + 30_000;
+
+                    while (!readLog(key).includes(line)) {
+                      if (Date.now() > end) {
+                        throw new Error(`the driver never marked ${line}`);
+                      }
+
+                      await sleep(50);
+                    }
                   },
                 });
               },
@@ -233,6 +294,28 @@ const runCell = async (
           name: ctx.event(eventName),
           data: { ...data, key },
         });
+      },
+      sendAll: async (eventName, items) => {
+        await client.send(
+          items.map((data) => {
+            return { name: ctx.event(eventName), data: { ...data, key } };
+          }),
+        );
+      },
+      opened: async (row) => {
+        await ctx.until(
+          async () => {
+            const [found] = await ctx.runsOf(start);
+
+            return found?.steps ?? [];
+          },
+          (steps) => {
+            return steps.includes(row);
+          },
+        );
+      },
+      mark: (line) => {
+        appendFileSync(logFile(key), `${line}\n`);
       },
       reached: async (line) => {
         await ctx.until(
@@ -294,6 +377,20 @@ const runCell = async (
       failures.push(
         `step bodies ran ${JSON.stringify(bodies)}, wanted ${JSON.stringify(flow.expect.bodies)}`,
       );
+    }
+
+    if (flow.expect.steps !== undefined) {
+      const tally = log
+        .filter((line) => {
+          return line.startsWith("steps:");
+        })
+        .at(-1);
+
+      if (tally !== `steps:${flow.expect.steps}`) {
+        failures.push(
+          `${tally ?? "no steps line"}, wanted steps:${flow.expect.steps}`,
+        );
+      }
     }
 
     const rows = distinct(
