@@ -10,6 +10,7 @@
  * wakes the run when a message arrives; the replay then finds the message in
  * state.
  */
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { EventPayload } from "../../types.ts";
 import type { InboxRead, Want } from "../execution/inboxState.ts";
 
@@ -887,7 +888,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     }
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  async [asyncDispose](): Promise<void> {
     await this.close();
   }
 }
