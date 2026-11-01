@@ -102,6 +102,43 @@ export const inboxRead = (
 };
 
 /**
+ * The ids of the messages of an inbox that are unread: every message after the
+ * ones earlier reads took, in the order the executor saved them.
+ * @param inbox The hashed ID of the step that opened the inbox.
+ * @param taken How many messages earlier reads took.
+ * @param stack The run's stack: step IDs in the order they were saved.
+ * @param stepState The run's step state by step ID.
+ */
+export const inboxUnread = (
+  inbox: string,
+  taken: number,
+  stack: readonly string[],
+  stepState: Record<string, { data?: unknown } | undefined>,
+): string[] => {
+  const ids = stack.filter((id) => {
+    const value = stepState[id]?.data;
+
+    return isInboxMessage(value) && value[inboxKey] === inbox;
+  });
+
+  return ids.slice(taken);
+};
+
+/**
+ * The event of a saved message step, or `undefined` if the step is not one.
+ * @param id The message's step ID.
+ * @param stepState The run's step state by step ID.
+ */
+export const inboxMessage = (
+  id: string,
+  stepState: Record<string, { data?: unknown } | undefined>,
+): unknown => {
+  const value = stepState[id]?.data;
+
+  return isInboxMessage(value) ? value.data : undefined;
+};
+
+/**
  * The steps of a run that are waited for when its state is replayed: every
  * step but the messages of an inbox, which are read from the state and never
  * requested. Only a step's ID and saved value count.

@@ -103,7 +103,12 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
-import { inboxRead, unseenSteps } from "./inboxState.ts";
+import {
+  inboxMessage,
+  inboxRead,
+  inboxUnread,
+  unseenSteps,
+} from "./inboxState.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
@@ -348,6 +353,17 @@ class InngestExecutionEngine
                     this.options.stepCompletionOrder,
                     this.options.stepState,
                   );
+                },
+                unread: (inbox: string, taken: number) => {
+                  return inboxUnread(
+                    inbox,
+                    taken,
+                    this.options.stepCompletionOrder,
+                    this.options.stepState,
+                  );
+                },
+                message: (id: string) => {
+                  return inboxMessage(id, this.options.stepState);
                 },
                 lastSeen: () => {
                   return this.options.stepCompletionOrder.at(-1) ?? "";
