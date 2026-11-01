@@ -103,7 +103,7 @@ export type InboxRead =
  * @param inbox The hashed ID of the step that opened the inbox.
  * @param taken How many messages earlier reads took.
  * @param wait The hashed ID of the read's wait op.
- * @param want The filter of the reader; only the messages it wants count.
+ * @param want The filter of the reader; it reads only the messages it wants.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
@@ -150,7 +150,7 @@ export const inboxRead = (
  * ones earlier reads took, in the order the executor saved them.
  * @param inbox The hashed ID of the step that opened the inbox.
  * @param taken How many messages earlier reads took.
- * @param want The filter of the reader; only the messages it wants count.
+ * @param want The filter of the reader; it reads only the messages it wants.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
