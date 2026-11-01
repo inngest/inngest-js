@@ -1899,6 +1899,10 @@ export function createAgentFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // An agent's reads wake it as soon as a message lands, and a reader left
+      // waiting beside its work never holds the run back.
+      optimizeParallelism: false,
       triggers: [
         ...[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(
           (name) => {

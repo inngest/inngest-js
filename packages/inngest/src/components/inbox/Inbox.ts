@@ -490,6 +490,20 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   }
 
   /**
+   * Whether `close()` has been called on this reader or on a reader it is a
+   * view of, settled or not. A read that starts after the call is past the
+   * close in program order: it ends without a wait, because the close op
+   * cannot name it.
+   */
+  #isEnding(): boolean {
+    if (this.#closing !== undefined) {
+      return true;
+    }
+
+    return this.#parent ? this.#parent.#isEnding() : false;
+  }
+
+  /**
    * Whether this reader is closed: it was closed, or a reader it is a view of
    * was. A closed reader reads nothing.
    */
@@ -700,8 +714,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    */
   next(options: ReadOptions): Promise<TMessage | null | undefined>;
   next(options?: ReadOptions): Promise<TMessage | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readOne(n, options?.timeout);
+    return this.#enqueue((n, late) => {
+      return this.#readOne(n, late, options?.timeout);
     });
   }
 
@@ -722,8 +736,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   nextBatch(
     options?: BatchOptions & Partial<ReadOptions>,
   ): Promise<TMessage[] | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readBatch(n, options?.max, true, options?.timeout);
+    return this.#enqueue((n, late) => {
+      return this.#readBatch(n, late, options?.max, true, options?.timeout);
     });
   }
 
@@ -732,8 +746,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * none. The read is still saved as a step, so a replay returns the same set.
    */
   drain(options?: BatchOptions): Promise<TMessage[]> {
-    return this.#enqueue(async (n) => {
-      return (await this.#readBatch(n, options?.max, false)) ?? [];
+    return this.#enqueue(async (n, late) => {
+      return (await this.#readBatch(n, late, options?.max, false)) ?? [];
     });
   }
 
@@ -746,8 +760,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined> {
     while (true) {
-      const batch = await this.#enqueue((n) => {
-        return this.#readBatch(n, options?.max, true, options?.timeout);
+      const batch = await this.#enqueue((n, late) => {
+        return this.#readBatch(n, late, options?.max, true, options?.timeout);
       });
 
       if (batch === undefined || batch === null) {
@@ -759,9 +773,13 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   }
 
   // Reads on one inbox are served in order. Each gets its own number `n`.
-  #enqueue<T>(read: (n: number) => Promise<T>): Promise<T> {
+  #enqueue<T>(read: (n: number, late: boolean) => Promise<T>): Promise<T> {
     const n = this.#reads;
     this.#reads += 1;
+
+    // Whether `close()` was called before this read started. The close op
+    // cannot name such a read, so it ends without reporting a wait.
+    const late = this.#isEnding();
 
     // The read is unsettled from the moment it starts, so a close that comes
     // before the read reports its wait still names it.
@@ -770,7 +788,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
 
     const result = this.#queue
       .then(() => {
-        return read(n);
+        return read(n, late);
       })
       .finally(() => {
         this.#unsettled.delete(op);
@@ -785,6 +803,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
 
   async #readBatch(
     n: number,
+    late: boolean,
     max: number | undefined,
     wait: boolean,
     timeout?: ReadTimeout,
@@ -799,12 +818,13 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     const want = this.#want();
     const loaded = this.#deps.unread(this.#deps.inbox, this.#taken, want);
 
-    // A read that finds nothing and whose reader was closed ends, as a wait does.
+    // A read that finds nothing and whose reader was closed, or whose close was
+    // called before it started, ends, as a wait does.
     if (
       wait &&
       loaded.length === 0 &&
       !this.#deps.answered(op) &&
-      this.#closedInState()
+      (late || this.#closedInState())
     ) {
       await this.#ended();
 
@@ -853,6 +873,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
 
   async #readOne(
     n: number,
+    late: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
     if (this.closed) {
@@ -885,8 +906,9 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
       return addEventIs(found.message as object) as TMessage;
     }
 
-    // The reader was closed while this read had nothing to read: it ends.
-    if (found.found === "nothing" && this.#closedInState()) {
+    // The reader was closed while this read had nothing to read, or its close
+    // was called before the read started: it ends.
+    if (found.found === "nothing" && (late || this.#closedInState())) {
       await this.#ended();
 
       return undefined;
