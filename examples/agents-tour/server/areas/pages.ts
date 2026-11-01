@@ -168,9 +168,12 @@ export const area: AreaFactory = (ctx) => {
 
       const started = Date.now();
       const dir = writeLesson(page, files);
-      const result = await worker.reload(dir, page.files.map((file) => {
-        return file.name;
-      }));
+      const result = await worker.reload(
+        dir,
+        page.files.map((file) => {
+          return file.name;
+        }),
+      );
 
       if (stale()) {
         worker.stop();

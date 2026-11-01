@@ -10,9 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { freePort } from "../scripts/lib.ts";
+import { createTour } from "../server/app.ts";
 import type { Area } from "../server/area.ts";
 import { HttpError } from "../server/http-error.ts";
-import { createTour } from "../server/app.ts";
 import type { Page, TourIndex } from "../shared/types.ts";
 
 const root = join(import.meta.dirname, "fixtures");
@@ -99,13 +99,10 @@ describe("the tour server", () => {
     const { port } = new URL(base);
 
     return new Promise<number>((resolve, reject) => {
-      const req = request(
-        { host: "127.0.0.1", port, path, headers },
-        (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        },
-      );
+      const req = request({ host: "127.0.0.1", port, path, headers }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
 
       req.on("error", reject);
       req.end();
@@ -305,10 +302,13 @@ describe("the tour server", () => {
       await post({ name: "agent.ts", content: "export const a   =  1" }),
       { content: "export const a = 1;\n", ok: true },
     );
-    assert.deepEqual(await post({ name: "agent.ts", content: "export const (" }), {
-      content: "export const (",
-      ok: false,
-    });
+    assert.deepEqual(
+      await post({ name: "agent.ts", content: "export const (" }),
+      {
+        content: "export const (",
+        ok: false,
+      },
+    );
 
     const bad = await fetch(`${base}/api/format`, {
       method: "POST",

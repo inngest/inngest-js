@@ -136,13 +136,14 @@ export const createTour = async (options: TourOptions) => {
     },
   };
 
-  areas = [...(await loadAreaFactories(
+  areas = [
+    ...(await loadAreaFactories(
       options.areasDir ?? join(import.meta.dirname, "areas"),
-    )), ...(options.areas ?? [])].map(
-    (factory) => {
-      return factory(ctx);
-    },
-  );
+    )),
+    ...(options.areas ?? []),
+  ].map((factory) => {
+    return factory(ctx);
+  });
 
   const routes = new Map<string, Route>();
 

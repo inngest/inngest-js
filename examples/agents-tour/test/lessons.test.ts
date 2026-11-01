@@ -111,18 +111,19 @@ describe("loading lessons", () => {
       '{ "readOnly": ["nope.ts"] }',
     );
 
-    assert.throws(() => loadLessons(dir), /first\/hello: no shared file nope.ts/);
+    assert.throws(
+      () => loadLessons(dir),
+      /first\/hello: no shared file nope.ts/,
+    );
     rmSync(dir, { recursive: true });
   });
 
   it("refuses a page folder without a number and a slug", () => {
     const dir = copy();
 
-    cpSync(
-      join(dir, "01-first", "01-hello"),
-      join(dir, "01-first", "hello"),
-      { recursive: true },
-    );
+    cpSync(join(dir, "01-first", "01-hello"), join(dir, "01-first", "hello"), {
+      recursive: true,
+    });
 
     assert.throws(() => loadLessons(dir), /a page folder is <nn>-<slug>/);
     rmSync(dir, { recursive: true });

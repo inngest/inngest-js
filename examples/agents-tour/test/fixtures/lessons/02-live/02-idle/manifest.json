@@ -1,1 +1,1 @@
-{}
+{ "start": [{ "event": { "name": "example/ping", "data": {} } }] }
