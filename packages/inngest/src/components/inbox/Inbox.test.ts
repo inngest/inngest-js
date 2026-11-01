@@ -88,7 +88,7 @@ describe("closing an inbox", () => {
     await inbox.close();
 
     expect(await inbox.next()).toBeUndefined();
-    expect(await inbox.nextBatch()).toEqual([]);
+    expect(await inbox.nextBatch()).toBeUndefined();
     expect(await inbox.drain()).toEqual([]);
 
     const seen: unknown[] = [];

@@ -224,7 +224,7 @@ const twoParallelBatches: Flow = {
     try {
       const [a, b] = await Promise.all([inbox.nextBatch(), inbox.nextBatch()]);
 
-      return { a: a.map(n), b: b.map(n) };
+      return { a: a?.map(n), b: b?.map(n) };
     } finally {
       await inbox.close();
     }

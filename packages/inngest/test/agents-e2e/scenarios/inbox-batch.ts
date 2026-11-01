@@ -20,8 +20,8 @@ const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
 };
 
-const numbers = (messages: { data?: unknown }[]) => {
-  return messages
+const numbers = (messages: { data?: unknown }[] | undefined) => {
+  return (messages ?? [])
     .map((message) => {
       return (message.data as { n: number }).n;
     })
@@ -86,10 +86,10 @@ const maxLeavesTheRest: Flow = {
       // Events sent together can be saved in any order, so which message is
       // first is not asserted.
       return {
-        first: first.length,
+        first: first?.length,
         rest: rest.length,
         none: none.length,
-        all: numbers([...first, ...rest]),
+        all: numbers([...(first ?? []), ...rest]),
       };
     } finally {
       await inbox.close();

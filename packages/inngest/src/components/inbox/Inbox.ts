@@ -565,9 +565,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   /**
    * Returns every unread message, waiting for at least one to arrive. The batch
    * is one small step listing the messages it took. A closed reader, or one
-   * that closes while this waits, returns an empty array.
+   * that closes while this waits, returns `undefined`.
    */
-  nextBatch(options?: BatchOptions): Promise<TMessage[]> {
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined> {
     return this.#enqueue((n) => {
       return this.#readBatch(n, options?.max, true);
     });
@@ -578,8 +578,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    * none. The read is still saved as a step, so a replay returns the same set.
    */
   drain(options?: BatchOptions): Promise<TMessage[]> {
-    return this.#enqueue((n) => {
-      return this.#readBatch(n, options?.max, false);
+    return this.#enqueue(async (n) => {
+      return (await this.#readBatch(n, options?.max, false)) ?? [];
     });
   }
 
@@ -594,7 +594,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     while (true) {
       const batch = await this.nextBatch(options);
 
-      if (batch.length === 0) {
+      if (batch === undefined) {
         return;
       }
 
@@ -631,9 +631,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     n: number,
     max: number | undefined,
     wait: boolean,
-  ): Promise<TMessage[]> {
+  ): Promise<TMessage[] | undefined> {
     if (this.closed) {
-      return [];
+      return wait ? undefined : [];
     }
 
     await this.#ready();
@@ -648,7 +648,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       if (this.#closedInState()) {
         await this.#ended();
 
-        return [];
+        return undefined;
       }
 
       // Nothing is unread. The executor wakes the run when a message arrives,

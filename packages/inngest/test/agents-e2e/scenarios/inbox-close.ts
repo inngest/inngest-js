@@ -38,12 +38,16 @@ const closeReturnsUnread: Flow = {
     const read = n(await inbox.next());
     const unread = await inbox.close();
     const after = await inbox.next();
+    const batchEnded = (await inbox.nextBatch()) === undefined;
+    const drained = (await inbox.drain()).length;
 
     return {
       read,
       unread: numbers(unread),
       closed: inbox.closed,
       ended: after === undefined,
+      batchEnded,
+      drained,
     };
   },
   drive: async (d) => {
@@ -57,7 +61,14 @@ const closeReturnsUnread: Flow = {
     d.mark("sent");
   },
   expect: {
-    output: { read: 1, unread: [2, 3], closed: true, ended: true },
+    output: {
+      read: 1,
+      unread: [2, 3],
+      closed: true,
+      ended: true,
+      batchEnded: true,
+      drained: 0,
+    },
     bodies: {},
     rows: ["inbox", "inbox:close"],
     steps: 5,
