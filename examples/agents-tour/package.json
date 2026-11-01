@@ -10,12 +10,14 @@
   "scripts": {
     "tour": "node --disable-warning=ExperimentalWarning scripts/tour.ts",
     "tour:devserver": "node --disable-warning=ExperimentalWarning scripts/devserver.ts",
+    "tour:model-proto": "node --disable-warning=ExperimentalWarning prototypes/local-model/run.ts",
     "tour:check-editor": "node --disable-warning=ExperimentalWarning scripts/check-editor.ts",
     "tour:check": "node --disable-warning=ExperimentalWarning scripts/check.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p site/tsconfig.json && node --disable-warning=ExperimentalWarning scripts/check.ts"
   },
   "dependencies": {
     "inngest": "link:../../packages/inngest/dist",
+    "node-llama-cpp": "3.22.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {

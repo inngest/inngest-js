@@ -18,7 +18,8 @@
     "server/**/*.ts",
     "runtime/**/*.ts",
     "lessons/**/*.ts",
-    "shared/**/*.ts"
+    "shared/**/*.ts",
+    "prototypes/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }
