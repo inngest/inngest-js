@@ -60,7 +60,26 @@ h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600}
 @keyframes shake{20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-3px)}60%{transform:translate(-3px,3px)}80%{transform:translate(3px,-1px)}}
 .bit{position:absolute;width:7px;height:7px;border-radius:2px}
 @media (prefers-reduced-motion:reduce){.shake,.moments button.hit{animation:none}.glow{transition:none}}
-@media (max-width:760px){main{grid-template-columns:1fr}section{border:0}}
+body.dm-on{padding-bottom:88px}
+#dbar{position:fixed;left:0;right:0;bottom:0;height:88px;z-index:30;display:flex;align-items:center;justify-content:center;gap:22px;padding:6px 16px;background:linear-gradient(#2c2722,#191613);border-top:3px solid #55493e;box-shadow:0 -6px 20px rgb(0 0 0/55%);transform:translateY(100%);visibility:hidden;transition:transform .16s cubic-bezier(.2,.9,.3,1),visibility 0s .16s;pointer-events:none;font-family:var(--mono)}
+#dbar.on{transform:none;visibility:visible;transition-delay:0s}
+#dbar .cell{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:78px}
+#dbar .lab{font-size:10px;letter-spacing:.12em;color:#9a8a76}
+#dbar .num{font-size:38px;font-weight:800;line-height:1;color:#ffb347;text-shadow:0 0 10px rgb(255 140 40/45%),0 2px 0 #5a2c0a;font-variant-numeric:tabular-nums}
+#dbar .num.low{color:#ff4d4d;text-shadow:0 0 12px rgb(255 40 40/60%),0 2px 0 #4a0a0a}
+#dbar .num.low.blink{animation:blink .5s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+#dbar .num.sm{font-size:28px}
+#face{width:60px;height:66px;image-rendering:pixelated;border:3px solid #55493e;border-radius:3px;background:#3a342d;box-shadow:inset 0 0 0 2px #14110f}
+#dbar .arms{display:grid;grid-template-columns:repeat(4,26px);gap:4px}
+#dbar .arms i{font-style:normal;font-size:13px;font-weight:700;text-align:center;line-height:24px;height:26px;border:2px solid #55493e;background:#1a1613;color:#6d6154;border-radius:2px}
+#dbar .arms i.cur{color:#1a1613;background:#ffb347;border-color:#ffd08a}
+#over{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;pointer-events:none;background:repeating-linear-gradient(0deg,rgb(0 0 0/35%) 0 2px,transparent 2px 5px),rgb(110 0 0/62%)}
+#over.on{display:flex}
+#over b{font:900 clamp(40px,9vw,96px)/1 var(--mono);letter-spacing:.14em;color:#ff4d4d;text-shadow:0 0 24px #000,4px 4px 0 #3a0000}
+.hurtflash{position:fixed;inset:0;pointer-events:none;z-index:45;background:radial-gradient(circle,rgb(255 0 0/10%),rgb(200 0 0/55%));opacity:0}
+@media (prefers-reduced-motion:reduce){#dbar{transition:none}#dbar .num.low.blink{animation:none}}
+@media (max-width:760px){#dbar{gap:10px}#dbar .arms{display:none}main{grid-template-columns:1fr}section{border:0}}
 </style>
 </head>
 <body>
@@ -80,7 +99,7 @@ h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600}
     <p class="status" style="margin:0 0 4px">crumb: Module 3, An agent hears</p>
     <h2 class="title" style="color:var(--text);font-size:22px;margin-bottom:8px">Waiting</h2>
     <p style="color:var(--muted);margin-top:0">A fake page. The buttons on the right stand in for the moments the real tour would sound.</p>
-    <div class="card"><div class="status">style <b id="style">Soft</b> &nbsp; sound <b id="state">muted</b><br>last moment <b id="last">none yet</b><br>played <b id="now">nothing</b></div></div>
+    <div class="card"><div class="status">style <b id="style">Soft</b> &nbsp; sound <b id="state">muted</b><br>last moment <b id="last">none yet</b><br>doom <b id="dstate">off</b><br>played <b id="now">nothing</b></div></div>
     <div class="pager"><button data-m="prev">Previous <kbd>b</kbd></button><button class="primary" data-m="next">Next <kbd>n</kbd></button></div>
     <h2 style="margin-top:22px">Check (exercise)</h2>
     <div class="card"><div class="code">await inbox.next();   // exercise: wait for the review comment</div>
@@ -89,10 +108,20 @@ h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600}
   <section>
     <h2>Moments</h2>
     <div class="moments" id="moments"></div>
+    <div class="card" id="dctl" hidden style="margin-top:14px"><div class="status" style="margin-bottom:8px">Doom controls. Damage: run failed -20 (<b>f</b>), check failed -25 (<b>x</b>). Jump to a face state with <b>1</b> to <b>6</b>.</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap"><button data-d="hurt10">Hurt 10 <kbd>h</kbd></button><button data-d="hp90">90 <kbd>1</kbd></button><button data-d="hp70">70 <kbd>2</kbd></button><button data-d="hp50">50 <kbd>3</kbd></button><button data-d="hp30">30 <kbd>4</kbd></button><button data-d="hp10">10 <kbd>5</kbd></button><button class="bad" data-d="hp0">Zero (game over) <kbd>6</kbd></button><button data-d="heal">Back to 100 <kbd>u</kbd></button></div></div>
     <h2 style="margin-top:22px">Which moments sound</h2>
     <div class="card" id="table" style="font-size:13px"></div>
   </section>
 </main>
+<div id="dbar" aria-hidden="true">
+  <canvas id="face" width="20" height="22"></canvas>
+  <div class="cell"><span class="lab">HEALTH</span><span class="num" id="dhp">100</span></div>
+  <div class="cell"><span class="lab">ARMS</span><div class="arms" id="darms"><i>1</i><i>2</i><i>3</i><i>4</i></div></div>
+  <div class="cell"><span class="lab">AMMO</span><span class="num sm" id="dammo">50</span></div>
+  <div class="cell"><span class="lab">SCORE</span><span class="num sm" id="dscore">0</span></div>
+</div>
+<div id="over"><b>GAME OVER</b></div><div class="hurtflash" id="hurt"></div>
 <div class="glow" id="glow"></div><div id="fx"></div>
 <script>
 "use strict";
@@ -339,13 +368,166 @@ const DOOM4={
  fail:g=>{[[0,0],[-2,.1],[-5,.2]].forEach(([o,at])=>fm(R4+o,at,.2,.2*g,1.414,4));}
 };
 Object.assign(STYLES,{doom1:makeDoom("Doom 1",DOOM1),doom2:makeDoom("Doom 2",DOOM2),doom3:makeDoom("Doom 3",DOOM3),doom4:makeDoom("Doom 4",DOOM4)});
+/* ---------- Doom: one style. Voice of Doom 2 (tight gallop, bite) with Doom 1's sine sub under the loop ---------- */
+const DOOM=makeDoom("Doom",DOOM2);
+Object.assign(DOOM,{
+ run:g=>{hiss(0,.14,.2*g,900,"bandpass");kick(0,.8*g,true);},
+ next:g=>{hiss(0,.025,.12*g,3200,"bandpass");hiss(.07,.03,.12*g,2200,"bandpass");},
+ prev:g=>{hiss(0,.025,.12*g,2200,"bandpass");hiss(.07,.03,.12*g,1500,"bandpass");},
+ message:g=>{fm(84,0,.25,.08*g,2,1.5);fm(91,.07,.3,.08*g,2,1.5);},
+ tool:g=>{hiss(0,.02,.1*g,2500,"bandpass");},
+ over:g=>{nt("sawtooth",midi(40),0,1.2,.2,a2(1),{to:midi(22),sus:.6});nt("sine",midi(34),0,1.2,.25,null,{to:midi(22),sus:.6});kick(0,1.2*g,true);crash(0,1,g);}
+});
+STYLES.doom=DOOM;
+/* background loop: 8 bars of 4/4 at 150 bpm (12.8 s), scheduled a bar ahead, so it loops seamlessly */
+const BPM=150,BAR=240/BPM,NN=null;
+const RIFF={A:[0,0,NN,0,0,NN,0,0,0,0,NN,0,0,NN,0,0],B:[0,0,NN,0,3,NN,3,3,0,0,NN,0,5,NN,5,3],C:[0,0,0,0,NN,NN,6,6,7,NN,7,NN,5,NN,3,NN]};
+const SONG=["A","A","B","A","A","A","B","C"];
+const HOOK={6:[24,27,26,22],7:[22,26,27,24]};
+let mus=null;
+function scheduleBar(i,when){
+  const real=master;master=mus.bus;
+  try{
+    const sx=BAR/16,at=x=>when-ctx.currentTime+x;
+    RIFF[SONG[i]].forEach((o,s)=>{if(o!==NN)DOOM2.hit(o,at(s*sx),sx*.8,1);});
+    [0,6,8,11].forEach(s=>kick(at(s*sx),.8));
+    snare(at(4*sx),.9);snare(at(12*sx),.9);
+    for(let s=0;s<16;s+=2)hiss(at(s*sx),.03,.025,8000);
+    if(i===7)[13,14,15].forEach(s=>snare(at(s*sx),.7));
+    if(i===0||i===4)crash(at(0),1.2,.6);
+    sub(R2+(i===7?5:0),at(0),BAR*.95,.12);
+    if(i===2||i===6)gt(R2+15,at(8*sx),sx*3,.12,a2(1),.8);
+    if(HOOK[i])HOOK[i].forEach((o,k)=>fm(R2+o+12,at(k*4*sx),.25,.07,1,2));
+  }finally{master=real;}
+}
+function startMusic(){
+  if(mus||!ctx)return;
+  const bus=ctx.createGain(),t0=ctx.currentTime;
+  bus.gain.setValueAtTime(0,t0);bus.gain.linearRampToValueAtTime(.55,t0+.5);bus.connect(master);
+  mus={bus,t:t0+.06,bar:0,timer:null};
+  const pump=()=>{while(mus&&mus.t<ctx.currentTime+.4){scheduleBar(mus.bar%8,Math.max(mus.t,ctx.currentTime));mus.t+=BAR;mus.bar++;}};
+  pump();mus.timer=setInterval(pump,80);
+}
+function stopMusic(){
+  if(!mus)return;
+  const m=mus,t=ctx.currentTime;mus=null;clearInterval(m.timer);
+  m.bus.gain.cancelScheduledValues(t);m.bus.gain.setValueAtTime(m.bus.gain.value,t);m.bus.gain.linearRampToValueAtTime(0,t+.06);
+  setTimeout(()=>m.bus.disconnect(),120);
+}
+function duckMusic(v,secs){if(!mus)return;const t=ctx.currentTime,g=mus.bus.gain;g.cancelScheduledValues(t);g.setValueAtTime(g.value,t);g.linearRampToValueAtTime(v,t+secs);}
+
+/* ---------- Doom game: the tour as a tiny shooter ---------- */
+const dm={active:false,hp:100,score:0,ammo:50,w:1,over:false,mood:null,look:0,moodT:null,overT:null,glanceT:null};
+const faceCtx=document.getElementById("face").getContext("2d");
+function drawFace(){
+  const c=faceCtx,hp=dm.hp,s=hp<=0?5:hp>80?0:hp>60?1:hp>40?2:hp>20?3:4;
+  const r=(x,y,w,h,col)=>{c.fillStyle=col;c.fillRect(x,y,w,h);};
+  const skin=["#d19a74","#cb9470","#c08c70","#b58572","#a9908a","#8d9998"][s],shade=["#b57d5b","#b07857","#a57356","#9a6d5c","#8e7570","#74807f"][s];
+  const blood="#b3202c",ink="#1b2230",teeth="#e8e4d8",mouth="#3a1a18",helm="#56683f";
+  r(0,0,20,22,"#3a342d");
+  /* helmet, ears, head */
+  r(3,0,14,3,helm);r(2,2,16,3,helm);r(2,4,16,1,"#3a4a2c");r(9,1,2,1,"#c9b458");
+  r(1,8,2,4,skin);r(17,8,2,4,skin);r(3,5,14,13,skin);r(4,18,12,2,skin);r(5,20,10,1,skin);
+  r(3,16,2,2,shade);r(15,16,2,2,shade);
+  /* nose */
+  r(9,11,2,3,shade);r(9,14,2,1,shade);
+  /* eyes */
+  const look=dm.look,squint=dm.mood==="hurt";
+  if(s<5){
+    [5,12].forEach((x,k)=>{
+      if(s===4&&k===1){r(x,9,3,2,skin);r(x,10,3,1,ink);return;}
+      if(s===3&&k===0){r(x-1,9,5,3,"#5a3550");r(x,10,3,1,teeth);r(x+look+1,10,1,1,ink);return;}
+      if(squint){r(x,9,3,1,skin);r(x,10,3,1,ink);return;}
+      r(x,9,3,2,teeth);r(x+look+1,9,1,2,ink);
+    });
+    r(5,8,3,1,"#2a1d16");r(12,8,3,1,"#2a1d16");
+    if(s>=2){r(7,9,1,1,"#2a1d16");r(12,9,1,1,"#2a1d16");}
+  }else{
+    [5,12].forEach(x=>{r(x,9,1,1,ink);r(x+2,9,1,1,ink);r(x+1,10,1,1,ink);r(x,11,1,1,ink);r(x+2,11,1,1,ink);});
+  }
+  /* mouth */
+  const m=dm.mood;
+  if(s===5){r(7,15,6,3,mouth);r(8,15,4,1,teeth);r(9,17,2,2,"#b4505a");}
+  else if(m==="hurt"||m==="fire"){r(7,15,6,3,mouth);r(8,15,4,1,teeth);r(9,17,2,1,"#b4505a");}
+  else if(m==="grin"){r(6,15,8,1,"#5a2a24");r(5,14,1,1,"#5a2a24");r(14,14,1,1,"#5a2a24");r(7,16,6,1,teeth);}
+  else if(s>=2){r(6,15,8,3,mouth);r(7,16,6,1,teeth);}
+  else r(7,16,6,1,"#5a2a24");
+  /* damage */
+  if(s>=1){r(13,12,3,1,blood);r(14,13,1,1,blood);}
+  if(s>=2)r(4,12,3,3,"#6d4a78");
+  if(s>=3){r(15,4,2,8,blood);r(16,12,1,3,blood);}
+  if(s>=4){r(8,0,1,4,"#1a1f14");r(3,5,3,9,blood);r(9,5,2,3,blood);}
+  if(s===5){r(2,0,6,1,"#3a342d");r(2,1,3,1,"#3a342d");r(12,6,5,12,blood);r(3,13,2,6,blood);}
+}
+function dmRender(){
+  const on=dm.hp<=30;
+  $("#dhp").textContent=dm.hp;$("#dhp").className="num"+(on?" low blink":"");
+  $("#dscore").textContent=dm.score;$("#dammo").textContent=dm.ammo;
+  [...$("#darms").children].forEach((e,i)=>e.classList.toggle("cur",i+1===dm.w));
+  drawFace();
+  $("#dstate").textContent=dm.active?`health ${dm.hp}, ammo ${dm.ammo}, score ${dm.score}, weapon ${dm.w}${dm.over?", GAME OVER":""}`:"off";
+}
+function dmMood(m,ms){dm.mood=m;clearTimeout(dm.moodT);dm.moodT=setTimeout(()=>{dm.mood=null;dmRender();},ms);}
+function dmFlash(){
+  if(reduce.matches)return;
+  const h=$("#hurt");h.style.opacity=1;h.animate([{opacity:1},{opacity:0}],{duration:350,easing:"ease-out"}).onfinish=()=>{h.style.opacity=0;};
+  const a=$("#app");a.classList.remove("shake");void a.offsetWidth;a.classList.add("shake");
+}
+function dmHurt(n,snd){
+  if(dm.over)return;
+  dm.hp=Math.max(0,dm.hp-n);dmFlash();
+  if(snd&&ctx)try{DOOM.runFail(GAIN.s);}catch(e){console.error(e);}
+  if(dm.hp===0)dmOver();else dmMood("hurt",320);
+  dmRender();
+}
+function dmHeal(n){dm.hp=Math.min(100,dm.hp+n);}
+function dmOver(){
+  dm.over=true;dm.mood=null;$("#over").classList.add("on");
+  try{DOOM.over(GAIN.big);}catch(e){console.error(e);}
+  duckMusic(.12,.1);
+  dm.overT=setTimeout(()=>{dm.over=false;dm.hp=100;$("#over").classList.remove("on");duckMusic(.55,.4);dmRender();},1500);
+}
+function dmSet(n){
+  if(!dm.active||dm.over)return;
+  if(n<dm.hp)dmHurt(dm.hp-n,true);else{dmHeal(n-dm.hp);dmRender();}
+}
+function doomGame(id){
+  if(dm.over)return;
+  switch(id){
+    case"runFail":dmHurt(20);break;
+    case"checkFail":dmHurt(25);break;
+    case"checkPass":dmHeal(15);dm.score+=100;dmMood("grin",700);break;
+    case"moduleDone":dmHeal(25);dm.score+=500;dm.ammo=50;dmMood("grin",1000);break;
+    case"agentDone":dmHeal(10);dm.score+=250;dmMood("grin",500);break;
+    case"runDone":dm.score+=25;break;
+    case"reply":dm.score+=10;break;
+    case"run":if(dm.ammo>0){dm.ammo--;dmMood("fire",120);}break;
+    case"message":dm.ammo=Math.min(99,dm.ammo+5);break;
+    case"next":dm.w=dm.w%4+1;break;
+    case"prev":dm.w=(dm.w+2)%4+1;break;
+  }
+  dmRender();
+}
+function syncDoom(){
+  const on=st.style==="doom"&&!st.muted&&!!ctx;
+  if(on&&!dm.active){
+    Object.assign(dm,{active:true,hp:100,score:0,ammo:50,w:1,over:false,mood:null,look:0});
+    document.body.classList.add("dm-on");$("#dbar").classList.add("on");$("#dctl").hidden=false;
+    startMusic();dmRender();
+    dm.glanceT=setInterval(()=>{if(dm.over)return;dm.look=[-1,0,1,0][Math.floor(Math.random()*4)];dmRender();},1700);
+  }else if(!on&&dm.active){
+    dm.active=false;stopMusic();clearInterval(dm.glanceT);clearTimeout(dm.overT);clearTimeout(dm.moodT);dm.over=false;
+    $("#over").classList.remove("on");document.body.classList.remove("dm-on");$("#dbar").classList.remove("on");$("#dctl").hidden=true;dmRender();
+  }
+}
+
 const DIS={
  soft:g=>seq([84,76],.07,.18,"sine",.07*g),
  quest:g=>seq([84,79,72],.07,.3,"triangle",.08*g),
  chip:g=>seq([84,76,67],.05,.07,"square",.05*g),
  kalimba:g=>{pluck(79,0,.07*g);pluck(72,.07,.07*g);}};
 for(const k in DIS)STYLES[k].disable=DIS[k];
-const ORDER=["soft","quest","chip","kalimba","doom1","doom2","doom3","doom4"];
+const ORDER=["soft","quest","chip","kalimba","doom1","doom2","doom3","doom4","doom"];
 
 /* ---------- state ---------- */
 const $=s=>document.querySelector(s);
@@ -357,20 +539,23 @@ function play(id){
   $("#last").textContent=m.label;
   if(st.muted||!ctx){$("#now").textContent="nothing (muted)";$("#now").style.color="var(--muted)";return;}
   try{STYLES[st.style][id](GAIN[m.tier]);}catch(e){console.error(e);throw e;}
+  if(st.style==="doom")doomGame(id);
   $("#now").textContent=STYLES[st.style].name+" / "+m.label+" ("+m.tier+")";$("#now").style.color="var(--ok)";
   if(m.tier==="big"||id==="runFail"||id==="moduleDone")visual(STYLES[st.style].fx,id);
 }
 function setMuted(v){
   st.muted=v;
   if(!v){ensure();if(ctx.state==="suspended")ctx.resume();}
+  if(v)syncDoom();
   speaker.classList.toggle("on",!v);
   speaker.setAttribute("aria-pressed",String(!v));
   $("#state").textContent=v?"muted":"on";
   if(v){if(ctx){try{STYLES[st.style].disable(GAIN.s);}catch(e){console.error(e);}}$("#now").textContent=STYLES[st.style].name+" / Sound disabled (the last sound)";$("#now").style.color="var(--ok)";$("#last").textContent="Sound disabled";}
-  else play("enable");
+  else{play("enable");syncDoom();}
 }
+function picked(id){setStyle(id);if(!st.muted&&id!=="doom")play("checkPass");}
 function setStyle(id){
-  st.style=id;$("#style").textContent=STYLES[id].name;renderMenu();
+  st.style=id;$("#style").textContent=STYLES[id].name;renderMenu();syncDoom();
 }
 
 /* ---------- visual touches (reduced motion respected) ---------- */
@@ -401,7 +586,7 @@ function renderMenu(){
 function openMenu(hover){st.menuIdx=ORDER.indexOf(st.style);renderMenu();menu.hidden=false;speaker.setAttribute("aria-expanded","true");}
 function closeMenu(hover){menu.hidden=true;speaker.setAttribute("aria-expanded","false");if(!hover)speaker.focus();}
 const menuOpen=()=>!menu.hidden;
-menu.addEventListener("click",e=>{const b=e.target.closest("[data-style]");if(b){setStyle(b.dataset.style);if(!st.muted)play("checkPass");}});
+menu.addEventListener("click",e=>{const b=e.target.closest("[data-style]");if(b){picked(b.dataset.style);}});
 
 /* ---------- speaker: click toggles mute, right area opens menu via S ---------- */
 speaker.addEventListener("click",()=>setMuted(!st.muted));
@@ -417,14 +602,19 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("[data-m]");if(!b)return;play(b.dataset.m);b.classList.remove("hit");void b.offsetWidth;b.classList.add("hit");
   if(!menu.contains(e.target)&&menuOpen())menu.hidden=true;
 });
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-d]");if(!b||!dm.active)return;
+  const d=b.dataset.d;
+  if(d==="hurt10")dmSet(dm.hp-10);else if(d==="heal")dmSet(100);else dmSet(+d.slice(2));
+});
 document.addEventListener("keydown",e=>{
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const k=e.key;
   if(menuOpen()){
     if(k==="Escape"){e.preventDefault();closeMenu();}
     else if(k==="ArrowDown"||k==="ArrowUp"){e.preventDefault();st.menuIdx=(st.menuIdx+(k==="ArrowDown"?1:-1)+ORDER.length)%ORDER.length;renderMenu();}
-    else if(k==="Enter"){e.preventDefault();setStyle(ORDER[st.menuIdx]);if(!st.muted)play("checkPass");}
-    else if(/^[1-8]$/.test(k)){e.preventDefault();setStyle(ORDER[+k-1]);if(!st.muted)play("checkPass");}
+    else if(k==="Enter"){e.preventDefault();picked(ORDER[st.menuIdx]);}
+    else if(/^[1-9]$/.test(k)&&+k<=ORDER.length){e.preventDefault();picked(ORDER[+k-1]);}
     else if(k.toLowerCase()==="m"){e.preventDefault();setMuted(!st.muted);}
     return;
   }
@@ -432,6 +622,12 @@ document.addEventListener("keydown",e=>{
   const kl=k.toLowerCase();
   if(kl==="m"&&e.shiftKey){e.preventDefault();openMenu();return;}
   if(kl==="m"){e.preventDefault();setMuted(!st.muted);return;}
+  if(dm.active){
+    const hp={"1":90,"2":70,"3":50,"4":30,"5":10,"6":0}[k];
+    if(hp!=null){e.preventDefault();dmSet(hp);return;}
+    if(kl==="h"){e.preventDefault();dmSet(dm.hp-10);return;}
+    if(kl==="u"){e.preventDefault();dmSet(100);return;}
+  }
   const m=MOMENTS.find(x=>x.key===kl);
   if(m){e.preventDefault();play(m.id);const b=document.querySelector(`[data-m="${m.id}"]`);if(b){b.classList.remove("hit");void b.offsetWidth;b.classList.add("hit");}}
 });
@@ -440,7 +636,7 @@ document.addEventListener("keydown",e=>{
 const WHY={run:"A soft click confirms the press.",runDone:"A run finishing is useful news.",runFail:"Failure should be heard, kept short and low.",checkPass:"The payoff. The biggest sound.",checkFail:"Short, never harsh.",next:"Only a tick, so paging stays calm.",prev:"Same tick, one step lower.",moduleDone:"Second payoff. Longer than a pass.",message:"The trace's arrival tick.",tool:"A tiny pluck per call.",reply:"The model answering, a small flourish.",agentDone:"A gentle resolve.",key:"Ticks only; ships off by default.",mute:"Confirms the toggle."};
 $("#table").innerHTML=MOMENTS.map(m=>`<div class="row"><span class="tag ${m.tier==="big"?"s":m.tier==="s"?"":"q"}">${m.tier==="big"?"payoff":m.tier==="s"?"normal":"quiet"}</span><b>${m.label}</b><span style="color:var(--muted)">${WHY[m.id]}</span></div>`).join("");
 setStyle("soft");
-window.__sound={play,setMuted,setStyle,st};
+window.__sound={play,setMuted,setStyle,st,dm,music:()=>!!mus};
 </script>
 </body>
 </html>
