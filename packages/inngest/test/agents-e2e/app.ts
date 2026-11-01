@@ -10,7 +10,8 @@ import { Inngest } from "inngest";
 import { connect } from "inngest/connect";
 import { sandboxMiddleware } from "inngest/experimental";
 import { serve } from "inngest/node";
-import { eventName, type Scenario } from "./kit/driver.ts";
+import { eventName, modelName, type Scenario } from "./kit/driver.ts";
+import { script } from "./kit/model.ts";
 import { fakeSandbox } from "./kit/sandbox.ts";
 
 const mode = process.env.AGENTS_E2E_MODE === "connect" ? "connect" : "serve";
@@ -75,6 +76,9 @@ const listed = scenarios.flatMap((s) => {
     event: (name) => {
       return eventName(s.id, name);
     },
+    script: (name, steps) => {
+      return script(steps, { url: fakesUrl, name: modelName(s.id, name) });
+    },
   });
 });
 const functions = [...new Set(listed)];
@@ -95,6 +99,9 @@ const others = scenarios.flatMap((s) => {
       redisUrl: process.env.INNGEST_EXPERIMENTAL_KV_URL,
       event: (name) => {
         return eventName(s.id, name);
+      },
+      script: (name, steps) => {
+        return script(steps, { url: fakesUrl, name: modelName(s.id, name) });
       },
     }) ?? []
   );

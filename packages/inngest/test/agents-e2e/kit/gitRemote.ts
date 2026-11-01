@@ -1,8 +1,8 @@
 /**
  * @module
- * The token-protected git remote, from the published testing entry.
+ * The token-protected git remote.
  */
 export {
   type GitRemote,
   startGitRemote,
-} from "inngest/experimental/agents/testing";
+} from "sdk-testing/gitRemote";

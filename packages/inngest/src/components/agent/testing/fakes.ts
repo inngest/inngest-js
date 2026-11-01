@@ -17,7 +17,7 @@ export interface Call {
   /**
    * Which fake received the call.
    */
-  channel: "slack" | "github" | "sandbox";
+  channel: "slack" | "github" | "sandbox" | "model";
 
   /**
    * What was called, such as `chat.postMessage`, `issues.createComment` or
@@ -272,6 +272,21 @@ export const startFakes = async (): Promise<Fakes> => {
       } else {
         reply(404, { message: "Not Found" });
       }
+
+      return;
+    }
+
+    // A scripted model in another process reports each request it was shown:
+    // the method is the model's name, the body is the request.
+    const model = path.match(/^\/model\/([^/]+)$/);
+
+    if (model && req.method === "POST") {
+      calls.push({
+        channel: "model",
+        method: decodeURIComponent(model[1] as string),
+        body,
+      });
+      reply(200, { ok: true });
 
       return;
     }
