@@ -29,14 +29,13 @@ type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
   : T;
 
 /**
- * Represents the structure of an event as received by function handlers.
- *
- * This is the runtime event shape that your function receives when triggered.
+ * The data fields of an event, without the methods the SDK adds to the events
+ * it hands to user code.
  *
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
+export type EventShape<TName, TData extends BasicDataUnknown> = {
   data: TData;
   id: string;
   name: TName;
@@ -49,6 +48,50 @@ export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
   ts: number;
   v: string;
 };
+
+/**
+ * Narrows an event to the event types it was asked about. One type or many.
+ */
+export type EventIs = {
+  is<
+    const T extends
+      | EventTypeWithAnySchema<string>
+      | readonly EventTypeWithAnySchema<string>[],
+  >(types: T): this is EventTypesToShape<T>;
+};
+
+/**
+ * Represents the structure of an event as received by function handlers.
+ *
+ * This is the runtime event shape that your function receives when triggered.
+ *
+ * @template TName - The event name as a string literal type
+ * @template TData - The event data object type
+ */
+export type ReceivedEvent<TName, TData extends BasicDataUnknown> = EventShape<
+  TName,
+  TData
+> &
+  EventIs;
+
+/**
+ * Converts one event type, or a list of them, to the union of their shapes.
+ */
+export type EventTypesToShape<T> = T extends readonly (infer TItem)[]
+  ? EventTypeToShape<TItem>
+  : EventTypeToShape<T>;
+
+/**
+ * Converts an EventType instance to the shape of the events it describes.
+ */
+export type EventTypeToShape<TEventType> = TEventType extends EventType<
+  infer TName,
+  infer TSchema
+>
+  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+    ? EventShape<WildcardToUnknown<TName>, TData>
+    : EventShape<WildcardToUnknown<TName>, BasicDataAny>
+  : never;
 
 /**
  * Recursively checks if a trigger array contains an invoke trigger.

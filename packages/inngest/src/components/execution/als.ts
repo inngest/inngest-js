@@ -2,6 +2,7 @@ import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
+import type { InboxRead, Want } from "./inboxState.ts";
 
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
@@ -91,6 +92,47 @@ export interface AsyncContext {
      * nested step, which is not allowed.
      */
     insideExperimentSelect?: boolean;
+
+    /**
+     * What an inbox (`step.subscribe()`) reads from the run's state: its
+     * messages in the order the executor saved them, and the last step of the
+     * stack this request loaded.
+     */
+    inbox?: {
+      read: (
+        inbox: string,
+        taken: number,
+        wait: string,
+        want?: Want,
+      ) => InboxRead;
+      unread: (
+        inbox: string,
+        taken: number,
+        want?: Want,
+        upTo?: string,
+      ) => string[];
+      message: (id: string) => unknown;
+      lastSeen: () => string;
+
+      /**
+       * Settles when replay reaches the message step `id` in the run's stack,
+       * after every found step earlier in the stack has been handed back.
+       */
+      place: (id: string) => Promise<void>;
+    };
+
+    /**
+     * Tells the engine that a step was skipped because its answer was already
+     * in the state, so it is not waited for. Only inboxes use it.
+     */
+    skipStep?: (id: string) => Promise<void>;
+
+    /**
+     * The answer the run's state holds for a step, if it has one. Only
+     * inboxes use it, to tell a read that timed out from one that has not
+     * been answered.
+     */
+    stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
 

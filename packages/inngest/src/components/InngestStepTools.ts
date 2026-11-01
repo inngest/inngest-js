@@ -36,6 +36,11 @@ import {
 } from "../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
+import {
+  firstReport,
+  hashedStepId,
+  type Want,
+} from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -60,6 +65,7 @@ import {
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
+import { Inbox, type InboxSources, sourcesOf } from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -567,6 +573,257 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * EXPERIMENTAL: opens an inbox inside the run. Every event that matches
+     * one of the sources and arrives afterwards becomes a message, saved once
+     * as its own step whether or not it is read. Read the inbox with `next()`.
+     *
+     * A source is written like a trigger: an event type (or its name), or an
+     * object with the event and an `if` expression, which sees the arriving
+     * event as `async`. Pass one source or an array.
+     *
+     * @example
+     * ```ts
+     * await using inbox = step.subscribe("reviews", pr.reviewed);
+     * const review = await inbox.next();
+     * ```
+     */
+    subscribe: (idOrOptions: StepOptionsOrId, sources: InboxSources): Inbox => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
+
+      return new Inbox({
+        sources: sourcesOf(sources),
+        id,
+        inbox: hashedStepId(`${prefix}${id}`),
+        open: (op, opened, inbox) => {
+          return tools["~inboxOpen"](inbox === undefined ? idOrOptions : op, {
+            sources: opened,
+            ...(inbox === undefined ? {} : { inbox }),
+          });
+        },
+        waitId: (op) => {
+          return hashedStepId(`${prefix}${op}`);
+        },
+        wait: (op, inbox, seen, want, timeout) => {
+          return tools["~inboxWait"](op, {
+            inbox,
+            seen,
+            ...(want === undefined ? {} : { want }),
+            ...(timeout === undefined
+              ? {}
+              : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
+          });
+        },
+        read: (inbox, taken, wait, want) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.read(
+              inbox,
+              taken,
+              wait,
+              want,
+            ) ?? {
+              found: "nothing",
+            }
+          );
+        },
+        unread: (inbox, taken, want, upTo) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.unread(
+              inbox,
+              taken,
+              want,
+              upTo,
+            ) ?? []
+          );
+        },
+        batch: (op, read) => {
+          return tools["~inboxWait"](op, {
+            inbox: read.inbox,
+            seen: read.seen,
+            ...(read.want === undefined ? {} : { want: read.want }),
+            ...(read.timeout === undefined
+              ? {}
+              : {
+                  timeout: timeStr(read.timeout, client[internalLoggerSymbol]),
+                }),
+            batch: {
+              ...(read.drain ? { drain: true } : {}),
+              ...(read.unread ? { unread: true } : {}),
+              ...(read.room === undefined ? {} : { room: read.room }),
+            },
+          });
+        },
+        answered: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
+          );
+        },
+        message: (messageId) => {
+          return getAsyncCtxSync()?.execution?.inbox?.message(messageId);
+        },
+        report: (op, inbox, messages, draw, row) => {
+          const runId = getAsyncCtxSync()?.execution?.ctx.runId;
+
+          if (
+            messages.length === 0 ||
+            runId === undefined ||
+            !firstReport(runId, `${prefix}${op}`)
+          ) {
+            return;
+          }
+
+          void tools["~inboxRead"](op, {
+            inbox,
+            messages,
+            draw,
+            ...(row === undefined ? {} : { row }),
+          }).catch(() => undefined);
+        },
+        skip: async (op) => {
+          await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
+        },
+        lastSeen: () => {
+          return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
+        },
+        closed: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
+          );
+        },
+        close: (op, closing) => {
+          return tools["~inboxClose"](op, closing) as Promise<string[]>;
+        },
+        place: async (id) => {
+          await getAsyncCtxSync()?.execution?.inbox?.place(id);
+        },
+      });
+    },
+
+    /**
+     * The op that opens an inbox. Used by `subscribe`.
+     */
+    "~inboxOpen": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { sources: { event: string; if?: string }[]; inbox?: string },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.Subscribe,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          sources: opts.sources,
+          ...(opts.inbox === undefined ? {} : { inbox: opts.inbox }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op that closes an inbox or a view. Used by `subscribe`. It settles
+     * with the ids of the messages the handle had not read, as the executor
+     * saved them.
+     */
+    "~inboxClose": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          ids: string[];
+          pauses: { id: string; event: string }[];
+          waits: string[];
+          rows: string[];
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeClose,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          ids: opts.ids,
+          pauses: opts.pauses,
+          waits: opts.waits,
+          rows: opts.rows,
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op of a read of an inbox that has nothing unread. Used by
+     * `subscribe`. It is never answered from state: the executor wakes the run
+     * and the read finds its message there.
+     */
+    "~inboxWait": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          seen: string;
+          want?: Want;
+          timeout?: string;
+          batch?: { drain?: boolean; unread?: boolean; room?: number };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeWait,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          seen: opts.seen,
+          ...(opts.want === undefined ? {} : { want: opts.want }),
+          ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+          ...(opts.batch === undefined ? {} : { batch: opts.batch }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The lazy op that reports the messages a read took. Used by `subscribe`.
+     * It rides on the next message to the executor and has no answer.
+     */
+    "~inboxRead": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          messages: string[];
+          draw: boolean;
+          row?: string;
+        },
+      ) => Promise<void>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.SubscribeRead,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          messages: opts.messages,
+          ...(opts.draw ? { draw: true } : {}),
+          ...(opts.row === undefined ? {} : { row: opts.row }),
+        },
+        userland: { id },
+      };
+    }),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried
