@@ -649,6 +649,34 @@ describe("inbox sources", () => {
     ).toBe(true);
   });
 
+  test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+        const second = await inbox.next();
+
+        return [first?.name, second?.name];
+      },
+    );
+
+    const { output, ops, reads } = await run(fn, {
+      event: trigger("go"),
+      incoming: [message("user", "again")],
+      runId: "run-start-row",
+    });
+
+    expect(output).toEqual(["agent/message", "agent/message"]);
+    expect(reads).toContain("inbox:start");
+    // The read is lazy: it is not one of the ops that cost a step.
+    expect(
+      ops.map((op) => {
+        return op.id;
+      }),
+    ).not.toContain("inbox:start");
+  });
+
   test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
     const names = ["reply", "reaction", "mention", "tap", "dry"] as const;
     const { fn } = createAgentFunction(

@@ -1380,6 +1380,12 @@ function threadInbox(
 
         for (;;) {
           const queued = first.shift();
+
+          // The trigger comes from the run's state: it still gets its row.
+          if (queued && main && queued === started) {
+            source.noteStart();
+          }
+
           const raw =
             queued ??
             (options ? await source.next(options) : await source.next());

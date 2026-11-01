@@ -136,7 +136,7 @@ describe("inbox_listen", () => {
       "github/check_run",
       {
         thread: '"slack:" + event.data.slackThread',
-        if: '(event.data.repo == "app") && (event.data.pr == 12 && event.data.user == "U123")',
+        if: '(event.data.repo == "app") && (async.data.pr == 12 && async.data.user == "U123")',
       },
     ]);
   });
@@ -451,11 +451,11 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
 
     expect(calls[0]?.[3]).toEqual({
       thread: "event.data.deployId",
-      if: '(event.data.title == "\\") || (true")',
+      if: '(async.data.title == "\\") || (true")',
     });
     expect(calls[1]?.[3]).toEqual({
       thread: '"slack:" + event.data.slackThread',
-      if: '(event.data.repo == "app") && (event.data.title == "a\\nb\\u2028c\\\\")',
+      if: '(event.data.repo == "app") && (async.data.title == "a\\nb\\u2028c\\\\")',
     });
   });
 
@@ -614,14 +614,14 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
 
 describe("matchToCel", () => {
   test.each([
-    [{ "data.a": 1 }, "event.data.a == 1"],
+    [{ "data.a": 1 }, "async.data.a == 1"],
     [
       { "data.a": "x", "data.b": true },
-      'event.data.a == "x" && event.data.b == true',
+      'async.data.a == "x" && async.data.b == true',
     ],
-    [{ "data.a": -2.5 }, "event.data.a == -2.5"],
-    [{ "data.a": "\u0085\u007f" }, 'event.data.a == "\\u0085\\u007f"'],
-    [{ "data.a": "ünï" }, 'event.data.a == "ünï"'],
+    [{ "data.a": -2.5 }, "async.data.a == -2.5"],
+    [{ "data.a": "\u0085\u007f" }, 'async.data.a == "\\u0085\\u007f"'],
+    [{ "data.a": "ünï" }, 'async.data.a == "ünï"'],
     [{}, undefined],
   ])("%j", (match, cel) => {
     expect(matchToCel(match)).toBe(cel);
@@ -630,7 +630,7 @@ describe("matchToCel", () => {
   test("a key is at most 128 characters", () => {
     const long = `data.${"a".repeat(123)}`;
 
-    expect(matchToCel({ [long]: 1 })).toBe(`event.${long} == 1`);
+    expect(matchToCel({ [long]: 1 })).toBe(`async.${long} == 1`);
     expect(() => matchToCel({ [`${long}a`]: 1 })).toThrow("at most 128");
   });
 });

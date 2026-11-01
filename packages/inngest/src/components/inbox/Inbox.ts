@@ -538,6 +538,15 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     });
   }
 
+  /**
+   * Draws the read of a message that came from the run's own state and not
+   * from this inbox, such as the event that started the run: it gets a row like
+   * any read answered from state, and costs no step. Internal.
+   */
+  noteStart(): void {
+    this._deps.report(`${this._deps.id}:start`, this._deps.inbox, [], true);
+  }
+
   private async _readOne(
     n: number,
     afterClose: boolean,

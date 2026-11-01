@@ -262,7 +262,7 @@ export const matchToCel = (
         );
       }
 
-      return `event.${path} == ${literal(value)}`;
+      return `async.${path} == ${literal(value)}`;
     })
     .join(" && ");
 };

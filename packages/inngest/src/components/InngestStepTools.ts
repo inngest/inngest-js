@@ -725,7 +725,9 @@ export const createStepTools = <
           const runId = getAsyncCtxSync()?.execution?.ctx.runId;
 
           if (
-            messages.length === 0 ||
+            // A drawn read with no row and no messages is the read of a
+            // message that is not in the inbox, such as the trigger.
+            (messages.length === 0 && (!draw || row !== undefined)) ||
             runId === undefined ||
             !firstReport(runId, `${prefix}${op}`)
           ) {

@@ -94,6 +94,13 @@ export const fewerSteps = scenario({
         }) === 0,
       run.steps,
     );
+    ctx.check(
+      "the first read, answered from the run's start, has a row",
+      named((name) => {
+        return name === "inbox:start";
+      }) >= 1,
+      run.steps,
+    );
     ctx.check(`steps in this run: ${run.steps.length}`, true, run.steps);
   },
 });
