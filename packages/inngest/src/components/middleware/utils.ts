@@ -119,6 +119,14 @@ export function stepTypeFromOpCode(
     return "waitForEvent";
   } else if (op === StepOpCode.WaitForSignal) {
     return "waitForSignal";
+  } else if (op === StepOpCode.Subscribe) {
+    return "subscribe";
+  } else if (op === StepOpCode.SubscribeWait) {
+    return "subscribe.wait";
+  } else if (op === StepOpCode.SubscribeClose) {
+    return "subscribe.close";
+  } else if (op === StepOpCode.SubscribeRead) {
+    return "subscribe.read";
   }
 
   logger.warn({ op, type: opts?.type }, "Unknown step type");
