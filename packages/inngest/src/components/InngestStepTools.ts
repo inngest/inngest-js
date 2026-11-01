@@ -343,6 +343,13 @@ export const STEP_INDEXING_SUFFIX = ":";
  * that the tools can use to submit a new op.
  */
 /**
+ * The ID of the op of the `n`th read of an inbox.
+ */
+const readId = (inbox: string, n: number): string => {
+  return n === 0 ? `${inbox}:next` : `${inbox}:next:${n}`;
+};
+
+/**
  * Merge client-level and function-level middleware into a single array type
  * for use with ApplyAllMiddlewareTransforms etc.
  */
@@ -722,11 +729,29 @@ export const createStepTools = <
         open: (opened) => {
           return tools["~inboxOpen"](idOrOptions, { sources: opened });
         },
-        wait: (inbox, seen) => {
-          return tools["~inboxWait"](`${id}:next`, { inbox, seen });
+        waitId: (n) => {
+          return hashedStepId(`${prefix}${readId(id, n)}`);
         },
-        messages: (inbox) => {
-          return getAsyncCtxSync()?.execution?.inbox?.messages(inbox) ?? [];
+        wait: (n, inbox, seen, timeout) => {
+          return tools["~inboxWait"](readId(id, n), {
+            inbox,
+            seen,
+            ...(timeout === undefined
+              ? {}
+              : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
+          });
+        },
+        read: (inbox, taken, wait) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.read(inbox, taken, wait) ?? {
+              found: "nothing",
+            }
+          );
+        },
+        skip: async (n) => {
+          await getAsyncCtxSync()?.execution?.skipStep?.(
+            `${prefix}${readId(id, n)}`,
+          );
         },
         lastSeen: () => {
           return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
@@ -762,7 +787,7 @@ export const createStepTools = <
     "~inboxWait": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { inbox: string; seen: string },
+        opts: { inbox: string; seen: string; timeout?: string },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -771,7 +796,11 @@ export const createStepTools = <
         op: StepOpCode.SubscribeWait,
         name: id,
         displayName: name ?? id,
-        opts: { inbox: opts.inbox, seen: opts.seen },
+        opts: {
+          inbox: opts.inbox,
+          seen: opts.seen,
+          ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+        },
         userland: { id },
       };
     }),
