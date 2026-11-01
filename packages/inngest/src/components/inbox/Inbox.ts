@@ -760,8 +760,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined> {
     while (true) {
-      const batch = await this.#enqueue((n) => {
-        return this.#readBatch(n, options?.max, true, options?.timeout);
+      const batch = await this.#enqueue((n, late) => {
+        return this.#readBatch(n, late, options?.max, true, options?.timeout);
       });
 
       if (batch === undefined || batch === null) {
