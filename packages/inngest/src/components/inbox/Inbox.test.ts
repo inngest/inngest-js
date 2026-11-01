@@ -119,7 +119,10 @@ describe("closing an inbox", () => {
     };
     const again = new Inbox(replayed.deps);
 
-    expect(await again.next()).toBeUndefined();
+    const ending = again.next();
+    await again.close();
+
+    expect(await ending).toBeUndefined();
     expect(waiting).toBeInstanceOf(Promise);
   });
 

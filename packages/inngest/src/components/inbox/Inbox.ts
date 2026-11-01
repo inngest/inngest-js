@@ -306,6 +306,10 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   // Set once this reader's own `close()` has settled.
   #closed = false;
 
+  // Settles once this reader, or a reader it is a view of, has closed.
+  #whenClosed: Promise<void>;
+  #markClosed: () => void = () => undefined;
+
   // The close of this reader, once started.
   #closing?: Promise<string[]>;
 
@@ -334,6 +338,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
   constructor(deps: InboxDeps, view?: ViewInit<TMessage>) {
     this.#deps = deps;
+    this.#whenClosed = new Promise<void>((resolve) => {
+      this.#markClosed = resolve;
+    });
     this.#base = view?.base ?? deps.id;
     this.#parent = view?.parent;
     this.#events = view?.events;
@@ -465,9 +472,21 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   }
 
   /**
+   * Settles once this reader, or one it is a view of, has closed, which is when
+   * the code's `close()` is replayed past. A read that finds nothing and whose
+   * close is in the run's state parks here instead of reporting a wait: it ends
+   * in the place of the close, after the steps that came before it, so a race
+   * against a step has the same winner on every replay.
+   */
+  #ended(): Promise<void> {
+    return this.#parent
+      ? Promise.race([this.#whenClosed, this.#parent.#ended()])
+      : this.#whenClosed;
+  }
+
+  /**
    * Whether the run's state holds the close of this reader or of one it is a
-   * view of. Reads that were waiting end then: they find nothing, and nothing
-   * will wake them.
+   * view of. Nothing will wake a read that finds nothing then.
    */
   #closedInState(): boolean {
     if (this.#deps.closed(closeId(this.#base))) {
@@ -626,8 +645,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       wait &&
       this.#deps.unread(this.#deps.inbox, this.#taken, want).length === 0
     ) {
-      // Nothing will wake a read of a reader that was closed.
       if (this.#closedInState()) {
+        await this.#ended();
+
         return [];
       }
 
@@ -688,6 +708,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     // The reader was closed while this read had nothing to read: it ends.
     if (found.found === "nothing" && this.#closedInState()) {
+      await this.#ended();
+
       return undefined;
     }
 
@@ -750,8 +772,17 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     });
 
     this.#closed = true;
+    this.#markClosedTree();
 
     return ids;
+  }
+
+  #markClosedTree(): void {
+    this.#markClosed();
+
+    for (const child of this.#children) {
+      child.#markClosedTree();
+    }
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
