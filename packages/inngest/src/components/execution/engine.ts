@@ -334,6 +334,7 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               functionId: this.options.fn.id(),
+              executorCapabilities: this.options.executorCapabilities,
               inbox: {
                 read: (
                   inbox: string,

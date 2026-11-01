@@ -3,7 +3,8 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { createClient } from "../../test/helpers.ts";
 import { StepMode } from "../../types.ts";
-import { eventType } from "./triggers.ts";
+import { addEventIs, eventType } from "./triggers.ts";
+import type { EventIs } from "./typeHelpers.ts";
 
 const a = eventType("a", { schema: z.object({ a: z.string() }) });
 const b = eventType("b", { schema: z.object({ b: z.number() }) });
@@ -44,6 +45,49 @@ describe("EventType.is", () => {
   });
 });
 
+describe("EventType.is with a wildcard type", () => {
+  const user = eventType("user/*", { schema: z.object({ id: z.string() }) });
+  const anyUser = eventType("user/*");
+
+  test("true for a name under the prefix", () => {
+    expect(user.is({ name: "user/created", data: { id: "x" } })).toBe(true);
+    expect(user.is({ name: "user/profile/updated", data: { id: "x" } })).toBe(
+      true,
+    );
+  });
+
+  test("false for a name outside the prefix", () => {
+    expect(user.is({ name: "account/created", data: {} })).toBe(false);
+    expect(user.is({ name: "user", data: {} })).toBe(false);
+  });
+
+  test("an exact type still matches by equality", () => {
+    expect(a.is({ name: "a/b", data: {} })).toBe(false);
+  });
+
+  test("event.is matches a wildcard type too", () => {
+    const named = (name: string) => {
+      return addEventIs({ name, data: {} }) as unknown as EventIs;
+    };
+
+    expect(named("user/created").is(user)).toBe(true);
+    expect(named("account/created").is(user)).toBe(false);
+    expect(named("user/created").is([a, anyUser])).toBe(true);
+  });
+
+  test("keeps the schema data type, and plain data without one", () => {
+    const value = { name: "user/created", data: { id: "x" } } as unknown;
+
+    if (user.is(value)) {
+      expectTypeOf(value.data).toEqualTypeOf<{ id: string }>();
+    }
+
+    if (anyUser.is(value)) {
+      expectTypeOf(value.data).toExtend<Record<string, unknown>>();
+    }
+  });
+});
+
 describe("handler event.is", () => {
   async function runHandler(name: string, data: Record<string, unknown>) {
     const results: unknown[] = [];
@@ -62,6 +106,22 @@ describe("handler event.is", () => {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         } else if (event.is([b, c])) {
           expectTypeOf(event.name).toEqualTypeOf<"b" | "c">();
+        }
+
+        if (event.is(a)) {
+          expectTypeOf(event.name).toEqualTypeOf<"a">();
+        } else {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "b" | "c" | "inngest/function.invoked"
+          >();
+        }
+
+        if (event.is([a, b])) {
+          expectTypeOf(event.name).toEqualTypeOf<"a" | "b">();
+        } else {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "c" | "inngest/function.invoked"
+          >();
         }
       },
     );

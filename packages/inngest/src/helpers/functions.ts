@@ -163,6 +163,7 @@ export const parseFnData = (
               max_attempts: z.number().optional(),
               disable_immediate_execution: z.boolean().default(false),
               use_api: z.boolean().default(false),
+              capabilities: z.array(z.string()).optional(),
               qi_id: z.string().optional(),
               stack: z
                 .object({

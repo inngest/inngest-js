@@ -2,6 +2,7 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import { subscribeCapability } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import {
   normalizeEventMeta,
@@ -65,7 +66,12 @@ import {
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
-import { Inbox, type InboxSources, sourcesOf } from "./inbox/Inbox.ts";
+import {
+  Inbox,
+  type InboxSources,
+  type SourcesMessage,
+  sourcesOf,
+} from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -601,14 +607,29 @@ export const createStepTools = <
      * object with the event and an `if` expression, which sees the arriving
      * event as `async`. Pass one source or an array.
      *
+     * The inbox's messages are typed from the sources: the union of the shapes
+     * of the event types given. A source written as a name has no schema, so
+     * its messages stay the default message, whose `data` is `unknown`.
+     *
      * @example
      * ```ts
      * await using inbox = step.subscribe("reviews", pr.reviewed);
      * const review = await inbox.next();
      * ```
      */
-    subscribe: (idOrOptions: StepOptionsOrId, sources: InboxSources): Inbox => {
+    subscribe: <const S extends InboxSources>(
+      idOrOptions: StepOptionsOrId,
+      sources: S, // what the inbox receives
+    ): Inbox<SourcesMessage<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
+
+      if (capabilities && !capabilities.includes(subscribeCapability)) {
+        throw new NonRetriableError(
+          "step.subscribe needs an executor that supports inboxes, and this one did not say it does. Upgrade the Dev Server (`npx inngest-cli@latest dev`) or use an Inngest Cloud environment with inboxes enabled.",
+        );
+      }
+
       const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
 
       return new Inbox({

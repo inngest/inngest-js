@@ -147,9 +147,11 @@ export interface View<TMessage>
 
   /**
    * Reads batch by batch with `for await`. The loop ends when the reader
-   * closes.
+   * closes, or when a wait passes `timeout` with nothing unread.
    */
-  batches(options?: BatchOptions): AsyncGenerator<TMessage[], void, undefined>;
+  batches(
+    options?: BatchOptions & Partial<NextOptions>,
+  ): AsyncGenerator<TMessage[], void, undefined>;
 
   /**
    * Closes the reader and returns its unread messages.
