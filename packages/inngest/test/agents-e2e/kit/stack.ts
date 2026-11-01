@@ -117,6 +117,12 @@ export interface StartOptions {
    * What the app needs beyond the Dev Server and Redis URLs.
    */
   appEnv: Record<string, string>;
+
+  /**
+   * When set, a second app runs this command and connects to the Dev Server
+   * (`connect()`) as the app with this client id, next to the served app.
+   */
+  connect?: { command: string; appId: string; env: Record<string, string> };
 }
 
 /**
@@ -172,6 +178,28 @@ export const startStack = async (options: StartOptions): Promise<Stack> => {
       return ["--env", `${key}=${value}`];
     }),
   ]);
+
+  if (options.connect) {
+    await devstack([
+      "app",
+      "start",
+      "--stack",
+      name,
+      "--name",
+      "connect",
+      "--cwd",
+      options.cwd,
+      "--cmd",
+      options.connect.command,
+      "--connect",
+      options.connect.appId,
+      ...Object.entries({ ...env, ...options.connect.env }).flatMap(
+        ([key, value]) => {
+          return ["--env", `${key}=${value}`];
+        },
+      ),
+    ]);
+  }
 
   return {
     name,

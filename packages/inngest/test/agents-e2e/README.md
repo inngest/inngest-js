@@ -78,6 +78,30 @@ Limits: the fake Slack and GitHub answer only the write methods listed (everythi
 
 Rules: a scenario uses its own event names and thread IDs (the driver gives you the event prefix); one retry is not allowed, a flaky scenario is a bug and blocks merges; 2 minute cap, aim for 30-60s.
 
+## The flow matrix
+
+`kit/flow.ts` runs a flow in all 8 cells: checkpointing on and off, served and connected (a second app uses `connect()`), `optimizeParallelism` true and false. A flow is a function body (`run`), a script that sends events at the right moments (`drive`) and what a correct run looks like (`expect`: the output, how many times each step body ran, the trace rows). Output is read through GraphQL, because the REST `output` is empty with checkpointing on and `optimizeParallelism: true`.
+
+```ts
+import { type Flow, flowScenario } from "../kit/flow.ts";
+
+const flow: Flow = {
+  name: "wait",
+  run: async (h) => {
+    const got = await h.step.waitForEvent("w", { event: h.event("w"), timeout: "1m", match: "data.key" });
+    return { got: got ? "w" : null };
+  },
+  drive: async (d) => {
+    await d.send("w");
+  },
+  expect: { output: { got: "w" }, bodies: {}, rows: ["w"] },
+};
+
+export const myFlows = flowScenario({ id: "my-flows", owner: "me", flows: [flow] });
+```
+
+Call `h.ran("<step id>")` first in a step body to have the body counted, and `h.mark(line)` / `d.reached(line)` to send an event once the function reached a point. Put `h.key` in the data of every event the flow waits on (`d.send` does it). Each cell prints `PASS <scenario>: <flow>/<mode>/c<cp>o<op>`. `scenarios/harness-race.ts` is the worked example. A scenario built with `flowScenario` needs the devstack stack (the direct stack cannot start the connected app).
+
 ## Needing a local OSS build
 
 If your piece needs a backend change not in the published Dev Server, declare it:

@@ -304,6 +304,19 @@ if (!inner) {
   });
 } else {
   const scenarios = await Promise.all(ids.map(load));
+
+  if (
+    direct &&
+    scenarios.some((s) => {
+      return s.connect;
+    })
+  ) {
+    console.error(
+      "Scenarios with connect: true need the devstack stack, not AGENTS_VERIFY_STACK=direct",
+    );
+    process.exit(2);
+  }
+
   const bin = await resolveBin(scenarios);
   const fakes = await startFakes();
   let failed = false;
@@ -355,6 +368,16 @@ if (!inner) {
         AGENTS_E2E_FAKES: fakes.url,
         AGENTS_E2E_EXPECT_FILE: expectFile,
       },
+      connect: scenarios.some((s) => {
+        return s.connect;
+      })
+        ? {
+            command:
+              "pnpm exec tsx --tsconfig test/agents-e2e/tsconfig.json test/agents-e2e/app.ts",
+            appId: "agents-e2e-connect",
+            env: { AGENTS_E2E_MODE: "connect" },
+          }
+        : undefined,
     });
 
     await waitForSync(stack.devUrl, expectFile);

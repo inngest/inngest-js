@@ -26,6 +26,12 @@ export type KitClient = Inngest<{
 
 export interface AppEnv {
   client: KitClient;
+
+  /**
+   * How the app running these functions talks to the Dev Server. Only a
+   * scenario with `connect: true` is ever loaded by the connected app.
+   */
+  mode: "serve" | "connect";
   fakes: { url: string };
   redisUrl: string | undefined;
 
@@ -154,6 +160,13 @@ export interface Scenario {
    * more.
    */
   capMs?: number;
+
+  /**
+   * Also load this scenario in a second app that uses `connect()` instead of
+   * `serve()`, so its functions can run in both modes. Needs the devstack
+   * stack.
+   */
+  connect?: boolean;
 
   /**
    * `"fake"` serves the Sandboxes API from memory in the app.
