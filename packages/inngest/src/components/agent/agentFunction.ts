@@ -49,10 +49,10 @@ import { toAsync } from "./cel.ts";
 import {
   type Channel,
   createReporter,
-  parseWithAsync,
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
+import { parseWithAsync } from "./validate.ts";
 import type { AgentPrice } from "./cost.ts";
 import {
   type ConfigValue,

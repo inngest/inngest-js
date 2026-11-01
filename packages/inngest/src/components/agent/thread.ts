@@ -16,7 +16,7 @@ import type { InngestApi } from "../../api/api.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
-import { parseWithAsync } from "./channels.ts";
+import { parseWithAsync } from "./validate.ts";
 import {
   type AgentMessageData,
   type AgentRequestData,
