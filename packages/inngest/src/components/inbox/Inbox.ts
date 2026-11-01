@@ -13,6 +13,13 @@
 import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { EventPayload } from "../../types.ts";
 import type { InboxRead, Want } from "../execution/inboxState.ts";
+import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
+import { addEventIs } from "../triggers/triggers.ts";
+import type {
+  EventIs,
+  EventTypesToShape,
+  EventTypeToShape,
+} from "../triggers/typeHelpers.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -36,6 +43,44 @@ type OneSource = string | { name: string } | InboxSource;
  * One source or several.
  */
 export type InboxSources = OneSource | readonly OneSource[];
+
+/**
+ * The message of one event type, or of a source that is not one: a name, or an
+ * object with only a name, has no schema, so its messages are the default
+ * `InboxMessage`, whose `data` is `unknown` because nothing says what it is.
+ */
+type TypedMessage<TEvent> = TEvent extends EventTypeWithAnySchema<string>
+  ? EventTypeToShape<TEvent> & EventIs
+  : InboxMessage;
+
+// An event type has an `event` field of its own (its name), so it is checked
+// before the `{ event, if }` form.
+type SourceMessage<TSource> = TSource extends EventTypeWithAnySchema<string>
+  ? TypedMessage<TSource>
+  : TSource extends { event: infer TEvent }
+    ? TypedMessage<TEvent>
+    : TypedMessage<TSource>;
+
+/**
+ * The messages the sources produce: the union of the shapes of the event types
+ * among them. A source written as a name contributes the default message.
+ */
+export type SourcesMessage<TSources> = TSources extends readonly (infer TItem)[]
+  ? SourceMessage<TItem>
+  : SourceMessage<TSources>;
+
+/**
+ * The messages of a view of the given event types under a reader of
+ * `TMessage`: the types asked for, kept to the ones the reader receives.
+ */
+type ViewMessage<TMessage, TTypes> =
+  EventTypesToShape<TTypes> extends infer TShape
+    ? string extends NameOf<TMessage>
+      ? TShape & EventIs
+      : Extract<TMessage, { name: NameOf<TShape> }>
+    : never;
+
+type NameOf<TMessage> = TMessage extends { name: infer TName } ? TName : never;
 
 /**
  * What the executor is told about a source.
@@ -74,22 +119,27 @@ const isList = (sources: InboxSources): sources is readonly OneSource[] => {
 };
 
 /**
- * One event type or several, by name or as an event type.
+ * One event type or several. A view is typed from them, so a name alone is
+ * not accepted.
  */
 export type InboxTypes =
-  | string
-  | { name: string }
-  | readonly (string | { name: string })[];
+  | EventTypeWithAnySchema<string>
+  | readonly EventTypeWithAnySchema<string>[];
 
 const namesOf = (types: InboxTypes): string[] => {
-  const list: readonly (string | { name: string })[] = Array.isArray(types)
+  const list: readonly { name: string }[] = Array.isArray(types)
     ? types
-    : [types as string | { name: string }];
+    : [types as { name: string }];
 
   return list.map((type) => {
-    return typeof type === "string" ? type : type.name;
+    return type.name;
   });
 };
+
+/**
+ * The key of the internal method that settles once the inbox is open.
+ */
+export const inboxOpened: unique symbol = Symbol("inngest.inbox.opened");
 
 /**
  * The ID of the op of the `n`th read of a reader.
@@ -314,6 +364,14 @@ export interface BatchOptions {
 }
 
 /**
+ * What an inbox hands back by default: the event, with `is()` to narrow it to
+ * the event types it was asked about and `data` left `unknown` until it is.
+ */
+export type InboxMessage = Omit<EventPayload, "data"> & {
+  data: unknown;
+} & EventIs;
+
+/**
  * A durable collection of the events that matched the sources of one
  * `step.subscribe()`, or a view of one. Open it with `await using` so it closes
  * at the end of the block.
@@ -321,7 +379,7 @@ export interface BatchOptions {
  * Every reader (the inbox and each view) sees every message it matches, and
  * keeps its own position: nothing one reader takes is hidden from another.
  */
-export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
+export class Inbox<TMessage = InboxMessage> implements AsyncDisposable {
   #deps: InboxDeps;
   #opened: Promise<void>;
 
@@ -432,7 +490,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    * types gives the same reader, wherever it is called, and a view reads from
    * the start of the inbox.
    */
-  of(types: InboxTypes): Inbox<TMessage> {
+  of<const T extends InboxTypes>(
+    types: T, // the event types the view reads
+  ): Inbox<ViewMessage<TMessage, T>> {
     const names = [...new Set(namesOf(types))].sort();
     const events = this.#events
       ? names.filter((name) => {
@@ -452,14 +512,16 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       this.#children.push(view);
     }
 
-    return view;
+    return view as unknown as Inbox<ViewMessage<TMessage, T>>;
   }
 
   /**
    * Adds sources to the inbox and returns a view over just them. Each call adds
    * its own sources, even if another view has the same.
    */
-  listen(sources: InboxSources): Inbox<TMessage> {
+  listen<const S extends InboxSources>(
+    sources: S, // the sources to add
+  ): Inbox<SourcesMessage<S>> {
     const op = listenId(this.#base, this.#listens);
     this.#listens += 1;
 
@@ -470,7 +532,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     });
     this.#children.push(view);
 
-    return view;
+    return view as unknown as Inbox<SourcesMessage<S>>;
   }
 
   /**
@@ -606,9 +668,10 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   /**
    * Settles once the executor has recorded the opens of this reader and of the
    * views under it. Code that does other work before its first read awaits it,
-   * so that work does not share a request with the open.
+   * so that work does not share a request with the open. Keyed by a symbol the
+   * package does not export to users.
    */
-  opened(): Promise<void> {
+  [inboxOpened](): Promise<void> {
     return this.#ready();
   }
 
@@ -664,16 +727,18 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
   /**
    * Reads the inbox batch by batch with `for await`. Each batch waits for at
-   * least one message. The loop ends when the reader closes or the code
-   * breaks out of it.
+   * least one message. The loop ends when the reader closes, when a wait
+   * passes `timeout` with nothing unread, or when the code breaks out of it.
    */
   async *batches(
-    options?: BatchOptions,
+    options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined> {
     while (true) {
-      const batch = await this.nextBatch(options);
+      const batch = await this.#enqueue((n) => {
+        return this.#readBatch(n, options?.max, true, options?.timeout);
+      });
 
-      if (batch === undefined) {
+      if (batch === undefined || batch === null) {
         return;
       }
 
@@ -770,7 +835,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     this.#deps.report(`${op}:read`, this.#deps.inbox, ids, true, op);
 
     return ids.map((id) => {
-      return this.#deps.message(id) as TMessage;
+      return addEventIs(this.#deps.message(id) as object) as TMessage;
     });
   }
 
@@ -805,7 +870,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
       await this.#deps.place(found.id);
 
-      return found.message as TMessage;
+      return addEventIs(found.message as object) as TMessage;
     }
 
     // The reader was closed while this read had nothing to read: it ends.
@@ -826,7 +891,11 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       timeout,
     );
 
-    return answer as TMessage | null;
+    if (answer === null) {
+      return null;
+    }
+
+    return addEventIs(answer as object) as TMessage;
   }
 
   /**
@@ -858,7 +927,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     return this.#closing.then((ids) => {
       return ids.map((id) => {
-        return this.#deps.message(id) as TMessage;
+        return addEventIs(this.#deps.message(id) as object) as TMessage;
       });
     });
   }

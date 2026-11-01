@@ -39,7 +39,7 @@ import {
 } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
-import type { Inbox } from "../inbox/Inbox.ts";
+import { type Inbox, inboxOpened } from "../inbox/Inbox.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
@@ -1454,11 +1454,13 @@ function threadInbox(
           }
         }
       }) as View<TOut>["nextBatch"],
-      async *batches(options?: BatchOptions) {
+      async *batches(options?: BatchOptions & Partial<NextOptions>) {
         for (;;) {
-          const batch = await reader.nextBatch(options);
+          const batch = await reader.nextBatch(
+            options as BatchOptions & NextOptions,
+          );
 
-          if (batch === undefined) {
+          if (batch === undefined || batch === null) {
             return;
           }
 
@@ -2055,7 +2057,7 @@ export function createAgentFunction(
           );
         }
 
-        await subscription.opened();
+        await subscription[inboxOpened]();
 
         // What each inbox source's events are checked against, by the name of
         // the source's event.
@@ -2197,9 +2199,11 @@ export function createAgentFunction(
           {
             inbox: subscription as unknown as Inbox<InboxMessage>,
             of: (type) => {
-              return subscription.of(
-                eventNameOf(type),
-              ) as unknown as Inbox<InboxMessage>;
+              // The wrapper types its own messages and reads sources by name;
+              // the core view only reads the name of each type.
+              return subscription.of({
+                name: eventNameOf(type),
+              } as EventTypeWithAnySchema<string>) as unknown as Inbox<InboxMessage>;
             },
             listen: listenTo,
           },

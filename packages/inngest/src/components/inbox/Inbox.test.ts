@@ -3,6 +3,7 @@
  * Tests for closing an `Inbox` against fake dependencies: what `close()` sends
  * the executor, what a closed reader returns, and `await using`.
  */
+import { eventType } from "../triggers/triggers.ts";
 import { Inbox, type InboxDeps } from "./Inbox.ts";
 
 const fakeDeps = (unread: string[]) => {
@@ -136,7 +137,7 @@ describe("closing an inbox", () => {
   test("closing a reader closes the views under it", async () => {
     const { deps } = fakeDeps(["m1"]);
     const inbox = new Inbox(deps);
-    const view = inbox.of("msg");
+    const view = inbox.of(eventType("msg"));
 
     await inbox.close();
 
