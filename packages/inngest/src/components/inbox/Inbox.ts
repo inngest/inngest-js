@@ -286,7 +286,7 @@ export interface BatchOptions {
  * What an inbox hands back by default: the event, with `is()` to narrow it to
  * the event types it was asked about and `data` left `unknown` until it is.
  */
-type DefaultMessage = Omit<EventPayload, "data"> & {
+export type DefaultMessage = Omit<EventPayload, "data"> & {
   data: unknown;
 } & EventIs;
 
@@ -314,45 +314,45 @@ export type InboxMessage<TInbox = Inbox<DefaultMessage>> = TInbox extends Inbox<
  * order they were made.
  */
 export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
-  #deps: InboxDeps;
-  #opened: Promise<void>;
+  private _deps: InboxDeps;
+  private _opened: Promise<void>;
 
   // Set once `close()` has been called, settled or not. A read made after it
   // returns at once.
-  #closeCalled = false;
+  private _closeCalled = false;
 
   // Set once `close()` has settled.
-  #closed = false;
+  private _closed = false;
 
   // Settles once `close()` has settled.
-  #whenClosed: Promise<void>;
-  #markClosed: () => void = () => undefined;
+  private _whenClosed: Promise<void>;
+  private _markClosed: () => void = () => undefined;
 
   // The close, once started.
-  #closing?: Promise<string[]>;
+  private _closing?: Promise<string[]>;
 
   // Messages taken by reads so far in this replay.
-  #taken = 0;
+  private _taken = 0;
 
   // Reads started so far. Each has an op of its own, named by this number, so
   // that its place in the run's state is known before it is reported.
-  #reads = 0;
+  private _reads = 0;
 
   // Reads are served in order, like an async generator's.
-  #queue: Promise<unknown> = Promise.resolve();
+  private _queue: Promise<unknown> = Promise.resolve();
 
   constructor(deps: InboxDeps) {
-    this.#deps = deps;
-    this.#whenClosed = new Promise<void>((resolve) => {
-      this.#markClosed = resolve;
+    this._deps = deps;
+    this._whenClosed = new Promise<void>((resolve) => {
+      this._markClosed = resolve;
     });
-    this.#opened = deps.open(deps.id, deps.sources).then(() => {
+    this._opened = deps.open(deps.id, deps.sources).then(() => {
       return undefined;
     });
 
     // A failed open is reported where the inbox is read; this keeps it from
     // also being reported as unhandled.
-    this.#opened.catch(() => {
+    this._opened.catch(() => {
       return undefined;
     });
   }
@@ -361,7 +361,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * Whether the inbox is closed. A closed inbox reads nothing.
    */
   get closed(): boolean {
-    return this.#closed;
+    return this._closed;
   }
 
   /**
@@ -370,7 +370,7 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * the open. Keyed by a symbol the package does not export to users.
    */
   [inboxOpened](): Promise<void> {
-    return this.#opened;
+    return this._opened;
   }
 
   /**
@@ -386,8 +386,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    */
   next(options: ReadOptions): Promise<TMessage | null | undefined>;
   next(options?: ReadOptions): Promise<TMessage | null | undefined> {
-    return this.#enqueue((n, afterClose) => {
-      return this.#readOne(n, afterClose, options?.timeout);
+    return this._enqueue((n, afterClose) => {
+      return this._readOne(n, afterClose, options?.timeout);
     });
   }
 
@@ -408,8 +408,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
   nextBatch(
     options?: BatchOptions & Partial<ReadOptions>,
   ): Promise<TMessage[] | null | undefined> {
-    return this.#enqueue((n, afterClose) => {
-      return this.#readBatch(
+    return this._enqueue((n, afterClose) => {
+      return this._readBatch(
         n,
         afterClose,
         options?.max,
@@ -424,8 +424,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * none. The read is still saved as a step, so a replay returns the same set.
    */
   drain(options?: BatchOptions): Promise<TMessage[]> {
-    return this.#enqueue(async (n, afterClose) => {
-      return (await this.#readBatch(n, afterClose, options?.max, false)) ?? [];
+    return this._enqueue(async (n, afterClose) => {
+      return (await this._readBatch(n, afterClose, options?.max, false)) ?? [];
     });
   }
 
@@ -438,8 +438,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined> {
     while (true) {
-      const batch = await this.#enqueue((n, afterClose) => {
-        return this.#readBatch(
+      const batch = await this._enqueue((n, afterClose) => {
+        return this._readBatch(
           n,
           afterClose,
           options?.max,
@@ -458,49 +458,49 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
 
   // Reads are served in order. Each gets its own number `n`, and knows whether
   // `close()` had been called when it was made.
-  #enqueue<T>(
+  private _enqueue<T>(
     read: (n: number, afterClose: boolean) => Promise<T>,
   ): Promise<T> {
-    const n = this.#reads;
-    this.#reads += 1;
+    const n = this._reads;
+    this._reads += 1;
 
-    const afterClose = this.#closeCalled;
+    const afterClose = this._closeCalled;
 
-    const result = this.#queue.then(() => {
+    const result = this._queue.then(() => {
       return read(n, afterClose);
     });
 
-    this.#queue = result.catch(() => {
+    this._queue = result.catch(() => {
       return undefined;
     });
 
     return result;
   }
 
-  async #readBatch(
+  private async _readBatch(
     n: number,
     afterClose: boolean,
     max: number | undefined,
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (afterClose || this.#closed) {
+    if (afterClose || this._closed) {
       return wait ? undefined : [];
     }
 
-    await this.#opened;
+    await this._opened;
 
-    const op = readId(this.#deps.id, n);
-    const held = this.#deps.unread(this.#deps.inbox, this.#taken);
+    const op = readId(this._deps.id, n);
+    const held = this._deps.unread(this._deps.inbox, this._taken);
 
     // A read that finds nothing and whose inbox was closed ends, as a wait does.
     if (
       wait &&
       held.length === 0 &&
-      !this.#deps.answered(op) &&
-      this.#closedInState()
+      !this._deps.answered(op) &&
+      this._closedInState()
     ) {
-      await this.#whenClosed;
+      await this._whenClosed;
 
       return undefined;
     }
@@ -508,9 +508,9 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     // The executor answers with the last message the read covers. The answer is
     // the read's record: a replay reads the same messages from the state it
     // loaded.
-    const answer = (await this.#deps.batch(op, {
-      inbox: this.#deps.inbox,
-      seen: this.#deps.lastSeen(),
+    const answer = (await this._deps.batch(op, {
+      inbox: this._deps.inbox,
+      seen: this._deps.lastSeen(),
       drain: !wait,
       unread: held.length > 0,
       ...(max === undefined ? {} : { max }),
@@ -525,54 +525,54 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     const covered =
       answer.cut === null
         ? []
-        : this.#deps.unread(this.#deps.inbox, this.#taken, answer.cut);
+        : this._deps.unread(this._deps.inbox, this._taken, answer.cut);
     const ids = max === undefined ? covered : covered.slice(0, max);
 
-    this.#taken += ids.length;
+    this._taken += ids.length;
 
-    this.#deps.report(`${op}:read`, this.#deps.inbox, ids, true, op);
+    this._deps.report(`${op}:read`, this._deps.inbox, ids, true, op);
 
     return ids.map((id) => {
-      return addEventIs(this.#deps.message(id) as object) as TMessage;
+      return addEventIs(this._deps.message(id) as object) as TMessage;
     });
   }
 
-  async #readOne(
+  private async _readOne(
     n: number,
     afterClose: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (afterClose || this.#closed) {
+    if (afterClose || this._closed) {
       return undefined;
     }
 
-    await this.#opened;
+    await this._opened;
 
-    const op = readId(this.#deps.id, n);
+    const op = readId(this._deps.id, n);
 
-    const found = this.#deps.read(
-      this.#deps.inbox,
-      this.#taken,
-      this.#deps.waitId(op),
+    const found = this._deps.read(
+      this._deps.inbox,
+      this._taken,
+      this._deps.waitId(op),
     );
 
     if (found.found === "message") {
-      this.#taken += 1;
+      this._taken += 1;
 
       if (found.timedOut) {
-        await this.#deps.skip(op);
+        await this._deps.skip(op);
       }
 
-      this.#deps.report(op, this.#deps.inbox, [found.id], true);
+      this._deps.report(op, this._deps.inbox, [found.id], true);
 
-      await this.#deps.place(found.id);
+      await this._deps.place(found.id);
 
       return addEventIs(found.message as object) as TMessage;
     }
 
     // The inbox was closed while this read had nothing to read: it ends.
-    if (found.found === "nothing" && this.#closedInState()) {
-      await this.#whenClosed;
+    if (found.found === "nothing" && this._closedInState()) {
+      await this._whenClosed;
 
       return undefined;
     }
@@ -580,10 +580,10 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
     // Nothing is unread. The executor wakes the run when a message arrives and
     // the replay finds it in state, so this does not settle in this request. A
     // read that timed out settles with the null the executor saved.
-    const answer = await this.#deps.wait(
+    const answer = await this._deps.wait(
       op,
-      this.#deps.inbox,
-      this.#deps.lastSeen(),
+      this._deps.inbox,
+      this._deps.lastSeen(),
       timeout,
     );
 
@@ -600,8 +600,8 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * came before it, so a race against a step has the same winner on every
    * replay.
    */
-  #closedInState(): boolean {
-    return this.#deps.closed(closeId(this.#deps.id));
+  private _closedInState(): boolean {
+    return this._deps.closed(closeId(this._deps.id));
   }
 
   /**
@@ -626,29 +626,29 @@ export class Inbox<TMessage = DefaultMessage> implements AsyncDisposable {
    * after this call returns at once.
    */
   close(): Promise<TMessage[]> {
-    this.#closeCalled = true;
-    this.#closing ??= this.#close();
+    this._closeCalled = true;
+    this._closing ??= this._close();
 
-    return this.#closing.then((ids) => {
+    return this._closing.then((ids) => {
       return ids.map((id) => {
-        return addEventIs(this.#deps.message(id) as object) as TMessage;
+        return addEventIs(this._deps.message(id) as object) as TMessage;
       });
     });
   }
 
-  async #close(): Promise<string[]> {
-    await this.#opened;
+  private async _close(): Promise<string[]> {
+    await this._opened;
 
-    const { cut } = await this.#deps.close(closeId(this.#deps.id), {
-      inbox: this.#deps.inbox,
+    const { cut } = await this._deps.close(closeId(this._deps.id), {
+      inbox: this._deps.inbox,
     });
 
-    this.#closed = true;
-    this.#markClosed();
+    this._closed = true;
+    this._markClosed();
 
     return cut === null
       ? []
-      : this.#deps.unread(this.#deps.inbox, this.#taken, cut);
+      : this._deps.unread(this._deps.inbox, this._taken, cut);
   }
 
   async [asyncDispose](): Promise<void> {
