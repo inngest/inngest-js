@@ -731,7 +731,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (this.closed || late) {
+    if (this.closed) {
       return wait ? undefined : [];
     }
 
@@ -741,12 +741,13 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     const want = this.#want();
     const loaded = this.#deps.unread(this.#deps.inbox, this.#taken, want);
 
-    // A read that finds nothing and whose reader was closed ends, as a wait does.
+    // A read that finds nothing and whose reader was closed, or whose close was
+    // called before it started, ends, as a wait does.
     if (
       wait &&
       loaded.length === 0 &&
       !this.#deps.answered(op) &&
-      this.#closedInState()
+      (late || this.#closedInState())
     ) {
       await this.#ended();
 
@@ -798,7 +799,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
     late: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (this.closed || late) {
+    if (this.closed) {
       return undefined;
     }
 
@@ -828,8 +829,9 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
       return found.message as TMessage;
     }
 
-    // The reader was closed while this read had nothing to read: it ends.
-    if (found.found === "nothing" && this.#closedInState()) {
+    // The reader was closed while this read had nothing to read, or its close
+    // was called before the read started: it ends.
+    if (found.found === "nothing" && (late || this.#closedInState())) {
       await this.#ended();
 
       return undefined;
