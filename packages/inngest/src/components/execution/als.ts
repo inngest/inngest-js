@@ -126,7 +126,12 @@ export interface AsyncContext {
         wait: string,
         want?: Want,
       ) => InboxRead;
-      unread: (inbox: string, taken: number, want?: Want) => string[];
+      unread: (
+        inbox: string,
+        taken: number,
+        want?: Want,
+        upTo?: string,
+      ) => string[];
       message: (id: string) => unknown;
       lastSeen: () => string;
 

@@ -44,38 +44,6 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 };
 
 /**
- * The reserved key of a step's saved output that holds the ids of the messages
- * the step took from a reader, beside the value the step returned.
- */
-export const takenKey = "inngest/taken";
-
-interface TakenValue {
-  "inngest/taken": string[];
-  value: unknown;
-}
-
-/**
- * The output a step saves when it took messages: the ids and the value its body
- * returned.
- */
-export const withTaken = (ids: string[], value: unknown): TakenValue => {
-  return { [takenKey]: ids, value };
-};
-
-/**
- * The ids and the value of a saved output made by {@link withTaken}.
- */
-export const takenIn = (output: unknown): TakenValue | undefined => {
-  if (typeof output !== "object" || output === null) {
-    return undefined;
-  }
-
-  const v = output as Partial<TakenValue>;
-
-  return Array.isArray(v[takenKey]) ? (v as TakenValue) : undefined;
-};
-
-/**
  * What a reader wants of its inbox's messages, sent to the executor with a wait
  * and applied here when a read walks the stack. A message has to pass every part
  * that is there; no part wants every message.
@@ -189,6 +157,9 @@ export const inboxRead = (
  * @param want The filter of the reader; it reads only the messages it wants.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
+ * @param upTo Reads the stack only as far as this step, itself included: what a
+ * batch read had loaded when the executor answered it. An empty ID is the
+ * start of the stack, so nothing.
  */
 export const inboxUnread = (
   inbox: string,
@@ -196,8 +167,11 @@ export const inboxUnread = (
   want: Want | undefined,
   stack: readonly string[],
   stepState: Record<string, { data?: unknown } | undefined>,
+  upTo?: string,
 ): string[] => {
-  const ids = stack.filter((id) => {
+  const end = upTo === undefined ? stack.length : stack.indexOf(upTo) + 1;
+
+  const ids = stack.slice(0, end).filter((id) => {
     const value = stepState[id]?.data;
 
     return (

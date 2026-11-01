@@ -350,13 +350,19 @@ class InngestExecutionEngine
                     this.options.stepState,
                   );
                 },
-                unread: (inbox: string, taken: number, want?: Want) => {
+                unread: (
+                  inbox: string,
+                  taken: number,
+                  want?: Want,
+                  upTo?: string,
+                ) => {
                   return inboxUnread(
                     inbox,
                     taken,
                     want,
                     this.options.stepCompletionOrder,
                     this.options.stepState,
+                    upTo,
                   );
                 },
                 message: (id: string) => {

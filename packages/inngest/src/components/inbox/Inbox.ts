@@ -11,13 +11,7 @@
  * state.
  */
 import type { EventPayload } from "../../types.ts";
-import {
-  type InboxRead,
-  takenIn,
-  takenKey,
-  type Want,
-  withTaken,
-} from "../execution/inboxState.ts";
+import type { InboxRead, Want } from "../execution/inboxState.ts";
 
 /**
  * One kind of event an inbox receives, written like a function trigger.
@@ -175,9 +169,40 @@ export interface InboxDeps {
 
   /**
    * The step ids of the messages the reader wants after the first `taken` of
-   * them, in the order they were saved.
+   * them, in the order they were saved. With `upTo`, only the steps of the stack
+   * as far as that step are read.
    */
-  unread: (inbox: string, taken: number, want?: Want) => string[];
+  unread: (
+    inbox: string,
+    taken: number,
+    want?: Want,
+    upTo?: string,
+  ) => string[];
+
+  /**
+   * Reports the batch read `op`. The executor answers it with the messages the
+   * reader wants that were saved after `seen` (`{ seen, ids }`, saved under the
+   * op) and wakes the run, or with `null` if the timeout passed with nothing
+   * unread. A `drain` is always answered at once; a read waits only if it is not
+   * a `drain`, the SDK holds no `unread` messages and none was saved since.
+   */
+  batch: (
+    op: string,
+    read: {
+      inbox: string;
+      seen: string;
+      want?: Want;
+      drain: boolean;
+      unread: boolean;
+      room?: number;
+      timeout?: ReadTimeout;
+    },
+  ) => Promise<unknown>;
+
+  /**
+   * Whether the run's state holds the answer to the op `op`.
+   */
+  answered: (op: string) => boolean;
 
   /**
    * The event of a message step.
@@ -185,27 +210,16 @@ export interface InboxDeps {
   message: (id: string) => unknown;
 
   /**
-   * Saves the batch of the read `op` as an ordinary step. `take` runs only when the
-   * step is new, and returns the ids of the messages the batch takes; a replay
-   * returns the ids saved the first time.
-   */
-  record: (op: string, take: () => string[]) => Promise<string[]>;
-
-  /**
-   * Runs `body` as an ordinary step with the ID `op` and returns what it
-   * returned, the way a replay does too.
-   */
-  step: (op: string, body: () => Promise<unknown>) => Promise<unknown>;
-
-  /**
    * Tells the executor which messages the read `op` took, so it can draw them.
-   * `draw` says the read has no row yet because nothing waited or ran for it.
+   * `draw` says the read has no row yet because nothing waited or ran for it;
+   * otherwise `row` is the op whose row they go under.
    */
   report: (
     op: string,
     inbox: string,
     messages: string[],
     draw: boolean,
+    row?: string,
   ) => void;
 
   /**
@@ -705,115 +719,57 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     const op = readId(this.#base, n);
     const want = this.#want();
+    const loaded = this.#deps.unread(this.#deps.inbox, this.#taken, want);
 
-    // A timeout that lost to a message is saved in state and never asked for.
-    let timedOut = false;
-    if (wait && timeout !== undefined) {
-      const found = this.#deps.read(
-        this.#deps.inbox,
-        this.#taken,
-        this.#deps.waitId(op),
-        want,
-      );
-
-      if (found.found === "message" && found.timedOut) {
-        await this.#deps.skip(op);
-      }
-
-      timedOut = found.found === "timeout";
-    }
-
+    // A read that finds nothing and whose reader was closed ends, as a wait does.
     if (
       wait &&
-      (timedOut ||
-        this.#deps.unread(this.#deps.inbox, this.#taken, want).length === 0)
+      loaded.length === 0 &&
+      !this.#deps.answered(op) &&
+      this.#closedInState()
     ) {
-      if (!timedOut && this.#closedInState()) {
-        await this.#ended();
+      await this.#ended();
 
-        return undefined;
-      }
-
-      // Nothing is unread. The executor wakes the run when a message arrives,
-      // and the replay finds it in state, so this does not settle here.
-      const answer = await this.#deps.wait(
-        op,
-        this.#deps.inbox,
-        this.#deps.lastSeen(),
-        want,
-        timeout,
-      );
-
-      // The timeout passed with nothing unread.
-      if (answer === null) {
-        return null;
-      }
+      return undefined;
     }
 
-    const ids = await this.#deps.record(op, () => {
-      const unread = this.#deps.unread(this.#deps.inbox, this.#taken, want);
+    const held = max === undefined ? loaded : loaded.slice(0, max);
 
-      return max === undefined ? unread : unread.slice(0, max);
-    });
+    // The executor answers with the messages saved after the step this request
+    // last saw. The answer is the read's record: it names that step, so a replay
+    // reads the same messages from the state it loaded, and the ids it lists.
+    const answer = (await this.#deps.batch(op, {
+      inbox: this.#deps.inbox,
+      seen: this.#deps.lastSeen(),
+      ...(want === undefined ? {} : { want }),
+      drain: !wait,
+      unread: held.length > 0,
+      ...(max === undefined ? {} : { room: Math.max(0, max - held.length) }),
+      ...(timeout === undefined ? {} : { timeout }),
+    })) as { seen: string; ids: string[] } | null;
+
+    // The timeout passed with nothing unread.
+    if (answer === null) {
+      return null;
+    }
+
+    const before = this.#deps.unread(
+      this.#deps.inbox,
+      this.#taken,
+      want,
+      answer.seen,
+    );
+    const ids = [
+      ...(max === undefined ? before : before.slice(0, max)),
+      ...answer.ids,
+    ];
 
     this.#taken += ids.length;
 
-    this.#deps.report(`${op}:batch`, this.#deps.inbox, ids, false);
-
-    const last = ids.at(-1);
-    if (last !== undefined) {
-      await this.#deps.place(last);
-    }
+    this.#deps.report(`${op}:read`, this.#deps.inbox, ids, false, op);
 
     return ids.map((id) => {
       return this.#deps.message(id) as TMessage;
-    });
-  }
-
-  /**
-   * Runs a step whose body takes this reader's unread messages and returns what
-   * the step returns to the caller. The ids of the messages taken are saved in
-   * the step's output, so a replay moves the reader past them when it reaches
-   * the step, and a failed attempt takes nothing. The body gets the messages
-   * (up to `max`, oldest first) from the state the request loaded. Other
-   * readers are not moved. Like a read, it waits for the reads before it on
-   * this reader.
-   *
-   * @internal for the agent loop only.
-   */
-  takeIn<T>(
-    id: string,
-    body: (fresh: TMessage[]) => T | Promise<T>,
-    options?: BatchOptions,
-  ): Promise<T> {
-    return this.#enqueue(async () => {
-      await this.#ready();
-
-      const want = this.#want();
-
-      const output = await this.#deps.step(id, async () => {
-        const unread = this.closed
-          ? []
-          : this.#deps.unread(this.#deps.inbox, this.#taken, want);
-        const ids =
-          options?.max === undefined ? unread : unread.slice(0, options.max);
-        const value = await body(
-          ids.map((messageId) => {
-            return this.#deps.message(messageId) as TMessage;
-          }),
-        );
-
-        return withTaken(ids, value);
-      });
-
-      const taken = takenIn(output);
-      const ids = taken?.[takenKey] ?? [];
-
-      this.#taken += ids.length;
-
-      this.#deps.report(id, this.#deps.inbox, ids, false);
-
-      return taken?.value as T;
     });
   }
 

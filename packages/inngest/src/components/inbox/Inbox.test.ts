@@ -32,11 +32,11 @@ const fakeDeps = (unread: string[]) => {
     message: (id) => {
       return { name: "msg", data: { id } };
     },
-    record: async (_op, take) => {
-      return take();
+    batch: async () => {
+      return { seen: "inbox", ids: [] };
     },
-    step: (_op, body) => {
-      return body();
+    answered: () => {
+      return false;
     },
     report: () => {
       return undefined;

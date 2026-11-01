@@ -8,7 +8,11 @@
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
-import { hashedStepId, inboxKey } from "../execution/inboxState.ts";
+import {
+  hashedStepId,
+  inboxKey,
+  isInboxMessage,
+} from "../execution/inboxState.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 
 interface Pause {
@@ -88,6 +92,11 @@ export const run = async (
   };
 
   const answer = (id: string, data: unknown) => {
+    // The executor saves a step once, however often the SDK reports its op.
+    if (id in state) {
+      return;
+    }
+
     stack.push(id);
     state = { ...state, [id]: { id, data } };
   };
@@ -191,6 +200,46 @@ export const run = async (
         ops.push({ id: op.userland?.id ?? op.id, op: "wait", opts });
         options.onOp?.(op, saved);
 
+        const batch = opts?.batch as
+          | { drain?: boolean; unread?: boolean; room?: number }
+          | undefined;
+        const seen = String(opts?.seen ?? "");
+        const want = opts?.want as
+          | { events?: string[]; src?: string[] }
+          | undefined;
+
+        // The message steps saved after the step the read last saw that it
+        // wants, as the executor finds them for a batch read.
+        const since = () => {
+          const after = stack.slice(seen === "" ? 0 : stack.indexOf(seen) + 1);
+          const ids = after.filter((id) => {
+            const value = state[id]?.data as
+              | { data?: { name?: string }; src?: string[] }
+              | undefined;
+
+            return (
+              isInboxMessage(value) &&
+              (want?.events === undefined ||
+                want.events.includes(value.data?.name ?? "")) &&
+              (want?.src === undefined ||
+                (value.src ?? []).some((pause) => {
+                  return want.src?.includes(pause);
+                }))
+            );
+          });
+
+          return batch?.room === undefined ? ids : ids.slice(0, batch.room);
+        };
+
+        if (batch !== undefined) {
+          const found = since();
+
+          if (batch.drain || batch.unread || found.length > 0) {
+            answer(op.id, { seen, ids: found });
+            continue;
+          }
+        }
+
         // A read with a timeout ends unanswered while timeouts are left.
         if (opts?.timeout !== undefined && timeoutsLeft > 0) {
           timeoutsLeft -= 1;
@@ -204,11 +253,20 @@ export const run = async (
         }
 
         save(incoming.shift());
+
+        if (batch !== undefined) {
+          answer(op.id, { seen, ids: since() });
+        }
+
         continue;
       }
 
       if (op.op === StepOpCode.StepRun) {
         options.onStep?.(op);
+      }
+
+      if (op.id in state) {
+        continue;
       }
 
       state = {

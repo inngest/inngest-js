@@ -646,22 +646,43 @@ export const createStepTools = <
             }
           );
         },
-        unread: (inbox, taken, want) => {
+        unread: (inbox, taken, want, upTo) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.unread(inbox, taken, want) ??
-            []
+            getAsyncCtxSync()?.execution?.inbox?.unread(
+              inbox,
+              taken,
+              want,
+              upTo,
+            ) ?? []
+          );
+        },
+        batch: (op, read) => {
+          return tools["~inboxWait"](op, {
+            inbox: read.inbox,
+            seen: read.seen,
+            ...(read.want === undefined ? {} : { want: read.want }),
+            ...(read.timeout === undefined
+              ? {}
+              : {
+                  timeout: timeStr(read.timeout, client[internalLoggerSymbol]),
+                }),
+            batch: {
+              ...(read.drain ? { drain: true } : {}),
+              ...(read.unread ? { unread: true } : {}),
+              ...(read.room === undefined ? {} : { room: read.room }),
+            },
+          });
+        },
+        answered: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
           );
         },
         message: (messageId) => {
           return getAsyncCtxSync()?.execution?.inbox?.message(messageId);
         },
-        record: (op, take) => {
-          return tools.run(`${op}:batch`, take);
-        },
-        step: (op, body) => {
-          return tools.run(op, body);
-        },
-        report: (op, inbox, messages, draw) => {
+        report: (op, inbox, messages, draw, row) => {
           const runId = getAsyncCtxSync()?.execution?.ctx.runId;
 
           if (
@@ -672,9 +693,12 @@ export const createStepTools = <
             return;
           }
 
-          void tools["~inboxRead"](op, { inbox, messages, draw }).catch(
-            () => undefined,
-          );
+          void tools["~inboxRead"](op, {
+            inbox,
+            messages,
+            draw,
+            ...(row === undefined ? {} : { row }),
+          }).catch(() => undefined);
         },
         skip: async (op) => {
           await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
@@ -762,7 +786,13 @@ export const createStepTools = <
     "~inboxWait": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { inbox: string; seen: string; want?: Want; timeout?: string },
+        opts: {
+          inbox: string;
+          seen: string;
+          want?: Want;
+          timeout?: string;
+          batch?: { drain?: boolean; unread?: boolean; room?: number };
+        },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -776,6 +806,7 @@ export const createStepTools = <
           seen: opts.seen,
           ...(opts.want === undefined ? {} : { want: opts.want }),
           ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+          ...(opts.batch === undefined ? {} : { batch: opts.batch }),
         },
         userland: { id },
       };
@@ -788,7 +819,12 @@ export const createStepTools = <
     "~inboxRead": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { inbox: string; messages: string[]; draw: boolean },
+        opts: {
+          inbox: string;
+          messages: string[];
+          draw: boolean;
+          row?: string;
+        },
       ) => Promise<void>
     >(({ id, name }, opts) => {
       return {
@@ -801,6 +837,7 @@ export const createStepTools = <
           inbox: opts.inbox,
           messages: opts.messages,
           ...(opts.draw ? { draw: true } : {}),
+          ...(opts.row === undefined ? {} : { row: opts.row }),
         },
         userland: { id },
       };
