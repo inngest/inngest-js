@@ -35,6 +35,9 @@ const fakeDeps = (unread: string[]) => {
     record: async (_op, take) => {
       return take();
     },
+    step: (_op, body) => {
+      return body();
+    },
     report: () => {
       return undefined;
     },

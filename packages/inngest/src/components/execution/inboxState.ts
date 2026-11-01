@@ -45,6 +45,38 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 };
 
 /**
+ * The reserved key of a step's saved output that holds the ids of the messages
+ * the step took from a reader, beside the value the step returned.
+ */
+export const takenKey = "inngest/taken";
+
+interface TakenValue {
+  "inngest/taken": string[];
+  value: unknown;
+}
+
+/**
+ * The output a step saves when it took messages: the ids and the value its body
+ * returned.
+ */
+export const withTaken = (ids: string[], value: unknown): TakenValue => {
+  return { [takenKey]: ids, value };
+};
+
+/**
+ * The ids and the value of a saved output made by {@link withTaken}.
+ */
+export const takenIn = (output: unknown): TakenValue | undefined => {
+  if (typeof output !== "object" || output === null) {
+    return undefined;
+  }
+
+  const v = output as Partial<TakenValue>;
+
+  return Array.isArray(v[takenKey]) ? (v as TakenValue) : undefined;
+};
+
+/**
  * What a reader wants of its inbox's messages, sent to the executor with a wait
  * and applied here when a read walks the stack. A message has to pass every part
  * that is there; no part wants every message.
