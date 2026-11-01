@@ -3,7 +3,7 @@
  * Type tests for `InboxMessage`, which names what an inbox reads.
  */
 import { expectTypeOf } from "vitest";
-import type { Inbox, InboxMessage } from "../../index.ts";
+import type { Inbox, InboxMessage } from "./Inbox.ts";
 
 describe("InboxMessage", () => {
   test("is the message type of an inbox", () => {
