@@ -2309,9 +2309,14 @@ export function createAgentFunction(
                   {
                     handler: inbox,
                     open: async (as, event, options) => {
+                      // The tools write `thread` and `if` over `event`, the
+                      // arriving event.
                       const given: InboxSource = {
                         event,
                         ...options,
+                        ...(options.if !== undefined && {
+                          if: toAsync(options.if),
+                        }),
                       } as InboxSource;
 
                       noteSource(given);

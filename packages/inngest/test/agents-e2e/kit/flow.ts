@@ -198,7 +198,9 @@ const readLog = (key: string) => {
 };
 
 // The spans the Dev Server adds around the function's own steps.
-const internalRow = /^(executor\.nonstep|Finalization|Execution|Attempt \d+)$/;
+// The ✉️ group rows that tag each inbox statement are not ops of the flow.
+const internalRow =
+  /^(executor\.nonstep|Finalization|Execution|Attempt \d+|subscribe|next|nextBatch|drain|close)$/;
 
 const distinct = (values: string[]) => {
   return [...new Set(values)].sort();

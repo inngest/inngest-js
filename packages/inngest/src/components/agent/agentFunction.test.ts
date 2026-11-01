@@ -599,6 +599,56 @@ describe("inbox sources", () => {
     ).toEqual(["agent/message", "agent/steer", "agent/request", "ci/status"]);
   });
 
+  test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inboxTools: {
+          listen: [{ event: "ci/status", thread: "event.data.t" }],
+        },
+      },
+      async ({ inbox, inboxTools, control }) => {
+        await inbox.next();
+        await (
+          inboxTools.inbox_listen?.run as unknown as (
+            input: unknown,
+          ) => Promise<unknown>
+        )({
+          source: "ci/status",
+          match: { "data.state": "red" },
+          as: "ci",
+        });
+
+        return control.inboxes().map((open) => {
+          return [open.as, open.source];
+        });
+      },
+    );
+
+    const { output, ops } = await run(fn, { event: trigger("go") });
+
+    expect(output).toEqual([
+      [
+        "ci",
+        {
+          event: "ci/status",
+          if: '((async.data.state == "red")) && (async.data.t) == "t1"',
+        },
+      ],
+    ]);
+    expect(
+      ops.some((op) => {
+        return (
+          op.opts as { sources?: { event: string }[] } | undefined
+        )?.sources?.some((source) => {
+          return source.event === "ci/status";
+        });
+      }),
+    ).toBe(true);
+  });
+
   test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
     const names = ["reply", "reaction", "mention", "tap", "dry"] as const;
     const { fn } = createAgentFunction(
