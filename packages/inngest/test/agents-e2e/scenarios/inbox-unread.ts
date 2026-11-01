@@ -65,8 +65,8 @@ const unreadMessages: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: {},
-    rows: ["inbox"],
-    steps: 4,
+    rows: ["inbox", "inbox:close"],
+    steps: 5,
   },
 };
 
@@ -103,8 +103,8 @@ const loopOf = (n: number): Flow => {
     expect: {
       output: { ns: upTo(n) },
       bodies: {},
-      rows: ["inbox"],
-      steps: n + 1,
+      rows: ["inbox", "inbox:close"],
+      steps: n + 2,
     },
   };
 };
@@ -135,8 +135,8 @@ const lookalikeStep: Flow = {
   expect: {
     output: { fake: 99, real: 1 },
     bodies: { fake: 1 },
-    rows: ["fake", "inbox"],
-    steps: 3,
+    rows: ["fake", "inbox", "inbox:close"],
+    steps: 4,
   },
 };
 
@@ -167,8 +167,8 @@ const twoSources: Flow = {
   expect: {
     output: { ns: [1, 2] },
     bodies: {},
-    rows: ["inbox"],
-    steps: 3,
+    rows: ["inbox", "inbox:close"],
+    steps: 4,
   },
 };
 

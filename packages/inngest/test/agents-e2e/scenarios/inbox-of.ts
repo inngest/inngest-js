@@ -51,8 +51,8 @@ const ofSkipsOtherTypes: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
-    rows: ["inbox"],
-    steps: 3,
+    rows: ["inbox", "inbox:close"],
+    steps: 4,
   },
 };
 
@@ -81,8 +81,8 @@ const twoViewsInParallel: Flow = {
   expect: {
     output: { a: 2, b: 1 },
     bodies: {},
-    rows: ["inbox"],
-    steps: 3,
+    rows: ["inbox", "inbox:close"],
+    steps: 4,
   },
 };
 
@@ -117,8 +117,8 @@ const sameFilterSameReader: Flow = {
   expect: {
     output: { first: 1, second: 2, same: true },
     bodies: {},
-    rows: ["inbox"],
-    steps: 3,
+    rows: ["inbox", "inbox:close"],
+    steps: 4,
   },
 };
 
@@ -152,8 +152,8 @@ const viewReadsFromTheStart: Flow = {
   expect: {
     output: { root: 1, view: 2 },
     bodies: {},
-    rows: ["inbox"],
-    steps: 3,
+    rows: ["inbox", "inbox:close"],
+    steps: 4,
   },
 };
 
@@ -195,10 +195,11 @@ const viewBatchTakesOnlyItsMessages: Flow = {
       "end",
       "hold",
       "inbox",
+      "inbox:close",
       "inbox:next:batch",
       "inbox:of:agents-e2e/inbox-of/a:next:batch",
     ],
-    steps: 8,
+    steps: 9,
   },
 };
 

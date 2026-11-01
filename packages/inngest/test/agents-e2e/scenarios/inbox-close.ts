@@ -257,6 +257,46 @@ const closingInboxClosesViews: Flow = {
   },
 };
 
+const backgroundBatchesBesideSteps: Flow = {
+  name: "inbox-close-background-batches",
+  run: async (h) => {
+    const inbox = h.step.subscribe("inbox", when(h, "msg"));
+
+    try {
+      // Never ends on its own; closing the inbox ends it.
+      (async () => {
+        for await (const batch of inbox.batches()) {
+          h.mark(`batch:${batch.length}`);
+        }
+      })();
+
+      const a = await h.step.run("a", () => {
+        h.ran("a");
+
+        return 1;
+      });
+      const b = await h.step.run("b", () => {
+        h.ran("b");
+
+        return 2;
+      });
+
+      return { a, b };
+    } finally {
+      await inbox.close();
+    }
+  },
+  drive: async (d) => {
+    await d.opened("inbox");
+  },
+  expect: {
+    output: { a: 1, b: 2 },
+    bodies: { a: 1, b: 1 },
+    rows: ["a", "b", "inbox", "inbox:close"],
+    steps: 4,
+  },
+};
+
 export const inboxClose = flowScenario({
   id: "inbox-close",
   owner: "sub-07-close",
@@ -267,5 +307,6 @@ export const inboxClose = flowScenario({
     closingListenKeepsInboxCopies,
     closingOfEndsOnlyThatReader,
     closingInboxClosesViews,
+    backgroundBatchesBesideSteps,
   ],
 });

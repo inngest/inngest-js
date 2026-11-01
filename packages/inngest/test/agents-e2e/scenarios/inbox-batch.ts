@@ -61,11 +61,11 @@ const burstThenBatch: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: { work: 1 },
-    rows: ["end", "inbox", "inbox:next:batch", "work"],
+    rows: ["end", "inbox", "inbox:close", "inbox:next:batch", "work"],
 
     // The open record, the work, three messages, the one batch record and
     // the last sleep.
-    steps: 7,
+    steps: 8,
   },
 };
 
@@ -107,6 +107,7 @@ const maxLeavesTheRest: Flow = {
     rows: [
       "end",
       "inbox",
+      "inbox:close",
       "inbox:next:batch",
       "inbox:next:1:batch",
       "inbox:next:2:batch",
@@ -114,7 +115,7 @@ const maxLeavesTheRest: Flow = {
 
     // The open record, three messages, three batch records and the last
     // sleep. The empty drain saves its record too.
-    steps: 8,
+    steps: 9,
   },
 };
 
@@ -139,7 +140,7 @@ const batchWaits: Flow = {
   expect: {
     output: { ns: [1] },
     bodies: {},
-    rows: ["inbox", "inbox:next:batch"],
+    rows: ["inbox", "inbox:close", "inbox:next:batch"],
   },
 };
 
@@ -176,10 +177,17 @@ const emptyDrain: Flow = {
   expect: {
     output: { none: 0, some: [1] },
     bodies: {},
-    rows: ["end", "inbox", "inbox:next:batch", "inbox:next:1:batch", "nap"],
+    rows: [
+      "end",
+      "inbox",
+      "inbox:close",
+      "inbox:next:batch",
+      "inbox:next:1:batch",
+      "nap",
+    ],
 
     // The open record, one message, two batch records and two sleeps.
-    steps: 6,
+    steps: 7,
   },
 };
 
@@ -224,6 +232,7 @@ const batchesLoop: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:next:batch",
       "inbox:next:1:batch",
       "inbox:next:2:batch",

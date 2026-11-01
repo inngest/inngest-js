@@ -38,6 +38,9 @@ const fakeDeps = (unread: string[]) => {
     skip: async () => {
       return undefined;
     },
+    place: async () => {
+      return undefined;
+    },
     lastSeen: () => {
       return "inbox";
     },
