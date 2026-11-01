@@ -120,8 +120,8 @@ const checks = async () => {
     expectTypeOf(either.name).toEqualTypeOf<"review">();
   }
 
-  // listen() keeps the inbox's message type.
-  const listened = inbox.listen(review);
+  // listen() is typed from its own sources; a name has no schema.
+  const listened = inbox.listen("review");
   expectTypeOf(await listened.next()).toEqualTypeOf<InboxMessage | undefined>();
 
   // Not public: a name alone, and opened().
