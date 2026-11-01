@@ -788,6 +788,15 @@ export const createStepTools = <
         lastSeen: () => {
           return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
         },
+        closed: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
+          );
+        },
+        close: (op, closing) => {
+          return tools["~inboxClose"](op, closing) as Promise<string[]>;
+        },
         place: async (id) => {
           await getAsyncCtxSync()?.execution?.inbox?.place(id);
         },
@@ -812,6 +821,38 @@ export const createStepTools = <
         opts: {
           sources: opts.sources,
           ...(opts.inbox === undefined ? {} : { inbox: opts.inbox }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op that closes an inbox or a view. Used by `subscribe`. It settles
+     * with the ids of the messages the handle had not read, as the executor
+     * saved them.
+     */
+    "~inboxClose": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          ids: string[];
+          pauses: { id: string; event: string }[];
+          waits: string[];
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeClose,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          ids: opts.ids,
+          pauses: opts.pauses,
+          waits: opts.waits,
         },
         userland: { id },
       };

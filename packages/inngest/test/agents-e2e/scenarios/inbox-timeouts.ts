@@ -54,7 +54,7 @@ const timeoutWithNoMessage: Flow = {
   expect: {
     output: { message: null },
     bodies: {},
-    rows: ["inbox", "inbox:next"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
   },
 };
 
@@ -79,7 +79,7 @@ const messageBeforeTimeout: Flow = {
   expect: {
     output: { n: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:next"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
   },
 };
 
@@ -97,7 +97,7 @@ const timeoutThenMessage: Flow = {
       const second = await inbox.next();
       h.mark("received");
 
-      return { first, n: (second.data as { n: number }).n };
+      return { first, n: (second?.data as { n: number }).n };
     } finally {
       await inbox.close();
     }
@@ -109,7 +109,7 @@ const timeoutThenMessage: Flow = {
   expect: {
     output: { first: null, n: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
   },
 };
 

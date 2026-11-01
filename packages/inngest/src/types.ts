@@ -306,6 +306,13 @@ export enum StepOpCode {
    * can draw the read and stamp when each message was read. It saves nothing.
    */
   SubscribeRead = "SubscribeRead",
+
+  /**
+   * Closes an inbox or a view of one: the executor deletes the pauses of its
+   * sources, ends the reads waiting under it and saves the ids of the
+   * messages it had not read.
+   */
+  SubscribeClose = "SubscribeClose",
 }
 
 /**

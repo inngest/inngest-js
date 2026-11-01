@@ -31,7 +31,7 @@ const idleNextThenMessage: Flow = {
       const message = await inbox.next();
       h.mark("received");
 
-      return { n: (message.data as { n: number }).n };
+      return { n: (message?.data as { n: number }).n };
     } finally {
       await inbox.close();
     }
@@ -43,9 +43,9 @@ const idleNextThenMessage: Flow = {
   expect: {
     output: { n: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:next"],
+    rows: ["inbox", "inbox:close", "inbox:next"],
     ticks: { inbox: 1, "inbox:next": 1 },
-    steps: 2,
+    steps: 3,
   },
 };
 
@@ -55,10 +55,10 @@ const twoWaits: Flow = {
     const inbox = h.step.subscribe("inbox", source(h));
 
     try {
-      const first = (await inbox.next()).data as { n: number };
+      const first = (await inbox.next())?.data as { n: number };
       h.mark("got:1");
 
-      const second = (await inbox.next()).data as { n: number };
+      const second = (await inbox.next())?.data as { n: number };
       h.mark("got:2");
 
       return { first: first.n, second: second.n };
@@ -75,9 +75,9 @@ const twoWaits: Flow = {
   expect: {
     output: { first: 1, second: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
     ticks: { inbox: 2, "inbox:next": 1, "inbox:next:1": 1 },
-    steps: 3,
+    steps: 4,
   },
 };
 

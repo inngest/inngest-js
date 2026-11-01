@@ -20,8 +20,8 @@ const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
 };
 
-const numbers = (messages: { data?: unknown }[]) => {
-  return messages
+const numbers = (messages: { data?: unknown }[] | undefined) => {
+  return (messages ?? [])
     .map((message) => {
       return (message.data as { n: number }).n;
     })
@@ -61,12 +61,12 @@ const burstThenBatch: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: { work: 1 },
-    rows: ["end", "inbox", "inbox:next:batch", "work"],
+    rows: ["end", "inbox", "inbox:close", "inbox:next:batch", "work"],
     ticks: { inbox: 3, "inbox:next:batch": 3 },
 
     // The open record, the work, three messages, the one batch record and
     // the last sleep.
-    steps: 7,
+    steps: 8,
   },
 };
 
@@ -87,10 +87,10 @@ const maxLeavesTheRest: Flow = {
       // Events sent together can be saved in any order, so which message is
       // first is not asserted.
       return {
-        first: first.length,
+        first: first?.length,
         rest: rest.length,
         none: none.length,
-        all: numbers([...first, ...rest]),
+        all: numbers([...(first ?? []), ...rest]),
       };
     } finally {
       await inbox.close();
@@ -109,6 +109,8 @@ const maxLeavesTheRest: Flow = {
       "end",
       "inbox",
       "inbox:next",
+      "inbox:close",
+      "inbox:next:batch",
       "inbox:next:1:batch",
       "inbox:next:2:batch",
       "inbox:next:batch",
@@ -116,7 +118,7 @@ const maxLeavesTheRest: Flow = {
 
     // The open record, three messages, three batch records and the last
     // sleep. The empty drain saves its record too.
-    steps: 8,
+    steps: 9,
   },
 };
 
@@ -141,7 +143,7 @@ const batchWaits: Flow = {
   expect: {
     output: { ns: [1] },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:batch"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:batch"],
     ticks: { inbox: 1, "inbox:next:batch": 1 },
   },
 };
@@ -179,10 +181,17 @@ const emptyDrain: Flow = {
   expect: {
     output: { none: 0, some: [1] },
     bodies: {},
-    rows: ["end", "inbox", "inbox:next:batch", "inbox:next:1:batch", "nap"],
+    rows: [
+      "end",
+      "inbox",
+      "inbox:close",
+      "inbox:next:batch",
+      "inbox:next:1:batch",
+      "nap",
+    ],
 
     // The open record, one message, two batch records and two sleeps.
-    steps: 6,
+    steps: 7,
   },
 };
 
@@ -228,6 +237,8 @@ const batchesLoop: Flow = {
     rows: [
       "inbox",
       "inbox:next",
+      "inbox:close",
+      "inbox:next:batch",
       "inbox:next:1:batch",
       "inbox:next:2:batch",
       "inbox:next:batch",

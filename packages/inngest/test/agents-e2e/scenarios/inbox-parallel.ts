@@ -64,7 +64,7 @@ const allWithStep: Flow = {
   expect: {
     output: { work: "slow-done", n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:next", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -89,7 +89,7 @@ const allMessageFirst: Flow = {
   expect: {
     output: { work: "slow-done", n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:next", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -118,7 +118,7 @@ const raceReadWins: Flow = {
   expect: {
     output: { settled: true, next: "after-done" },
     bodies: { slow: 1, after: 1 },
-    rows: ["after", "inbox", "inbox:next", "slow"],
+    rows: ["after", "inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -149,7 +149,7 @@ const raceStepWins: Flow = {
   expect: {
     output: { settled: true, next: "after-done" },
     bodies: { slow: 1, after: 1 },
-    rows: ["after", "inbox", "inbox:next", "slow"],
+    rows: ["after", "inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 
@@ -176,7 +176,7 @@ const twoParallelNexts: Flow = {
   expect: {
     output: { a: 1, b: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1"],
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
   },
 };
 
@@ -212,7 +212,13 @@ const twoParallelNextsQueued: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1", "inbox:next:2"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:2",
+    ],
   },
 };
 
@@ -224,7 +230,7 @@ const twoParallelBatches: Flow = {
     try {
       const [a, b] = await Promise.all([inbox.nextBatch(), inbox.nextBatch()]);
 
-      return { a: a.map(n), b: b.map(n) };
+      return { a: a?.map(n), b: b?.map(n) };
     } finally {
       await inbox.close();
     }
@@ -241,6 +247,7 @@ const twoParallelBatches: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:next",
       "inbox:next:1",
       "inbox:next:1:batch",
@@ -293,6 +300,7 @@ const backgroundBatches: Flow = {
       "inbox",
       "inbox:next",
       "inbox:next:1",
+      "inbox:close",
       "inbox:next:1:batch",
       "inbox:next:2",
       "inbox:next:2:batch",
@@ -329,7 +337,7 @@ const reuseTheRead: Flow = {
   expect: {
     output: { settled: true, n: 1 },
     bodies: { slow: 1 },
-    rows: ["inbox", "inbox:next", "slow"],
+    rows: ["inbox", "inbox:close", "inbox:next", "slow"],
   },
 };
 

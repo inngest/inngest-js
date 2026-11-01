@@ -95,7 +95,7 @@ export const raceFlow = (
       bodies: { slow: 1, record: 1, tail: 1 },
       ...(options.read
         ? {}
-        : { rows: ["inbox", "inbox:next", "record", "slow", "tail"] }),
+        : { rows: ["inbox", "inbox:close", "record", "slow", "tail"] }),
     },
   };
 };

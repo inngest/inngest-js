@@ -21,10 +21,10 @@ const source = (h: FlowHandle) => {
   return { event: h.event("msg"), if: `async.data.key == "${h.key}"` };
 };
 
-const numbers = (messages: { data?: unknown }[]) => {
+const numbers = (messages: ({ data?: unknown } | undefined)[]) => {
   return messages
     .map((message) => {
-      return (message.data as { n: number }).n;
+      return (message?.data as { n: number }).n;
     })
     .sort((a, b) => {
       return a - b;
@@ -65,8 +65,14 @@ const unreadMessages: Flow = {
   expect: {
     output: { ns: [1, 2, 3] },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1", "inbox:next:2"],
-    steps: 4,
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:next:1",
+      "inbox:next:2",
+    ],
+    steps: 5,
   },
 };
 
@@ -110,7 +116,7 @@ const loopOf = (n: number): Flow => {
     expect: {
       output: { ns: upTo(n) },
       bodies: {},
-      rows: ["inbox", ...reads(n)],
+      rows: ["inbox", "inbox:close"],
       ticks: {
         inbox: n,
         ...Object.fromEntries(
@@ -119,7 +125,7 @@ const loopOf = (n: number): Flow => {
           }),
         ),
       },
-      steps: n + 1,
+      steps: n + 2,
     },
   };
 };
@@ -138,7 +144,7 @@ const lookalikeStep: Flow = {
       });
       const real = await inbox.next();
 
-      return { fake: fake.data.n, real: (real.data as { n: number }).n };
+      return { fake: fake.data.n, real: (real?.data as { n: number }).n };
     } finally {
       await inbox.close();
     }
@@ -150,8 +156,8 @@ const lookalikeStep: Flow = {
   expect: {
     output: { fake: 99, real: 1 },
     bodies: { fake: 1 },
-    rows: ["fake", "inbox", "inbox:next"],
-    steps: 3,
+    rows: ["fake", "inbox", "inbox:close", "inbox:next"],
+    steps: 4,
   },
 };
 
@@ -182,8 +188,8 @@ const twoSources: Flow = {
   expect: {
     output: { ns: [1, 2] },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:next:1"],
-    steps: 3,
+    rows: ["inbox", "inbox:close", "inbox:next", "inbox:next:1"],
+    steps: 4,
   },
 };
 

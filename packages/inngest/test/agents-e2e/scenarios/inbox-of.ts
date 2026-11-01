@@ -21,8 +21,8 @@ const sources = (h: FlowHandle) => {
   ];
 };
 
-const n = (message: { data?: unknown }) => {
-  return (message.data as { n: number }).n;
+const n = (message: { data?: unknown } | undefined) => {
+  return (message?.data as { n: number }).n;
 };
 
 const ofSkipsOtherTypes: Flow = {
@@ -51,13 +51,18 @@ const ofSkipsOtherTypes: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:of:agents-e2e/inbox-of/a:next"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:of:agents-e2e/inbox-of/a:next",
+    ],
     ticks: {
       inbox: 2,
       "inbox:next": 1,
       "inbox:of:agents-e2e/inbox-of/a:next": 1,
     },
-    steps: 3,
+    steps: 4,
   },
 };
 
@@ -88,10 +93,11 @@ const twoViewsInParallel: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:of:agents-e2e/inbox-of/a:next",
       "inbox:of:agents-e2e/inbox-of/b:next",
     ],
-    steps: 3,
+    steps: 4,
   },
 };
 
@@ -128,10 +134,11 @@ const sameFilterSameReader: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:of:agents-e2e/inbox-of/a:next",
       "inbox:of:agents-e2e/inbox-of/a:next:1",
     ],
-    steps: 3,
+    steps: 4,
   },
 };
 
@@ -165,8 +172,13 @@ const viewReadsFromTheStart: Flow = {
   expect: {
     output: { root: 1, view: 2 },
     bodies: {},
-    rows: ["inbox", "inbox:next", "inbox:of:agents-e2e/inbox-of/b:next"],
-    steps: 3,
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:next",
+      "inbox:of:agents-e2e/inbox-of/b:next",
+    ],
+    steps: 4,
   },
 };
 
@@ -208,10 +220,11 @@ const viewBatchTakesOnlyItsMessages: Flow = {
       "end",
       "hold",
       "inbox",
+      "inbox:close",
       "inbox:next:batch",
       "inbox:of:agents-e2e/inbox-of/a:next:batch",
     ],
-    steps: 8,
+    steps: 9,
   },
 };
 

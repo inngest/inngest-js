@@ -22,8 +22,8 @@ const sources = (h: FlowHandle) => {
   ];
 };
 
-const n = (message: { data?: unknown }) => {
-  return (message.data as { n: number }).n;
+const n = (message: { data?: unknown } | undefined) => {
+  return (message?.data as { n: number }).n;
 };
 
 const listenAddsSources: Flow = {
@@ -61,14 +61,20 @@ const listenAddsSources: Flow = {
   expect: {
     output: { fromView: 2, fromInbox: 1 },
     bodies: {},
-    rows: ["inbox", "inbox:listen", "inbox:listen:next", "inbox:next"],
+    rows: [
+      "inbox",
+      "inbox:close",
+      "inbox:listen",
+      "inbox:listen:next",
+      "inbox:next",
+    ],
     ticks: {
       inbox: 1,
       "inbox:listen": 1,
       "inbox:listen:next": 1,
       "inbox:next": 1,
     },
-    steps: 4,
+    steps: 5,
   },
 };
 
@@ -109,10 +115,11 @@ const nestedOfUnderListen: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:listen",
       "inbox:listen:of:agents-e2e/inbox-listen/c:next",
     ],
-    steps: 5,
+    steps: 6,
   },
 };
 
@@ -154,12 +161,13 @@ const listensWithDifferentExpressions: Flow = {
     bodies: {},
     rows: [
       "inbox",
+      "inbox:close",
       "inbox:listen",
       "inbox:listen:1",
       "inbox:listen:1:next",
       "inbox:listen:next",
     ],
-    steps: 5,
+    steps: 6,
   },
 };
 
