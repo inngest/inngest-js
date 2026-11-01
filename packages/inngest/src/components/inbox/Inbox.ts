@@ -58,8 +58,9 @@ type SourceMessage<TSource> = TSource extends EventTypeWithAnySchema<string>
     : TypedMessage<TSource>;
 
 /**
- * The messages the sources produce: the union of the shapes of the event types
- * among them. A source written as a name contributes the default message.
+ * The messages the sources of an inbox produce: the union of the shapes of the
+ * event types among them. A source written as a name contributes the untyped
+ * message. Exported mainly so declaration files can name inbox types.
  */
 export type InboxMessageOf<TSources> = TSources extends readonly (infer TItem)[]
   ? SourceMessage<TItem>
@@ -291,8 +292,9 @@ export interface BatchOptions {
 }
 
 /**
- * What an inbox hands back by default: the event, with `is()` to narrow it to
- * the event types it was asked about and `data` left `unknown` until it is.
+ * What an inbox yields when no source narrows it: the event with `data` left
+ * `unknown` until `is()` narrows it. Exported mainly so declaration files can
+ * name inbox types.
  */
 export type UntypedInboxMessage = Omit<EventPayload, "data"> & {
   data: unknown;
