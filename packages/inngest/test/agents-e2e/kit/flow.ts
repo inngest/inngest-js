@@ -74,11 +74,23 @@ export interface Flow {
   run: (handle: FlowHandle) => Promise<unknown>;
 
   /**
+   * Lowers the Dev Server's bounds for this flow's functions before any run
+   * starts: the number of steps, or the bytes of state.
+   */
+  bounds?: { steps?: number; stateSize?: number };
+
+  /**
    * Called once the run has started.
    */
   drive: (driver: FlowDriver) => Promise<void>;
   expect: {
     output: unknown;
+
+    /**
+     * A run that must end `FAILED` with this text in its error. `output` is
+     * not checked then.
+     */
+    failure?: string;
 
     /**
      * How many times each step body ran, by step id. A step not listed must
@@ -196,6 +208,14 @@ export const flowScenario = (definition: {
         });
       });
 
+      // The Dev Server keeps these bounds in plain maps that its setter writes
+      // while runs read them, so every bound is set before any run starts.
+      for (const { flow, cell } of queue) {
+        if (flow.bounds) {
+          await lowerBounds(ctx, functionId(flow, cell), flow.bounds);
+        }
+      }
+
       // Eight runs at a time: the Dev Server is shared with the app.
       await Promise.all(
         Array.from({ length: 8 }, async () => {
@@ -206,6 +226,55 @@ export const flowScenario = (definition: {
       );
     },
   });
+};
+
+/**
+ * Lowers the bounds the Dev Server enforces on the cell's function.
+ */
+const lowerBounds = async (
+  ctx: Ctx,
+  functionSlug: string,
+  bounds: NonNullable<Flow["bounds"]>,
+) => {
+  const res = await fetch(`${ctx.devUrl}/v0/gql`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "{ functions { id slug } }" }),
+  });
+  const json = (await res.json()) as {
+    data: { functions: { id: string; slug: string }[] };
+  };
+  const found = json.data.functions.find((fn) => {
+    return fn.slug.endsWith(functionSlug);
+  });
+
+  if (!found) {
+    throw new Error(`no function ends with ${functionSlug}`);
+  }
+
+  const settings = [
+    ["step-limit", bounds.steps],
+    ["state-size-limit", bounds.stateSize],
+  ] as const;
+
+  for (const [path, value] of settings) {
+    if (value === undefined) {
+      continue;
+    }
+
+    const set = await fetch(`${ctx.devUrl}/fn/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        functionId: found.id,
+        limit: String(value),
+      }),
+    });
+
+    if (!set.ok) {
+      throw new Error(`setting ${path} failed: ${set.status}`);
+    }
+  }
 };
 
 const runCell = async (
@@ -248,6 +317,8 @@ const runCell = async (
 
     await ctx.finished(start);
 
+    const failure = flow.expect.failure;
+
     // The status can turn terminal before the output is readable.
     const run = await ctx.until(
       async () => {
@@ -260,17 +331,29 @@ const runCell = async (
       },
     );
 
-    if (run.status !== "COMPLETED") {
-      failures.push(`run ended ${run.status}`);
-    }
+    if (failure !== undefined) {
+      if (run.status !== "FAILED") {
+        failures.push(`run ended ${run.status}, wanted FAILED`);
+      }
 
-    if (
-      JSON.stringify(sortKeys(run.output)) !==
-      JSON.stringify(sortKeys(flow.expect.output))
-    ) {
-      failures.push(
-        `output ${JSON.stringify(run.output)}, wanted ${JSON.stringify(flow.expect.output)}`,
-      );
+      if (!JSON.stringify(run.output).includes(failure)) {
+        failures.push(
+          `error ${JSON.stringify(run.output)}, wanted it to include ${JSON.stringify(failure)}`,
+        );
+      }
+    } else {
+      if (run.status !== "COMPLETED") {
+        failures.push(`run ended ${run.status}`);
+      }
+
+      if (
+        JSON.stringify(sortKeys(run.output)) !==
+        JSON.stringify(sortKeys(flow.expect.output))
+      ) {
+        failures.push(
+          `output ${JSON.stringify(run.output)}, wanted ${JSON.stringify(flow.expect.output)}`,
+        );
+      }
     }
 
     // Let a late duplicate body show up before counting.

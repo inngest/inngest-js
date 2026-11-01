@@ -296,9 +296,11 @@ const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
 
   // The Dev Server wraps a run's output in the ops it recorded.
   if (Array.isArray(output)) {
-    output = output.find((op) => {
+    const complete = output.find((op) => {
       return op?.op === "RunComplete";
-    })?.data;
+    });
+
+    output = complete ? complete.data : output;
   }
 
   const found = run.trace ? spans(run.trace) : [];
