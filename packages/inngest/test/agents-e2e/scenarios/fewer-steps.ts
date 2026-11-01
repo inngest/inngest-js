@@ -72,13 +72,13 @@ export const fewerSteps = scenario({
     };
 
     ctx.check(
-      "the agent's own events open in one step and the inbox config's sources in one more",
+      "the agent's own events and the inbox config's sources open in one step",
       named((name) => {
         return name === "inbox";
       }) === 1 &&
         named((name) => {
           return name === "inbox:listen";
-        }) === 1,
+        }) === 0,
       run.steps,
     );
     ctx.check(
