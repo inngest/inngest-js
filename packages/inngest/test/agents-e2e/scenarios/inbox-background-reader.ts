@@ -58,20 +58,29 @@ const withGapAndMessage = (name: string): Flow => {
     run: async (h) => {
       const inbox = h.step.subscribe("inbox", source(h));
       const got: number[] = [];
+      let gotOne: () => void = () => undefined;
+      const first = new Promise<void>((resolve) => {
+        gotOne = resolve;
+      });
 
       const read = async () => {
         for await (const message of inbox) {
           got.push((message as { data: { n: number } }).data.n);
+          gotOne();
         }
 
         return "ended";
       };
       const bg = read();
 
+      // The message reaches the reader while the steps run: the steps wait for
+      // the reader to have it, which only a wake from the message can cause.
       const foreground = async () => {
+        await first;
+
         const a = await work(h, "a");
 
-        await h.step.sleep("gap", "3s");
+        await h.step.sleep("gap", "1s");
 
         const b = await work(h, "b");
 
