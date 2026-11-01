@@ -25,16 +25,15 @@ nav{margin-left:auto;display:flex;gap:4px;align-items:center}
 #speaker.on{color:var(--accent)}
 #speaker svg{width:16px;height:16px;display:block}
 .waves{display:none}#speaker.on .waves{display:inline}
-.menu{position:absolute;right:12px;top:100%;margin-top:6px;width:290px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;z-index:10}
+.menu{position:absolute;right:12px;top:100%;margin-top:6px;width:140px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:3px;z-index:10}
 .menu[hidden]{display:none}
-.menu p{margin:6px 8px 4px;font-size:12px;color:var(--muted)}
-.opt{width:100%;justify-content:flex-start;border:0;background:transparent;text-align:left;padding:7px 8px;border-radius:7px;flex-wrap:wrap}
-.opt small{flex-basis:100%;color:var(--muted);font-size:12px;margin-left:34px}
+
+.opt{width:100%;justify-content:flex-start;border:0;background:transparent;text-align:left;padding:3px 6px;border-radius:5px;font-size:12px;gap:6px}
 .opt[aria-checked=true]{background:var(--accent-soft)}
 .opt.cur,.opt:hover{background:var(--surface-2)}
 .opt[aria-checked=true].cur{background:var(--accent-soft)}
-.opt kbd{margin-right:4px}
-.menu .foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px 2px;font-size:12px;color:var(--muted)}
+.opt kbd{font-size:9px;padding:1px 3px}
+.menu .foot{padding:3px 6px 2px;font-size:9px;color:var(--muted);white-space:nowrap}
 main{display:grid;grid-template-columns:42fr 58fr;min-height:0}
 section{padding:20px;border-right:1px solid var(--border);min-height:0;overflow:auto}
 section:last-child{border:0}
@@ -146,18 +145,11 @@ function hiss(at,dur,gain,freq,type,out){
   g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
   s.connect(f);f.connect(g);g.connect(out||master);s.start(t);s.stop(t+dur+.05);
 }
-function dist(amount){
-  const w=ctx.createWaveShaper(),n=2048,c=new Float32Array(n);
-  for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=Math.tanh(x*amount);}
-  w.curve=c;w.oversample="4x";
-  const lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=3800;
-  w.connect(lp);lp.connect(master);return w;
-}
 const seq=(notes,step,dur,type,gain,out)=>notes.forEach((m,i)=>m!=null&&tone(m,i*step,dur,type,gain,null,out));
 
 /* ---------- styles: each returns a function per moment, g = tier gain ---------- */
 const STYLES={
-soft:{name:"Soft",blurb:"Barely there: tiny sine ticks and one gentle two-note rise.",fx:"none",
+soft:{name:"Soft",fx:"none",
  run:g=>tone(79,0,.07,"sine",.06*g),
  runDone:g=>seq([76,83],.07,.18,"sine",.08*g),
  runFail:g=>tone(64,0,.25,"sine",.09*g,59),
@@ -172,7 +164,7 @@ soft:{name:"Soft",blurb:"Barely there: tiny sine ticks and one gentle two-note r
  agentDone:g=>seq([79,76,72],.09,.3,"sine",.06*g),
  key:g=>tone(90,0,.025,"sine",.03*g),
  enable:g=>tone(84,0,.08,"sine",.07*g)},
-quest:{name:"Quest",blurb:"Fantasy adventure: bells, harp runs and a bright unlock fanfare.",fx:"confetti",
+quest:{name:"Quest",fx:"confetti",
  run:g=>{tone(84,0,.15,"triangle",.07*g);tone(91,.05,.2,"sine",.04*g);},
  runDone:g=>seq([72,76,79],.07,.35,"triangle",.1*g),
  runFail:g=>seq([64,63,60],.11,.3,"triangle",.1*g),
@@ -189,7 +181,7 @@ quest:{name:"Quest",blurb:"Fantasy adventure: bells, harp runs and a bright unlo
  agentDone:g=>seq([72,79,84],.09,.5,"triangle",.09*g),
  key:g=>tone(91,0,.05,"sine",.035*g),
  enable:g=>seq([79,84,88],.06,.25,"triangle",.08*g)},
-chip:{name:"Chiptune",blurb:"8-bit: square and triangle blips, coin-style jumps and a victory arpeggio.",fx:"scan",
+chip:{name:"Chiptune",fx:"scan",
  run:g=>tone(72,0,.08,"square",.05*g,84),
  runDone:g=>seq([72,76,79,84],.06,.08,"square",.06*g),
  runFail:g=>tone(60,0,.3,"square",.07*g,36),
@@ -204,26 +196,7 @@ chip:{name:"Chiptune",blurb:"8-bit: square and triangle blips, coin-style jumps 
  agentDone:g=>seq([84,79,84,91],.07,.09,"square",.05*g),
  key:g=>tone(96,0,.02,"square",.025*g),
  enable:g=>seq([72,84],.05,.06,"square",.05*g)},
-metal:{name:"Metal",blurb:"Heavy riff: distorted power chords, palm-muted gallop, a one-second riff on a pass.",fx:"shake",
- run:g=>{const o=dist(9);tone(40,0,.1,"sawtooth",.07*g,null,o);tone(47,0,.1,"sawtooth",.05*g,null,o);},
- runDone:g=>{const o=dist(9);[40,47].forEach(m=>tone(m,0,.35,"sawtooth",.08*g,null,o));hiss(0,.12,.04*g,6000);},
- runFail:g=>{const o=dist(14);tone(40,0,.6,"sawtooth",.1*g,28,o);tone(46,0,.6,"sawtooth",.07*g,34,o);hiss(0,.5,.05*g,300,"lowpass");},
- checkPass:g=>{ // galloping chugs, then a held power chord and a cymbal wash. Original, generic.
-   const o=dist(12),chug=(m,at,d)=>{tone(m,at,d,"sawtooth",.1*g,null,o);tone(m+7,at,d,"sawtooth",.07*g,null,o);tone(m+12,at,d,"sawtooth",.04*g,null,o);};
-   [0,.1,.2,.33,.43,.53].forEach((a,i)=>chug(i<3?40:43,a,.08));
-   chug(45,.66,.4);chug(47,.9,.5);tone(28,0,1.3,"sine",.14*g);hiss(.66,.9,.05*g,5500);},
- checkFail:g=>{const o=dist(14);tone(40,0,.25,"sawtooth",.09*g,36,o);tone(39,.2,.4,"sawtooth",.09*g,30,o);},
- next:g=>{const o=dist(8);tone(43,0,.05,"sawtooth",.045*g,null,o);},
- prev:g=>{const o=dist(8);tone(40,0,.05,"sawtooth",.045*g,null,o);},
- moduleDone:g=>{const o=dist(12),c=(m,at,d)=>[0,7,12].forEach(k=>tone(m+k,at,d,"sawtooth",.08*g,null,o));
-   [0,.12,.24,.42,.54,.66].forEach(a=>c(40,a,.08));c(43,.84,.15);c(45,1,.15);c(47,1.2,.9);tone(28,0,2.1,"sine",.14*g);hiss(1.2,1,.06*g,5000);},
- message:g=>{const o=dist(8);tone(52,0,.07,"sawtooth",.04*g,null,o);},
- tool:g=>{const o=dist(8);[40,40].forEach((m,i)=>tone(m,i*.07,.05,"sawtooth",.05*g,null,o));},
- reply:g=>{const o=dist(9);[40,43].forEach((m,i)=>tone(m,i*.08,.1,"sawtooth",.06*g,null,o));},
- agentDone:g=>{const o=dist(10);[40,47,52].forEach((m,i)=>tone(m,i*.09,.25,"sawtooth",.07*g,null,o));},
- key:g=>{const o=dist(8);tone(52,0,.025,"sawtooth",.03*g,null,o);},
- enable:g=>{const o=dist(9);tone(40,0,.12,"sawtooth",.06*g,null,o);}},
-kalimba:{name:"Kalimba",blurb:"Our own: warm plucks and water-drop pops on a pentatonic scale, so everything harmonises.",fx:"ripple",
+kalimba:{name:"Kalimba",fx:"ripple",
  run:g=>pluck(67,0,.05*g),
  runDone:g=>{pluck(72,0,.07*g);pluck(79,.08,.07*g);},
  runFail:g=>{pluck(65,0,.07*g);pluck(58,.12,.07*g);},
@@ -241,14 +214,138 @@ kalimba:{name:"Kalimba",blurb:"Our own: warm plucks and water-drop pops on a pen
 };
 function pluck(m,at,gain){tone(m,at,.5,"triangle",gain);tone(m+12,at,.15,"sine",gain*.4);tone(m+19.02,at,.08,"sine",gain*.2);}
 function drop(at,gain){tone(96,at,.12,"sine",gain,72);hiss(at,.03,gain*.3,4000,"bandpass");}
+
+/* ---------- Doom toolkit: clean attack, tight low end, filtered highs ---------- */
+/* what made the old Metal muddy: sawtooth stacks driven by tanh(9x to 14x) were flat-clipped, kept low-mid
+   energy (the octave and fifth beat around 150 to 400 Hz), and ran into a 3.8 kHz lowpass, so the highs fizzed
+   and the attack had no transient. Here: moderate drive, a high-pass before the clip, a mid cut after it, a low
+   lowpass, a separate clean sine for the low end, and a drum click on every payoff. */
+function amp(o){ // drive chain: highpass, clip, mid cut, lowpass, level
+  const inp=ctx.createGain(),hp=ctx.createBiquadFilter(),ws=ctx.createWaveShaper(),mid=ctx.createBiquadFilter(),lp=ctx.createBiquadFilter(),out=ctx.createGain();
+  hp.type="highpass";hp.frequency.value=o.hp;
+  const n=1024,c=new Float32Array(n);
+  for(let i=0;i<n;i++){const x=i*2/n-1,y=Math.tanh(x*o.k);c[i]=o.crush?Math.round(y*o.crush)/o.crush:y;}
+  ws.curve=c;ws.oversample="4x";
+  mid.type="peaking";mid.frequency.value=o.mf;mid.gain.value=o.mg;mid.Q.value=.9;
+  lp.type="lowpass";lp.frequency.value=o.lp;lp.Q.value=.5;
+  out.gain.value=o.lv;
+  inp.connect(hp);hp.connect(ws);ws.connect(mid);mid.connect(lp);lp.connect(out);out.connect(master);
+  return inp;
+}
+/* a note with a real attack (4 ms ramp), a decay to `sus`, and a short release */
+function nt(type,f,at,dur,gain,out,o){
+  o=o||{};
+  const t=ctx.currentTime+at,s=ctx.createOscillator(),g=ctx.createGain(),a=o.a||.004,rel=Math.min(.04,dur*.4);
+  s.type=type;s.frequency.setValueAtTime(f,t);
+  if(o.to)s.frequency.exponentialRampToValueAtTime(o.to,t+(o.sl||dur));
+  if(o.det)s.detune.value=o.det;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain,t+a);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0001,gain*(o.sus==null?1:o.sus)),t+Math.max(a+.005,dur-rel));
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  s.connect(g);g.connect(out||master);s.start(t);s.stop(t+dur+.02);
+}
+function gt(m,at,dur,gain,out,sus){ // two detuned saws plus the fifth
+  nt("sawtooth",midi(m),at,dur,gain,out,{det:-9,sus});nt("sawtooth",midi(m),at,dur,gain,out,{det:9,sus});
+  nt("sawtooth",midi(m+7),at,dur,gain*.7,out,{sus});
+}
+function sub(m,at,dur,gain){nt("sine",midi(m),at,dur,gain,null,{sus:.5,a:.006});}
+function kick(at,g,dirty){
+  const out=dirty?amp({k:4,hp:30,mf:200,mg:-3,lp:2500,lv:.5*g}):null;
+  nt("sine",160,at,.22,.5*g*(dirty?.6:1),out,{to:42,sl:.12,sus:.3,a:.002});
+  hiss(at,.02,.06*g,2500,"bandpass",out);
+}
+function snare(at,g){hiss(at,.16,.12*g,1800,"highpass");nt("triangle",190,at,.09,.15*g,null,{to:120,a:.002,sus:.2});}
+function crash(at,dur,g){hiss(at,dur,.05*g,5500);}
+function rise(at,dur,g){ // noise sweeping up into a hit
+  const t=ctx.currentTime+at,s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),v=ctx.createGain();
+  s.buffer=noiseBuf;s.loop=true;f.type="bandpass";f.Q.value=3;
+  f.frequency.setValueAtTime(300,t);f.frequency.exponentialRampToValueAtTime(5000,t+dur);
+  v.gain.setValueAtTime(.0001,t);v.gain.exponentialRampToValueAtTime(.12*g,t+dur);v.gain.linearRampToValueAtTime(0,t+dur+.02);
+  s.connect(f);f.connect(v);v.connect(master);s.start(t);s.stop(t+dur+.05);
+}
+function bs(m,at,dur,g,f0,f1,out){ // synth bass: two saws and a square, lowpass closing
+  const t=ctx.currentTime+at,lp=ctx.createBiquadFilter();
+  lp.type="lowpass";lp.Q.value=2;lp.frequency.setValueAtTime(f0,t);lp.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  lp.connect(out||master);
+  nt("sawtooth",midi(m),at,dur,g,lp,{det:-14,sus:.7});nt("sawtooth",midi(m),at,dur,g,lp,{det:14,sus:.7});nt("square",midi(m-12),at,dur,g*.8,lp,{sus:.7});
+}
+function clank(at,v){ // short inharmonic metal hit
+  const hp=ctx.createBiquadFilter();hp.type="highpass";hp.frequency.value=900;hp.connect(master);
+  nt("square",587,at,.08,v,hp,{sus:.1,a:.001});nt("square",911,at,.08,v*.8,hp,{sus:.1,a:.001});
+}
+function fm(m,at,dur,g,ratio,idx,out){ // two-operator FM voice
+  const f=midi(m),t=ctx.currentTime+at,c=ctx.createOscillator(),md=ctx.createOscillator(),mg=ctx.createGain(),v=ctx.createGain();
+  c.frequency.value=f;md.frequency.value=f*ratio;
+  mg.gain.setValueAtTime(f*idx,t);mg.gain.exponentialRampToValueAtTime(f*.05,t+dur);
+  v.gain.setValueAtTime(0,t);v.gain.linearRampToValueAtTime(g,t+.003);v.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  md.connect(mg);mg.connect(c.frequency);c.connect(v);v.connect(out||master);
+  c.start(t);md.start(t);c.stop(t+dur+.02);md.stop(t+dur+.02);
+}
+/* every Doom version gives hit(offset, at, dur, volume), pass, module and fail; the rest is built from hit */
+function makeDoom(name,sp){
+  const h=sp.hit;
+  return {name,fx:"shake",
+   run:g=>h(0,0,.07,.7*g),
+   runDone:g=>{h(0,0,.1,.8*g);h(7,.1,.22,.9*g);},
+   runFail:g=>sp.fail(g),
+   checkPass:g=>sp.pass(g),
+   checkFail:g=>{h(0,0,.12,.9*g);h(-1,.14,.3,.9*g);},
+   next:g=>h(12,0,.05,.5*g),
+   prev:g=>h(0,0,.05,.5*g),
+   moduleDone:g=>sp.module(g),
+   message:g=>h(15,0,.05,.45*g),
+   tool:g=>{h(0,0,.05,.5*g);h(0,.07,.05,.5*g);},
+   reply:g=>{h(0,0,.07,.7*g);h(3,.09,.12,.7*g);},
+   agentDone:g=>{h(0,0,.1,.7*g);h(7,.1,.1,.7*g);h(12,.2,.3,.8*g);},
+   key:g=>h(24,0,.04,.3*g),
+   enable:g=>h(7,0,.12,.7*g),
+   disable:g=>{h(7,0,.1,.6*g);h(0,.1,.25,.6*g);}};
+}
+/* Doom 1: slow, crushing doom-metal. Wide gaps, long held chord, big sine low end under it. */
+const R1=35,a1=v=>amp({k:3.5,hp:70,mf:380,mg:-6,lp:2200,lv:.34*v});
+const DOOM1={
+ hit:(o,at,d,v)=>{gt(R1+o,at,d,.2,a1(v),.6);sub(R1+o,at,d,.22*v);},
+ pass:g=>{[[0,0,.2],[.22,0,.2],[.46,3,1]].forEach(([at,o,d],i)=>{DOOM1.hit(o,at,d,g*(i===2?1.1:.9));kick(at,.9*g);});crash(.46,1,g);},
+ module:g=>{[[0,0,.2],[.25,0,.2],[.5,3,.2],[.75,5,.2],[1,7,1.2]].forEach(([at,o,d],i)=>{DOOM1.hit(o,at,d,g*(i===4?1.1:.9));kick(at,.9*g);});crash(1,1.3,g);},
+ fail:g=>{const a=a1(.9*g);nt("sawtooth",midi(R1),0,.6,.2,a,{to:midi(R1-7),det:-9,sus:.5});nt("sawtooth",midi(R1),0,.6,.2,a,{to:midi(R1-7),det:9,sus:.5});nt("sine",midi(R1),0,.6,.22*g,null,{to:midi(R1-7),sus:.5});}
+};
+/* Doom 2: tight thrash gallop. Gated sixteenth chugs, kick on every other one, snare, crash on the stab. */
+const R2=40,a2=v=>amp({k:6,hp:110,mf:1400,mg:3,lp:3200,lv:.3*v});
+const DOOM2={
+ hit:(o,at,d,v)=>{gt(R2+o,at,Math.max(.04,d),.18,a2(v),.8);sub(R2+o,at,d,.1*v);},
+ pass:g=>{[0,0,0,0,0,0,3,3,0,0].forEach((o,i)=>{DOOM2.hit(o,i*.065,.055,g);if(i%2===0)kick(i*.065,.7*g);});snare(.26,g);snare(.52,g);
+   DOOM2.hit(0,.65,.55,1.1*g);DOOM2.hit(12,.65,.55,.8*g);crash(.65,.8,g);kick(.65,g);snare(.65,g);},
+ module:g=>{[0,0,0,0,3,3,0,0,0,0,5,5,3,3,1,1].forEach((o,i)=>{DOOM2.hit(o,i*.06,.05,g);if(i%2===0)kick(i*.06,.7*g);});[.24,.48,.72,.96].forEach(t=>snare(t,g));
+   DOOM2.hit(7,1.02,.7,1.1*g);DOOM2.hit(0,1.02,.7,1.1*g);crash(1.02,1,g);kick(1.02,g);snare(1.02,g);},
+ fail:g=>{[[0,0],[0,.07],[-2,.15],[-4,.25],[-7,.38]].forEach(([o,at],i)=>{DOOM2.hit(o,at,.08,.9*g);if(i%2===0)kick(at,.6*g);});}
+};
+/* Doom 3: dark industrial. No guitar: bit-crushed detuned bass, a distorted kick, metal clanks, a noise riser. */
+const R3=36,a3=v=>amp({k:2.5,hp:60,mf:500,mg:-4,lp:2600,crush:7,lv:.4*v});
+const DOOM3={
+ hit:(o,at,d,v)=>{bs(R3+o,at,Math.max(.05,d),.16,2200,260,a3(v));clank(at,.05*v);},
+ pass:g=>{rise(0,.42,g);kick(.42,1.1*g,true);clank(.42,.1*g);bs(R3,.42,.8,.2,3000,120,a3(1.1*g));sub(R3,.42,.8,.25*g);clank(.62,.06*g);},
+ module:g=>{rise(0,.7,g);kick(.7,1.1*g,true);clank(.7,.1*g);bs(R3,.7,.5,.2,3000,160,a3(1.1*g));clank(.95,.07*g);
+   kick(1.2,1.1*g,true);clank(1.2,.1*g);bs(R3-5,1.2,.9,.2,3000,110,a3(1.1*g));sub(R3-5,1.2,.9,.25*g);},
+ fail:g=>{kick(0,.9*g,true);bs(R3,0,.2,.2,1800,200,a3(g));bs(R3-6,.18,.4,.2,1500,90,a3(g));}
+};
+/* Doom 4: retro FM shooter riff. Clean two-operator FM bass, driving eighths, FM kick, hats, a bell stab. */
+const R4=40;
+const DOOM4={
+ hit:(o,at,d,v)=>{fm(R4+o,at,d,.24*v,1,3);fm(R4+o+12,at,d,.1*v,2,2);},
+ pass:g=>{[0,0,12,0,0,11,0,7].forEach((o,i)=>{DOOM4.hit(o,i*.075,.1,g);hiss(i*.075+.037,.03,.03*g,8000);if(i%2===0)kick(i*.075,.7*g);});
+   [12,19,24].forEach(o=>fm(R4+o,.62,.8,.1*g,2.01,2.5));kick(.62,g);},
+ module:g=>{[0,0,12,0,0,11,0,7,0,0,12,0,0,10,0,5].forEach((o,i)=>{DOOM4.hit(o,i*.07,.1,g);hiss(i*.07+.035,.03,.03*g,8000);if(i%2===0)kick(i*.07,.7*g);});
+   [12,19,24,31].forEach(o=>fm(R4+o,1.12,1,.1*g,2.01,2.5));kick(1.12,g);},
+ fail:g=>{[[0,0],[-2,.1],[-5,.2]].forEach(([o,at])=>fm(R4+o,at,.2,.2*g,1.414,4));}
+};
+Object.assign(STYLES,{doom1:makeDoom("Doom 1",DOOM1),doom2:makeDoom("Doom 2",DOOM2),doom3:makeDoom("Doom 3",DOOM3),doom4:makeDoom("Doom 4",DOOM4)});
 const DIS={
  soft:g=>seq([84,76],.07,.18,"sine",.07*g),
  quest:g=>seq([84,79,72],.07,.3,"triangle",.08*g),
  chip:g=>seq([84,76,67],.05,.07,"square",.05*g),
- metal:g=>{const o=dist(9);tone(45,0,.3,"sawtooth",.07*g,33,o);},
  kalimba:g=>{pluck(79,0,.07*g);pluck(72,.07,.07*g);}};
 for(const k in DIS)STYLES[k].disable=DIS[k];
-const ORDER=["soft","quest","chip","metal","kalimba"];
+const ORDER=["soft","quest","chip","kalimba","doom1","doom2","doom3","doom4"];
 
 /* ---------- state ---------- */
 const $=s=>document.querySelector(s);
@@ -297,9 +394,9 @@ function flash(el){el.style.opacity=1;setTimeout(()=>{el.style.opacity=0},180);}
 
 /* ---------- menu ---------- */
 function renderMenu(){
-  menu.innerHTML='<p>Sound style</p>'+ORDER.map((id,i)=>
-   `<button class="opt${i===st.menuIdx?" cur":""}" role="menuitemradio" aria-checked="${id===st.style}" data-style="${id}"><kbd>${i+1}</kbd><b>${STYLES[id].name}</b><small>${STYLES[id].blurb}</small></button>`).join("")+
-   '<div class="foot"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> pick <kbd>Esc</kbd> close <kbd>M</kbd> on/off</div>';
+  menu.innerHTML=ORDER.map((id,i)=>
+   `<button class="opt${i===st.menuIdx?" cur":""}" role="menuitemradio" aria-checked="${id===st.style}" data-style="${id}"><kbd>${i+1}</kbd>${STYLES[id].name}</button>`).join("")+
+   '<div class="foot">arrows, Enter, Esc</div>';
 }
 function openMenu(hover){st.menuIdx=ORDER.indexOf(st.style);renderMenu();menu.hidden=false;speaker.setAttribute("aria-expanded","true");}
 function closeMenu(hover){menu.hidden=true;speaker.setAttribute("aria-expanded","false");if(!hover)speaker.focus();}
@@ -327,7 +424,7 @@ document.addEventListener("keydown",e=>{
     if(k==="Escape"){e.preventDefault();closeMenu();}
     else if(k==="ArrowDown"||k==="ArrowUp"){e.preventDefault();st.menuIdx=(st.menuIdx+(k==="ArrowDown"?1:-1)+ORDER.length)%ORDER.length;renderMenu();}
     else if(k==="Enter"){e.preventDefault();setStyle(ORDER[st.menuIdx]);if(!st.muted)play("checkPass");}
-    else if(/^[1-5]$/.test(k)){e.preventDefault();setStyle(ORDER[+k-1]);if(!st.muted)play("checkPass");}
+    else if(/^[1-8]$/.test(k)){e.preventDefault();setStyle(ORDER[+k-1]);if(!st.muted)play("checkPass");}
     else if(k.toLowerCase()==="m"){e.preventDefault();setMuted(!st.muted);}
     return;
   }
