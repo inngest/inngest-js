@@ -86,6 +86,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { Stream } from "../StreamTools.ts";
+import { addEventIs } from "../triggers/triggers.ts";
 import { validateEvents } from "../triggers/utils.js";
 import {
   getAsyncCtx,
@@ -2298,6 +2299,11 @@ class InngestExecutionEngine
       defer,
     } as unknown as Context.Any;
 
+    addEventIs(fnArg.event);
+    for (const event of fnArg.events ?? []) {
+      addEventIs(event);
+    }
+
     // Aggregate the run's triggering events into its propagated sessions in
     // `ctx.sessions`
     //
@@ -2346,11 +2352,13 @@ class InngestExecutionEngine
 
     // Mutate in place so the ALS store's reference to this.fnArg stays valid.
     if (event !== this.fnArg.event) {
-      this.fnArg.event = event;
+      this.fnArg.event = addEventIs(event);
     }
 
     if (events !== this.fnArg.events) {
-      this.fnArg.events = events;
+      this.fnArg.events = events.map((e) => {
+        return addEventIs(e);
+      }) as typeof events;
     }
 
     if (step !== this.fnArg.step) {
