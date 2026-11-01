@@ -57,7 +57,7 @@ export const threadHandle = scenario({
           }
 
           const result = await agent.loop({
-            id: `turn${message.seq}`,
+            id: `turn:${message.id}`,
             model: script([
               { call: { name: "think", input: {} } },
               { say: "echo: {{last}}" },

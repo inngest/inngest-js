@@ -5,7 +5,10 @@
  * (`../inbox/Inbox.ts`).
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { timeStr } from "../../helpers/strings.ts";
+import type {
+  BatchOptions,
+  ReadOptions as NextOptions,
+} from "../inbox/Inbox.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
@@ -15,12 +18,6 @@ import type {
  * One delivered message.
  */
 export interface InboxMessage<TData = unknown, TName extends string = string> {
-  /**
-   * Position in the reader that handed the message over, starting at 1. The
-   * event that started the run, put first in the thread's inbox, has `seq` 0.
-   */
-  seq: number;
-
   /**
    * The ID of the event.
    */
@@ -64,22 +61,7 @@ export interface InboxMessage<TData = unknown, TName extends string = string> {
   ): this is SourceMessage<{ event: TType }>;
 }
 
-/**
- * How long a `next()` waits: a number of milliseconds, a time string such as
- * `"30s"`, a date, or a duration, as for `step.waitForEvent()`.
- */
-export type NextTimeout = Parameters<typeof timeStr>[0];
-
-/**
- * Options of `next()`.
- */
-export interface NextOptions {
-  /**
-   * Stop waiting after this long: `next()` then returns `undefined`. A message
-   * that arrives later is not lost; the next read gets it. `0` never waits.
-   */
-  timeout?: NextTimeout;
-}
+export type { BatchOptions, ReadOptions as NextOptions } from "../inbox/Inbox.ts";
 
 /**
  * One event an inbox receives.
@@ -132,31 +114,47 @@ export function eventNameOf(source: InboxEvent["event"]): string {
 }
 
 /**
- * A reader of one kind of message in an inbox, with a cursor of its own over the
- * same ordered sequence. Reading through a view hides nothing from the inbox or
- * from other views: every reader sees every message in its place.
+ * A reader of an inbox with a read position of its own: the inbox itself or a
+ * view of it. Reading through one hides nothing from the inbox or from other
+ * views: every reader sees every message in its place.
  */
-export interface View<TMessage> extends AsyncIterable<TMessage> {
+export interface View<TMessage> extends AsyncIterable<TMessage>, AsyncDisposable {
   /**
-   * Waits for the next message of this kind after this view's cursor, or
-   * returns `null` once the inbox is closed and none is left. `{ timeout }`
-   * gives up with `undefined`, and `{ timeout: 0 }` never waits.
-   * @param options The timeout.
+   * The next message, waiting for one if none is unread. `undefined` once the
+   * reader is closed. With a `timeout`, `null` when none arrives in time.
    */
-  next(): Promise<TMessage | null>;
+  next(): Promise<TMessage | undefined>;
   next(options: NextOptions): Promise<TMessage | null | undefined>;
 
   /**
-   * Every message of this kind after this view's cursor, in order, advancing
-   * the cursor past them. It never waits.
+   * Every unread message, waiting for at least one. `undefined` once the reader
+   * is closed; with a `timeout`, `null` when none arrives in time.
    */
-  unread(): Promise<TMessage[]>;
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
+  nextBatch(
+    options: BatchOptions & NextOptions,
+  ): Promise<TMessage[] | null | undefined>;
 
   /**
-   * Every message of this kind so far, read or not, in order. It moves no
-   * cursor and never waits.
+   * Every unread message without waiting: an empty array if there is none.
    */
-  current(): Promise<TMessage[]>;
+  drain(options?: BatchOptions): Promise<TMessage[]>;
+
+  /**
+   * Reads batch by batch with `for await`. The loop ends when the reader
+   * closes.
+   */
+  batches(options?: BatchOptions): AsyncGenerator<TMessage[], void, undefined>;
+
+  /**
+   * Closes the reader and returns its unread messages.
+   */
+  close(): Promise<TMessage[]>;
+
+  /**
+   * Whether the reader is closed.
+   */
+  readonly closed: boolean;
 }
 
 /**

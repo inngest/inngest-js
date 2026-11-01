@@ -63,7 +63,7 @@ export const inboxToolsRestart = scenario({
       async ({ inbox, control, inboxTools: tools }) => {
         for await (const message of inbox) {
           const result = await agent.loop({
-            id: `turn${message.seq}`,
+            id: `turn:${message.id}`,
             model: agent.model(async (request) => {
               switch (request.turn) {
                 case 1:

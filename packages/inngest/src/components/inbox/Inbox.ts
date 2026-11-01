@@ -556,6 +556,15 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   }
 
   /**
+   * Settles once the executor has recorded the opens of this reader and of the
+   * views under it. Code that does other work before its first read awaits it,
+   * so that work does not share a request with the open.
+   */
+  opened(): Promise<void> {
+    return this.#ready();
+  }
+
+  /**
    * Returns the next unread message. If none is unread, waits for one to
    * arrive. Returns `undefined` once the reader is closed, also for a read
    * that was waiting when it closed.

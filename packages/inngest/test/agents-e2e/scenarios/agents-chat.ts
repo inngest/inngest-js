@@ -57,7 +57,7 @@ export const agentsChat = scenario({
         });
         const history = await kv.thread.get(kvKey<never[]>("history"));
         const result = await agent.loop({
-          id: `turn${message.seq}`,
+          id: `turn:${message.id}`,
           model: script([
             { call: { name: "think", input: {} } },
             { say: "echo: {{last}}" },
@@ -69,7 +69,7 @@ export const agentsChat = scenario({
         });
 
         await kv.thread.set("history", result.history);
-        await kv.thread.set("last", { seq: message.seq, text: result.text });
+        await kv.thread.set("last", { id: message.id, text: result.text });
         await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
           return [...(turns ?? []), textOf(message) ?? ""];
         });

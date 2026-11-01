@@ -102,14 +102,10 @@ export interface InboxToolView {
   }) => Promise<InboxToolMessage | null | undefined>;
 
   /**
-   * Every message after the read position, moving the position to the end.
+   * Every message after the read position without waiting, moving the position
+   * to the end.
    */
-  unread: () => Promise<InboxToolMessage[]>;
-
-  /**
-   * Every message so far, without moving the read position.
-   */
-  current: () => Promise<InboxToolMessage[]>;
+  drain: () => Promise<InboxToolMessage[]>;
 }
 
 /**
@@ -162,7 +158,6 @@ const maxMatchValueChars = 200;
 const maxMatchKeyChars = 128;
 const defaultMaxPerRun = 3;
 const defaultMaxTotalWait = "2h";
-const maxReadMessages = 20;
 
 const eventName = (source: InboxToolSource): string => {
   return typeof source.event === "string" ? source.event : source.event.name;
@@ -290,9 +285,8 @@ const render = (message: InboxToolMessage) => {
  * - `inbox_wait({ timeout, as? })` waits for the next message of a listener's
  *   event and returns it, or says that nothing came. In `run_code` it
  *   suspends the script like any waiting tool, so the wait can be long.
- * - `inbox_read({ as?, all? })` returns what has arrived since the last read,
- *   without waiting (`view.unread()`). With `all` it returns the latest 20 of
- *   everything so far, without moving the read position (`view.current()`).
+ * - `inbox_read({ as? })` returns what has arrived since the last read,
+ *   without waiting (`view.drain()`).
  * - `inbox_stop({ as })` stops a listener.
  *
  * A message returns marked with `agent.untrusted()`, since it came from
@@ -503,7 +497,19 @@ export const createInboxTools = (
           );
         }
 
-        const message = await (views[0] as InboxToolView).next({ timeout: ms });
+        const view = views[0] as InboxToolView;
+
+        // A timeout of 0 does not wait: it takes what has arrived.
+        if (ms === 0) {
+          const [first, ...more] = await view.drain();
+
+          return {
+            message: first ? render(first) : null,
+            ...(more.length > 0 && { more: more.map(render) }),
+          };
+        }
+
+        const message = await view.next({ timeout: ms });
 
         return message ? { message: render(message) } : { message: null };
       },
@@ -511,33 +517,17 @@ export const createInboxTools = (
 
     inbox_read: tool.group({
       description:
-        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as". With all: true, return the latest 20 of everything received so far instead, and how many there are in all.',
+        'Return the messages your listeners have received since you last read, without waiting, each tagged with its source. Name one listener with "as".',
       input: z.object({
         as: z.string().optional(),
-        all: z.boolean().optional(),
       }),
-      run: async ({ as, all }) => {
+      run: async ({ as }) => {
         const views = await viewsFor(as);
-
-        if (all) {
-          const everything = (
-            await Promise.all(
-              views.map((view) => {
-                return view.current();
-              }),
-            )
-          ).flat();
-
-          return {
-            total: everything.length,
-            messages: everything.slice(-maxReadMessages).map(render),
-          };
-        }
 
         const fresh = (
           await Promise.all(
             views.map((view) => {
-              return view.unread();
+              return view.drain();
             }),
           )
         ).flat();
