@@ -639,8 +639,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    */
   next(options: ReadOptions): Promise<TMessage | null | undefined>;
   next(options?: ReadOptions): Promise<TMessage | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readOne(n, options?.timeout);
+    return this.#enqueue((n, late) => {
+      return this.#readOne(n, late, options?.timeout);
     });
   }
 
@@ -661,8 +661,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   nextBatch(
     options?: BatchOptions & Partial<ReadOptions>,
   ): Promise<TMessage[] | null | undefined> {
-    return this.#enqueue((n) => {
-      return this.#readBatch(n, options?.max, true, options?.timeout);
+    return this.#enqueue((n, late) => {
+      return this.#readBatch(n, late, options?.max, true, options?.timeout);
     });
   }
 
@@ -671,8 +671,8 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
    * none. The read is still saved as a step, so a replay returns the same set.
    */
   drain(options?: BatchOptions): Promise<TMessage[]> {
-    return this.#enqueue(async (n) => {
-      return (await this.#readBatch(n, options?.max, false)) ?? [];
+    return this.#enqueue(async (n, late) => {
+      return (await this.#readBatch(n, late, options?.max, false)) ?? [];
     });
   }
 
@@ -696,9 +696,13 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
   }
 
   // Reads on one inbox are served in order. Each gets its own number `n`.
-  #enqueue<T>(read: (n: number) => Promise<T>): Promise<T> {
+  #enqueue<T>(read: (n: number, late: boolean) => Promise<T>): Promise<T> {
     const n = this.#reads;
     this.#reads += 1;
+
+    // Whether `close()` was called before this read started. The close op
+    // cannot name such a read, so it ends without reporting a wait.
+    const late = this.#isEnding();
 
     // The read is unsettled from the moment it starts, so a close that comes
     // before the read reports its wait still names it.
@@ -707,7 +711,7 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
     const result = this.#queue
       .then(() => {
-        return read(n);
+        return read(n, late);
       })
       .finally(() => {
         this.#unsettled.delete(op);
@@ -722,19 +726,16 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
   async #readBatch(
     n: number,
+    late: boolean,
     max: number | undefined,
     wait: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage[] | null | undefined> {
-    if (this.closed || this.#isEnding()) {
+    if (this.closed || late) {
       return wait ? undefined : [];
     }
 
     await this.#ready();
-
-    if (this.#isEnding()) {
-      return wait ? undefined : [];
-    }
 
     const op = readId(this.#base, n);
     const want = this.#want();
@@ -794,17 +795,14 @@ export class Inbox<TMessage = EventPayload> implements AsyncDisposable {
 
   async #readOne(
     n: number,
+    late: boolean,
     timeout?: ReadTimeout,
   ): Promise<TMessage | null | undefined> {
-    if (this.closed || this.#isEnding()) {
+    if (this.closed || late) {
       return undefined;
     }
 
     await this.#ready();
-
-    if (this.#isEnding()) {
-      return undefined;
-    }
 
     const op = readId(this.#base, n);
     const want = this.#want();
